@@ -392,7 +392,7 @@ fn decode_field_rhs(
     }
 }
 
-/// Builder type and initialisation for a field, such as `StringBuilder::new()` or
+/// Builder type and initialization for a field, such as `StringBuilder::new()` or
 /// `Float64Array::builder(len)`.
 fn encode_builder_for_field(ty: &Type, json: bool, len_var: &syn::Ident) -> Option<TokenStream> {
     if json {

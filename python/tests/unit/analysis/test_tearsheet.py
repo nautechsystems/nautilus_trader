@@ -1742,7 +1742,7 @@ def two_month_returns() -> object:
     """
     # Two +10% single-day returns, one per consecutive month: the equity index ends
     # each month at 1.10 then 1.21, so compounded monthly returns are [10%, 10%] and
-    # simple (fixed-base) monthly returns are [10%, 11%], both totalling 21%.
+    # simple (fixed-base) monthly returns are [10%, 11%], both totaling 21%.
     index = pd.to_datetime(["2024-01-31", "2024-02-29"])
     return pd.Series([0.10, 0.10], index=index)
 

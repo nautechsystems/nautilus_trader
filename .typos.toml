@@ -1,12 +1,92 @@
 # Configuration for typos spell checker
 
+[default]
+locale = "en-us"
+# Preserve accepted identifier spellings, external values, and file references
+extend-ignore-re = ['"[^"\s]*\.(?:json|csv|txt|xml)"', '`licence`']
+
 [default.extend-identifiers]
+# Regex prefix and established diagnostic spelling
+consisten = "consisten"
+UNPARSEABLE = "UNPARSEABLE"
+
 # Rust crate names
 writeable = "writeable"
 # GitHub usernames
 NoiceHax = "NoiceHax"
 
+# Betfair API names
+MarketCatalogue = "MarketCatalogue"
+ListMarketCatalogueParams = "ListMarketCatalogueParams"
+listMarketCatalogue = "listMarketCatalogue"
+METHOD_LIST_MARKET_CATALOGUE = "METHOD_LIST_MARKET_CATALOGUE"
+CATALOGUE_BATCH_SIZE = "CATALOGUE_BATCH_SIZE"
+parse_market_catalogue = "parse_market_catalogue"
+size_cancelled = "size_cancelled"
+sizeCancelled = "sizeCancelled"
+cancelled_date = "cancelled_date"
+CancelledNotPlaced = "CancelledNotPlaced"
+CANCELLED_NOT_PLACED = "CANCELLED_NOT_PLACED"
+
+# External order statuses and response fields
+CancelledError = "CancelledError"
+ApiCancelled = "ApiCancelled"
+API_CANCELLED = "API_CANCELLED"
+CANCELLED = "CANCELLED"
+GoodTilCancelled = "GoodTilCancelled"
+GoodUntilCancelled = "GoodUntilCancelled"
+GOOD_UNTIL_CANCELLED = "GOOD_UNTIL_CANCELLED"
+good_til_cancelled = "good_til_cancelled"
+OrderCancelled = "OrderCancelled"
+CancelledOrder = "CancelledOrder"
+RequestCancelled = "RequestCancelled"
+cancelled_order = "cancelled_order"
+cancelled_orders = "cancelled_orders"
+cancelled_trigger_orders = "cancelled_trigger_orders"
+cancelled_labels = "cancelled_labels"
+cancelledOrders = "cancelledOrders"
+cancelled_by_user = "cancelled_by_user"
+orders_cancelled = "orders_cancelled"
+
+# BitMEX and Bybit wire fields
+prev_realised_pnl = "prev_realised_pnl"
+prev_unrealised_pnl = "prev_unrealised_pnl"
+realised_cost = "realised_cost"
+realised_gross_pnl = "realised_gross_pnl"
+realised_tax = "realised_tax"
+realised_pnl = "realised_pnl"
+unrealised_cost = "unrealised_cost"
+unrealised_gross_pnl = "unrealised_gross_pnl"
+unrealised_tax = "unrealised_tax"
+unrealised_pnl = "unrealised_pnl"
+unrealised_pnl_pcnt = "unrealised_pnl_pcnt"
+unrealised_roe_pcnt = "unrealised_roe_pcnt"
+unrealised_profit = "unrealised_profit"
+cum_realised_pnl = "cum_realised_pnl"
+cur_realised_pnl = "cur_realised_pnl"
+unrealisedPnl = "unrealisedPnl"
+cumRealisedPnl = "cumRealisedPnl"
+curRealisedPnl = "curRealisedPnl"
+
+# Existing public BitMEX configuration and module names
+canceller = "canceller"
+canceller_pool_size = "canceller_pool_size"
+canceller_proxy_urls = "canceller_proxy_urls"
+has_canceller_proxy_urls = "has_canceller_proxy_urls"
+
 [default.extend-words]
+# Enforce preferred spellings that the locale dictionary also accepts as variants
+catalogue = "catalog"
+catalogues = "catalogs"
+catalogued = "cataloged"
+cataloguing = "cataloging"
+cancelled = "cancelled"
+cancelling = "cancelling"
+totalled = "totalled"
+signalled = "signalled"
+queueing = "queueing"
+canceller = "canceller"
+
 # Industry standard abbreviations and technical terms
 CMO = "CMO" # Chande Momentum Oscillator
 BSE = "BSE" # Bombay Stock Exchange
@@ -65,5 +145,22 @@ intoto = "intoto" # Part of .intoto.jsonl in-toto attestation bundle filenames
 ymbol = "ymbol" # Part of generated file names from SBE code generator
 
 [files]
-# Exclude generated SBE codec files from typos checking (vendored external code)
-extend-exclude = ["crates/adapters/binance/src/common/sbe/spot/*.rs"]
+# Preserve legal text, historical releases, vendored code, and verbatim data
+ignore-hidden = false
+extend-exclude = [
+  ".git/",
+  ".codespellrc",
+  "CLA.md",
+  "RELEASES.md",
+  "patches/",
+  "crates/adapters/binance/src/common/sbe/spot/*.rs",
+  "**/test_data/**/*.json",
+  "**/test_data/**/*.csv",
+  "**/test_data/**/*.txt",
+  "**/test_data/**/*.xml",
+]
+
+# Preserve the existing dataset metadata key and shell variable
+[type.dataset-script]
+extend-glob = ["curate-dataset.sh"]
+extend-ignore-re = ['"licence"', '\$\{licence\}', '(?m)^licence=']

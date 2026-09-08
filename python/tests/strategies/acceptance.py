@@ -16,7 +16,7 @@
 Strategies used by acceptance tests.
 
 Each strategy is importable via ImportableStrategyConfig. They aim to exercise specific
-engine behaviours - multi-cycle PnL accounting, cascading order submission, timer
+engine behaviors - multi-cycle PnL accounting, cascading order submission, timer
 firing, etc.
 
 """

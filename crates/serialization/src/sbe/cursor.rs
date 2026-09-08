@@ -244,7 +244,7 @@ impl<'a> SbeCursor<'a> {
 
     // Const-generic slice-to-array conversion lets LLVM lower the read to
     // a single aligned load after one bounds check, matching the pattern
-    // the compiler recognises for `from_le_bytes`.
+    // the compiler recognizes for `from_le_bytes`.
     #[inline]
     fn read_array<const N: usize>(&mut self) -> Result<[u8; N], SbeDecodeError> {
         self.require(N)?;

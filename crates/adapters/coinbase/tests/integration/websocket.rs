@@ -16,7 +16,7 @@
 //! Integration tests for the Coinbase WebSocket client using a mock server.
 //!
 //! These tests exercise the [`CoinbaseWebSocketClient`] directly (without the
-//! [`CoinbaseDataClient`] facade) to cover transport-layer behaviour: the
+//! [`CoinbaseDataClient`] facade) to cover transport-layer behavior: the
 //! subscribe / unsubscribe wire protocol, subscription-state tracking,
 //! reconnection-driven resubscribe, the credentials-required gate on the user
 //! channel, and graceful tolerance of malformed messages.
@@ -63,7 +63,7 @@ struct WsServerState {
     connection_count: Arc<AtomicUsize>,
     /// Subscribe/unsubscribe payloads received from the client, in arrival
     /// order. Tests assert against this to verify wire protocol shape and
-    /// resubscribe-after-reconnect behaviour.
+    /// resubscribe-after-reconnect behavior.
     received_messages: Arc<tokio::sync::Mutex<Vec<Value>>>,
     /// When set, the next received subscribe causes the server to close the
     /// WebSocket so the client can exercise its reconnect path.

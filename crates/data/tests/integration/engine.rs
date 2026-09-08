@@ -16597,7 +16597,7 @@ fn test_process_pipeline_bar_drops_out_of_sequence(stub_msgbus: Rc<RefCell<Messa
     assert_eq!(
         cache.borrow().bar(&bar_type),
         Some(&first),
-        "pipeline bar handler must honour validate_data_sequence and keep the first bar",
+        "pipeline bar handler must honor validate_data_sequence and keep the first bar",
     );
 }
 

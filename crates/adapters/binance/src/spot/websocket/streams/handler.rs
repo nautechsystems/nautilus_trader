@@ -300,7 +300,7 @@ impl BinanceSpotWsFeedHandler {
 }
 
 /// Classifies a JSON text frame that did not match a subscription response or
-/// known error envelope. Recognises the `serverShutdown` event; otherwise
+/// known error envelope. Recognizes the `serverShutdown` event; otherwise
 /// emits `RawJson` for parseable payloads or an empty vector for garbage.
 fn classify_unsolicited_json(text: &str) -> Vec<BinanceSpotWsMessage> {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(text) else {

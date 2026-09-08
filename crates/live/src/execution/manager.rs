@@ -647,7 +647,7 @@ impl ExecutionManager {
         self.validate_mass_status_order_sources(&mass_status);
 
         // Publish raw reports before any state mutation (including fill adjustment
-        // below, which can synthesise replacement order/fill reports). The
+        // below, which can synthesize replacement order/fill reports). The
         // execution engine's per-report `reconcile_*` entry points are bypassed by
         // this path, so the capture seam lives here.
         let raw_order_status_topic =

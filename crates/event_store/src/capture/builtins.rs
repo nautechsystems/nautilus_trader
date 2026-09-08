@@ -686,7 +686,7 @@ pub fn encode_fill_report(report: &FillReport) -> Result<EncodedPayload, EncodeE
 /// `PositionStatusReport` carries only `AccountId`, `InstrumentId`, and `PositionId`;
 /// none of those have a matching [`IndexKind`] variant today. Capture with no sidecar
 /// indices so the entry is forensics-discoverable by sequential scan rather than
-/// synthesising an index against an identifier the reader cannot query.
+/// synthesizing an index against an identifier the reader cannot query.
 ///
 /// # Errors
 ///
@@ -3062,7 +3062,7 @@ mod tests {
     fn account_state_encoder_records_no_indices() {
         // AccountState carries AccountId and event_id (UUID4); neither matches an
         // IndexKind variant today. The encoder must capture the payload without
-        // synthesising sidecar indices pointing at identifiers the reader cannot
+        // synthesizing sidecar indices pointing at identifiers the reader cannot
         // query, mirroring the PositionStatusReport precedent.
         let state = make_account_state();
         let encoded = encode_account_state(&state).expect("encode");

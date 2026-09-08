@@ -1830,7 +1830,7 @@ mod tests {
     #[rstest]
     fn test_deserialize_historical_combo_leg_with_missing_optional_fields() {
         // Pins the review-fix loop's optionality decisions on DeribitTradeLeg.
-        // Synthesised fixture: one combo trade where the parent omits
+        // Synthesized fixture: one combo trade where the parent omits
         // contracts/index_price/mark_price (already optional pre-patch), and
         // legs omit varying subsets of the same Option<Decimal> fields plus
         // `iv`. A regression that re-tightens any of them will fail here.

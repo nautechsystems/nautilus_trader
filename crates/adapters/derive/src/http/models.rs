@@ -890,7 +890,7 @@ pub struct DeriveTrade {
 ///
 /// The public WS feed strips private fields (subaccount, wallet, settlement
 /// metadata, role, fee, PnL) and only carries values visible to every market
-/// participant. Those fields are modelled as `Option` so the same struct can
+/// participant. Those fields are modeled as `Option` so the same struct can
 /// deserialize both the HTTP shape (richer, when the caller has account
 /// context) and the WS shape (slim).
 #[derive(Clone, Debug, Serialize, Deserialize)]

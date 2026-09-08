@@ -294,7 +294,7 @@ impl ProxyTarget {
     /// Parses a proxy URL into the components needed to establish the tunnel.
     ///
     /// Only `http://` and `https://` schemes are accepted here. Use
-    /// [`ProxyKind::parse`] when callers need to distinguish recognised but
+    /// [`ProxyKind::parse`] when callers need to distinguish recognized but
     /// unsupported schemes (currently SOCKS) from malformed input.
     ///
     /// # Errors
@@ -550,7 +550,7 @@ where
 }
 
 #[cfg(test)]
-#[cfg(not(feature = "turmoil"))] // proxy hop is not modelled under the turmoil simulator
+#[cfg(not(feature = "turmoil"))] // proxy hop is not modeled under the turmoil simulator
 mod tests {
     use std::net::SocketAddr;
 

@@ -2594,7 +2594,7 @@ async fn test_submit_order_jsonrpc_ambiguous_does_not_emit_order_rejected() {
 #[rstest]
 #[tokio::test]
 async fn test_submit_order_rate_limit_jsonrpc_emits_order_rejected() {
-    // Observed venue behaviour: Derive returns `-32000 Rate limit exceeded`
+    // Observed venue behavior: Derive returns `-32000 Rate limit exceeded`
     // for throttled requests. The code sits in the JSON-RPC server-error
     // range and is HTTP-retryable, but the matching engine never saw the
     // request: the gateway threw it out. This is a *definitive* rejection

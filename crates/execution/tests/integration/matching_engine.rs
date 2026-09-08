@@ -14570,7 +14570,7 @@ fn test_option_expiration_cancellation_latched_across_deferred_retries(account_i
 
     // An Accepted (open) order in the cache whose status never advances: the
     // collection-only handler below does not apply events back to the cache,
-    // modeling a queueing consumer that has not yet processed the
+    // modeling a queuing consumer that has not yet processed the
     // cancellation when the next expiration retry scans the cache.
     let resting_client_order_id = ClientOrderId::from("O-RESTING-OPTION-3");
     let mut resting_order = OrderTestBuilder::new(OrderType::Limit)

@@ -25,7 +25,7 @@ use crate::{
     spot::http::client::BinanceSpotHttpClient,
 };
 
-/// Loads the configured Binance instrument catalogue for the Python async facade.
+/// Loads the configured Binance instrument catalog for the Python async facade.
 ///
 /// The public `load_binance_instruments` coroutine runs this blocking boundary in a Python worker
 /// thread. The request uses the same domain-level HTTP paths and
@@ -34,7 +34,7 @@ use crate::{
 /// # Errors
 ///
 /// Returns an error if the configuration is invalid, the product type is unsupported, the
-/// catalogue request fails, or an instrument cannot be converted to Python.
+/// catalog request fails, or an instrument cannot be converted to Python.
 #[pyfunction]
 #[pyo3(name = "_load_binance_instruments")]
 pub(super) fn py_load_binance_instruments<'py>(

@@ -21,7 +21,7 @@
 //!   REST call
 //!
 //! Numbers here decompose the EIP-712 cost (typed-data hash + ECDSA) from the
-//! HMAC path so a regression in either is localisable.
+//! HMAC path so a regression in either is localizable.
 
 use std::hint::black_box;
 

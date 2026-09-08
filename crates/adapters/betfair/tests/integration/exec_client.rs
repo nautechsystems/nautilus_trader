@@ -4895,7 +4895,7 @@ async fn test_ocm_ignore_external_orders_skips_orders_without_rfo() {
 }
 
 /// Regression: an empty `rfo` string must be treated identically to a missing
-/// `rfo`. Parsers elsewhere normalise `""` to `None`; the
+/// `rfo`. Parsers elsewhere normalize `""` to `None`; the
 /// `ignore_external_orders` skip must do the same so externally-placed orders
 /// (the venue sometimes emits `"rfo": ""`) are silently ignored.
 #[rstest]
@@ -5210,7 +5210,7 @@ async fn test_submit_order_with_handicap_includes_handicap_in_instruction() {
 
     let instr = &params["instructions"][0];
     assert_eq!(instr["selectionId"], 86362);
-    // Decimals serialise as JSON strings; Betfair accepts the string form.
+    // Decimals serialize as JSON strings; Betfair accepts the string form.
     assert_eq!(instr["handicap"], "1.5");
 
     client.disconnect().await.unwrap();
@@ -5279,7 +5279,7 @@ async fn test_modify_price_dispatches_replace_orders_with_new_price() {
     let instr = &params["instructions"][0];
     assert_valid_customer_ref(&params);
     assert_eq!(instr["betId"], "228000000111");
-    // Decimals serialise as JSON strings.
+    // Decimals serialize as JSON strings.
     assert_eq!(instr["newPrice"], "3.50");
 
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
@@ -6890,7 +6890,7 @@ async fn test_query_order_recovers_from_no_session() {
 
 /// Replace-flow reconciliation: after a successful `replaceOrders`, the OCM
 /// will publish a cancel for the *old* bet id (Betfair models a price modify
-/// as cancel-old + place-new). The handler must recognise that cancel as part
+/// as cancel-old + place-new). The handler must recognize that cancel as part
 /// of the replace and suppress it; emitting a CancelRejected or Canceled
 /// here would make the strategy think its order was killed even though a
 /// fresh bet has just been placed.
@@ -7192,7 +7192,7 @@ async fn test_startup_restored_replace_stream_before_rest_emits_updated_once() {
     server.await.unwrap();
 }
 
-/// A FOK limit order must serialise with `timeInForce=FILL_OR_KILL` and no
+/// A FOK limit order must serialize with `timeInForce=FILL_OR_KILL` and no
 /// `persistenceType` so Betfair rejects unmatched residue rather than parking
 /// it on the book.
 #[rstest]
@@ -7313,7 +7313,7 @@ async fn test_submit_limit_at_the_close_sends_limit_on_close_payload() {
     server.await.unwrap();
 }
 
-/// A Market AtTheClose order must serialise as a `marketOnCloseOrder` (BSP)
+/// A Market AtTheClose order must serialize as a `marketOnCloseOrder` (BSP)
 /// with the order quantity used as `liability`, not as a regular limit.
 #[rstest]
 #[tokio::test]

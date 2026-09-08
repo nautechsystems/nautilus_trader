@@ -840,7 +840,7 @@ pub struct BybitTradeHistoryParams {
 /// Kept separate from the response-side
 /// [`crate::http::models::BybitApiKeyPermissions`]: every field here is
 /// `Option<Vec<String>>` with `skip_serializing_if`, so an unset bucket is
-/// omitted from the request body entirely rather than being serialised as an
+/// omitted from the request body entirely rather than being serialized as an
 /// explicit empty array (which the venue treats as "clear all permissions").
 ///
 /// The field set is the superset of the master and sub-account permission
@@ -914,7 +914,7 @@ pub struct BybitUpdateSubApiParams {
     #[builder(setter(strip_option))]
     pub api_key: Option<SecretString>,
     // Bybit accepts `readOnly` as a 0/1 integer on the wire; the builder takes
-    // a `bool` and `opt_bool_as_int` serialises it to match.
+    // a `bool` and `opt_bool_as_int` serializes it to match.
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none", with = "opt_bool_as_int")]
     #[builder(setter(strip_option))]
@@ -963,7 +963,7 @@ pub struct BybitUpdateMasterApiParams {
 /// Shared by `GET /v5/user/submembers` and `GET /v5/user/escrow_sub_members`,
 /// which take the same pagination shape (`pageSize` up to 100 plus
 /// `nextCursor`). Bybit documents `pageSize` as a string, but the URL encoder
-/// serialises any numeric value as text anyway, so `u32` is used on the Rust
+/// serializes any numeric value as text anyway, so `u32` is used on the Rust
 /// side for compile-time type safety.
 ///
 /// # References

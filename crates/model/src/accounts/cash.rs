@@ -444,7 +444,7 @@ mod tests {
     fn test_cash_account_balances_preserve_insertion_order(cash_account_multi: CashAccount) {
         // Locks in IndexMap iteration order for BaseAccount.balances:
         // currencies appear in the same order as the AccountState.balances
-        // Vec they were initialised from. Drives the deterministic ordering
+        // Vec they were initialized from. Drives the deterministic ordering
         // of regenerated AccountState events in portfolio::manager.
         let keys: Vec<Currency> = cash_account_multi.balances().keys().copied().collect();
         assert_eq!(keys, vec![Currency::from("BTC"), Currency::from("ETH")]);

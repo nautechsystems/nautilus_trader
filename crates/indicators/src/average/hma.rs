@@ -362,7 +362,7 @@ mod tests {
                 "HMA(1) should equal last price {price}, was {}",
                 hma.value()
             );
-            assert!(hma.initialized(), "HMA(1) must initialise immediately");
+            assert!(hma.initialized(), "HMA(1) must initialize immediately");
         }
     }
 
@@ -406,13 +406,13 @@ mod tests {
 
         for i in 0..(period - 1) {
             hma.update_raw(i as f64);
-            assert!(!hma.initialized(), "HMA wrongly initialised at count {i}");
+            assert!(!hma.initialized(), "HMA wrongly initialized at count {i}");
         }
 
         hma.update_raw(0.0);
         assert!(
             hma.initialized(),
-            "HMA should initialise at exactly {period} ticks"
+            "HMA should initialize at exactly {period} ticks"
         );
     }
 

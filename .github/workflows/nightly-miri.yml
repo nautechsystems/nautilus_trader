@@ -1,7 +1,7 @@
 name: nightly-miri
 
 # Runs Miri across the foundational `nautilus-core` and `nautilus-model` crates,
-# plus the `nautilus-plugin` ABI boundary. This detects undefined behaviour in
+# plus the `nautilus-plugin` ABI boundary. This detects undefined behavior in
 # unsafe code (raw pointer / `CStr` handling in `string::stack_str`, plug-in FFI
 # ownership paths, aliasing rules) and confirms that the type-safe domain model
 # holds up against Miri's strict provenance and Stacked Borrows checks.

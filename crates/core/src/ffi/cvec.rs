@@ -19,7 +19,7 @@
 //! a raw pointer (`ptr`) together with the vector's logical `len` and `cap`.  By moving the
 //! allocation metadata into a plain `repr(C)` type we allow the memory created by Rust to be
 //! owned, inspected, and ultimately freed by foreign code (or vice-versa) without introducing
-//! undefined behaviour.
+//! undefined behavior.
 //!
 //! Only a very small API surface is exposed to C:
 //!

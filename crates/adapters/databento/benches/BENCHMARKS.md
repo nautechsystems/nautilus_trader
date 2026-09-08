@@ -99,7 +99,7 @@ They are not external Databento service latency claims.
 ## Component breakdown (`micros.rs`)
 
 Diagnostic benches that decompose the pipeline numbers above. Use these to
-localise where time goes when a loader bench regresses.
+localize where time goes when a loader bench regresses.
 
 `record_decode` measures already-decoded Databento records converted into
 Nautilus domain values.

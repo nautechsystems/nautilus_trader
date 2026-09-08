@@ -351,7 +351,7 @@ impl WebSocketClientInner {
 
         // Adapters build this config by struct literal, bypassing the builder, so this is the only
         // place the field invariants are enforced for them. Stream mode documents the reconnect and
-        // liveness fields as ignored and permits zero for them, so it checks only what it honours.
+        // liveness fields as ignored and permits zero for them, so it checks only what it honors.
         if is_stream_mode {
             if config.heartbeat_interval_secs == Some(0) {
                 return Err(TransportError::Io(std::io::Error::new(
@@ -614,7 +614,7 @@ impl WebSocketClientInner {
     /// Connects via an HTTP `CONNECT` proxy and performs the WebSocket
     /// handshake over the resulting tunnel.
     ///
-    /// Recognised but unsupported proxy schemes (currently SOCKS) log a
+    /// Recognized but unsupported proxy schemes (currently SOCKS) log a
     /// warning and fall back to a direct connection so existing REST proxy
     /// configs remain usable. Only available in production builds; the
     /// turmoil simulator does not model arbitrary outbound TCP via a proxy.
@@ -781,7 +781,7 @@ impl WebSocketClientInner {
     /// Connects via an HTTP `CONNECT` proxy and performs the sockudo WebSocket
     /// handshake over the resulting tunnel.
     ///
-    /// Recognised but unsupported proxy schemes (currently SOCKS) log a warning
+    /// Recognized but unsupported proxy schemes (currently SOCKS) log a warning
     /// and fall back to a direct connection, matching the Tungstenite path.
     #[inline]
     #[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]
@@ -813,7 +813,7 @@ impl WebSocketClientInner {
         Self::finish_sockudo_handshake(stream, &target, &headers).await
     }
 
-    /// Turmoil simulator variant: HTTP `CONNECT` tunneling is not modelled under
+    /// Turmoil simulator variant: HTTP `CONNECT` tunneling is not modeled under
     /// the simulator so any proxy URL is rejected up front.
     #[inline]
     #[cfg(all(feature = "transport-sockudo", feature = "turmoil"))]
@@ -3013,7 +3013,7 @@ impl WebSocketClient {
 
     /// Returns whether the client connection is active.
     ///
-    /// Returns `true` if the client is connected and has not been signalled to disconnect.
+    /// Returns `true` if the client is connected and has not been signaled to disconnect.
     /// The client will automatically retry connection based on its configuration.
     #[inline]
     #[must_use]
@@ -9537,7 +9537,7 @@ mod rust_tests {
         "/ws",
         true
     )]
-    // url::Url normalises explicit default ports (`:80` for ws, `:443` for wss)
+    // url::Url normalizes explicit default ports (`:80` for ws, `:443` for wss)
     // away, so `parsed.port()` reports `None` here and Host stays unqualified.
     #[case::ws_explicit_default(
         "ws://example.com:80/ws",

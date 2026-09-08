@@ -616,7 +616,7 @@ mod tests {
         let overflow = TradeId::new(format!("trade-{DEDUP_CAPACITY}").as_str());
         assert!(!state.check_and_insert_trade(overflow));
 
-        // Inspect the dedup set directly to confirm FIFO behaviour without
+        // Inspect the dedup set directly to confirm FIFO behavior without
         // perturbing state via another `check_and_insert_trade` call.
         let set = state.emitted_trades.lock();
         assert_eq!(set.len(), DEDUP_CAPACITY);

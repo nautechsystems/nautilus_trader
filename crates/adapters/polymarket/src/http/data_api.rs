@@ -43,7 +43,7 @@ use crate::{
     },
 };
 
-// Composite key for stabilising same-second trades across paginated responses
+// Composite key for stabilizing same-second trades across paginated responses
 fn data_api_trade_sort_key(t: &DataApiTrade) -> (i64, &str, &str, &'static str, Decimal, Decimal) {
     (
         t.timestamp,
@@ -530,7 +530,7 @@ fn parse_trade_ticks(
     price_precision: u8,
     size_precision: u8,
 ) -> anyhow::Result<Vec<TradeTick>> {
-    // Composite sort to stabilise same-second trades across pages
+    // Composite sort to stabilize same-second trades across pages
     data_api_trades.sort_by(|a, b| data_api_trade_sort_key(a).cmp(&data_api_trade_sort_key(b)));
 
     let mut timestamp_counts: HashMap<u64, u32> = HashMap::new();

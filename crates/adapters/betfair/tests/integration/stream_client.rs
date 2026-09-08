@@ -1183,7 +1183,7 @@ async fn test_stream_status_message_keeps_client_active() {
 /// a subsequent reconnection does not replay a stale token. The
 /// `OrderSubscription` struct is built with `clk: None` by construction, so
 /// the immediate on-wire payload always lacks `clk`; the *load-bearing*
-/// behaviour is that the post-reconnection resubscribe also omits the prior
+/// behavior is that the post-reconnection resubscribe also omits the prior
 /// OCM's `clk`. Force a reconnect after the second subscribe to exercise
 /// that path.
 #[rstest]

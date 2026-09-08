@@ -415,7 +415,7 @@ fn test_turmoil_real_sockudo_network_partition(mut websocket_config: WebSocketCo
 
 /// In production a Sockudo config with `proxy_url` tunnels through the proxy
 /// with its own HTTP `CONNECT` path; under the simulator tunneling is not
-/// modelled, so the config surfaces as an up-front error instead. This pins
+/// modeled, so the config surfaces as an up-front error instead. This pins
 /// the simulator behavior, not the production tunnel.
 #[rstest]
 fn test_turmoil_sockudo_rejects_proxy_url(mut websocket_config: WebSocketConfig) {
@@ -442,7 +442,7 @@ fn test_turmoil_sockudo_rejects_proxy_url(mut websocket_config: WebSocketConfig)
     sim.run().unwrap();
 }
 
-/// `wss://` cannot be modelled under the simulator (turmoil has no TLS), so
+/// `wss://` cannot be modeled under the simulator (turmoil has no TLS), so
 /// the sockudo backend must reject it up front rather than failing later in
 /// the handshake.
 #[rstest]

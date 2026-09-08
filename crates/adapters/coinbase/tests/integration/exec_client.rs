@@ -2392,7 +2392,7 @@ async fn test_exec_cancel_all_http_failure_does_not_emit_cancel_rejected() {
 }
 
 // HTTP error-path tests. Each spins up an ad-hoc router with a single failure
-// behaviour so the assertion is unambiguous: the test name names the failure
+// behavior so the assertion is unambiguous: the test name names the failure
 // mode, and a regression in retry/parse handling fails exactly the right test.
 
 async fn start_failure_server(router: Router) -> SocketAddr {

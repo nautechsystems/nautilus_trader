@@ -1610,7 +1610,7 @@ pub fn build_order_configuration(
         OrderType::Market => {
             // Coinbase exposes `market_market_ioc` and `market_market_fok` for
             // MARKET orders. Nautilus' default GTC is mapped to IOC (mirroring
-            // the Bybit adapter pattern); explicit IOC and FOK are honoured;
+            // the Bybit adapter pattern); explicit IOC and FOK are honored;
             // DAY / GTD are rejected.
             //
             // Note: a MARKET order built with TIF=GTC will execute as IOC at

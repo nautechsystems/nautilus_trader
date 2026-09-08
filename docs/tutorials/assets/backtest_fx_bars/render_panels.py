@@ -357,7 +357,7 @@ def panel_b_zoom(
 def panel_c_pnl_curve(cycles: list[dict]) -> go.Figure:
     fig = go.Figure()
     if not cycles:
-        apply_layout(fig, "Cumulative realised pnl per closed cycle (no fills)", height=400)
+        apply_layout(fig, "Cumulative realized pnl per closed cycle (no fills)", height=400)
         return fig
     df = pd.DataFrame(cycles)
     df["pnl_jpy"] = (df["close_price"] - df["open_price"]) * df["side"] * df["qty"]
@@ -387,7 +387,7 @@ def panel_c_pnl_curve(cycles: list[dict]) -> go.Figure:
         ),
     )
     fig.add_hline(y=0, line={"color": NEUTRAL, "dash": "dash", "width": 1})
-    apply_layout(fig, "Cumulative realised pnl across all closed cycles (JPY)", height=420)
+    apply_layout(fig, "Cumulative realized pnl across all closed cycles (JPY)", height=420)
     fig.update_xaxes(title_text="cycle close time")
     fig.update_yaxes(title_text="JPY")
     return fig
@@ -397,7 +397,7 @@ def panel_d_distributions(cycles: list[dict]) -> go.Figure:
     fig = make_subplots(
         rows=1,
         cols=2,
-        subplot_titles=("Cycle hold time (minutes)", "Per-cycle realised pnl (JPY)"),
+        subplot_titles=("Cycle hold time (minutes)", "Per-cycle realized pnl (JPY)"),
     )
 
     if not cycles:

@@ -741,7 +741,7 @@ mod tests {
     }
 
     /// An `auto_redeem` user-channel event as observed from the venue, which is undocumented and
-    /// not modelled by [`UserWsMessage`].
+    /// not modeled by [`UserWsMessage`].
     fn auto_redeem_element() -> serde_json::Value {
         serde_json::json!({
             "event_type": "auto_redeem",

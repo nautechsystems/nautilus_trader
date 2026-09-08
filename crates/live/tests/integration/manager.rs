@@ -16074,7 +16074,7 @@ async fn test_reconcile_mass_status_publishes_raw_reports_for_capture() {
 #[tokio::test]
 async fn test_reconcile_mass_status_does_not_capture_synthetic_reports() {
     // The raw publish must happen BEFORE adjust_mass_status_fills, which can
-    // synthesise replacement order/fill reports via
+    // synthesize replacement order/fill reports via
     // process_mass_status_for_reconciliation. Forensic replay must see only
     // the venue-supplied raw inputs; synthetic reports are an internal
     // reconstruction step and must never appear on `reconciliation.raw.*`.

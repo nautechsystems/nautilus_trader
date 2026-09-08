@@ -617,7 +617,7 @@ pub fn parse_ws_fill_report(
 }
 
 /// Parses a raw WebSocket JSON string and returns [`KrakenSpotWsMessage::OrderResponse`] if the
-/// message is an order-method response envelope, or `Ok(None)` for unrecognised messages.
+/// message is an order-method response envelope, or `Ok(None)` for unrecognized messages.
 ///
 /// # Errors
 ///

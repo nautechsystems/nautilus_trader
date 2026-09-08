@@ -15,7 +15,7 @@
 
 //! DeFi (Decentralized Finance) domain model.
 //!
-//! This module gathers all constructs required to model on-chain markets and decentralised
+//! This module gathers all constructs required to model on-chain markets and decentralized
 //! exchange (DEX) activity.
 //!
 //! • `chain`    - Blockchain networks supported by Nautilus (Ethereum, Arbitrum, …).

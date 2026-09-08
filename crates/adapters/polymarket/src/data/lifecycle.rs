@@ -1828,7 +1828,7 @@ mod tests {
         )
     }
 
-    // The data-runtime maps and sets that a retired Polymarket instrument must vacate, labelled so
+    // The data-runtime maps and sets that a retired Polymarket instrument must vacate, labeled so
     // a count mismatch names the owner that retained state.
     fn data_runtime_owner_counts(client: &PolymarketDataClient) -> Vec<(&'static str, usize)> {
         vec![

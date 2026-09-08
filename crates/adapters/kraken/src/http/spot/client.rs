@@ -3600,7 +3600,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_build_add_order_params_leverage_serialised_as_ratio() {
+    fn test_build_add_order_params_leverage_serialized_as_ratio() {
         let client = KrakenSpotHttpClient::default();
         let instrument_id =
             cache_test_spot_instrument_with_leverage(&client, &[2, 3, 5], &[2, 3, 5]);

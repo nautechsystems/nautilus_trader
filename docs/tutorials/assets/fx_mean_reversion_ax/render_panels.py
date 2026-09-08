@@ -553,7 +553,7 @@ def panel_c_decision_scatter(bars: pd.DataFrame) -> go.Figure:
 def panel_d_pnl(positions: pd.DataFrame, cycles: list[dict]) -> go.Figure:
     fig = go.Figure()
     if not cycles:
-        apply_layout(fig, "Cumulative realised pnl per closed cycle (no cycles)", height=420)
+        apply_layout(fig, "Cumulative realized pnl per closed cycle (no cycles)", height=420)
         return fig
     if "realized_pnl" in positions.columns:
         df = positions.copy()
@@ -598,7 +598,7 @@ def panel_d_pnl(positions: pd.DataFrame, cycles: list[dict]) -> go.Figure:
         ),
     )
     fig.add_hline(y=0, line={"color": NEUTRAL, "dash": "dash", "width": 1})
-    apply_layout(fig, "Cumulative realised pnl per closed position (USD)", height=420)
+    apply_layout(fig, "Cumulative realized pnl per closed position (USD)", height=420)
     fig.update_xaxes(title_text="position close time")
     fig.update_yaxes(title_text="USD")
     return fig

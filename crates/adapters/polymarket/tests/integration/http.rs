@@ -1475,7 +1475,7 @@ async fn test_request_times_out_when_server_is_slow() {
     // Upper bound: must not have hung past the configured timeout.
     assert!(
         elapsed < Duration::from_millis(2_500),
-        "request did not honour the timeout (took {elapsed:?})",
+        "request did not honor the timeout (took {elapsed:?})",
     );
 
     // Server must have actually received the request (one increment via

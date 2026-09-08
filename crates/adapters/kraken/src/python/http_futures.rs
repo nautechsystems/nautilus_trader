@@ -129,13 +129,13 @@ impl KrakenFuturesHttpClient {
         self.cancel_all_requests();
     }
 
-    /// Requests the complete tradable instrument catalogue from Kraken Futures.
+    /// Requests the complete tradable instrument catalog from Kraken Futures.
     ///
     /// # Errors
     ///
     /// Returns an error if the underlying request fails or any instrument definition cannot be
     /// parsed. An instrument parse failure returns `KrakenHttpError.ParseError` without a
-    /// partial catalogue.
+    /// partial catalog.
     #[pyo3(name = "request_instruments")]
     fn py_request_instruments<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();

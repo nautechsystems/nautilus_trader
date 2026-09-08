@@ -336,7 +336,7 @@ impl KrakenSpotDataClient {
         let ws_l3 = self
             .ws_l3
             .as_ref()
-            .expect("ws_l3 initialised above")
+            .expect("ws_l3 initialized above")
             .clone();
 
         self.spawn_ws(

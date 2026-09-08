@@ -1550,7 +1550,7 @@ impl BinanceFuturesHttpClient {
         self.inner.has_credentials()
     }
 
-    /// Replaces the raw instrument metadata after a complete catalogue fetch.
+    /// Replaces the raw instrument metadata after a complete catalog fetch.
     fn replace_instruments(
         &self,
         instruments: Vec<(Ustr, BinanceFuturesInstrument)>,
@@ -1560,21 +1560,21 @@ impl BinanceFuturesHttpClient {
             instrument.precisions()?;
             if instrument.symbol() != symbol {
                 return Err(BinanceFuturesHttpError::ValidationError(format!(
-                    "Binance Futures catalogue key {symbol} does not match instrument symbol {}",
+                    "Binance Futures catalog key {symbol} does not match instrument symbol {}",
                     instrument.symbol()
                 )));
             }
             let expected_id = format_instrument_id(&symbol, self.product_type);
             if instrument.id() != expected_id {
                 return Err(BinanceFuturesHttpError::ValidationError(format!(
-                    "Binance Futures catalogue instrument ID {} does not match expected ID {expected_id}",
+                    "Binance Futures catalog instrument ID {} does not match expected ID {expected_id}",
                     instrument.id()
                 )));
             }
 
             if snapshot.insert(symbol, instrument).is_some() {
                 return Err(BinanceFuturesHttpError::ValidationError(format!(
-                    "Duplicate Binance Futures catalogue symbol {symbol}"
+                    "Duplicate Binance Futures catalog symbol {symbol}"
                 )));
             }
         }
@@ -1757,14 +1757,14 @@ impl BinanceFuturesHttpClient {
             .await
     }
 
-    /// Fetches, selects, and parses the configured instrument catalogue.
+    /// Fetches, selects, and parses the configured instrument catalog.
     ///
     /// Account-wide Futures VIP rates provide the fallback when credentials are
     /// present. Exact per-symbol commission queries are opt-in.
     ///
     /// # Errors
     ///
-    /// Returns an error if configuration or the catalogue request is invalid.
+    /// Returns an error if configuration or the catalog request is invalid.
     pub async fn request_instruments_with_config(
         &self,
         config: &BinanceInstrumentProviderConfig,

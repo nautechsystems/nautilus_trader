@@ -1431,7 +1431,7 @@ Class/struct: `PolymarketDataClientConfig`.
 | `proxy_url`                            | `None`     | HTTP or HTTPS proxy for every data transport.                                             |
 | `http_timeout_secs`, `ws_timeout_secs` | `60`, `30` | HTTP and WebSocket timeout in seconds.                                                    |
 | `ws_max_subscriptions`                 | `200`      | Per-connection subscription cap; the market pool shards across connections at this bound. |
-| `update_instruments_interval_mins`     | `60`       | Instrument catalogue refresh interval; pass `None` to disable it.                         |
+| `update_instruments_interval_mins`     | `60`       | Instrument catalog refresh interval; pass `None` to disable it.                           |
 | `subscribe_new_markets`                | `false`    | Subscribe to discovery and resolution events; also enables `best_bid_ask` quote ticks.    |
 | `new_market_filter`                    | `None`     | Rust-only filter applied to newly discovered markets before instrument emission.          |
 | `new_market_fetch_max_concurrency`     | `8`        | Bound concurrent market fetches from discovery events.                                    |
@@ -1521,7 +1521,7 @@ reconciliation must also set `load_ids`.
 
 | Option               | Default | Description                                             |
 | -------------------- | ------- | ------------------------------------------------------- |
-| `load_all`           | `false` | Load the full venue catalogue at startup.               |
+| `load_all`           | `false` | Load the full venue catalog at startup.                 |
 | `load_ids`           | `None`  | Load exact Nautilus instrument IDs.                     |
 | `filters`            | `None`  | Validated Gamma market keyset filters.                  |
 | `event_slugs`        | `None`  | Resolve all markets for the listed events at bootstrap. |
@@ -1603,7 +1603,7 @@ Provider, data, and execution operations run in Rust. `event_slug_builder` there
 Rust-backed `PolymarketUpDownEventSlugConfig`; it does not accept Python callable paths.
 
 Use this for predictable Polymarket Up/Down event slugs without downloading the full venue
-catalogue. The builder emits slugs with the pattern
+catalog. The builder emits slugs with the pattern
 `{asset}-updown-{interval_mins}m-{unix_timestamp}` for the configured window of aligned periods.
 
 ```python

@@ -1334,7 +1334,7 @@ mod tests {
         .unwrap();
         // Verify the result has at most 6 decimal places.
         assert!(adjusted.scale() <= 6);
-        // And the value is in the expected neighbourhood.
+        // And the value is in the expected neighborhood.
         let expected = dec!(8.944565);
         assert!(
             (adjusted - expected).abs() < dec!(0.000001),

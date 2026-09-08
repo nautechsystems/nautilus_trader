@@ -100,9 +100,18 @@ repos:
     rev: v1.50.1
     hooks:
       - id: typos
-        description: Checks for common typos
-        args: ["--force-exclude"]
-        types_or: [rust, python, toml, yaml, rst, markdown]
+        description: Enforces American English spelling and checks for common typos
+        args: ["--force-exclude", "--threads", "2"]
+        types: [text]
+      - id: typos
+        alias: typos-policy
+        name: typos (spelling policy changes)
+        description: Check repository spelling when spelling policy or hook scope changes
+        entry: bash -o pipefail -c 'git ls-files | typos --file-list - "$@"' --
+        args: ["--force-exclude", "--threads", "2"]
+        pass_filenames: false
+        files: ^(\.pre-commit-config\.yaml|(.*/)?\.typos\.toml|docs/developer_guide/coding_standards\.md)$
+        types: [text]
 
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.3

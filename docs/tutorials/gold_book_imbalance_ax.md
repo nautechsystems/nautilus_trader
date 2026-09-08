@@ -251,7 +251,7 @@ The runnable example is at
 
 Replaying 2024-11-15 GC.v.0 mbp-1 (one trading day) through
 `OrderBookImbalance(0.10, 1.0, 5s)` prints 2,378 FOK fills net into 5 closed
-position cycles. Cumulative realised pnl ends at **-4,170 USD**: the
+position cycles. Cumulative realized pnl ends at **-4,170 USD**: the
 strategy bleeds steadily across the day, mostly through spread cost on
 incremental FOK fills that add to existing positions.
 
@@ -274,9 +274,9 @@ threshold is the addressable trigger region.*
 across the trading day. Top-of-book sizes flicker between roughly two and
 fifty contracts; the mid traverses about a fifteen-dollar range.*
 
-![Cumulative realised pnl per closed position](./assets/gold_book_imbalance_ax/panel_d_pnl.png)
+![Cumulative realized pnl per closed position](./assets/gold_book_imbalance_ax/panel_d_pnl.png)
 
-**Figure 4.** *Cumulative realised USD pnl across the five closed position
+**Figure 4.** *Cumulative realized USD pnl across the five closed position
 cycles. The slope is consistently negative and the per-cycle pnl is
 dominated by spread.*
 

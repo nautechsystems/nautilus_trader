@@ -1259,13 +1259,13 @@ impl KrakenFuturesHttpClient {
         self.clock.get_time_ns()
     }
 
-    /// Requests the complete tradable instrument catalogue from Kraken Futures.
+    /// Requests the complete tradable instrument catalog from Kraken Futures.
     ///
     /// # Errors
     ///
     /// Returns an error if the underlying request fails or any instrument definition cannot be
     /// parsed. An instrument parse failure returns [`KrakenHttpError::ParseError`] without a
-    /// partial catalogue.
+    /// partial catalog.
     pub async fn request_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>, KrakenHttpError> {
         let ts_init = self.generate_ts_init();
         let response = self.inner.get_instruments().await?;

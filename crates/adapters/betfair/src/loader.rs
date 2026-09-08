@@ -946,7 +946,7 @@ mod tests {
     fn test_load_snapshot_deltas_emit_inline_before_trades() {
         // Snapshot messages (mc.img=true) emit Clear+Add deltas inline per runner
         // so consumers can apply the book state before any trades in the same
-        // MCM. This matches Python's inline-snapshot behaviour.
+        // MCM. This matches Python's inline-snapshot behavior.
         let data = compact_json(&load_test_json(
             "stream/market_definition_runner_removed.json",
         ));

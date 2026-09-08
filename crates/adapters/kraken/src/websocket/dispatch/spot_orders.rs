@@ -157,7 +157,7 @@ impl OrderRequestState {
     ///
     /// # Errors
     ///
-    /// Returns an error if the JSON envelope fails to serialise or if the
+    /// Returns an error if the JSON envelope fails to serialize or if the
     /// handler command channel is closed.
     pub fn submit(
         self: &Arc<Self>,
@@ -180,7 +180,7 @@ impl OrderRequestState {
     ///
     /// # Errors
     ///
-    /// Returns an error if serialisation fails or the handler command channel is closed.
+    /// Returns an error if serialization fails or the handler command channel is closed.
     pub fn amend(
         self: &Arc<Self>,
         params: KrakenWsAmendOrderParams,
@@ -202,7 +202,7 @@ impl OrderRequestState {
     ///
     /// # Errors
     ///
-    /// Returns an error if serialisation fails or the handler command channel is closed.
+    /// Returns an error if serialization fails or the handler command channel is closed.
     pub fn cancel(
         self: &Arc<Self>,
         params: KrakenWsCancelOrderParams,
@@ -224,7 +224,7 @@ impl OrderRequestState {
     ///
     /// # Errors
     ///
-    /// Returns an error if serialisation fails or the handler command channel is closed.
+    /// Returns an error if serialization fails or the handler command channel is closed.
     pub fn batch_add(
         self: &Arc<Self>,
         params: KrakenWsBatchAddParams,
@@ -440,7 +440,7 @@ impl OrderRequestState {
         let payload = match serde_json::to_string(&envelope) {
             Ok(payload) => SecretString::from(payload),
             Err(e) => {
-                log::warn!("Submit timeout: compensating cancel serialise failed: {e}");
+                log::warn!("Submit timeout: compensating cancel serialize failed: {e}");
                 return;
             }
         };

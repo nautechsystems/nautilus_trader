@@ -7071,7 +7071,7 @@ fn test_own_book_client_order_ids_preserved_across_remove() {
 fn test_own_book_client_order_ids_after_update_with_price_change() {
     // Documents the order semantics of OwnBookLadder::update when the
     // price changes: shift_remove + add re-appends the order at the end
-    // of the cache. Locks in this behaviour so a future swap to
+    // of the cache. Locks in this behavior so a future swap to
     // swap_remove or a different update path would surface in tests.
     let instrument_id = InstrumentId::from("AAPL.XNAS");
     let mut own_book = OwnOrderBook::new(instrument_id);

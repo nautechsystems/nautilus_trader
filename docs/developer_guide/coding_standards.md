@@ -11,7 +11,9 @@ The following applies to **all** source files (Rust, Python, shell, etc.):
 
 - Use **spaces only**, never hard tab characters.
 - Lines should generally stay below **100 characters**; wrap thoughtfully when necessary.
-- Prefer American English spelling (`color`, `serialize`, `behavior`).
+- Use American English spelling (`color`, `serialize`, `behavior`), enforced by `.typos.toml`.
+  Preserve external API spellings through exact identifier exceptions; exclude verbatim data and generated files.
+  Run `prek run typos --all-files` to check the repository.
 
 ### Shell scripts
 

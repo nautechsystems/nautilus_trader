@@ -67,7 +67,7 @@ class EMACrossConfig(StrategyConfig):
         """
         Initialize the instance.
         """
-        # The pyo3 base initialises its state in `__new__`, so `__init__`
+        # The pyo3 base initializes its state in `__new__`, so `__init__`
         # falls through to `object.__init__` which only accepts `self`.
         super().__init__()
         self.instrument_id = instrument_id

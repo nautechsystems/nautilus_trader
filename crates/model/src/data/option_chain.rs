@@ -814,7 +814,7 @@ mod tests {
             tolerance: 0.05,
         };
         let strikes = vec![Price::from("50000"), Price::from("55000")];
-        // No ATM -> deferred (empty), matching ATM-relative behaviour.
+        // No ATM -> deferred (empty), matching ATM-relative behavior.
         assert!(delta.resolve(None, &strikes).is_empty());
     }
 }

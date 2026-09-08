@@ -338,4 +338,4 @@ pass. `signing_field.rs` is wall-clock noise at the per-op level;
 
 Quote `signing_sign_verify.rs` when publishing a signing number.
 `micros.rs` repeats a few of the same calls next to decode and JSON render
-so a pipeline regression can be localised.
+so a pipeline regression can be localized.

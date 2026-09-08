@@ -27,7 +27,7 @@ use crate::http::data_api::build_polymarket_trade_id;
 /// chronological stream.
 ///
 /// The returned tuple is `(timestamp, transactionHash, asset, side, price, size)`,
-/// with all string-typed fields stringified to match Python's behaviour for
+/// with all string-typed fields stringified to match Python's behavior for
 /// dictionaries with mixed-type values. Missing keys default to empty strings,
 /// matching `dict.get(key, "")`.
 #[pyfunction]

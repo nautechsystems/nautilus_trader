@@ -128,7 +128,7 @@ impl Fp {
     }
 
     /// Branch-free select: returns `a` when `mask == 0` and `b` when
-    /// `mask == u64::MAX`. Behaviour for any other mask value is unspecified;
+    /// `mask == u64::MAX`. Behavior for any other mask value is unspecified;
     /// the secret-scalar curve primitives only ever pass full-bit masks.
     #[inline(always)]
     #[must_use]

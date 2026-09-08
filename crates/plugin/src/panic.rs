@@ -15,7 +15,7 @@
 
 //! Catch-unwind wrapper used by every plug-in `extern "C"` thunk.
 //!
-//! Unwinding across an FFI boundary is undefined behaviour, so every host-bound
+//! Unwinding across an FFI boundary is undefined behavior, so every host-bound
 //! call from a plug-in must be wrapped to convert a panic into a returned
 //! [`PluginError`] with code [`PluginErrorCode::Panic`].
 
@@ -46,7 +46,7 @@ pub fn guard<T>(f: impl FnOnce() -> Result<T, PluginError>) -> PluginResult<T> {
 /// On panic, logs the message and aborts the process. Aborting is the only
 /// sound option once a panic reaches this point: returning a sentinel would
 /// silently corrupt downstream computation, and unwinding across the FFI
-/// boundary is undefined behaviour.
+/// boundary is undefined behavior.
 pub fn guard_infallible<T>(thunk_name: &str, f: impl FnOnce() -> T) -> T {
     match catch_unwind(AssertUnwindSafe(f)) {
         Ok(t) => t,
@@ -112,7 +112,7 @@ pub fn guard_drop(thunk_name: &str, f: impl FnOnce()) {
 ///
 /// `std::panic::catch_unwind` catches the original panic, but if the payload
 /// itself panics on drop the second panic unwinds the caller. For an
-/// `extern "C"` thunk that is undefined behaviour. Wrapping the drop in
+/// `extern "C"` thunk that is undefined behavior. Wrapping the drop in
 /// another `catch_unwind` keeps the surface around the FFI boundary
 /// unwind-free even with adversarial payloads (e.g. `panic_any(T)` where
 /// `T: Drop` panics). If disposal panics, its new payload is deliberately leaked.

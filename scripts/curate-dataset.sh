@@ -2,13 +2,13 @@
 #
 # curate-dataset.sh  ── Curate and package an external dataset for test fixtures.
 #
-# This script downloads the specified dataset file, captures its licence
+# This script downloads the specified dataset file, captures its license
 # information, computes a SHA-256 checksum, and emits a ready-to-upload
 # directory structure that is compatible with the NautilusTrader test-data
 # bucket layout described in the developer guide.
 #
 # Usage:
-#   scripts/curate-dataset.sh <slug> <filename> <download-url> <licence>
+#   scripts/curate-dataset.sh <slug> <filename> <download-url> <license>
 #
 # Example:
 #   scripts/curate-dataset.sh fi2010_day1 lob_5stocks.csv.gz \
@@ -17,7 +17,7 @@
 # The command above will create the following local directory structure:
 #   v1/fi2010_day1/
 #     ├── lob_5stocks.csv.gz    # downloaded file
-#     ├── LICENSE.txt           # contains the licence string or URL
+#     ├── LICENSE.txt           # contains the license string or URL
 #     └── metadata.json         # provenance & integrity metadata
 #
 # The resulting directory can be uploaded to the cloud bucket one-to-one
@@ -25,7 +25,7 @@
 #
 # Notes:
 # • Only basic validation is performed. The caller is responsible for
-#   ensuring that the licence really permits redistribution.
+#   ensuring that the license really permits redistribution.
 # • `curl` must be available in the environment.
 # • Works on both Linux (GNU coreutils) and macOS (BSD).
 
@@ -55,7 +55,7 @@ file_size_bytes() {
 }
 
 if [[ $# -lt 4 ]]; then
-  echo "Usage: $0 <slug> <filename> <download-url> <licence>" >&2
+  echo "Usage: $0 <slug> <filename> <download-url> <license>" >&2
   exit 1
 fi
 
@@ -63,7 +63,7 @@ fi
 slug="$1"    # Dataset directory name, e.g. fi2010_day1
 file="$2"    # Output filename, e.g. lob_5stocks.csv.gz
 url="$3"     # Original download URL
-licence="$4" # Licence identifier or URL (e.g. CC-BY-SA-4.0)
+licence="$4" # License identifier or URL (e.g. CC-BY-SA-4.0)
 
 # Create target directory under versioned root
 root_dir="v1/${slug}"
@@ -79,7 +79,7 @@ curl -L --fail --retry 3 -o "${target_path}" "${url}"
 sha256=$(sha256_file "${target_path}")
 size_bytes=$(file_size_bytes "${target_path}")
 
-# Write LICENCE file (overwrites if already present)
+# Write LICENSE file (overwrites if already present)
 echo "${licence}" > "${root_dir}/LICENSE.txt"
 
 # Write metadata.json

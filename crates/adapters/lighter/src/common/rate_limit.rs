@@ -27,7 +27,7 @@
 //!
 //! Non-transaction WS frames (subscribe, unsubscribe, resubscribe) face two
 //! independent per-IP caps: 200 messages per minute and 50 unacknowledged
-//! (inflight) messages. The adapter honours each with a separate mechanism:
+//! (inflight) messages. The adapter honors each with a separate mechanism:
 //!
 //! - Rate: one [`ws_message_rate_limiter`] per venue URL, shared by the data and
 //!   execution clients so their combined send rate counts against a single
@@ -95,17 +95,17 @@ pub static LIGHTER_WS_MESSAGE_RATE_LIMIT_KEY: LazyLock<[Ustr; 1]> =
     LazyLock::new(|| [Ustr::from(LIGHTER_WS_MESSAGE_BUCKET)]);
 
 /// Per-account transaction rate limiter, shared across the HTTP and WebSocket
-/// `sendTx` paths so their combined rate honours the single venue bucket.
+/// `sendTx` paths so their combined rate honors the single venue bucket.
 pub type LighterTxRateLimiter = RateLimiter<Ustr, MonotonicClock>;
 
 /// Shared WebSocket message limiter, keyed by venue WS URL. Both data and
 /// execution clients (and the backend balance poller) draw from one bucket
-/// per URL so their combined send rate honours the venue's per-IP cap.
+/// per URL so their combined send rate honors the venue's per-IP cap.
 pub type LighterWsMessageRateLimiter = Arc<RateLimiter<Ustr, MonotonicClock>>;
 
 // Process-global registry of Lighter WS message limiters, keyed by resolved
 // WS URL. Clients on the same URL (a network's data, execution, and backend
-// poller) share one bucket honouring the venue per-IP cap; distinct URLs
+// poller) share one bucket honoring the venue per-IP cap; distinct URLs
 // (testnet, or a custom endpoint in tests) stay isolated so unrelated traffic
 // never contends for the same tokens.
 static LIGHTER_WS_MESSAGE_LIMITERS: LazyLock<Mutex<AHashMap<String, LighterWsMessageRateLimiter>>> =

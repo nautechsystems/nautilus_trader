@@ -319,7 +319,7 @@ impl InstrumentClass {
         self.parent_suffix()
     }
 
-    /// Returns the `InstrumentClass` for the parent-symbol suffix, if recognised.
+    /// Returns the `InstrumentClass` for the parent-symbol suffix, if recognized.
     ///
     /// Matches strict uppercase forms only. Both Databento-style abbreviations
     /// (`FUT`, `OPT`) and long forms (`FUTURE`, `OPTION`) are accepted.

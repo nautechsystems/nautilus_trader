@@ -200,7 +200,7 @@ pub struct BinanceDataClientConfig {
     /// Instrument loading and fee configuration.
     #[builder(default)]
     pub instrument_provider: BinanceInstrumentProviderConfig,
-    /// Interval in seconds for a full instrument catalogue refresh.
+    /// Interval in seconds for a full instrument catalog refresh.
     ///
     /// Set to 0 to disable. Defaults to 3600 (60 minutes).
     #[builder(default = 3600)]

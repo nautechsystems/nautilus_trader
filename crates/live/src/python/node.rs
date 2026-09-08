@@ -659,7 +659,7 @@ impl PyNodeRun {
                 }
 
                 if let Some(raised) = self.pending_throw.take() {
-                    // Shutdown finished, so the injected exception is now honoured. Reporting
+                    // Shutdown finished, so the injected exception is now honored. Reporting
                     // success here would break `asyncio.timeout`, `wait_for`, and task groups.
                     return Err(raised);
                 }

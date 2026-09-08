@@ -126,7 +126,7 @@ dynamic ranges. After ATM is known, when no active strike's Greeks match the ban
 (including before any Greeks arrive), `Delta` falls back to an ATM-relative window of five
 strikes either side of ATM. Before switching from the fallback window to selected delta
 strikes, the aggregator waits until every fallback leg has Greeks so partial early updates do
-not drop neighbouring strikes.
+not drop neighboring strikes.
 
 ### Snapshot vs. raw mode
 

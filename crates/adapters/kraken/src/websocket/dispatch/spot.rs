@@ -126,7 +126,7 @@ fn execution_inner(
         return;
     };
 
-    // Mirror the existing behaviour: cache the order quantity by truncated cli
+    // Mirror the existing behavior: cache the order quantity by truncated cli
     // ord id so the parser can fall back to it for quote-quantity orders.
     let cached_qty = exec
         .cl_ord_id

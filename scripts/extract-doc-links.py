@@ -23,7 +23,7 @@ Doc comments are the bulk of it. `*_DOCS_URL` constants and any line referencing
 documentation site are collected too, because those carry links into user-facing messages,
 where a dead link is worse than in a comment, and nothing else checks them.
 
-Each item is labelled with its source location, so a failure reported at line N of the
+Each item is labeled with its source location, so a failure reported at line N of the
 generated file maps back through `sed -n 'Np' <output>`.
 
 """

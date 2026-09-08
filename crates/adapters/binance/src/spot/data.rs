@@ -344,7 +344,7 @@ impl BinanceSpotDataClient {
     }
 
     #[expect(clippy::too_many_arguments)]
-    async fn refresh_instrument_catalogue(
+    async fn refresh_instrument_catalog(
         http: &BinanceSpotHttpClient,
         provider: &crate::config::BinanceInstrumentProviderConfig,
         us: bool,
@@ -1504,7 +1504,7 @@ impl DataClient for BinanceSpotDataClient {
                 ws_client.begin_shutdown();
             });
 
-        Self::refresh_instrument_catalogue(
+        Self::refresh_instrument_catalog(
             &self.http_client,
             &self.config.instrument_provider,
             self.config.us,
@@ -1705,7 +1705,7 @@ impl DataClient for BinanceSpotDataClient {
                     loop {
                         tokio::select! {
                             _ = interval.tick() => {
-                                if let Err(e) = Self::refresh_instrument_catalogue(
+                                if let Err(e) = Self::refresh_instrument_catalog(
                                     &http,
                                     &provider,
                                     us,

@@ -324,7 +324,7 @@ pub struct OutcomeSideSpec {
 ///
 /// Questions group a fallback outcome plus a sequence of named outcomes whose
 /// `description` field holds an `index:N` pointer back into `named_outcomes`.
-/// Settlement is signalled when `settled_named_outcomes` becomes non-empty.
+/// Settlement is signaled when `settled_named_outcomes` becomes non-empty.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OutcomeQuestion {

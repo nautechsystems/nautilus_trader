@@ -25,7 +25,7 @@
 //!
 //! Arithmetic, inversion, and the [`Fp5::legendre`] descent inherit `Fp`'s
 //! constant-time guarantees. [`Fp5::sqrt`] / [`Fp5::canonical_sqrt`] inherit
-//! the variable-time behaviour of [`Fp::sqrt`] and are intended for the
+//! the variable-time behavior of [`Fp::sqrt`] and are intended for the
 //! public-input curve decode path; do not feed them secret operands.
 
 use core::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
@@ -373,7 +373,7 @@ impl Fp5 {
     /// by [`Self::canonical_sqrt`] to fix the sign of square roots.
     ///
     /// The latch `sign = sign || (zero && sign_i)` with `sign_i = (limb is
-    /// even)` reproduces the upstream behaviour bit-for-bit, including a
+    /// even)` reproduces the upstream behavior bit-for-bit, including a
     /// known wrinkle: an element whose first non-zero coefficient is preceded
     /// by zero coefficients (e.g. `[0, 1, 0, 0, 0]`) reports `true` because a
     /// leading zero satisfies `sign_i`. This wrinkle has no observable effect
@@ -791,7 +791,7 @@ mod tests {
         /// returns the negated root which still reports `true`. That branch
         /// has no observable effect on `Point::decode` per the doc on
         /// `Fp5::sgn0`, and the byte-equality oracle vectors pin the wider
-        /// behaviour end-to-end.
+        /// behavior end-to-end.
         #[rstest]
         fn prop_canonical_sqrt_round_trip(a in arb_fp5_nonzero()) {
             let sq = a.square();

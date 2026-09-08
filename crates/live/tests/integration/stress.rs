@@ -27,7 +27,7 @@
 //!   channel as fast as possible, drains, and reports end-to-end throughput
 //!   from the bus counter deltas.
 //! - `cancel_starvation`: alternates a batch of trade ticks with a single
-//!   `CancelOrder`, repeatedly. The runner's biased `select!` prioritises
+//!   `CancelOrder`, repeatedly. The runner's biased `select!` prioritizes
 //!   exec commands over data events, so each cancel should be picked up on
 //!   the next iteration regardless of how deep the trade backlog is.
 //!   Reports cancel observation latency percentiles, timed
@@ -87,7 +87,7 @@
 //! ```
 //!
 //! Process isolation matters because each scenario builds a node that
-//! initialises global logging state.
+//! initializes global logging state.
 //!
 //! # Scale via env var
 //!

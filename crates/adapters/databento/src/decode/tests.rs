@@ -1738,7 +1738,7 @@ fn test_decode_mbp10_msg_with_undefined_levels() {
     assert_eq!(depth.asks[7].price.precision, 0);
     assert_eq!(depth.asks[7].size.raw, 0);
 
-    // Defined neighbours keep their normal side and instrument precision
+    // Defined neighbors keep their normal side and instrument precision
     assert_eq!(depth.bids[0].side, Some(OrderSide::Buy));
     assert_eq!(depth.bids[0].price.precision, 2);
     assert_eq!(depth.asks[0].side, Some(OrderSide::Sell));

@@ -2475,7 +2475,7 @@ impl ExecutionClient for DydxExecutionClient {
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
         // dYdX Indexer `/v4/orders` caps at `limit` and has no offset cursor, so we
-        // request the maximum page to maximise the chance of finding a match
+        // request the maximum page to maximize the chance of finding a match
         // on active subaccounts. Callers looking for older orders should prefer
         // `generate_mass_status` or narrow via `instrument_id`.
         let market = cmd
@@ -3577,7 +3577,7 @@ mod tests {
         assert!(client.pending_task_labels.lock().is_empty());
     }
 
-    // The label substring used by `begin_pending_shutdown` to recognise cancel
+    // The label substring used by `begin_pending_shutdown` to recognize cancel
     // tasks must match the labels actually used at spawn sites. Pin those
     // sites here so a rename in only one place is caught.
     #[rstest]
@@ -3591,7 +3591,7 @@ mod tests {
         #[case] is_cancel: bool,
     ) {
         // The classification branch is `label.contains("cancel")` (lowercase).
-        // This test locks the substring so an accidental rename of a labelled
+        // This test locks the substring so an accidental rename of a labeled
         // spawn site breaks the assertion at compile time.
         assert_eq!(label.contains("cancel"), is_cancel);
     }

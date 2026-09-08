@@ -138,7 +138,7 @@ impl BetfairHttpError {
 
     /// Returns whether this is a login/auth rejection from the Identity API.
     ///
-    /// `keep_alive` returns this when the session is expired or unrecognised.
+    /// `keep_alive` returns this when the session is expired or unrecognized.
     /// Transient errors (network, timeout) return different variants.
     #[must_use]
     pub fn is_login_failed(&self) -> bool {

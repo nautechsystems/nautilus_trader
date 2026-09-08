@@ -28,7 +28,7 @@ and oracle fixtures Lighter requires for L2 transaction signing.
     `src/signing/schnorr/` is an original Rust implementation of Poseidon2
     hashing and the Schnorr binding Lighter applies on top of `ecgfp5`. It is
     written from public specifications, with `poseidon_crypto` used as the
-    behavioural reference for Lighter's specific parameter sets (round
+    behavioral reference for Lighter's specific parameter sets (round
     constants, MDS matrices). Test vectors reproduced verbatim under
     `test_data/signing_field_goldilocks_vectors.json`,
     `test_data/signing_field_quintic_vectors.json`,

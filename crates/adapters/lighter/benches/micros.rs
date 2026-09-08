@@ -18,7 +18,7 @@
 //! Decimal/UUID/event construction, signing component costs).
 //!
 //! Use these when an `inbound_pipeline` or `exec_pipeline` bench regresses
-//! and you need to localise where the time went, or when evaluating a
+//! and you need to localize where the time went, or when evaluating a
 //! structural change (e.g. swapping the JSON tokenizer) and want to confirm
 //! the gain landed in the layer it was supposed to.
 //!
@@ -195,7 +195,7 @@ fn bench_uuid4_new(c: &mut Criterion) {
 // ----- signing component micros --------------------------------------------
 
 // Pure hash cost: drives the Poseidon2 permutation over the preimage size
-// each tx kind feeds in. Use to localise regressions in `exec_pipeline`
+// each tx kind feeds in. Use to localize regressions in `exec_pipeline`
 // numbers between the encode + hash stage and the signing stage.
 fn bench_compute_tx_hash_create_order(c: &mut Criterion) {
     let tx = create_order_tx();

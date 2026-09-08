@@ -20,7 +20,7 @@ Order matching is performed off-chain by a sequencer, with ZK proofs published o
 to guarantee correctness of matching, fills, and liquidations.
 
 Trading is non-custodial: users hold their assets in Lighter's smart contracts
-and authorise trades with their own keys.
+and authorize trades with their own keys.
 
 ## NautilusTrader
 

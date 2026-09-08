@@ -98,7 +98,7 @@ cost the tracked path adds.
 ## Component breakdown (`micros.rs`)
 
 Diagnostic benches that decompose the pipeline numbers above. Use these to
-localise where time goes when a pipeline bench regresses.
+localize where time goes when a pipeline bench regresses.
 
 | Bench                        | Median  |
 | ---------------------------- | ------- |

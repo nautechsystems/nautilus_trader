@@ -1468,7 +1468,7 @@ mod tests {
     fn test_parse_trades_data_combo_not_cached_emits_no_tick() {
         // When the combo InstrumentAny is not in the WS handler cache,
         // parse_trades_data must drop the message rather than panic or
-        // synthesise a tick against an unknown instrument.
+        // synthesize a tick against an unknown instrument.
         let cache: AHashMap<Ustr, InstrumentAny> = AHashMap::new();
         let trades = load_combo_trade_msgs();
         let data = parse_trades_data(&trades, &cache, UnixNanos::default());

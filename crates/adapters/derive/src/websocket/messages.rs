@@ -391,7 +391,7 @@ pub struct WsSubscriptionFrame {
 ///
 /// The channel payload is held as a [`RawValue`] (the raw JSON bytes) rather
 /// than a decoded [`Value`]; each channel parser decodes those bytes straight
-/// into its typed struct, so the inbound path never materialises the payload
+/// into its typed struct, so the inbound path never materializes the payload
 /// into an intermediate `Value` tree.
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsSubscriptionPayload {
@@ -823,7 +823,7 @@ impl DeriveWsFrame {
             return Ok(Self::UncorrelatedError(error));
         }
 
-        // Unrecognised frame: re-parse into a `Value` for diagnostic logging.
+        // Unrecognized frame: re-parse into a `Value` for diagnostic logging.
         // The live feed only sends responses and subscription notifications, so
         // this second parse never runs on a hot path.
         Ok(Self::Unknown(serde_json::from_str(text)?))

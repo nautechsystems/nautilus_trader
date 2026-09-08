@@ -2508,7 +2508,7 @@ impl OrderMatchingEngine {
             InstrumentAny::OptionContract(_) | InstrumentAny::CryptoOption(_)
         ) {
             // `iterate` matches resting orders ahead of this check, so enter
-            // pending resolution at the first trigger. Latched because a queueing
+            // pending resolution at the first trigger. Latched because a queuing
             // handler leaves the cached status behind the cancellation dispatch.
             if !self.option_expiration_orders_canceled {
                 self.option_expiration_orders_canceled = true;

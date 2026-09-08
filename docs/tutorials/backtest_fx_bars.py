@@ -173,7 +173,7 @@ engine.add_venue(
 # %% [markdown]
 # ## Instrument and data
 #
-# `TestDataProvider.quotes_from_fxcm_bars` synthesises quote ticks from each
+# `TestDataProvider.quotes_from_fxcm_bars` synthesizes quote ticks from each
 # minute's open, high, low, and close in the bundled FXCM bid and ask CSVs.
 # The strategy declares `5-MINUTE-BID-INTERNAL`, so the engine builds 5-minute
 # BID bars from the quote stream internally.
@@ -251,7 +251,7 @@ engine.generate_positions_report()
 # **Figure 2.** *Zoom on 2013-02-12 to 2013-02-15 UTC. Each marker is a
 # crossover entry: triangles up are long, triangles down are short.*
 #
-# ![Cumulative realised pnl](./assets/backtest_fx_bars/panel_c_pnl_curve.png)
+# ![Cumulative realized pnl](./assets/backtest_fx_bars/panel_c_pnl_curve.png)
 #
 # **Figure 3.** *Cumulative JPY pnl across all closed cycles. Marker color
 # encodes per-cycle pnl: blue = positive, red = negative.*
@@ -283,7 +283,7 @@ engine.generate_positions_report()
 # - **Slow the signal**. The default 10/20 EMAs whip in low-trend sessions.
 #   Try 20/60 on the same bars or move to 15-minute bars to cut the cycle
 #   count.
-# - **Add a regime filter**. Suppress entries when realised range is below
+# - **Add a regime filter**. Suppress entries when realized range is below
 #   a threshold so the strategy only trades sessions with directional movement.
 # - **Compare aggregations**. Build the bars from raw tick data via
 #   `BarType.from_str("USD/JPY.SIM-5-MINUTE-BID-INTERNAL")` against an

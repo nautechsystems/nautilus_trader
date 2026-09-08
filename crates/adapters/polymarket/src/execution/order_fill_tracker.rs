@@ -375,7 +375,7 @@ impl OrderFillTrackerMap {
     /// maker BUYs can fill across several events but execute at their own price, so they never
     /// overfill and never reach this raise. A venue that split one marketable BUY across multiple
     /// trade events would close the order on the first crossing fill; this is not Polymarket's
-    /// observed behaviour and would need a final-fill signal to handle.
+    /// observed behavior and would need a final-fill signal to handle.
     pub(crate) fn buy_overfill_bump(&self, venue_order_id: &VenueOrderId) -> Option<Quantity> {
         let mut guard = self.inner.lock();
         buy_overfill_bump_in(&mut guard.orders, venue_order_id)

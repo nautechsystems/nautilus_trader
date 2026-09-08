@@ -3137,7 +3137,7 @@ fn test_cache_orders_returned_sorted_by_client_order_id(
     audusd_sim: CurrencyPair,
 ) {
     // The cache index is AHash-backed for fast lookup, so it iterates in
-    // hasher-randomised order. The public Vec returns sort by client_order_id
+    // hasher-randomized order. The public Vec returns sort by client_order_id
     // so callers (e.g. own-book replay, cancel-all cascades) see the same
     // sequence across runs.
     let instrument = InstrumentAny::CurrencyPair(audusd_sim);

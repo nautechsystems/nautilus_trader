@@ -103,7 +103,7 @@ Examples:
 Use `scripts/curate-dataset.sh`:
 
 ```bash
-scripts/curate-dataset.sh <slug> <filename> <download-url> <licence>
+scripts/curate-dataset.sh <slug> <filename> <download-url> <license>
 ```
 
 This creates a versioned directory (`v1/<slug>/`) with the file,

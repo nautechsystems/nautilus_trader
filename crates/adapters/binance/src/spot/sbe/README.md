@@ -138,7 +138,7 @@ trait/buffer definitions below `SBE_SEMANTIC_VERSION`). Update:
 
 ### Final fixups
 
-- Run `cargo +nightly fmt -p nautilus-binance` to normalise the generator's whitespace.
+- Run `cargo +nightly fmt -p nautilus-binance` to normalize the generator's whitespace.
 - Update the schema reference in this README and the `mod.rs` doc comment.
 - If the schema adds enum values or message types the adapter maps (e.g. `symbolStatus`),
   extend the corresponding match arms (e.g. `common/status.rs`) and add test cases.

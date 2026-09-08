@@ -24,7 +24,7 @@
 //! execution-report path that `dispatch` runs end-to-end in `exec.rs`.
 //!
 //! Use these when a `data.rs` or `exec.rs` bench regresses and you need to
-//! localise where the time went.
+//! localize where the time went.
 
 mod common;
 

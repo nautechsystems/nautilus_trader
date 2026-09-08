@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Data structures modelling OKX WebSocket request and response payloads.
+//! Data structures modeling OKX WebSocket request and response payloads.
 
 use derive_builder::Builder;
 #[cfg(test)]

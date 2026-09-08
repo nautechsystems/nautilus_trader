@@ -1072,7 +1072,7 @@ async fn test_futures_data_client_request_instrument_refetches_when_cached() {
 
 #[rstest]
 #[tokio::test]
-async fn test_futures_data_client_does_not_cache_partial_catalogue() {
+async fn test_futures_data_client_does_not_cache_partial_catalog() {
     let (addr, state) = start_test_server().await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     replace_data_event_sender(tx);
@@ -1124,7 +1124,7 @@ async fn test_futures_data_client_does_not_cache_partial_catalogue() {
             UnixNanos::default(),
             None,
         ))
-        .expect("mixed-catalogue request_instrument");
+        .expect("mixed-catalog request_instrument");
 
     wait_until_async(
         || async {
@@ -1141,7 +1141,7 @@ async fn test_futures_data_client_does_not_cache_partial_catalogue() {
     let cached = client.instruments();
     assert!(
         instrument_response(&events).is_none(),
-        "failed catalogue must not emit an instrument response; events were: {events:?}",
+        "failed catalog must not emit an instrument response; events were: {events:?}",
     );
     assert_eq!(cached.len(), cached_count);
     assert_eq!(
@@ -3050,7 +3050,7 @@ async fn test_futures_domain_request_instruments_includes_precision_10_contract(
 #[cfg(not(feature = "high-precision"))]
 #[rstest]
 #[tokio::test]
-async fn test_futures_domain_request_instruments_rejects_partial_catalogue() {
+async fn test_futures_domain_request_instruments_rejects_partial_catalog() {
     let (addr, state) = start_test_server().await;
     state
         .futures_instruments_over_precision

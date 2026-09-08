@@ -55,7 +55,7 @@ use crate::{
 ///
 /// When supplied to [`OrderSubmitter::submit_market_order`] alongside
 /// `OrderSide::Buy`, the submitter shrinks `amount` so `amount + fees`
-/// fits within `user_pusd_balance`, mirroring the SDK behaviour. SELL
+/// fits within `user_pusd_balance`, mirroring the SDK behavior. SELL
 /// orders ignore this context.
 #[derive(Debug, Clone)]
 pub(crate) struct MarketBuyFeeContext {

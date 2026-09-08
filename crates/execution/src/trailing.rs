@@ -560,7 +560,7 @@ mod tests {
     #[rstest]
     #[case(OrderSide::Buy, 100.0, 1.0, 98.0, Some("99.0"))]
     #[case(OrderSide::Sell, 100.0, 1.0, 102.0, Some("101.0"))]
-    fn test_trailing_stop_market_last_price_move_in_favour(
+    fn test_trailing_stop_market_last_price_move_in_favor(
         #[case] side: OrderSide,
         #[case] initial_trigger: f64,
         #[case] offset: f64,

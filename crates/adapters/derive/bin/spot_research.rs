@@ -213,7 +213,7 @@ async fn main() -> anyhow::Result<()> {
         write_outcome(out_dir, "q4_cancel_buy", &cancel);
     }
 
-    // Q7 reduce_only tests only on testnet: we already characterised the
+    // Q7 reduce_only tests only on testnet: we already characterized the
     // venue's reduce_only error surface; rerunning on mainnet is wasted
     // signed traffic.
     if matches!(environment, DeriveEnvironment::Testnet) {

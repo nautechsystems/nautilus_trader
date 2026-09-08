@@ -280,7 +280,7 @@ use `panic = "abort"` and are built via `[profile.release]`).
 
 > **Note** Benchmark binaries are compiled with the custom `[profile.bench]`
 > defined in the workspace `Cargo.toml`. That profile inherits from
-> `release` and sets `debug = "full"`, preserving full optimisation *and*
+> `release` and sets `debug = "full"`, preserving full optimization *and*
 > debug symbols so tools like `cargo flamegraph` or `perf` produce
 > human-readable stack traces.
 

@@ -914,7 +914,7 @@ async fn test_data_client_handles_resub_delta_emits_deltas() {
 }
 
 /// Live race-style MCMs reach the parser and emit one Deltas event per runner
-/// in `rc`. Both the snapshot (`img: true`) and the delta update flavours must
+/// in `rc`. Both the snapshot (`img: true`) and the delta update flavors must
 /// behave the same way; the difference is only the snapshot flag, not the
 /// dispatch path.
 #[rstest]
@@ -979,7 +979,7 @@ async fn test_data_client_handles_live_race_message_emits_deltas(
 }
 
 /// A BSP-settled MCM (`marketDefinition.status = CLOSED`, `bspReconciled =
-/// true`) marks the market as finalised. Each runner must emit an
+/// true`) marks the market as finalized. Each runner must emit an
 /// InstrumentStatus with `Close` action so strategies can wind down promptly.
 #[rstest]
 #[tokio::test]
@@ -1208,7 +1208,7 @@ async fn test_data_client_connect_is_idempotent() {
     assert_eq!(after_first_login, 1, "first connect must login");
 
     // Drain instrument events emitted during connect-time provider load so
-    // the second connect's behaviour is observable in isolation.
+    // the second connect's behavior is observable in isolation.
     let mut first_instruments = 0usize;
 
     while let Ok(event) = rx.try_recv() {

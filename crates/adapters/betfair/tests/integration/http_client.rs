@@ -741,7 +741,7 @@ async fn test_http_client_connect_is_idempotent() {
     );
 }
 
-/// Concurrent `connect()` calls must serialise under the connect lock so the
+/// Concurrent `connect()` calls must serialize under the connect lock so the
 /// venue sees exactly one login regardless of how many tasks raced.
 #[rstest]
 #[tokio::test]
@@ -763,7 +763,7 @@ async fn test_http_client_connect_concurrent_calls_only_login_once() {
     assert_eq!(
         state.login_count.load(std::sync::atomic::Ordering::Relaxed),
         1,
-        "concurrent connects must serialise to a single login round-trip"
+        "concurrent connects must serialize to a single login round-trip"
     );
 }
 

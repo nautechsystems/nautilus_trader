@@ -89,7 +89,7 @@ the component breakdown below).
 ## Component breakdown (`micros.rs`)
 
 Diagnostic benches that decompose the pipeline numbers above. Use these to
-localise where time goes when a pipeline bench regresses.
+localize where time goes when a pipeline bench regresses.
 
 | Bench                           | Median  |
 | ------------------------------- | ------- |
@@ -117,7 +117,7 @@ localise where time goes when a pipeline bench regresses.
 - **Exec is signature-bound.** EIP-712 + keccak + secp256k1 dominates, and
   `lto = "fat"` collapses the per-variant differences so submit and modify
   converge at ~42 µs. Cancel sits at ~48 µs because the cancel action
-  serialises a different msgpack shape. Optimisations that don't change
+  serializes a different msgpack shape. Optimizations that don't change
   the signing scheme won't move these numbers.
 - **Dispatch in production is faster than the bench suggests.** The
   canonical bench rebuilds state per iteration; the steady-state cost on a
@@ -128,6 +128,6 @@ localise where time goes when a pipeline bench regresses.
   decoder was prototyped, run side-by-side against `serde_json`, and
   found to be 20-50% **slower** on hyperliquid payload sizes. The mutable-
   buffer requirement forces a per-call `to_vec()`, payloads are too small
-  to amortise SIMD setup, and owned-`String` deserialization negates the
+  to amortize SIMD setup, and owned-`String` deserialization negates the
   borrow advantage. Re-evaluate only if payloads grow materially or a
   zero-copy borrowed-string path lands.

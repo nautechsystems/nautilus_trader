@@ -2390,7 +2390,7 @@ fn test_incremental_fill_price_keeps_negative_back_solve_when_instrument_allows_
 
 #[rstest]
 fn test_synthetic_partial_window_reports_clamp_out_of_range_price() {
-    // Partial-window reconciliation can synthesise an opening fill whose price is
+    // Partial-window reconciliation can synthesize an opening fill whose price is
     // value/dust-qty (30.41 observed live). The synthetic order and fill reports
     // must be capped at the instrument's max price.
     let instrument = bounded_binary_option();

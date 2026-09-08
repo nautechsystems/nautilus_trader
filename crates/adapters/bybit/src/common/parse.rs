@@ -1343,7 +1343,7 @@ fn resolve_settlement_currency(
         Ok(quote_currency)
     } else {
         Err(anyhow::anyhow!(
-            "unrecognised settlement currency '{settle_coin}'"
+            "unrecognized settlement currency '{settle_coin}'"
         ))
     }
 }

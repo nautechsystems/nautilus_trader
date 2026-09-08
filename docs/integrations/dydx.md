@@ -106,7 +106,7 @@ Until then, gRPC and Indexer account queries return not-found, so `DydxExecution
 fails while initializing the transaction sequence.
 
 Before starting a `LiveNode`, send any positive amount of USDC or other supported collateral
-from the same wallet on the same network (mainnet/testnet). Once the transaction has finalised
+from the same wallet on the same network (mainnet/testnet). Once the transaction has finalized
 (a few blocks), restart the node and the client will connect cleanly.
 :::
 

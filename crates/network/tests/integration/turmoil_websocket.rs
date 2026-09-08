@@ -859,7 +859,7 @@ fn test_turmoil_real_websocket_disconnect_during_backoff(mut websocket_config: W
     sim.run().unwrap();
 }
 
-/// HTTP `CONNECT` proxy tunneling cannot be modelled in the turmoil
+/// HTTP `CONNECT` proxy tunneling cannot be modeled in the turmoil
 /// simulator (no `tokio-tungstenite` adapter for the proxy hop). The
 /// simulator-specific stub must reject `proxy_url` clearly so callers see
 /// the gap immediately rather than silently bypassing the proxy.

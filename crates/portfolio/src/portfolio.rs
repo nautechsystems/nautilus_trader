@@ -3103,7 +3103,7 @@ impl Portfolio {
 
     // Pairs with `calculate_xrate_to_base`, which yields a unit rate when conversion is disabled:
     // the output currency must ignore the account base currency for the same reason, otherwise a
-    // native cost-currency amount is labelled with a currency it was never converted into.
+    // native cost-currency amount is labeled with a currency it was never converted into.
     fn conversion_base_currency(&self, account: &AccountAny) -> Option<Currency> {
         if self.config.convert_to_account_base_currency {
             account.base_currency()

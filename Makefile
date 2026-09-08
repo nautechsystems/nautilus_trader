@@ -1100,7 +1100,7 @@ cargo-test-coverage-crate-html-%:  #-- Run coverage for specific crate with HTML
 # Miri (UB detection)
 # -----------------------------------------------------------------------------
 # Runs library and selected integration tests under Miri to detect undefined
-# behaviour: invalid pointer operations, aliasing violations (Stacked/Tree
+# behavior: invalid pointer operations, aliasing violations (Stacked/Tree
 # Borrows), uninitialised reads, and unsound `unsafe` impls. Requires a nightly
 # toolchain with the `miri` component installed.
 #
@@ -1109,7 +1109,7 @@ cargo-test-coverage-crate-html-%:  #-- Run coverage for specific crate with HTML
 # and `defi` pulls in `alloy-primitives`, which is out of scope here. The
 # `--lib` filter keeps doctests out of the run as well.
 #
-# Proptest cases are dialled down via `PROPTEST_CASES` since Miri is roughly
+# Proptest cases are dialed down via `PROPTEST_CASES` since Miri is roughly
 # 10-100x slower than native execution. `MIRIFLAGS` enables disable-isolation
 # so tests that read environment variables (e.g. PATH probes) work. Most runs
 # use strict provenance; the collections slice uses permissive provenance to

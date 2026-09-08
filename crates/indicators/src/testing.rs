@@ -118,7 +118,7 @@ mod tests {
     }
 
     #[rstest]
-    fn approx_equal_with_honours_explicit_tolerances() {
+    fn approx_equal_with_honors_explicit_tolerances() {
         assert!(approx_equal_with(100.0, 100.000_001, 1e-7, 0.0));
         assert!(!approx_equal_with(100.0, 100.000_1, 1e-7, 0.0));
         assert!(approx_equal_with(0.0, 1e-13, 0.0, 1e-12));

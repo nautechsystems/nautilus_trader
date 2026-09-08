@@ -825,7 +825,7 @@ The BitMEX data client provides the following configuration options:
 | `retry_delay_initial_ms`           | `1,000`   | Initial backoff delay (milliseconds) between retries.                                                                       |
 | `retry_delay_max_ms`               | `10,000`  | Maximum backoff delay (milliseconds) between retries.                                                                       |
 | `recv_window_ms`                   | `10,000`  | Expiration window (milliseconds) for signed requests. See [Request authentication](#request-authentication-and-expiration). |
-| `update_instruments_interval_mins` | `None`    | Interval (minutes) between instrument catalogue refreshes. `None` disables periodic refresh.                                |
+| `update_instruments_interval_mins` | `None`    | Interval (minutes) between instrument catalog refreshes. `None` disables periodic refresh.                                  |
 | `max_requests_per_second`          | `10`      | Burst rate limit enforced by the adapter for REST calls.                                                                    |
 | `max_requests_per_minute`          | `120`     | Rolling minute rate limit enforced by the adapter for REST calls.                                                           |
 | `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                                                       |

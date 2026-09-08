@@ -620,7 +620,7 @@ pub enum DispatchOutcome {
     /// or [`ExecutionEventEmitter::send_fill_report`] so the engine can
     /// reconcile.
     External,
-    /// The report was recognised as stale (e.g. cancel leg of a
+    /// The report was recognized as stale (e.g. cancel leg of a
     /// cancel-replace modify, or replay after terminal state). The caller
     /// must drop it without forwarding.
     Skip,

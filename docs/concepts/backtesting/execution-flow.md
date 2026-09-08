@@ -100,7 +100,7 @@ repeated runs](apis-and-runs.md#shutdown-on-error). It invokes each strategy's `
 drains and settles any commands it emits (e.g. `close_all_positions`, `cancel_all_orders`), then
 stops the engines.
 
-- `on_stop` commands use normal venue queueing and latency. They do not get priority over earlier
+- `on_stop` commands use normal venue queuing and latency. They do not get priority over earlier
   inflight commands.
 - If a pre-stop order reaches the venue before an `on_stop` cancel, it may still fill. A later
   reduce-only close can then reject if the fill changed net exposure.

@@ -32,7 +32,7 @@
 //! `(x, u)` points with window width `5`. The window prep batches
 //! `Fp5` inversions through Montgomery's trick, paying a single inversion for
 //! the entire table. Both [`lookup`] and [`lookup_var_time`] mirror the
-//! upstream Go behaviour: [`lookup_var_time`] short-circuits on the digit
+//! upstream Go behavior: [`lookup_var_time`] short-circuits on the digit
 //! and is suited to public-input top-window selection, while [`lookup`]
 //! walks the table with a constant shape but assigns through a digit-derived
 //! branch. [`Point::scalar_mul`] composes these and is therefore documented
@@ -522,7 +522,7 @@ fn scalar_mul_with_window_ct(win: &[AffinePoint], digits: &[i32; NUM_DIGITS]) ->
     p
 }
 
-// Affine multiples of the canonical generator, lazily initialised on first
+// Affine multiples of the canonical generator, lazily initialized on first
 // use and shared across every `mulgen` / `mulgen_ct` call in the process.
 fn generator_window() -> &'static [AffinePoint; WIN_SIZE] {
     static WINDOW_CACHE: OnceLock<[AffinePoint; WIN_SIZE]> = OnceLock::new();

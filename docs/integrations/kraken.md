@@ -57,7 +57,7 @@ The adapter supports these product categories:
 Kraken Futures can return instrument definitions that need more than standard-precision mode's nine decimal places.
 Keep [high-precision mode](../getting_started/installation.md#precision-mode) enabled for Futures. Standard-precision
 mode continues to support Spot, but Futures clients fail to start or return instruments when any definition cannot
-be parsed. Futures catalogue requests return no partial result and never round, clamp, or omit an unsupported
+be parsed. Futures catalog requests return no partial result and never round, clamp, or omit an unsupported
 definition.
 :::
 

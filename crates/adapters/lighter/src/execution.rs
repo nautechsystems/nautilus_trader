@@ -276,7 +276,7 @@ impl LighterExecutionClient {
         let socket_factory = SocketControlFactory::new(core.client_id, Some(core.venue));
 
         // One transaction limiter shared across the HTTP and WebSocket sendTx
-        // paths so their combined rate honours the single per-account venue bucket.
+        // paths so their combined rate honors the single per-account venue bucket.
         let tx_rate_limiter = build_tx_rate_limiter(config.sendtx_quota_per_min);
 
         let raw_http = LighterRawHttpClient::new_with_quotas(
@@ -5766,7 +5766,7 @@ fn dispatch_lighter_order(
         ) {
             Ok(event_opt) => {
                 // Refresh the stored snapshot for any tracked live frame
-                // so a synthesised `OrderAccepted` (fill-before-open or
+                // so a synthesized `OrderAccepted` (fill-before-open or
                 // fresh-trigger path) leaves a baseline behind for the
                 // next diff. Without this seed `shape_changed` would
                 // stay permanently false and a real later modify would
@@ -5935,7 +5935,7 @@ fn dispatch_lighter_trade(
     });
 
     if let Some((cloid, identity)) = identity {
-        // Synthesise an `OrderAccepted` first if one has not been
+        // Synthesize an `OrderAccepted` first if one has not been
         // emitted yet: fills can race ahead of the matching `Open`
         // order frame.
         ensure_accepted_emitted(
@@ -6055,7 +6055,7 @@ fn dispatch_tracked_order_event(
             // Modify-as-restate: the venue echoes the post-modify order as
             // `Open`; `accepted_was_emitted` already gated parsing to
             // produce `Updated` instead of duplicate `Accepted`. No need
-            // to re-synthesise the accept here.
+            // to re-synthesize the accept here.
             dispatch.clear_pending_order_action_if(&cloid, PendingOrderAction::Modify);
             is_terminal = false;
             emitter.send_order_event(OrderEventAny::Updated(e));
@@ -6120,11 +6120,11 @@ fn dispatch_tracked_order_event(
     }
 }
 
-/// Synthesise an `OrderAccepted` event if one has not yet been emitted for
+/// Synthesize an `OrderAccepted` event if one has not yet been emitted for
 /// `cloid`. Mirrors the BitMEX dispatch function of the same name.
 #[expect(
     clippy::too_many_arguments,
-    reason = "synthesised events need the full identity context to populate the event"
+    reason = "synthesized events need the full identity context to populate the event"
 )]
 fn ensure_accepted_emitted(
     cloid: ClientOrderId,
@@ -10191,7 +10191,7 @@ mod tests {
     #[rstest]
     fn dispatch_lighter_trade_tracked_synthesizes_accepted_before_filled() {
         // Fill-before-open: the trade arrives before the matching Open
-        // frame. The dispatcher must synthesise `OrderAccepted` first so
+        // frame. The dispatcher must synthesize `OrderAccepted` first so
         // the engine sees the lifecycle in order.
         let mut rig = dispatcher_rig("4");
         register_identity(&rig);
@@ -11071,7 +11071,7 @@ mod tests {
 
     #[rstest]
     fn dispatch_lighter_order_seeds_snapshot_after_synthesized_accept() {
-        // After a synthesised `OrderAccepted` (fill-before-open), the
+        // After a synthesized `OrderAccepted` (fill-before-open), the
         // next `Open` frame must seed the shape snapshot even when the
         // parser returns None. Without the seed, shape_changed stays
         // permanently false and a later modify is lost.
@@ -11096,7 +11096,7 @@ mod tests {
         assert!(rig.dispatch.accepted_was_emitted(&rig.cloid));
         assert!(
             rig.dispatch.snapshot_for(&rig.cloid).is_none(),
-            "synthesised Accept has no snapshot until the Open frame seeds one",
+            "synthesized Accept has no snapshot until the Open frame seeds one",
         );
 
         // Open frame lands later (matches venue ordering). Parser
@@ -11113,7 +11113,7 @@ mod tests {
         );
         assert!(
             rig.dispatch.snapshot_for(&rig.cloid).is_some(),
-            "Open frame after synthesised accept must seed the snapshot",
+            "Open frame after synthesized accept must seed the snapshot",
         );
 
         // A real modify must now fire Updated.

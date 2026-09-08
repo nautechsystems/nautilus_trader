@@ -175,7 +175,7 @@ environment variables) to be present in order to construct.
 - A custom `X-Sandbox` request header can trigger predefined error scenarios.
 
 Use sandbox to wire up your client and verify request/response shape; use
-production (with real funds and care) for any realistic behaviour testing.
+production (with real funds and care) for any realistic behavior testing.
 :::
 
 ## Authentication
@@ -377,7 +377,7 @@ accepts `FOUR_HOUR`, which the adapter does not currently map.
 Live bar subscriptions are different: the WebSocket `candles` channel takes
 no granularity parameter and publishes five-minute buckets only. The adapter
 stamps each received candle with the `BarType` registered for that product,
-so subscribing at any other bar specification yields five-minute bars labelled
+so subscribing at any other bar specification yields five-minute bars labeled
 with the requested type. Request a `5-MINUTE-LAST-EXTERNAL` bar type for live
 subscriptions, and use historical requests for the other granularities.
 
@@ -471,11 +471,11 @@ and noted there as *Not currently implemented* by the adapter.
 The adapter accepts the values in this matrix; combinations not listed are
 rejected at submit time with `"Unsupported TIF {tif} for {order_type}"`.
 
-| Order type   | GTC | GTD | IOC | FOK | Notes                                                                                                                                            |
-| ------------ | --- | --- | --- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `MARKET`     | ✓   | -   | ✓   | (✓) | GTC is mapped to IOC; explicit IOC is honoured. FOK builds `market_market_fok`, which Coinbase documents as perpetuals-only and rejects on spot. |
-| `LIMIT`      | ✓   | ✓   | -   | ✓   | GTD requires `expire_time`. LIMIT IOC *not currently implemented* (see [SOR LIMIT IOC](#advanced-order-features)).                               |
-| `STOP_LIMIT` | ✓   | ✓   | -   | -   | Requires `trigger_price`.                                                                                                                        |
+| Order type   | GTC | GTD | IOC | FOK | Notes                                                                                                                                           |
+| ------------ | --- | --- | --- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MARKET`     | ✓   | -   | ✓   | (✓) | GTC is mapped to IOC; explicit IOC is honored. FOK builds `market_market_fok`, which Coinbase documents as perpetuals-only and rejects on spot. |
+| `LIMIT`      | ✓   | ✓   | -   | ✓   | GTD requires `expire_time`. LIMIT IOC *not currently implemented* (see [SOR LIMIT IOC](#advanced-order-features)).                              |
+| `STOP_LIMIT` | ✓   | ✓   | -   | -   | Requires `trigger_price`.                                                                                                                       |
 
 ### Advanced order features
 
@@ -548,7 +548,7 @@ auto-deleveraging separately from liquidation, so both surface through the
 same warning. The user channel carries no equivalent warning, so forced
 closes are visible from reconciliation rather than from the live stream.
 
-## Execution client behaviour
+## Execution client behavior
 
 This section documents how `CoinbaseExecutionClient` translates Nautilus
 order commands and Coinbase venue events into Nautilus execution events.
@@ -747,7 +747,7 @@ previous session's `Disconnect` command lost a race with the shutdown signal.
 | `environment`                      | `Live`    | `Live` or `Sandbox`.                                                              |
 | `http_timeout_secs`                | `10`      | HTTP request timeout (seconds).                                                   |
 | `ws_timeout_secs`                  | `30`      | WebSocket timeout (seconds).                                                      |
-| `update_instruments_interval_mins` | `60`      | Interval between instrument catalogue refreshes.                                  |
+| `update_instruments_interval_mins` | `60`      | Interval between instrument catalog refreshes.                                    |
 | `derivatives_poll_interval_secs`   | `15`      | Interval between REST polls that emit `IndexPriceUpdate` and `FundingRateUpdate`. |
 | `transport_backend`                | `Sockudo` | WebSocket transport backend.                                                      |
 
@@ -849,7 +849,7 @@ The current Python examples show how to pair these configs with
   are not in the cache and `submit_order` will deny them.
 - **MARKET orders default to IOC.** A `MarketOrder` constructed with the
   Nautilus default `TimeInForce::Gtc` is mapped to `market_market_ioc` at
-  the venue. Explicit `TimeInForce::Ioc` is honoured; `TimeInForce::Fok`
+  the venue. Explicit `TimeInForce::Ioc` is honored; `TimeInForce::Fok`
   routes to `market_market_fok`, which Coinbase documents as perpetuals-only
   and rejects at runtime on spot with `UNSUPPORTED_ORDER_CONFIGURATION`.
   `Day` and `Gtd` are rejected at submit time.

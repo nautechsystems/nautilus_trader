@@ -888,7 +888,7 @@ info (e.g. after delisting or contract expiry), the adapter emits
 `NotAvailableForTrading`.
 
 Status polling does not reload instrument definitions. The separate
-`instrument_refresh_interval_secs` task performs a complete filtered catalogue load, atomically
+`instrument_refresh_interval_secs` task performs a complete filtered catalog load, atomically
 replaces the data-client and WebSocket lookup maps, sends the refreshed instruments to the data
 engine, and updates the status snapshot. It also refreshes the execution client precision cache.
 The default full refresh interval is 3,600 seconds; set it to `0` to disable it. Disconnect cancels
@@ -1055,7 +1055,7 @@ For the latest rate limits, query `/api/v3/exchangeInfo` (Spot) or `/fapi/v1/exc
 | `api_key` / `api_secret`           | `None`    | Required for Spot SBE; optional for public JSON and Futures data.              |
 | `spot_market_data_mode`            | `Sbe`     | `Json` keeps the credential-free Global Spot path. Binance US requires `Json`. |
 | `instrument_provider`              | default   | Loading, filters, parser-warning, and commission policy.                       |
-| `instrument_refresh_interval_secs` | `3,600`   | Full catalogue refresh interval; `0` disables it.                              |
+| `instrument_refresh_interval_secs` | `3,600`   | Full catalog refresh interval; `0` disables it.                                |
 | `instrument_status_poll_secs`      | `3,600`   | Status-only exchange-info poll interval; `0` disables it.                      |
 | `proxy_url`                        | `None`    | Proxy applied to HTTP and every market WebSocket connection.                   |
 | `recv_window_ms`                   | `5,000`   | Signed HTTP receive window, inclusive range `1..=60000`.                       |
@@ -1408,7 +1408,7 @@ and the USD-M
 endpoint.
 
 Exact queries require credentials. Because they issue one private request per selected symbol,
-combine `load_ids` or filters with this option on large catalogues.
+combine `load_ids` or filters with this option on large catalogs.
 
 ### Parser warnings
 

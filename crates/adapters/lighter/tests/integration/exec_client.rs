@@ -3478,7 +3478,7 @@ fn account_all_orders_open_entry(
 async fn test_cancel_all_orders_iterates_open_orders_and_dispatches_cancel_per_order() {
     // `cancel_all_orders` walks `cache.orders_open` for the target
     // instrument and routes each through `cancel_order`, which depends
-    // on `dispatch.lookup_venue_order_id` because the synthesised
+    // on `dispatch.lookup_venue_order_id` because the synthesized
     // CancelOrder commands carry `venue_order_id: None`. The test seeds
     // both halves of that contract via [`seed_open_order`] so a
     // regression that stops iterating (or stops resolving venue order

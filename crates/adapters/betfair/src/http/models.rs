@@ -174,7 +174,7 @@ pub struct RunnerId {
     pub handicap: Option<Handicap>,
 }
 
-/// Market catalogue entry returned by `listMarketCatalogue`.
+/// Market catalog entry returned by `listMarketCatalogue`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MarketCatalogue {

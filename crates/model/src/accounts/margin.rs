@@ -431,7 +431,7 @@ impl MarginAccount {
 
     /// Recalculates the account balance for the specified currency based on current margins.
     ///
-    /// If the margins cannot be totalled, the balance is reserved in full so no further orders
+    /// If the margins cannot be totaled, the balance is reserved in full so no further orders
     /// are funded against it.
     pub fn recalculate_balance(&mut self, currency: Currency) {
         let current_balance = if let Some(balance) = self.balances.get(&currency) {

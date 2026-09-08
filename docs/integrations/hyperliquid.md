@@ -1527,7 +1527,7 @@ separate weights and request limits therefore remain outside this adapter's limi
 | `stale_stream_recovery_enabled`          | `False`   | Enable automated recovery of stale market data streams (targeted resubscribe, then reconnect).                          |
 | `stale_stream_recovery_cooldown_secs`    | `120`     | Cooldown (seconds) between recovery actions for the same market data stream. Must be positive for recovery to run.      |
 | `stale_stream_max_targeted_resubscribes` | `3`       | Targeted resubscribe attempts for a stale stream before escalating to a full WebSocket reconnect.                       |
-| `update_instruments_interval_mins`       | `60`      | Interval (minutes) between instrument catalogue refreshes. Accepted but not yet consumed.                               |
+| `update_instruments_interval_mins`       | `60`      | Interval (minutes) between instrument catalog refreshes. Accepted but not yet consumed.                                 |
 | `transport_backend`                      | `Sockudo` | WebSocket transport backend.                                                                                            |
 
 :::note

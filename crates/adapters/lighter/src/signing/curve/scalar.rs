@@ -211,7 +211,7 @@ impl Scalar {
     /// Montgomery multiplication `(self * rhs) / 2^320 mod n`.
     ///
     /// `self` MUST be canonical. `rhs` may exceed `n` provided it fits in 320
-    /// bits, mirroring the upstream behaviour used to lift values into
+    /// bits, mirroring the upstream behavior used to lift values into
     /// Montgomery form via the `R2` constant.
     #[must_use]
     pub fn monty_mul(self, rhs: Self) -> Self {
@@ -252,7 +252,7 @@ impl Scalar {
     /// Build a scalar from an `Fp5` element via reduction modulo `n`.
     ///
     /// Concatenates the five canonical 64-bit limbs of `e` into a 320-bit
-    /// little-endian integer and reduces, matching the upstream behaviour of
+    /// little-endian integer and reduces, matching the upstream behavior of
     /// `FromGfp5`. Used by the Schnorr binding to derive a scalar from a
     /// Poseidon2 digest.
     #[must_use]

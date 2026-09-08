@@ -275,8 +275,8 @@ Selected put: BTC-28APR26-75000-P-USDT-OPTION.BYBIT (strike=75000)
 Strangle: 1 contracts per leg, hedge on BTCUSDT-LINEAR.BYBIT
 ```
 
-That is enough to reason about the strategy's structural behaviour. The
-panels below visualise the mechanics around the actual selected strikes
+That is enough to reason about the strategy's structural behavior. The
+panels below visualize the mechanics around the actual selected strikes
 (75,000 / 81,000) at the captured underlying.
 
 ![Short strangle payoff at expiry](./assets/delta_neutral_options_bybit/panel_a_strangle_payoff.png)

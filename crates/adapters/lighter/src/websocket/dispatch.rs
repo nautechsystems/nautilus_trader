@@ -574,7 +574,7 @@ pub(crate) struct WsDispatchState {
     /// loop diffs incoming `Open` frames against this map to distinguish
     /// a real modify (qty / price / trigger changed) from a venue echo
     /// (snapshot, reconnect replay, partial-fill update). The snapshot
-    /// is initialised on the first emitted `OrderAccepted` and refreshed
+    /// is initialized on the first emitted `OrderAccepted` and refreshed
     /// on every emitted `OrderUpdated`.
     pub(crate) order_snapshots: Arc<DashMap<ClientOrderId, OrderShapeSnapshot>>,
     /// Local lifecycle action that a venue frame or reconciliation report
@@ -1148,7 +1148,7 @@ impl WsDispatchState {
     /// Reconciliation can turn any non-rejected tracked report into
     /// `OrderAccepted` for a locally submitted order before the typed
     /// WebSocket path receives a cancel, fill, or open frame. Marking here
-    /// keeps that later typed path from synthesising a second `OrderAccepted`.
+    /// keeps that later typed path from synthesizing a second `OrderAccepted`.
     pub(crate) fn seed_accepted_from_report(&self, report: &OrderStatusReport) {
         if !matches!(
             report.order_status,

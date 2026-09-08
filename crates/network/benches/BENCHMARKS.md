@@ -61,7 +61,7 @@ the same binary and measurement session.
 - Throughput processes 10,000 text messages per Criterion iteration.
 - Round-trip latency spans client send through echo receive.
 - One-way burst latency timestamps each binary message from a continuous
-  sender and includes in-memory queueing and receiver backpressure.
+  sender and includes in-memory queuing and receiver backpressure.
 - Each p99.9 value covers 50 observations per run; it is useful but noisier
   than p50, p95, or p99.
 
@@ -87,7 +87,7 @@ relative to `tokio-tungstenite 0.30.0`.
 
 ## One-way binary burst latency
 
-Lower is better. Values are microseconds and include queueing within the
+Lower is better. Values are microseconds and include queuing within the
 in-memory transport.
 
 | Payload | Library                    |    p50 |    p95 |    p99 | p99.9  |

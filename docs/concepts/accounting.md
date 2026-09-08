@@ -54,7 +54,7 @@ transaction spends that asset even when the order reduces a position.
 
 ### Betting accounts
 
-Betting accounts are specialised for venues where you stake an amount to win or
+Betting accounts are specialized for venues where you stake an amount to win or
 lose a fixed payout (prediction markets, sports books). The engine locks only
 the stake required by the venue; leverage and margin do not apply.
 

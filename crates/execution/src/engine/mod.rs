@@ -1322,7 +1322,7 @@ impl ExecutionEngine {
     /// Returns the registered order on success.
     #[allow(
         clippy::too_many_arguments,
-        reason = "external order materialisation threads several ids and a timestamp"
+        reason = "external order materialization threads several ids and a timestamp"
     )]
     fn materialize_external_order(
         &self,
@@ -1484,7 +1484,7 @@ impl ExecutionEngine {
     ///
     /// Real fills supplied by the adapter are applied first so their `trade_id` and
     /// `commission` are preserved; any residual quantity not covered by the fills is
-    /// then synthesised as an inferred fill from the status report's `avg_px`.
+    /// then synthesized as an inferred fill from the status report's `avg_px`.
     /// Adapters use this to emit ADL / liquidation / settlement events without
     /// losing real fill metadata.
     pub fn reconcile_order_with_fills(&mut self, report: &OrderStatusReport, fills: &[FillReport]) {

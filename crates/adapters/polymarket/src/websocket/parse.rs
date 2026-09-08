@@ -165,7 +165,7 @@ pub fn parse_book_snapshot(
     let mut deltas = Vec::with_capacity(total + 1);
 
     // Every snapshot delta (including the opening CLEAR) carries F_SNAPSHOT so
-    // downstream consumers can recognise the rebuild; F_LAST closes the batch
+    // downstream consumers can recognize the rebuild; F_LAST closes the batch
     // on the final delta. `OrderBookDelta::clear` already sets F_SNAPSHOT.
     let snapshot_flag = RecordFlag::F_SNAPSHOT as u8;
     deltas.push(OrderBookDelta::clear(instrument_id, 0, ts_event, ts_init));

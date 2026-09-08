@@ -702,7 +702,7 @@ fn test_spot_pending_new_then_symbolless_delta_resolves_via_cache(
 #[rstest]
 fn test_spot_delta_without_cached_symbol_is_dropped() {
     // No prior `pending_new` -> no cached symbol -> the delta frame must be
-    // skipped (existing behaviour, no panic, no event).
+    // skipped (existing behavior, no panic, no event).
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let instruments = instruments_with(make_spot_pair());

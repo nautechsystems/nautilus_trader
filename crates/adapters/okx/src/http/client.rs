@@ -3214,7 +3214,7 @@ impl OKXHttpClient {
         let ts_init = self.generate_ts_init();
         let inst = self.instrument_from_cache_by_id(instrument_id)?;
 
-        // Historical pagination walks backwards using trade IDs, OKX does not honour timestamps for
+        // Historical pagination walks backwards using trade IDs, OKX does not honor timestamps for
         // standalone `before` requests (type=2)
         if matches!(mode, Mode::Backward | Mode::Range) {
             let mut before_trade_id: Option<String> = None;

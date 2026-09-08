@@ -150,7 +150,7 @@ pub fn make_customer_order_ref_legacy(client_order_id: &str) -> String {
 
 /// Parses a Betfair [`MarketCatalogue`] into a vec of [`InstrumentAny`].
 ///
-/// Each runner in the catalogue becomes a separate [`BettingInstrument`].
+/// Each runner in the catalog becomes a separate [`BettingInstrument`].
 ///
 /// # Errors
 ///

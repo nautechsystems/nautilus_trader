@@ -208,7 +208,7 @@ pub struct WebSocketConfig {
     /// Cargo feature is enabled (the default), otherwise [`TransportBackend::Tungstenite`].
     /// When the feature is disabled, `connect_with_server` returns an error if
     /// `Sockudo` is selected. Both backends pass `headers` into the HTTP
-    /// upgrade request and both honour [`Self::proxy_url`].
+    /// upgrade request and both honor [`Self::proxy_url`].
     #[serde(default)]
     #[builder(default)]
     pub backend: TransportBackend,

@@ -198,7 +198,7 @@ impl LighterRawHttpClient {
     /// resolved from the client's configured `rest_quota_per_min` (detected tier
     /// only logs hints). `tx_rate_limiter` paces `sendTx` / `sendTxBatch`; the
     /// execution client shares one limiter across this and the WebSocket
-    /// `sendTx` path so their combined rate honours the single venue tx bucket.
+    /// `sendTx` path so their combined rate honors the single venue tx bucket.
     /// The data client passes `None` (it sends no transactions).
     ///
     /// # Errors

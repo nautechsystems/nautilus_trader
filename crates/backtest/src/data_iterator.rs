@@ -134,7 +134,7 @@ impl Ord for HeapEntry {
             .cmp(&other.key)
             .then_with(|| self.priority.cmp(&other.priority))
             .then_with(|| self.index.cmp(&other.index))
-            .reverse() // BinaryHeap is max by default -> reverse for min behaviour
+            .reverse() // BinaryHeap is max by default -> reverse for min behavior
     }
 }
 

@@ -21,7 +21,7 @@
 //!
 //! Decoding accepts both uppercase and lowercase hex. A `%` that is not
 //! followed by two hex digits is passed through literally, matching the
-//! behaviour of the `urlencoding` crate that this module replaces.
+//! behavior of the `urlencoding` crate that this module replaces.
 //!
 //! [RFC 3986]: https://datatracker.ietf.org/doc/html/rfc3986
 //! [RFC 3986 Section 2.1]: https://datatracker.ietf.org/doc/html/rfc3986#section-2.1

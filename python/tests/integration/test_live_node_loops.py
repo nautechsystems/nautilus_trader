@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Host-loop behaviour a `LiveNode` must hold across loop implementations and teardown.
+Host-loop behavior a `LiveNode` must hold across loop implementations and teardown.
 
 These cases drive the loop themselves rather than borrowing pytest-asyncio's, because
 loop choice and loop closure are what is under test.

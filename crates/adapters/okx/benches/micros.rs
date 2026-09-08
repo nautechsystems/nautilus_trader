@@ -18,7 +18,7 @@
 //! Decimal / Price / UUID construction, dispatch state churn).
 //!
 //! Use these when a `data.rs` or `exec.rs` bench regresses and you need to
-//! localise where the time went, or when evaluating a structural change
+//! localize where the time went, or when evaluating a structural change
 //! (e.g. swapping the JSON tokenizer) and want to confirm the gain landed in
 //! the layer it was supposed to.
 

@@ -1143,7 +1143,7 @@ pub(crate) fn make_venue_position_id(
 /// Bundles the parsed `OrderStatusReport` and `FillReport` into a single
 /// `OrderWithFills` send so the engine creates the external order from the
 /// status report and applies the real fill (preserving `trade_id` and
-/// `commission`) instead of synthesising one. Falls back to whichever report
+/// `commission`) instead of synthesizing one. Falls back to whichever report
 /// parsed if the other parser fails.
 ///
 /// Skips events with zero fill quantity (pending liquidation notifications).

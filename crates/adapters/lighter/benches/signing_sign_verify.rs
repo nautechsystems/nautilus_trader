@@ -21,7 +21,7 @@
 //!
 //! Quote these IDs in `BENCHMARKS.md`. `micros.rs` repeats a few of the same
 //! calls next to decode and JSON render so a pipeline regression can be
-//! localised; do not treat those duplicates as a second baseline.
+//! localized; do not treat those duplicates as a second baseline.
 
 use std::hint::black_box;
 

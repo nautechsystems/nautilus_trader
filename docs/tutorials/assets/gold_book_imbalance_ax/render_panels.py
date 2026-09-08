@@ -475,7 +475,7 @@ def panel_c_size_landscape(samples: pd.DataFrame) -> go.Figure:
 def panel_d_pnl(positions: pd.DataFrame, fills: pd.DataFrame) -> go.Figure:
     fig = go.Figure()
     if positions.empty or fills.empty:
-        apply_layout(fig, "Cumulative realised pnl per closed position (no positions)", height=420)
+        apply_layout(fig, "Cumulative realized pnl per closed position (no positions)", height=420)
         return fig
     df = positions.copy()
     df = df[df["ts_closed"].notna()]
@@ -511,7 +511,7 @@ def panel_d_pnl(positions: pd.DataFrame, fills: pd.DataFrame) -> go.Figure:
         ),
     )
     fig.add_hline(y=0, line={"color": NEUTRAL, "dash": "dash", "width": 1})
-    apply_layout(fig, "Cumulative realised pnl per closed position (USD)", height=420)
+    apply_layout(fig, "Cumulative realized pnl per closed position (USD)", height=420)
     fig.update_xaxes(title_text="position close time")
     fig.update_yaxes(title_text="USD")
     return fig

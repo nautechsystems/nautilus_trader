@@ -384,7 +384,7 @@ impl BinanceFuturesDataClient {
     }
 
     #[expect(clippy::too_many_arguments)]
-    async fn refresh_instrument_catalogue(
+    async fn refresh_instrument_catalog(
         http: &BinanceFuturesHttpClient,
         provider: &crate::config::BinanceInstrumentProviderConfig,
         instruments_cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
@@ -1553,7 +1553,7 @@ impl DataClient for BinanceFuturesDataClient {
                 ws_public_client.begin_shutdown();
             });
 
-        Self::refresh_instrument_catalogue(
+        Self::refresh_instrument_catalog(
             &self.http_client,
             &self.config.instrument_provider,
             &self.instruments,
@@ -1771,7 +1771,7 @@ impl DataClient for BinanceFuturesDataClient {
                     loop {
                         tokio::select! {
                             _ = interval.tick() => {
-                                if let Err(e) = Self::refresh_instrument_catalogue(
+                                if let Err(e) = Self::refresh_instrument_catalog(
                                     &http,
                                     &provider,
                                     &instruments,

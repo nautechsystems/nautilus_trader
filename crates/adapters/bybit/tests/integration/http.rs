@@ -4985,7 +4985,7 @@ async fn test_update_sub_api_key_serializes_permissions_pascal_case() {
         .get("permissions")
         .and_then(Value::as_object)
         .expect("permissions object");
-    // Permission keys must be serialised in PascalCase and must contain only
+    // Permission keys must be serialized in PascalCase and must contain only
     // the buckets that were explicitly set on the builder.
     assert!(perms.contains_key("Spot"));
     assert!(perms.contains_key("Wallet"));

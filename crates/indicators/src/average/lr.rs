@@ -406,14 +406,14 @@ mod tests {
     #[case(128)]
     #[case(1_024)]
     #[case(16_384)]
-    fn large_period_initialisation_and_window_size(#[case] period: usize) {
+    fn large_period_initialization_and_window_size(#[case] period: usize) {
         let mut lr = LinearRegression::new(period);
         for v in 0..period {
             lr.update_raw(v as f64);
         }
         assert!(
             lr.initialized,
-            "indicator should initialise after exactly `period` samples"
+            "indicator should initialize after exactly `period` samples"
         );
         assert_eq!(
             lr.inputs.len(),

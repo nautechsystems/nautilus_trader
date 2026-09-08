@@ -1137,7 +1137,7 @@ impl SocketClient {
 
     /// Returns whether the client connection is active.
     ///
-    /// Returns `true` if the client is connected and has not been signalled to disconnect.
+    /// Returns `true` if the client is connected and has not been signaled to disconnect.
     /// The client will automatically retry connection based on its configuration.
     #[inline]
     #[must_use]

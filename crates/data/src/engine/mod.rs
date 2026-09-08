@@ -5372,7 +5372,7 @@ impl DataEngine {
 // Resolves parent expansion components for a book subscription command.
 //
 // Returns Ok(Some((root, class))) when params carries PARAMS_IS_PARENT=true and
-// the instrument_id parses as a recognised <root>.<class> shape; Ok(None) for
+// the instrument_id parses as a recognized <root>.<class> shape; Ok(None) for
 // concrete (non-parent) subscriptions; Err when the caller asserts a parent
 // subscription but the id cannot be parsed, so subscribe entries can reject up
 // front before touching state.
@@ -5386,7 +5386,7 @@ fn resolve_parent_components(
     let Some((root, class)) = instrument_id.parse_parent_components() else {
         anyhow::bail!(
             "Cannot expand parent subscription for {instrument_id}: \
-             symbol does not parse as `<root>.<class>` with a recognised class suffix"
+             symbol does not parse as `<root>.<class>` with a recognized class suffix"
         );
     };
     Ok(Some((Ustr::from(root), class)))
@@ -5728,7 +5728,7 @@ fn derive_quote_from_depth(depth: &OrderBookDepth10) -> Option<QuoteTick> {
 }
 
 // Validates a bar against `last_bar` before writing and (optionally) publishing.
-// Shared by `handle_bar` and aggregator-emitted bars so both honour
+// Shared by `handle_bar` and aggregator-emitted bars so both honor
 // `validate_data_sequence`.
 fn process_engine_bar(
     cache: &Rc<RefCell<Cache>>,

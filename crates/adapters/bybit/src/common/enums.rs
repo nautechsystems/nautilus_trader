@@ -386,7 +386,7 @@ pub enum BybitContractType {
     InverseFutures,
 }
 
-/// Option flavour values.
+/// Option flavor values.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum BybitOptionType {
