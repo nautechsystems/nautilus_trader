@@ -73,12 +73,56 @@ The handler determines where the children wait. The backtest engine can hold the
 live adapter may send native venue instructions, submit all legs, reject the list, or require the
 strategy to manage the relationship.
 
+#### Child sizing
+
 Before the parent's first fill, strategy management propagates parent quantity updates to open,
-non-active-local OTO children. After filling starts, parent events keep each child quantity equal to
-the parent's cumulative filled quantity. A child fill or update waits for the next parent event to
-refresh that target. Parent processing cancels an open child if the parent closes without a fill or
-if the child's cumulative fills meet or exceed the refreshed target. The active-local emulator
-remains responsible for submitting a child held locally.
+non-active-local OTO children.
+
+After filling starts, each parent event starts the child target at the parent's cumulative filled
+quantity. For an execution spawn, this quantity includes fills from every order in the spawn.
+
+For a parent linked to a position, the manager then adjusts the target in order:
+
+1. For a non-spread parent with a reduce-only child, cap the total target at the child's filled
+   quantity plus the current [commission-adjusted](../positions.md#base-currency-commissions)
+   position quantity. This keeps the child's remaining quantity within the open position.
+1. Round the total target down to a multiple of the child instrument's size increment.
+1. When configured, treat a rounded target below the child instrument's minimum quantity as zero.
+
+The calculation does not round position or account state. A remaining position too small to meet
+the child instrument's size increment and optional minimum quantity stays open without reduce-only
+child coverage. Spread parents skip the position cap because the execution engine does not create
+positions for them. Non-reduce-only children also skip the cap. Both still use the child
+instrument's size rules.
+
+#### Required sizing state
+
+When a fill event, cached parent, or filled execution-spawn sibling identifies a position, sizing
+requires:
+
+- The parent and child instruments in the cache.
+- A positive size increment for the child instrument.
+- The linked position in the cache for a non-spread parent with a reduce-only child.
+- Matching fill-event and cached position IDs when both are present.
+
+A fill-event position ID that conflicts with cached ownership stops processing for that parent
+event. Other missing sizing state leaves the affected child unchanged, and processing continues
+with the remaining linked children.
+
+#### Child lifecycle
+
+Parent events apply the validated target according to the child and parent state:
+
+| Condition                                                | Action                                                     |
+| -------------------------------------------------------- | ---------------------------------------------------------- |
+| Managed child has a different positive target            | Update its total quantity.                                 |
+| Target is zero; parent or execution spawn remains active | Keep the child unchanged and wait for executable quantity. |
+| Target is zero; parent or execution spawn closes         | Cancel the child.                                          |
+| Child fills meet or exceed the positive target           | Cancel any remaining quantity.                             |
+| Active-local child reaches an executable positive target | The active-local emulator submits it once.                 |
+
+A child fill or update does not recalculate the target immediately. The next parent event refreshes
+it.
 
 #### Trigger models
 

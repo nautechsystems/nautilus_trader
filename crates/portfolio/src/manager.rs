@@ -3749,6 +3749,84 @@ mod tests {
     }
 
     #[rstest]
+    fn test_update_balances_preserves_subincrement_base_commission() {
+        let btc = Currency::BTC();
+        let usdt = Currency::USDT();
+        let account_id = AccountId::new("SIM-001");
+        let account_state = AccountState::new(
+            account_id,
+            AccountType::Cash,
+            vec![
+                AccountBalance::new(Money::from("1 BTC"), Money::zero(btc), Money::from("1 BTC")),
+                AccountBalance::new(
+                    Money::from("1000 USDT"),
+                    Money::zero(usdt),
+                    Money::from("1000 USDT"),
+                ),
+            ],
+            Vec::new(),
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+        let account = CashAccount::new(account_state, true, false);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache.clone());
+        let mut instrument = currency_pair_btcusdt();
+        instrument.size_increment = Quantity::from("0.005000");
+        let instrument = InstrumentAny::CurrencyPair(instrument);
+        let position_id = PositionId::new("P-001");
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .account_id(account_id)
+            .position_id(position_id)
+            .order_side(OrderSide::Buy)
+            .order_type(OrderType::Market)
+            .last_qty(Quantity::from("0.003000"))
+            .last_px(Price::from("50000.00"))
+            .currency(usdt)
+            .commission(Money::from("0.00040000 BTC"))
+            .build();
+        let position = Position::new(&instrument, fill.clone());
+        cache
+            .borrow_mut()
+            .add_position(&position, OmsType::Netting)
+            .unwrap();
+
+        let (updated, state) =
+            manager.update_balances(AccountAny::Cash(account), &instrument, &fill);
+        let AccountAny::Cash(cash) = updated else {
+            panic!("Expected CashAccount");
+        };
+        let state_btc = state
+            .balances
+            .iter()
+            .find(|balance| balance.currency == btc)
+            .unwrap();
+        let state_usdt = state
+            .balances
+            .iter()
+            .find(|balance| balance.currency == usdt)
+            .unwrap();
+
+        assert_eq!(position.quantity, Quantity::from("0.002600"));
+        assert_eq!(
+            cash.balance_total(Some(btc)),
+            Some(Money::from("1.00260000 BTC")),
+        );
+        assert_eq!(
+            cash.balance_total(Some(usdt)),
+            Some(Money::from("850 USDT")),
+        );
+        assert_eq!(cash.commission(&btc), Some(Money::from("0.00040000 BTC")),);
+        assert_eq!(state_btc.total, Money::from("1.00260000 BTC"));
+        assert_eq!(state_usdt.total, Money::from("850 USDT"));
+    }
+
+    #[rstest]
     fn test_update_balances_rollback_restores_balances_and_commissions() {
         // Overflowing the commission total is the only reachable trigger for a rollback after
         // the balance mutation: the realized PnL lands first, then the commission is rejected.

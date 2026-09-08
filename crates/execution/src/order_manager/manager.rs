@@ -24,6 +24,7 @@ use nautilus_model::{
         OrderCanceled, OrderEventAny, OrderExpired, OrderFilled, OrderRejected, OrderUpdated,
     },
     identifiers::{ClientId, ClientOrderId, PositionId},
+    instruments::Instrument,
     orders::{Order, OrderAny},
     types::Quantity,
 };
@@ -313,31 +314,43 @@ impl OrderManager {
 
         match order.contingency_type() {
             Some(ContingencyType::Oto) => {
-                let position_id = self
+                let cached_position_id = self
                     .cache
                     .borrow()
                     .position_id(&order.client_order_id())
                     .copied();
+
+                if let (Some(fill_position_id), Some(cached_position_id)) =
+                    (filled.position_id, cached_position_id)
+                    && fill_position_id != cached_position_id
+                {
+                    log::error!(
+                        "Cannot handle OTO fill: event position {fill_position_id} does not match cached position {cached_position_id}"
+                    );
+                    return actions;
+                }
+
+                let position_id = filled.position_id.or(cached_position_id);
                 let client_id = self
                     .cache
                     .borrow()
                     .client_id(&order.client_order_id())
                     .copied();
 
-                let parent_filled_qty = match order.exec_spawn_id() {
+                let (parent_filled_qty, is_spawn_active) = match order.exec_spawn_id() {
                     Some(spawn_id) => {
-                        if let Some(qty) = self
-                            .cache
-                            .borrow()
-                            .exec_spawn_total_filled_qty(&spawn_id, false)
-                        {
-                            qty
-                        } else {
+                        let cache = self.cache.borrow();
+                        let Some(filled_qty) = cache.exec_spawn_total_filled_qty(&spawn_id, false)
+                        else {
                             log::error!("Failed to get spawn filled quantity for {spawn_id}");
                             return actions;
-                        }
+                        };
+                        let is_spawn_active = cache
+                            .exec_spawn_total_leaves_qty(&spawn_id, true)
+                            .is_some_and(|leaves_qty| leaves_qty.is_positive());
+                        (filled_qty, is_spawn_active)
                     }
-                    None => order.filled_qty(),
+                    None => (order.filled_qty(), false),
                 };
 
                 let Some(linked_orders) = order.linked_order_ids() else {
@@ -367,9 +380,29 @@ impl OrderManager {
                         child_order.set_position_id(position_id);
                     }
 
-                    actions.extend(self.sync_oto_quantity(&child_order, parent_filled_qty));
+                    let Some(child_quantity) = self.position_adjusted_oto_quantity(
+                        &order,
+                        &child_order,
+                        parent_filled_qty,
+                        child_order.filled_qty(),
+                        position_id,
+                    ) else {
+                        continue;
+                    };
 
-                    if self.active_local
+                    if child_quantity.is_zero() {
+                        self.oto_target_quantities.remove(client_order_id);
+
+                        if order.is_closed() && !is_spawn_active {
+                            actions.extend(self.cancel_order(&child_order));
+                        }
+                        continue;
+                    }
+
+                    actions.extend(self.sync_oto_quantity(&child_order, child_quantity));
+
+                    if child_quantity.is_positive()
+                        && self.active_local
                         && !self
                             .submit_order_commands
                             .contains_key(&child_order.client_order_id())
@@ -421,21 +454,19 @@ impl OrderManager {
 
     pub fn handle_contingencies(&mut self, order: &OrderAny) -> Vec<OrderManagerAction> {
         let mut actions = Vec::new();
+
         let (filled_qty, leaves_qty, is_spawn_active) =
             if let Some(exec_spawn_id) = order.exec_spawn_id() {
-                if let (Some(filled), Some(leaves)) = (
-                    self.cache
-                        .borrow()
-                        .exec_spawn_total_filled_qty(&exec_spawn_id, false),
-                    self.cache
-                        .borrow()
-                        .exec_spawn_total_leaves_qty(&exec_spawn_id, true),
-                ) {
-                    (filled, leaves, leaves.raw > 0)
-                } else {
-                    log::error!("Failed to get spawn quantities for {exec_spawn_id}");
+                let cache = self.cache.borrow();
+                let Some(filled) = cache.exec_spawn_total_filled_qty(&exec_spawn_id, false) else {
+                    log::error!("Failed to get spawn filled quantity for {exec_spawn_id}");
                     return actions;
-                }
+                };
+                let leaves = cache
+                    .exec_spawn_total_leaves_qty(&exec_spawn_id, true)
+                    .unwrap_or_else(|| Quantity::zero(filled.precision));
+
+                (filled, leaves, leaves.is_positive())
             } else {
                 (order.filled_qty(), order.leaves_qty(), false)
             };
@@ -474,13 +505,37 @@ impl OrderManager {
 
             match order.contingency_type() {
                 Some(ContingencyType::Oto) => {
-                    if order.is_closed()
-                        && filled_qty.raw == 0
+                    if filled_qty.is_zero()
+                        && order.is_closed()
                         && (order.exec_spawn_id().is_none() || !is_spawn_active)
                     {
+                        self.oto_target_quantities.remove(client_order_id);
                         actions.extend(self.cancel_order(&contingent_order));
-                    } else if filled_qty.raw > 0 {
-                        actions.extend(self.sync_oto_quantity(&contingent_order, filled_qty));
+                        continue;
+                    }
+
+                    let position_id = self.oto_parent_position_id(order);
+
+                    let Some(child_quantity) = self.position_adjusted_oto_quantity(
+                        order,
+                        &contingent_order,
+                        filled_qty,
+                        contingent_order.filled_qty(),
+                        position_id,
+                    ) else {
+                        continue;
+                    };
+
+                    if child_quantity.is_zero() {
+                        self.oto_target_quantities.remove(client_order_id);
+
+                        if order.is_closed()
+                            && (order.exec_spawn_id().is_none() || !is_spawn_active)
+                        {
+                            actions.extend(self.cancel_order(&contingent_order));
+                        }
+                    } else {
+                        actions.extend(self.sync_oto_quantity(&contingent_order, child_quantity));
                     }
                 }
                 Some(ContingencyType::Oco)
@@ -510,6 +565,7 @@ impl OrderManager {
     pub fn handle_contingencies_update(&mut self, order: &OrderAny) -> Vec<OrderManagerAction> {
         let mut actions = Vec::new();
         let contingency_type = order.contingency_type();
+
         let quantity = match order.exec_spawn_id() {
             Some(exec_spawn_id) => {
                 if let Some(qty) = self
@@ -530,8 +586,8 @@ impl OrderManager {
             return actions;
         }
 
-        let oto_quantity = if contingency_type == Some(ContingencyType::Oto) {
-            let filled_qty = match order.exec_spawn_id() {
+        let oto_filled_qty = if contingency_type == Some(ContingencyType::Oto) {
+            Some(match order.exec_spawn_id() {
                 Some(exec_spawn_id) => {
                     if let Some(qty) = self
                         .cache
@@ -545,15 +601,9 @@ impl OrderManager {
                     }
                 }
                 None => order.filled_qty(),
-            };
-
-            if filled_qty.raw > 0 {
-                filled_qty
-            } else {
-                quantity
-            }
+            })
         } else {
-            quantity
+            None
         };
 
         let Some(linked_orders) = order.linked_order_ids() else {
@@ -587,7 +637,25 @@ impl OrderManager {
 
             match contingency_type {
                 Some(ContingencyType::Oto) => {
-                    actions.extend(self.sync_oto_quantity(&contingent_order, oto_quantity));
+                    let child_quantity =
+                        if let Some(filled_qty) = oto_filled_qty.filter(Quantity::is_positive) {
+                            let position_id = self.oto_parent_position_id(order);
+
+                            let Some(quantity) = self.position_adjusted_oto_quantity(
+                                order,
+                                &contingent_order,
+                                filled_qty,
+                                contingent_order.filled_qty(),
+                                position_id,
+                            ) else {
+                                continue;
+                            };
+                            quantity
+                        } else {
+                            quantity
+                        };
+
+                    actions.extend(self.sync_oto_quantity(&contingent_order, child_quantity));
                 }
                 Some(ContingencyType::Ouo) if contingent_order.filled_qty() >= quantity => {
                     actions.extend(self.cancel_order(&contingent_order));
@@ -602,12 +670,109 @@ impl OrderManager {
         actions
     }
 
+    fn oto_parent_position_id(&self, order: &OrderAny) -> Option<PositionId> {
+        if let Some(position_id) = order.position_id() {
+            return Some(position_id);
+        }
+
+        let cache = self.cache.borrow();
+
+        cache
+            .position_id(&order.client_order_id())
+            .copied()
+            .or_else(|| {
+                order.exec_spawn_id().and_then(|spawn_id| {
+                    cache
+                        .orders_for_exec_spawn(&spawn_id)
+                        .into_iter()
+                        .find_map(|spawn_order| spawn_order.position_id())
+                })
+            })
+    }
+
+    fn position_adjusted_oto_quantity(
+        &self,
+        parent_order: &OrderAny,
+        child_order: &OrderAny,
+        filled_qty: Quantity,
+        child_filled_qty: Quantity,
+        position_id: Option<PositionId>,
+    ) -> Option<Quantity> {
+        let Some(position_id) = position_id else {
+            return Some(filled_qty);
+        };
+
+        let cache = self.cache.borrow();
+        let Some(parent_instrument) = cache.instrument(&parent_order.instrument_id()) else {
+            log::error!(
+                "Cannot size OTO orders: instrument {} not found in cache",
+                parent_order.instrument_id()
+            );
+            return None;
+        };
+
+        let Some(child_instrument) = cache.instrument(&child_order.instrument_id()) else {
+            log::error!(
+                "Cannot size OTO order {}: instrument {} not found in cache",
+                child_order.client_order_id(),
+                child_order.instrument_id()
+            );
+            return None;
+        };
+
+        let increment = child_instrument.size_increment();
+        if increment.is_zero() {
+            log::error!(
+                "Cannot size OTO orders: size increment is zero for {}",
+                child_order.instrument_id()
+            );
+            return None;
+        }
+
+        let capped_raw = if parent_instrument.is_spread() || !child_order.is_reduce_only() {
+            filled_qty.raw
+        } else {
+            let Some(position) = cache.position(&position_id) else {
+                log::error!("Cannot size OTO orders: position {position_id} not found in cache");
+                return None;
+            };
+            let position_cap_raw = child_filled_qty.raw.saturating_add(position.quantity.raw);
+            filled_qty.raw.min(position_cap_raw)
+        };
+
+        let target_raw = capped_raw - capped_raw % increment.raw;
+        let target_raw = if child_instrument
+            .min_quantity()
+            .is_some_and(|min_quantity| target_raw < min_quantity.raw)
+        {
+            0
+        } else {
+            target_raw
+        };
+
+        match Quantity::from_raw_checked(target_raw, child_instrument.size_precision()) {
+            Ok(quantity) => Some(quantity),
+            Err(e) => {
+                log::error!(
+                    "Cannot size OTO orders for {} from raw quantity {target_raw}: {e}",
+                    child_order.instrument_id()
+                );
+                None
+            }
+        }
+    }
+
     fn sync_oto_quantity(
         &mut self,
         order: &OrderAny,
         quantity: Quantity,
     ) -> Vec<OrderManagerAction> {
         let client_order_id = order.client_order_id();
+
+        if quantity.is_zero() {
+            self.oto_target_quantities.remove(&client_order_id);
+            return Vec::new();
+        }
 
         if order.filled_qty() >= quantity {
             self.oto_target_quantities.remove(&client_order_id);
@@ -642,18 +807,26 @@ mod tests {
     use nautilus_common::{cache::Cache, clock::TestClock};
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
-        enums::{ContingencyType, OrderSide, OrderType, TriggerType},
+        enums::{ContingencyType, OmsType, OrderSide, OrderStatus, OrderType, TriggerType},
         events::order::spec::{
-            OrderAcceptedSpec, OrderCanceledSpec, OrderExpiredSpec, OrderModifyRejectedSpec,
-            OrderPendingUpdateSpec, OrderRejectedSpec, OrderSubmittedSpec, OrderUpdatedSpec,
+            OrderAcceptedSpec, OrderCanceledSpec, OrderEmulatedSpec, OrderExpiredSpec,
+            OrderModifyRejectedSpec, OrderPendingUpdateSpec, OrderRejectedSpec, OrderSubmittedSpec,
+            OrderUpdatedSpec,
         },
         identifiers::{
             AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, StrategyId, TradeId, TraderId,
             VenueOrderId,
         },
-        instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
-        orders::{Order, OrderTestBuilder, stubs::TestOrderEventStubs},
-        types::{Price, Quantity},
+        instruments::{
+            Instrument, InstrumentAny,
+            stubs::{audusd_sim, currency_pair_btcusdt, futures_spread_es},
+        },
+        orders::{
+            Order, OrderTestBuilder,
+            stubs::{OrderFilledTestBuilder, TestOrderEventStubs},
+        },
+        position::Position,
+        types::{Money, Price, Quantity},
     };
     use rstest::rstest;
 
@@ -1721,19 +1894,56 @@ mod tests {
         trade_id: &str,
         last_qty: Quantity,
     ) -> OrderEventAny {
-        let event = TestOrderEventStubs::filled(
-            order,
-            instrument,
-            Some(TradeId::from(trade_id)),
-            None,
-            None,
-            Some(last_qty),
-            None,
-            None,
-            None,
-            Some(AccountId::from("ACCOUNT-001")),
-        );
+        let event = OrderFilledTestBuilder::new(order, instrument)
+            .trade_id(TradeId::from(trade_id))
+            .last_qty(last_qty)
+            .account_id(AccountId::from("ACCOUNT-001"))
+            .without_position_id()
+            .build();
         cache.borrow_mut().update_order(&event).unwrap();
+        event
+    }
+
+    fn apply_position_fill(
+        cache: &Rc<RefCell<Cache>>,
+        order: &OrderAny,
+        instrument: &InstrumentAny,
+        position_id: PositionId,
+        trade_id: &str,
+        last_qty: Quantity,
+        commission: Option<Money>,
+    ) -> OrderEventAny {
+        let mut builder = OrderFilledTestBuilder::new(order, instrument);
+        builder
+            .trade_id(TradeId::from(trade_id))
+            .position_id(position_id)
+            .last_qty(last_qty)
+            .account_id(AccountId::from("ACCOUNT-001"));
+
+        if let Some(commission) = commission {
+            builder.commission(commission);
+        } else {
+            builder.without_commission();
+        }
+        let event = builder.build();
+        cache.borrow_mut().update_order(&event).unwrap();
+        let OrderEventAny::Filled(fill) = &event else {
+            unreachable!();
+        };
+
+        if cache.borrow().position_exists(&position_id) {
+            cache
+                .borrow_mut()
+                .update_position_from_fill(position_id, fill)
+                .unwrap();
+        } else {
+            let position = Position::new(instrument, fill.clone());
+            cache
+                .borrow_mut()
+                .add_position(&position, OmsType::Netting)
+                .unwrap();
+        }
+
         event
     }
 
@@ -1929,6 +2139,1613 @@ mod tests {
             manager.oto_target_quantities.get(&child_id),
             Some(&Quantity::from(100_000)),
         );
+    }
+
+    #[rstest]
+    fn test_handle_oto_spread_fill_preserves_positionless_sizing() {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), false);
+        let instrument = InstrumentAny::FuturesSpread(futures_spread_es());
+        let position_id = PositionId::from("P-SPREAD");
+        let parent_id = ClientOrderId::from("O-PARENT");
+        let child_id = ClientOrderId::from("O-CHILD");
+        let parent = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(parent_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("100.00"))
+            .quantity(Quantity::from(10))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .submit(true)
+            .build();
+        let child = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(child_id)
+            .side(OrderSide::Sell)
+            .price(Price::from("101.00"))
+            .quantity(Quantity::from(10))
+            .submit(true)
+            .build();
+
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+
+        for order in [&parent, &child] {
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+        let mut builder = OrderFilledTestBuilder::new(&parent, &instrument);
+        let event = builder
+            .trade_id(TradeId::from("T-SPREAD"))
+            .position_id(position_id)
+            .last_qty(Quantity::from(4))
+            .account_id(AccountId::from("ACCOUNT-001"))
+            .without_commission()
+            .build();
+        cache.borrow_mut().update_order(&event).unwrap();
+
+        let actions = manager.handle_event(&event);
+        let repeated_actions = manager.handle_event(&event);
+        let cached_parent = cache.borrow().order_owned(&parent_id).unwrap();
+
+        assert!(matches!(
+            actions.as_slice(),
+            [OrderManagerAction::ModifyLocalQuantity { order, quantity }]
+                if order.client_order_id() == child_id
+                    && *quantity == Quantity::from(4)
+        ));
+        assert!(repeated_actions.is_empty());
+        assert_eq!(cached_parent.position_id(), Some(position_id));
+        assert!(!cache.borrow().position_exists(&position_id));
+        assert!(manager.handle_contingencies(&cached_parent).is_empty());
+        assert!(
+            manager
+                .handle_contingencies_update(&cached_parent)
+                .is_empty()
+        );
+    }
+
+    #[rstest]
+    fn test_handle_oto_sizes_mixed_instrument_child_to_its_increment() {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), false);
+        let mut parent_instrument = currency_pair_btcusdt();
+        parent_instrument.size_increment = Quantity::from("0.005000");
+        let mut child_instrument = parent_instrument.clone();
+        child_instrument.id = InstrumentId::from("BTC-USDT-EXIT.OKX");
+        child_instrument.size_increment = Quantity::from("0.010000");
+        let parent_instrument = InstrumentAny::CurrencyPair(parent_instrument);
+        let child_instrument = InstrumentAny::CurrencyPair(child_instrument);
+        let position_id = PositionId::from("P-MIXED");
+        let parent_id = ClientOrderId::from("O-PARENT");
+        let child_id = ClientOrderId::from("O-CHILD");
+        let parent = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(parent_instrument.id())
+            .client_order_id(parent_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.00"))
+            .quantity(Quantity::from("1.000000"))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .submit(true)
+            .build();
+        let child = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(child_instrument.id())
+            .client_order_id(child_id)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("49000.00"))
+            .quantity(Quantity::from("1.000000"))
+            .reduce_only(true)
+            .submit(true)
+            .build();
+
+        for instrument in [&parent_instrument, &child_instrument] {
+            cache
+                .borrow_mut()
+                .add_instrument(instrument.clone())
+                .unwrap();
+        }
+
+        for order in [&parent, &child] {
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+        let event = apply_position_fill(
+            &cache,
+            &parent,
+            &parent_instrument,
+            position_id,
+            "T-PARENT",
+            Quantity::from("1.000000"),
+            Some(Money::from("0.00040000 BTC")),
+        );
+
+        let actions = manager.handle_event(&event);
+        let position = cache.borrow().position_owned(&position_id).unwrap();
+
+        assert!(matches!(
+            actions.as_slice(),
+            [OrderManagerAction::ModifyLocalQuantity { order, quantity }]
+                if order.client_order_id() == child_id
+                    && *quantity == Quantity::from("0.990000")
+                    && quantity.raw % child_instrument.size_increment().raw == 0
+                    && order.instrument_id() == child_instrument.id()
+        ));
+        let OrderManagerAction::ModifyLocalQuantity { order, quantity } = &actions[0] else {
+            unreachable!();
+        };
+        let mut resized = order.clone();
+        resized.set_quantity(*quantity);
+        resized.set_leaves_qty(*quantity);
+
+        assert_eq!(position.quantity, Quantity::from("0.999600"));
+        assert!(resized.would_reduce_only(position.side, position.quantity));
+    }
+
+    #[rstest]
+    fn test_handle_oto_base_commission_sizes_both_exits_to_net_position() {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), true);
+        let mut instrument = currency_pair_btcusdt();
+        instrument.size_increment = Quantity::from("0.005000");
+        let instrument = InstrumentAny::CurrencyPair(instrument);
+        let position_id = PositionId::from("P-COMMISSION");
+        let parent_id = ClientOrderId::from("O-PARENT");
+        let stop_id = ClientOrderId::from("O-STOP");
+        let take_id = ClientOrderId::from("O-TAKE");
+        let parent = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(parent_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.00"))
+            .quantity(Quantity::from("1.000000"))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![stop_id, take_id])
+            .submit(true)
+            .build();
+        let stop = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(stop_id)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("49000.00"))
+            .quantity(Quantity::from("1.000000"))
+            .reduce_only(true)
+            .contingency_type(ContingencyType::Oco)
+            .linked_order_ids(vec![stop_id, take_id])
+            .parent_order_id(parent_id)
+            .build();
+        let take = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(take_id)
+            .side(OrderSide::Sell)
+            .price(Price::from("51000.00"))
+            .quantity(Quantity::from("1.000000"))
+            .reduce_only(true)
+            .contingency_type(ContingencyType::Oco)
+            .linked_order_ids(vec![stop_id, take_id])
+            .parent_order_id(parent_id)
+            .build();
+
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+
+        for order in [&parent, &stop, &take] {
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+        let first = apply_position_fill(
+            &cache,
+            &parent,
+            &instrument,
+            position_id,
+            "T-PARENT-1",
+            Quantity::from("0.600000"),
+            Some(Money::from("0.00040000 BTC")),
+        );
+
+        let first_actions = manager.handle_event(&first);
+        let repeated_first_actions = manager.handle_event(&first);
+        let first_position = cache.borrow().position_owned(&position_id).unwrap();
+
+        assert_eq!(first_position.quantity, Quantity::from("0.599600"));
+        assert_eq!(first_actions.len(), 4);
+        for (actions, child_id) in first_actions
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .zip([stop_id, take_id])
+        {
+            let OrderManagerAction::ModifyLocalQuantity { order, quantity } = &actions[0] else {
+                panic!("expected child quantity update");
+            };
+            let mut resized = order.clone();
+            resized.set_quantity(*quantity);
+            resized.set_leaves_qty(*quantity);
+
+            assert_eq!(order.client_order_id(), child_id);
+            assert_eq!(*quantity, Quantity::from("0.595000"));
+            assert!(resized.would_reduce_only(first_position.side, first_position.quantity));
+            assert!(matches!(
+                &actions[1],
+                OrderManagerAction::SubmitToRisk(command)
+                    if command.client_order_id == child_id
+                        && command.position_id == Some(position_id)
+            ));
+        }
+        assert!(repeated_first_actions.is_empty());
+
+        let second = apply_position_fill(
+            &cache,
+            &parent,
+            &instrument,
+            position_id,
+            "T-PARENT-2",
+            Quantity::from("0.400000"),
+            Some(Money::from("0.00040000 BTC")),
+        );
+
+        let second_actions = manager.handle_event(&second);
+        let repeated_second_actions = manager.handle_event(&second);
+        let second_position = cache.borrow().position_owned(&position_id).unwrap();
+
+        assert_eq!(second_position.quantity, Quantity::from("0.999200"));
+        assert_eq!(second_actions.len(), 2);
+        for (action, child_id) in second_actions.iter().zip([stop_id, take_id]) {
+            let OrderManagerAction::ModifyLocalQuantity { order, quantity } = action else {
+                panic!("expected child quantity update");
+            };
+            let mut resized = order.clone();
+            resized.set_quantity(*quantity);
+            resized.set_leaves_qty(*quantity);
+
+            assert_eq!(order.client_order_id(), child_id);
+            assert_eq!(*quantity, Quantity::from("0.995000"));
+            assert!(resized.would_reduce_only(second_position.side, second_position.quantity));
+        }
+        assert!(repeated_second_actions.is_empty());
+        assert_eq!(manager.submit_order_commands.len(), 2);
+
+        let cached_parent = cache.borrow().order_owned(&parent_id).unwrap();
+        assert!(manager.handle_contingencies(&cached_parent).is_empty());
+        assert!(
+            manager
+                .handle_contingencies_update(&cached_parent)
+                .is_empty()
+        );
+    }
+
+    #[rstest]
+    fn test_handle_oto_sizes_partially_filled_child_by_leaves_quantity() {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), false);
+        let mut instrument = currency_pair_btcusdt();
+        instrument.size_increment = Quantity::from("0.005000");
+        let instrument = InstrumentAny::CurrencyPair(instrument);
+        let position_id = PositionId::from("P-COMMISSION");
+        let parent_id = ClientOrderId::from("O-PARENT");
+        let child_id = ClientOrderId::from("O-CHILD");
+        let parent = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(parent_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.00"))
+            .quantity(Quantity::from("1.000000"))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .submit(true)
+            .build();
+        let child = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(child_id)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("49000.00"))
+            .quantity(Quantity::from("1.000000"))
+            .reduce_only(true)
+            .submit(true)
+            .build();
+
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+
+        for order in [&parent, &child] {
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+        let first_parent_fill = apply_position_fill(
+            &cache,
+            &parent,
+            &instrument,
+            position_id,
+            "T-PARENT-1",
+            Quantity::from("0.600000"),
+            Some(Money::from("0.00040000 BTC")),
+        );
+        let first_actions = manager.handle_event(&first_parent_fill);
+        assert!(matches!(
+            first_actions.as_slice(),
+            [OrderManagerAction::ModifyLocalQuantity { quantity, .. }]
+                if *quantity == Quantity::from("0.595000")
+        ));
+
+        apply_accepted(&cache, &child, "V-CHILD");
+        apply_update(&cache, &child, Quantity::from("0.595000"));
+        let child = cache.borrow().order_owned(&child_id).unwrap();
+        let child_fill = apply_position_fill(
+            &cache,
+            &child,
+            &instrument,
+            position_id,
+            "T-CHILD",
+            Quantity::from("0.400000"),
+            None,
+        );
+        manager.handle_event(&child_fill);
+        let position = cache.borrow().position_owned(&position_id).unwrap();
+        assert_eq!(position.quantity, Quantity::from("0.199600"));
+
+        let parent = cache.borrow().order_owned(&parent_id).unwrap();
+        let second_parent_fill = apply_position_fill(
+            &cache,
+            &parent,
+            &instrument,
+            position_id,
+            "T-PARENT-2",
+            Quantity::from("0.400000"),
+            Some(Money::from("0.00040000 BTC")),
+        );
+        let actions = manager.handle_event(&second_parent_fill);
+        let position = cache.borrow().position_owned(&position_id).unwrap();
+
+        let [OrderManagerAction::ModifyLocalQuantity { order, quantity }] = actions.as_slice()
+        else {
+            panic!("expected child quantity update");
+        };
+        let leaves_qty = *quantity - order.filled_qty();
+        let mut resized = order.clone();
+        resized.set_quantity(*quantity);
+        resized.set_leaves_qty(leaves_qty);
+
+        assert_eq!(position.quantity, Quantity::from("0.599200"));
+        assert_eq!(order.filled_qty(), Quantity::from("0.400000"));
+        assert_eq!(*quantity, Quantity::from("0.995000"));
+        assert_eq!(leaves_qty, Quantity::from("0.595000"));
+        assert!(resized.would_reduce_only(position.side, position.quantity));
+    }
+
+    #[rstest]
+    fn test_handle_oto_child_base_commission_reduces_total_target() {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), false);
+        let mut instrument = currency_pair_btcusdt();
+        instrument.size_increment = Quantity::from("0.005000");
+        let instrument = InstrumentAny::CurrencyPair(instrument);
+        let position_id = PositionId::from("P-CHILD-COMMISSION");
+        let parent_id = ClientOrderId::from("O-PARENT");
+        let child_id = ClientOrderId::from("O-CHILD");
+        let parent = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(parent_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.00"))
+            .quantity(Quantity::from("1.000000"))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .submit(true)
+            .build();
+        let child = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(child_id)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("49000.00"))
+            .quantity(Quantity::from("1.000000"))
+            .reduce_only(true)
+            .submit(true)
+            .build();
+
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+
+        for order in [&parent, &child] {
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+        apply_accepted(&cache, &child, "V-CHILD");
+        let parent_fill = apply_position_fill(
+            &cache,
+            &parent,
+            &instrument,
+            position_id,
+            "T-PARENT",
+            Quantity::from("1.000000"),
+            None,
+        );
+        assert!(manager.handle_event(&parent_fill).is_empty());
+
+        let child = cache.borrow().order_owned(&child_id).unwrap();
+        let child_fill = apply_position_fill(
+            &cache,
+            &child,
+            &instrument,
+            position_id,
+            "T-CHILD",
+            Quantity::from("0.400000"),
+            Some(Money::from("0.00100000 BTC")),
+        );
+        assert!(manager.handle_event(&child_fill).is_empty());
+
+        let position = cache.borrow().position_owned(&position_id).unwrap();
+        let parent = cache.borrow().order_owned(&parent_id).unwrap();
+        let actions = manager.handle_contingencies(&parent);
+
+        assert_eq!(position.quantity, Quantity::from("0.599000"));
+        assert!(matches!(
+            actions.as_slice(),
+            [OrderManagerAction::ModifyLocalQuantity { order, quantity }]
+                if order.client_order_id() == child_id
+                    && order.filled_qty() == Quantity::from("0.400000")
+                    && *quantity == Quantity::from("0.995000")
+        ));
+    }
+
+    #[rstest]
+    fn test_handle_oto_non_reduce_only_child_uses_parent_fill_quantity() {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), false);
+        let instrument = InstrumentAny::CurrencyPair(currency_pair_btcusdt());
+        let position_id = PositionId::from("P-REENTRY");
+        let parent_id = ClientOrderId::from("O-PARENT");
+        let child_id = ClientOrderId::from("O-CHILD");
+        let entry = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-ENTRY"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000000"))
+            .submit(true)
+            .build();
+        let parent = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .client_order_id(parent_id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.000000"))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .submit(true)
+            .build();
+        let child = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .client_order_id(child_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("0.500000"))
+            .submit(true)
+            .build();
+
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_order(entry.clone(), Some(position_id), None, false)
+            .unwrap();
+        apply_accepted(&cache, &entry, "V-ENTRY");
+        let entry = cache
+            .borrow()
+            .order_owned(&entry.client_order_id())
+            .unwrap();
+        apply_position_fill(
+            &cache,
+            &entry,
+            &instrument,
+            position_id,
+            "T-ENTRY",
+            Quantity::from("1.000000"),
+            None,
+        );
+        cache
+            .borrow_mut()
+            .add_order(parent.clone(), Some(position_id), None, false)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_order(child, Some(position_id), None, false)
+            .unwrap();
+        apply_accepted(&cache, &parent, "V-PARENT");
+        let parent = cache.borrow().order_owned(&parent_id).unwrap();
+        let event = apply_position_fill(
+            &cache,
+            &parent,
+            &instrument,
+            position_id,
+            "T-PARENT",
+            Quantity::from("1.000000"),
+            None,
+        );
+
+        let actions = manager.handle_event(&event);
+
+        assert!(cache.borrow().position(&position_id).unwrap().is_closed());
+        assert!(matches!(
+            actions.as_slice(),
+            [OrderManagerAction::ModifyLocalQuantity { order, quantity }]
+                if order.client_order_id() == child_id
+                    && *quantity == Quantity::from("1.000000")
+        ));
+    }
+
+    #[rstest]
+    fn test_handle_oto_zero_target_clears_stored_positive_target() {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), false);
+        let mut instrument = currency_pair_btcusdt();
+        instrument.size_increment = Quantity::from("0.005000");
+        let instrument = InstrumentAny::CurrencyPair(instrument);
+        let position_id = PositionId::from("P-CLEAR-TARGET");
+        let parent_id = ClientOrderId::from("O-PARENT");
+        let child_id = ClientOrderId::from("O-CHILD");
+        let parent = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(parent_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.00"))
+            .quantity(Quantity::from("1.000000"))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .submit(true)
+            .build();
+        let child = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(child_id)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("49000.00"))
+            .quantity(Quantity::from("1.000000"))
+            .reduce_only(true)
+            .submit(true)
+            .build();
+        let external_exit = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-EXTERNAL-EXIT"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("0.598000"))
+            .submit(true)
+            .build();
+
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+
+        for order in [&parent, &child, &external_exit] {
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), Some(position_id), None, false)
+                .unwrap();
+        }
+        apply_accepted(&cache, &parent, "V-PARENT");
+        apply_accepted(&cache, &external_exit, "V-EXTERNAL-EXIT");
+        let parent = cache.borrow().order_owned(&parent_id).unwrap();
+        let external_exit = cache
+            .borrow()
+            .order_owned(&external_exit.client_order_id())
+            .unwrap();
+        let first = apply_position_fill(
+            &cache,
+            &parent,
+            &instrument,
+            position_id,
+            "T-PARENT-1",
+            Quantity::from("0.600000"),
+            Some(Money::from("0.00040000 BTC")),
+        );
+        let first_actions = manager.handle_event(&first);
+        assert!(matches!(
+            first_actions.as_slice(),
+            [OrderManagerAction::ModifyLocalQuantity { quantity, .. }]
+                if *quantity == Quantity::from("0.595000")
+        ));
+        assert_eq!(
+            manager.oto_target_quantities.get(&child_id),
+            Some(&Quantity::from("0.595000"))
+        );
+
+        apply_position_fill(
+            &cache,
+            &external_exit,
+            &instrument,
+            position_id,
+            "T-EXTERNAL-EXIT",
+            Quantity::from("0.598000"),
+            None,
+        );
+        let parent = cache.borrow().order_owned(&parent_id).unwrap();
+        let second = apply_position_fill(
+            &cache,
+            &parent,
+            &instrument,
+            position_id,
+            "T-PARENT-2",
+            Quantity::from("0.001000"),
+            None,
+        );
+        let second_actions = manager.handle_event(&second);
+
+        assert_eq!(
+            cache.borrow().position(&position_id).unwrap().quantity,
+            Quantity::from("0.002600")
+        );
+        assert!(second_actions.is_empty());
+        assert!(!manager.oto_target_quantities.contains_key(&child_id));
+    }
+
+    #[rstest]
+    #[case::none(None)]
+    #[case::zero_base(Some(Money::from("0 BTC")))]
+    #[case::quote(Some(Money::from("10 USDT")))]
+    fn test_oto_quantity_preserves_gross_without_base_commission(
+        #[case] commission: Option<Money>,
+    ) {
+        let (clock, cache) = create_test_components();
+        let manager = OrderManager::new(clock, cache.clone(), true);
+        let mut instrument = currency_pair_btcusdt();
+        instrument.size_increment = Quantity::from("0.005000");
+        let instrument = InstrumentAny::CurrencyPair(instrument);
+        let position_id = PositionId::from("P-COMMISSION");
+        let parent = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-PARENT"))
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.00"))
+            .quantity(Quantity::from("0.600000"))
+            .reduce_only(true)
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![ClientOrderId::from("O-CHILD")])
+            .submit(true)
+            .build();
+
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_order(parent.clone(), None, None, false)
+            .unwrap();
+        apply_position_fill(
+            &cache,
+            &parent,
+            &instrument,
+            position_id,
+            "T-PARENT",
+            Quantity::from("0.600000"),
+            commission,
+        );
+        let position = cache.borrow().position_owned(&position_id).unwrap();
+
+        let quantity = manager
+            .position_adjusted_oto_quantity(
+                &parent,
+                &parent,
+                Quantity::from("0.600000"),
+                Quantity::from("0.000000"),
+                Some(position_id),
+            )
+            .unwrap();
+
+        assert_eq!(position.quantity, Quantity::from("0.600000"));
+        assert_eq!(quantity, Quantity::from("0.600000"));
+    }
+
+    #[rstest]
+    #[case::position(true, false)]
+    #[case::instrument(false, true)]
+    fn test_oto_handlers_require_complete_position_state(
+        #[case] add_instrument: bool,
+        #[case] add_position: bool,
+    ) {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), true);
+        let instrument = InstrumentAny::CurrencyPair(currency_pair_btcusdt());
+        let position_id = PositionId::from("P-MISSING");
+        let parent_id = ClientOrderId::from("O-PARENT");
+        let child_id = ClientOrderId::from("O-CHILD");
+        let parent = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(parent_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.00"))
+            .quantity(Quantity::from("1.000000"))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .submit(true)
+            .build();
+        let child = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(child_id)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("49000.00"))
+            .quantity(Quantity::from("1.000000"))
+            .reduce_only(true)
+            .build();
+        let event = TestOrderEventStubs::filled(
+            &parent,
+            &instrument,
+            Some(TradeId::from("T-PARENT")),
+            Some(position_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(AccountId::from("ACCOUNT-001")),
+        );
+        let OrderEventAny::Filled(fill) = &event else {
+            unreachable!();
+        };
+
+        cache
+            .borrow_mut()
+            .add_order(parent, Some(position_id), None, false)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_order(child, None, None, false)
+            .unwrap();
+        cache.borrow_mut().update_order(&event).unwrap();
+
+        if add_instrument {
+            cache
+                .borrow_mut()
+                .add_instrument(instrument.clone())
+                .unwrap();
+        }
+
+        if add_position {
+            let position = Position::new(&instrument, fill.clone());
+            cache
+                .borrow_mut()
+                .add_position(&position, OmsType::Netting)
+                .unwrap();
+        }
+
+        let fill_actions = manager.handle_event(&event);
+        let cached_parent = cache.borrow().order_owned(&parent_id).unwrap();
+        let contingency_actions = manager.handle_contingencies(&cached_parent);
+        let update_actions = manager.handle_contingencies_update(&cached_parent);
+
+        assert!(fill_actions.is_empty());
+        assert!(contingency_actions.is_empty());
+        assert!(update_actions.is_empty());
+        assert!(manager.submit_order_commands.is_empty());
+    }
+
+    #[rstest]
+    fn test_oto_quantity_rejects_zero_size_increment() {
+        let (clock, cache) = create_test_components();
+        let manager = OrderManager::new(clock, cache.clone(), true);
+        let mut instrument = currency_pair_btcusdt();
+        instrument.size_increment = Quantity::zero(instrument.size_precision);
+        let instrument = InstrumentAny::CurrencyPair(instrument);
+        let position_id = PositionId::from("P-ZERO-INCREMENT");
+        let parent = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.00"))
+            .quantity(Quantity::from("1.000000"))
+            .build();
+        let event = TestOrderEventStubs::filled(
+            &parent,
+            &instrument,
+            Some(TradeId::from("T-PARENT")),
+            Some(position_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(AccountId::from("ACCOUNT-001")),
+        );
+        let OrderEventAny::Filled(fill) = event else {
+            unreachable!();
+        };
+        let position = Position::new(&instrument, fill);
+
+        cache.borrow_mut().add_instrument(instrument).unwrap();
+        cache
+            .borrow_mut()
+            .add_position(&position, OmsType::Netting)
+            .unwrap();
+
+        assert_eq!(
+            manager.position_adjusted_oto_quantity(
+                &parent,
+                &parent,
+                Quantity::from("1.000000"),
+                Quantity::from("0.000000"),
+                Some(position_id),
+            ),
+            None,
+        );
+    }
+
+    #[rstest]
+    fn test_handle_oto_waits_for_instrument_minimum_quantity() {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), true);
+        let mut instrument = currency_pair_btcusdt();
+        instrument.size_increment = Quantity::from("0.005000");
+        instrument.min_quantity = Some(Quantity::from("0.010000"));
+        let instrument = InstrumentAny::CurrencyPair(instrument);
+        let position_id = PositionId::from("P-MINIMUM");
+        let parent_id = ClientOrderId::from("O-PARENT");
+        let child_id = ClientOrderId::from("O-CHILD");
+        let parent = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(parent_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.00"))
+            .quantity(Quantity::from("0.012000"))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .submit(true)
+            .build();
+        let child = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(child_id)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("49000.00"))
+            .quantity(Quantity::from("0.012000"))
+            .reduce_only(true)
+            .build();
+
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+
+        for order in [&parent, &child] {
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+        let first = apply_position_fill(
+            &cache,
+            &parent,
+            &instrument,
+            position_id,
+            "T-PARENT-1",
+            Quantity::from("0.006000"),
+            None,
+        );
+
+        let first_actions = manager.handle_event(&first);
+
+        assert!(first_actions.is_empty());
+        assert!(manager.submit_order_commands.is_empty());
+
+        let parent = cache.borrow().order_owned(&parent_id).unwrap();
+        let second = apply_position_fill(
+            &cache,
+            &parent,
+            &instrument,
+            position_id,
+            "T-PARENT-2",
+            Quantity::from("0.006000"),
+            None,
+        );
+        let second_actions = manager.handle_event(&second);
+
+        assert!(matches!(
+            second_actions.as_slice(),
+            [
+                OrderManagerAction::ModifyLocalQuantity { order, quantity },
+                OrderManagerAction::SubmitToRisk(command),
+            ] if order.client_order_id() == child_id
+                && *quantity == Quantity::from("0.010000")
+                && command.client_order_id == child_id
+        ));
+    }
+
+    #[rstest]
+    fn test_handle_oto_waits_for_executable_quantity_and_preserves_residual() {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), true);
+        let mut instrument = currency_pair_btcusdt();
+        instrument.size_increment = Quantity::from("0.005000");
+        let instrument = InstrumentAny::CurrencyPair(instrument);
+        let position_id = PositionId::from("P-RESIDUAL");
+        let parent_id = ClientOrderId::from("O-PARENT");
+        let child_id = ClientOrderId::from("O-CHILD");
+        let parent = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(parent_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.00"))
+            .quantity(Quantity::from("0.010000"))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .submit(true)
+            .build();
+        let child = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(child_id)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("49000.00"))
+            .quantity(Quantity::from("0.010000"))
+            .reduce_only(true)
+            .build();
+
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+
+        for order in [&parent, &child] {
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+        let first = apply_position_fill(
+            &cache,
+            &parent,
+            &instrument,
+            position_id,
+            "T-PARENT-1",
+            Quantity::from("0.003000"),
+            Some(Money::from("0.00040000 BTC")),
+        );
+
+        let first_actions = manager.handle_event(&first);
+        let first_position = cache.borrow().position_owned(&position_id).unwrap();
+
+        assert!(first_actions.is_empty());
+        assert_eq!(first_position.quantity, Quantity::from("0.002600"));
+        assert!(manager.submit_order_commands.is_empty());
+
+        let second = apply_position_fill(
+            &cache,
+            &parent,
+            &instrument,
+            position_id,
+            "T-PARENT-2",
+            Quantity::from("0.007000"),
+            Some(Money::from("0.00040000 BTC")),
+        );
+
+        let second_actions = manager.handle_event(&second);
+        let position = cache.borrow().position_owned(&position_id).unwrap();
+
+        assert_eq!(position.quantity, Quantity::from("0.009200"));
+        assert!(matches!(
+            second_actions.as_slice(),
+            [
+                OrderManagerAction::ModifyLocalQuantity { order, quantity },
+                OrderManagerAction::SubmitToRisk(command),
+            ] if order.client_order_id() == child_id
+                && *quantity == Quantity::from("0.005000")
+                && command.client_order_id == child_id
+        ));
+        assert_eq!(
+            position.quantity - Quantity::from("0.005000"),
+            Quantity::from("0.004200"),
+        );
+    }
+
+    #[rstest]
+    #[case::accepted(false)]
+    #[case::emulated(true)]
+    fn test_handle_oto_zero_target_waits_for_more_executable_quantity(#[case] active_local: bool) {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), active_local);
+        let mut instrument = currency_pair_btcusdt();
+        instrument.size_increment = Quantity::from("0.005000");
+        let instrument = InstrumentAny::CurrencyPair(instrument);
+        let position_id = PositionId::from("P-WAIT");
+        let parent_id = ClientOrderId::from("O-PARENT");
+        let child_id = ClientOrderId::from("O-CHILD");
+        let parent = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(parent_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.00"))
+            .quantity(Quantity::from("0.010000"))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .submit(true)
+            .build();
+        let child = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(child_id)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("49000.00"))
+            .quantity(Quantity::from("0.010000"))
+            .reduce_only(true)
+            .submit(!active_local)
+            .build();
+
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+
+        for order in [&parent, &child] {
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+
+        if active_local {
+            let event = OrderEventAny::Emulated(
+                OrderEmulatedSpec::builder()
+                    .trader_id(child.trader_id())
+                    .strategy_id(child.strategy_id())
+                    .instrument_id(child.instrument_id())
+                    .client_order_id(child_id)
+                    .build(),
+            );
+            cache.borrow_mut().update_order(&event).unwrap();
+        } else {
+            apply_accepted(&cache, &child, "V-CHILD");
+        }
+        let first = apply_position_fill(
+            &cache,
+            &parent,
+            &instrument,
+            position_id,
+            "T-PARENT-1",
+            Quantity::from("0.003000"),
+            Some(Money::from("0.00040000 BTC")),
+        );
+
+        let first_actions = manager.handle_event(&first);
+        let cached_child = cache.borrow().order_owned(&child_id).unwrap();
+
+        assert!(first_actions.is_empty());
+        assert_eq!(
+            cached_child.status(),
+            if active_local {
+                OrderStatus::Emulated
+            } else {
+                OrderStatus::Accepted
+            }
+        );
+
+        let second = apply_position_fill(
+            &cache,
+            &parent,
+            &instrument,
+            position_id,
+            "T-PARENT-2",
+            Quantity::from("0.007000"),
+            Some(Money::from("0.00040000 BTC")),
+        );
+        let second_actions = manager.handle_event(&second);
+
+        assert_eq!(second_actions.len(), if active_local { 2 } else { 1 });
+        assert!(matches!(
+            second_actions.first(),
+            Some(OrderManagerAction::ModifyLocalQuantity { order, quantity })
+                if order.client_order_id() == child_id
+                    && *quantity == Quantity::from("0.005000")
+        ));
+    }
+
+    #[rstest]
+    fn test_handle_oto_closed_spawn_slice_waits_while_spawn_remains_active() {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), true);
+        let mut instrument = currency_pair_btcusdt();
+        instrument.size_increment = Quantity::from("0.005000");
+        let instrument = InstrumentAny::CurrencyPair(instrument);
+        let position_id = PositionId::from("P-SPAWN-WAIT");
+        let spawn_id = ClientOrderId::from("O-SPAWN");
+        let first_id = ClientOrderId::from("O-SPAWN-1");
+        let second_id = ClientOrderId::from("O-SPAWN-2");
+        let child_id = ClientOrderId::from("O-CHILD");
+        let exec_algorithm_id = ExecAlgorithmId::from("TWAP");
+        let first = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(first_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.00"))
+            .quantity(Quantity::from("0.003000"))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .exec_algorithm_id(exec_algorithm_id)
+            .exec_spawn_id(spawn_id)
+            .submit(true)
+            .build();
+        let second = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(second_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.00"))
+            .quantity(Quantity::from("0.007000"))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .exec_algorithm_id(exec_algorithm_id)
+            .exec_spawn_id(spawn_id)
+            .submit(true)
+            .build();
+        let child = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(child_id)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("49000.00"))
+            .quantity(Quantity::from("0.010000"))
+            .reduce_only(true)
+            .build();
+
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+
+        for order in [&first, &second, &child] {
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+        apply_accepted(&cache, &first, "V-SPAWN-1");
+        apply_accepted(&cache, &second, "V-SPAWN-2");
+        let first = cache.borrow().order_owned(&first_id).unwrap();
+        let event = apply_position_fill(
+            &cache,
+            &first,
+            &instrument,
+            position_id,
+            "T-SPAWN-1",
+            Quantity::from("0.003000"),
+            Some(Money::from("0.00040000 BTC")),
+        );
+
+        let first_actions = manager.handle_event(&event);
+
+        assert!(first_actions.is_empty());
+
+        let second = cache.borrow().order_owned(&second_id).unwrap();
+        let event = apply_position_fill(
+            &cache,
+            &second,
+            &instrument,
+            position_id,
+            "T-SPAWN-2",
+            Quantity::from("0.007000"),
+            Some(Money::from("0.00040000 BTC")),
+        );
+        let second_actions = manager.handle_event(&event);
+
+        assert!(matches!(
+            second_actions.as_slice(),
+            [
+                OrderManagerAction::ModifyLocalQuantity { order, quantity },
+                OrderManagerAction::SubmitToRisk(command),
+            ] if order.client_order_id() == child_id
+                && *quantity == Quantity::from("0.005000")
+                && command.client_order_id == child_id
+        ));
+    }
+
+    #[rstest]
+    #[case::missing_primary(None)]
+    #[case::active_primary(Some(false))]
+    #[case::closed_primary(Some(true))]
+    fn test_handle_oto_last_spawn_cancellation_respects_primary_state(
+        #[case] primary_closed: Option<bool>,
+    ) {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), true);
+        let mut instrument = currency_pair_btcusdt();
+        instrument.size_increment = Quantity::from("0.005000");
+        let instrument = InstrumentAny::CurrencyPair(instrument);
+        let position_id = PositionId::from("P-SPAWN-CANCEL");
+        let spawn_id = ClientOrderId::from("O-SPAWN");
+        let first_id = ClientOrderId::from("O-SPAWN-1");
+        let second_id = ClientOrderId::from("O-SPAWN-2");
+        let child_id = ClientOrderId::from("O-CHILD");
+        let exec_algorithm_id = ExecAlgorithmId::from("TWAP");
+
+        if let Some(closed) = primary_closed {
+            let primary = OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(instrument.id())
+                .client_order_id(spawn_id)
+                .side(OrderSide::Buy)
+                .price(Price::from("50000.00"))
+                .quantity(Quantity::from("0.010000"))
+                .contingency_type(ContingencyType::Oto)
+                .linked_order_ids(vec![child_id])
+                .exec_algorithm_id(exec_algorithm_id)
+                .exec_spawn_id(spawn_id)
+                .build();
+            cache
+                .borrow_mut()
+                .add_order(primary.clone(), None, None, false)
+                .unwrap();
+
+            if closed {
+                apply_terminal(&cache, &primary, TerminalEvent::Canceled);
+            }
+        }
+        let first = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(first_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.00"))
+            .quantity(Quantity::from("0.003000"))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .exec_algorithm_id(exec_algorithm_id)
+            .exec_spawn_id(spawn_id)
+            .submit(true)
+            .build();
+        let second = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(second_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.00"))
+            .quantity(Quantity::from("0.007000"))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .exec_algorithm_id(exec_algorithm_id)
+            .exec_spawn_id(spawn_id)
+            .submit(true)
+            .build();
+        let child = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(child_id)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("49000.00"))
+            .quantity(Quantity::from("0.010000"))
+            .reduce_only(true)
+            .build();
+
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+
+        for order in [&first, &second, &child] {
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+        apply_accepted(&cache, &first, "V-SPAWN-1");
+        apply_accepted(&cache, &second, "V-SPAWN-2");
+        let first = cache.borrow().order_owned(&first_id).unwrap();
+        let first_fill = apply_position_fill(
+            &cache,
+            &first,
+            &instrument,
+            position_id,
+            "T-SPAWN-1",
+            Quantity::from("0.003000"),
+            Some(Money::from("0.00040000 BTC")),
+        );
+
+        assert!(manager.handle_event(&first_fill).is_empty());
+
+        let second = cache.borrow().order_owned(&second_id).unwrap();
+        let canceled = apply_terminal(&cache, &second, TerminalEvent::Canceled);
+        let actions = manager.handle_event(&canceled);
+
+        if primary_closed == Some(false) {
+            assert!(actions.is_empty());
+        } else {
+            assert!(matches!(
+                actions.as_slice(),
+                [OrderManagerAction::CancelLocal(order)]
+                    if order.client_order_id() == child_id
+            ));
+        }
+    }
+
+    #[rstest]
+    fn test_handle_oto_missing_child_instrument_does_not_block_siblings() {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), false);
+        let mut instrument = currency_pair_btcusdt();
+        instrument.size_increment = Quantity::from("0.005000");
+        let instrument = InstrumentAny::CurrencyPair(instrument);
+        let position_id = PositionId::from("P-SIBLINGS");
+        let missing_id = ClientOrderId::from("O-MISSING");
+        let valid_id = ClientOrderId::from("O-VALID");
+        let parent = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-PARENT"))
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.00"))
+            .quantity(Quantity::from("0.010000"))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![missing_id, valid_id])
+            .submit(true)
+            .build();
+        let missing = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(InstrumentId::from("BTC-USDT-MISSING.OKX"))
+            .client_order_id(missing_id)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("49000.00"))
+            .quantity(Quantity::from("0.010000"))
+            .reduce_only(true)
+            .submit(true)
+            .build();
+        let valid = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(valid_id)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("49000.00"))
+            .quantity(Quantity::from("0.010000"))
+            .reduce_only(true)
+            .submit(true)
+            .build();
+
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+
+        for order in [&parent, &missing, &valid] {
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+        let event = apply_position_fill(
+            &cache,
+            &parent,
+            &instrument,
+            position_id,
+            "T-PARENT",
+            Quantity::from("0.010000"),
+            Some(Money::from("0.00040000 BTC")),
+        );
+
+        let actions = manager.handle_event(&event);
+
+        assert!(matches!(
+            actions.as_slice(),
+            [OrderManagerAction::ModifyLocalQuantity { order, quantity }]
+                if order.client_order_id() == valid_id
+                    && *quantity == Quantity::from("0.005000")
+        ));
+    }
+
+    #[rstest]
+    fn test_handle_oto_parent_cancel_cancels_child_with_zero_target() {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), true);
+        let mut instrument = currency_pair_btcusdt();
+        instrument.size_increment = Quantity::from("0.005000");
+        let instrument = InstrumentAny::CurrencyPair(instrument);
+        let position_id = PositionId::from("P-CANCEL");
+        let parent_id = ClientOrderId::from("O-PARENT");
+        let child_id = ClientOrderId::from("O-CHILD");
+        let parent = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(parent_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.00"))
+            .quantity(Quantity::from("0.010000"))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .submit(true)
+            .build();
+        let child = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(child_id)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("49000.00"))
+            .quantity(Quantity::from("0.010000"))
+            .reduce_only(true)
+            .build();
+
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+
+        for order in [&parent, &child] {
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+        let fill = apply_position_fill(
+            &cache,
+            &parent,
+            &instrument,
+            position_id,
+            "T-PARENT",
+            Quantity::from("0.003000"),
+            Some(Money::from("0.00040000 BTC")),
+        );
+        assert!(manager.handle_event(&fill).is_empty());
+
+        let parent = cache.borrow().order_owned(&parent_id).unwrap();
+        let canceled = apply_terminal(&cache, &parent, TerminalEvent::Canceled);
+        let actions = manager.handle_event(&canceled);
+
+        assert_eq!(
+            cache.borrow().position(&position_id).unwrap().quantity,
+            Quantity::from("0.002600")
+        );
+        assert!(matches!(
+            actions.as_slice(),
+            [OrderManagerAction::CancelLocal(order)]
+                if order.client_order_id() == child_id
+        ));
+    }
+
+    #[rstest]
+    fn test_handle_oto_unfilled_terminal_parent_cancels_child_without_cached_position() {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), true);
+        let instrument = InstrumentAny::CurrencyPair(currency_pair_btcusdt());
+        let position_id = PositionId::from("P-NOT-OPENED");
+        let parent_id = ClientOrderId::from("O-PARENT");
+        let child_id = ClientOrderId::from("O-CHILD");
+        let parent = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(parent_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.00"))
+            .quantity(Quantity::from("1.000000"))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .submit(true)
+            .build();
+        let child = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(child_id)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("49000.00"))
+            .quantity(Quantity::from("1.000000"))
+            .reduce_only(true)
+            .build();
+
+        cache.borrow_mut().add_instrument(instrument).unwrap();
+        cache
+            .borrow_mut()
+            .add_order(parent.clone(), Some(position_id), None, false)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_order(child, Some(position_id), None, false)
+            .unwrap();
+        let canceled = apply_terminal(&cache, &parent, TerminalEvent::Canceled);
+
+        let actions = manager.handle_event(&canceled);
+
+        assert!(!cache.borrow().position_exists(&position_id));
+        assert!(matches!(
+            actions.as_slice(),
+            [OrderManagerAction::CancelLocal(order)]
+                if order.client_order_id() == child_id
+        ));
+    }
+
+    #[rstest]
+    fn test_handle_oto_terminal_fill_cancels_child_when_position_is_below_increment() {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), true);
+        let mut instrument = currency_pair_btcusdt();
+        instrument.size_increment = Quantity::from("0.005000");
+        let instrument = InstrumentAny::CurrencyPair(instrument);
+        let position_id = PositionId::from("P-ZERO");
+        let parent_id = ClientOrderId::from("O-PARENT");
+        let child_id = ClientOrderId::from("O-CHILD");
+        let parent = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(parent_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.00"))
+            .quantity(Quantity::from("0.004000"))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .submit(true)
+            .build();
+        let child = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(child_id)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("49000.00"))
+            .quantity(Quantity::from("0.005000"))
+            .reduce_only(true)
+            .build();
+
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+
+        for order in [&parent, &child] {
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+        let event = apply_position_fill(
+            &cache,
+            &parent,
+            &instrument,
+            position_id,
+            "T-PARENT",
+            Quantity::from("0.004000"),
+            Some(Money::from("0.00400000 BTC")),
+        );
+
+        let actions = manager.handle_event(&event);
+
+        assert!(cache.borrow().position(&position_id).unwrap().is_closed());
+        assert!(matches!(
+            actions.as_slice(),
+            [OrderManagerAction::CancelLocal(order)]
+                if order.client_order_id() == child_id
+        ));
+        assert!(manager.submit_order_commands.is_empty());
+    }
+
+    #[rstest]
+    fn test_handle_oto_fill_rejects_conflicting_position_ids() {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), true);
+        let instrument = InstrumentAny::CurrencyPair(currency_pair_btcusdt());
+        let cached_position_id = PositionId::from("P-CACHED");
+        let event_position_id = PositionId::from("P-EVENT");
+        let parent_id = ClientOrderId::from("O-PARENT");
+        let child_id = ClientOrderId::from("O-CHILD");
+        let parent = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(parent_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.00"))
+            .quantity(Quantity::from("1.000000"))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .submit(true)
+            .build();
+        let event = TestOrderEventStubs::filled(
+            &parent,
+            &instrument,
+            Some(TradeId::from("T-PARENT")),
+            Some(event_position_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(AccountId::from("ACCOUNT-001")),
+        );
+        cache
+            .borrow_mut()
+            .add_order(parent, Some(cached_position_id), None, false)
+            .unwrap();
+
+        let actions = manager.handle_event(&event);
+
+        assert!(actions.is_empty());
+        assert!(manager.submit_order_commands.is_empty());
     }
 
     #[rstest]
@@ -2370,6 +4187,215 @@ mod tests {
         assert_eq!(
             manager.oto_target_quantities.get(&child_id),
             Some(&Quantity::from(40_000)),
+        );
+    }
+
+    #[rstest]
+    fn test_handle_oto_exec_spawn_fill_uses_commission_adjusted_position() {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), false);
+        let mut instrument = currency_pair_btcusdt();
+        instrument.size_increment = Quantity::from("0.005000");
+        let instrument = InstrumentAny::CurrencyPair(instrument);
+        let position_id = PositionId::from("P-SPAWN");
+        let spawn_id = ClientOrderId::from("O-SPAWN");
+        let first_id = ClientOrderId::from("O-SPAWN-1");
+        let second_id = ClientOrderId::from("O-SPAWN-2");
+        let child_id = ClientOrderId::from("O-CHILD");
+        let exec_algorithm_id = ExecAlgorithmId::from("TWAP");
+        let first = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(first_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.00"))
+            .quantity(Quantity::from("0.600000"))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .exec_algorithm_id(exec_algorithm_id)
+            .exec_spawn_id(spawn_id)
+            .submit(true)
+            .build();
+        let second = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(second_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.00"))
+            .quantity(Quantity::from("0.400000"))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .exec_algorithm_id(exec_algorithm_id)
+            .exec_spawn_id(spawn_id)
+            .submit(true)
+            .build();
+        let child = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(child_id)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("49000.00"))
+            .quantity(Quantity::from("1.000000"))
+            .reduce_only(true)
+            .submit(true)
+            .build();
+
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+
+        for order in [&first, &second, &child] {
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+        apply_accepted(&cache, &first, "V-SPAWN-1");
+        apply_accepted(&cache, &second, "V-SPAWN-2");
+        let first = cache.borrow().order_owned(&first_id).unwrap();
+        let second = cache.borrow().order_owned(&second_id).unwrap();
+        apply_position_fill(
+            &cache,
+            &first,
+            &instrument,
+            position_id,
+            "T-SPAWN-1",
+            Quantity::from("0.600000"),
+            Some(Money::from("0.00040000 BTC")),
+        );
+        let event = apply_position_fill(
+            &cache,
+            &second,
+            &instrument,
+            position_id,
+            "T-SPAWN-2",
+            Quantity::from("0.100000"),
+            Some(Money::from("0.00040000 BTC")),
+        );
+
+        let actions = manager.handle_event(&event);
+        let repeated_actions = manager.handle_event(&event);
+        let position = cache.borrow().position_owned(&position_id).unwrap();
+
+        assert_eq!(position.quantity, Quantity::from("0.699200"));
+        assert!(matches!(
+            actions.as_slice(),
+            [OrderManagerAction::ModifyLocalQuantity { order, quantity }]
+                if order.client_order_id() == child_id
+                    && *quantity == Quantity::from("0.695000")
+        ));
+        let OrderManagerAction::ModifyLocalQuantity { order, quantity } = &actions[0] else {
+            unreachable!();
+        };
+        let mut resized = order.clone();
+        resized.set_quantity(*quantity);
+        resized.set_leaves_qty(*quantity);
+
+        assert!(resized.would_reduce_only(position.side, position.quantity));
+        assert!(repeated_actions.is_empty());
+
+        let second = cache.borrow().order_owned(&second_id).unwrap();
+        assert_eq!(second.position_id(), Some(position_id));
+        assert!(manager.handle_contingencies(&second).is_empty());
+        assert!(manager.handle_contingencies_update(&second).is_empty());
+    }
+
+    #[rstest]
+    fn test_handle_oto_exec_spawn_update_uses_filled_sibling_position() {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), false);
+        let mut instrument = currency_pair_btcusdt();
+        instrument.size_increment = Quantity::from("0.005000");
+        let instrument = InstrumentAny::CurrencyPair(instrument);
+        let position_id = PositionId::from("P-SPAWN");
+        let spawn_id = ClientOrderId::from("O-SPAWN");
+        let first_id = ClientOrderId::from("O-SPAWN-1");
+        let second_id = ClientOrderId::from("O-SPAWN-2");
+        let child_id = ClientOrderId::from("O-CHILD");
+        let exec_algorithm_id = ExecAlgorithmId::from("TWAP");
+        let first = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(first_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.00"))
+            .quantity(Quantity::from("0.600000"))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .exec_algorithm_id(exec_algorithm_id)
+            .exec_spawn_id(spawn_id)
+            .submit(true)
+            .build();
+        let second = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(second_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.00"))
+            .quantity(Quantity::from("0.400000"))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .exec_algorithm_id(exec_algorithm_id)
+            .exec_spawn_id(spawn_id)
+            .submit(true)
+            .build();
+        let child = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(child_id)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("49000.00"))
+            .quantity(Quantity::from("1.000000"))
+            .reduce_only(true)
+            .submit(true)
+            .build();
+
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+
+        for order in [&first, &second, &child] {
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+        apply_accepted(&cache, &first, "V-SPAWN-1");
+        apply_accepted(&cache, &second, "V-SPAWN-2");
+        let first = cache.borrow().order_owned(&first_id).unwrap();
+        let first_fill = apply_position_fill(
+            &cache,
+            &first,
+            &instrument,
+            position_id,
+            "T-SPAWN-1",
+            Quantity::from("0.600000"),
+            Some(Money::from("0.00040000 BTC")),
+        );
+        let first_actions = manager.handle_event(&first_fill);
+        assert!(matches!(
+            first_actions.as_slice(),
+            [OrderManagerAction::ModifyLocalQuantity { quantity, .. }]
+                if *quantity == Quantity::from("0.595000")
+        ));
+        apply_update(&cache, &child, Quantity::from("0.595000"));
+
+        let second = cache.borrow().order_owned(&second_id).unwrap();
+        assert_eq!(second.position_id(), None);
+        let update = OrderEventAny::Updated(
+            OrderUpdatedSpec::builder()
+                .trader_id(second.trader_id())
+                .strategy_id(second.strategy_id())
+                .instrument_id(second.instrument_id())
+                .client_order_id(second.client_order_id())
+                .quantity(Quantity::from("0.500000"))
+                .venue_order_id(VenueOrderId::from("V-SPAWN-2"))
+                .account_id(AccountId::from("ACCOUNT-001"))
+                .build(),
+        );
+        cache.borrow_mut().update_order(&update).unwrap();
+        let actions = manager.handle_event(&update);
+
+        assert!(actions.is_empty());
+        assert_eq!(
+            manager.oto_target_quantities.get(&child_id),
+            Some(&Quantity::from("0.595000")),
         );
     }
 
