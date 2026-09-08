@@ -126,6 +126,13 @@ serde_json = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 
+[[bin]]
+name = "prepare-test-data"
+path = "bin/prepare_test_data.rs"
+required-features = ["datasets"]
+test = false
+doc = false
+
 [[test]]
 name = "integration"
 path = "tests/integration/main.rs"

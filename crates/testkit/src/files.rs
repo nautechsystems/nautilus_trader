@@ -15,6 +15,7 @@
 
 use std::{
     cmp,
+    collections::BTreeMap,
     ffi::OsString,
     fmt::Display,
     fs::{File, OpenOptions, remove_file},
@@ -102,6 +103,43 @@ fn next_retry_delay(delay: Duration, backoff_factor: f64) -> Duration {
     }
 
     Duration::try_from_secs_f64(next).unwrap_or(Duration::MAX)
+}
+
+/// Downloads missing large test fixtures and verifies every file against the checksum manifest.
+///
+/// Replaces cached files whose checksums differ. The manifest remains unchanged.
+///
+/// # Errors
+///
+/// Returns an error if the manifest cannot be read, a download fails, or a checksum differs.
+pub fn prepare_test_data() -> anyhow::Result<()> {
+    let checksums = crate::common::get_test_data_large_checksums_filepath();
+    let manifest: BTreeMap<String, String> =
+        serde_json::from_reader(BufReader::new(File::open(&checksums)?))?;
+    let directory = nautilus_core::paths::get_test_data_path().join("large");
+
+    for filename in manifest.keys() {
+        let filepath = directory.join(filename);
+        let url = format!("https://test-data.nautechsystems.io/large/{filename}");
+        prepare_test_data_file(&filepath, &url, &checksums)?;
+    }
+    Ok(())
+}
+
+fn prepare_test_data_file(filepath: &Path, url: &str, checksums: &Path) -> anyhow::Result<()> {
+    if filepath.exists() {
+        if verify_sha256_checksum(filepath, checksums)? {
+            return Ok(());
+        }
+        remove_file(filepath)?;
+    }
+
+    download_file(filepath, url, 30, None)?;
+    if !verify_sha256_checksum(filepath, checksums)? {
+        remove_file(filepath)?;
+        anyhow::bail!("Checksum mismatch for {}", filepath.display());
+    }
+    Ok(())
 }
 
 /// Ensures that a file exists at the specified path by downloading it if necessary.
@@ -522,6 +560,57 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
 
         addr
+    }
+
+    #[rstest]
+    #[case::missing(None, "verified fixture", true)]
+    #[case::cached(Some("verified fixture"), "verified fixture", true)]
+    #[case::stale_cached(Some("stale fixture"), "verified fixture", true)]
+    #[case::corrupt_download(None, "corrupt download", false)]
+    #[tokio::test]
+    async fn test_prepare_test_data_file(
+        #[case] cached: Option<&str>,
+        #[case] downloaded: &str,
+        #[case] valid: bool,
+    ) {
+        let temp_dir = TempDir::new().unwrap();
+        let filepath = temp_dir.path().join("testfile.txt");
+        let checksums = temp_dir.path().join("checksums.json");
+        let content = "verified fixture";
+        let manifest = serde_json::to_vec(&json!({
+            "testfile.txt": format!("sha256:{}", calculate_sha256_bytes(content.as_bytes()))
+        }))
+        .unwrap();
+        fs::write(&checksums, &manifest).unwrap();
+        if let Some(cached) = cached {
+            fs::write(&filepath, cached).unwrap();
+        }
+
+        let url = if cached == Some(content) {
+            "http://127.0.0.1:0/testfile.txt".to_string()
+        } else {
+            let addr = setup_test_server(Some(downloaded.to_string()), StatusCode::OK).await;
+            format!("http://{addr}/testfile.txt")
+        };
+        let filepath_clone = filepath.clone();
+        let checksums_clone = checksums.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            prepare_test_data_file(&filepath_clone, &url, &checksums_clone)
+        })
+        .await
+        .unwrap();
+
+        if valid {
+            result.unwrap();
+            assert_eq!(fs::read_to_string(&filepath).unwrap(), content);
+        } else {
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                format!("Checksum mismatch for {}", filepath.display()),
+            );
+            assert!(!filepath.exists());
+        }
+        assert_eq!(fs::read(&checksums).unwrap(), manifest);
     }
 
     #[tokio::test]

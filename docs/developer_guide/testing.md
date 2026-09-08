@@ -172,6 +172,8 @@ measurement policy. Run benchmarks separately from unit tests to avoid interfere
 
 ### Rust tests
 
+Before running the full suite, [prepare the large test fixtures](test_datasets.md#dataset-categories).
+
 ```bash
 make cargo-test
 # or

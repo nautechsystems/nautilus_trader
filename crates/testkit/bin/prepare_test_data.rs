@@ -13,29 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_testkit::common::{
-    ensure_histdata_eurusd_instrument_parquet, ensure_histdata_eurusd_quotes_parquet,
-};
-use rstest::rstest;
-
-#[rstest]
-fn ensure_histdata_eurusd_quotes_parquet_exists() {
-    let filepath = ensure_histdata_eurusd_quotes_parquet();
-
-    assert!(filepath.exists());
-    assert_eq!(
-        filepath.file_name().unwrap().to_str().unwrap(),
-        "histdata_EURUSD.SIM_2020-01_quotes.parquet",
-    );
-}
-
-#[rstest]
-fn ensure_histdata_eurusd_instrument_parquet_exists() {
-    let filepath = ensure_histdata_eurusd_instrument_parquet();
-
-    assert!(filepath.exists());
-    assert_eq!(
-        filepath.file_name().unwrap().to_str().unwrap(),
-        "histdata_EURUSD.SIM_2020-01_instrument.parquet",
-    );
+fn main() -> anyhow::Result<()> {
+    nautilus_testkit::files::prepare_test_data()
 }

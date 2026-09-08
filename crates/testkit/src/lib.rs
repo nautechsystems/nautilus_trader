@@ -17,9 +17,9 @@
 //!
 //! The `nautilus-testkit` crate provides testing utilities including test data management,
 //! file handling, and common testing patterns. This crate supports robust testing workflows
-//! across the entire NautilusTrader ecosystem with automated data downloads and validation:
+//! across the entire NautilusTrader ecosystem with explicit data preparation and local-only loading:
 //!
-//! - **Test data management**: Automated downloading and caching of test datasets.
+//! - **Test data management**: Explicit downloading, checksum verification, and caching of test datasets before tests.
 //! - **File utilities**: File integrity verification with SHA-256 checksums.
 //! - **Path resolution**: Platform-agnostic test data path management.
 //! - **Precision handling**: Support for both 64-bit and 128-bit precision test data.

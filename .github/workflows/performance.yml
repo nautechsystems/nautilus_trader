@@ -119,6 +119,9 @@ jobs:
       - name: Set compile jobs from cache state
         run: bash scripts/ci/set-cargo-build-jobs.sh
 
+      - name: Prepare test data
+        uses: $/.github/actions/common-test-data
+
       - name: Run Rust tests
         run: make cargo-test NEXTEST_PROFILE=ci
 

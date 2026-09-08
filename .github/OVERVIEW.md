@@ -13,7 +13,8 @@ integration, scheduled checks, and publication.
   tool with caching.
 - [`common-setup`](actions/common-setup/action.yml): configures system packages, Rust and Python
   toolchains, caches, and optional disk or swap preparation.
-- [`common-test-data`](actions/common-test-data/action.yml): caches the large test data set.
+- [`common-test-data`](actions/common-test-data/action.yml): downloads, verifies, and caches the
+  large test data set.
 - [`generate-sbom-retry`](actions/generate-sbom-retry/action.yml): retries SPDX SBOM generation
   after transient failures.
 - [`install-capnp`](actions/install-capnp/action.yml): installs the Cap'n Proto compiler across

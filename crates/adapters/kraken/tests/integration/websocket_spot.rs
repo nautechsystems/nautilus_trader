@@ -37,7 +37,8 @@ use nautilus_common::{
     testing::wait_until_async,
 };
 use nautilus_kraken::{
-    config::KrakenDataClientConfig, websocket::spot_v2::client::KrakenSpotWebSocketClient,
+    config::KrakenDataClientConfig,
+    websocket::{error::KrakenWsError, spot_v2::client::KrakenSpotWebSocketClient},
 };
 use nautilus_live::{SocketControl, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
@@ -790,21 +791,25 @@ async fn test_websocket_get_subscriptions() {
 #[rstest]
 #[tokio::test]
 async fn test_websocket_wait_until_active_timeout() {
-    let state = Arc::new(TestServerState::default());
-    let _url = start_test_server(state).await;
+    let socket = tokio::net::TcpSocket::new_v4().unwrap();
+    socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let addr = socket.local_addr().unwrap();
 
     let config = KrakenDataClientConfig {
-        ws_public_url: Some("ws://invalid.invalid/v2".to_string()), // Invalid URL
+        ws_public_url: Some(format!("ws://{addr}/v2")),
         ..Default::default()
     };
 
     let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
 
-    // Connection will fail, so wait_until_active should timeout
-    let _ = client.connect().await; // May or may not succeed initially
+    assert!(client.connect().await.is_err());
 
     let result = client.wait_until_active(0.2).await;
-    assert!(result.is_err(), "Expected timeout error: {result:?}");
+    assert!(matches!(
+        result,
+        Err(KrakenWsError::ConnectionError(message))
+            if message == "WebSocket connection timeout after 0.2 seconds"
+    ));
 }
 
 #[rstest]

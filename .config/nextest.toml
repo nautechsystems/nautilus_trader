@@ -1,6 +1,5 @@
 [test-groups]
 serial-tests = { max-threads = 1 }
-large-data-tests = { max-threads = 1 }
 
 [profile.default]
 # Default settings
@@ -24,11 +23,6 @@ test-group = 'serial-tests'
 [[profile.default.overrides]]
 filter = 'test(test_order_book)'
 slow-timeout = { period = "300s" }
-
-# Tests that download large data files share the same target paths across processes
-[[profile.default.overrides]]
-filter = '(package(nautilus-backtest) & binary(integration) & (test(/^backtest_node_itch::/) | test(/^grid_mm_itch::/))) | (package(nautilus-testkit) & binary(integration) & (test(/^large_data::/) | test(/^orderbook_integration::/))) | (package(nautilus-persistence) & binary(integration) & test(/^test_pinned_data_direct_session::/))'
-test-group = 'large-data-tests'
 
 # Execution client, websocket, and data client tests spawn order and stream
 # tasks on the global tokio runtime, separate from the #[tokio::test] runtime.
