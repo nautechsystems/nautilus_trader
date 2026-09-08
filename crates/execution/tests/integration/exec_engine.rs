@@ -13121,6 +13121,357 @@ fn test_own_book_status_integrity_during_transitions() {
     }
 }
 
+#[rstest]
+fn test_hedging_flip_applies_remainders_to_flipped_position(mut execution_engine: ExecutionEngine) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = audusd_sim();
+
+    let stub_client = StubExecutionClient::new(
+        ClientId::from("STUB"),
+        AccountId::test_default(),
+        Venue::test_default(),
+        OmsType::Hedging,
+        None,
+    );
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(CashAccount::default().into())
+        .unwrap();
+
+    let position_id = PositionId::from("P-19700101-000000-000-001-1");
+    let opening_order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-1"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(
+            opening_order.clone(),
+            None,
+            Some(ClientId::from("STUB")),
+            true,
+        )
+        .unwrap();
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &opening_order,
+        AccountId::test_default(),
+    ));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &opening_order,
+        AccountId::test_default(),
+        VenueOrderId::from("V-1"),
+    ));
+    execution_engine.process(&TestOrderEventStubs::filled(
+        &opening_order,
+        &instrument.clone().into(),
+        Some(TradeId::new("T-OPEN")),
+        Some(position_id),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        Some(Money::from("0 USD")),
+        None,
+        Some(AccountId::test_default()),
+    ));
+
+    let reversal_order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-FLIP"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(200_000))
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(
+            reversal_order.clone(),
+            None,
+            Some(ClientId::from("STUB")),
+            true,
+        )
+        .unwrap();
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &reversal_order,
+        AccountId::test_default(),
+    ));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &reversal_order,
+        AccountId::test_default(),
+        VenueOrderId::from("V-FLIP"),
+    ));
+    execution_engine.process(&TestOrderEventStubs::filled(
+        &reversal_order,
+        &instrument.clone().into(),
+        Some(TradeId::new("T-FLIP")),
+        Some(position_id),
+        Some(Price::from("1.00010")),
+        Some(Quantity::from(150_000)),
+        None,
+        Some(Money::from("0 USD")),
+        None,
+        Some(AccountId::test_default()),
+    ));
+
+    // Two remainders, not one: applying the first writes the cached flipped ID onto the
+    // order, so a predicate reading the order's own position ID accepts this one and
+    // rejects the next.
+    let first_remainder_trade_id = TradeId::new("T-REMAINDER-1");
+    let second_remainder_trade_id = TradeId::new("T-REMAINDER-2");
+
+    for trade_id in [first_remainder_trade_id, second_remainder_trade_id] {
+        let partially_filled_order = cached_order_or(&execution_engine, &reversal_order);
+        execution_engine.process(&TestOrderEventStubs::filled(
+            &partially_filled_order,
+            &instrument.clone().into(),
+            Some(trade_id),
+            Some(position_id),
+            None,
+            Some(Quantity::from(25_000)),
+            None,
+            None,
+            None,
+            Some(AccountId::test_default()),
+        ));
+    }
+
+    let cache = execution_engine.cache().borrow();
+    let filled_order = cache.order(&reversal_order.client_order_id()).unwrap();
+    assert_eq!(filled_order.filled_qty(), Quantity::from(200_000));
+
+    let original = cache.position(&position_id).unwrap();
+    assert!(original.is_closed());
+
+    let positions = cache.positions_open(None, None, None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_ne!(positions[0].id, position_id);
+    assert_eq!(positions[0].side, PositionSide::Short);
+    assert_eq!(positions[0].quantity, Quantity::from(100_000));
+    assert!(positions[0].trade_ids.contains(&first_remainder_trade_id));
+    assert!(positions[0].trade_ids.contains(&second_remainder_trade_id));
+}
+
+#[rstest]
+fn test_hedging_flip_remainder_reopens_a_closed_flipped_position(
+    mut execution_engine: ExecutionEngine,
+) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = audusd_sim();
+
+    let stub_client = StubExecutionClient::new(
+        ClientId::from("STUB"),
+        AccountId::test_default(),
+        Venue::test_default(),
+        OmsType::Hedging,
+        None,
+    );
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(CashAccount::default().into())
+        .unwrap();
+
+    let position_id = PositionId::from("P-19700101-000000-000-001-1");
+    let opening_order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-1"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(
+            opening_order.clone(),
+            None,
+            Some(ClientId::from("STUB")),
+            true,
+        )
+        .unwrap();
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &opening_order,
+        AccountId::test_default(),
+    ));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &opening_order,
+        AccountId::test_default(),
+        VenueOrderId::from("V-1"),
+    ));
+    execution_engine.process(&TestOrderEventStubs::filled(
+        &opening_order,
+        &instrument.clone().into(),
+        Some(TradeId::new("T-OPEN")),
+        Some(position_id),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        Some(Money::from("0 USD")),
+        None,
+        Some(AccountId::test_default()),
+    ));
+
+    let reversal_order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-FLIP"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(200_000))
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(
+            reversal_order.clone(),
+            None,
+            Some(ClientId::from("STUB")),
+            true,
+        )
+        .unwrap();
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &reversal_order,
+        AccountId::test_default(),
+    ));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &reversal_order,
+        AccountId::test_default(),
+        VenueOrderId::from("V-FLIP"),
+    ));
+    execution_engine.process(&TestOrderEventStubs::filled(
+        &reversal_order,
+        &instrument.clone().into(),
+        Some(TradeId::new("T-FLIP")),
+        Some(position_id),
+        Some(Price::from("1.00010")),
+        Some(Quantity::from(150_000)),
+        None,
+        Some(Money::from("0 USD")),
+        None,
+        Some(AccountId::test_default()),
+    ));
+
+    let flipped_position_id = {
+        let cache = execution_engine.cache().borrow();
+        let open = cache.positions_open(None, None, None, None, None);
+        assert_eq!(open.len(), 1);
+        open[0].id
+    };
+
+    // Close the flipped position with a different order, so the remainder below
+    // arrives while the position its order is indexed to is already closed.
+    let closing_order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-CLOSE"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(50_000))
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(
+            closing_order.clone(),
+            None,
+            Some(ClientId::from("STUB")),
+            true,
+        )
+        .unwrap();
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &closing_order,
+        AccountId::test_default(),
+    ));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &closing_order,
+        AccountId::test_default(),
+        VenueOrderId::from("V-CLOSE"),
+    ));
+    execution_engine.process(&TestOrderEventStubs::filled(
+        &closing_order,
+        &instrument.clone().into(),
+        Some(TradeId::new("T-CLOSE")),
+        Some(flipped_position_id),
+        Some(Price::from("1.00002")),
+        None,
+        None,
+        Some(Money::from("0 USD")),
+        None,
+        Some(AccountId::test_default()),
+    ));
+
+    let remainder_trade_id = TradeId::new("T-REMAINDER");
+    let partially_filled_order = cached_order_or(&execution_engine, &reversal_order);
+    execution_engine.process(&TestOrderEventStubs::filled(
+        &partially_filled_order,
+        &instrument.into(),
+        Some(remainder_trade_id),
+        Some(position_id),
+        Some(Price::from("1.00006")),
+        Some(Quantity::from(50_000)),
+        None,
+        Some(Money::from("0 USD")),
+        None,
+        Some(AccountId::test_default()),
+    ));
+
+    let cache = execution_engine.cache().borrow();
+    let filled_order = cache.order(&reversal_order.client_order_id()).unwrap();
+    assert_eq!(filled_order.filled_qty(), Quantity::from(200_000));
+
+    // The remainder reopens the flipped ID rather than being dropped: the engine
+    // routes a fill naming a closed position to its standard Hedging reopen.
+    let reopened = cache.position(&flipped_position_id).unwrap();
+    assert!(reopened.is_open());
+    assert_eq!(reopened.side, PositionSide::Short);
+    assert_eq!(reopened.quantity, Quantity::from(50_000));
+    assert!(reopened.trade_ids.contains(&remainder_trade_id));
+    assert!(cache.position(&position_id).unwrap().is_closed());
+
+    // The closed flipped cycle is archived before its ID is reused: short 50,000 opened at
+    // 1.00010 by the flip and closed at 1.00002, so the realized PnL totals that read
+    // closed cycles from the snapshots keep the earlier 4.00 USD after the reopen.
+    let snapshots = cache.position_snapshots(Some(&flipped_position_id), None);
+    assert_eq!(snapshots.len(), 1);
+    assert_eq!(snapshots[0].realized_pnl, Some(Money::from("4.00 USD")));
+    assert_eq!(reopened.realized_pnl, Some(Money::from("0 USD")));
+}
+
 fn setup_netting_snapshot_engine(
     execution_engine: &mut ExecutionEngine,
     instrument: &CurrencyPair,
