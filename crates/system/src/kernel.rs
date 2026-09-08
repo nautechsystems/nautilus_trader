@@ -71,8 +71,17 @@ use nautilus_execution::{
 };
 use nautilus_model::identifiers::{ClientId, TraderId};
 #[cfg(feature = "streaming")]
-use nautilus_persistence::backend::feather::{
-    FeatherWriter, FeatherWriterSubscriptions, RotationConfig as WriterRotationConfig,
+use nautilus_persistence::{
+    backend::default_writer_factories,
+    catalog::traits::NautilusDataTypePrefix,
+    config::StreamingConfig,
+    writer::{
+        factory::{WriterConnectConfig, create_writer, replace_existing_writer_data},
+        feather::{RotationConfig as WriterRotationConfig, WriterClock},
+        filter::WriterRecordFilter,
+        subscription::StreamingSinkSubscription,
+        traits::StreamingSinkBox,
+    },
 };
 use nautilus_portfolio::portfolio::Portfolio;
 use nautilus_risk::engine::RiskEngine;
@@ -127,9 +136,9 @@ pub struct NautilusKernel {
     event_store_replay: bool,
     state_save_armed: bool,
     #[cfg(feature = "streaming")]
-    streaming_writer: Option<Rc<RefCell<FeatherWriter>>>,
+    streaming_writer: Option<Rc<RefCell<StreamingSinkBox>>>,
     #[cfg(feature = "streaming")]
-    streaming_subscriptions: Option<FeatherWriterSubscriptions>,
+    streaming_subscriptions: Option<StreamingSinkSubscription>,
 }
 
 impl Debug for NautilusKernel {
@@ -191,6 +200,35 @@ impl NautilusKernelDependencies {
 }
 
 impl NautilusKernel {
+    #[cfg(feature = "streaming")]
+    fn writer_record_filter(config: &StreamingConfig) -> Option<WriterRecordFilter> {
+        let mut filter = config
+            .record_types
+            .clone()
+            .map(WriterRecordFilter::from_record_types)
+            .unwrap_or_default();
+
+        if let Some(data_types) = &config.data_types {
+            for data_type in data_types {
+                filter.insert_prefix(data_type.path_prefix().into_owned(), None);
+            }
+        }
+
+        if let Some(instrument_types) = &config.instrument_types {
+            for instrument_type in instrument_types {
+                filter.insert_instrument_type(instrument_type);
+            }
+        }
+
+        if let Some(entries) = &config.record_filters {
+            for entry in entries {
+                filter.insert(&entry.record_type, entry.identifiers.clone());
+            }
+        }
+
+        (!filter.is_empty()).then_some(filter)
+    }
+
     /// Create a new [`NautilusKernelBuilder`] for fluent configuration.
     #[must_use]
     pub const fn builder(
@@ -338,11 +376,14 @@ impl NautilusKernel {
             let mut catalog_names = HashSet::new();
 
             for catalog_config in config.catalogs() {
-                let name = catalog_config.name.clone().unwrap_or_else(|| {
-                    let name = format!("catalog_{unnamed_index}");
-                    unnamed_index += 1;
-                    name
-                });
+                let name = catalog_config.name().map_or_else(
+                    || {
+                        let name = format!("catalog_{unnamed_index}");
+                        unnamed_index += 1;
+                        name
+                    },
+                    str::to_owned,
+                );
                 anyhow::ensure!(
                     catalog_names.insert(name.clone()),
                     "Duplicate data catalog name '{name}'",
@@ -350,10 +391,10 @@ impl NautilusKernel {
                 let catalog = catalog_config.create_catalog().with_context(|| {
                     format!(
                         "Failed to create data catalog from '{}'",
-                        catalog_config.path
+                        catalog_config.path()
                     )
                 })?;
-                data_engine.register_catalog(catalog, Some(&name));
+                data_engine.register_catalog_box(catalog, Some(&name));
             }
         }
         let data_engine = Rc::new(RefCell::new(data_engine));
@@ -397,17 +438,26 @@ impl NautilusKernel {
                 };
                 let uri = format!("{base_uri}/{environment}/{instance_id}");
                 let rotation_config = writer_rotation_config(&streaming_config.rotation_config);
-                let writer = Rc::new(RefCell::new(FeatherWriter::from_uri(
-                    &uri,
-                    None,
-                    clock.clone(),
-                    rotation_config,
-                    None,
-                    Some(streaming_config.flush_interval_ms),
-                    streaming_config.replace_existing,
+                let mut connect = WriterConnectConfig::new(&uri, None);
+                connect.rotation_config = rotation_config;
+                connect.flush_interval_ms = Some(streaming_config.flush_interval_ms);
+                connect.params.clone_from(&streaming_config.params);
+                connect.record_filter = Self::writer_record_filter(&streaming_config);
+                if streaming_config.replace_existing {
+                    replace_existing_writer_data(&connect)?;
+                }
+                let (writer_clock, bridge) = WriterClock::from_shared_clock(&clock);
+                let writer = Rc::new(RefCell::new(create_writer(
+                    &streaming_config.writer_backend,
+                    &connect,
+                    writer_clock,
+                    &default_writer_factories(),
                 )?));
-                let handler = FeatherWriter::subscribe_builtin_to_message_bus(writer.clone())
-                    .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+                let handler = StreamingSinkSubscription::subscribe_named(
+                    writer.clone(),
+                    bridge.map(|atomic| (Rc::clone(&clock), atomic)),
+                    uri.clone(),
+                );
                 log::info!("Writing data and events to {uri}");
                 (Some(writer), Some(handler))
             }
@@ -1003,16 +1053,13 @@ impl NautilusKernel {
 
         #[cfg(feature = "streaming")]
         {
-            if let Some(subscriptions) = self.streaming_subscriptions.take() {
-                FeatherWriter::unsubscribe_from_message_bus(&subscriptions);
+            if let Some(subscriptions) = self.streaming_subscriptions.take()
+                && let Err(e) = subscriptions.close()
+            {
+                log::warn!("Failed to close streaming writer: {e}");
             }
 
-            if let Some(writer) = self.streaming_writer.take()
-                && let Err(e) =
-                    nautilus_common::live::get_runtime().block_on(writer.borrow_mut().close())
-            {
-                log::error!("Error closing streaming writer: {e}");
-            }
+            drop(self.streaming_writer.take());
         }
 
         self.data_engine.borrow_mut().dispose();
@@ -1033,8 +1080,9 @@ impl NautilusKernel {
     pub fn flush_streaming(&mut self) -> anyhow::Result<()> {
         #[cfg(feature = "streaming")]
         if let Some(writer) = &self.streaming_writer {
-            nautilus_common::live::get_runtime()
-                .block_on(writer.borrow_mut().flush())
+            writer
+                .borrow_mut()
+                .flush()
                 .map_err(|e| anyhow::anyhow!(e.to_string()))?;
         }
         Ok(())
@@ -1132,13 +1180,13 @@ fn writer_rotation_config(config: &crate::config::RotationConfig) -> WriterRotat
             max_size: *max_size,
         },
         crate::config::RotationConfig::Interval { interval_ns } => WriterRotationConfig::Interval {
-            interval_ns: *interval_ns,
+            interval_ns: interval_ns.as_u64(),
         },
         crate::config::RotationConfig::ScheduledDates {
             interval_ns,
             schedule_ns,
         } => WriterRotationConfig::ScheduledDates {
-            interval_ns: *interval_ns,
+            interval_ns: interval_ns.as_u64(),
             rotation_time: *schedule_ns,
             rotation_timezone: TimeZone::UTC,
         },
@@ -1241,13 +1289,13 @@ mod streaming_tests {
     };
     use nautilus_core::DurationNanos;
     use nautilus_model::{
-        data::{CustomData, DataType, QuoteTick},
+        data::{CustomData, DataType, NautilusDataType, QuoteTick},
         identifiers::InstrumentId,
         types::{Price, Quantity},
     };
     use nautilus_persistence::{
-        backend::catalog::ParquetDataCatalog, config::DataCatalogConfig,
-        test_data::RustTestCustomData,
+        backend::parquet::catalog::ParquetDataCatalog, config::DataCatalogConfig,
+        test_data::RustTestCustomData, writer::feather::RotationConfig as WriterRotationConfig,
     };
     use nautilus_serialization::ensure_custom_data_registered;
     use rstest::rstest;
@@ -1266,7 +1314,7 @@ mod streaming_tests {
             interval_ns: DurationNanos::new(23),
         },
         WriterRotationConfig::Interval {
-            interval_ns: DurationNanos::new(23),
+            interval_ns: 23,
         }
     )]
     #[case(
@@ -1275,7 +1323,7 @@ mod streaming_tests {
             schedule_ns: UnixNanos::from(37),
         },
         WriterRotationConfig::ScheduledDates {
-            interval_ns: DurationNanos::new(31),
+            interval_ns: 31,
             rotation_time: UnixNanos::from(37),
             rotation_timezone: TimeZone::UTC,
         }
@@ -1291,8 +1339,8 @@ mod streaming_tests {
             (
                 WriterRotationConfig::Size { max_size: actual },
                 WriterRotationConfig::Size { max_size: expected },
-            ) => assert_eq!(actual, expected),
-            (
+            )
+            | (
                 WriterRotationConfig::Interval {
                     interval_ns: actual,
                 },
@@ -1348,12 +1396,14 @@ mod streaming_tests {
         let catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
         catalog.write_to_parquet(&quotes, None, None, None).unwrap();
         let config = KernelConfig {
-            catalogs: vec![DataCatalogConfig::new(
-                directory.path().to_string_lossy().into_owned(),
-                Some("file".to_string()),
-                None,
-                Some("history".to_string()),
-            )],
+            catalogs: vec![
+                DataCatalogConfig::new(
+                    directory.path().to_string_lossy().into_owned(),
+                    Some("file".to_string()),
+                    None,
+                )
+                .with_name(Some("history".to_string())),
+            ],
             ..KernelConfig::default()
         };
         let mut kernel = NautilusKernel::new("CatalogQueryTest".to_string(), config).unwrap();
@@ -1401,15 +1451,17 @@ mod streaming_tests {
 
         let directory = tempdir().unwrap();
         let instance_id = UUID4::new();
+        let mut streaming = StreamingConfig::new(
+            directory.path().to_string_lossy().into_owned(),
+            "file".to_string(),
+            1_000,
+            false,
+            RotationConfig::NoRotation,
+        );
+        streaming.data_types = Some(vec![NautilusDataType::QuoteTick]);
         let config = KernelConfig {
             instance_id: Some(instance_id),
-            streaming: Some(StreamingConfig::new(
-                directory.path().to_string_lossy().into_owned(),
-                "file".to_string(),
-                1_000,
-                false,
-                RotationConfig::NoRotation,
-            )),
+            streaming: Some(streaming),
             ..KernelConfig::default()
         };
         let mut kernel = NautilusKernel::new("BuiltInStreamingTest".to_string(), config).unwrap();

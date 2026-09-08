@@ -9,16 +9,25 @@ from nautilus_trader import model
 
 __all__ = [
     "BarDataWrangler",
+    "CatalogBackend",
     "DataBackendSession",
     "DataCatalogConfig",
     "DataQueryResult",
+    "MacroYieldCurveData",
     "NautilusDataType",
     "OrderBookDeltaDataWrangler",
     "OrderBookDepth10DataWrangler",
     "ParquetDataCatalog",
     "QuoteTickDataWrangler",
+    "RotationConfig",
+    "RustTestCustomData",
+    "RustTestFixedCustomData",
+    "RustTestParamsCustomData",
+    "RustTestPriceMapCustomData",
+    "RustTestTypedMapCustomData",
     "StreamingConfig",
     "StreamingFeatherWriter",
+    "StreamingWriter",
     "TradeTickDataWrangler",
 ]
 
@@ -56,17 +65,26 @@ class DataCatalogConfig:
     @property
     def path(self) -> str: ...
     @property
-    def fs_protocol(self) -> str | None: ...
-    @property
     def name(self) -> str | None: ...
+    @property
+    def read_only(self) -> bool: ...
+    @property
+    def fs_protocol(self) -> str: ...
+    @property
+    def catalog_backend(self) -> CatalogBackend: ...
+    @property
+    def params(self) -> dict | None: ...
     @property
     def fs_rust_storage_option_keys(self) -> list[str] | None: ...
     def __new__(
         cls,
         path: str,
         fs_protocol: str | None = None,
-        fs_rust_storage_options: typing.Mapping[str, str] | None = None,
+        catalog_backend: CatalogBackend | None = None,
+        params: dict | None = None,
         name: str | None = None,
+        read_only: bool = ...,
+        fs_rust_storage_options: typing.Mapping[str, str] | None = None,
     ) -> DataCatalogConfig: ...
 
 @typing.final
@@ -74,6 +92,35 @@ class DataQueryResult:
     def to_list(self) -> list[typing.Any]: ...
     def __iter__(self) -> DataQueryResult: ...
     def __next__(self) -> typing.Any | None: ...
+
+@typing.final
+class MacroYieldCurveData:
+    @property
+    def curve_name(self) -> str: ...
+    @property
+    def tenors(self) -> list[float]: ...
+    @property
+    def interest_rates(self) -> list[float]: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+    @classmethod
+    def decode_record_batch_py(
+        cls, metadata: typing.Mapping[str, str], py_batch: typing.Any
+    ) -> typing.Any: ...
+    def encode_record_batch_py(self, items: list) -> typing.Any: ...
+    def __new__(
+        cls,
+        curve_name: str,
+        tenors: typing.Sequence[float],
+        interest_rates: typing.Sequence[float],
+        ts_event: int,
+        ts_init: int,
+    ) -> MacroYieldCurveData: ...
+    def to_json(self) -> str: ...
+    @classmethod
+    def from_json(cls, data: typing.Any) -> typing.Any: ...
 
 @typing.final
 class OrderBookDeltaDataWrangler:
@@ -95,7 +142,22 @@ class OrderBookDepth10DataWrangler:
     def price_precision(self) -> int: ...
     @property
     def size_precision(self) -> int: ...
-    def process_record_batch_bytes(self, data: bytes) -> list[model.OrderBookDepth10]: ...
+    def process_record_batch_bytes(self, data: bytes) -> list[model.OrderBookDepth]: ...
+
+@typing.final
+class CatalogBackend:
+    Parquet: CatalogBackend
+    @property
+    def name(self) -> str: ...
+    @property
+    def value(self) -> str: ...
+    @property
+    def external_name(self) -> str | None: ...
+    @staticmethod
+    def from_str(value: str) -> CatalogBackend: ...
+    @staticmethod
+    def External(name: str) -> CatalogBackend: ...
+    def __hash__(self) -> int: ...
 
 @typing.final
 class ParquetDataCatalog:
@@ -107,6 +169,12 @@ class ParquetDataCatalog:
         compression: int | None = None,
         max_row_group_size: int | None = None,
     ) -> None: ...
+    def migrate_from_legacy_parquet_path(
+        self,
+        parquet_path: str,
+        storage_options: typing.Mapping[str, str] | None = None,
+        dry_run: bool = False,
+    ) -> int: ...
     def write_quote_ticks(
         self,
         data: typing.Sequence[model.QuoteTick],
@@ -137,7 +205,7 @@ class ParquetDataCatalog:
     ) -> str: ...
     def write_order_book_depths(
         self,
-        data: typing.Sequence[model.OrderBookDepth10],
+        data: typing.Sequence[model.OrderBookDepth],
         start: int | None = None,
         end: int | None = None,
         skip_disjoint_check: bool = False,
@@ -163,13 +231,45 @@ class ParquetDataCatalog:
         end: int | None = None,
         skip_disjoint_check: bool = False,
     ) -> str: ...
-    def write_instruments(self, data: typing.Any) -> list[str]: ...
+    def write_instrument_statuses(
+        self,
+        data: typing.Sequence[model.InstrumentStatus],
+        start: int | None = None,
+        end: int | None = None,
+        skip_disjoint_check: bool = False,
+    ) -> str: ...
+    def write_instrument_closes(
+        self,
+        data: typing.Sequence[model.InstrumentClose],
+        start: int | None = None,
+        end: int | None = None,
+        skip_disjoint_check: bool = False,
+    ) -> str: ...
+    def write_instruments(self, instruments: typing.Any) -> list[str]: ...
     def instruments(
         self,
         instrument_ids: typing.Sequence[str] | None = None,
         start: int | None = None,
         end: int | None = None,
+        where_clause: str | None = None,
+        instrument_type: typing.Any | None = None,
     ) -> list[typing.Any]: ...
+    def query_instrument_arrow_bytes(
+        self,
+        instrument_ids: typing.Sequence[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
+        instrument_type: typing.Any | None = None,
+    ) -> bytes: ...
+    def query_instrument_arrow_stream(
+        self,
+        instrument_ids: typing.Sequence[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
+        instrument_type: typing.Any | None = None,
+    ) -> typing.Any: ...
     def extend_file_name(
         self, data_cls: str, instrument_id: str | None, start: int, end: int
     ) -> None: ...
@@ -211,7 +311,7 @@ class ParquetDataCatalog:
     def delete_data_range(
         self,
         type_name: str,
-        instrument_id: str | None = None,
+        identifier: str | None = None,
         start: int | None = None,
         end: int | None = None,
     ) -> None: ...
@@ -231,6 +331,61 @@ class ParquetDataCatalog:
         start: int | None = None,
         end: int | None = None,
     ) -> list[str]: ...
+    def query_metadata(
+        self,
+        data_type: typing.Any,
+        identifiers: typing.Sequence[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
+    ) -> dict: ...
+    def query_data_arrow_bytes(
+        self,
+        data_type: typing.Any,
+        identifiers: typing.Sequence[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
+        display: bool = True,
+        as_of: typing.Any | None = None,
+    ) -> bytes: ...
+    def query_data_arrow_stream(
+        self,
+        data_type: typing.Any,
+        identifiers: typing.Sequence[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
+        display: bool = True,
+        as_of: typing.Any | None = None,
+    ) -> typing.Any: ...
+    def write_record_arrow_bytes(
+        self,
+        record_type: typing.Any,
+        data: typing.Sequence[int],
+        identifier: str | None = None,
+        params: dict | None = None,
+    ) -> None: ...
+    def query_record_arrow_bytes(
+        self,
+        record_type: typing.Any,
+        identifier: str | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
+        display: bool = True,
+        as_of: typing.Any | None = None,
+    ) -> bytes: ...
+    def query_record_arrow_stream(
+        self,
+        record_type: typing.Any,
+        identifier: str | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
+        display: bool = True,
+        as_of: typing.Any | None = None,
+    ) -> typing.Any: ...
     def get_missing_intervals_for_request(
         self, start: int, end: int, data_cls: str, instrument_id: str | None = None
     ) -> list[tuple[int, int]]: ...
@@ -283,28 +438,28 @@ class ParquetDataCatalog:
     ) -> list[model.Bar]: ...
     def query_order_book_depths(
         self,
-        instrument_ids: typing.Sequence[str] | None = None,
+        identifiers: typing.Sequence[str] | None = None,
         start: int | None = None,
         end: int | None = None,
         where_clause: str | None = None,
-    ) -> list[model.OrderBookDepth10]: ...
+    ) -> list[model.OrderBookDepth]: ...
     def query_mark_price_updates(
         self,
-        instrument_ids: typing.Sequence[str] | None = None,
+        identifiers: typing.Sequence[str] | None = None,
         start: int | None = None,
         end: int | None = None,
         where_clause: str | None = None,
     ) -> list[model.MarkPriceUpdate]: ...
     def query_index_price_updates(
         self,
-        instrument_ids: typing.Sequence[str] | None = None,
+        identifiers: typing.Sequence[str] | None = None,
         start: int | None = None,
         end: int | None = None,
         where_clause: str | None = None,
     ) -> list[model.IndexPriceUpdate]: ...
     def query_option_greeks(
         self,
-        instrument_ids: typing.Sequence[str] | None = None,
+        identifiers: typing.Sequence[str] | None = None,
         start: int | None = None,
         end: int | None = None,
         where_clause: str | None = None,
@@ -333,6 +488,76 @@ class ParquetDataCatalog:
     ) -> list[typing.Any]: ...
 
 @typing.final
+class RotationConfig:
+    @property
+    def mode(self) -> str: ...
+    @property
+    def max_size(self) -> int | None: ...
+    @property
+    def interval_ns(self) -> int | None: ...
+    @property
+    def schedule_ns(self) -> int | None: ...
+    @staticmethod
+    def no_rotation() -> RotationConfig: ...
+    @staticmethod
+    def size(max_size: int) -> RotationConfig: ...
+    @staticmethod
+    def interval(interval_ns: int) -> RotationConfig: ...
+    @staticmethod
+    def scheduled_dates(interval_ns: int, schedule_ns: int) -> RotationConfig: ...
+
+@typing.final
+class StreamingConfig:
+    @property
+    def catalog_path(self) -> str: ...
+    @property
+    def fs_protocol(self) -> str: ...
+    @property
+    def flush_interval_ms(self) -> int: ...
+    @property
+    def replace_existing(self) -> bool: ...
+    @property
+    def rotation_config(self) -> RotationConfig: ...
+    @property
+    def rotation_mode(self) -> str: ...
+    @property
+    def max_file_size(self) -> int | None: ...
+    @property
+    def rotation_interval_ns(self) -> int | None: ...
+    @property
+    def schedule_ns(self) -> int | None: ...
+    @property
+    def writer_backend(self) -> str: ...
+    @property
+    def params(self) -> dict | None: ...
+    @property
+    def data_types(self) -> list[str] | None: ...
+    @property
+    def record_types(self) -> list[str] | None: ...
+    @property
+    def instrument_types(self) -> list[str] | None: ...
+    @property
+    def record_filters(self) -> dict | None: ...
+    def __new__(
+        cls,
+        catalog_path: str,
+        fs_protocol: str | None = None,
+        flush_interval_ms: int = ...,
+        replace_existing: bool = ...,
+        rotation_config: RotationConfig | None = None,
+        writer_backend: str | None = None,
+        data_types: typing.Any | None = None,
+        record_types: typing.Any | None = None,
+        instrument_types: typing.Any | None = None,
+        record_filters: typing.Any | None = None,
+        params: dict | None = None,
+        rotation_mode: str | None = None,
+        max_file_size: int | None = None,
+        rotation_interval_ns: int | None = None,
+        schedule_ns: int | None = None,
+    ) -> StreamingConfig: ...
+
+@typing.final
 class StreamingFeatherWriter:
     def __init__(
         self,
@@ -342,6 +567,8 @@ class StreamingFeatherWriter:
         fs_protocol: str | None = None,
         fs_storage_options: typing.Mapping[str, str] | None = None,
         include_types: typing.Sequence[str] | None = None,
+        record_types: typing.Any | None = None,
+        record_filters: typing.Any | None = None,
         rotation_mode: int = 3,
         max_file_size: int = 1073741824,
         rotation_interval_ns: int | None = None,
@@ -363,6 +590,21 @@ class StreamingFeatherWriter:
     ) -> int | None: ...
 
 @typing.final
+class StreamingWriter:
+    def __init__(
+        self,
+        backend: str,
+        path: str,
+        clock: common.Clock,
+        storage_options: typing.Mapping[str, str] | None = None,
+    ) -> None: ...
+    @property
+    def backend(self) -> str: ...
+    def write(self, data: typing.Any) -> None: ...
+    def flush(self) -> None: ...
+    def close(self) -> None: ...
+
+@typing.final
 class QuoteTickDataWrangler:
     def __init__(self, instrument_id: str, price_precision: int, size_precision: int) -> None: ...
     @property
@@ -374,34 +616,201 @@ class QuoteTickDataWrangler:
     def process_record_batch_bytes(self, data: bytes) -> list[model.QuoteTick]: ...
 
 @typing.final
-class StreamingConfig:
+class RustTestCustomData:
     @property
-    def catalog_path(self) -> str: ...
+    def instrument_id(self) -> model.InstrumentId: ...
     @property
-    def fs_protocol(self) -> str: ...
+    def value(self) -> float: ...
     @property
-    def flush_interval_ms(self) -> int: ...
+    def flag(self) -> bool: ...
     @property
-    def replace_existing(self) -> bool: ...
+    def ts_event(self) -> int: ...
     @property
-    def rotation_mode(self) -> str: ...
-    @property
-    def max_file_size(self) -> int | None: ...
-    @property
-    def rotation_interval_ns(self) -> int | None: ...
-    @property
-    def schedule_ns(self) -> int | None: ...
+    def ts_init(self) -> int: ...
+    @classmethod
+    def decode_record_batch_py(
+        cls, metadata: typing.Mapping[str, str], py_batch: typing.Any
+    ) -> typing.Any: ...
+    def encode_record_batch_py(self, items: list) -> typing.Any: ...
     def __new__(
         cls,
-        catalog_path: str,
-        fs_protocol: str | None = None,
-        flush_interval_ms: int | None = None,
-        replace_existing: bool = ...,
-        rotation_mode: str = ...,
-        max_file_size: int = ...,
-        rotation_interval_ns: int | None = None,
-        schedule_ns: int | None = None,
-    ) -> StreamingConfig: ...
+        instrument_id: model.InstrumentId,
+        value: float,
+        flag: bool,
+        ts_event: int,
+        ts_init: int,
+    ) -> RustTestCustomData: ...
+    def to_json(self) -> str: ...
+    @classmethod
+    def from_json(cls, data: typing.Any) -> typing.Any: ...
+
+@typing.final
+class RustTestFixedCustomData:
+    @property
+    def instrument_id(self) -> model.InstrumentId: ...
+    @property
+    def price(self) -> model.Price: ...
+    @property
+    def quantity(self) -> model.Quantity: ...
+    @property
+    def aggressor_side(self) -> model.AggressorSide: ...
+    @property
+    def notional(self) -> model.Money: ...
+    @property
+    def nullable_aggressor_side(self) -> model.AggressorSide | None: ...
+    @property
+    def nullable_notional(self) -> model.Money | None: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+    @classmethod
+    def decode_record_batch_py(
+        cls, metadata: typing.Mapping[str, str], py_batch: typing.Any
+    ) -> typing.Any: ...
+    def encode_record_batch_py(self, items: list) -> typing.Any: ...
+    def __new__(
+        cls,
+        instrument_id: model.InstrumentId,
+        price: model.Price,
+        quantity: model.Quantity,
+        aggressor_side: model.AggressorSide,
+        notional: model.Money,
+        nullable_aggressor_side: model.AggressorSide | None,
+        nullable_notional: model.Money | None,
+        ts_event: int,
+        ts_init: int,
+    ) -> RustTestFixedCustomData: ...
+    def to_json(self) -> str: ...
+    @classmethod
+    def from_json(cls, data: typing.Any) -> typing.Any: ...
+
+@typing.final
+class RustTestParamsCustomData:
+    @property
+    def name(self) -> str: ...
+    @property
+    def params(self) -> dict: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+    @classmethod
+    def decode_record_batch_py(
+        cls, metadata: typing.Mapping[str, str], py_batch: typing.Any
+    ) -> typing.Any: ...
+    def encode_record_batch_py(self, items: list) -> typing.Any: ...
+    def __new__(
+        cls, name: str, params: dict, ts_event: int, ts_init: int
+    ) -> RustTestParamsCustomData: ...
+    def to_json(self) -> str: ...
+    @classmethod
+    def from_json(cls, data: typing.Any) -> typing.Any: ...
+
+@typing.final
+class RustTestPriceMapCustomData:
+    @property
+    def name(self) -> str: ...
+    @property
+    def prices(self) -> typing.Any: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+    @classmethod
+    def decode_record_batch_py(
+        cls, metadata: typing.Mapping[str, str], py_batch: typing.Any
+    ) -> typing.Any: ...
+    def encode_record_batch_py(self, items: list) -> typing.Any: ...
+    def __new__(
+        cls, name: str, prices: typing.Any, ts_event: int, ts_init: int
+    ) -> RustTestPriceMapCustomData: ...
+    def to_json(self) -> str: ...
+    @classmethod
+    def from_json(cls, data: typing.Any) -> typing.Any: ...
+
+@typing.final
+class RustTestTypedMapCustomData:
+    @property
+    def name(self) -> str: ...
+    @property
+    def instrument_ids(self) -> typing.Any: ...
+    @property
+    def account_ids(self) -> typing.Any: ...
+    @property
+    def currencies(self) -> typing.Any: ...
+    @property
+    def bar_types(self) -> typing.Any: ...
+    @property
+    def prices(self) -> typing.Any: ...
+    @property
+    def quantities(self) -> typing.Any: ...
+    @property
+    def monies(self) -> typing.Any: ...
+    @property
+    def prices_by_instrument(self) -> typing.Any: ...
+    @property
+    def quantities_by_account(self) -> typing.Any: ...
+    @property
+    def monies_by_currency(self) -> typing.Any: ...
+    @property
+    def prices_by_bar_type(self) -> typing.Any: ...
+    @property
+    def hash_prices_by_instrument(self) -> typing.Any: ...
+    @property
+    def strings(self) -> typing.Any: ...
+    @property
+    def floats_64(self) -> typing.Any: ...
+    @property
+    def floats_32(self) -> typing.Any: ...
+    @property
+    def booleans(self) -> typing.Any: ...
+    @property
+    def integers_u64(self) -> typing.Any: ...
+    @property
+    def integers_i64(self) -> typing.Any: ...
+    @property
+    def integers_u32(self) -> typing.Any: ...
+    @property
+    def integers_i32(self) -> typing.Any: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+    @classmethod
+    def decode_record_batch_py(
+        cls, metadata: typing.Mapping[str, str], py_batch: typing.Any
+    ) -> typing.Any: ...
+    def encode_record_batch_py(self, items: list) -> typing.Any: ...
+    def __new__(
+        cls,
+        name: str,
+        instrument_ids: typing.Any,
+        account_ids: typing.Any,
+        currencies: typing.Any,
+        bar_types: typing.Any,
+        prices: typing.Any,
+        quantities: typing.Any,
+        monies: typing.Any,
+        prices_by_instrument: typing.Any,
+        quantities_by_account: typing.Any,
+        monies_by_currency: typing.Any,
+        prices_by_bar_type: typing.Any,
+        hash_prices_by_instrument: typing.Any,
+        strings: typing.Any,
+        floats_64: typing.Any,
+        floats_32: typing.Any,
+        booleans: typing.Any,
+        integers_u64: typing.Any,
+        integers_i64: typing.Any,
+        integers_u32: typing.Any,
+        integers_i32: typing.Any,
+        ts_event: int,
+        ts_init: int,
+    ) -> RustTestTypedMapCustomData: ...
+    def to_json(self) -> str: ...
+    @classmethod
+    def from_json(cls, data: typing.Any) -> typing.Any: ...
 
 @typing.final
 class TradeTickDataWrangler:

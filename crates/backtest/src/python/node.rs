@@ -48,7 +48,7 @@ use crate::{
 impl BacktestNode {
     /// Orchestrates catalog-driven backtests from run configurations.
     ///
-    /// `BacktestNode` connects the `ParquetDataCatalog` with `BacktestEngine` to load
+    /// `BacktestNode` connects the a catalog with `BacktestEngine` to load
     /// historical data and run backtests. Supports both oneshot and streaming modes.
     #[new]
     fn py_new(configs: Vec<BacktestRunConfig>) -> PyResult<Self> {

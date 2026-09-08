@@ -43,10 +43,14 @@ use nautilus_model::{
     types::{Currency, Money},
 };
 #[cfg(feature = "streaming")]
+use nautilus_persistence::config::CatalogBackendType;
+#[cfg(feature = "streaming")]
 use nautilus_persistence::config::DataCatalogConfig;
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
-use nautilus_system::config::{NautilusKernelConfig, StreamingConfig};
+use nautilus_system::config::NautilusKernelConfig;
+#[cfg(feature = "streaming")]
+use nautilus_system::config::StreamingConfig;
 use nautilus_trading::ImportableControllerConfig;
 use rust_decimal::Decimal;
 use strum::{AsRefStr, EnumIter, IntoEnumIterator};
@@ -168,6 +172,7 @@ pub struct BacktestEngineConfig {
     /// The importable controller configuration.
     pub controller: Option<ImportableControllerConfig>,
     /// The configuration for streaming to feather files.
+    #[cfg(feature = "streaming")]
     pub streaming: Option<StreamingConfig>,
     /// Configurations for existing data catalogs.
     #[cfg(feature = "streaming")]
@@ -258,6 +263,7 @@ impl NautilusKernelConfig for BacktestEngineConfig {
         self.portfolio
     }
 
+    #[cfg(feature = "streaming")]
     fn streaming(&self) -> Option<StreamingConfig> {
         self.streaming.clone()
     }
@@ -836,6 +842,10 @@ pub struct BacktestDataConfig {
     data_type: NautilusDataType,
     /// The path to the data catalog.
     catalog_path: String,
+    /// Catalog backend used for data loading.
+    #[builder(default)]
+    #[cfg(feature = "streaming")]
+    catalog_backend: CatalogBackendType,
     /// The `fsspec` filesystem protocol for the catalog.
     catalog_fs_protocol: Option<String>,
     /// The filesystem storage options for the catalog (e.g. cloud auth credentials).
@@ -880,6 +890,13 @@ impl<S: backtest_data_config_builder::IsComplete> BacktestDataConfigBuilder<S> {
 }
 
 impl BacktestDataConfig {
+    /// Returns the configured catalog backend.
+    #[must_use]
+    #[cfg(feature = "streaming")]
+    pub fn catalog_backend(&self) -> CatalogBackendType {
+        self.catalog_backend.clone()
+    }
+
     /// Validates the data configuration, collecting every field violation.
     ///
     /// # Errors
