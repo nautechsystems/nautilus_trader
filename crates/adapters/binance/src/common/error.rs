@@ -17,6 +17,8 @@
 
 use std::fmt::Display;
 
+use crate::common::consts::{BINANCE_STATUS_UNKNOWN_CODE, BINANCE_UNEXPECTED_RESPONSE_CODE};
+
 /// Binance WebSocket streams error type shared by spot and futures clients.
 #[derive(Debug)]
 pub enum BinanceWsError {
@@ -77,100 +79,29 @@ pub enum BinanceError {
     Config(String),
 }
 
-/// Binance error codes indicating authentication or permission failures.
-const BINANCE_AUTH_ERROR_CODES: [i64; 3] = [
-    -2015, // Invalid API-key, IP, or permissions for action
-    -2014, // API-key format invalid
-    -1022, // Signature for this request is not valid
-];
-
 /// Binance error codes indicating rate limiting or throttling.
 const BINANCE_RATE_LIMIT_ERROR_CODES: [i64; 2] = [
     -1003, // Too many requests; WAF limit violated
     -1015, // Too many new orders; rate limit violated
 ];
 
-impl BinanceError {
-    /// Returns `true` if the error is likely transient and the operation can be retried.
-    #[must_use]
-    pub fn is_retryable(&self) -> bool {
-        match self {
-            Self::SpotHttp(e) => match e {
-                crate::spot::http::error::BinanceSpotHttpError::NetworkError(_)
-                | crate::spot::http::error::BinanceSpotHttpError::Timeout(_) => true,
-                crate::spot::http::error::BinanceSpotHttpError::BinanceError { code, .. } => {
-                    BINANCE_RATE_LIMIT_ERROR_CODES.contains(code)
-                }
-                crate::spot::http::error::BinanceSpotHttpError::UnexpectedStatus {
-                    status, ..
-                } => *status == 429 || *status >= 500,
-                _ => false,
-            },
-            Self::FuturesHttp(e) => match e {
-                crate::futures::http::error::BinanceFuturesHttpError::NetworkError(_)
-                | crate::futures::http::error::BinanceFuturesHttpError::Timeout(_) => true,
-                crate::futures::http::error::BinanceFuturesHttpError::BinanceError {
-                    code, ..
-                } => BINANCE_RATE_LIMIT_ERROR_CODES.contains(code),
-                crate::futures::http::error::BinanceFuturesHttpError::UnexpectedStatus {
-                    status,
-                    ..
-                } => *status == 429 || *status >= 500,
-                _ => false,
-            },
-            Self::WebSocket(e) => matches!(
-                e,
-                BinanceWsError::NetworkError(_) | BinanceWsError::Timeout(_)
-            ),
-            Self::SpotWsApi(e) => matches!(
-                e,
-                crate::spot::websocket::trading::error::BinanceWsApiError::ConnectionError(_)
-                    | crate::spot::websocket::trading::error::BinanceWsApiError::Timeout(_)
-            ),
-            Self::FuturesWsApi(e) => matches!(
-                e,
-                crate::futures::websocket::trading::error::BinanceFuturesWsApiError::ConnectionError(_)
-            ),
-            Self::Config(_) => false,
-        }
-    }
+/// Returns `true` when the venue error code marks a transient rate-limit failure.
+pub(crate) fn is_retryable_venue_code(code: i64) -> bool {
+    BINANCE_RATE_LIMIT_ERROR_CODES.contains(&code)
+}
 
-    /// Returns `true` if the error is fatal and requires intervention.
-    #[must_use]
-    pub fn is_fatal(&self) -> bool {
-        match self {
-            Self::SpotHttp(e) => match e {
-                crate::spot::http::error::BinanceSpotHttpError::MissingCredentials => true,
-                crate::spot::http::error::BinanceSpotHttpError::BinanceError { code, .. } => {
-                    BINANCE_AUTH_ERROR_CODES.contains(code)
-                }
-                crate::spot::http::error::BinanceSpotHttpError::UnexpectedStatus {
-                    status, ..
-                } => *status == 401 || *status == 403,
-                _ => false,
-            },
-            Self::FuturesHttp(e) => match e {
-                crate::futures::http::error::BinanceFuturesHttpError::MissingCredentials => true,
-                crate::futures::http::error::BinanceFuturesHttpError::BinanceError {
-                    code, ..
-                } => BINANCE_AUTH_ERROR_CODES.contains(code),
-                crate::futures::http::error::BinanceFuturesHttpError::UnexpectedStatus {
-                    status,
-                    ..
-                } => *status == 401 || *status == 403,
-                _ => false,
-            },
-            Self::WebSocket(e) => {
-                matches!(e, BinanceWsError::AuthenticationError(_))
-            }
-            Self::SpotWsApi(e) => matches!(
-                e,
-                crate::spot::websocket::trading::error::BinanceWsApiError::AuthenticationError(_)
-            ),
-            Self::FuturesWsApi(_) => false,
-            Self::Config(_) => true,
-        }
-    }
+/// Returns `true` when the HTTP status marks a transient failure (rate limited,
+/// auto-banned, or a server error).
+pub(crate) fn is_retryable_http_status(status: u16) -> bool {
+    status == 429 || status == 418 || status >= 500
+}
+
+/// Returns `true` when the venue error code means execution status is unknown.
+///
+/// Binance documents -1006 (unexpected matching-engine response) and -1007 (backend
+/// timeout) as "send status unknown; execution status unknown" for any request.
+pub(crate) fn is_ambiguous_venue_code(code: i64) -> bool {
+    code == BINANCE_UNEXPECTED_RESPONSE_CODE || code == BINANCE_STATUS_UNKNOWN_CODE
 }
 
 #[cfg(test)]
@@ -178,167 +109,37 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::{
-        futures::http::error::BinanceFuturesHttpError, spot::http::error::BinanceSpotHttpError,
-    };
 
     #[rstest]
-    fn test_spot_http_network_error_is_retryable() {
-        let err = BinanceError::SpotHttp(BinanceSpotHttpError::NetworkError(
-            "connection reset".to_string(),
-        ));
-        assert!(err.is_retryable());
-        assert!(!err.is_fatal());
+    #[case::too_many_requests(-1003, true)]
+    #[case::too_many_new_orders(-1015, true)]
+    #[case::illegal_characters(-1100, false)]
+    #[case::invalid_api_key(-2015, false)]
+    #[case::invalid_signature(-1022, false)]
+    #[case::unexpected_response(-1006, false)]
+    fn test_is_retryable_venue_code(#[case] code: i64, #[case] expected: bool) {
+        assert_eq!(is_retryable_venue_code(code), expected);
     }
 
     #[rstest]
-    fn test_spot_http_timeout_is_retryable() {
-        let err = BinanceError::SpotHttp(BinanceSpotHttpError::Timeout("timed out".to_string()));
-        assert!(err.is_retryable());
+    #[case::rate_limited(429, true)]
+    #[case::banned(418, true)]
+    #[case::server_error(500, true)]
+    #[case::bad_gateway(502, true)]
+    #[case::bad_request(400, false)]
+    #[case::unauthorized(401, false)]
+    #[case::forbidden(403, false)]
+    #[case::success(200, false)]
+    fn test_is_retryable_http_status(#[case] status: u16, #[case] expected: bool) {
+        assert_eq!(is_retryable_http_status(status), expected);
     }
 
     #[rstest]
-    fn test_spot_http_missing_credentials_is_fatal() {
-        let err = BinanceError::SpotHttp(BinanceSpotHttpError::MissingCredentials);
-        assert!(err.is_fatal());
-        assert!(!err.is_retryable());
-    }
-
-    #[rstest]
-    fn test_spot_http_binance_error_is_not_retryable() {
-        let err = BinanceError::SpotHttp(BinanceSpotHttpError::BinanceError {
-            code: -1021,
-            message: "Timestamp for this request was 1000ms ahead".to_string(),
-        });
-        assert!(!err.is_retryable());
-        assert!(!err.is_fatal());
-    }
-
-    #[rstest]
-    fn test_futures_http_network_error_is_retryable() {
-        let err = BinanceError::FuturesHttp(BinanceFuturesHttpError::NetworkError(
-            "connection refused".to_string(),
-        ));
-        assert!(err.is_retryable());
-        assert!(!err.is_fatal());
-    }
-
-    #[rstest]
-    fn test_futures_http_missing_credentials_is_fatal() {
-        let err = BinanceError::FuturesHttp(BinanceFuturesHttpError::MissingCredentials);
-        assert!(err.is_fatal());
-        assert!(!err.is_retryable());
-    }
-
-    #[rstest]
-    fn test_ws_auth_error_is_fatal() {
-        let err = BinanceError::WebSocket(BinanceWsError::AuthenticationError(
-            "invalid key".to_string(),
-        ));
-        assert!(err.is_fatal());
-        assert!(!err.is_retryable());
-    }
-
-    #[rstest]
-    fn test_ws_network_error_is_retryable() {
-        let err =
-            BinanceError::WebSocket(BinanceWsError::NetworkError("connection lost".to_string()));
-        assert!(err.is_retryable());
-        assert!(!err.is_fatal());
-    }
-
-    #[rstest]
-    fn test_config_error_is_fatal() {
-        let err = BinanceError::Config("invalid product type".to_string());
-        assert!(err.is_fatal());
-        assert!(!err.is_retryable());
-    }
-
-    #[rstest]
-    fn test_spot_http_auth_error_code_is_fatal() {
-        let err = BinanceError::SpotHttp(BinanceSpotHttpError::BinanceError {
-            code: -2015,
-            message: "Invalid API-key, IP, or permissions for action".to_string(),
-        });
-        assert!(err.is_fatal());
-        assert!(!err.is_retryable());
-    }
-
-    #[rstest]
-    fn test_futures_http_auth_error_code_is_fatal() {
-        let err = BinanceError::FuturesHttp(BinanceFuturesHttpError::BinanceError {
-            code: -2015,
-            message: "Invalid API-key".to_string(),
-        });
-        assert!(err.is_fatal());
-        assert!(!err.is_retryable());
-    }
-
-    #[rstest]
-    fn test_spot_http_invalid_signature_is_fatal() {
-        let err = BinanceError::SpotHttp(BinanceSpotHttpError::BinanceError {
-            code: -1022,
-            message: "Signature for this request is not valid".to_string(),
-        });
-        assert!(err.is_fatal());
-    }
-
-    #[rstest]
-    fn test_spot_http_rate_limit_is_retryable() {
-        let err = BinanceError::SpotHttp(BinanceSpotHttpError::BinanceError {
-            code: -1015,
-            message: "Too many new orders".to_string(),
-        });
-        assert!(err.is_retryable());
-        assert!(!err.is_fatal());
-    }
-
-    #[rstest]
-    fn test_futures_http_rate_limit_is_retryable() {
-        let err = BinanceError::FuturesHttp(BinanceFuturesHttpError::BinanceError {
-            code: -1003,
-            message: "Too many requests".to_string(),
-        });
-        assert!(err.is_retryable());
-        assert!(!err.is_fatal());
-    }
-
-    #[rstest]
-    fn test_spot_http_unexpected_status_429_is_retryable() {
-        let err = BinanceError::SpotHttp(BinanceSpotHttpError::UnexpectedStatus {
-            status: 429,
-            body: "rate limited".to_string(),
-        });
-        assert!(err.is_retryable());
-    }
-
-    #[rstest]
-    fn test_spot_http_unexpected_status_500_is_retryable() {
-        let err = BinanceError::SpotHttp(BinanceSpotHttpError::UnexpectedStatus {
-            status: 500,
-            body: "internal server error".to_string(),
-        });
-        assert!(err.is_retryable());
-    }
-
-    #[rstest]
-    fn test_spot_http_unexpected_status_401_is_fatal() {
-        let err = BinanceError::SpotHttp(BinanceSpotHttpError::UnexpectedStatus {
-            status: 401,
-            body: "unauthorized".to_string(),
-        });
-        assert!(err.is_fatal());
-        assert!(!err.is_retryable());
-    }
-
-    #[rstest]
-    fn test_display_formatting() {
-        let err = BinanceError::SpotHttp(BinanceSpotHttpError::BinanceError {
-            code: -1100,
-            message: "Illegal characters found".to_string(),
-        });
-        let msg = err.to_string();
-        assert!(msg.contains("Spot HTTP error"));
-        assert!(msg.contains("-1100"));
+    #[case::unexpected_response(-1006, true)]
+    #[case::status_unknown(-1007, true)]
+    #[case::rate_limit(-1003, false)]
+    #[case::no_such_order(-2013, false)]
+    fn test_is_ambiguous_venue_code(#[case] code: i64, #[case] expected: bool) {
+        assert_eq!(is_ambiguous_venue_code(code), expected);
     }
 }

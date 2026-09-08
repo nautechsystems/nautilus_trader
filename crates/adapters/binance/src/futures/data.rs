@@ -196,7 +196,8 @@ impl BinanceFuturesDataClient {
             None, // timeout_secs
             proxy_url.clone(),
             false, // treat_expired_as_canceled
-        )?;
+        )?
+        .with_retry_config(config.retry_config());
 
         let market_url = config.base_url_ws.clone().map(|url| {
             if product_type == BinanceProductType::UsdM

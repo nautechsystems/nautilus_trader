@@ -264,6 +264,10 @@ impl BinanceFuturesWsTradingClient {
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();
 
+        cmd_tx
+            .send(BinanceFuturesWsTradingCommand::SetClient(client))
+            .map_err(|e| BinanceFuturesWsApiError::HandlerUnavailable(e.to_string()))?;
+
         {
             let mut rx_guard = self.out_rx.lock();
             *rx_guard = Some(out_rx);
@@ -280,11 +284,6 @@ impl BinanceFuturesWsTradingClient {
             BinanceFuturesWsTradingHandler::new(signal, cmd_rx, raw_rx, out_tx, credential)
                 .with_recv_window(self.recv_window_ms);
 
-        self.cmd_tx
-            .read()
-            .await
-            .send(BinanceFuturesWsTradingCommand::SetClient(client))
-            .map_err(|e| BinanceFuturesWsApiError::HandlerUnavailable(e.to_string()))?;
         if let Some(control) = &self.socket_control {
             control.register(move || reconnect_handle.request_reconnect());
         }

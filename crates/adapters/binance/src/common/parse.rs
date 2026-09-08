@@ -1017,9 +1017,12 @@ pub fn parse_spot_trades_sbe(
 }
 
 /// Maps Binance SBE order status to Nautilus order status.
-#[must_use]
-pub const fn map_order_status_sbe(status: SbeOrderStatus) -> OrderStatus {
-    match status {
+///
+/// # Errors
+///
+/// Returns an error for an unknown or absent venue value.
+pub fn map_order_status_sbe(status: SbeOrderStatus) -> anyhow::Result<OrderStatus> {
+    Ok(match status {
         SbeOrderStatus::New => OrderStatus::Accepted,
         SbeOrderStatus::PendingNew => OrderStatus::Submitted,
         SbeOrderStatus::PartiallyFilled => OrderStatus::PartiallyFilled,
@@ -1029,21 +1032,26 @@ pub const fn map_order_status_sbe(status: SbeOrderStatus) -> OrderStatus {
         SbeOrderStatus::Rejected => OrderStatus::Rejected,
         SbeOrderStatus::Expired | SbeOrderStatus::ExpiredInMatch => OrderStatus::Expired,
         SbeOrderStatus::Unknown | SbeOrderStatus::NonRepresentable | SbeOrderStatus::NullVal => {
-            OrderStatus::Initialized
+            anyhow::bail!("unknown Binance SBE order status")
         }
-    }
+    })
 }
 
 /// Maps Binance SBE order type to Nautilus order type.
-#[must_use]
-pub const fn map_order_type_sbe(order_type: SbeOrderType) -> OrderType {
-    match order_type {
+///
+/// # Errors
+///
+/// Returns an error for an unknown or absent venue value.
+pub fn map_order_type_sbe(order_type: SbeOrderType) -> anyhow::Result<OrderType> {
+    Ok(match order_type {
         SbeOrderType::Market => OrderType::Market,
         SbeOrderType::Limit | SbeOrderType::LimitMaker => OrderType::Limit,
         SbeOrderType::StopLoss | SbeOrderType::TakeProfit => OrderType::StopMarket,
         SbeOrderType::StopLossLimit | SbeOrderType::TakeProfitLimit => OrderType::StopLimit,
-        SbeOrderType::NonRepresentable | SbeOrderType::NullVal => OrderType::Market,
-    }
+        SbeOrderType::NonRepresentable | SbeOrderType::NullVal => {
+            anyhow::bail!("unknown Binance SBE order type")
+        }
+    })
 }
 
 /// Maps Binance SBE order side to Nautilus order side.
@@ -1057,14 +1065,19 @@ pub const fn map_order_side_sbe(side: SbeOrderSide) -> Option<OrderSide> {
 }
 
 /// Maps Binance SBE time in force to Nautilus time in force.
-#[must_use]
-pub const fn map_time_in_force_sbe(tif: SbeTimeInForce) -> TimeInForce {
-    match tif {
+///
+/// # Errors
+///
+/// Returns an error for an unknown or absent venue value.
+pub fn map_time_in_force_sbe(tif: SbeTimeInForce) -> anyhow::Result<TimeInForce> {
+    Ok(match tif {
         SbeTimeInForce::Gtc => TimeInForce::Gtc,
         SbeTimeInForce::Ioc => TimeInForce::Ioc,
         SbeTimeInForce::Fok => TimeInForce::Fok,
-        SbeTimeInForce::NonRepresentable | SbeTimeInForce::NullVal => TimeInForce::Gtc,
-    }
+        SbeTimeInForce::NonRepresentable | SbeTimeInForce::NullVal => {
+            anyhow::bail!("unknown Binance SBE time in force")
+        }
+    })
 }
 
 /// Parses a Binance SBE order response into a Nautilus `OrderStatusReport`.
@@ -1136,10 +1149,10 @@ pub fn parse_order_status_report_sbe(
     });
 
     // Map enums
-    let order_status = map_order_status_sbe(order.status);
-    let order_type = map_order_type_sbe(order.order_type);
+    let order_status = map_order_status_sbe(order.status)?;
+    let order_type = map_order_type_sbe(order.order_type)?;
     let order_side = map_order_side_sbe(order.side);
-    let time_in_force = map_time_in_force_sbe(order.time_in_force);
+    let time_in_force = map_time_in_force_sbe(order.time_in_force)?;
 
     // Determine trigger type for stop orders
     let trigger_type = if trigger_price.is_some() {
@@ -1279,10 +1292,10 @@ pub fn parse_new_order_response_sbe(
         }
     });
 
-    let order_status = map_order_status_sbe(response.status);
-    let order_type = map_order_type_sbe(response.order_type);
+    let order_status = map_order_status_sbe(response.status)?;
+    let order_type = map_order_type_sbe(response.order_type)?;
     let order_side = map_order_side_sbe(response.side);
-    let time_in_force = map_time_in_force_sbe(response.time_in_force);
+    let time_in_force = map_time_in_force_sbe(response.time_in_force)?;
 
     let trigger_type = if trigger_price.is_some() {
         Some(TriggerType::LastPrice)
@@ -1602,6 +1615,34 @@ mod tests {
         consts::BINANCE_NAUTILUS_SPOT_BROKER_ID,
         enums::{BinanceContractStatus, BinanceTradingStatus},
     };
+
+    #[rstest]
+    fn test_sbe_order_mappings_reject_unknown_values() {
+        for status in [
+            SbeOrderStatus::Unknown,
+            SbeOrderStatus::NonRepresentable,
+            SbeOrderStatus::NullVal,
+        ] {
+            assert_eq!(
+                map_order_status_sbe(status).unwrap_err().to_string(),
+                "unknown Binance SBE order status"
+            );
+        }
+
+        for order_type in [SbeOrderType::NonRepresentable, SbeOrderType::NullVal] {
+            assert_eq!(
+                map_order_type_sbe(order_type).unwrap_err().to_string(),
+                "unknown Binance SBE order type"
+            );
+        }
+
+        for tif in [SbeTimeInForce::NonRepresentable, SbeTimeInForce::NullVal] {
+            assert_eq!(
+                map_time_in_force_sbe(tif).unwrap_err().to_string(),
+                "unknown Binance SBE time in force"
+            );
+        }
+    }
 
     #[rstest]
     fn test_quote_to_l1_deltas_maps_all_fields() {

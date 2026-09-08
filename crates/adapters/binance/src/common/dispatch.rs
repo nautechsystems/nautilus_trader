@@ -27,7 +27,7 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::{OrderSide, OrderType},
-    events::{OrderAccepted, OrderEventAny},
+    events::{OrderAccepted, OrderCanceled, OrderEventAny},
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, VenueOrderId},
     types::{Price, Quantity},
 };
@@ -84,6 +84,8 @@ pub struct WsDispatchState {
     pub order_identities: DashMap<ClientOrderId, OrderIdentity>,
     pub pending_requests: DashMap<String, PendingRequest>,
     algo_order_ids: DashMap<ClientOrderId, AlgoOrderIds>,
+    order_updates: DashMap<ClientOrderId, OrderUpdate>,
+    replacements: DashMap<ClientOrderId, PendingReplacement>,
     emitted_accepted: Mutex<FifoCache<ClientOrderId, 10_000>>,
     filled_orders: Mutex<FifoCache<ClientOrderId, 10_000>>,
 }
@@ -94,6 +96,8 @@ impl Default for WsDispatchState {
             order_identities: DashMap::new(),
             pending_requests: DashMap::new(),
             algo_order_ids: DashMap::new(),
+            order_updates: DashMap::new(),
+            replacements: DashMap::new(),
             emitted_accepted: Mutex::new(FifoCache::new()),
             filled_orders: Mutex::new(FifoCache::new()),
         }
@@ -148,13 +152,88 @@ impl WsDispatchState {
             .and_then(|ids| (ids.current != ids.algo).then_some(ids.current))
     }
 
+    pub(crate) fn record_order_update(
+        &self,
+        cid: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        quantity: Quantity,
+        price: Price,
+        trigger_price: Option<Price>,
+    ) -> bool {
+        let update = OrderUpdate {
+            venue_order_id,
+            quantity,
+            price,
+            trigger_price,
+        };
+        let changed = self
+            .order_updates
+            .insert(cid, update)
+            .is_none_or(|previous| previous != update);
+        self.replacements
+            .remove_if(&cid, |_, pending| pending.venue_order_id != venue_order_id);
+        changed
+    }
+
+    pub(crate) fn begin_replace(&self, cid: ClientOrderId, venue_order_id: VenueOrderId) {
+        self.replacements.insert(
+            cid,
+            PendingReplacement {
+                venue_order_id,
+                canceled: None,
+            },
+        );
+    }
+
+    pub(crate) fn defer_replace_cancel(&self, canceled: OrderCanceled) -> bool {
+        let cid = canceled.client_order_id;
+
+        if self
+            .order_updates
+            .get(&cid)
+            .is_some_and(|update| Some(update.venue_order_id) != canceled.venue_order_id)
+        {
+            return true;
+        }
+
+        if let Some(mut pending) = self.replacements.get_mut(&cid)
+            && Some(pending.venue_order_id) == canceled.venue_order_id
+        {
+            pending.canceled = Some(canceled);
+            return true;
+        }
+        false
+    }
+
+    pub(crate) fn reject_replace(&self, cid: ClientOrderId) -> Option<OrderCanceled> {
+        self.replacements
+            .remove(&cid)
+            .and_then(|(_, pending)| pending.canceled)
+    }
+
     /// Removes all tracking state for a terminal order.
     pub fn cleanup_terminal(&self, cid: ClientOrderId) {
         self.order_identities.remove(&cid);
         self.algo_order_ids.remove(&cid);
+        self.order_updates.remove(&cid);
+        self.replacements.remove(&cid);
         self.emitted_accepted.lock().remove(&cid);
         self.filled_orders.lock().remove(&cid);
     }
+}
+
+#[derive(Debug)]
+struct PendingReplacement {
+    venue_order_id: VenueOrderId,
+    canceled: Option<OrderCanceled>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct OrderUpdate {
+    venue_order_id: VenueOrderId,
+    quantity: Quantity,
+    price: Price,
+    trigger_price: Option<Price>,
 }
 
 /// Synthesizes and emits OrderAccepted if one has not yet been emitted.

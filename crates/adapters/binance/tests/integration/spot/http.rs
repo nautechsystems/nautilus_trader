@@ -1543,6 +1543,51 @@ async fn test_rate_limit_triggers_after_threshold() {
 
 #[rstest]
 #[tokio::test]
+async fn test_instrument_requests_refresh_venue_symbols() {
+    let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let captured = count.clone();
+    let app = Router::new().route(
+        "/api/v3/exchangeInfo",
+        get(move || {
+            let captured = captured.clone();
+            async move {
+                let symbols = if captured.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+                    vec![("BTCUSDT", "BTC", "USDT")]
+                } else {
+                    vec![("ETHUSDT", "ETH", "USDT")]
+                };
+                sbe_response(build_exchange_info_response(&symbols))
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let client = BinanceSpotHttpClient::new(
+        BinanceEnvironment::Live,
+        get_atomic_clock_realtime(),
+        None,
+        None,
+        Some(url),
+        None,
+        Some(5),
+        None,
+    )
+    .unwrap();
+
+    let first = client.request_instruments().await.unwrap();
+    let second = client.request_instruments().await.unwrap();
+    server.abort();
+
+    assert_eq!(count.load(std::sync::atomic::Ordering::Relaxed), 2);
+    assert_eq!(first.len(), 1);
+    assert_eq!(second.len(), 1);
+    assert_eq!(first[0].id(), InstrumentId::from("BTCUSDT.BINANCE"));
+    assert_eq!(second[0].id(), InstrumentId::from("ETHUSDT.BINANCE"));
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_domain_client_request_instruments() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
     let base_url = format!("http://{addr}");

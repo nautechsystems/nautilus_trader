@@ -597,7 +597,6 @@ impl BinanceSpotPublicJsonWebSocketClient {
             .send(BinanceSpotPublicWsCommand::SetClient(client))
             .map_err(|e| anyhow::anyhow!("Failed to set Spot public JSON WS client: {e}"))?;
 
-        let signal = self.signal.clone();
         let token = cancellation_token.clone();
         let resubscribe_tx = cmd_tx.clone();
 
@@ -635,12 +634,7 @@ impl BinanceSpotPublicJsonWebSocketClient {
                                     break;
                                 }
                             }
-                            None => {
-                                if signal.load(Ordering::Relaxed) {
-                                    break;
-                                }
-                                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-                            }
+                            None => break,
                         }
                     }
                 }

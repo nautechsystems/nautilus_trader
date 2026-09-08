@@ -344,12 +344,28 @@ impl BinanceFuturesWsTradingHandler {
         };
 
         if response.status != 200 {
-            let (code, msg) = response.error.map(|e| (e.code, e.msg)).unwrap_or((
-                -1,
-                format!("Request failed with status {}", response.status),
-            ));
-            let rejection = self.create_rejection(response.id, code, msg, meta);
-            self.emit(rejection);
+            match response.error {
+                Some(error) => {
+                    let rejection = self.create_rejection(
+                        response.id,
+                        response.status,
+                        error.code,
+                        error.msg,
+                        meta,
+                    );
+                    self.emit(rejection);
+                }
+                // A missing error payload carries no definitive command evidence
+                None => {
+                    self.emit(BinanceFuturesWsTradingMessage::RequestFailed {
+                        request_id: response.id,
+                        msg: format!(
+                            "Request failed with status {}; error payload missing",
+                            response.status
+                        ),
+                    });
+                }
+            }
             return;
         }
 
@@ -408,6 +424,7 @@ impl BinanceFuturesWsTradingHandler {
     fn create_rejection(
         &self,
         request_id: String,
+        status: u16,
         code: i32,
         msg: String,
         meta: BinanceFuturesWsTradingRequestMeta,
@@ -416,6 +433,7 @@ impl BinanceFuturesWsTradingHandler {
             BinanceFuturesWsTradingRequestMeta::PlaceOrder => {
                 BinanceFuturesWsTradingMessage::OrderRejected {
                     request_id,
+                    status,
                     code,
                     msg,
                 }
@@ -423,6 +441,7 @@ impl BinanceFuturesWsTradingHandler {
             BinanceFuturesWsTradingRequestMeta::CancelOrder => {
                 BinanceFuturesWsTradingMessage::CancelRejected {
                     request_id,
+                    status,
                     code,
                     msg,
                 }
@@ -430,6 +449,7 @@ impl BinanceFuturesWsTradingHandler {
             BinanceFuturesWsTradingRequestMeta::ModifyOrder => {
                 BinanceFuturesWsTradingMessage::ModifyRejected {
                     request_id,
+                    status,
                     code,
                     msg,
                 }

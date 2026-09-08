@@ -106,6 +106,8 @@ pub enum BinanceSpotWsTradingMessage {
     OrderRejected {
         /// Request ID for correlation.
         request_id: String,
+        /// Venue response status.
+        status: u16,
         /// Error code from venue.
         code: i32,
         /// Error message from venue.
@@ -122,6 +124,8 @@ pub enum BinanceSpotWsTradingMessage {
     CancelRejected {
         /// Request ID for correlation.
         request_id: String,
+        /// Venue response status.
+        status: u16,
         /// Error code from venue.
         code: i32,
         /// Error message from venue.
@@ -140,6 +144,8 @@ pub enum BinanceSpotWsTradingMessage {
     CancelReplaceRejected {
         /// Request ID for correlation.
         request_id: String,
+        /// Venue response status.
+        status: u16,
         /// Error code from venue.
         code: i32,
         /// Error message from venue.

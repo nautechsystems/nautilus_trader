@@ -43,6 +43,9 @@ pub enum BinanceSpotExecutionType {
     Expired,
     /// Self-trade prevention triggered.
     TradePrevention,
+    /// Unknown or undocumented execution type.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Execution report event (`executionReport`) from the Spot user data stream.

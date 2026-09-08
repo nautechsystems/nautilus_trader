@@ -42,6 +42,8 @@ use crate::spot::sbe::{
         cancel_open_orders_response_codec::SBE_TEMPLATE_ID as CANCEL_OPEN_ORDERS_TEMPLATE_ID,
         cancel_order_list_response_codec::SBE_TEMPLATE_ID as CANCEL_ORDER_LIST_TEMPLATE_ID,
         cancel_order_response_codec::SBE_TEMPLATE_ID as CANCEL_ORDER_TEMPLATE_ID,
+        cancel_replace_order_response_codec::SBE_TEMPLATE_ID as CANCEL_REPLACE_TEMPLATE_ID,
+        cancel_replace_status::CancelReplaceStatus,
         depth_response_codec::SBE_TEMPLATE_ID as DEPTH_TEMPLATE_ID,
         exchange_info_response_codec::SBE_TEMPLATE_ID as EXCHANGE_INFO_TEMPLATE_ID,
         klines_response_codec::SBE_TEMPLATE_ID as KLINES_TEMPLATE_ID,
@@ -493,6 +495,58 @@ pub fn decode_new_order_full(buf: &[u8]) -> Result<BinanceNewOrderResponse, SbeD
         fills,
         expiry_reason,
     })
+}
+
+/// Decodes the replacement order from a successful cancel-replace response.
+///
+/// # Errors
+///
+/// Returns an error for a malformed wrapper or an unsuccessful replacement.
+pub fn decode_cancel_replace(buf: &[u8]) -> Result<BinanceNewOrderResponse, SbeDecodeError> {
+    let (_, replacement) = decode_cancel_replace_payloads(buf)?;
+    decode_new_order_full(replacement)
+}
+
+pub(crate) fn decode_cancel_replace_orders(
+    buf: &[u8],
+) -> Result<(BinanceCancelOrderResponse, BinanceNewOrderResponse), SbeDecodeError> {
+    let (cancellation, replacement) = decode_cancel_replace_payloads(buf)?;
+    Ok((
+        decode_cancel_order(cancellation)?,
+        decode_new_order_full(replacement)?,
+    ))
+}
+
+fn decode_cancel_replace_payloads(buf: &[u8]) -> Result<(&[u8], &[u8]), SbeDecodeError> {
+    let mut cursor = SbeCursor::new(buf);
+    let header = MessageHeader::decode_cursor(&mut cursor)?;
+    header.validate()?;
+    if header.template_id != CANCEL_REPLACE_TEMPLATE_ID {
+        return Err(SbeDecodeError::UnknownTemplateId(header.template_id));
+    }
+
+    if header.block_length < 2 {
+        return Err(SbeDecodeError::InvalidBlockLength {
+            expected: 2,
+            actual: header.block_length,
+        });
+    }
+    let cancel_result = cursor.read_u8()?;
+    let new_order_result = cursor.read_u8()?;
+    cursor.advance(usize::from(header.block_length) - 2)?;
+
+    if cancel_result != CancelReplaceStatus::Success as u8
+        || new_order_result != CancelReplaceStatus::Success as u8
+    {
+        return Err(SbeDecodeError::InvalidValue {
+            field: "cancel-replace result",
+        });
+    }
+    let cancel_len = usize::from(cursor.read_u16_le()?);
+    let cancellation = cursor.read_bytes(cancel_len)?;
+    let new_order_len = cursor.read_u32_le()? as usize;
+    let replacement = cursor.read_bytes(new_order_len)?;
+    Ok((cancellation, replacement))
 }
 
 /// Decode a cancel order response.
@@ -2714,6 +2768,43 @@ mod tests {
         write_var_string(&mut buf, "ETHUSDT");
         write_var_string(&mut buf, "client-456");
         buf
+    }
+
+    #[rstest]
+    #[case::current(2)]
+    #[case::extended(5)]
+    fn test_decode_cancel_replace_nested_order(#[case] block_length: u16) {
+        let nested = build_new_order_full_v3_buffer(0xFF);
+        let mut buf = create_header(
+            block_length,
+            CANCEL_REPLACE_TEMPLATE_ID,
+            SBE_SCHEMA_ID,
+            SBE_SCHEMA_VERSION,
+        )
+        .to_vec();
+        buf.resize(HEADER_LENGTH + usize::from(block_length), 0);
+        buf.extend_from_slice(&3_u16.to_le_bytes());
+        buf.extend_from_slice(&[11, 22, 33]);
+        buf.extend_from_slice(&(nested.len() as u32).to_le_bytes());
+        buf.extend_from_slice(&nested);
+
+        let response = decode_cancel_replace(&buf).unwrap();
+        let expected = decode_new_order_full(&nested).unwrap();
+        assert_eq!(response, expected);
+
+        for end in 0..buf.len() {
+            assert!(
+                decode_cancel_replace(&buf[..end]).is_err(),
+                "Accepted truncated response at {end}"
+            );
+        }
+        buf[HEADER_LENGTH + 1] = CancelReplaceStatus::Failure as u8;
+        assert!(matches!(
+            decode_cancel_replace(&buf),
+            Err(SbeDecodeError::InvalidValue {
+                field: "cancel-replace result"
+            })
+        ));
     }
 
     #[rstest]

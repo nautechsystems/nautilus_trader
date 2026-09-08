@@ -1596,6 +1596,38 @@ async fn test_subscribe_l1_mbp_uses_json_top_of_book_and_rejects_invalid_depth()
 }
 
 #[rstest]
+#[case(1)]
+#[case(5)]
+#[case(10)]
+#[case(21)]
+#[tokio::test]
+async fn test_subscribe_book_deltas_rejects_unsupported_sbe_depth(#[case] depth: usize) {
+    let (mut client, _rx) = create_test_data_client(
+        "http://127.0.0.1:1".to_string(),
+        "ws://127.0.0.1:1/ws".to_string(),
+    );
+    let cmd = SubscribeBookDeltas::new(
+        InstrumentId::from("BTCUSDT.BINANCE"),
+        BookType::L2_MBP,
+        Some(*BINANCE_CLIENT_ID),
+        None,
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        NonZeroUsize::new(depth),
+        false,
+        None,
+        None,
+    );
+
+    let error = client.subscribe_book_deltas(cmd).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "Binance Spot SBE partial books support depth 20 only; use JSON market data for other depths",
+    );
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_subscribe_book_deltas_with_partial_depth_stream() {
     let addr = start_data_test_server().await;

@@ -14,5 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 mod futures;
+mod http_contracts;
+mod http_retry;
 mod python;
 mod spot;

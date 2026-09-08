@@ -351,9 +351,11 @@ pub enum BinanceFuturesOrderType {
     Unknown,
 }
 
-impl From<BinanceFuturesOrderType> for OrderType {
-    fn from(value: BinanceFuturesOrderType) -> Self {
-        match value {
+impl TryFrom<BinanceFuturesOrderType> for OrderType {
+    type Error = anyhow::Error;
+
+    fn try_from(value: BinanceFuturesOrderType) -> Result<Self, Self::Error> {
+        Ok(match value {
             BinanceFuturesOrderType::Limit => Self::Limit,
             BinanceFuturesOrderType::Market => Self::Market,
             BinanceFuturesOrderType::Stop => Self::StopLimit,
@@ -361,10 +363,9 @@ impl From<BinanceFuturesOrderType> for OrderType {
             BinanceFuturesOrderType::TakeProfit => Self::LimitIfTouched,
             BinanceFuturesOrderType::TakeProfitMarket => Self::MarketIfTouched,
             BinanceFuturesOrderType::TrailingStopMarket => Self::TrailingStopMarket,
-            BinanceFuturesOrderType::Liquidation
-            | BinanceFuturesOrderType::Adl
-            | BinanceFuturesOrderType::Unknown => Self::Market, // Exchange-generated orders
-        }
+            BinanceFuturesOrderType::Liquidation | BinanceFuturesOrderType::Adl => Self::Market,
+            BinanceFuturesOrderType::Unknown => anyhow::bail!("unknown Binance Futures order type"),
+        })
     }
 }
 

@@ -15,7 +15,7 @@
 
 //! Binance adapter configuration structures.
 
-use std::{any::Any, collections::HashMap, fmt::Debug, str::FromStr};
+use std::{any::Any, collections::HashMap, fmt::Debug, str::FromStr, time::Duration};
 
 use nautilus_common::factories::ClientConfig;
 #[cfg(test)]
@@ -26,7 +26,9 @@ use nautilus_model::{
     identifiers::{AccountId, InstrumentId},
     types::Currency,
 };
-use nautilus_network::websocket::TransportBackend;
+use nautilus_network::{
+    backoff::ExponentialBackoff, retry::RetryConfig, websocket::TransportBackend,
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -121,6 +123,15 @@ impl BinanceInstrumentProviderConfig {
 
         Ok(())
     }
+
+    pub(crate) fn excludes(&self, instrument_id: InstrumentId) -> bool {
+        !self.load_all
+            && self.load_ids.as_ref().is_some_and(|load_ids| {
+                load_ids
+                    .iter()
+                    .all(|raw_id| InstrumentId::from(raw_id.as_str()) != instrument_id)
+            })
+    }
 }
 
 fn validate_filter_strings(name: &str, value: &serde_json::Value) -> anyhow::Result<()> {
@@ -214,6 +225,15 @@ pub struct BinanceDataClientConfig {
     /// Receive window in milliseconds for signed HTTP requests.
     #[builder(default = 5_000)]
     pub recv_window_ms: u64,
+    /// Maximum retries for HTTP GET requests. Mutating requests are sent once.
+    #[builder(default = RetryConfig::default().max_retries)]
+    pub max_retries: u32,
+    /// Initial HTTP retry delay in milliseconds.
+    #[builder(default = RetryConfig::default().initial_delay_ms)]
+    pub retry_delay_initial_ms: u64,
+    /// Maximum exponential HTTP retry delay in milliseconds.
+    #[builder(default = RetryConfig::default().max_delay_ms)]
+    pub retry_delay_max_ms: u64,
     /// Whether to route this Spot client to Binance US.
     #[builder(default)]
     pub us: bool,
@@ -233,6 +253,9 @@ nautilus_core::impl_pyo3_config_getters!(BinanceDataClientConfig {
     instrument_refresh_interval_secs: u64,
     instrument_status_poll_secs: u64,
     recv_window_ms: u64,
+    max_retries: u32,
+    retry_delay_initial_ms: u64,
+    retry_delay_max_ms: u64,
     us: bool,
     transport_backend: TransportBackend,
 });
@@ -251,6 +274,7 @@ impl BinanceDataClientConfig {
     /// Returns an error for invalid receive-window, provider, or Binance US settings.
     pub fn validate(&self) -> anyhow::Result<()> {
         validate_recv_window(self.recv_window_ms)?;
+        validate_retry_config(&self.retry_config())?;
         self.instrument_provider.validate(self.product_type)?;
 
         if self.us {
@@ -269,6 +293,15 @@ impl BinanceDataClientConfig {
         }
 
         Ok(())
+    }
+
+    pub(crate) fn retry_config(&self) -> RetryConfig {
+        RetryConfig {
+            max_retries: self.max_retries,
+            initial_delay_ms: self.retry_delay_initial_ms,
+            max_delay_ms: self.retry_delay_max_ms,
+            ..crate::common::http::retry_config()
+        }
     }
 }
 
@@ -355,6 +388,15 @@ pub struct BinanceExecutionClientConfig {
     /// Receive window in milliseconds for signed HTTP requests.
     #[builder(default = 5_000)]
     pub recv_window_ms: u64,
+    /// Maximum retries for HTTP GET requests. Mutating requests are sent once.
+    #[builder(default = RetryConfig::default().max_retries)]
+    pub max_retries: u32,
+    /// Initial HTTP retry delay in milliseconds.
+    #[builder(default = RetryConfig::default().initial_delay_ms)]
+    pub retry_delay_initial_ms: u64,
+    /// Maximum exponential HTTP retry delay in milliseconds.
+    #[builder(default = RetryConfig::default().max_delay_ms)]
+    pub retry_delay_max_ms: u64,
     /// Whether to route this Spot client to Binance US.
     #[builder(default)]
     pub us: bool,
@@ -402,6 +444,9 @@ nautilus_core::impl_pyo3_config_getters!(BinanceExecutionClientConfig {
     oms_type: Option<OmsType>,
     default_taker_fee: Decimal,
     recv_window_ms: u64,
+    max_retries: u32,
+    retry_delay_initial_ms: u64,
+    retry_delay_max_ms: u64,
     us: bool,
     futures_leverages: Option<HashMap<String, u32>>,
     futures_margin_types: Option<HashMap<String, BinanceMarginType>>,
@@ -426,6 +471,7 @@ impl BinanceExecutionClientConfig {
     /// Binance US settings.
     pub fn validate(&self) -> anyhow::Result<()> {
         validate_recv_window(self.recv_window_ms)?;
+        validate_retry_config(&self.retry_config())?;
         anyhow::ensure!(
             self.ws_trading_setup_timeout_ms > 0,
             "ws_trading_setup_timeout_ms must be greater than 0, was {}",
@@ -446,6 +492,26 @@ impl BinanceExecutionClientConfig {
 
         Ok(())
     }
+
+    pub(crate) fn retry_config(&self) -> RetryConfig {
+        RetryConfig {
+            max_retries: self.max_retries,
+            initial_delay_ms: self.retry_delay_initial_ms,
+            max_delay_ms: self.retry_delay_max_ms,
+            ..crate::common::http::retry_config()
+        }
+    }
+}
+
+fn validate_retry_config(config: &RetryConfig) -> anyhow::Result<()> {
+    ExponentialBackoff::new(
+        Duration::from_millis(config.initial_delay_ms),
+        Duration::from_millis(config.max_delay_ms),
+        config.backoff_factor,
+        config.jitter_ms,
+        config.immediate_first,
+    )?;
+    Ok(())
 }
 
 fn validate_recv_window(recv_window_ms: u64) -> anyhow::Result<()> {

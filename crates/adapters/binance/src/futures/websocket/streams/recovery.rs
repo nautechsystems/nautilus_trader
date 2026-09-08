@@ -630,7 +630,6 @@ mod tests {
             clock,
             dispatch_state: Arc::new(WsDispatchState::default()),
             triggered_algo_ids: Arc::new(AtomicSet::<ClientOrderId>::new()),
-            algo_client_ids: Arc::new(AtomicSet::<ClientOrderId>::new()),
             use_position_ids: true,
             default_taker_fee: Decimal::new(4, 4),
             bnfcr_currency: Currency::USDT(),

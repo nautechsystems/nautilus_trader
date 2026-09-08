@@ -172,7 +172,8 @@ impl BinanceSpotDataClient {
             None, // timeout_secs
             proxy_url.clone(),
             config.us,
-        )?;
+        )?
+        .with_retry_config(config.retry_config());
 
         let creds = if spot_market_data_mode == BinanceSpotMarketDataMode::Sbe {
             resolve_credentials(api_key, api_secret, config.environment, config.product_type)
@@ -1881,11 +1882,11 @@ impl DataClient for BinanceSpotDataClient {
         match cmd.depth.map(|d| d.get()) {
             // Partial book streams are self-contained snapshots.
             Some(depth) => {
-                let depth_level = match depth {
-                    1..=5 => 5,
-                    6..=10 => 10,
-                    _ => 20,
-                };
+                anyhow::ensure!(
+                    depth == 20,
+                    "Binance Spot SBE partial books support depth 20 only; use JSON market data for other depths"
+                );
+                let depth_level = depth as u32;
                 self.book_subscriptions.insert(instrument_id, depth_level);
 
                 let stream = format!("{symbol_lower}@depth{depth_level}");

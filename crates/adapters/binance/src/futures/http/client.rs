@@ -47,6 +47,7 @@ use nautilus_model::{
 use nautilus_network::{
     http::{HttpClient, HttpResponse, Method, USER_AGENT},
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
+    retry::{RetryConfig, RetryError, RetryManager},
 };
 use parking_lot::Mutex;
 use rust_decimal::Decimal;
@@ -84,7 +85,8 @@ use crate::{
         bar::BinanceBar,
         consts::{
             BINANCE_API_KEY_HEADER, BINANCE_DAPI_PATH, BINANCE_DAPI_RATE_LIMITS, BINANCE_FAPI_PATH,
-            BINANCE_FAPI_RATE_LIMITS, BINANCE_NAUTILUS_FUTURES_BROKER_ID, BinanceRateLimitQuota,
+            BINANCE_FAPI_RATE_LIMITS, BINANCE_NAUTILUS_FUTURES_BROKER_ID,
+            BINANCE_RETRY_AFTER_HEADER, BinanceRateLimitQuota,
         },
         credential::SigningCredential,
         encoder::encode_broker_id,
@@ -168,6 +170,7 @@ struct BatchCancelParams {
 /// Raw HTTP client for Binance Futures REST API.
 #[derive(Debug, Clone)]
 pub struct BinanceRawFuturesHttpClient {
+    retry_manager: Arc<RetryManager<BinanceFuturesHttpError>>,
     client: HttpClient,
     base_url: String,
     api_path: &'static str,
@@ -233,13 +236,17 @@ impl BinanceRawFuturesHttpClient {
 
         let client = HttpClient::builder()
             .headers(headers)
-            .header_keys(vec![BINANCE_API_KEY_HEADER.to_string()])
+            .header_keys(vec![
+                BINANCE_API_KEY_HEADER.to_string(),
+                BINANCE_RETRY_AFTER_HEADER.to_string(),
+            ])
             .maybe_timeout_secs(timeout_secs)
             .maybe_proxy_url(proxy_url)
             .rate_limiters(rate_limiters)
             .build()?;
 
         Ok(Self {
+            retry_manager: Arc::new(RetryManager::new(crate::common::http::retry_config())),
             client,
             base_url,
             api_path,
@@ -509,7 +516,7 @@ impl BinanceRawFuturesHttpClient {
 
         let response = self
             .client
-            .request(
+            .request_with_url_redacted(
                 method,
                 url,
                 None::<&HashMap<String, Vec<String>>>,
@@ -546,6 +553,58 @@ impl BinanceRawFuturesHttpClient {
     }
 
     async fn request<P, T>(
+        &self,
+        method: Method,
+        path: &str,
+        params: Option<&P>,
+        signed: bool,
+        use_order_quota: bool,
+        body: Option<Vec<u8>>,
+    ) -> BinanceFuturesHttpResult<T>
+    where
+        P: Serialize + ?Sized,
+        T: DeserializeOwned,
+    {
+        let operation = || {
+            self.request_once(
+                method.clone(),
+                path,
+                params,
+                signed,
+                use_order_quota,
+                body.clone(),
+            )
+        };
+
+        if method != Method::GET {
+            return operation().await;
+        }
+        self.retry_manager
+            .invocation(
+                path,
+                operation,
+                BinanceFuturesHttpError::is_retryable,
+                |e| match e {
+                    RetryError::Canceled => {
+                        BinanceFuturesHttpError::Canceled("HTTP requests canceled".to_string())
+                    }
+                    RetryError::OperationTimeout { timeout_ms } => {
+                        BinanceFuturesHttpError::Timeout(format!("Request exceeded {timeout_ms}ms"))
+                    }
+                    RetryError::InvalidConfiguration { message } => {
+                        BinanceFuturesHttpError::ValidationError(message)
+                    }
+                    e @ RetryError::ElapsedBudgetExceeded { .. } => {
+                        BinanceFuturesHttpError::RetryBudgetExceeded(e.to_string())
+                    }
+                },
+            )
+            .retry_delay(&BinanceFuturesHttpError::retry_after)
+            .execute()
+            .await
+    }
+
+    async fn request_once<P, T>(
         &self,
         method: Method,
         path: &str,
@@ -599,7 +658,7 @@ impl BinanceRawFuturesHttpClient {
 
         let response = self
             .client
-            .request(
+            .request_with_url_redacted(
                 method,
                 url,
                 None::<&HashMap<String, Vec<String>>>,
@@ -654,15 +713,22 @@ impl BinanceRawFuturesHttpClient {
     fn parse_error_response<T>(&self, response: &HttpResponse) -> BinanceFuturesHttpResult<T> {
         let status = response.status.as_u16();
         let body = String::from_utf8_lossy(&response.body).to_string();
+        let retry_after = crate::common::http::retry_after(&response.headers, Timestamp::now());
 
         if let Ok(err) = serde_json::from_str::<BinanceErrorResponse>(&body) {
             return Err(BinanceFuturesHttpError::BinanceError {
                 code: err.code,
                 message: err.msg,
+                status,
+                retry_after,
             });
         }
 
-        Err(BinanceFuturesHttpError::UnexpectedStatus { status, body })
+        Err(BinanceFuturesHttpError::UnexpectedStatus {
+            status,
+            body,
+            retry_after,
+        })
     }
 
     fn default_headers(credential: &Option<SigningCredential>) -> HashMap<String, String> {
@@ -1516,6 +1582,11 @@ impl BinanceFuturesHttpClient {
             instruments_load_lock: Arc::new(tokio::sync::Mutex::new(())),
             treat_expired_as_canceled,
         })
+    }
+
+    pub(crate) fn with_retry_config(mut self, config: RetryConfig) -> Self {
+        Arc::make_mut(&mut self.inner).retry_manager = Arc::new(RetryManager::new(config));
+        self
     }
 
     /// Returns the product type (UsdM or CoinM).
@@ -4094,9 +4165,16 @@ mod tests {
         let result: BinanceFuturesHttpResult<()> = client.parse_error_response(&response);
 
         match result {
-            Err(BinanceFuturesHttpError::BinanceError { code, message }) => {
+            Err(BinanceFuturesHttpError::BinanceError {
+                code,
+                message,
+                status,
+                retry_after,
+            }) => {
                 assert_eq!(code, -1121);
                 assert_eq!(message, "Invalid symbol.");
+                assert_eq!(status, 400);
+                assert_eq!(retry_after, None);
             }
             other => panic!("Expected BinanceError, was {other:?}"),
         }

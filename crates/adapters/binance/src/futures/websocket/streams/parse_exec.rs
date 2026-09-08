@@ -20,10 +20,7 @@
 
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
-    enums::{
-        AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
-        TrailingOffsetType, TriggerType,
-    },
+    enums::{AccountType, LiquiditySide, OrderSide, OrderStatus, TrailingOffsetType, TriggerType},
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
     reports::{FillReport, OrderStatusReport},
@@ -72,9 +69,9 @@ pub fn parse_futures_order_update_to_order_status(
     let venue_order_id = VenueOrderId::new(order.order_id.to_string());
 
     let order_side = parse_side(order.side);
-    let order_status = parse_order_status(order.order_status, treat_expired_as_canceled);
-    let order_type = parse_futures_order_type(order.order_type);
-    let time_in_force = parse_time_in_force(order.time_in_force);
+    let order_status = parse_order_status(order.order_status, treat_expired_as_canceled)?;
+    let order_type = order.order_type.to_nautilus_order_type()?;
+    let time_in_force = order.time_in_force.to_nautilus_time_in_force()?;
 
     let quantity =
         parse_required_quantity_at_precision(&order.original_qty, size_precision, "original_qty")?;
@@ -309,8 +306,8 @@ pub fn parse_futures_algo_update_to_order_status(
     };
 
     let order_side = parse_side(algo_data.side);
-    let order_type = parse_futures_order_type(algo_data.order_type);
-    let time_in_force = parse_time_in_force(algo_data.time_in_force);
+    let order_type = algo_data.order_type.to_nautilus_order_type()?;
+    let time_in_force = algo_data.time_in_force.to_nautilus_time_in_force()?;
 
     let quantity =
         parse_required_quantity_at_precision(&algo_data.quantity, size_precision, "quantity")?;
@@ -512,8 +509,11 @@ fn parse_side(side: BinanceSide) -> OrderSide {
     }
 }
 
-fn parse_order_status(status: BinanceOrderStatus, treat_expired_as_canceled: bool) -> OrderStatus {
-    match status {
+fn parse_order_status(
+    status: BinanceOrderStatus,
+    treat_expired_as_canceled: bool,
+) -> anyhow::Result<OrderStatus> {
+    Ok(match status {
         BinanceOrderStatus::New | BinanceOrderStatus::PendingNew => OrderStatus::Accepted,
         BinanceOrderStatus::PartiallyFilled => OrderStatus::PartiallyFilled,
         BinanceOrderStatus::Filled
@@ -528,38 +528,13 @@ fn parse_order_status(status: BinanceOrderStatus, treat_expired_as_canceled: boo
                 OrderStatus::Expired
             }
         }
-        BinanceOrderStatus::Unknown => OrderStatus::Accepted,
-    }
-}
-
-fn parse_futures_order_type(order_type: BinanceFuturesOrderType) -> OrderType {
-    match order_type {
-        BinanceFuturesOrderType::Limit => OrderType::Limit,
-        BinanceFuturesOrderType::Market => OrderType::Market,
-        BinanceFuturesOrderType::Stop => OrderType::StopLimit,
-        BinanceFuturesOrderType::StopMarket => OrderType::StopMarket,
-        BinanceFuturesOrderType::TakeProfit => OrderType::LimitIfTouched,
-        BinanceFuturesOrderType::TakeProfitMarket => OrderType::MarketIfTouched,
-        BinanceFuturesOrderType::TrailingStopMarket => OrderType::TrailingStopMarket,
-        BinanceFuturesOrderType::Liquidation
-        | BinanceFuturesOrderType::Adl
-        | BinanceFuturesOrderType::Unknown => OrderType::Market,
-    }
-}
-
-fn parse_time_in_force(tif: BinanceTimeInForce) -> TimeInForce {
-    match tif {
-        BinanceTimeInForce::Gtc | BinanceTimeInForce::Gtx => TimeInForce::Gtc,
-        BinanceTimeInForce::Ioc | BinanceTimeInForce::Rpi => TimeInForce::Ioc,
-        BinanceTimeInForce::Fok => TimeInForce::Fok,
-        BinanceTimeInForce::Gtd => TimeInForce::Gtd,
-        BinanceTimeInForce::Unknown => TimeInForce::Gtc,
-    }
+        BinanceOrderStatus::Unknown => anyhow::bail!("unknown Binance order status"),
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::enums::OrderSide;
+    use nautilus_model::enums::{OrderSide, OrderType, TimeInForce};
     use rstest::rstest;
     use serde::de::DeserializeOwned;
 
@@ -1339,13 +1314,13 @@ mod tests {
 
     #[rstest]
     fn test_parse_order_status_new_adl_maps_to_filled() {
-        let result = parse_order_status(BinanceOrderStatus::NewAdl, false);
+        let result = parse_order_status(BinanceOrderStatus::NewAdl, false).unwrap();
         assert_eq!(result, OrderStatus::Filled);
     }
 
     #[rstest]
     fn test_parse_order_status_new_insurance_maps_to_filled() {
-        let result = parse_order_status(BinanceOrderStatus::NewInsurance, false);
+        let result = parse_order_status(BinanceOrderStatus::NewInsurance, false).unwrap();
         assert_eq!(result, OrderStatus::Filled);
     }
 
@@ -1359,7 +1334,7 @@ mod tests {
         #[case] treat_expired_as_canceled: bool,
         #[case] expected: OrderStatus,
     ) {
-        let result = parse_order_status(status, treat_expired_as_canceled);
+        let result = parse_order_status(status, treat_expired_as_canceled).unwrap();
         assert_eq!(result, expected);
     }
 

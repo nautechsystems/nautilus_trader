@@ -46,7 +46,7 @@ use nautilus_binance::{
         },
         encoder::encode_broker_id,
     },
-    config::BinanceExecutionClientConfig,
+    config::{BinanceExecutionClientConfig, BinanceInstrumentProviderConfig},
     spot::{
         execution::BinanceSpotExecutionClient,
         sbe::spot::{SBE_SCHEMA_ID, SBE_SCHEMA_VERSION},
@@ -59,8 +59,9 @@ use nautilus_common::{
     messages::{
         ExecutionEvent, ExecutionReport, SystemEvent,
         execution::{
-            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports, ModifyOrder,
-            QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+            GenerateOrderStatusReportBuilder, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
+            SubmitOrderList,
         },
         system::SocketState,
     },
@@ -697,16 +698,8 @@ fn create_exec_test_router_with_fill_fixture(
                         .get("newClientOrderId")
                         .cloned()
                         .unwrap_or_else(|| "replace-order".to_string());
-                    sbe_response(build_new_order_response(
-                        99998,
-                        &symbol,
-                        &client_order_id,
-                        100_000_000_000,
-                        10_000_000,
-                        0,
-                        1, // NEW
-                    ))
-                    .into_response()
+                    sbe_response(build_cancel_replace_response(&symbol, &client_order_id))
+                        .into_response()
                 },
             ),
         )
@@ -1145,6 +1138,34 @@ async fn handle_order_cancel(
     )
 }
 
+fn build_cancel_replace_response(symbol: &str, client_order_id: &str) -> Vec<u8> {
+    let canceled = build_cancel_order_response(
+        12345,
+        symbol,
+        "cancel-request",
+        client_order_id,
+        100_000_000_000,
+        10_000_000,
+        0,
+    );
+    let replacement = build_new_order_response(
+        99998,
+        symbol,
+        client_order_id,
+        100_000_000_000,
+        10_000_000,
+        0,
+        1,
+    );
+    let mut response = create_sbe_header(2, 307).to_vec();
+    response.extend_from_slice(&[0, 0]);
+    response.extend_from_slice(&(canceled.len() as u16).to_le_bytes());
+    response.extend_from_slice(&canceled);
+    response.extend_from_slice(&(replacement.len() as u32).to_le_bytes());
+    response.extend_from_slice(&replacement);
+    response
+}
+
 async fn handle_order_modify(
     State(state): State<CommandResponseState>,
     headers: HeaderMap,
@@ -1165,15 +1186,7 @@ async fn handle_order_modify(
         .unwrap_or_else(|| "replace-order".to_string());
     command_response(
         state.responses.modify,
-        sbe_response(build_new_order_response(
-            99998,
-            &symbol,
-            &client_order_id,
-            100_000_000_000,
-            10_000_000,
-            0,
-            1,
-        )),
+        sbe_response(build_cancel_replace_response(&symbol, &client_order_id)),
     )
 }
 
@@ -1765,8 +1778,13 @@ async fn test_connect_loads_instruments_and_account() {
 }
 
 #[rstest]
+#[case::linked("12345", true)]
+#[case::unlinked("67890", false)]
 #[tokio::test]
-async fn test_generate_mass_status_uses_execution_instrument_for_retained_order() {
+async fn test_generate_mass_status_uses_execution_instrument_for_retained_order(
+    #[case] venue_order_id: &str,
+    #[case] reports_complete: bool,
+) {
     let (addr, captured_queries) =
         start_exec_test_server_with_fill_fixture(FillFixtureMode::Stable).await;
     let base_url = format!("http://{addr}");
@@ -1779,7 +1797,7 @@ async fn test_generate_mass_status_uses_execution_instrument_for_retained_order(
         test_instrument_id(),
         ClientOrderId::new("retained-spot-order"),
         account_id,
-        VenueOrderId::from("12345"),
+        VenueOrderId::from(venue_order_id),
     );
 
     let futures_instrument = crypto_perpetual_ethusdt();
@@ -1808,6 +1826,7 @@ async fn test_generate_mass_status_uses_execution_instrument_for_retained_order(
         .unwrap();
     let fill_reports: Vec<_> = mass_status.fill_reports().into_values().flatten().collect();
 
+    assert_eq!(mass_status.reports_complete(), reports_complete);
     assert!(mass_status.order_reports().is_empty());
     assert_eq!(fill_reports.len(), 1);
     assert_eq!(fill_reports[0].instrument_id, test_instrument_id());
@@ -1817,6 +1836,74 @@ async fn test_generate_mass_status_uses_execution_instrument_for_retained_order(
     assert_eq!(
         queries[0].query.get("symbol").map(String::as_str),
         Some("BTCUSDT")
+    );
+}
+
+#[rstest]
+#[case::explicit_scope(false, 0)]
+#[case::load_all(true, 1)]
+#[tokio::test]
+async fn test_mass_status_respects_explicit_instrument_scope(
+    #[case] load_all: bool,
+    #[case] expected_orders: usize,
+) {
+    let (addr, captured_queries) =
+        start_exec_test_server_with_fill_fixture(FillFixtureMode::StableWithOpenOrder).await;
+    let config = BinanceExecutionClientConfig {
+        account_id: AccountId::from("BINANCE-001"),
+        base_url_http: Some(format!("http://{addr}")),
+        base_url_ws_trading: Some(format!("ws://{addr}/ws-api/v3")),
+        api_key: Some("test_api_key".into()),
+        api_secret: Some("test_api_secret".into()),
+        instrument_provider: BinanceInstrumentProviderConfig {
+            load_all,
+            load_ids: Some(vec!["ETHUSDT.BINANCE".to_string()]),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(mass_status.order_reports().len(), expected_orders);
+    assert_eq!(mass_status.fill_reports().len(), expected_orders);
+    assert_eq!(captured_queries.lock().len(), expected_orders);
+    assert!(mass_status.reports_complete());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_single_order_probe_rejects_excluded_instrument() {
+    let config = BinanceExecutionClientConfig {
+        instrument_provider: BinanceInstrumentProviderConfig {
+            load_all: false,
+            load_ids: Some(vec!["ETHUSDT.BINANCE".to_string()]),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let (client, _rx, _cache) = create_test_execution_client_from_config(config);
+    let cmd = GenerateOrderStatusReportBuilder::default()
+        .ts_init(UnixNanos::default())
+        .instrument_id(Some(test_instrument_id()))
+        .client_order_id(Some(ClientOrderId::new("excluded-spot-order")))
+        .venue_order_id(Some(VenueOrderId::new("98765")))
+        .build()
+        .unwrap();
+
+    let result = client.generate_order_status_report(&cmd).await;
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "Cannot query Binance Spot order for excluded instrument BTCUSDT.BINANCE"
     );
 }
 
@@ -2018,6 +2105,12 @@ async fn test_generate_mass_status_paginates_fill_reports(
     let fill_reports: Vec<_> = mass_status.fill_reports().into_values().flatten().collect();
     let queries = captured_queries.lock();
 
+    assert_eq!(
+        mass_status.lookback_start(),
+        lookback_mins
+            .map(|mins| UnixNanos::from(mass_status.ts_init.as_u64() - mins * 60_000_000_000)),
+    );
+    assert!(mass_status.reports_complete());
     assert_eq!(fill_reports.len(), expected_reports);
     assert_eq!(fill_reports.first().unwrap().trade_id, TradeId::new("1"));
     assert_eq!(
@@ -2039,7 +2132,10 @@ async fn test_generate_mass_status_paginates_fill_reports(
         assert!(!queries[0].query.contains_key("endTime"));
     } else {
         assert!(queries[0].query.contains_key("startTime"));
-        assert!(queries[0].query.contains_key("endTime"));
+        assert_eq!(
+            queries[0].query.get("endTime"),
+            Some(&(mass_status.ts_init.as_u64() / 1_000_000).to_string()),
+        );
     }
     assert_eq!(
         queries[1].query.get("fromId").map(String::as_str),
@@ -2597,11 +2693,16 @@ async fn test_submit_spot_native_gtd_rejects_before_submission() {
     while rx.try_recv().is_ok() {}
 
     let order = add_gtd_limit_order_to_cache(&cache, ClientOrderId::new("spot-gtd-test-001"));
-    let error = client
-        .submit_order(submit_order_command(&order))
-        .unwrap_err();
+    client.submit_order(submit_order_command(&order)).unwrap();
 
-    assert!(error.to_string().contains("does not support native GTD"));
+    let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = rx.try_recv().unwrap() else {
+        panic!("Expected OrderDenied");
+    };
+    assert_eq!(denied.client_order_id, order.client_order_id());
+    assert_eq!(denied.instrument_id, order.instrument_id());
+    assert_eq!(denied.strategy_id, order.strategy_id());
+    assert_eq!(denied.trader_id, order.trader_id());
+    assert_eq!(denied.reason.as_str(), "UNSUPPORTED_TIME_IN_FORCE: GTD");
     assert!(captured_queries.lock().is_empty());
     assert!(rx.try_recv().is_err());
 }
@@ -2976,20 +3077,28 @@ async fn test_modify_order_generates_events() {
         None, // correlation_id
     );
 
-    // Modify uses cancel-replace on Binance Spot, which generates cancel + new events
-    let result = client.modify_order(modify_cmd);
-    result.unwrap();
-
-    // Should get at least one execution event (cancel or accepted for the replacement)
-    wait_until_async(
-        || {
-            let found = rx
-                .try_recv()
-                .is_ok_and(|e| matches!(e, ExecutionEvent::Order(_)));
-            async move { found }
-        },
-        Duration::from_secs(5),
-    )
+    client.modify_order(modify_cmd).unwrap();
+    let event = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(ExecutionEvent::Order(OrderEventAny::Updated(event))) = rx.recv().await {
+                break event;
+            }
+        }
+    })
+    .await
+    .expect("Replacement update missing");
+    assert_eq!(event.client_order_id, client_order_id);
+    assert_eq!(event.venue_order_id, Some(VenueOrderId::from("99998")));
+    assert_eq!(event.quantity, Quantity::from("0.1"));
+    assert_eq!(event.price, Some(Price::from("1000.00")));
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::Updated(_)
+                | OrderEventAny::Canceled(_)
+                | OrderEventAny::ModifyRejected(_)
+        )
+    })
     .await;
 }
 
@@ -3496,8 +3605,11 @@ async fn test_per_order_batch_cancel_rejection_emits_cancel_rejected() {
 }
 
 #[rstest]
+#[case::disconnect("disconnect")]
+#[case::reset("reset")]
+#[case::dispose("dispose")]
 #[tokio::test]
-async fn test_connect_disconnect_reconnect() {
+async fn test_connect_disconnect_reconnect(#[case] shutdown: &str) {
     let addr = start_exec_test_server().await;
     let base_url = format!("http://{addr}");
     let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -3534,6 +3646,14 @@ async fn test_connect_disconnect_reconnect() {
     assert_eq!(change.venue, Some(*BINANCE_VENUE));
     assert_eq!(change.endpoint, endpoint);
     assert_eq!(change.state, SocketState::Disconnected);
+
+    match shutdown {
+        "reset" => client.reset().unwrap(),
+        "dispose" => client.dispose().unwrap(),
+        "disconnect" => client.disconnect().await.unwrap(),
+        _ => unreachable!(),
+    }
+    assert!(!client.is_connected());
 
     client.disconnect().await.unwrap();
     assert!(!client.is_connected());

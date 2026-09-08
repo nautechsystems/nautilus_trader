@@ -850,6 +850,9 @@ pub enum BinanceExecutionType {
     Trade,
     /// Amendment (order modified).
     Amendment,
+    /// Unknown or undocumented execution type.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Margin call event from user data stream.

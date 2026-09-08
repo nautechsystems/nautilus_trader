@@ -301,7 +301,8 @@ blindly retry a command after a timeout, network failure, or Binance unknown-sta
 the first request may have reached the matching engine. Retrying could create a duplicate order or
 apply a second amendment.
 
-- A definitive local validation error or venue rejection emits the matching rejection event.
+- Local submit validation emits `OrderDenied` before submission; local modify validation emits
+  `OrderModifyRejected`. A definitive venue rejection emits the matching rejection event.
 - An ambiguous transport result remains inflight and is resolved by the private stream or REST
   reconciliation. The adapter does not emit a false rejection while the venue outcome is unknown.
 - A Futures algo cancel may fall back from the pre-trigger algo endpoint to the regular-order
@@ -310,8 +311,15 @@ apply a second amendment.
 - Strategy code must not resubmit a command while its result is ambiguous. Wait for reconciliation
   or query the order by its client order ID.
 
-The configs do not expose retry controls for order commands because resending an ambiguous command
-could duplicate an order or amendment.
+`BinanceDataClientConfig` and `BinanceExecutionClientConfig` expose `max_retries`,
+`retry_delay_initial_ms`, and `retry_delay_max_ms` for HTTP GET requests. Transient read failures
+retry with bounded exponential backoff and fresh authentication fields. A venue `Retry-After`
+header sets the minimum delay, which can exceed `retry_delay_max_ms`. The fixed total retry budget
+is 180 seconds. When a required delay exceeds the remaining budget, the request returns the venue
+error without waiting.
+
+These settings do not retry order commands because resending an ambiguous command could duplicate
+an order or amendment.
 
 ### Position management
 
@@ -660,7 +668,9 @@ data WebSocket reconnect. The rebuild runs in this order:
 :::note
 This snapshot-and-buffer sequence applies to Futures and Spot `BookDeltas`
 subscriptions without an explicit depth. Spot partial-depth subscriptions deliver
-self-contained top-N snapshots. See [Spot market data mode](#spot-market-data-mode).
+self-contained top-N snapshots. SBE partial books require depth 20; use JSON market data
+for depth 5 or 10. Unsupported SBE partial depths are rejected before subscription.
+See [Spot market data mode](#spot-market-data-mode).
 :::
 
 ## Quote timestamps
@@ -1074,6 +1084,9 @@ For the latest rate limits, query `/api/v3/exchangeInfo` (Spot) or `/fapi/v1/exc
 | `instrument_status_poll_secs`      | `3,600`   | Status-only exchange-info poll interval; `0` disables it.                      |
 | `proxy_url`                        | `None`    | Proxy applied to HTTP and every market WebSocket connection.                   |
 | `recv_window_ms`                   | `5,000`   | Signed HTTP receive window, inclusive range `1..=60000`.                       |
+| `max_retries`                      | `3`       | Maximum retries for HTTP GET requests.                                         |
+| `retry_delay_initial_ms`           | `1,000`   | Initial HTTP read retry delay in milliseconds.                                 |
+| `retry_delay_max_ms`               | `10,000`  | Maximum exponential delay; a venue minimum can exceed it.                      |
 | `us`                               | `False`   | Route a live Spot JSON client to Binance US.                                   |
 | `transport_backend`                | `Sockudo` | WebSocket transport backend.                                                   |
 
@@ -1093,6 +1106,9 @@ For the latest rate limits, query `/api/v3/exchangeInfo` (Spot) or `/fapi/v1/exc
 | `instrument_refresh_interval_secs` | `3,600`   | Execution precision-cache refresh interval; `0` disables it.            |
 | `proxy_url`                        | `None`    | Proxy applied to HTTP, private streams, and WebSocket trading.          |
 | `recv_window_ms`                   | `5,000`   | Signed HTTP and WebSocket receive window, inclusive range `1..=60000`.  |
+| `max_retries`                      | `3`       | Maximum retries for HTTP GET requests.                                  |
+| `retry_delay_initial_ms`           | `1,000`   | Initial HTTP read retry delay in milliseconds.                          |
+| `retry_delay_max_ms`               | `10,000`  | Maximum exponential delay; a venue minimum can exceed it.               |
 | `us`                               | `False`   | Route a live Spot execution client to Binance US.                       |
 | `api_key` / `api_secret`           | `None`    | Global uses Ed25519 WebSocket auth; Binance US uses HMAC HTTP signing.  |
 | `use_gtd`                          | `True`    | Use native USD-M GTD; see [GTD policy](#gtd-policy).                    |

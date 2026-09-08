@@ -22,7 +22,7 @@
 //! directly since the stream never reports them.
 
 use nautilus_core::{UUID4, time::AtomicTime};
-use nautilus_live::ExecutionEventEmitter;
+use nautilus_live::{ExecutionEventEmitter, execution::failure::CommandFailure};
 use nautilus_model::{
     events::{OrderCancelRejected, OrderEventAny, OrderModifyRejected, OrderRejected},
     identifiers::AccountId,
@@ -30,11 +30,9 @@ use nautilus_model::{
 
 use super::messages::BinanceFuturesWsTradingMessage;
 use crate::common::{
-    consts::{
-        BINANCE_GTX_ORDER_REJECT_CODE, BINANCE_STATUS_UNKNOWN_CODE,
-        BINANCE_UNEXPECTED_RESPONSE_CODE,
-    },
+    consts::BINANCE_GTX_ORDER_REJECT_CODE,
     dispatch::WsDispatchState,
+    failure::{classify_venue_failure, sanitize_reason},
 };
 
 pub(crate) fn dispatch_ws_trading_message(
@@ -58,22 +56,27 @@ pub(crate) fn dispatch_ws_trading_message(
         }
         BinanceFuturesWsTradingMessage::OrderRejected {
             request_id,
+            status,
             code,
             msg,
         } => {
-            log::debug!("WS order rejected: request_id={request_id}, code={code}, msg={msg}");
+            log::debug!(
+                "WS order rejected: request_id={request_id}, status={status}, code={code}, msg={msg}"
+            );
 
             if let Some((_, pending)) = dispatch_state.pending_requests.remove(&request_id) {
                 let code_i64 = i64::from(code);
-                if matches!(
-                    code_i64,
-                    BINANCE_UNEXPECTED_RESPONSE_CODE | BINANCE_STATUS_UNKNOWN_CODE
-                ) {
-                    log::warn!(
-                        "Ambiguous WS submit failure for {}, awaiting reconciliation: code={code}, msg={msg}",
-                        pending.client_order_id,
-                    );
-                    return;
+                let reason = format!("code={code}: {msg}");
+
+                match classify_venue_failure(Some(code_i64), Some(status), &reason) {
+                    CommandFailure::Ambiguous(_) => {
+                        log::warn!(
+                            "Ambiguous WS submit failure for {}, awaiting reconciliation: {reason}",
+                            pending.client_order_id,
+                        );
+                        return;
+                    }
+                    CommandFailure::NotSent(_) | CommandFailure::VenueRejected(_) => {}
                 }
 
                 // Clone to drop the DashMap read guard before cleanup_terminal
@@ -91,7 +94,7 @@ pub(crate) fn dispatch_ws_trading_message(
                         identity.instrument_id,
                         pending.client_order_id,
                         account_id,
-                        ustr::Ustr::from(&format!("code={code}: {msg}")),
+                        ustr::Ustr::from(&sanitize_reason(&reason)),
                         UUID4::new(),
                         ts_now,
                         ts_now,
@@ -123,31 +126,48 @@ pub(crate) fn dispatch_ws_trading_message(
         }
         BinanceFuturesWsTradingMessage::CancelRejected {
             request_id,
+            status,
             code,
             msg,
         } => {
-            log::warn!("WS cancel rejected: request_id={request_id}, code={code}, msg={msg}");
+            log::debug!(
+                "WS cancel rejected: request_id={request_id}, status={status}, code={code}, msg={msg}"
+            );
 
-            if let Some((_, pending)) = dispatch_state.pending_requests.remove(&request_id)
-                && let Some(identity) = dispatch_state
+            if let Some((_, pending)) = dispatch_state.pending_requests.remove(&request_id) {
+                let reason = format!("code={code}: {msg}");
+
+                match classify_venue_failure(Some(i64::from(code)), Some(status), &reason) {
+                    CommandFailure::Ambiguous(_) => {
+                        log::warn!(
+                            "Ambiguous WS cancel failure for {}, awaiting reconciliation: {reason}",
+                            pending.client_order_id,
+                        );
+                        return;
+                    }
+                    CommandFailure::NotSent(_) | CommandFailure::VenueRejected(_) => {}
+                }
+
+                if let Some(identity) = dispatch_state
                     .order_identities
                     .get(&pending.client_order_id)
-            {
-                let ts_now = clock.get_time_ns();
-                let rejected = OrderCancelRejected::new(
-                    emitter.trader_id(),
-                    identity.strategy_id,
-                    identity.instrument_id,
-                    pending.client_order_id,
-                    ustr::Ustr::from(&format!("code={code}: {msg}")),
-                    UUID4::new(),
-                    ts_now,
-                    ts_now,
-                    false,
-                    pending.venue_order_id,
-                    Some(account_id),
-                );
-                emitter.send_order_event(OrderEventAny::CancelRejected(rejected));
+                {
+                    let ts_now = clock.get_time_ns();
+                    let rejected = OrderCancelRejected::new(
+                        emitter.trader_id(),
+                        identity.strategy_id,
+                        identity.instrument_id,
+                        pending.client_order_id,
+                        ustr::Ustr::from(&sanitize_reason(&reason)),
+                        UUID4::new(),
+                        ts_now,
+                        ts_now,
+                        false,
+                        pending.venue_order_id,
+                        Some(account_id),
+                    );
+                    emitter.send_order_event(OrderEventAny::CancelRejected(rejected));
+                }
             }
         }
         BinanceFuturesWsTradingMessage::OrderModified {
@@ -163,31 +183,48 @@ pub(crate) fn dispatch_ws_trading_message(
         }
         BinanceFuturesWsTradingMessage::ModifyRejected {
             request_id,
+            status,
             code,
             msg,
         } => {
-            log::warn!("WS modify rejected: request_id={request_id}, code={code}, msg={msg}");
+            log::debug!(
+                "WS modify rejected: request_id={request_id}, status={status}, code={code}, msg={msg}"
+            );
 
-            if let Some((_, pending)) = dispatch_state.pending_requests.remove(&request_id)
-                && let Some(identity) = dispatch_state
+            if let Some((_, pending)) = dispatch_state.pending_requests.remove(&request_id) {
+                let reason = format!("code={code}: {msg}");
+
+                match classify_venue_failure(Some(i64::from(code)), Some(status), &reason) {
+                    CommandFailure::Ambiguous(_) => {
+                        log::warn!(
+                            "Ambiguous WS modify failure for {}, awaiting reconciliation: {reason}",
+                            pending.client_order_id,
+                        );
+                        return;
+                    }
+                    CommandFailure::NotSent(_) | CommandFailure::VenueRejected(_) => {}
+                }
+
+                if let Some(identity) = dispatch_state
                     .order_identities
                     .get(&pending.client_order_id)
-            {
-                let ts_now = clock.get_time_ns();
-                let rejected = OrderModifyRejected::new(
-                    emitter.trader_id(),
-                    identity.strategy_id,
-                    identity.instrument_id,
-                    pending.client_order_id,
-                    ustr::Ustr::from(&format!("code={code}: {msg}")),
-                    UUID4::new(),
-                    ts_now,
-                    ts_now,
-                    false,
-                    pending.venue_order_id,
-                    Some(account_id),
-                );
-                emitter.send_order_event(OrderEventAny::ModifyRejected(rejected));
+                {
+                    let ts_now = clock.get_time_ns();
+                    let rejected = OrderModifyRejected::new(
+                        emitter.trader_id(),
+                        identity.strategy_id,
+                        identity.instrument_id,
+                        pending.client_order_id,
+                        ustr::Ustr::from(&sanitize_reason(&reason)),
+                        UUID4::new(),
+                        ts_now,
+                        ts_now,
+                        false,
+                        pending.venue_order_id,
+                        Some(account_id),
+                    );
+                    emitter.send_order_event(OrderEventAny::ModifyRejected(rejected));
+                }
             }
         }
         BinanceFuturesWsTradingMessage::RequestFailed { request_id, msg } => {
@@ -220,7 +257,10 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::common::dispatch::{OrderIdentity, PendingOperation, PendingRequest};
+    use crate::common::{
+        consts::{BINANCE_STATUS_UNKNOWN_CODE, BINANCE_UNEXPECTED_RESPONSE_CODE},
+        dispatch::{OrderIdentity, PendingOperation, PendingRequest},
+    };
 
     #[rstest]
     fn test_dispatch_ws_trading_message_emits_cancel_rejected_and_clears_pending_request() {
@@ -242,6 +282,7 @@ mod tests {
         dispatch_ws_trading_message(
             BinanceFuturesWsTradingMessage::CancelRejected {
                 request_id: "req-cancel".to_string(),
+                status: 400,
                 code: -2011,
                 msg: "Unknown order sent".to_string(),
             },
@@ -287,6 +328,7 @@ mod tests {
         dispatch_ws_trading_message(
             BinanceFuturesWsTradingMessage::OrderRejected {
                 request_id: "req-submit".to_string(),
+                status: 400,
                 code: BINANCE_GTX_ORDER_REJECT_CODE as i32,
                 msg: "Post only order will be rejected".to_string(),
             },
@@ -350,6 +392,7 @@ mod tests {
         dispatch_ws_trading_message(
             BinanceFuturesWsTradingMessage::OrderRejected {
                 request_id: "req-submit".to_string(),
+                status: 400,
                 code: code as i32,
                 msg: msg.to_string(),
             },
@@ -389,6 +432,7 @@ mod tests {
         dispatch_ws_trading_message(
             BinanceFuturesWsTradingMessage::ModifyRejected {
                 request_id: "req-modify".to_string(),
+                status: 400,
                 code: -4028,
                 msg: "Price or quantity not changed".to_string(),
             },

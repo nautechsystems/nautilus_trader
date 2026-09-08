@@ -58,6 +58,7 @@ use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
     clock::TestClock,
+    enums::LogLevel,
     live::runner::{replace_system_event_sender, set_exec_event_sender},
     messages::{
         ExecutionEvent, SystemEvent,
@@ -1922,7 +1923,7 @@ async fn test_submit_hedge_order_rejects_custom_position_id_before_request() {
         start_exec_test_server_with_order_capture_and_hedge_mode(true).await;
     let base_url_http = format!("http://{addr}");
     let base_url_ws = format!("ws://{addr}/ws");
-    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    let (mut client, mut rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
     add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
     client.start().unwrap();
     client.connect().await.unwrap();
@@ -1931,12 +1932,29 @@ async fn test_submit_hedge_order_rejects_custom_position_id_before_request() {
     let mut command = submit_order_command(&order);
     command.position_id = Some(PositionId::from("P-VIRTUAL-LONG"));
 
-    let error = client.submit_order(command).unwrap_err();
+    client.submit_order(command).unwrap();
 
-    assert_eq!(
-        error.to_string(),
-        "submitted position ID P-VIRTUAL-LONG conflicts with canonical Binance Futures venue position ID BTCUSDT-PERP.BINANCE-LONG; omit position_id while use_position_ids=true, or set use_position_ids=false for virtual hedging",
-    );
+    let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            ExecutionEvent::Order(event) => Some(event),
+            _ => None,
+        })
+        .collect();
+    let expected = std::slice::from_ref(&order);
+    assert_eq!(events.len(), expected.len());
+    for (event, order) in events.iter().zip(expected) {
+        let OrderEventAny::Denied(denied) = event else {
+            panic!("Expected OrderDenied, was {event:?}");
+        };
+        assert_eq!(denied.client_order_id, order.client_order_id());
+        assert_eq!(denied.instrument_id, order.instrument_id());
+        assert_eq!(denied.strategy_id, order.strategy_id());
+        assert_eq!(denied.trader_id, order.trader_id());
+        assert_eq!(
+            denied.reason.as_str(),
+            "INVALID_POSITION_ID: P-VIRTUAL-LONG; conflicts with canonical Binance Futures venue position ID BTCUSDT-PERP.BINANCE-LONG; omit position_id while use_position_ids=true, or set use_position_ids=false for virtual hedging"
+        );
+    }
     assert!(captured_query.lock().is_none());
 }
 
@@ -1952,7 +1970,7 @@ async fn test_submit_hedge_order_list_rejects_custom_position_id_before_request(
         .await;
     let base_url_http = format!("http://{addr}");
     let base_url_ws = format!("ws://{addr}/ws");
-    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    let (mut client, mut rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
     add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
     client.start().unwrap();
     client.connect().await.unwrap();
@@ -1964,12 +1982,29 @@ async fn test_submit_hedge_order_list_rejects_custom_position_id_before_request(
     let mut command = submit_order_list_command(&orders);
     command.position_id = Some(PositionId::from("P-VIRTUAL-LONG"));
 
-    let error = client.submit_order_list(command).unwrap_err();
+    client.submit_order_list(command).unwrap();
 
-    assert_eq!(
-        error.to_string(),
-        "submitted position ID P-VIRTUAL-LONG conflicts with canonical Binance Futures venue position ID BTCUSDT-PERP.BINANCE-LONG; omit position_id while use_position_ids=true, or set use_position_ids=false for virtual hedging",
-    );
+    let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            ExecutionEvent::Order(event) => Some(event),
+            _ => None,
+        })
+        .collect();
+    let expected = orders.as_slice();
+    assert_eq!(events.len(), expected.len());
+    for (event, order) in events.iter().zip(expected) {
+        let OrderEventAny::Denied(denied) = event else {
+            panic!("Expected OrderDenied, was {event:?}");
+        };
+        assert_eq!(denied.client_order_id, order.client_order_id());
+        assert_eq!(denied.instrument_id, order.instrument_id());
+        assert_eq!(denied.strategy_id, order.strategy_id());
+        assert_eq!(denied.trader_id, order.trader_id());
+        assert_eq!(
+            denied.reason.as_str(),
+            "INVALID_POSITION_ID: P-VIRTUAL-LONG; conflicts with canonical Binance Futures venue position ID BTCUSDT-PERP.BINANCE-LONG; omit position_id while use_position_ids=true, or set use_position_ids=false for virtual hedging"
+        );
+    }
     assert!(
         captured_queries
             .lock()
@@ -2345,7 +2380,7 @@ async fn test_submit_close_position_requires_reduce_only_intent() {
         start_exec_test_server_with_algo_capture_and_hedge_mode(false).await;
     let base_url_http = format!("http://{addr}");
     let base_url_ws = format!("ws://{addr}/ws");
-    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    let (mut client, mut rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
     add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
 
     client.start().unwrap();
@@ -2354,16 +2389,30 @@ async fn test_submit_close_position_requires_reduce_only_intent() {
     let client_order_id = ClientOrderId::new("close-position-without-reduce-only-001");
     let order = add_stop_market_order_to_cache(&cache, client_order_id, OrderSide::Sell, false);
 
-    let error = client
+    client
         .submit_order(submit_order_command_with_params(
             &order,
             Some(close_position_params()),
         ))
-        .unwrap_err();
+        .unwrap();
 
+    let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            ExecutionEvent::Order(event) => Some(event),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(events.len(), 1);
+    let OrderEventAny::Denied(denied) = &events[0] else {
+        panic!("Expected OrderDenied, was {:?}", events[0]);
+    };
+    assert_eq!(denied.client_order_id, client_order_id);
+    assert_eq!(denied.instrument_id, order.instrument_id());
+    assert_eq!(denied.strategy_id, order.strategy_id());
+    assert_eq!(denied.trader_id, order.trader_id());
     assert_eq!(
-        error.to_string(),
-        "`close_position` requires `reduce_only=true` on the Nautilus order"
+        denied.reason.as_str(),
+        "VALIDATION_FAILED: `close_position` requires `reduce_only=true` on the Nautilus order"
     );
     assert!(captured_query.lock().is_none());
 }
@@ -2617,6 +2666,73 @@ async fn test_cancel_order_completes() {
     // We verify the command is accepted and the HTTP request completes without error.
     let result = client.cancel_order(cancel_cmd);
     result.unwrap();
+}
+
+#[rstest]
+#[case::http_first(false)]
+#[case::stream_first(true)]
+#[tokio::test]
+async fn test_modify_order_http_and_stream_emit_once(#[case] stream_first: bool) {
+    let (addr, injector) = start_injectable_test_server().await;
+    let (mut client, mut rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws-inject"));
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let cid = ClientOrderId::from("amend-once");
+    let order = add_limit_order_to_cache(&cache, cid);
+    client.submit_order(submit_order_command(&order)).unwrap();
+    recv_until(&mut rx, |e| {
+        matches!(e, ExecutionEvent::Order(OrderEventAny::Submitted(_)))
+    })
+    .await;
+    let mut update: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../test_data/futures/user_data_json/order_update_new.json"
+    ))
+    .unwrap();
+    update["o"]["c"] = json!(encode_broker_id(&cid, BINANCE_NAUTILUS_FUTURES_BROKER_ID));
+    update["o"]["o"] = json!("LIMIT");
+    update["o"]["ot"] = json!("LIMIT");
+    update["o"]["sp"] = json!("0");
+    update["o"]["ps"] = json!("BOTH");
+    update["o"]["x"] = json!("AMENDMENT");
+    update["o"]["i"] = json!(12345678);
+    update["o"]["q"] = json!("0.002");
+    update["o"]["p"] = json!("51000.00");
+    let mut command = modify_order_command(cid);
+    command.venue_order_id = Some(VenueOrderId::from("12345678"));
+
+    if stream_first {
+        injector.send(update.to_string()).unwrap();
+    } else {
+        client.modify_order(command.clone()).unwrap();
+    }
+    let event = recv_until(&mut rx, |e| {
+        matches!(e, ExecutionEvent::Order(OrderEventAny::Updated(_)))
+    })
+    .await;
+
+    if stream_first {
+        client.modify_order(command).unwrap();
+    } else {
+        injector.send(update.to_string()).unwrap();
+    }
+    injector.send(update.to_string()).unwrap();
+    assert_no_order_event_matching(&mut rx, |e| {
+        matches!(
+            e,
+            OrderEventAny::Updated(_) | OrderEventAny::ModifyRejected(_)
+        )
+    })
+    .await;
+    let ExecutionEvent::Order(OrderEventAny::Updated(event)) = event else {
+        unreachable!()
+    };
+    assert_eq!(event.client_order_id, cid);
+    assert_eq!(event.venue_order_id, Some(VenueOrderId::from("12345678")));
+    assert_eq!(event.quantity, Quantity::from("0.002"));
+    assert_eq!(event.price, Some(Price::from("51000.00")));
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -3420,7 +3536,7 @@ async fn test_historical_reconciliation_skips_unresolved_instrument_before_query
             None,
         ))
         .await
-        .unwrap();
+        .unwrap_err();
     let orders = client
         .generate_order_status_reports(&GenerateOrderStatusReports::new(
             nautilus_core::UUID4::new(),
@@ -3448,7 +3564,10 @@ async fn test_historical_reconciliation_skips_unresolved_instrument_before_query
         .await
         .unwrap();
 
-    assert!(order.is_none());
+    assert_eq!(
+        order.to_string(),
+        "Binance Futures order request has unresolved instrument BTCUSDT-PERP.BINANCE",
+    );
     assert!(orders.is_empty());
     assert!(fills.is_empty());
     assert!(captured_queries.lock().iter().all(|query| {
@@ -4517,6 +4636,7 @@ async fn test_generate_mass_status_restores_close_position_quantities() {
 #[rstest]
 #[tokio::test]
 async fn test_generate_open_order_reports_restores_close_position_quantities() {
+    let logger = install_position_log_capture();
     let (addr, _captured_queries) = start_exec_test_server_with_query_capture_and_responses(
         CommandResponses::default(),
         ReportFixtureMode::ClosePosition,
@@ -4530,19 +4650,24 @@ async fn test_generate_open_order_reports_restores_close_position_quantities() {
     client.start().unwrap();
     client.connect().await.unwrap();
 
-    let reports = client
-        .generate_order_status_reports(&GenerateOrderStatusReports::new(
-            nautilus_core::UUID4::new(),
-            UnixNanos::default(),
-            true,
-            None,
-            None,
-            None,
-            None,
-            None,
-        ))
-        .await
-        .unwrap();
+    let mut cmd = GenerateOrderStatusReports::new(
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        true,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    cmd.log_receipt_level = LogLevel::Off;
+    logger.take_records();
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+    let receipt_logs: Vec<_> = logger
+        .take_records()
+        .into_iter()
+        .filter(|(_, message)| message.starts_with("Received "))
+        .collect();
     let close_long = reports
         .iter()
         .find(|report| report.venue_order_id == VenueOrderId::from("123456790"))
@@ -4564,6 +4689,7 @@ async fn test_generate_open_order_reports_restores_close_position_quantities() {
         .find(|report| report.venue_order_id == VenueOrderId::from("123456794"))
         .unwrap();
 
+    assert_eq!(receipt_logs, vec![]);
     assert_eq!(reports.len(), 5);
     assert_eq!(close_long.quantity, Quantity::from("0.005"));
     assert!(close_long.reduce_only);
@@ -4656,6 +4782,67 @@ enum FillRangeCoverage {
 }
 
 const USER_TRADES_COMPLETE_LOOKBACK_MINS: u64 = 88 * 24 * 60;
+
+#[rstest]
+#[case::usdm_unbounded(BinanceProductType::UsdM, false)]
+#[case::usdm_bounded(BinanceProductType::UsdM, true)]
+#[case::coinm_unbounded(BinanceProductType::CoinM, false)]
+#[case::coinm_bounded(BinanceProductType::CoinM, true)]
+#[tokio::test]
+async fn test_generate_fill_reports_filters_venue_order_id(
+    #[case] product_type: BinanceProductType,
+    #[case] bounded: bool,
+) {
+    let (addr, captured_queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses::default(),
+        ReportFixtureMode::HedgePositionsWithFills,
+    )
+    .await;
+    let (mut client, _rx, cache) = create_test_execution_client_for_product(
+        format!("http://{addr}"),
+        format!("ws://{addr}/ws"),
+        product_type,
+    );
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    captured_queries.lock().clear();
+    let instrument_id = match product_type {
+        BinanceProductType::UsdM => test_instrument_id(),
+        BinanceProductType::CoinM => InstrumentId::from("BTCUSD_260925.BINANCE"),
+        _ => unreachable!(),
+    };
+    let now = UnixNanos::from(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos() as u64,
+    );
+    let reports = client
+        .generate_fill_reports(GenerateFillReports::new(
+            nautilus_core::UUID4::new(),
+            now,
+            Some(instrument_id),
+            Some(VenueOrderId::from("8886775")),
+            bounded.then(|| now.saturating_sub(DurationNanos::from_secs(60))),
+            bounded.then_some(now),
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+    let queries = captured_queries.lock();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].venue_order_id, VenueOrderId::from("8886775"));
+    assert_eq!(reports[0].trade_id, TradeId::from("12345679"));
+    assert_eq!(queries.len(), 1);
+    assert_eq!(queries[0].path, "userTrades");
+    assert_eq!(
+        queries[0].query.get("orderId").map(String::as_str),
+        Some("8886775")
+    );
+}
 
 #[rstest]
 #[case::usdm_wholly_before(BinanceProductType::UsdM, FillRangeCoverage::WhollyBefore)]
@@ -6725,8 +6912,11 @@ async fn test_modify_order_ws_rejection_emits_modify_rejected() {
 }
 
 #[rstest]
+#[case::disconnect("disconnect")]
+#[case::reset("reset")]
+#[case::dispose("dispose")]
 #[tokio::test]
-async fn test_connect_disconnect_reconnect() {
+async fn test_connect_disconnect_reconnect(#[case] shutdown: &str) {
     let addr = start_exec_test_server().await;
     let base_url_http = format!("http://{addr}");
     let base_url_ws = format!("ws://{addr}/ws");
@@ -6765,6 +6955,14 @@ async fn test_connect_disconnect_reconnect() {
     assert_eq!(change.venue, Some(*BINANCE_VENUE));
     assert_eq!(change.endpoint, endpoint);
     assert_eq!(change.state, SocketState::Disconnected);
+
+    match shutdown {
+        "reset" => client.reset().unwrap(),
+        "dispose" => client.dispose().unwrap(),
+        "disconnect" => client.disconnect().await.unwrap(),
+        _ => unreachable!(),
+    }
+    assert!(!client.is_connected());
 
     client.disconnect().await.unwrap();
     assert!(!client.is_connected());

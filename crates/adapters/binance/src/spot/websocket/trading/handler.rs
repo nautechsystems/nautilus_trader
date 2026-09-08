@@ -50,7 +50,7 @@ use crate::{
     common::credential::{SigningCredential, canonical_ws_query_string},
     spot::{
         enums::BinanceSpotUserDataEventType,
-        http::{models::BinanceCancelOrderResponse, parse},
+        http::parse,
         sbe::spot::{
             ReadBuf,
             error_response_codec::ErrorResponseDecoder,
@@ -465,7 +465,9 @@ impl BinanceSpotWsTradingHandler {
                     .get("error")
                     .map(|e| {
                         (
-                            e.get("code").and_then(|v| v.as_i64()).unwrap_or(-1),
+                            e.get("code")
+                                .and_then(|v| v.as_i64())
+                                .and_then(|code| i32::try_from(code).ok()),
                             e.get("msg")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("Unknown error")
@@ -479,12 +481,24 @@ impl BinanceSpotWsTradingHandler {
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("Unknown error")
                                 .to_string();
-                            (code, msg)
+                            (i32::try_from(code).ok(), msg)
                         })
                     });
 
                 if let Some((code, msg)) = error_info {
-                    let rejection = self.create_rejection(id_str, code as i32, msg, meta);
+                    let status = json
+                        .get("status")
+                        .and_then(|v| v.as_u64())
+                        .map(|s| s as u16);
+                    let rejection = match code {
+                        Some(code) => {
+                            self.create_rejection(id_str, status.unwrap_or(0), code, msg, meta)
+                        }
+                        None => BinanceSpotWsTradingMessage::RequestFailed {
+                            request_id: id_str,
+                            msg: format!("Missing or invalid venue error code: {msg}"),
+                        },
+                    };
                     self.emit(rejection);
                     return;
                 }
@@ -509,7 +523,7 @@ impl BinanceSpotWsTradingHandler {
                     _ => {
                         // Order operation responses come as SBE binary, not JSON text.
                         // If we get a JSON success for an order operation, log it.
-                        log::debug!("Unexpected JSON success for request {id_str}: {json}");
+                        log::debug!("Unexpected JSON success for request {id_str}");
                     }
                 }
                 return;
@@ -534,7 +548,7 @@ impl BinanceSpotWsTradingHandler {
             return;
         }
 
-        log::debug!("Unhandled text message: {text}");
+        log::debug!("Unhandled text message: {} bytes", text.len());
     }
 
     fn handle_user_data_event(&self, event: &serde_json::Value) {
@@ -646,11 +660,14 @@ impl BinanceSpotWsTradingHandler {
 
         // Check for error status (non-200)
         if status != 200 {
-            let (code, msg) = Self::try_decode_sbe_error(&result_data).unwrap_or((
-                status as i32,
-                format!("Request failed with status {status}"),
-            ));
-            return Ok(self.create_rejection(request_id, code, msg, meta));
+            return Ok(match Self::try_decode_sbe_error(&result_data) {
+                Some((code, msg)) => self.create_rejection(request_id, status, code, msg, meta),
+                // An undecodable error payload carries no definitive command evidence
+                None => BinanceSpotWsTradingMessage::RequestFailed {
+                    request_id,
+                    msg: format!("Request failed with status {status}; error payload undecodable"),
+                },
+            });
         }
 
         // Decode the inner payload based on request type
@@ -670,27 +687,8 @@ impl BinanceSpotWsTradingHandler {
                 })
             }
             BinanceSpotWsTradingRequestMeta::CancelReplaceOrder => {
-                // Cancel-replace returns both cancel and new order info
-                let new_order_response = parse::decode_new_order_full(&result_data)?;
-                let cancel_response = BinanceCancelOrderResponse {
-                    price_exponent: new_order_response.price_exponent,
-                    qty_exponent: new_order_response.qty_exponent,
-                    order_id: 0,
-                    order_list_id: None,
-                    transact_time: new_order_response.transact_time,
-                    price_mantissa: 0,
-                    orig_qty_mantissa: 0,
-                    executed_qty_mantissa: 0,
-                    cummulative_quote_qty_mantissa: 0,
-                    status: crate::spot::sbe::spot::order_status::OrderStatus::Canceled,
-                    time_in_force: new_order_response.time_in_force,
-                    order_type: new_order_response.order_type,
-                    side: new_order_response.side,
-                    self_trade_prevention_mode: new_order_response.self_trade_prevention_mode,
-                    client_order_id: String::new(),
-                    orig_client_order_id: String::new(),
-                    symbol: new_order_response.symbol.clone(),
-                };
+                let (cancel_response, new_order_response) =
+                    parse::decode_cancel_replace_orders(&result_data)?;
                 Ok(BinanceSpotWsTradingMessage::CancelReplaceAccepted {
                     request_id,
                     cancel_response,
@@ -777,6 +775,7 @@ impl BinanceSpotWsTradingHandler {
     fn create_rejection(
         &self,
         request_id: String,
+        status: u16,
         code: i32,
         msg: String,
         meta: BinanceSpotWsTradingRequestMeta,
@@ -785,6 +784,7 @@ impl BinanceSpotWsTradingHandler {
             BinanceSpotWsTradingRequestMeta::PlaceOrder => {
                 BinanceSpotWsTradingMessage::OrderRejected {
                     request_id,
+                    status,
                     code,
                     msg,
                 }
@@ -792,6 +792,7 @@ impl BinanceSpotWsTradingHandler {
             BinanceSpotWsTradingRequestMeta::CancelOrder => {
                 BinanceSpotWsTradingMessage::CancelRejected {
                     request_id,
+                    status,
                     code,
                     msg,
                 }
@@ -799,6 +800,7 @@ impl BinanceSpotWsTradingHandler {
             BinanceSpotWsTradingRequestMeta::CancelReplaceOrder => {
                 BinanceSpotWsTradingMessage::CancelReplaceRejected {
                     request_id,
+                    status,
                     code,
                     msg,
                 }
@@ -806,6 +808,7 @@ impl BinanceSpotWsTradingHandler {
             BinanceSpotWsTradingRequestMeta::CancelAllOrders => {
                 BinanceSpotWsTradingMessage::CancelRejected {
                     request_id,
+                    status,
                     code,
                     msg,
                 }
@@ -945,6 +948,108 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_cancel_replace_response_decodes_both_orders() {
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut handler = BinanceSpotWsTradingHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            Arc::new(SigningCredential::new(
+                "api-key".to_string(),
+                "secret".to_string(),
+            )),
+        );
+        let placed = include_bytes!(
+            "../../../../test_data/spot/user_data_sbe/mainnet/web_socket_response_1.sbe"
+        );
+        let canceled = include_bytes!(
+            "../../../../test_data/spot/user_data_sbe/mainnet/web_socket_response_2.sbe"
+        );
+        let (request_id, _, replacement) = handler.parse_envelope(placed).unwrap();
+        let (_, _, cancellation) = handler.parse_envelope(canceled).unwrap();
+        let expected_new = parse::decode_new_order_full(&replacement).unwrap();
+        let expected_cancel = parse::decode_cancel_order(&cancellation).unwrap();
+        let mut payload = Vec::new();
+
+        for field in [
+            2_u16,
+            crate::spot::sbe::spot::cancel_replace_order_response_codec::SBE_TEMPLATE_ID,
+            crate::spot::sbe::spot::SBE_SCHEMA_ID,
+            crate::spot::sbe::spot::SBE_SCHEMA_VERSION,
+        ] {
+            payload.extend_from_slice(&field.to_le_bytes());
+        }
+        let success =
+            crate::spot::sbe::spot::cancel_replace_status::CancelReplaceStatus::Success as u8;
+        payload.extend_from_slice(&[success, success]);
+        payload.extend_from_slice(&(cancellation.len() as u16).to_le_bytes());
+        payload.extend_from_slice(&cancellation);
+        payload.extend_from_slice(&(replacement.len() as u32).to_le_bytes());
+        payload.extend_from_slice(&replacement);
+        let mut response = placed[..placed.len() - replacement.len() - 4].to_vec();
+        response.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        response.extend_from_slice(&payload);
+        handler.pending_requests.insert(
+            request_id.clone(),
+            BinanceSpotWsTradingRequestMeta::CancelReplaceOrder,
+        );
+
+        let decoded = handler.decode_ws_api_response(&response).unwrap();
+
+        let BinanceSpotWsTradingMessage::CancelReplaceAccepted {
+            request_id: actual_id,
+            cancel_response,
+            new_order_response,
+        } = decoded
+        else {
+            panic!("Expected cancel-replace acceptance");
+        };
+        assert_eq!(actual_id, request_id);
+        assert_eq!(cancel_response, expected_cancel);
+        assert_eq!(new_order_response, expected_new);
+        assert!(handler.pending_requests.is_empty());
+    }
+
+    #[rstest]
+    #[case::missing(None)]
+    #[case::overflow(Some(i64::MAX))]
+    fn test_json_error_without_valid_code_is_ambiguous(#[case] code: Option<i64>) {
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut handler = BinanceSpotWsTradingHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            Arc::new(SigningCredential::new(
+                "test-key".to_string(),
+                "test-secret".to_string(),
+            )),
+        );
+        handler.pending_requests.insert(
+            "order-1".to_string(),
+            BinanceSpotWsTradingRequestMeta::PlaceOrder,
+        );
+        let response = serde_json::json!({"id": "order-1", "status": 400, "error": {"code": code, "msg": "invalid request"}});
+
+        handler.handle_text_response(&response.to_string());
+
+        let BinanceSpotWsTradingMessage::RequestFailed { request_id, msg } =
+            out_rx.try_recv().unwrap()
+        else {
+            panic!("expected ambiguous request failure");
+        };
+        assert_eq!(request_id, "order-1");
+        assert_eq!(msg, "Missing or invalid venue error code: invalid request");
+        assert!(handler.pending_requests.is_empty());
+        assert!(out_rx.try_recv().is_err());
+    }
 
     #[rstest]
     #[case::microseconds_converted_to_ms(1_700_000_000_000_000_i64, 1_700_000_000_000_i64)]
