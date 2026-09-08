@@ -163,12 +163,44 @@ Another sibling can fill before cancellation completes.
 
 ### One-Updates-Other (OUO)
 
+#### Updates after a sibling fill
+
 In backtest local matching, a fill in one OUO order uses that order's remaining quantity as the
-target for each open sibling. The engine cancels a sibling when the target is zero or its filled
-quantity already meets the target; otherwise, it updates the sibling when needed. This behavior
-suits equal-sized peers and does not preserve a ratio between unequal starting quantities. With
-strategy management enabled, the strategy applies the same update or cancellation behavior to
-open, non-active-local siblings. Otherwise, live behavior depends on adapter and venue support.
+target for each open sibling:
+
+- If the target is zero or the sibling's filled quantity already meets the target, cancel the sibling.
+- Otherwise, update the sibling's quantity when needed.
+
+This behavior suits equal-sized peers and does not preserve a ratio between unequal starting
+quantities. With strategy management enabled, the strategy applies the same update or cancellation
+behavior to open, non-active-local siblings. Otherwise, live behavior depends on adapter and venue
+support.
+
+#### Backtest reduce-only resizing
+
+With reduce-only enforcement enabled, a fill can resize resting reduce-only orders to the available
+position quantity, subject to parent caps. When contingent-order support is also enabled, a resized
+OUO order propagates its remaining quantity to siblings that are:
+
+- Open and not active local.
+- Passive orders resting on the same instrument's book.
+
+Siblings do not need to be `reduce_only`. Each sibling's quantity update follows these rules:
+
+- Add the sibling's prior fills to the propagated remaining quantity to obtain its total quantity.
+- Apply the sibling's own cached parent's filled-quantity cap, when available.
+- Never reduce the total below the sibling's prior fills.
+
+The order already being filled retains its active fill loop's quantity rules. This propagation does
+not trigger matching itself.
+
+#### Backtest cancellation at zero capacity
+
+With reduce-only enforcement and contingent-order support enabled:
+
+- When the reduce-only order has no remaining capacity, cancel it and its eligible siblings without
+  resizing the siblings. This also covers siblings whose acceptance event is still awaiting delivery.
+- When a sibling exhausts only its own parent allowance, resize it to its filled quantity, then cancel it.
 
 ## Constructing contingent orders
 

@@ -73,6 +73,7 @@ Released on TBD (UTC).
 - Fixed `released_price`, `due_post_only`, `protection_price`, `causation_id`, `correction_id`, `is_reopened`, and fill `info` being dropped when an order event was persisted to PostgreSQL
 - Fixed position commissions and realized PnL after fill-void replay
 - Fixed OTO exit sizing for commission-adjusted positions, child size increments, and minimum quantities
+- Fixed backtest reduce-only resizing and cancellation propagation to linked OUO orders
 - Fixed cash account locked balances after partial order fills
 - Fixed cash account backtests accepting futures contracts, thanks for reporting @folknor
 - Fixed false reconciliation errors for uncached hedge positions reporting zero quantity
