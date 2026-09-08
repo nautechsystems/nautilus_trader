@@ -100,6 +100,8 @@ Released on TBD (UTC).
 - Fixed Binance Spot cancel-all decoding and lifecycle handling for OCO order lists
 - Fixed Binance Spot `MIN_NOTIONAL` and `NOTIONAL` filters being omitted from instrument constraints
 - Fixed Bybit funding settlements being treated as fills (#4937), thanks for reporting @luk911
+- Fixed Bybit book subscriptions producing incorrect quotes, including zero sizes from deleted levels
+- Fixed Bybit quote and book subscription cleanup after unsubscribe or subscription failure
 - Fixed Kraken Spot available balances excluding funds held by the venue (#4922), thanks @zhaow-de
 - Fixed Kraken Spot instrument fees to use account rates when credentials are configured (#4890), thanks @matvt-cell
 - Fixed OKX mass status succeeding with incomplete pending algo-order coverage (#4924), thanks @silarin

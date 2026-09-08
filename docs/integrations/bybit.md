@@ -205,6 +205,18 @@ Bybit's current testnet guidance also notes:
   account.
 - Bybit currently documents testnet account setup through a desktop browser.
 
+## Quotes and order books
+
+For SPOT, LINEAR, and INVERSE products, quote subscriptions use Bybit's depth-1 order book
+snapshots. This feed provides best bid/ask prices and sizes at a documented 10 ms push frequency.
+OPTION quotes use the ticker feed. See the [Bybit order book specification](https://bybit-exchange.github.io/docs/v5/websocket/public/orderbook).
+
+Quotes and depth-1 book subscriptions share one WebSocket topic. Unsubscribing from one leaves the
+topic active while the other is still subscribed. A deeper book subscription uses its own topic alongside
+the depth-1 quote feed, so adding book deltas does not change the quote source. Book deltas only
+come from the requested depth. Subscribe to one book depth per instrument; unsubscribe from the
+existing book before selecting another depth.
+
 ## Orders capability
 
 Bybit offers a flexible combination of trigger types, enabling a broader range of Nautilus orders.
