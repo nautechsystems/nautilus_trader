@@ -1994,6 +1994,9 @@ impl DataClient for InteractiveBrokersDataClient {
                                 ts_init,
                             ) {
                                 Ok(quote_tick) => batch_quotes.push(quote_tick),
+                                Err(e) if super::parse::is_unrepresentable_size(&e) => {
+                                    tracing::debug!("Dropping quote for {}: {}", instrument_id, e);
+                                }
                                 Err(e) => {
                                     tracing::warn!("Failed to parse quote tick: {:?}", e);
                                 }
@@ -2185,6 +2188,13 @@ impl DataClient for InteractiveBrokersDataClient {
                                 trade_id,
                             ) {
                                 Ok(trade_tick) => batch_trades.push(trade_tick),
+                                Err(e) if super::parse::is_unrepresentable_size(&e) => {
+                                    tracing::debug!(
+                                        "Dropping trade print for {}: {}",
+                                        instrument_id,
+                                        e
+                                    );
+                                }
                                 Err(e) => {
                                     tracing::warn!("Failed to parse trade tick: {:?}", e);
                                 }
