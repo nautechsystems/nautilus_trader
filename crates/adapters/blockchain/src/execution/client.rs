@@ -4634,6 +4634,7 @@ async fn complete_finalized_swap(
                 false,
                 Some(fill.venue_order_id),
                 Some(emitter.account_id()),
+                None,
             );
             emitter.try_send_order_event(OrderEventAny::Canceled(canceled))?;
         }

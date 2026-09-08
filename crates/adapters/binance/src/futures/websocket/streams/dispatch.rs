@@ -537,6 +537,7 @@ pub(crate) fn dispatch_order_update(
                     false,
                     Some(venue_order_id),
                     Some(account_id),
+                    None,
                 );
                 dispatch_state.cleanup_terminal(client_order_id);
                 emitter.send_order_event(OrderEventAny::Canceled(canceled));
@@ -565,6 +566,7 @@ pub(crate) fn dispatch_order_update(
                         false,
                         Some(venue_order_id),
                         Some(account_id),
+                        None,
                     );
                     emitter.send_order_event(OrderEventAny::Canceled(canceled));
                 } else {
@@ -1421,6 +1423,7 @@ pub(crate) fn dispatch_algo_update(
                     false,
                     venue_order_id,
                     Some(account_id),
+                    None,
                 );
                 emitter.send_order_event(OrderEventAny::Canceled(canceled));
             } else {

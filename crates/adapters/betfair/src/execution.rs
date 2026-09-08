@@ -1154,6 +1154,7 @@ impl BetfairExecutionClient {
             false,
             Some(report.venue_order_id),
             Some(context.account_id),
+            report.cancel_reason.as_deref().map(Ustr::from),
         );
         context
             .emitter
@@ -2400,6 +2401,7 @@ impl ExecutionClient for BetfairExecutionClient {
                             false,
                             Some(venue_order_id),
                             Some(emitter.account_id()),
+                            None,
                         );
                         emitter.send_order_event(OrderEventAny::Canceled(canceled));
                     }
@@ -2618,6 +2620,7 @@ impl ExecutionClient for BetfairExecutionClient {
                                     false,
                                     Some(venue_order_id),
                                     Some(emitter.account_id()),
+                                    None,
                                 );
                                 emitter.send_order_event(OrderEventAny::Canceled(canceled));
                             }
@@ -4726,6 +4729,7 @@ fn emit_replace_failure(
             false,
             Some(venue_order_id),
             Some(emitter.account_id()),
+            None,
         );
         emitter.send_order_event(OrderEventAny::Canceled(canceled));
     } else {
@@ -6928,6 +6932,7 @@ mod tests {
                 false,
                 Some(venue_order_id),
                 Some(account_id),
+                None,
             )))
             .unwrap();
 

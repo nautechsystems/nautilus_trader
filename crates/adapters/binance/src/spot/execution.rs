@@ -540,6 +540,7 @@ impl BinanceSpotExecutionClient {
                             false,
                             Some(venue_order_id),
                             Some(account_id),
+                            None,
                         );
                         event_emitter.send_order_event(OrderEventAny::Canceled(canceled_event));
                     }
@@ -2001,6 +2002,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                     false,
                     Some(canceled_order.venue_order_id),
                     Some(account_id),
+                    None,
                 );
 
                 event_emitter.send_order_event(OrderEventAny::Canceled(canceled_event));
@@ -2080,6 +2082,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                                         false,
                                         Some(venue_order_id),
                                         Some(account_id),
+                                        None,
                                     );
 
                                     event_emitter
@@ -3361,6 +3364,7 @@ fn dispatch_tracked_execution_report(
                 false,
                 Some(venue_order_id),
                 Some(account_id),
+                None,
             );
             state.cleanup_terminal(client_order_id);
             emitter.send_order_event(OrderEventAny::Canceled(canceled));
@@ -3389,6 +3393,7 @@ fn dispatch_tracked_execution_report(
                     false,
                     Some(venue_order_id),
                     Some(account_id),
+                    None,
                 );
                 emitter.send_order_event(OrderEventAny::Canceled(canceled));
             } else {

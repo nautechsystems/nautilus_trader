@@ -755,6 +755,7 @@ pub fn parse_order_event(
                     false,
                     Some(venue_order_id),
                     Some(account_id),
+                    cancel_reason.as_deref().map(Ustr::from),
                 );
                 Some(ParsedOrderEvent::Canceled(canceled))
             }

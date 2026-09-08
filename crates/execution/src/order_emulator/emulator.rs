@@ -1160,6 +1160,7 @@ impl OrderEmulator {
             false,
             order.venue_order_id(),
             order.account_id(),
+            None,
         );
 
         let event = OrderEventAny::Canceled(event);
@@ -3818,6 +3819,7 @@ mod tests {
                 0.into(),
                 0.into(),
                 false,
+                None,
                 None,
                 None,
             )))

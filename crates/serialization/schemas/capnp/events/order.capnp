@@ -165,6 +165,7 @@ struct OrderCanceled {
     tsEvent @7 :Base.UnixNanos;
     tsInit @8 :Base.UnixNanos;
     reconciliation @9 :Bool;
+    reason @10 :Text;
 }
 
 # OrderExpired - order expired

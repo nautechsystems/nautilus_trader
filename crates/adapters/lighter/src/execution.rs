@@ -11040,6 +11040,7 @@ mod tests {
             false,
             Some(venue_order_id),
             Some(account_id()),
+            None,
         ));
         cache.borrow_mut().update_order(&canceled).unwrap();
     }

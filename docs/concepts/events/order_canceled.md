@@ -19,6 +19,7 @@ Beyond the [common Python order event fields](index.md#common-python-order-event
 | ---------------- | ------------------------ | ---------------- | ------------------------------------------------------------------------------ |
 | `venue_order_id` | `VenueOrderId` or `None` | `None`           | The venue-assigned order identifier, if known.                                 |
 | `account_id`     | `AccountId` or `None`    | `None`           | The account associated with the order, if known.                               |
+| `reason`         | `str` or `None`          | `None`           | The cancellation reason supplied by the venue.                                 |
 | `reconciliation` | `bool`                   | Required         | If reconciliation generated the event; this does not imply venue confirmation. |
 
 ## Example

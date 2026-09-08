@@ -32,6 +32,7 @@ use nautilus_model::{
     reports::OrderStatusReport,
     types::{Price, Quantity},
 };
+use ustr::Ustr;
 
 use super::{
     DeltaSnapshot, OrderIdentity, WsDispatchState, ensure_accepted_emitted,
@@ -191,6 +192,7 @@ fn delta_tracked(
             false,
             Some(venue_order_id),
             Some(account_id),
+            delta.reason.as_deref().map(Ustr::from),
         );
         emitter.send_order_event(OrderEventAny::Canceled(canceled));
         state.cleanup_terminal(&client_order_id);
@@ -344,6 +346,7 @@ pub fn open_orders_cancel(
             false,
             Some(venue_order_id),
             Some(account_id),
+            cancel.reason.as_deref().map(Ustr::from),
         );
         emitter.send_order_event(OrderEventAny::Canceled(canceled));
         state.cleanup_terminal(&client_order_id);

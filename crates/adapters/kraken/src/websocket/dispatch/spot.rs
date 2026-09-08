@@ -35,6 +35,7 @@ use nautilus_model::{
     types::Quantity,
 };
 use rust_decimal::Decimal;
+use ustr::Ustr;
 
 use super::{
     OrderIdentity, WsDispatchState, ensure_accepted_emitted, fill_report_to_order_filled,
@@ -351,6 +352,7 @@ fn status_tracked(
                 false,
                 Some(venue_order_id),
                 Some(account_id),
+                report.cancel_reason.as_deref().map(Ustr::from),
             );
             emitter.send_order_event(OrderEventAny::Canceled(canceled));
             state.cleanup_terminal(&client_order_id);

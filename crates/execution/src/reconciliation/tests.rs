@@ -23,8 +23,8 @@ use nautilus_model::{
         TrailingOffsetType,
     },
     events::{
-        OrderAccepted, OrderEventAny, OrderFilled, OrderPendingCancel, OrderPendingUpdate,
-        OrderSubmitted,
+        OrderAccepted, OrderEvent, OrderEventAny, OrderFilled, OrderPendingCancel,
+        OrderPendingUpdate, OrderSubmitted,
         order::spec::{
             OrderAcceptedSpec, OrderFilledSpec, OrderPendingCancelSpec, OrderPendingUpdateSpec,
             OrderSubmittedSpec, OrderUpdatedSpec,
@@ -1515,6 +1515,38 @@ fn test_external_order_status_event_generation(
         _ => "Other",
     };
     assert_eq!(actual_type, last_event_type, "status={status}");
+}
+
+#[rstest]
+fn test_external_canceled_order_preserves_cancel_reason() {
+    let instrument = crypto_perpetual_ethusdt();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.0"))
+        .price(Price::from("100.00"))
+        .build();
+    let mut report = make_test_report(
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Canceled,
+        "0",
+        false,
+    );
+    report.cancel_reason = Some("not-enough-liquidity".to_string());
+
+    let events = generate_external_order_status_events(
+        &order,
+        &report,
+        &AccountId::from("TEST-001"),
+        &InstrumentAny::CryptoPerpetual(instrument),
+        UnixNanos::from(2_000_000),
+    );
+
+    let OrderEventAny::Canceled(canceled) = events.last().unwrap() else {
+        panic!("Expected Canceled event");
+    };
+    assert_eq!(canceled.reason(), Some("not-enough-liquidity".into()));
 }
 
 #[rstest]
@@ -3124,7 +3156,7 @@ fn test_reconcile_order_report_generates_canceled(instrument: InstrumentAny) {
     );
     order.apply(OrderEventAny::Accepted(accepted)).unwrap();
 
-    let report = create_test_order_status_report(
+    let mut report = create_test_order_status_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -3133,10 +3165,13 @@ fn test_reconcile_order_report_generates_canceled(instrument: InstrumentAny) {
         Quantity::from(100),
         Quantity::from(0),
     );
+    report.cancel_reason = Some("not-enough-liquidity".to_string());
 
     let result = reconcile_order_report(&order, &report, Some(&instrument), UnixNanos::default());
-    assert!(result.is_some());
-    assert!(matches!(result.unwrap(), OrderEventAny::Canceled(_)));
+    let OrderEventAny::Canceled(canceled) = result.unwrap() else {
+        panic!("Expected Canceled event");
+    };
+    assert_eq!(canceled.reason(), Some("not-enough-liquidity".into()));
 }
 
 #[rstest]

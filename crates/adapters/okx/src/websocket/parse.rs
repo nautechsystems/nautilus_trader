@@ -280,6 +280,7 @@ pub fn parse_order_event(
                     false,
                     Some(venue_order_id),
                     Some(account_id),
+                    None,
                 )))
             }
         }
@@ -398,6 +399,7 @@ pub fn parse_spread_order_event(
                 false,
                 Some(venue_order_id),
                 Some(account_id),
+                None,
             )))
         }
         _ => parse_common_spread_order_status_report(
