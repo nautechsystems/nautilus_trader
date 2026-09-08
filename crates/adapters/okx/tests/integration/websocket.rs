@@ -630,7 +630,7 @@ async fn connect_client(ws_url: &str) -> OKXWebSocketClient {
 }
 
 #[tokio::test]
-async fn test_submit_event_order_defaults_speed_bump_and_outcome() {
+async fn test_submit_event_order_omits_speed_bump() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
@@ -649,7 +649,7 @@ async fn test_submit_event_order_defaults_speed_bump_and_outcome() {
             StrategyId::from("STRATEGY-001"),
             InstrumentId::from(EVENT_INSTRUMENT_ID),
             OKXTradeMode::Cash,
-            ClientOrderId::from("O-event-default-speed"),
+            ClientOrderId::from("O-event-limit"),
             OrderSide::Buy,
             OrderType::Limit,
             Quantity::from("10"),
@@ -657,7 +657,6 @@ async fn test_submit_event_order_defaults_speed_bump_and_outcome() {
             Some(Price::from("0.420")),
             None,
             Some(false),
-            None,
             None,
             None,
             None,
@@ -686,7 +685,7 @@ async fn test_submit_event_order_defaults_speed_bump_and_outcome() {
     let arg = &messages[0]["args"][0];
 
     assert_eq!(messages[0]["op"], "order");
-    assert_eq!(arg["speedBump"], "1");
+    assert!(arg.get("speedBump").is_none());
     assert_eq!(arg["outcome"], "yes");
     assert!(arg.get("ccy").is_none());
 
@@ -694,7 +693,7 @@ async fn test_submit_event_order_defaults_speed_bump_and_outcome() {
 }
 
 #[tokio::test]
-async fn test_submit_event_post_only_order_omits_default_speed_bump() {
+async fn test_submit_event_post_only_order_omits_speed_bump() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
@@ -721,7 +720,6 @@ async fn test_submit_event_post_only_order_omits_default_speed_bump() {
             Some(Price::from("0.420")),
             None,
             Some(true),
-            None,
             None,
             None,
             None,
@@ -861,7 +859,6 @@ async fn test_submit_margin_cross_order_preserves_reduce_only_on_wire() {
             None,
             None,
             None,
-            None,
         )
         .await
         .expect("submit margin order failed");
@@ -931,7 +928,6 @@ async fn test_submit_order_during_reconnect_is_not_replayed() {
             None,
             Some(false),
             Some(false),
-            None,
             None,
             None,
             None,
@@ -1019,7 +1015,6 @@ async fn test_submit_cash_spot_order_rejects_reduce_only() {
             None,
             None,
             None,
-            None,
         )
         .await
         .unwrap_err();
@@ -1065,7 +1060,6 @@ async fn test_submit_swap_hedge_mode_order_omits_reduce_only_on_wire() {
             Some(true),
             None,
             Some(PositionSide::Long),
-            None,
             None,
             None,
             None,
@@ -1140,7 +1134,6 @@ async fn test_submit_swap_hedge_mode_rejects_non_closing_reduce_only_order() {
             None,
             None,
             None,
-            None,
         )
         .await
         .unwrap_err();
@@ -1184,7 +1177,6 @@ async fn test_submit_swap_net_mode_order_preserves_reduce_only_on_wire() {
             None,
             Some(false),
             Some(true),
-            None,
             None,
             None,
             None,
@@ -1257,7 +1249,6 @@ async fn test_batch_submit_orders_scope_reduce_only_on_wire() {
                 None,
                 None,
                 None,
-                None,
             ),
             (
                 OKXInstrumentType::Margin,
@@ -1272,7 +1263,6 @@ async fn test_batch_submit_orders_scope_reduce_only_on_wire() {
                 None,
                 Some(false),
                 Some(true),
-                None,
                 None,
                 None,
                 None,
@@ -1295,7 +1285,6 @@ async fn test_batch_submit_orders_scope_reduce_only_on_wire() {
                 None,
                 None,
                 None,
-                None,
             ),
             (
                 OKXInstrumentType::Swap,
@@ -1310,7 +1299,6 @@ async fn test_batch_submit_orders_scope_reduce_only_on_wire() {
                 None,
                 Some(false),
                 Some(true),
-                None,
                 None,
                 None,
                 None,
@@ -1378,7 +1366,6 @@ async fn test_submit_event_order_requires_outcome() {
             None,
             None,
             None,
-            None,
         )
         .await;
 
@@ -1413,7 +1400,6 @@ async fn test_batch_submit_event_order_requires_outcome() {
             None,
             None,
             None,
-            None,
         )])
         .await;
 
@@ -1426,7 +1412,7 @@ async fn test_batch_submit_event_order_requires_outcome() {
 }
 
 #[tokio::test]
-async fn test_batch_submit_event_order_defaults_speed_bump() {
+async fn test_batch_submit_event_order_omits_speed_bump() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
@@ -1444,7 +1430,7 @@ async fn test_batch_submit_event_order_defaults_speed_bump() {
             OKXInstrumentType::Events,
             InstrumentId::from(EVENT_INSTRUMENT_ID),
             OKXTradeMode::Cash,
-            ClientOrderId::from("O-event-batch-default-speed"),
+            ClientOrderId::from("O-event-batch-limit"),
             OrderSide::Buy,
             None,
             OrderType::Limit,
@@ -1452,7 +1438,6 @@ async fn test_batch_submit_event_order_defaults_speed_bump() {
             Some(Price::from("0.420")),
             None,
             Some(false),
-            None,
             None,
             Some("yes".to_string()),
             None,
@@ -1475,14 +1460,17 @@ async fn test_batch_submit_event_order_defaults_speed_bump() {
     let arg = &messages[0]["args"][0];
 
     assert_eq!(messages[0]["op"], "batch-orders");
-    assert_eq!(arg["speedBump"], "1");
+    assert!(arg.get("speedBump").is_none());
     assert_eq!(arg["outcome"], "yes");
 
     client.close().await.expect("close failed");
 }
 
+#[rstest]
+#[case::single(false, "amend-order")]
+#[case::batch(true, "batch-amend-orders")]
 #[tokio::test]
-async fn test_modify_event_order_sends_explicit_speed_bump() {
+async fn test_modify_event_order_omits_speed_bump(#[case] batch: bool, #[case] operation: &str) {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
@@ -1495,23 +1483,38 @@ async fn test_modify_event_order_sends_explicit_speed_bump() {
         .await
         .expect("client inactive");
 
-    client
-        .modify_order(
-            TraderId::from("TRADER-001"),
-            StrategyId::from("STRATEGY-001"),
-            InstrumentId::from(EVENT_INSTRUMENT_ID),
-            Some(ClientOrderId::from("O-event-amend")),
-            Some(Price::from("0.430")),
-            Some(Quantity::from("10")),
-            None,
-            None,
-            None,
-            Some("0".to_string()),
-            None,
-            None,
-        )
-        .await
-        .expect("modify event order failed");
+    if batch {
+        client
+            .batch_modify_orders(vec![(
+                OKXInstrumentType::Events,
+                InstrumentId::from(EVENT_INSTRUMENT_ID),
+                ClientOrderId::from("O-event-amend"),
+                None,
+                Some(Price::from("0.430")),
+                Some(Quantity::from("10")),
+                Some(true),
+                Some(false),
+            )])
+            .await
+            .expect("batch modify event order failed");
+    } else {
+        client
+            .modify_order(
+                TraderId::from("TRADER-001"),
+                StrategyId::from("STRATEGY-001"),
+                InstrumentId::from(EVENT_INSTRUMENT_ID),
+                Some(ClientOrderId::from("O-event-amend")),
+                Some(Price::from("0.430")),
+                Some(Quantity::from("10")),
+                None,
+                None,
+                None,
+                Some(true),
+                Some(false),
+            )
+            .await
+            .expect("modify event order failed");
+    }
 
     wait_until_async(
         || {
@@ -1525,8 +1528,18 @@ async fn test_modify_event_order_sends_explicit_speed_bump() {
     let messages = state.order_messages().await;
     let arg = &messages[0]["args"][0];
 
-    assert_eq!(messages[0]["op"], "amend-order");
-    assert_eq!(arg["speedBump"], "0");
+    assert_eq!(messages[0]["op"], operation);
+    assert_eq!(
+        *arg,
+        json!({
+            "instIdCode": EVENT_INST_ID_CODE,
+            "clOrdId": "O-event-amend",
+            "newPx": "0.430",
+            "newSz": "10",
+            "rpiTakerAccess": true,
+            "rpiPxRound": false,
+        })
+    );
 
     client.close().await.expect("close failed");
 }
@@ -1593,7 +1606,6 @@ async fn test_rpi_websocket_subscription_and_single_batch_order_matrix() {
             None,
             None,
             None,
-            None,
             Some(true),
             None,
             None,
@@ -1627,7 +1639,6 @@ async fn test_rpi_websocket_subscription_and_single_batch_order_matrix() {
             None,
             None,
             None,
-            None,
             Some(true),
             Some(true),
             Some(false),
@@ -1649,7 +1660,6 @@ async fn test_rpi_websocket_subscription_and_single_batch_order_matrix() {
             Some(false),
             Some(false),
             None,
-            None,
             Some(true),
             Some(false),
             Some(true),
@@ -1667,7 +1677,6 @@ async fn test_rpi_websocket_subscription_and_single_batch_order_matrix() {
             None,
             None,
             None,
-            None,
             Some(true),
             Some(false),
         )
@@ -1681,7 +1690,6 @@ async fn test_rpi_websocket_subscription_and_single_batch_order_matrix() {
             Some("RPI-WS-AMEND-2".to_string()),
             Some(Price::from("65000.4")),
             Some(Quantity::from("1.00")),
-            None,
             Some(false),
             Some(true),
         )])

@@ -939,9 +939,6 @@ pub struct OKXPlaceOrderRequest {
     /// Attached TP/SL OCO instructions.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attach_algo_ords: Option<Vec<OKXAttachAlgoOrdRequest>>,
-    /// Event contract speed bump flag. Use "1" for non-post-only EVENTS orders.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub speed_bump: Option<String>,
     /// Event contract market outcome: yes or no.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub outcome: Option<String>,
@@ -2154,7 +2151,6 @@ mod tests {
             reduce_only: None,
             tgt_ccy: None,
             attach_algo_ords: None,
-            speed_bump: None,
             outcome: None,
             slippage_pct: None,
             rpi_taker_access: None,
@@ -2186,7 +2182,6 @@ mod tests {
             reduce_only: None,
             tgt_ccy: None,
             attach_algo_ords: None,
-            speed_bump: None,
             outcome: None,
             slippage_pct: None,
             rpi_taker_access: None,
@@ -2217,7 +2212,6 @@ mod tests {
             reduce_only: None,
             tgt_ccy: None,
             attach_algo_ords: None,
-            speed_bump: None,
             outcome: None,
             slippage_pct: Some("0.005".to_string()),
             rpi_taker_access: None,
@@ -2246,7 +2240,6 @@ mod tests {
             reduce_only: Some(false),
             tgt_ccy: None,
             attach_algo_ords: None,
-            speed_bump: None,
             outcome: None,
             slippage_pct: None,
             rpi_taker_access: Some(true),
@@ -2449,7 +2442,6 @@ mod tests {
             reduce_only: None,
             tgt_ccy: None,
             attach_algo_ords: None,
-            speed_bump: Some("1".to_string()),
             outcome: Some("yes".to_string()),
             slippage_pct: None,
             rpi_taker_access: None,
@@ -2458,7 +2450,7 @@ mod tests {
 
         let json: serde_json::Value = serde_json::to_value(&request).unwrap();
 
-        assert_eq!(json["speedBump"], "1");
+        assert!(json.get("speedBump").is_none());
         assert_eq!(json["outcome"], "yes");
     }
 

@@ -881,10 +881,9 @@ order = strategy.order_factory.limit(
 strategy.submit_order(order)
 ```
 
-OKX requires `outcome` for `EVENTS` orders. It also requires `speedBump=1` for
-non-post-only event contract orders and amendments. The adapter validates `outcome`
-before sending the order and defaults `speedBump` to `1` for non-post-only event
-orders when it is not supplied.
+OKX requires `outcome` for `EVENTS` orders, which the adapter validates before
+sending. OKX ignores the obsolete `speedBump` request parameter, so the adapter
+omits it. Remove `speed_bump` from existing client calls and order `params`.
 
 Settlement fills arrive with OKX order category `delivery`. The adapter parses this
 category during live order updates and reconciliation.
@@ -894,6 +893,7 @@ Upstream references:
 - [Event contract REST endpoints](https://www.okx.com/docs-v5/en/#public-data-rest-api-get-series).
 - [WS channel](https://www.okx.com/docs-v5/en/#public-data-websocket-event-contract-markets-channel).
 - [Place order request fields](https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-place-order).
+- [Removal of `speedBump`](https://www.okx.com/docs-v5/log_en/#2026-07-24).
 
 ## Authentication
 

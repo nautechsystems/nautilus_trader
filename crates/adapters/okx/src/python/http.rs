@@ -995,7 +995,6 @@ impl OKXHttpClient {
         attach_algo_ords=None,
         px_usd=None,
         px_vol=None,
-        speed_bump=None,
         outcome=None,
         slippage_pct=None,
     ))]
@@ -1020,7 +1019,6 @@ impl OKXHttpClient {
         attach_algo_ords: Option<Vec<Py<PyDict>>>,
         px_usd: Option<String>,
         px_vol: Option<String>,
-        speed_bump: Option<String>,
         outcome: Option<String>,
         slippage_pct: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -1047,7 +1045,6 @@ impl OKXHttpClient {
                     attach_algo_ords,
                     px_usd,
                     px_vol,
-                    speed_bump,
                     outcome,
                     slippage_pct,
                     None,

@@ -313,7 +313,6 @@ class OKXHttpClient:
         attach_algo_ords: typing.Sequence[dict] | None = None,
         px_usd: str | None = None,
         px_vol: str | None = None,
-        speed_bump: str | None = None,
         outcome: str | None = None,
         slippage_pct: str | None = None,
     ) -> typing.Any: ...

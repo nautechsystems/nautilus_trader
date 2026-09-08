@@ -2407,7 +2407,6 @@ impl OKXWebSocketClient {
         attach_algo_ords: Option<Vec<WsAttachAlgoOrdParams>>,
         px_usd: Option<String>,
         px_vol: Option<String>,
-        speed_bump: Option<String>,
         outcome: Option<String>,
         slippage_pct: Option<String>,
         rpi: Option<bool>,
@@ -2592,24 +2591,10 @@ impl OKXWebSocketClient {
             "Order type mapping: order_type={order_type:?}, time_in_force={time_in_force:?}, post_only={post_only:?} -> okx_ord_type={okx_ord_type:?}"
         );
 
-        let speed_bump = if instrument_type == OKXInstrumentType::Events {
-            if outcome.is_none() {
-                return Err(OKXWsError::ClientError(
-                    "OKX event contract orders require `outcome`".to_string(),
-                ));
-            }
-
-            if okx_ord_type == OKXOrderType::PostOnly {
-                speed_bump
-            } else {
-                Some(speed_bump.unwrap_or_else(|| "1".to_string()))
-            }
-        } else {
-            speed_bump
-        };
-
-        if let Some(speed_bump) = speed_bump {
-            builder.speed_bump(speed_bump);
+        if instrument_type == OKXInstrumentType::Events && outcome.is_none() {
+            return Err(OKXWsError::ClientError(
+                "OKX event contract orders require `outcome`".to_string(),
+            ));
         }
 
         if let Some(outcome) = outcome {
@@ -2713,7 +2698,6 @@ impl OKXWebSocketClient {
         venue_order_id: Option<VenueOrderId>,
         new_px_usd: Option<String>,
         new_px_vol: Option<String>,
-        speed_bump: Option<String>,
         rpi_taker_access: Option<bool>,
         rpi_px_round: Option<bool>,
     ) -> Result<(), OKXWsError> {
@@ -2757,10 +2741,6 @@ impl OKXWebSocketClient {
 
         if let Some(quantity) = quantity {
             builder.new_sz(quantity.to_string());
-        }
-
-        if let Some(speed_bump) = speed_bump {
-            builder.speed_bump(speed_bump);
         }
 
         if let Some(rpi_taker_access) = rpi_taker_access {
@@ -2981,7 +2961,6 @@ impl OKXWebSocketClient {
             Option<bool>,
             Option<bool>,
             Option<String>,
-            Option<String>,
             Option<bool>,
             Option<bool>,
             Option<bool>,
@@ -3006,7 +2985,6 @@ impl OKXWebSocketClient {
                 tp,
                 post_only,
                 reduce_only,
-                speed_bump,
                 outcome,
                 rpi,
                 rpi_taker_access,
@@ -3083,24 +3061,10 @@ impl OKXWebSocketClient {
                     builder.reduce_only(reduce_only);
                 }
 
-                let speed_bump = if inst_type == OKXInstrumentType::Events {
-                    if outcome.is_none() {
-                        return Err(OKXWsError::ClientError(
-                            "OKX event contract orders require `outcome`".to_string(),
-                        ));
-                    }
-
-                    if okx_ord_type == OKXOrderType::PostOnly {
-                        speed_bump
-                    } else {
-                        Some(speed_bump.unwrap_or_else(|| "1".to_string()))
-                    }
-                } else {
-                    speed_bump
-                };
-
-                if let Some(speed_bump) = speed_bump {
-                    builder.speed_bump(speed_bump);
+                if inst_type == OKXInstrumentType::Events && outcome.is_none() {
+                    return Err(OKXWsError::ClientError(
+                        "OKX event contract orders require `outcome`".to_string(),
+                    ));
                 }
 
                 if let Some(outcome) = outcome {
@@ -3146,7 +3110,6 @@ impl OKXWebSocketClient {
             Option<String>,
             Option<Price>,
             Option<Quantity>,
-            Option<String>,
             Option<bool>,
             Option<bool>,
         )>,
@@ -3163,7 +3126,6 @@ impl OKXWebSocketClient {
                 request_id,
                 pr,
                 sz,
-                speed_bump,
                 rpi_taker_access,
                 rpi_px_round,
             ) in orders
@@ -3186,10 +3148,6 @@ impl OKXWebSocketClient {
 
                 if let Some(q) = sz {
                     builder.new_sz(q.to_string());
-                }
-
-                if let Some(speed_bump) = speed_bump {
-                    builder.speed_bump(speed_bump);
                 }
 
                 if let Some(rpi_taker_access) = rpi_taker_access {
@@ -4403,7 +4361,6 @@ mod tests {
                 OrderSide::Buy,
                 OrderType::Limit,
                 Quantity::from("0.01"),
-                None,
                 None,
                 None,
                 None,

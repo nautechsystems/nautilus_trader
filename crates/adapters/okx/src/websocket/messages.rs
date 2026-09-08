@@ -1355,10 +1355,6 @@ pub struct WsPostOrderParams {
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attach_algo_ords: Option<Vec<WsAttachAlgoOrdParams>>,
-    /// Event contract speed bump flag. Use "1" for non-post-only EVENTS orders.
-    #[builder(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub speed_bump: Option<String>,
     /// Event contract market outcome: yes or no.
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1444,9 +1440,6 @@ pub struct WsAmendOrderParams {
     /// Whether OKX may round the amended price to an eligible RPI price.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rpi_px_round: Option<bool>,
-    /// Event contract speed bump flag. Use "1" for non-post-only EVENTS orders.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub speed_bump: Option<String>,
 }
 
 /// Parameters for WebSocket algo order placement.
@@ -2550,32 +2543,37 @@ mod tests {
             .ord_type(OKXOrderType::Limit)
             .sz("10".to_string())
             .px("0.42".to_string())
-            .speed_bump("1")
             .outcome("yes")
             .build()
             .unwrap();
 
         let json: serde_json::Value = serde_json::to_value(&params).unwrap();
 
-        assert_eq!(json["speedBump"], "1");
+        assert!(json.get("speedBump").is_none());
         assert_eq!(json["outcome"], "yes");
     }
 
     #[rstest]
-    fn test_ws_amend_order_params_serializes_speed_bump() {
+    fn test_ws_amend_order_params_omits_speed_bump() {
         use super::WsAmendOrderParamsBuilder;
 
         let params = WsAmendOrderParamsBuilder::default()
             .inst_id_code(10459u64)
             .cl_ord_id("event-1".to_string())
             .new_px("0.43".to_string())
-            .speed_bump("1")
             .build()
             .unwrap();
 
         let json: serde_json::Value = serde_json::to_value(&params).unwrap();
 
-        assert_eq!(json["speedBump"], "1");
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "instIdCode": 10459,
+                "clOrdId": "event-1",
+                "newPx": "0.43",
+            })
+        );
     }
 
     #[rstest]

@@ -727,7 +727,6 @@ impl OKXExecutionClient {
 
         let px_usd = get_param_as_string(&cmd.params, "px_usd");
         let px_vol = get_param_as_string(&cmd.params, "px_vol");
-        let speed_bump = get_param_as_string(&cmd.params, "speed_bump");
         let outcome = get_param_as_string(&cmd.params, "outcome");
         let slippage_pct = get_param_as_string(&cmd.params, "slippage_pct");
         let rpi = get_param_as_bool(&cmd.params, "rpi");
@@ -755,7 +754,6 @@ impl OKXExecutionClient {
                     None,
                     px_usd,
                     px_vol,
-                    speed_bump,
                     outcome,
                     slippage_pct,
                     rpi,
@@ -822,7 +820,6 @@ impl OKXExecutionClient {
                     Some(time_in_force),
                     price,
                     Some(is_post_only),
-                    None,
                     None,
                     None,
                     None,
@@ -2330,7 +2327,6 @@ impl ExecutionClient for OKXExecutionClient {
 
         // Build batch payload and emit submitted events
         let mut batch_orders = Vec::new();
-        let speed_bump = get_param_as_string(&cmd.params, "speed_bump");
         let outcome = get_param_as_string(&cmd.params, "outcome");
         let rpi = get_param_as_bool(&cmd.params, "rpi");
         let rpi_taker_access = get_param_as_bool(&cmd.params, "rpi_taker_access");
@@ -2352,7 +2348,6 @@ impl ExecutionClient for OKXExecutionClient {
                 context.trigger_price,
                 Some(context.is_post_only),
                 Some(context.is_reduce_only),
-                speed_bump.clone(),
                 outcome.clone(),
                 rpi,
                 rpi_taker_access,
@@ -2438,7 +2433,6 @@ impl ExecutionClient for OKXExecutionClient {
 
         let new_px_usd = get_param_as_string(&cmd.params, "px_usd");
         let new_px_vol = get_param_as_string(&cmd.params, "px_vol");
-        let speed_bump = get_param_as_string(&cmd.params, "speed_bump");
         let rpi_taker_access = get_param_as_bool(&cmd.params, "rpi_taker_access");
         let rpi_px_round = get_param_as_bool(&cmd.params, "rpi_px_round");
 
@@ -2457,7 +2451,6 @@ impl ExecutionClient for OKXExecutionClient {
                     command.venue_order_id,
                     new_px_usd,
                     new_px_vol,
-                    speed_bump,
                     rpi_taker_access,
                     rpi_px_round,
                 )

@@ -115,7 +115,7 @@ Released on TBD (UTC).
 - Standardized crate feature documentation across READMEs and Rustdoc
 - Standardized adapter client source layout across the Rust venue implementations
 - Standardized code and documentation terminology with domain-specific names
-- Updated Makefile help output to match the startup log header
+- Removed obsolete OKX `speed_bump` order parameters; omit the argument from Rust and Python client calls
 - Optimized pre-commit and CI convention hook runtime
 - Optimized Rust integration test compilation with one test binary per crate, thanks @faysou
 - Optimized DataEngine and backtest dispatch through borrowed data views (#4900), thanks @faysou
@@ -151,6 +151,7 @@ Released on TBD (UTC).
 - Simplified documented `StrategyConfig` and `DataActorConfig` subclassing to keyword-only fields
 - Updated persistence catalog migration commands to kebab-case binary names
 - Updated migration guidance for order books and instrument inspection
+- Updated Makefile help output to match the startup log header
 - Restructured execution documentation around algorithms, policies, reconciliation, and live recovery
 - Standardized Rust documentation links and added offline link coverage
 - Fixed the actor configuration example rejecting a positional argument

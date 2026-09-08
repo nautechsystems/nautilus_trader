@@ -6099,7 +6099,6 @@ impl OKXHttpClient {
         attach_algo_ords: Option<Vec<OKXAttachAlgoOrdRequest>>,
         px_usd: Option<String>,
         px_vol: Option<String>,
-        speed_bump: Option<String>,
         outcome: Option<String>,
         slippage_pct: Option<String>,
         rpi: Option<bool>,
@@ -6116,7 +6115,6 @@ impl OKXHttpClient {
                     .is_some_and(|orders| !orders.is_empty())
                 || px_usd.is_some()
                 || px_vol.is_some()
-                || speed_bump.is_some()
                 || outcome.is_some()
                 || slippage_pct.is_some()
                 || rpi
@@ -6259,21 +6257,11 @@ impl OKXHttpClient {
             (OKXOrderType::from(order_type), price)
         };
 
-        let speed_bump = if instrument_type == OKXInstrumentType::Events {
-            if outcome.is_none() {
-                return Err(OKXHttpError::ValidationError(
-                    "OKX event contract orders require `outcome`".to_string(),
-                ));
-            }
-
-            if ord_type == OKXOrderType::PostOnly {
-                speed_bump
-            } else {
-                Some(speed_bump.unwrap_or_else(|| "1".to_string()))
-            }
-        } else {
-            speed_bump
-        };
+        if instrument_type == OKXInstrumentType::Events && outcome.is_none() {
+            return Err(OKXHttpError::ValidationError(
+                "OKX event contract orders require `outcome`".to_string(),
+            ));
+        }
 
         let reduce_only = if reduce_only == Some(true) {
             okx_reduce_only_wire_value(
@@ -6313,7 +6301,6 @@ impl OKXHttpClient {
             reduce_only,
             tgt_ccy,
             attach_algo_ords,
-            speed_bump,
             outcome,
             slippage_pct,
             rpi_taker_access,

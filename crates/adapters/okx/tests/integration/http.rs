@@ -49,6 +49,7 @@ use nautilus_model::{
 use nautilus_network::http::{HttpClient, HttpClientError};
 use nautilus_okx::{
     common::{
+        consts::OKX_NAUTILUS_BROKER_ID,
         enums::{
             OKXAlgoOrderStatus, OKXEnvironment, OKXInstrumentType, OKXOrderStatus, OKXOrderType,
             OKXPositionMode, OKXPositionSide, OKXRpiPermission, OKXSide, OKXTradeMode,
@@ -1495,7 +1496,6 @@ async fn test_http_place_order_with_domain_types_routes_spread_request() {
             None,
             None,
             None,
-            None,
         )
         .await
         .unwrap();
@@ -1654,7 +1654,6 @@ async fn test_http_place_order_with_domain_types_rejects_invalid_spread_inputs(
             Quantity::from("10"),
             time_in_force,
             price,
-            None,
             None,
             None,
             None,
@@ -4608,6 +4607,143 @@ async fn test_http_place_algo_order_with_close_fraction_uses_conditional_close_o
 }
 
 #[rstest]
+#[case::limit_yes(false, "yes", "limit")]
+#[case::post_only_no(true, "no", "post_only")]
+#[tokio::test]
+async fn test_http_place_event_order_omits_speed_bump(
+    #[case] post_only: bool,
+    #[case] outcome: &str,
+    #[case] ord_type: &str,
+) {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+    let (instruments, _) = client
+        .request_instruments(OKXInstrumentType::Events, None)
+        .await
+        .unwrap();
+    let instrument_id = instruments[0].id();
+    client.cache_instruments(&instruments);
+
+    let response = client
+        .place_order_with_domain_types(
+            instrument_id,
+            OKXTradeMode::Cash,
+            ClientOrderId::from("Oeventhttp"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("7"),
+            Some(TimeInForce::Gtc),
+            Some(Price::from("0.420")),
+            Some(post_only),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(outcome.to_string()),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    let body = state.last_order_body.lock().await.clone().unwrap();
+
+    assert_eq!(response.ord_id, Some(Ustr::from("12345")));
+    assert_eq!(
+        body,
+        serde_json::json!({
+            "instId": instrument_id.symbol.as_str(),
+            "tdMode": "cash",
+            "clOrdId": "Oeventhttp",
+            "tag": OKX_NAUTILUS_BROKER_ID,
+            "side": "buy",
+            "ordType": ord_type,
+            "sz": "7",
+            "px": "0.420",
+            "outcome": outcome,
+        })
+    );
+}
+
+#[rstest]
+#[case::limit(false)]
+#[case::post_only(true)]
+#[tokio::test]
+async fn test_http_place_event_order_requires_outcome(#[case] post_only: bool) {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+    let (instruments, _) = client
+        .request_instruments(OKXInstrumentType::Events, None)
+        .await
+        .unwrap();
+    let instrument_id = instruments[0].id();
+    client.cache_instruments(&instruments);
+
+    let error = client
+        .place_order_with_domain_types(
+            instrument_id,
+            OKXTradeMode::Cash,
+            ClientOrderId::from("Oeventhttp"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("7"),
+            Some(TimeInForce::Gtc),
+            Some(Price::from("0.420")),
+            Some(post_only),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+
+    match error {
+        OKXHttpError::ValidationError(message) => {
+            assert_eq!(message, "OKX event contract orders require `outcome`");
+        }
+        other => panic!("Expected outcome validation error, was {other:?}"),
+    }
+    assert_eq!(*state.last_order_body.lock().await, None);
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_http_place_order_with_attached_tp_sl_uses_single_oco_payload() {
     let state = Arc::new(TestServerState::default());
@@ -4661,7 +4797,6 @@ async fn test_http_place_order_with_attached_tp_sl_uses_single_oco_payload() {
                 new_callback_spread: None,
                 new_active_px: None,
             }]),
-            None,
             None,
             None,
             None,
@@ -5224,7 +5359,6 @@ async fn test_place_order_venue_error_preserves_submit_retry_gate(
         reduce_only: None,
         tgt_ccy: None,
         attach_algo_ords: None,
-        speed_bump: None,
         outcome: None,
         slippage_pct: None,
         rpi_taker_access: None,
@@ -5327,7 +5461,6 @@ async fn test_place_order_truncated_response_is_ambiguous_transport_failure() {
         reduce_only: None,
         tgt_ccy: None,
         attach_algo_ords: None,
-        speed_bump: None,
         outcome: None,
         slippage_pct: None,
         rpi_taker_access: None,
@@ -6213,7 +6346,6 @@ async fn test_rpi_rest_single_batch_place_and_amend_client_paths() {
             None,
             None,
             None,
-            None,
             Some(true),
             None,
             None,
@@ -6244,7 +6376,6 @@ async fn test_rpi_rest_single_batch_place_and_amend_client_paths() {
         reduce_only: None,
         tgt_ccy: None,
         attach_algo_ords: None,
-        speed_bump: None,
         outcome: None,
         slippage_pct: None,
         rpi_taker_access: Some(true),
@@ -6368,7 +6499,6 @@ async fn test_rpi_rest_batch_preserves_partial_success_items() {
         reduce_only: None,
         tgt_ccy: None,
         attach_algo_ords: None,
-        speed_bump: None,
         outcome: None,
         slippage_pct: None,
         rpi_taker_access: Some(false),
