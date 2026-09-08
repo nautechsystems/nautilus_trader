@@ -84,13 +84,13 @@ use ustr::Ustr;
 use super::{
     error::OKXHttpError,
     models::{
-        OKXAccount, OKXAmendAlgoOrderRequest, OKXAmendAlgoOrderResponse, OKXAmendOrderRequest,
-        OKXAttachAlgoOrdRequest, OKXCancelAlgoOrderRequest, OKXCancelAlgoOrderResponse,
-        OKXCancelAllSpreadOrdersRequest, OKXCancelOrderRequest, OKXCancelOrderResponse,
-        OKXCancelSpreadOrderRequest, OKXEventContractEvent, OKXEventContractMarket,
-        OKXEventContractSeries, OKXFeeRate, OKXFundingRateHistory, OKXIndexTicker, OKXMarkPrice,
-        OKXOptionSummary, OKXOrderAlgo, OKXOrderBookSnapshot, OKXOrderHistory,
-        OKXPlaceAlgoOrderRequest, OKXPlaceAlgoOrderResponse, OKXPlaceOrderRequest,
+        OKXAccount, OKXAccountConfiguration, OKXAmendAlgoOrderRequest, OKXAmendAlgoOrderResponse,
+        OKXAmendOrderRequest, OKXAttachAlgoOrdRequest, OKXCancelAlgoOrderRequest,
+        OKXCancelAlgoOrderResponse, OKXCancelAllSpreadOrdersRequest, OKXCancelOrderRequest,
+        OKXCancelOrderResponse, OKXCancelSpreadOrderRequest, OKXEventContractEvent,
+        OKXEventContractMarket, OKXEventContractSeries, OKXFeeRate, OKXFundingRateHistory,
+        OKXIndexTicker, OKXMarkPrice, OKXOptionSummary, OKXOrderAlgo, OKXOrderBookSnapshot,
+        OKXOrderHistory, OKXPlaceAlgoOrderRequest, OKXPlaceAlgoOrderResponse, OKXPlaceOrderRequest,
         OKXPlaceOrderResponse, OKXPlaceSpreadOrderRequest, OKXPosition, OKXPositionHistory,
         OKXPositionTier, OKXPriceLimit, OKXRpiOrderBookSnapshot, OKXServerTime, OKXSpread,
         OKXSpreadOrder, OKXSpreadTrade, OKXTransactionDetail,
@@ -594,6 +594,10 @@ impl OKXRawHttpClient {
     fn rate_limiter_quotas() -> Vec<(String, Quota)> {
         vec![
             (OKX_GLOBAL_RATE_KEY.to_string(), *OKX_REST_QUOTA),
+            (
+                "okx:/api/v5/account/config".to_string(),
+                Quota::per_second(NonZeroU32::new(2).expect("non-zero")).expect("valid constant"),
+            ),
             (
                 "okx:/api/v5/account/set-position-mode".to_string(),
                 Quota::per_second(NonZeroU32::new(2).expect("non-zero")).expect("valid constant"),
@@ -1747,6 +1751,27 @@ impl OKXRawHttpClient {
             false,
         )
         .await
+    }
+
+    /// Requests the authenticated account's configuration.
+    ///
+    /// Returns the response data array, which is empty if OKX returns no configuration.
+    /// This query exposes exchange configuration without applying account or permission policy.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, OKX returns an error,
+    /// or required configuration fields are missing or invalid.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-get-account-configuration>
+    pub async fn get_account_configuration(
+        &self,
+    ) -> Result<Vec<OKXAccountConfiguration>, OKXHttpError> {
+        let path = "/api/v5/account/config";
+        self.send_request::<_, ()>(Method::GET, path, None, None, true)
+            .await
     }
 
     /// Requests a list of assets (with non-zero balance), remaining balance, and available amount

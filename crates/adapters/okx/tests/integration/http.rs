@@ -28,6 +28,7 @@ use std::{
 
 use axum::{
     Router,
+    body::Bytes,
     extract::Query,
     http::{HeaderMap, HeaderValue, StatusCode, Uri, header::RETRY_AFTER},
     response::{IntoResponse, Json},
@@ -50,10 +51,11 @@ use nautilus_network::http::{HttpClient, HttpClientError};
 use nautilus_okx::{
     common::{
         consts::OKX_NAUTILUS_BROKER_ID,
+        credential::Credential,
         enums::{
-            OKXAlgoOrderStatus, OKXEnvironment, OKXInstrumentType, OKXOrderStatus, OKXOrderType,
-            OKXPositionMode, OKXPositionSide, OKXRpiPermission, OKXSide, OKXTradeMode,
-            OKXTriggerType,
+            OKXAccountLevel, OKXAlgoOrderStatus, OKXApiKeyPermission, OKXEnvironment, OKXFeeType,
+            OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionMode, OKXPositionSide,
+            OKXRpiPermission, OKXSide, OKXTradeMode, OKXTriggerType,
         },
         failure::classify_okx_http_failure,
         models::OKXInstrument,
@@ -84,6 +86,8 @@ use ustr::Ustr;
 
 #[derive(Clone, Default)]
 struct TestServerState {
+    account_configuration_request: Arc<tokio::sync::Mutex<Option<(HeaderMap, Uri, Bytes)>>>,
+    account_configuration_response: Arc<tokio::sync::Mutex<Option<(StatusCode, String)>>>,
     request_count: Arc<tokio::sync::Mutex<usize>>,
     last_history_trades_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
     last_pending_orders_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
@@ -362,6 +366,7 @@ fn event_contract_markets_response(params: &HashMap<String, String>) -> Value {
 }
 
 fn create_router(state: Arc<TestServerState>) -> Router {
+    let account_configuration_state = state.clone();
     let instruments_state = state.clone();
     let spreads_state = state.clone();
     let spread_order_query_state = state.clone();
@@ -734,6 +739,26 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         "msg": "",
                         "data": [],
                     }))
+                }
+            }),
+        )
+        .route(
+            "/api/v5/account/config",
+            get(move |headers: HeaderMap, uri: Uri, body: Bytes| {
+                let state = account_configuration_state.clone();
+                async move {
+                    *state.account_configuration_request.lock().await = Some((headers, uri, body));
+                    state
+                        .account_configuration_response
+                        .lock()
+                        .await
+                        .clone()
+                        .unwrap_or_else(|| {
+                            (
+                                StatusCode::OK,
+                                load_test_data("http_get_account_configuration.json").to_string(),
+                            )
+                        })
                 }
             }),
         )
@@ -2344,6 +2369,325 @@ async fn test_http_request_event_contract_markets_preserves_settlement_boundarie
     assert_eq!(between_markets[0].cap_strike, "INF");
     assert_eq!(between_markets[0].hit_dir, "");
     assert_eq!(state.event_market_queries.lock().await.len(), 2);
+}
+
+async fn account_configuration_client(
+    state: Arc<TestServerState>,
+    environment: OKXEnvironment,
+) -> OKXRawHttpClient {
+    let addr = start_test_server(state).await;
+    OKXRawHttpClient::with_credentials(
+        "test_key".to_string(),
+        "test_secret".to_string(),
+        "passphrase".to_string(),
+        format!("http://{addr}"),
+        5,
+        0,
+        1,
+        1,
+        environment,
+        None,
+    )
+    .unwrap()
+}
+
+#[rstest]
+#[case(OKXEnvironment::Live)]
+#[case(OKXEnvironment::Demo)]
+#[tokio::test]
+async fn test_http_account_configuration_authenticated_request(
+    #[case] environment: OKXEnvironment,
+) {
+    let state = Arc::new(TestServerState::default());
+    let client = account_configuration_client(state.clone(), environment).await;
+
+    let accounts = client.get_account_configuration().await.unwrap();
+
+    assert_eq!(accounts.len(), 1);
+    let account = &accounts[0];
+    assert_eq!(account.account_level, OKXAccountLevel::Futures);
+    assert_eq!(account.position_mode, OKXPositionMode::LongShortMode);
+    assert!(!account.auto_loan);
+    assert_eq!(account.fee_type, OKXFeeType::ReceivedCurrency);
+    assert_eq!(
+        account.permissions,
+        vec![
+            OKXApiKeyPermission::ReadOnly,
+            OKXApiKeyPermission::Withdraw,
+            OKXApiKeyPermission::Trade
+        ]
+    );
+
+    let (headers, uri, body) = state
+        .account_configuration_request
+        .lock()
+        .await
+        .clone()
+        .unwrap();
+    assert_eq!(uri.path(), "/api/v5/account/config");
+    assert_eq!(uri.query(), None);
+    assert!(body.is_empty());
+    assert!(has_auth_headers(&headers));
+    assert_eq!(headers["ok-access-key"], "test_key");
+    assert_eq!(headers["ok-access-passphrase"], "passphrase");
+    assert_eq!(
+        headers
+            .get("x-simulated-trading")
+            .map(|value| value.to_str().unwrap()),
+        (environment == OKXEnvironment::Demo).then_some("1")
+    );
+    let timestamp = headers["ok-access-timestamp"].to_str().unwrap();
+    assert_eq!(
+        timestamp,
+        format!("{:.3}", timestamp.parse::<Timestamp>().unwrap())
+    );
+    let credential = Credential::new(
+        "test_key".to_string(),
+        "test_secret".to_string(),
+        "passphrase".to_string(),
+    );
+    assert_eq!(
+        headers["ok-access-sign"],
+        credential.sign_bytes(timestamp, "GET", "/api/v5/account/config", None)
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_account_configuration_requires_credentials() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let client = OKXRawHttpClient::new(
+        Some(format!("http://{addr}")),
+        5,
+        0,
+        1,
+        1,
+        OKXEnvironment::Demo,
+        None,
+    )
+    .unwrap();
+
+    assert!(matches!(
+        client.get_account_configuration().await,
+        Err(OKXHttpError::MissingCredentials)
+    ));
+    assert!(state.account_configuration_request.lock().await.is_none());
+}
+
+#[rstest]
+#[case("1", OKXAccountLevel::Spot)]
+#[case("2", OKXAccountLevel::Futures)]
+#[case("3", OKXAccountLevel::MultiCurrencyMargin)]
+#[case("4", OKXAccountLevel::PortfolioMargin)]
+#[tokio::test]
+async fn test_http_account_configuration_documented_values(
+    #[case] account_level: &str,
+    #[case] expected_level: OKXAccountLevel,
+    #[values(("net_mode", OKXPositionMode::NetMode), ("long_short_mode", OKXPositionMode::LongShortMode))]
+    position: (&str, OKXPositionMode),
+    #[values(("0", OKXFeeType::ReceivedCurrency), ("1", OKXFeeType::QuoteCurrency))] fee: (
+        &str,
+        OKXFeeType,
+    ),
+    #[values(false, true)] auto_loan: bool,
+) {
+    let state = Arc::new(TestServerState::default());
+    let mut response = load_test_data("http_get_account_configuration.json");
+    let account = &mut response["data"][0];
+    account["acctLv"] = json!(account_level);
+    account["posMode"] = json!(position.0);
+    account["feeType"] = json!(fee.0);
+    account["autoLoan"] = json!(auto_loan);
+    *state.account_configuration_response.lock().await =
+        Some((StatusCode::OK, response.to_string()));
+    let client = account_configuration_client(state, OKXEnvironment::Demo).await;
+
+    let accounts = client.get_account_configuration().await.unwrap();
+
+    assert_eq!(accounts.len(), 1);
+    assert_eq!(accounts[0].account_level, expected_level);
+    assert_eq!(accounts[0].position_mode, position.1);
+    assert_eq!(accounts[0].auto_loan, auto_loan);
+    assert_eq!(accounts[0].fee_type, fee.1);
+    let serialized = serde_json::to_value(&accounts[0]).unwrap();
+    for field in ["acctLv", "posMode", "autoLoan", "feeType", "perm"] {
+        assert_eq!(serialized[field], response["data"][0][field]);
+    }
+}
+
+#[rstest]
+#[case("read_only", vec![OKXApiKeyPermission::ReadOnly])]
+#[case("trade", vec![OKXApiKeyPermission::Trade])]
+#[case("withdraw", vec![OKXApiKeyPermission::Withdraw])]
+#[case("read_only,trade", vec![OKXApiKeyPermission::ReadOnly, OKXApiKeyPermission::Trade])]
+#[case("read_only,withdraw", vec![OKXApiKeyPermission::ReadOnly, OKXApiKeyPermission::Withdraw])]
+#[case("trade,withdraw", vec![OKXApiKeyPermission::Trade, OKXApiKeyPermission::Withdraw])]
+#[case("read_only,withdraw,trade", vec![OKXApiKeyPermission::ReadOnly, OKXApiKeyPermission::Withdraw, OKXApiKeyPermission::Trade])]
+#[case("trade,read_only", vec![OKXApiKeyPermission::Trade, OKXApiKeyPermission::ReadOnly])]
+#[case("read_only,read_only", vec![OKXApiKeyPermission::ReadOnly, OKXApiKeyPermission::ReadOnly])]
+#[tokio::test]
+async fn test_http_account_configuration_permissions(
+    #[case] permissions: &str,
+    #[case] expected: Vec<OKXApiKeyPermission>,
+) {
+    let state = Arc::new(TestServerState::default());
+    let mut response = load_test_data("http_get_account_configuration.json");
+    response["data"][0]["perm"] = json!(permissions);
+    *state.account_configuration_response.lock().await =
+        Some((StatusCode::OK, response.to_string()));
+    let client = account_configuration_client(state, OKXEnvironment::Demo).await;
+
+    let accounts = client.get_account_configuration().await.unwrap();
+
+    assert_eq!(accounts[0].permissions, expected);
+    assert_eq!(
+        serde_json::to_value(&accounts[0]).unwrap()["perm"],
+        permissions
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_account_configuration_missing_fields(
+    #[values("acctLv", "posMode", "autoLoan", "feeType", "perm")] field: &str,
+) {
+    let state = Arc::new(TestServerState::default());
+    let mut response = load_test_data("http_get_account_configuration.json");
+    response["data"][0].as_object_mut().unwrap().remove(field);
+    *state.account_configuration_response.lock().await =
+        Some((StatusCode::OK, response.to_string()));
+    let client = account_configuration_client(state, OKXEnvironment::Demo).await;
+
+    assert!(matches!(
+        client.get_account_configuration().await,
+        Err(OKXHttpError::ResponseDecoding(_))
+    ));
+}
+
+#[rstest]
+#[case("acctLv", json!("5"))]
+#[case("acctLv", json!(1))]
+#[case("acctLv", json!({"1": null}))]
+#[case("posMode", json!("hedge_mode"))]
+#[case("posMode", json!({"net_mode": null}))]
+#[case("feeType", json!("2"))]
+#[case("feeType", json!(0))]
+#[case("feeType", json!({"0": null}))]
+#[case("autoLoan", json!("true"))]
+#[case("autoLoan", json!("false"))]
+#[case("autoLoan", json!(1))]
+#[case("perm", json!("read_only,admin"))]
+#[case("perm", json!("read_only,,trade"))]
+#[case("perm", json!("read_only,"))]
+#[case("perm", json!(",trade"))]
+#[case("perm", json!("read_only, trade"))]
+#[case("perm", json!("READ_ONLY"))]
+#[case("perm", json!(["read_only", "trade"]))]
+#[tokio::test]
+async fn test_http_account_configuration_invalid_values(#[case] field: &str, #[case] value: Value) {
+    let state = Arc::new(TestServerState::default());
+    let mut response = load_test_data("http_get_account_configuration.json");
+    response["data"][0][field] = value;
+    *state.account_configuration_response.lock().await =
+        Some((StatusCode::OK, response.to_string()));
+    let client = account_configuration_client(state, OKXEnvironment::Demo).await;
+
+    assert!(matches!(
+        client.get_account_configuration().await,
+        Err(OKXHttpError::ResponseDecoding(_))
+    ));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_account_configuration_empty_or_wrong_types(
+    #[values("acctLv", "posMode", "autoLoan", "feeType", "perm")] field: &str,
+    #[values(json!(null), json!(""), json!([]), json!({}))] value: Value,
+) {
+    let state = Arc::new(TestServerState::default());
+    let mut response = load_test_data("http_get_account_configuration.json");
+    response["data"][0][field] = value;
+    *state.account_configuration_response.lock().await =
+        Some((StatusCode::OK, response.to_string()));
+    let client = account_configuration_client(state, OKXEnvironment::Demo).await;
+
+    assert!(matches!(
+        client.get_account_configuration().await,
+        Err(OKXHttpError::ResponseDecoding(_))
+    ));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_account_configuration_malformed_response(
+    #[values("not JSON", "{", r#"{"code":"0","msg":"","data":["#)] body: &str,
+) {
+    let state = Arc::new(TestServerState::default());
+    *state.account_configuration_response.lock().await = Some((StatusCode::OK, body.to_string()));
+    let client = account_configuration_client(state, OKXEnvironment::Demo).await;
+
+    assert!(matches!(
+        client.get_account_configuration().await,
+        Err(OKXHttpError::MalformedResponse(_))
+    ));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_account_configuration_invalid_envelope(
+    #[values(json!({}), json!({"code":"0","msg":""}), json!({"code":"0","msg":"","data":null}), json!({"code":"0","msg":"","data":[{}]}))]
+    response: Value,
+) {
+    let state = Arc::new(TestServerState::default());
+    *state.account_configuration_response.lock().await =
+        Some((StatusCode::OK, response.to_string()));
+    let client = account_configuration_client(state, OKXEnvironment::Demo).await;
+
+    assert!(matches!(
+        client.get_account_configuration().await,
+        Err(OKXHttpError::ResponseDecoding(_))
+    ));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_account_configuration_empty_response() {
+    let state = Arc::new(TestServerState::default());
+    *state.account_configuration_response.lock().await =
+        Some((StatusCode::OK, okx_response(&[]).to_string()));
+    let client = account_configuration_client(state.clone(), OKXEnvironment::Demo).await;
+
+    assert!(client.get_account_configuration().await.unwrap().is_empty());
+
+    *state.account_configuration_response.lock().await = Some((StatusCode::OK, String::new()));
+
+    assert!(matches!(
+        client.get_account_configuration().await,
+        Err(OKXHttpError::EmptyResponse)
+    ));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_account_configuration_structured_error(
+    #[values(StatusCode::OK, StatusCode::UNAUTHORIZED)] status: StatusCode,
+) {
+    let state = Arc::new(TestServerState::default());
+    let response = json!({"code":"50113", "msg":"Invalid signature", "data":[]});
+    *state.account_configuration_response.lock().await = Some((status, response.to_string()));
+    let client = account_configuration_client(state, OKXEnvironment::Demo).await;
+
+    match client.get_account_configuration().await {
+        Err(OKXHttpError::OkxError {
+            error_code,
+            message,
+        }) => {
+            assert_eq!(error_code, "50113");
+            assert_eq!(message, "Invalid signature");
+        }
+        other => panic!("expected OkxError: {other:?}"),
+    }
 }
 
 #[rstest]

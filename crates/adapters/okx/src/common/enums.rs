@@ -736,6 +736,47 @@ pub enum OKXPositionMode {
     LongShortMode,
 }
 
+/// Represents the account mode reported by OKX account configuration.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OKXAccountLevel {
+    /// Spot mode.
+    #[serde(rename = "1")]
+    Spot,
+    /// Futures mode.
+    #[serde(rename = "2")]
+    Futures,
+    /// Multi-currency margin mode.
+    #[serde(rename = "3")]
+    MultiCurrencyMargin,
+    /// Portfolio margin mode.
+    #[serde(rename = "4")]
+    PortfolioMargin,
+}
+
+/// Represents the fee-charging currency configured for an OKX account.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OKXFeeType {
+    /// Fees are charged in the currency received from the trade.
+    #[serde(rename = "0")]
+    ReceivedCurrency,
+    /// Fees are always charged in the trading pair's quote currency.
+    #[serde(rename = "1")]
+    QuoteCurrency,
+}
+
+/// Represents a permission of the requesting OKX API key or access token.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, AsRefStr, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum OKXApiKeyPermission {
+    /// Read permission.
+    ReadOnly,
+    /// Trading permission.
+    Trade,
+    /// Withdrawal permission.
+    Withdraw,
+}
+
 #[derive(
     Copy,
     Clone,

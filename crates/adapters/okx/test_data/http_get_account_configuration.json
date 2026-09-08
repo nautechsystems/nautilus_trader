@@ -1,0 +1,41 @@
+{
+  "code": "0",
+  "data": [
+    {
+      "acctLv": "2",
+      "acctStpMode": "cancel_maker",
+      "autoLoan": false,
+      "ctIsoMode": "automatic",
+      "enableSpotBorrow": false,
+      "greeksType": "PA",
+      "feeType": "0",
+      "ip": "",
+      "type": "0",
+      "kycLv": "3",
+      "label": "v5 test",
+      "level": "Lv1",
+      "levelTmp": "",
+      "liquidationGear": "-1",
+      "mainUid": "10000000000000001",
+      "mgnIsoMode": "automatic",
+      "opAuth": "1",
+      "perm": "read_only,withdraw,trade",
+      "posMode": "long_short_mode",
+      "roleType": "0",
+      "spotBorrowAutoRepay": false,
+      "spotOffsetType": "",
+      "spotRoleType": "0",
+      "spotTraderInsts": [],
+      "stgyType": "0",
+      "traderInsts": [],
+      "uid": "10000000000000001",
+      "settleCcy": "USDC",
+      "settleCcyList": [
+        "USD",
+        "USDC",
+        "USDG"
+      ]
+    }
+  ],
+  "msg": ""
+}
