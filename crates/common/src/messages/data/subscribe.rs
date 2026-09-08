@@ -585,6 +585,8 @@ pub struct SubscribeOptionChain {
     pub ts_init: UnixNanos,
     pub client_id: Option<ClientId>,
     pub venue: Option<Venue>,
+    #[serde(default)]
+    pub correlation_id: Option<UUID4>,
     pub params: Option<Params>,
 }
 
@@ -613,6 +615,7 @@ impl SubscribeOptionChain {
             ts_init,
             client_id,
             venue,
+            correlation_id: None,
             params,
         }
     }

@@ -249,7 +249,7 @@ impl OptionChainManager {
         };
 
         for instrument_id in instrument_ids {
-            client.execute_subscribe(SubscribeCommand::Quotes(SubscribeQuotes {
+            client.execute_subscribe_intent(SubscribeCommand::Quotes(SubscribeQuotes {
                 instrument_id: *instrument_id,
                 client_id: cmd.client_id,
                 venue: Some(venue),
@@ -258,16 +258,18 @@ impl OptionChainManager {
                 correlation_id: None,
                 params: None,
             }));
-            client.execute_subscribe(SubscribeCommand::OptionGreeks(SubscribeOptionGreeks {
-                instrument_id: *instrument_id,
-                client_id: cmd.client_id,
-                venue: Some(venue),
-                command_id: UUID4::new(),
-                ts_init,
-                correlation_id: None,
-                params: None,
-            }));
-            client.execute_subscribe(SubscribeCommand::InstrumentStatus(
+            client.execute_subscribe_intent(SubscribeCommand::OptionGreeks(
+                SubscribeOptionGreeks {
+                    instrument_id: *instrument_id,
+                    client_id: cmd.client_id,
+                    venue: Some(venue),
+                    command_id: UUID4::new(),
+                    ts_init,
+                    correlation_id: None,
+                    params: None,
+                },
+            ));
+            client.execute_subscribe_intent(SubscribeCommand::InstrumentStatus(
                 SubscribeInstrumentStatus {
                     instrument_id: *instrument_id,
                     client_id: cmd.client_id,
@@ -666,7 +668,7 @@ impl OptionChainManager {
 
         let ts_init = clock.borrow().timestamp_ns();
 
-        client.execute_subscribe(SubscribeCommand::Quotes(SubscribeQuotes {
+        client.execute_subscribe_intent(SubscribeCommand::Quotes(SubscribeQuotes {
             instrument_id,
             client_id: None,
             venue: Some(venue),
@@ -675,7 +677,7 @@ impl OptionChainManager {
             correlation_id: None,
             params: None,
         }));
-        client.execute_subscribe(SubscribeCommand::OptionGreeks(SubscribeOptionGreeks {
+        client.execute_subscribe_intent(SubscribeCommand::OptionGreeks(SubscribeOptionGreeks {
             instrument_id,
             client_id: None,
             venue: Some(venue),
@@ -684,7 +686,7 @@ impl OptionChainManager {
             correlation_id: None,
             params: None,
         }));
-        client.execute_subscribe(SubscribeCommand::InstrumentStatus(
+        client.execute_subscribe_intent(SubscribeCommand::InstrumentStatus(
             SubscribeInstrumentStatus {
                 instrument_id,
                 client_id: None,

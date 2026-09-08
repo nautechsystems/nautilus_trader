@@ -27,6 +27,7 @@ Released on TBD (UTC).
 - Added Polymarket collateral-sized limit BUY orders with exact limit price preservation
 - Added Polymarket limit order modification support
 - Added Polymarket resolution subscriptions for data-only clients (#4895), thanks @mystic-io
+- Added `SubscribeOptionChain.correlation_id` and `UnsubscribeOptionChain.params` for tracking edits across client routes
 
 ### Breaking Changes
 
@@ -79,6 +80,11 @@ Released on TBD (UTC).
 - Fixed `BacktestNode.run_streaming()` loading all records when more than one data config was used (#4897), thanks @abhijeetvichare76
 - Fixed stale or terminal single and list order submissions reaching execution clients
 - Fixed TWD, 1INCH, CAKE, and SHIB currency lookup panics
+- Fixed retiring `DataActor`, `Strategy`, and `ExecutionAlgorithm` instances retaining active or pending data subscriptions
+- Fixed shared client subscriptions being released before their final owner
+- Fixed failed data subscriptions blocking later owners from retrying
+- Fixed successful component resets retaining old data subscriptions before restart
+- Fixed component removal failing after its stop or fault hook returned an error
 - Fixed order-status report windows filtering resting orders instead of closed history
 - Fixed foreign account events panicking and reservation failures leaving balances or margins in an inconsistent state
 - Fixed importable strategy configs ignoring a string `strategy_id` in favor of the class-derived default ID

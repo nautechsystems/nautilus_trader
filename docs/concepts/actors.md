@@ -90,15 +90,15 @@ lifecycle handler, the actor reaches the destination state only after that handl
 
 Override these methods to hook into lifecycle events:
 
-| Method         | When called                                                                    |
-| -------------- | ------------------------------------------------------------------------------ |
-| `on_start()`   | Actor is starting; subscribe to data here.                                     |
-| `on_stop()`    | Actor is stopping; clean up actor-owned resources.                             |
-| `on_resume()`  | Actor is resuming after it stopped or degraded.                                |
-| `on_reset()`   | Actor is resetting, including when the engine resets between backtest runs.    |
-| `on_degrade()` | Actor is entering a degraded state and may provide only partial functionality. |
-| `on_fault()`   | Actor is entering the faulted state after it encounters a fault.               |
-| `on_dispose()` | Actor is being disposed and must release its remaining resources.              |
+| Method         | When called                                                                                                            |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `on_start()`   | Actor is starting; subscribe to data here.                                                                             |
+| `on_stop()`    | Actor is stopping; clean up actor-owned resources.                                                                     |
+| `on_resume()`  | Actor is resuming after it stopped or degraded.                                                                        |
+| `on_reset()`   | Actor is resetting, including between backtest runs; retained data subscriptions are released after the hook succeeds. |
+| `on_degrade()` | Actor is entering a degraded state and may provide only partial functionality.                                         |
+| `on_fault()`   | Actor is entering the faulted state after it encounters a fault.                                                       |
+| `on_dispose()` | Actor is being disposed and must release its remaining resources.                                                      |
 
 ## Timers and alerts
 

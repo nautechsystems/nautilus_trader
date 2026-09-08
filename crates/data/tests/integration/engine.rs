@@ -120,7 +120,7 @@ use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use ustr::Ustr;
 
-use crate::common::mocks::{FailingMockDataClient, MockDataClient};
+use crate::common::mocks::{FailingMockDataClient, MockDataClient, MockSubscribeFailure};
 
 #[fixture]
 fn client_id() -> ClientId {
@@ -207,6 +207,27 @@ fn register_mock_client(
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(client));
     data_engine.register_client(adapter, routing);
+}
+
+fn register_failing_subscribe_client(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+    failure: MockSubscribeFailure,
+    data_engine: &mut DataEngine,
+) {
+    let client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    )
+    .with_subscribe_failure(failure);
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(client));
+    data_engine.register_client(adapter, None);
 }
 
 struct FailingRequestDataClient {
@@ -311,6 +332,18 @@ fn spread_quote_params() -> Params {
         "update_interval_seconds": null,
     }))
     .unwrap()
+}
+
+fn client_subscription_params(params: Params) -> Params {
+    #[cfg(feature = "streaming")]
+    {
+        let mut params = params;
+        params.insert("start_ns".to_string(), Value::Null);
+        params
+    }
+
+    #[cfg(not(feature = "streaming"))]
+    params
 }
 
 fn spread_quote_default_interval_params() -> Params {
@@ -1161,6 +1194,73 @@ fn test_unsubscribe_depth10_keeps_deltas_book_updater(
     data_engine.execute(unsub_deltas);
 
     assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
+    assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 0);
+}
+
+#[rstest]
+fn test_book_depth10_releases_after_final_route_owner(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+    let depth_topic = switchboard::get_book_depth10_topic(audusd_sim.id);
+
+    for _ in 0..2 {
+        data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDepth10(
+            SubscribeBookDepth10::new(
+                audusd_sim.id,
+                BookType::L2_MBP,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::default(),
+                NonZeroUsize::new(10),
+                true,
+                None,
+                None,
+            ),
+        )));
+    }
+    assert_eq!(recorder.borrow().len(), 1);
+    assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 1);
+
+    let unsubscribe = || {
+        DataCommand::Unsubscribe(UnsubscribeCommand::BookDepth10(
+            UnsubscribeBookDepth10::new(
+                audusd_sim.id,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ),
+        ))
+    };
+    data_engine.execute(unsubscribe());
+    assert_eq!(recorder.borrow().len(), 1);
+    assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 1);
+
+    data_engine.execute(unsubscribe());
+    assert_eq!(recorder.borrow().len(), 2);
+    assert!(matches!(
+        &recorder.borrow()[1],
+        DataCommand::Unsubscribe(UnsubscribeCommand::BookDepth10(_))
+    ));
     assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 0);
 }
 
@@ -5656,6 +5756,306 @@ fn test_emit_quotes_from_book_publishes_on_depth_apply(
     );
 }
 
+#[derive(Clone, Copy, Debug)]
+enum BookSubscriptionKind {
+    Deltas,
+    Depth10,
+}
+
+impl BookSubscriptionKind {
+    fn failure(self) -> MockSubscribeFailure {
+        match self {
+            Self::Deltas => MockSubscribeFailure::BookDeltas,
+            Self::Depth10 => MockSubscribeFailure::BookDepth10,
+        }
+    }
+}
+
+#[rstest]
+#[case::deltas(BookSubscriptionKind::Deltas)]
+#[case::depth10(BookSubscriptionKind::Depth10)]
+fn test_shared_book_subscription_retries_after_client_failure(
+    #[case] kind: BookSubscriptionKind,
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_failing_subscribe_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        &recorder,
+        kind.failure(),
+        &mut data_engine,
+    );
+
+    let subscribe = |command_id| match kind {
+        BookSubscriptionKind::Deltas => SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+            audusd_sim.id,
+            BookType::L3_MBO,
+            Some(client_id),
+            Some(venue),
+            command_id,
+            UnixNanos::from(1),
+            NonZeroUsize::new(5),
+            true,
+            None,
+            None,
+        )),
+        BookSubscriptionKind::Depth10 => SubscribeCommand::BookDepth10(SubscribeBookDepth10::new(
+            audusd_sim.id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            command_id,
+            UnixNanos::from(1),
+            NonZeroUsize::new(5),
+            true,
+            None,
+            None,
+        )),
+    };
+    let first = subscribe(UUID4::new());
+    let second = subscribe(UUID4::new());
+
+    data_engine.execute(DataCommand::Subscribe(first));
+    assert!(recorder.borrow().is_empty());
+
+    data_engine.execute(DataCommand::Subscribe(second.clone()));
+
+    let expected_subscribe = DataCommand::Subscribe(second);
+    assert_eq!(
+        recorder.borrow().as_slice(),
+        std::slice::from_ref(&expected_subscribe)
+    );
+
+    let unsubscribe = |command_id| match kind {
+        BookSubscriptionKind::Deltas => UnsubscribeCommand::BookDeltas(UnsubscribeBookDeltas::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            command_id,
+            UnixNanos::from(2),
+            None,
+            None,
+        )),
+        BookSubscriptionKind::Depth10 => {
+            UnsubscribeCommand::BookDepth10(UnsubscribeBookDepth10::new(
+                audusd_sim.id,
+                Some(client_id),
+                Some(venue),
+                command_id,
+                UnixNanos::from(2),
+                None,
+                None,
+            ))
+        }
+    };
+    data_engine.execute(DataCommand::Unsubscribe(unsubscribe(UUID4::new())));
+    assert_eq!(
+        recorder.borrow().as_slice(),
+        std::slice::from_ref(&expected_subscribe)
+    );
+
+    let expected_unsubscribe = DataCommand::Unsubscribe(unsubscribe(UUID4::new()));
+    data_engine.execute(expected_unsubscribe.clone());
+    assert_eq!(
+        recorder.borrow().as_slice(),
+        &[expected_subscribe, expected_unsubscribe]
+    );
+}
+
+#[rstest]
+fn test_shared_book_snapshot_retries_source_after_client_failure(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_failing_subscribe_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        &recorder,
+        MockSubscribeFailure::BookDeltas,
+        &mut data_engine,
+    );
+    let first_command_id = UUID4::new();
+    let subscribe = |command_id, ts_init| {
+        SubscribeCommand::BookSnapshots(SubscribeBookSnapshots::new(
+            audusd_sim.id,
+            BookType::L3_MBO,
+            Some(client_id),
+            Some(venue),
+            command_id,
+            ts_init,
+            NonZeroUsize::new(5),
+            NonZeroUsize::new(1000).unwrap(),
+            None,
+            None,
+        ))
+    };
+
+    data_engine.execute(DataCommand::Subscribe(subscribe(
+        first_command_id,
+        UnixNanos::from(1),
+    )));
+    assert!(recorder.borrow().is_empty());
+
+    data_engine.execute(DataCommand::Subscribe(subscribe(
+        UUID4::new(),
+        UnixNanos::from(2),
+    )));
+
+    let recorded = recorder.borrow();
+    assert_eq!(recorded.len(), 1);
+    let DataCommand::Subscribe(SubscribeCommand::BookDeltas(command)) = &recorded[0] else {
+        panic!("expected a book deltas source subscription");
+    };
+    assert_eq!(command.instrument_id, audusd_sim.id);
+    assert_eq!(command.book_type, BookType::L3_MBO);
+    assert_eq!(command.client_id, Some(client_id));
+    assert_eq!(command.venue, Some(venue));
+    assert_eq!(command.ts_init, UnixNanos::from(1));
+    assert_eq!(command.depth, NonZeroUsize::new(5));
+    assert!(command.managed);
+    assert_eq!(command.correlation_id, Some(first_command_id));
+    assert_eq!(command.params, None);
+    drop(recorded);
+
+    let unsubscribe = || {
+        DataCommand::Unsubscribe(UnsubscribeCommand::BookSnapshots(
+            UnsubscribeBookSnapshots::new(
+                audusd_sim.id,
+                NonZeroUsize::new(1000).unwrap(),
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::from(3),
+                None,
+                None,
+            ),
+        ))
+    };
+    data_engine.execute(unsubscribe());
+    assert_eq!(recorder.borrow().len(), 1);
+    data_engine.execute(unsubscribe());
+
+    let recorded = recorder.borrow();
+    assert_eq!(recorded.len(), 2);
+    let DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(command)) = &recorded[1] else {
+        panic!("expected a book deltas source unsubscription");
+    };
+    assert_eq!(command.instrument_id, audusd_sim.id);
+    assert_eq!(command.client_id, Some(client_id));
+    assert_eq!(command.venue, Some(venue));
+    assert_eq!(command.ts_init, UnixNanos::from(3));
+    assert_eq!(command.correlation_id, Some(first_command_id));
+    assert_eq!(command.params, None);
+}
+
+#[rstest]
+fn test_book_snapshot_retains_existing_deltas_source(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+    let snapshot_command_id = UUID4::new();
+
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
+        SubscribeBookDeltas::new(
+            audusd_sim.id,
+            BookType::L3_MBO,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::from(1),
+            None,
+            true,
+            None,
+            None,
+        ),
+    )));
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookSnapshots(
+        SubscribeBookSnapshots::new(
+            audusd_sim.id,
+            BookType::L3_MBO,
+            Some(client_id),
+            Some(venue),
+            snapshot_command_id,
+            UnixNanos::from(2),
+            None,
+            NonZeroUsize::new(1000).unwrap(),
+            None,
+            None,
+        ),
+    )));
+    assert_eq!(recorder.borrow().len(), 1);
+
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(
+        UnsubscribeBookDeltas::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::from(3),
+            None,
+            None,
+        ),
+    )));
+    assert_eq!(recorder.borrow().len(), 1);
+
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::BookSnapshots(
+        UnsubscribeBookSnapshots::new(
+            audusd_sim.id,
+            NonZeroUsize::new(1000).unwrap(),
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::from(4),
+            None,
+            None,
+        ),
+    )));
+
+    let recorded = recorder.borrow();
+    assert_eq!(recorded.len(), 2);
+    let DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(command)) = &recorded[1] else {
+        panic!("expected a book deltas source unsubscription");
+    };
+    assert_eq!(command.instrument_id, audusd_sim.id);
+    assert_eq!(command.client_id, Some(client_id));
+    assert_eq!(command.venue, Some(venue));
+    assert_eq!(command.ts_init, UnixNanos::from(4));
+    assert_eq!(command.correlation_id, Some(snapshot_command_id));
+    assert_eq!(command.params, None);
+}
+
 #[rstest]
 fn test_reset_clears_book_state_and_timers(
     audusd_sim: CurrencyPair,
@@ -5712,19 +6112,35 @@ fn test_reset_clears_book_state_and_timers(
     data_engine.execute(sub_snapshots);
 
     assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 1);
+    assert_eq!(recorder.borrow().len(), 1);
     assert!(!data_engine.subscribed_book_snapshots().is_empty());
     assert!(!data_engine.get_clock().timer_names().is_empty());
 
     data_engine.reset();
 
-    // Engine-owned book state and timers cleared; adapter-tracked subs
-    // remain because `client.reset()` is a no-op
     assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
     assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 0);
     assert!(data_engine.subscribed_book_snapshots().is_empty());
     assert!(data_engine.get_clock().timer_names().is_empty());
     assert_eq!(data_engine.command_count(), 0);
     assert_eq!(data_engine.data_count(), 0);
+
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
+        SubscribeBookDeltas::new(
+            audusd_sim.id,
+            BookType::L3_MBO,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::from(2),
+            None,
+            true,
+            None,
+            None,
+        ),
+    )));
+
+    assert_eq!(recorder.borrow().len(), 2);
 }
 
 #[rstest]
@@ -6914,6 +7330,294 @@ fn test_unsubscribe_spread_quotes_removes_leg_handlers(
 }
 
 #[rstest]
+fn test_spread_quotes_release_after_final_owner_with_first_route(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+    let spread = generic_futures_spread();
+    let spread_id = spread.id();
+    let (leg_a, leg_b) = generic_futures_spread_legs();
+    data_engine.process(&InstrumentAny::FuturesSpread(spread) as &dyn Any);
+    let mut first_params = spread_quote_params();
+    first_params.insert("owner".to_string(), serde_json::json!(1));
+    let mut second_params = spread_quote_params();
+    second_params.insert("owner".to_string(), serde_json::json!(2));
+
+    for params in [first_params.clone(), second_params.clone()] {
+        data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(
+            SubscribeQuotes::new(
+                spread_id,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                Some(params),
+            ),
+        )));
+    }
+    assert_eq!(recorder.borrow().len(), 2);
+
+    let unsubscribe = |params| {
+        DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(UnsubscribeQuotes::new(
+            spread_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            Some(params),
+        )))
+    };
+    data_engine.execute(unsubscribe(second_params.clone()));
+    assert_eq!(recorder.borrow().len(), 2);
+    assert_eq!(
+        msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(leg_a)),
+        1,
+    );
+    assert_eq!(
+        msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(leg_b)),
+        1,
+    );
+
+    data_engine.execute(unsubscribe(second_params));
+
+    let recorded = recorder.borrow();
+    let released = recorded
+        .iter()
+        .filter_map(|command| match command {
+            DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command)) => Some(command),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(released.len(), 2);
+    assert_eq!(released[0].instrument_id, leg_a);
+    assert_eq!(released[1].instrument_id, leg_b);
+    assert_eq!(released[0].params.as_ref(), Some(&first_params));
+    assert_eq!(released[1].params.as_ref(), Some(&first_params));
+    assert_eq!(
+        msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(leg_a)),
+        0,
+    );
+    assert_eq!(
+        msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(leg_b)),
+        0,
+    );
+}
+
+#[rstest]
+fn test_shared_spread_quotes_retry_failed_leg(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_failing_subscribe_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        &recorder,
+        MockSubscribeFailure::Quotes,
+        &mut data_engine,
+    );
+    let spread = generic_futures_spread();
+    let spread_id = spread.id();
+    let (leg_a, leg_b) = generic_futures_spread_legs();
+    data_engine.process(&InstrumentAny::FuturesSpread(spread) as &dyn Any);
+    let first_command_id = UUID4::new();
+    let subscribe = |command_id| {
+        DataCommand::Subscribe(SubscribeCommand::Quotes(SubscribeQuotes::new(
+            spread_id,
+            Some(client_id),
+            Some(venue),
+            command_id,
+            UnixNanos::from(1),
+            None,
+            Some(spread_quote_params()),
+        )))
+    };
+
+    data_engine.execute(subscribe(first_command_id));
+    assert_eq!(recorder.borrow().len(), 1);
+
+    data_engine.execute(subscribe(UUID4::new()));
+
+    let recorded = recorder.borrow();
+    let commands = recorded
+        .iter()
+        .map(|command| match command {
+            DataCommand::Subscribe(SubscribeCommand::Quotes(command)) => command,
+            other => panic!("expected a quote subscription, was {other:?}"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(commands.len(), 2);
+    assert_eq!(commands[0].instrument_id, leg_b);
+    assert_eq!(commands[1].instrument_id, leg_a);
+    for command in commands {
+        assert_eq!(command.client_id, Some(client_id));
+        assert_eq!(command.venue, Some(venue));
+        assert_eq!(command.ts_init, UnixNanos::from(1));
+        assert_eq!(command.correlation_id, Some(first_command_id));
+        assert_eq!(
+            command.params,
+            Some(client_subscription_params(spread_quote_params())),
+        );
+    }
+    drop(recorded);
+
+    let unsubscribe = || {
+        DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(UnsubscribeQuotes::new(
+            spread_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::from(2),
+            None,
+            Some(spread_quote_params()),
+        )))
+    };
+    data_engine.execute(unsubscribe());
+    assert_eq!(recorder.borrow().len(), 2);
+    data_engine.execute(unsubscribe());
+
+    let recorded = recorder.borrow();
+    let commands = recorded
+        .iter()
+        .filter_map(|command| match command {
+            DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command)) => Some(command),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(commands.len(), 2);
+    assert_eq!(commands[0].instrument_id, leg_a);
+    assert_eq!(commands[1].instrument_id, leg_b);
+    for command in commands {
+        assert_eq!(command.client_id, Some(client_id));
+        assert_eq!(command.venue, Some(venue));
+        assert_eq!(command.ts_init, UnixNanos::from(2));
+        assert_eq!(command.correlation_id, Some(first_command_id));
+        assert_eq!(command.params, Some(spread_quote_params()));
+    }
+}
+
+#[rstest]
+fn test_spread_quotes_retain_existing_leg_sources(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+    let spread = generic_futures_spread();
+    let spread_id = spread.id();
+    let (leg_a, leg_b) = generic_futures_spread_legs();
+    data_engine.process(&InstrumentAny::FuturesSpread(spread) as &dyn Any);
+    let params = spread_quote_params();
+    let spread_command_id = UUID4::new();
+
+    for leg_id in [leg_a, leg_b] {
+        data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(
+            SubscribeQuotes::new(
+                leg_id,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::from(1),
+                None,
+                Some(params.clone()),
+            ),
+        )));
+    }
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(
+        SubscribeQuotes::new(
+            spread_id,
+            Some(client_id),
+            Some(venue),
+            spread_command_id,
+            UnixNanos::from(2),
+            None,
+            Some(params.clone()),
+        ),
+    )));
+    assert_eq!(recorder.borrow().len(), 2);
+
+    for leg_id in [leg_a, leg_b] {
+        data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(
+            UnsubscribeQuotes::new(
+                leg_id,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::from(3),
+                None,
+                Some(params.clone()),
+            ),
+        )));
+    }
+    assert_eq!(recorder.borrow().len(), 2);
+
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(
+        UnsubscribeQuotes::new(
+            spread_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::from(4),
+            None,
+            Some(params.clone()),
+        ),
+    )));
+
+    let recorded = recorder.borrow();
+    let commands = recorded
+        .iter()
+        .filter_map(|command| match command {
+            DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command)) => Some(command),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(commands.len(), 2);
+    assert_eq!(commands[0].instrument_id, leg_a);
+    assert_eq!(commands[1].instrument_id, leg_b);
+    for command in commands {
+        assert_eq!(command.client_id, Some(client_id));
+        assert_eq!(command.venue, Some(venue));
+        assert_eq!(command.ts_init, UnixNanos::from(4));
+        assert_eq!(command.correlation_id, Some(spread_command_id));
+        assert_eq!(command.params, Some(params.clone()));
+    }
+}
+
+#[rstest]
 fn test_reset_stops_spread_quote_timer_and_removes_leg_handlers(
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<TestClock>>,
@@ -6973,7 +7677,7 @@ fn test_reset_stops_spread_quote_timer_and_removes_leg_handlers(
 }
 
 #[rstest]
-fn test_unsubscribe_quotes_keeps_client_subscribed_when_other_subscribers(
+fn test_unsubscribe_quotes_keeps_client_subscribed_until_final_owner(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<TestClock>>,
@@ -7001,7 +7705,7 @@ fn test_unsubscribe_quotes_keeps_client_subscribed_when_other_subscribers(
     msgbus::subscribe_quotes(topic.into(), handler_a, None);
     msgbus::subscribe_quotes(topic.into(), handler_b, None);
 
-    let sub = SubscribeQuotes::new(
+    let sub_a = SubscribeQuotes::new(
         audusd_sim.id,
         Some(client_id),
         Some(venue),
@@ -7010,10 +7714,9 @@ fn test_unsubscribe_quotes_keeps_client_subscribed_when_other_subscribers(
         None,
         None,
     );
-    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Quotes(sub));
-    data_engine.execute(sub_cmd.clone());
-
-    let unsub = UnsubscribeQuotes::new(
+    let sub_cmd_a = DataCommand::Subscribe(SubscribeCommand::Quotes(sub_a));
+    data_engine.execute(sub_cmd_a.clone());
+    let sub_b = SubscribeQuotes::new(
         audusd_sim.id,
         Some(client_id),
         Some(venue),
@@ -7022,10 +7725,25 @@ fn test_unsubscribe_quotes_keeps_client_subscribed_when_other_subscribers(
         None,
         None,
     );
-    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(unsub));
-    data_engine.execute(unsub_cmd);
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(sub_b)));
 
-    assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
+    let unsub_a = UnsubscribeQuotes::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(
+        unsub_a,
+    )));
+
+    assert_eq!(
+        recorder.borrow().as_slice(),
+        std::slice::from_ref(&sub_cmd_a)
+    );
 
     let quote = QuoteTick::new(
         audusd_sim.id,
@@ -7040,6 +7758,20 @@ fn test_unsubscribe_quotes_keeps_client_subscribed_when_other_subscribers(
 
     assert_eq!(saver_a.get_messages(), vec![quote]);
     assert_eq!(saver_b.get_messages(), vec![quote]);
+
+    let unsub_b = UnsubscribeQuotes::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    let unsub_cmd_b = DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(unsub_b));
+    data_engine.execute(unsub_cmd_b.clone());
+
+    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd_a, unsub_cmd_b]);
 }
 
 #[rstest]
@@ -7280,6 +8012,63 @@ fn test_execute_subscribe_internal_bars_stays_local(
 }
 
 #[rstest]
+fn test_shared_internal_bars_retry_failed_source(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_failing_subscribe_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        &recorder,
+        MockSubscribeFailure::Trades,
+        &mut data_engine,
+    );
+    data_engine.process(&InstrumentAny::CurrencyPair(audusd_sim.clone()) as &dyn Any);
+    let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-INTERNAL");
+    let first_command_id = UUID4::new();
+    let subscribe = |command_id| {
+        DataCommand::Subscribe(SubscribeCommand::Bars(SubscribeBars::new(
+            bar_type,
+            Some(client_id),
+            Some(venue),
+            command_id,
+            UnixNanos::from(1),
+            None,
+            None,
+        )))
+    };
+
+    data_engine.execute(subscribe(first_command_id));
+    assert!(recorder.borrow().is_empty());
+
+    data_engine.execute(subscribe(UUID4::new()));
+
+    let recorded = recorder.borrow();
+    assert_eq!(recorded.len(), 1);
+    let DataCommand::Subscribe(SubscribeCommand::Trades(command)) = &recorded[0] else {
+        panic!("expected a trade source subscription");
+    };
+    assert_eq!(command.instrument_id, audusd_sim.id);
+    assert_eq!(command.client_id, Some(client_id));
+    assert_eq!(command.venue, Some(venue));
+    assert_eq!(command.ts_init, UnixNanos::from(1));
+    assert_eq!(command.correlation_id, Some(first_command_id));
+    #[cfg(feature = "streaming")]
+    let expected_params = Some(client_subscription_params(Params::new()));
+    #[cfg(not(feature = "streaming"))]
+    let expected_params = None;
+    assert_eq!(command.params, expected_params);
+}
+
+#[rstest]
 fn test_unsubscribe_internal_bars_stays_local_with_remaining_exact_subscribers(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
@@ -7348,10 +8137,11 @@ fn test_unsubscribe_internal_bars_stays_local_with_remaining_exact_subscribers(
     }
 
     msgbus::unsubscribe_bars(bar_topic.into(), &handler);
+    let fallback_client_id = ClientId::new("FALLBACK-CLIENT");
     data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Bars(
         UnsubscribeBars::new(
             bar_type,
-            Some(client_id),
+            Some(fallback_client_id),
             Some(venue),
             unsubscribe_command_id,
             UnixNanos::default(),
@@ -7363,10 +8153,11 @@ fn test_unsubscribe_internal_bars_stays_local_with_remaining_exact_subscribers(
     {
         let recorded = recorder.borrow();
         assert_eq!(recorded.len(), 2);
-        assert!(matches!(
-            &recorded[1],
-            DataCommand::Unsubscribe(UnsubscribeCommand::Trades(_))
-        ));
+        let DataCommand::Unsubscribe(UnsubscribeCommand::Trades(command)) = &recorded[1] else {
+            panic!("expected source trade unsubscribe, was {:?}", recorded[1]);
+        };
+        assert_eq!(command.client_id, Some(client_id));
+        assert_eq!(command.correlation_id, Some(unsubscribe_command_id));
     }
 }
 
@@ -7499,6 +8290,273 @@ fn test_external_client_forwards_subscribe_and_unsubscribe_commands(
         serde_json::to_value(unsubscribe_saver.get_messages()).unwrap(),
         serde_json::to_value([unsubscribe]).unwrap(),
     );
+}
+
+#[rstest]
+fn test_external_client_releases_after_final_owner(
+    audusd_sim: CurrencyPair,
+    _stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let config = DataEngineConfig {
+        external_clients: Some(vec![client_id]),
+        ..DataEngineConfig::default()
+    };
+    let mut data_engine = DataEngine::new(clock, cache, Some(config));
+    let topic = format!("commands.data.{client_id}");
+    let mut first_params = Params::new();
+    first_params.insert("owner".to_string(), serde_json::json!(1));
+    let mut second_params = Params::new();
+    second_params.insert("owner".to_string(), serde_json::json!(2));
+    let first_subscribe = SubscribeCommand::Quotes(SubscribeQuotes::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::from(1),
+        None,
+        Some(first_params.clone()),
+    ));
+    let second_subscribe = SubscribeCommand::Quotes(SubscribeQuotes::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::from(2),
+        None,
+        Some(second_params),
+    ));
+    let (subscribe_handler, subscribe_saver) = get_any_saving_handler::<SubscribeCommand>(None);
+    msgbus::subscribe_any(topic.as_str().into(), subscribe_handler, None);
+
+    data_engine.execute(DataCommand::Subscribe(first_subscribe.clone()));
+    data_engine.execute(DataCommand::Subscribe(second_subscribe));
+
+    assert_eq!(
+        serde_json::to_value(subscribe_saver.get_messages()).unwrap(),
+        serde_json::to_value([first_subscribe]).unwrap(),
+    );
+
+    let (unsubscribe_handler, unsubscribe_saver) =
+        get_any_saving_handler::<UnsubscribeCommand>(None);
+    msgbus::subscribe_any(topic.as_str().into(), unsubscribe_handler, None);
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(
+        UnsubscribeQuotes::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::from(3),
+            None,
+            None,
+        ),
+    )));
+    assert!(unsubscribe_saver.get_messages().is_empty());
+
+    let final_command_id = UUID4::new();
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(
+        UnsubscribeQuotes::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            final_command_id,
+            UnixNanos::from(4),
+            None,
+            None,
+        ),
+    )));
+
+    let commands = unsubscribe_saver.get_messages();
+    let [UnsubscribeCommand::Quotes(command)] = commands.as_slice() else {
+        panic!("expected one final external unsubscribe, was {commands:?}");
+    };
+    assert_eq!(command.instrument_id, audusd_sim.id);
+    assert_eq!(command.client_id, Some(client_id));
+    assert_eq!(command.venue, Some(venue));
+    assert_eq!(command.command_id, final_command_id);
+    assert_eq!(command.ts_init, UnixNanos::from(4));
+    assert_eq!(command.params.as_ref(), Some(&first_params));
+}
+
+#[rstest]
+fn test_external_option_chain_releases_after_final_owner(
+    _stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let config = DataEngineConfig {
+        external_clients: Some(vec![client_id]),
+        ..DataEngineConfig::default()
+    };
+    let mut data_engine = DataEngine::new(clock, cache, Some(config));
+    let topic = format!("commands.data.{client_id}");
+    let series_id = make_series_id();
+    let mut first_params = Params::new();
+    first_params.insert("owner".to_string(), serde_json::json!(1));
+    let mut second_params = Params::new();
+    second_params.insert("owner".to_string(), serde_json::json!(2));
+    let subscribe = |command_id, strike, params| {
+        SubscribeCommand::OptionChain(SubscribeOptionChain::new(
+            series_id,
+            StrikeRange::Fixed(vec![Price::from(strike)]),
+            Some(1_000),
+            command_id,
+            UnixNanos::default(),
+            Some(client_id),
+            Some(venue),
+            Some(params),
+        ))
+    };
+    let (subscribe_handler, subscribe_saver) = get_any_saving_handler::<SubscribeCommand>(None);
+    let (unsubscribe_handler, unsubscribe_saver) =
+        get_any_saving_handler::<UnsubscribeCommand>(None);
+    msgbus::subscribe_any(topic.as_str().into(), subscribe_handler, None);
+    msgbus::subscribe_any(topic.as_str().into(), unsubscribe_handler, None);
+
+    data_engine.execute(DataCommand::Subscribe(subscribe(
+        UUID4::new(),
+        "50000",
+        first_params,
+    )));
+    data_engine.execute(DataCommand::Subscribe(subscribe(
+        UUID4::new(),
+        "51000",
+        second_params.clone(),
+    )));
+    assert_eq!(subscribe_saver.get_messages().len(), 2);
+
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::OptionChain(
+        UnsubscribeOptionChain::new(
+            series_id,
+            UUID4::new(),
+            UnixNanos::from(1),
+            Some(client_id),
+            Some(venue),
+        ),
+    )));
+    assert!(unsubscribe_saver.get_messages().is_empty());
+
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::OptionChain(
+        UnsubscribeOptionChain::new(
+            series_id,
+            UUID4::new(),
+            UnixNanos::from(2),
+            Some(client_id),
+            Some(venue),
+        ),
+    )));
+    let commands = unsubscribe_saver.get_messages();
+    let [UnsubscribeCommand::OptionChain(command)] = commands.as_slice() else {
+        panic!("expected one final external option chain unsubscribe, was {commands:?}");
+    };
+    assert_eq!(command.series_id, series_id);
+    assert_eq!(command.client_id, Some(client_id));
+    assert_eq!(command.venue, Some(venue));
+    assert_eq!(command.ts_init, UnixNanos::from(2));
+    assert_eq!(command.params.as_ref(), Some(&second_params));
+}
+
+#[rstest]
+fn test_external_option_chain_edit_moves_owner_to_new_client(
+    _stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let edited_client_id = ClientId::from("EDITED-EXTERNAL-CLIENT");
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let config = DataEngineConfig {
+        external_clients: Some(vec![client_id, edited_client_id]),
+        ..DataEngineConfig::default()
+    };
+    let mut data_engine = DataEngine::new(clock, cache, Some(config));
+    let initial_topic = format!("commands.data.{client_id}");
+    let edited_topic = format!("commands.data.{edited_client_id}");
+    let series_id = make_series_id();
+    let owner_id = UUID4::new();
+    let mut initial_params = Params::new();
+    initial_params.insert("route".to_string(), serde_json::json!(1));
+    let mut edited_params = Params::new();
+    edited_params.insert("route".to_string(), serde_json::json!(2));
+    let (initial_unsubscribe_handler, initial_unsubscribe_saver) =
+        get_any_saving_handler::<UnsubscribeCommand>(None);
+    let (edited_subscribe_handler, edited_subscribe_saver) =
+        get_any_saving_handler::<SubscribeCommand>(None);
+    let (edited_unsubscribe_handler, edited_unsubscribe_saver) =
+        get_any_saving_handler::<UnsubscribeCommand>(None);
+    msgbus::subscribe_any(
+        initial_topic.as_str().into(),
+        initial_unsubscribe_handler,
+        None,
+    );
+    msgbus::subscribe_any(edited_topic.as_str().into(), edited_subscribe_handler, None);
+    msgbus::subscribe_any(
+        edited_topic.as_str().into(),
+        edited_unsubscribe_handler,
+        None,
+    );
+
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::OptionChain(
+        SubscribeOptionChain::new(
+            series_id,
+            StrikeRange::Fixed(vec![Price::from("50000")]),
+            Some(1_000),
+            owner_id,
+            UnixNanos::from(1),
+            Some(client_id),
+            Some(venue),
+            Some(initial_params.clone()),
+        ),
+    )));
+    let mut edit = SubscribeOptionChain::new(
+        series_id,
+        StrikeRange::Fixed(vec![Price::from("51000")]),
+        Some(2_000),
+        UUID4::new(),
+        UnixNanos::from(2),
+        Some(edited_client_id),
+        Some(venue),
+        Some(edited_params.clone()),
+    );
+    edit.correlation_id = Some(owner_id);
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::OptionChain(edit)));
+
+    let initial_commands = initial_unsubscribe_saver.get_messages();
+    let [UnsubscribeCommand::OptionChain(initial_unsubscribe)] = initial_commands.as_slice() else {
+        panic!("expected one unsubscribe from the old external client, was {initial_commands:?}");
+    };
+    assert_eq!(initial_unsubscribe.series_id, series_id);
+    assert_eq!(initial_unsubscribe.client_id, Some(client_id));
+    assert_eq!(initial_unsubscribe.ts_init, UnixNanos::from(2));
+    assert_eq!(initial_unsubscribe.params.as_ref(), Some(&initial_params));
+    let edited_commands = edited_subscribe_saver.get_messages();
+    let [SubscribeCommand::OptionChain(edited_subscribe)] = edited_commands.as_slice() else {
+        panic!("expected one subscribe to the new external client, was {edited_commands:?}");
+    };
+    assert_eq!(edited_subscribe.correlation_id, Some(owner_id));
+
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::OptionChain(
+        UnsubscribeOptionChain::new(
+            series_id,
+            UUID4::new(),
+            UnixNanos::from(3),
+            Some(edited_client_id),
+            Some(venue),
+        ),
+    )));
+    let final_commands = edited_unsubscribe_saver.get_messages();
+    let [UnsubscribeCommand::OptionChain(final_unsubscribe)] = final_commands.as_slice() else {
+        panic!("expected one unsubscribe from the active external client, was {final_commands:?}");
+    };
+    assert_eq!(final_unsubscribe.series_id, series_id);
+    assert_eq!(final_unsubscribe.client_id, Some(edited_client_id));
+    assert_eq!(final_unsubscribe.ts_init, UnixNanos::from(3));
+    assert_eq!(final_unsubscribe.params.as_ref(), Some(&edited_params));
 }
 
 #[rstest]
@@ -8122,7 +9180,7 @@ fn test_execute_subscribe_mark_prices(
 }
 
 #[rstest]
-fn test_unsubscribe_mark_prices_keeps_client_subscribed_when_other_subscribers(
+fn test_unsubscribe_mark_prices_keeps_client_subscribed_until_final_owner(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<TestClock>>,
@@ -8150,7 +9208,7 @@ fn test_unsubscribe_mark_prices_keeps_client_subscribed_when_other_subscribers(
     msgbus::subscribe_mark_prices(topic.into(), handler_a, None);
     msgbus::subscribe_mark_prices(topic.into(), handler_b, None);
 
-    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::MarkPrices(SubscribeMarkPrices::new(
+    let sub_cmd_a = DataCommand::Subscribe(SubscribeCommand::MarkPrices(SubscribeMarkPrices::new(
         audusd_sim.id,
         Some(client_id),
         Some(venue),
@@ -8159,9 +9217,37 @@ fn test_unsubscribe_mark_prices_keeps_client_subscribed_when_other_subscribers(
         None,
         None,
     )));
-    data_engine.execute(sub_cmd.clone());
+    data_engine.execute(sub_cmd_a.clone());
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::MarkPrices(
+        SubscribeMarkPrices::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
 
-    let unsub_cmd =
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::MarkPrices(
+        UnsubscribeMarkPrices::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+
+    assert_eq!(
+        recorder.borrow().as_slice(),
+        std::slice::from_ref(&sub_cmd_a)
+    );
+
+    let unsub_cmd_b =
         DataCommand::Unsubscribe(UnsubscribeCommand::MarkPrices(UnsubscribeMarkPrices::new(
             audusd_sim.id,
             Some(client_id),
@@ -8171,9 +9257,9 @@ fn test_unsubscribe_mark_prices_keeps_client_subscribed_when_other_subscribers(
             None,
             None,
         )));
-    data_engine.execute(unsub_cmd);
+    data_engine.execute(unsub_cmd_b.clone());
 
-    assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
+    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd_a, unsub_cmd_b]);
 }
 
 #[rstest]
@@ -9910,6 +10996,64 @@ fn test_reset_clears_synthetic_subscriptions(stub_msgbus: Rc<RefCell<MessageBus>
     );
     assert!(quote_saver.get_messages().is_empty());
     assert!(trade_saver.get_messages().is_empty());
+}
+
+#[rstest]
+fn test_synthetic_quotes_release_after_final_owner(stub_msgbus: Rc<RefCell<MessageBus>>) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let (synthetic, _, _) = synthetic_index();
+    let synthetic_id = synthetic.id;
+    cache.borrow_mut().add_synthetic(synthetic).unwrap();
+
+    data_engine.execute(subscribe_synthetic_quotes_cmd(synthetic_id));
+    data_engine.execute(subscribe_synthetic_quotes_cmd(synthetic_id));
+    data_engine.execute(unsubscribe_synthetic_quotes_cmd(synthetic_id));
+
+    assert!(
+        data_engine
+            .subscribed_synthetic_quotes()
+            .contains(&synthetic_id)
+    );
+
+    data_engine.execute(unsubscribe_synthetic_quotes_cmd(synthetic_id));
+
+    assert!(
+        !data_engine
+            .subscribed_synthetic_quotes()
+            .contains(&synthetic_id)
+    );
+}
+
+#[rstest]
+fn test_synthetic_trades_release_after_final_owner(stub_msgbus: Rc<RefCell<MessageBus>>) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let (synthetic, _, _) = synthetic_index();
+    let synthetic_id = synthetic.id;
+    cache.borrow_mut().add_synthetic(synthetic).unwrap();
+
+    data_engine.execute(subscribe_synthetic_trades_cmd(synthetic_id));
+    data_engine.execute(subscribe_synthetic_trades_cmd(synthetic_id));
+    data_engine.execute(unsubscribe_synthetic_trades_cmd(synthetic_id));
+
+    assert!(
+        data_engine
+            .subscribed_synthetic_trades()
+            .contains(&synthetic_id)
+    );
+
+    data_engine.execute(unsubscribe_synthetic_trades_cmd(synthetic_id));
+
+    assert!(
+        !data_engine
+            .subscribed_synthetic_trades()
+            .contains(&synthetic_id)
+    );
 }
 
 #[rstest]
@@ -14038,6 +15182,368 @@ fn test_unsubscribe_option_chain_tears_down(
 }
 
 #[rstest]
+fn test_option_chain_manager_survives_partial_retirement(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let _ = msgbus::get_message_bus();
+    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let client_id = ClientId::new("DERIBIT");
+    let venue = Venue::new("DERIBIT");
+    let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+    register_mock_client(
+        clock,
+        cache.clone(),
+        client_id,
+        venue,
+        Some(venue),
+        &recorder,
+        &mut data_engine.borrow_mut(),
+    );
+    let _ = cache
+        .borrow_mut()
+        .add_instrument(make_btc_option("50000.000", OptionKind::Call));
+    let series_id = make_series_id();
+    let topic = switchboard::get_option_chain_topic(series_id);
+    let (first_handler, _first_saver) = get_typed_message_saving_handler::<OptionChainSlice>(Some(
+        Ustr::from("first-option-chain-owner"),
+    ));
+    let (second_handler, _second_saver) = get_typed_message_saving_handler::<OptionChainSlice>(
+        Some(Ustr::from("second-option-chain-owner")),
+    );
+    msgbus::subscribe_option_chain(topic.into(), first_handler.clone(), None);
+    data_engine
+        .borrow_mut()
+        .execute(make_subscribe_option_chain(
+            series_id,
+            vec![Price::from("50000.000")],
+            Some(client_id),
+            Some(venue),
+        ));
+    msgbus::subscribe_option_chain(topic.into(), second_handler.clone(), None);
+    data_engine
+        .borrow_mut()
+        .execute(make_subscribe_option_chain(
+            series_id,
+            vec![Price::from("50000.000")],
+            Some(client_id),
+            Some(venue),
+        ));
+    recorder.borrow_mut().clear();
+
+    msgbus::unsubscribe_option_chain(topic.into(), &first_handler);
+    data_engine
+        .borrow_mut()
+        .execute(make_unsubscribe_option_chain(
+            series_id,
+            Some(client_id),
+            Some(venue),
+        ));
+
+    assert!(data_engine.borrow().has_option_chain_manager(&series_id));
+    assert!(recorder.borrow().is_empty());
+
+    msgbus::unsubscribe_option_chain(topic.into(), &second_handler);
+    data_engine
+        .borrow_mut()
+        .execute(make_unsubscribe_option_chain(
+            series_id,
+            Some(client_id),
+            Some(venue),
+        ));
+
+    assert!(!data_engine.borrow().has_option_chain_manager(&series_id));
+    assert!(recorder.borrow().iter().any(|command| matches!(
+        command,
+        DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(_))
+    )));
+}
+
+#[rstest]
+#[case::retire(false)]
+#[case::edit(true)]
+fn test_option_chain_settles_rebalance_before_retirement(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    #[case] edit: bool,
+) {
+    let _ = msgbus::get_message_bus();
+    let engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let client_id = ClientId::new("DERIBIT");
+    let venue = Venue::new("DERIBIT");
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock.clone(),
+        cache.clone(),
+        client_id,
+        venue,
+        Some(venue),
+        &recorder,
+        &mut engine.borrow_mut(),
+    );
+    let old = make_btc_option("50000.000", OptionKind::Call);
+    let next = make_btc_option("51000.000", OptionKind::Call);
+    let old_id = old.id();
+    let next_id = next.id();
+    cache.borrow_mut().add_instrument(old).unwrap();
+    cache.borrow_mut().add_instrument(next).unwrap();
+    engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(SubscribeCommand::Quotes(
+            SubscribeQuotes::new(
+                next_id,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ),
+        )));
+    let series_id = make_series_id();
+    engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(SubscribeCommand::OptionChain(
+            SubscribeOptionChain::new(
+                series_id,
+                StrikeRange::AtmRelative {
+                    strikes_above: 0,
+                    strikes_below: 0,
+                },
+                Some(1000),
+                UUID4::new(),
+                UnixNanos::default(),
+                Some(client_id),
+                Some(venue),
+                None,
+            ),
+        )));
+    let request_id = option_chain_reference_price_request_id(&recorder);
+    engine
+        .borrow_mut()
+        .response(DataResponse::OptionChainReferencePrice(
+            OptionChainReferencePriceResponse::new(
+                request_id,
+                client_id,
+                series_id,
+                Some(Price::from("50000.000")),
+                UnixNanos::from(1),
+                None,
+            ),
+        ));
+    engine
+        .borrow_mut()
+        .process_data(Data::OptionGreeks(make_option_chain_greeks(
+            old_id, 51000.0,
+        )));
+    recorder.borrow_mut().clear();
+
+    let events = clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(6_000_000_000_u64), true);
+    let handlers = clock.borrow().match_handlers(events);
+    assert!(!handlers.is_empty());
+    for handler in handlers {
+        handler.callback.call(handler.event);
+    }
+    assert!(recorder.borrow().is_empty());
+
+    if edit {
+        engine.borrow_mut().execute(make_subscribe_option_chain(
+            series_id,
+            vec![Price::from("50000.000")],
+            Some(client_id),
+            Some(venue),
+        ));
+    }
+    engine.borrow_mut().execute(make_unsubscribe_option_chain(
+        series_id,
+        Some(client_id),
+        Some(venue),
+    ));
+    let commands_at_retirement = recorder.borrow().clone();
+    engine
+        .borrow_mut()
+        .process_data(Data::OptionGreeks(make_option_chain_greeks(
+            old_id, 51000.0,
+        )));
+
+    assert_eq!(
+        recorder.borrow().as_slice(),
+        commands_at_retirement.as_slice()
+    );
+    assert!(!commands_at_retirement.iter().any(|command| matches!(command,
+        DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command)) if command.instrument_id == next_id
+    )));
+    assert!(!engine.borrow().has_option_chain_manager(&series_id));
+    assert_eq!(engine.borrow().subscribed_quotes(), vec![next_id]);
+    assert!(
+        engine
+            .borrow_mut()
+            .get_client(Some(&client_id), Some(&venue))
+            .unwrap()
+            .subscriptions_option_greeks
+            .is_empty()
+    );
+    assert!(engine.borrow().subscribed_instrument_status().is_empty());
+    assert_eq!(clock.borrow().timer_count(), 0);
+}
+
+#[rstest]
+fn test_pending_option_chain_survives_partial_retirement(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let _ = msgbus::get_message_bus();
+    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let client_id = ClientId::new("DERIBIT");
+    let venue = Venue::new("DERIBIT");
+    let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+    register_mock_client(
+        clock,
+        cache.clone(),
+        client_id,
+        venue,
+        Some(venue),
+        &recorder,
+        &mut data_engine.borrow_mut(),
+    );
+    let _ = cache
+        .borrow_mut()
+        .add_instrument(make_btc_option("50000.000", OptionKind::Call));
+    let series_id = make_series_id();
+    let topic = switchboard::get_option_chain_topic(series_id);
+    let (first_handler, _first_saver) = get_typed_message_saving_handler::<OptionChainSlice>(Some(
+        Ustr::from("first-pending-option-chain-owner"),
+    ));
+    let (second_handler, _second_saver) = get_typed_message_saving_handler::<OptionChainSlice>(
+        Some(Ustr::from("second-pending-option-chain-owner")),
+    );
+    let subscribe = || {
+        DataCommand::Subscribe(SubscribeCommand::OptionChain(SubscribeOptionChain::new(
+            series_id,
+            StrikeRange::AtmRelative {
+                strikes_above: 2,
+                strikes_below: 2,
+            },
+            Some(1_000),
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(client_id),
+            Some(venue),
+            None,
+        )))
+    };
+    msgbus::subscribe_option_chain(topic.into(), first_handler.clone(), None);
+    data_engine.borrow_mut().execute(subscribe());
+    msgbus::subscribe_option_chain(topic.into(), second_handler.clone(), None);
+    data_engine.borrow_mut().execute(subscribe());
+    assert_eq!(data_engine.borrow().pending_option_chain_request_count(), 1);
+
+    msgbus::unsubscribe_option_chain(topic.into(), &first_handler);
+    data_engine
+        .borrow_mut()
+        .execute(make_unsubscribe_option_chain(
+            series_id,
+            Some(client_id),
+            Some(venue),
+        ));
+
+    assert_eq!(data_engine.borrow().pending_option_chain_request_count(), 1);
+
+    msgbus::unsubscribe_option_chain(topic.into(), &second_handler);
+    data_engine
+        .borrow_mut()
+        .execute(make_unsubscribe_option_chain(
+            series_id,
+            Some(client_id),
+            Some(venue),
+        ));
+
+    assert_eq!(data_engine.borrow().pending_option_chain_request_count(), 0);
+}
+
+#[rstest]
+fn test_option_chain_client_edit_releases_old_and_active_routes(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let _ = msgbus::get_message_bus();
+    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let venue = Venue::new("DERIBIT");
+    let first_client_id = ClientId::new("DERIBIT-FIRST");
+    let second_client_id = ClientId::new("DERIBIT-SECOND");
+    let first_recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+    let second_recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+    register_mock_client(
+        clock.clone(),
+        cache.clone(),
+        first_client_id,
+        venue,
+        None,
+        &first_recorder,
+        &mut data_engine.borrow_mut(),
+    );
+    register_mock_client(
+        clock,
+        cache.clone(),
+        second_client_id,
+        venue,
+        None,
+        &second_recorder,
+        &mut data_engine.borrow_mut(),
+    );
+    let _ = cache
+        .borrow_mut()
+        .add_instrument(make_btc_option("50000.000", OptionKind::Call));
+    let series_id = make_series_id();
+    let strikes = vec![Price::from("50000.000")];
+
+    data_engine
+        .borrow_mut()
+        .execute(make_subscribe_option_chain(
+            series_id,
+            strikes.clone(),
+            Some(first_client_id),
+            Some(venue),
+        ));
+    data_engine
+        .borrow_mut()
+        .execute(make_subscribe_option_chain(
+            series_id,
+            strikes,
+            Some(second_client_id),
+            Some(venue),
+        ));
+
+    assert!(first_recorder.borrow().iter().any(|command| matches!(
+        command,
+        DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command))
+            if command.client_id == Some(first_client_id)
+    )));
+    assert!(
+        !second_recorder
+            .borrow()
+            .iter()
+            .any(|command| matches!(command, DataCommand::Unsubscribe(_)))
+    );
+
+    data_engine
+        .borrow_mut()
+        .execute(make_unsubscribe_option_chain(
+            series_id,
+            Some(first_client_id),
+            Some(venue),
+        ));
+
+    assert!(second_recorder.borrow().iter().any(|command| matches!(
+        command,
+        DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command))
+            if command.client_id == Some(second_client_id)
+    )));
+}
+
+#[rstest]
 fn test_unsubscribe_option_chain_not_subscribed_does_not_panic(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
@@ -15136,7 +16642,6 @@ fn test_unsubscribe_option_chain_preserves_user_owned_bootstrap_greeks(
             Some(client_id),
             Some(venue),
         ));
-
     assert!(recorder.borrow().is_empty());
     let sample_is_subscribed = data_engine
         .borrow_mut()
@@ -23352,7 +24857,7 @@ fn test_book_deltas_replay_respects_cache_ownership(
 }
 
 #[rstest]
-fn test_unsubscribe_external_bars_stays_local_with_remaining_exact_subscribers(
+fn test_external_bars_release_after_final_owner(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<TestClock>>,
@@ -23360,8 +24865,6 @@ fn test_unsubscribe_external_bars_stays_local_with_remaining_exact_subscribers(
     client_id: ClientId,
     venue: Venue,
 ) {
-    // One actor unsubscribing must not forward the client unsubscribe while
-    // other exact subscribers remain on the bars topic (v1 parity)
     let mut data_engine = data_engine.borrow_mut();
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
@@ -23378,12 +24881,7 @@ fn test_unsubscribe_external_bars_stays_local_with_remaining_exact_subscribers(
     data_engine.process(&inst_any as &dyn Any);
 
     let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL");
-    let bar_topic = switchboard::get_bars_topic(bar_type);
-    let (handler, _saver) =
-        get_typed_message_saving_handler::<Bar>(Some(Ustr::from("remaining-bar-subscriber")));
-    msgbus::subscribe_bars(bar_topic.into(), handler.clone(), None);
-
-    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Bars(SubscribeBars::new(
+    let first_subscribe = DataCommand::Subscribe(SubscribeCommand::Bars(SubscribeBars::new(
         bar_type,
         Some(client_id),
         Some(venue),
@@ -23392,10 +24890,19 @@ fn test_unsubscribe_external_bars_stays_local_with_remaining_exact_subscribers(
         None,
         None,
     )));
-    data_engine.execute(sub_cmd);
+    let second_subscribe = DataCommand::Subscribe(SubscribeCommand::Bars(SubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )));
+    data_engine.execute(first_subscribe);
+    data_engine.execute(second_subscribe);
     assert_eq!(recorder.borrow().len(), 1);
 
-    // Unsubscribe while the exact subscriber remains: no client forwarding
     data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Bars(
         UnsubscribeBars::new(
             bar_type,
@@ -23409,8 +24916,6 @@ fn test_unsubscribe_external_bars_stays_local_with_remaining_exact_subscribers(
     )));
     assert_eq!(recorder.borrow().len(), 1);
 
-    // After the last subscriber detaches, the unsubscribe reaches the client
-    msgbus::unsubscribe_bars(bar_topic.into(), &handler);
     data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Bars(
         UnsubscribeBars::new(
             bar_type,
@@ -23428,6 +24933,100 @@ fn test_unsubscribe_external_bars_stays_local_with_remaining_exact_subscribers(
     assert!(matches!(
         &recorded[1],
         DataCommand::Unsubscribe(UnsubscribeCommand::Bars(_))
+    ));
+}
+
+#[rstest]
+fn test_quote_routes_release_independently_with_shared_topic(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let first_client_id = ClientId::new("FIRST-CLIENT");
+    let second_client_id = ClientId::new("SECOND-CLIENT");
+    let first_recorder = Rc::new(RefCell::new(Vec::new()));
+    let second_recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock.clone(),
+        cache.clone(),
+        first_client_id,
+        venue,
+        None,
+        &first_recorder,
+        &mut data_engine,
+    );
+    register_mock_client(
+        clock,
+        cache,
+        second_client_id,
+        venue,
+        None,
+        &second_recorder,
+        &mut data_engine,
+    );
+    let instrument_id = audusd_sim.id;
+    data_engine.process(&InstrumentAny::CurrencyPair(audusd_sim) as &dyn Any);
+
+    for client_id in [first_client_id, second_client_id] {
+        data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(
+            SubscribeQuotes::new(
+                instrument_id,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ),
+        )));
+    }
+    let topic = switchboard::get_quotes_topic(instrument_id);
+    let (remaining_handler, _saver) = get_typed_message_saving_handler::<QuoteTick>(Some(
+        Ustr::from("remaining-route-subscriber"),
+    ));
+    msgbus::subscribe_quotes(topic.into(), remaining_handler.clone(), None);
+
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(
+        UnsubscribeQuotes::new(
+            instrument_id,
+            Some(first_client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+
+    assert_eq!(first_recorder.borrow().len(), 2);
+    assert!(matches!(
+        &first_recorder.borrow()[1],
+        DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command))
+            if command.client_id == Some(first_client_id)
+    ));
+    assert_eq!(second_recorder.borrow().len(), 1);
+
+    msgbus::unsubscribe_quotes(topic.into(), &remaining_handler);
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(
+        UnsubscribeQuotes::new(
+            instrument_id,
+            Some(second_client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+
+    assert_eq!(second_recorder.borrow().len(), 2);
+    assert!(matches!(
+        &second_recorder.borrow()[1],
+        DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command))
+            if command.client_id == Some(second_client_id)
     ));
 }
 

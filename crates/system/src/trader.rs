@@ -34,7 +34,8 @@ use nautilus_common::{
     clock::Clock,
     component::{
         Component, component_state, deregister_component, dispose_component,
-        register_component_actor, reset_component, start_component, stop_component,
+        register_component_actor, release_component_subscriptions, reset_component,
+        start_component, stop_component,
     },
     enums::{ComponentState, ComponentTrigger, Environment},
     logging::RECV,
@@ -1493,16 +1494,19 @@ impl Trader {
     /// Disposes the component `id` unless it has already reached a terminal state.
     ///
     /// A component disposed from Python has already run `on_dispose`, so a second disposal
-    /// transition would fail and strand the trader's bookkeeping. A `Faulted` component has
-    /// released its subscriptions on every route into that state, through either
-    /// [`Component::dispose`] or [`Component::fault`], so it is retirable without a further
-    /// transition.
+    /// transition would fail and strand the trader's bookkeeping. A `Faulted` component may have
+    /// retained subscriptions after `on_dispose` failed, so release them idempotently without
+    /// invoking the failed hook again.
     fn dispose_registered_component(id: Ustr) -> anyhow::Result<()> {
         let state = component_state(&id)?;
 
-        if matches!(state, ComponentState::Disposed | ComponentState::Faulted) {
+        if state == ComponentState::Disposed {
             log::debug!("Component {id} already {state}, skipping disposal transition");
             return Ok(());
+        }
+
+        if state == ComponentState::Faulted {
+            return release_component_subscriptions(&id);
         }
 
         dispose_component(&id)
@@ -1842,7 +1846,8 @@ mod tests {
         },
         nautilus_actor,
         runner::{
-            SyncTradingCommandSender, drain_trading_cmd_queue, replace_exec_cmd_sender,
+            SyncDataCommandSender, SyncTradingCommandSender, drain_data_cmd_queue,
+            drain_trading_cmd_queue, replace_data_cmd_sender, replace_exec_cmd_sender,
             trading_cmd_queue_is_empty,
         },
     };
@@ -1850,7 +1855,7 @@ mod tests {
     use nautilus_data::engine::{DataEngine, config::DataEngineConfig};
     use nautilus_execution::engine::{ExecutionEngine, config::ExecutionEngineConfig};
     use nautilus_model::{
-        data::{Bar, DataType, stubs::stub_bar},
+        data::{Bar, BarType, DataType, stubs::stub_bar},
         enums::{BookType, OrderSide, OrderStatus, OrderType, PositionAdjustmentType, TimeInForce},
         events::{
             OrderAccepted, OrderDenied, OrderFilled, OrderRejected, OrderUpdated, PositionAdjusted,
@@ -1894,6 +1899,8 @@ mod tests {
     #[derive(Debug)]
     struct TestDataActor {
         core: DataActorCore,
+        fail_stop: bool,
+        fail_fault: bool,
         fail_dispose: bool,
         bars_received: usize,
     }
@@ -1902,6 +1909,8 @@ mod tests {
         fn new(config: DataActorConfig) -> Self {
             Self {
                 core: DataActorCore::new(config),
+                fail_stop: false,
+                fail_fault: false,
                 fail_dispose: false,
                 bars_received: 0,
             }
@@ -1909,9 +1918,23 @@ mod tests {
     }
 
     impl DataActor for TestDataActor {
+        fn on_stop(&mut self) -> anyhow::Result<()> {
+            if self.fail_stop {
+                anyhow::bail!("test actor stop failure");
+            }
+            Ok(())
+        }
+
         fn on_dispose(&mut self) -> anyhow::Result<()> {
             if self.fail_dispose {
                 anyhow::bail!("test actor dispose failure");
+            }
+            Ok(())
+        }
+
+        fn on_fault(&mut self) -> anyhow::Result<()> {
+            if self.fail_fault {
+                anyhow::bail!("test actor fault failure");
             }
             Ok(())
         }
@@ -2044,17 +2067,26 @@ mod tests {
     #[derive(Debug)]
     struct TestStrategy {
         core: StrategyCore,
+        fail_stop: bool,
     }
 
     impl TestStrategy {
         fn new(config: StrategyConfig) -> Self {
             Self {
                 core: StrategyCore::new(config),
+                fail_stop: false,
             }
         }
     }
 
-    impl DataActor for TestStrategy {}
+    impl DataActor for TestStrategy {
+        fn on_stop(&mut self) -> anyhow::Result<()> {
+            if self.fail_stop {
+                anyhow::bail!("test strategy stop failure");
+            }
+            Ok(())
+        }
+    }
 
     nautilus_strategy!(TestStrategy);
 
@@ -4146,6 +4178,76 @@ class StateComponent:
     }
 
     #[rstest]
+    fn test_remove_actor_disposes_after_stop_hook_failure() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+        let actor_id = ActorId::from("Failing-Stop-Actor");
+        let mut actor = TestDataActor::new(DataActorConfig {
+            actor_id: Some(actor_id),
+            ..Default::default()
+        });
+        actor.fail_stop = true;
+        trader.add_actor(actor).unwrap();
+        trader.start_actor(&actor_id).unwrap();
+
+        let error = stop_component(&actor_id.inner()).unwrap_err();
+        assert_eq!(error.to_string(), "test actor stop failure");
+        assert_eq!(
+            component_state(&actor_id.inner()).unwrap(),
+            ComponentState::Stopping,
+        );
+
+        trader.remove_actor(&actor_id).unwrap();
+
+        assert!(get_component(&actor_id.inner()).is_none());
+        assert!(!actor_exists(&actor_id.inner()));
+        assert!(!trader.actor_ids().contains(&actor_id));
+    }
+
+    #[rstest]
+    fn test_remove_strategy_disposes_after_stop_hook_failure() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+        let strategy_id = StrategyId::from("Failing-Stop-Strategy");
+        let mut strategy = TestStrategy::new(StrategyConfig {
+            strategy_id: Some(strategy_id),
+            ..Default::default()
+        });
+        strategy.fail_stop = true;
+        trader.add_strategy(strategy).unwrap();
+        trader.start_strategy(&strategy_id).unwrap();
+
+        let error = stop_component(&strategy_id.inner()).unwrap_err();
+        assert_eq!(error.to_string(), "test strategy stop failure");
+        assert_eq!(
+            component_state(&strategy_id.inner()).unwrap(),
+            ComponentState::Stopping,
+        );
+
+        trader.remove_strategy(&strategy_id).unwrap();
+
+        assert!(get_component(&strategy_id.inner()).is_none());
+        assert!(!actor_exists(&strategy_id.inner()));
+        assert!(!trader.strategy_ids().contains(&strategy_id));
+    }
+
+    #[rstest]
     fn test_clear_exec_algorithms_deregisters_components() {
         let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
@@ -4244,12 +4346,25 @@ class StateComponent:
         });
         actor.fail_dispose = true;
         trader.add_actor(actor).unwrap();
+        trader.start_actor(&actor_id).unwrap();
+
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let deltas_topic = get_book_deltas_topic(instrument_id);
+        get_actor_unchecked::<TestDataActor>(&actor_id.inner()).subscribe_book_deltas(
+            instrument_id,
+            BookType::L3_MBO,
+            None,
+            None,
+            false,
+            None,
+        );
 
         trader.remove_actor(&actor_id).unwrap_err();
         assert_eq!(
             component_state(&actor_id.inner()).unwrap(),
             ComponentState::Faulted
         );
+        assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 1);
 
         // The dead end this closes: retirement previously failed for the life of the process
         trader.remove_actor(&actor_id).unwrap();
@@ -4258,10 +4373,11 @@ class StateComponent:
         assert!(!actor_exists(&actor_id.inner()));
         assert!(trader.actor_ids().is_empty());
         assert!(trader.get_component_clocks().is_empty());
+        assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
     }
 
     #[rstest]
-    fn test_failed_dispose_releases_subscriptions() {
+    fn test_failed_dispose_preserves_subscriptions() {
         let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let mut trader = Trader::new(
@@ -4298,8 +4414,7 @@ class StateComponent:
 
         trader.remove_actor(&actor_id).unwrap_err();
 
-        // A failed disposal releases subscriptions even though it retains the registration
-        assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
+        assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 1);
     }
 
     #[rstest]
@@ -4353,6 +4468,57 @@ class StateComponent:
         assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
         assert!(get_component(&actor_id.inner()).is_none());
         assert!(!actor_exists(&actor_id.inner()));
+    }
+
+    #[rstest]
+    fn test_actor_retires_after_fault_hook_failure() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+        let actor_id = ActorId::from("Failing-Fault-Actor");
+        let mut actor = TestDataActor::new(DataActorConfig {
+            actor_id: Some(actor_id),
+            ..Default::default()
+        });
+        actor.fail_fault = true;
+        trader.add_actor(actor).unwrap();
+        trader.start_actor(&actor_id).unwrap();
+
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let deltas_topic = get_book_deltas_topic(instrument_id);
+        get_actor_unchecked::<TestDataActor>(&actor_id.inner()).subscribe_book_deltas(
+            instrument_id,
+            BookType::L3_MBO,
+            None,
+            None,
+            false,
+            None,
+        );
+        assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 1);
+
+        let error = get_actor_unchecked::<TestDataActor>(&actor_id.inner())
+            .fault()
+            .unwrap_err();
+        assert_eq!(error.to_string(), "test actor fault failure");
+        assert_eq!(
+            component_state(&actor_id.inner()).unwrap(),
+            ComponentState::Faulting,
+        );
+        assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
+
+        trader.remove_actor(&actor_id).unwrap();
+
+        assert!(get_component(&actor_id.inner()).is_none());
+        assert!(!actor_exists(&actor_id.inner()));
+        assert!(trader.actor_ids().is_empty());
+        assert!(trader.get_component_clocks().is_empty());
     }
 
     #[rstest]
@@ -4785,6 +4951,56 @@ class ModuleStrategy(Strategy):
         assert_eq!(msgbus::subscriptions_count_any(data_topic).unwrap(), 0);
         assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
         assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 0);
+    }
+
+    #[rstest]
+    fn test_retirement_releases_bar_aggregator_after_final_subscriber() {
+        let (msgbus, cache, portfolio, data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        set_message_bus(msgbus);
+        replace_data_cmd_sender(Arc::new(SyncDataCommandSender));
+        DataEngine::register_msgbus_handlers(&data_engine);
+
+        let instrument = audusd_sim();
+        cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CurrencyPair(instrument))
+            .unwrap();
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+        let first_id = ActorId::from("Bar-Subscriber-001");
+        let second_id = ActorId::from("Bar-Subscriber-002");
+        for actor_id in [first_id, second_id] {
+            trader
+                .add_actor(TestDataActor::new(DataActorConfig {
+                    actor_id: Some(actor_id),
+                    ..Default::default()
+                }))
+                .unwrap();
+            trader.start_actor(&actor_id).unwrap();
+        }
+
+        let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-INTERNAL");
+        get_actor_unchecked::<TestDataActor>(&first_id.inner())
+            .subscribe_bars(bar_type, None, None);
+        get_actor_unchecked::<TestDataActor>(&second_id.inner())
+            .subscribe_bars(bar_type, None, None);
+        drain_data_cmd_queue();
+        assert!(data_engine.borrow().subscribed_bars().contains(&bar_type));
+
+        trader.remove_actor(&first_id).unwrap();
+        drain_data_cmd_queue();
+        assert!(data_engine.borrow().subscribed_bars().contains(&bar_type));
+
+        trader.remove_actor(&second_id).unwrap();
+        drain_data_cmd_queue();
+        assert!(!data_engine.borrow().subscribed_bars().contains(&bar_type));
     }
 
     #[rstest]

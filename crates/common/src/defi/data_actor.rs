@@ -52,17 +52,17 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_block_subscription(topic, handler);
-
-        let command = DefiSubscribeCommand::Blocks(SubscribeBlocks {
+        let command = DataCommand::DefiSubscribe(DefiSubscribeCommand::Blocks(SubscribeBlocks {
             chain,
             client_id,
             command_id: UUID4::new(),
             ts_init: self.timestamp_ns(),
             params,
-        });
+        }));
 
-        self.send_data_cmd(DataCommand::DefiSubscribe(command));
+        if self.add_block_subscription(topic, handler, command.clone()) {
+            self.send_data_cmd(command);
+        }
     }
 
     /// Subscribes the actor to pool.
@@ -76,17 +76,17 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_pool_subscription(topic, handler);
-
-        let command = DefiSubscribeCommand::Pool(SubscribePool {
+        let command = DataCommand::DefiSubscribe(DefiSubscribeCommand::Pool(SubscribePool {
             instrument_id,
             client_id,
             command_id: UUID4::new(),
             ts_init: self.timestamp_ns(),
             params,
-        });
+        }));
 
-        self.send_data_cmd(DataCommand::DefiSubscribe(command));
+        if self.add_pool_subscription(topic, handler, command.clone()) {
+            self.send_data_cmd(command);
+        }
     }
 
     /// Subscribes the actor to pool swap.
@@ -100,17 +100,18 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_pool_swap_subscription(topic, handler);
+        let command =
+            DataCommand::DefiSubscribe(DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
+                instrument_id,
+                client_id,
+                command_id: UUID4::new(),
+                ts_init: self.timestamp_ns(),
+                params,
+            }));
 
-        let command = DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
-            instrument_id,
-            client_id,
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::DefiSubscribe(command));
+        if self.add_pool_swap_subscription(topic, handler, command.clone()) {
+            self.send_data_cmd(command);
+        }
     }
 
     /// Subscribes the actor to pool liquidity update.
@@ -124,17 +125,19 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_pool_liquidity_subscription(topic, handler);
+        let command = DataCommand::DefiSubscribe(DefiSubscribeCommand::PoolLiquidityUpdates(
+            SubscribePoolLiquidityUpdates {
+                instrument_id,
+                client_id,
+                command_id: UUID4::new(),
+                ts_init: self.timestamp_ns(),
+                params,
+            },
+        ));
 
-        let command = DefiSubscribeCommand::PoolLiquidityUpdates(SubscribePoolLiquidityUpdates {
-            instrument_id,
-            client_id,
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::DefiSubscribe(command));
+        if self.add_pool_liquidity_subscription(topic, handler, command.clone()) {
+            self.send_data_cmd(command);
+        }
     }
 
     /// Subscribes the actor to pool fee collect.
@@ -148,17 +151,19 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_pool_collect_subscription(topic, handler);
+        let command = DataCommand::DefiSubscribe(DefiSubscribeCommand::PoolFeeCollects(
+            SubscribePoolFeeCollects {
+                instrument_id,
+                client_id,
+                command_id: UUID4::new(),
+                ts_init: self.timestamp_ns(),
+                params,
+            },
+        ));
 
-        let command = DefiSubscribeCommand::PoolFeeCollects(SubscribePoolFeeCollects {
-            instrument_id,
-            client_id,
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::DefiSubscribe(command));
+        if self.add_pool_collect_subscription(topic, handler, command.clone()) {
+            self.send_data_cmd(command);
+        }
     }
 
     /// Subscribes the actor to pool flash event.
@@ -172,17 +177,19 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_pool_flash_subscription(topic, handler);
+        let command = DataCommand::DefiSubscribe(DefiSubscribeCommand::PoolFlashEvents(
+            SubscribePoolFlashEvents {
+                instrument_id,
+                client_id,
+                command_id: UUID4::new(),
+                ts_init: self.timestamp_ns(),
+                params,
+            },
+        ));
 
-        let command = DefiSubscribeCommand::PoolFlashEvents(SubscribePoolFlashEvents {
-            instrument_id,
-            client_id,
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::DefiSubscribe(command));
+        if self.add_pool_flash_subscription(topic, handler, command.clone()) {
+            self.send_data_cmd(command);
+        }
     }
 
     /// Unsubscribes the actor from blocks.
@@ -195,7 +202,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_defi_blocks_topic(chain);
-        self.remove_block_subscription(topic);
+        let retained = self.remove_block_subscription(topic);
 
         let command = DefiUnsubscribeCommand::Blocks(UnsubscribeBlocks {
             chain,
@@ -205,7 +212,7 @@ impl DataActorCore {
             params,
         });
 
-        self.send_data_cmd(DataCommand::DefiUnsubscribe(command));
+        self.send_unsubscribe_cmd(retained, DataCommand::DefiUnsubscribe(command));
     }
 
     /// Unsubscribes the actor from pool definition updates.
@@ -218,7 +225,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_defi_pool_topic(instrument_id);
-        self.remove_pool_subscription(topic);
+        let retained = self.remove_pool_subscription(topic);
 
         let command = DefiUnsubscribeCommand::Pool(UnsubscribePool {
             instrument_id,
@@ -228,7 +235,7 @@ impl DataActorCore {
             params,
         });
 
-        self.send_data_cmd(DataCommand::DefiUnsubscribe(command));
+        self.send_unsubscribe_cmd(retained, DataCommand::DefiUnsubscribe(command));
     }
 
     /// Unsubscribes the actor from pool swaps.
@@ -241,7 +248,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_defi_pool_swaps_topic(instrument_id);
-        self.remove_pool_swap_subscription(topic);
+        let retained = self.remove_pool_swap_subscription(topic);
 
         let command = DefiUnsubscribeCommand::PoolSwaps(UnsubscribePoolSwaps {
             instrument_id,
@@ -251,7 +258,7 @@ impl DataActorCore {
             params,
         });
 
-        self.send_data_cmd(DataCommand::DefiUnsubscribe(command));
+        self.send_unsubscribe_cmd(retained, DataCommand::DefiUnsubscribe(command));
     }
 
     /// Unsubscribes the actor from pool liquidity updates.
@@ -264,7 +271,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_defi_liquidity_topic(instrument_id);
-        self.remove_pool_liquidity_subscription(topic);
+        let retained = self.remove_pool_liquidity_subscription(topic);
 
         let command =
             DefiUnsubscribeCommand::PoolLiquidityUpdates(UnsubscribePoolLiquidityUpdates {
@@ -275,7 +282,7 @@ impl DataActorCore {
                 params,
             });
 
-        self.send_data_cmd(DataCommand::DefiUnsubscribe(command));
+        self.send_unsubscribe_cmd(retained, DataCommand::DefiUnsubscribe(command));
     }
 
     /// Unsubscribes the actor from pool fee collects.
@@ -288,7 +295,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_defi_collect_topic(instrument_id);
-        self.remove_pool_collect_subscription(topic);
+        let retained = self.remove_pool_collect_subscription(topic);
 
         let command = DefiUnsubscribeCommand::PoolFeeCollects(UnsubscribePoolFeeCollects {
             instrument_id,
@@ -298,7 +305,7 @@ impl DataActorCore {
             params,
         });
 
-        self.send_data_cmd(DataCommand::DefiUnsubscribe(command));
+        self.send_unsubscribe_cmd(retained, DataCommand::DefiUnsubscribe(command));
     }
 
     /// Unsubscribes the actor from pool flash events.
@@ -311,7 +318,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_defi_flash_topic(instrument_id);
-        self.remove_pool_flash_subscription(topic);
+        let retained = self.remove_pool_flash_subscription(topic);
 
         let command = DefiUnsubscribeCommand::PoolFlashEvents(UnsubscribePoolFlashEvents {
             instrument_id,
@@ -321,6 +328,6 @@ impl DataActorCore {
             params,
         });
 
-        self.send_data_cmd(DataCommand::DefiUnsubscribe(command));
+        self.send_unsubscribe_cmd(retained, DataCommand::DefiUnsubscribe(command));
     }
 }

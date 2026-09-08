@@ -25,6 +25,8 @@ use std::{
 };
 
 use ahash::AHashSet;
+#[cfg(feature = "defi")]
+use nautilus_common::messages::defi::DefiSubscribeCommand;
 use nautilus_common::{
     clients::{DataClient, log_command_error},
     enums::LogColor,
@@ -42,7 +44,6 @@ use nautilus_common::{
         UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes,
         UnsubscribeTrades,
     },
-    msgbus::{self, switchboard::get_custom_topic},
 };
 #[cfg(feature = "defi")]
 use nautilus_model::defi::Blockchain;
@@ -54,6 +55,9 @@ use nautilus_model::{
 #[cfg(feature = "defi")]
 #[allow(unused_imports)] // Brings DeFi impl blocks into scope
 use crate::defi::client as _;
+#[cfg(feature = "defi")]
+use crate::subscription::DefiSubscriptionKey;
+use crate::subscription::{SubscriptionKey, SubscriptionRegistry, SubscriptionRelease};
 
 /// Wraps a [`DataClient`], managing subscription state and forwarding commands.
 pub struct DataClientAdapter {
@@ -76,6 +80,10 @@ pub struct DataClientAdapter {
     pub subscriptions_index_prices: AHashSet<InstrumentId>,
     pub subscriptions_funding_rates: AHashSet<InstrumentId>,
     pub subscriptions_option_greeks: AHashSet<InstrumentId>,
+    subscriptions_active: SubscriptionRegistry<SubscriptionKey, SubscribeCommand>,
+    #[cfg(feature = "defi")]
+    pub(crate) subscriptions_active_defi:
+        SubscriptionRegistry<DefiSubscriptionKey, DefiSubscribeCommand>,
     #[cfg(feature = "defi")]
     pub subscriptions_blocks: AHashSet<Blockchain>,
     #[cfg(feature = "defi")]
@@ -158,6 +166,9 @@ impl DataClientAdapter {
             subscriptions_instrument_close: AHashSet::new(),
             subscriptions_instrument: AHashSet::new(),
             subscriptions_instrument_venue: AHashSet::new(),
+            subscriptions_active: SubscriptionRegistry::default(),
+            #[cfg(feature = "defi")]
+            subscriptions_active_defi: SubscriptionRegistry::default(),
             #[cfg(feature = "defi")]
             subscriptions_blocks: AHashSet::new(),
             #[cfg(feature = "defi")]
@@ -199,8 +210,28 @@ impl DataClientAdapter {
 
     #[inline]
     pub fn execute_subscribe(&mut self, cmd: SubscribeCommand) {
+        self.execute_subscribe_with_retained(cmd.clone(), cmd, false);
+    }
+
+    pub(crate) fn execute_subscribe_intent(&mut self, cmd: SubscribeCommand) {
+        self.execute_subscribe_with_retained(cmd.clone(), cmd, true);
+    }
+
+    pub(crate) fn execute_subscribe_with_retained(
+        &mut self,
+        cmd: SubscribeCommand,
+        retained: SubscribeCommand,
+        retain_on_failure: bool,
+    ) {
+        let key = SubscriptionKey::from_subscribe(&retained);
+        if self.has_active_subscription(&retained) {
+            self.subscriptions_active
+                .retain(key, retained.command_id(), retained);
+            return;
+        }
+
         let cmd_debug = format!("{cmd:?}");
-        if let Err(e) = match cmd {
+        let result = match cmd {
             SubscribeCommand::Data(cmd) => self.subscribe(cmd),
             SubscribeCommand::Instrument(cmd) => self.subscribe_instrument(cmd),
             SubscribeCommand::Instruments(cmd) => self.subscribe_instruments(cmd),
@@ -217,14 +248,111 @@ impl DataClientAdapter {
             SubscribeCommand::InstrumentClose(cmd) => self.subscribe_instrument_close(cmd),
             SubscribeCommand::OptionGreeks(cmd) => self.subscribe_option_greeks(cmd),
             SubscribeCommand::OptionChain(_) => Ok(()), // Handled internally by engine
-        } {
+        };
+
+        if let Err(e) = result {
+            // Engine-owned intent survives failure until its matching release
+            if retain_on_failure {
+                self.subscriptions_active
+                    .retain(key, retained.command_id(), retained);
+            }
+
             log_command_error(&cmd_debug, &e);
+            return;
+        }
+
+        // A retry can establish a different physical identity from the failed attempt
+        if let Some(subscription) = self.subscriptions_active.get_mut(&key) {
+            subscription.command = retained.clone();
+        }
+        self.subscriptions_active
+            .retain(key, retained.command_id(), retained);
+    }
+
+    #[must_use]
+    pub(crate) fn has_active_subscription(&self, cmd: &SubscribeCommand) -> bool {
+        match cmd {
+            SubscribeCommand::Data(cmd) => self.subscriptions_custom.contains(&cmd.data_type),
+            SubscribeCommand::Instrument(cmd) => {
+                self.subscriptions_instrument.contains(&cmd.instrument_id)
+            }
+            SubscribeCommand::Instruments(cmd) => {
+                self.subscriptions_instrument_venue.contains(&cmd.venue)
+            }
+            SubscribeCommand::BookDeltas(cmd) => {
+                self.subscriptions_book_deltas.contains(&cmd.instrument_id)
+            }
+            SubscribeCommand::BookDepth10(cmd) => {
+                self.subscriptions_book_depth10.contains(&cmd.instrument_id)
+            }
+            SubscribeCommand::Quotes(cmd) => self.subscriptions_quotes.contains(&cmd.instrument_id),
+            SubscribeCommand::Trades(cmd) => self.subscriptions_trades.contains(&cmd.instrument_id),
+            SubscribeCommand::Bars(cmd) => self.subscriptions_bars.contains(&cmd.bar_type),
+            SubscribeCommand::MarkPrices(cmd) => {
+                self.subscriptions_mark_prices.contains(&cmd.instrument_id)
+            }
+            SubscribeCommand::IndexPrices(cmd) => {
+                self.subscriptions_index_prices.contains(&cmd.instrument_id)
+            }
+            SubscribeCommand::FundingRates(cmd) => self
+                .subscriptions_funding_rates
+                .contains(&cmd.instrument_id),
+            SubscribeCommand::InstrumentStatus(cmd) => self
+                .subscriptions_instrument_status
+                .contains(&cmd.instrument_id),
+            SubscribeCommand::InstrumentClose(cmd) => self
+                .subscriptions_instrument_close
+                .contains(&cmd.instrument_id),
+            SubscribeCommand::OptionGreeks(cmd) => self
+                .subscriptions_option_greeks
+                .contains(&cmd.instrument_id),
+            SubscribeCommand::BookSnapshots(_) | SubscribeCommand::OptionChain(_) => self
+                .subscriptions_active
+                .contains(&SubscriptionKey::from_subscribe(cmd)),
+        }
+    }
+
+    pub(crate) fn clear_subscription_state(&mut self) {
+        self.subscriptions_custom.clear();
+        self.subscriptions_book_deltas.clear();
+        self.subscriptions_book_depth10.clear();
+        self.subscriptions_quotes.clear();
+        self.subscriptions_trades.clear();
+        self.subscriptions_bars.clear();
+        self.subscriptions_instrument_status.clear();
+        self.subscriptions_instrument_close.clear();
+        self.subscriptions_instrument.clear();
+        self.subscriptions_instrument_venue.clear();
+        self.subscriptions_mark_prices.clear();
+        self.subscriptions_index_prices.clear();
+        self.subscriptions_funding_rates.clear();
+        self.subscriptions_option_greeks.clear();
+        self.subscriptions_active.clear();
+
+        #[cfg(feature = "defi")]
+        {
+            self.subscriptions_active_defi.clear();
+            self.subscriptions_blocks.clear();
+            self.subscriptions_pools.clear();
+            self.subscriptions_pool_swaps.clear();
+            self.subscriptions_pool_liquidity_updates.clear();
+            self.subscriptions_pool_fee_collects.clear();
+            self.subscriptions_pool_flash.clear();
         }
     }
 
     #[inline]
     pub fn execute_unsubscribe(&mut self, cmd: &UnsubscribeCommand) {
-        if let Err(e) = match cmd {
+        let key = SubscriptionKey::from_unsubscribe(cmd);
+        let command = match self.subscriptions_active.release(&key) {
+            SubscriptionRelease::Retained => return,
+            SubscriptionRelease::Final(subscribe) => {
+                subscribe.into_unsubscribe(cmd.command_id(), cmd.ts_init(), cmd.correlation_id())
+            }
+            SubscriptionRelease::Untracked => cmd.clone(),
+        };
+
+        if let Err(e) = match &command {
             UnsubscribeCommand::Data(cmd) => self.unsubscribe(cmd),
             UnsubscribeCommand::Instrument(cmd) => self.unsubscribe_instrument(cmd),
             UnsubscribeCommand::Instruments(cmd) => self.unsubscribe_instruments(cmd),
@@ -242,7 +370,9 @@ impl DataClientAdapter {
             UnsubscribeCommand::OptionGreeks(cmd) => self.unsubscribe_option_greeks(cmd),
             UnsubscribeCommand::OptionChain(_) => Ok(()), // Handled internally by engine
         } {
-            log_command_error(&cmd, &e);
+            log_command_error(&command, &e);
+        } else {
+            self.subscriptions_active.remove(&key);
         }
     }
 
@@ -252,12 +382,14 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     pub fn subscribe(&mut self, cmd: SubscribeCustomData) -> anyhow::Result<()> {
-        if !self.subscriptions_custom.contains(&cmd.data_type) {
-            self.subscriptions_custom.insert(cmd.data_type.clone());
-            log_info!("Subscribed {}", cmd.data_type, color = LogColor::Blue);
-            self.client.subscribe(cmd)?;
-        }
-        Ok(())
+        let data_type = cmd.data_type.clone();
+        Self::execute_tracked_subscribe(
+            self.client.as_mut(),
+            &mut self.subscriptions_custom,
+            data_type,
+            "",
+            |client| client.subscribe(cmd),
+        )
     }
 
     /// Unsubscribes from a custom data type, updating internal state and forwarding to the client.
@@ -266,16 +398,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     pub fn unsubscribe(&mut self, cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
-        if self.subscriptions_custom.contains(&cmd.data_type) {
-            if msgbus::subscriptions_count_any(get_custom_topic(&cmd.data_type))? > 0 {
-                return Ok(());
-            }
-
-            self.subscriptions_custom.remove(&cmd.data_type);
-            self.client.unsubscribe(cmd)?;
-            log_info!("Unsubscribed {}", cmd.data_type, color = LogColor::Blue);
-        }
-        Ok(())
+        Self::execute_tracked_unsubscribe(
+            self.client.as_mut(),
+            &mut self.subscriptions_custom,
+            &cmd.data_type,
+            "",
+            |client| client.unsubscribe(cmd),
+        )
     }
 
     /// Subscribes to instrument definitions for a venue, updating internal state and forwarding to the client.
@@ -284,15 +413,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_instruments(&mut self, cmd: SubscribeInstruments) -> anyhow::Result<()> {
-        if Self::track_subscribe(
+        Self::execute_tracked_subscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_instrument_venue,
             cmd.venue,
             "instruments",
-        ) {
-            self.client.subscribe_instruments(cmd)?;
-        }
-
-        Ok(())
+            |client| client.subscribe_instruments(cmd),
+        )
     }
 
     /// Unsubscribes from instrument definition updates for a venue, updating internal state and forwarding to the client.
@@ -301,15 +428,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_instruments(&mut self, cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
-        if Self::track_unsubscribe(
+        Self::execute_tracked_unsubscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_instrument_venue,
-            cmd.venue,
+            &cmd.venue,
             "instruments",
-        ) {
-            self.client.unsubscribe_instruments(cmd)?;
-        }
-
-        Ok(())
+            |client| client.unsubscribe_instruments(cmd),
+        )
     }
 
     /// Subscribes to instrument definitions for a single instrument, updating internal state and forwarding to the client.
@@ -318,15 +443,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
-        if Self::track_subscribe(
+        Self::execute_tracked_subscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_instrument,
             cmd.instrument_id,
             "instrument",
-        ) {
-            self.client.subscribe_instrument(cmd)?;
-        }
-
-        Ok(())
+            |client| client.subscribe_instrument(cmd),
+        )
     }
 
     /// Unsubscribes from instrument definition updates for a single instrument, updating internal state and forwarding to the client.
@@ -335,15 +458,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
-        if Self::track_unsubscribe(
+        Self::execute_tracked_unsubscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_instrument,
-            cmd.instrument_id,
+            &cmd.instrument_id,
             "instrument",
-        ) {
-            self.client.unsubscribe_instrument(cmd)?;
-        }
-
-        Ok(())
+            |client| client.unsubscribe_instrument(cmd),
+        )
     }
 
     /// Subscribes to book deltas updates for an instrument, updating internal state and forwarding to the client.
@@ -352,15 +473,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
-        if Self::track_subscribe(
+        Self::execute_tracked_subscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_book_deltas,
             cmd.instrument_id,
             "order book deltas",
-        ) {
-            self.client.subscribe_book_deltas(cmd)?;
-        }
-
-        Ok(())
+            |client| client.subscribe_book_deltas(cmd),
+        )
     }
 
     /// Unsubscribes from book deltas for an instrument, updating internal state and forwarding to the client.
@@ -369,15 +488,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        if Self::track_unsubscribe(
+        Self::execute_tracked_unsubscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_book_deltas,
-            cmd.instrument_id,
+            &cmd.instrument_id,
             "order book deltas",
-        ) {
-            self.client.unsubscribe_book_deltas(cmd)?;
-        }
-
-        Ok(())
+            |client| client.unsubscribe_book_deltas(cmd),
+        )
     }
 
     /// Subscribes to book depth updates for an instrument, updating internal state and forwarding to the client.
@@ -386,15 +503,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_book_depth10(&mut self, cmd: SubscribeBookDepth10) -> anyhow::Result<()> {
-        if Self::track_subscribe(
+        Self::execute_tracked_subscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_book_depth10,
             cmd.instrument_id,
             "order book depth",
-        ) {
-            self.client.subscribe_book_depth10(cmd)?;
-        }
-
-        Ok(())
+            |client| client.subscribe_book_depth10(cmd),
+        )
     }
 
     /// Unsubscribes from book depth updates for an instrument, updating internal state and forwarding to the client.
@@ -403,15 +518,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_book_depth10(&mut self, cmd: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
-        if Self::track_unsubscribe(
+        Self::execute_tracked_unsubscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_book_depth10,
-            cmd.instrument_id,
+            &cmd.instrument_id,
             "order book depth",
-        ) {
-            self.client.unsubscribe_book_depth10(cmd)?;
-        }
-
-        Ok(())
+            |client| client.unsubscribe_book_depth10(cmd),
+        )
     }
 
     /// Subscribes to quotes for an instrument, updating internal state and forwarding to the client.
@@ -420,10 +533,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
-        if Self::track_subscribe(&mut self.subscriptions_quotes, cmd.instrument_id, "quotes") {
-            self.client.subscribe_quotes(cmd)?;
-        }
-        Ok(())
+        Self::execute_tracked_subscribe(
+            self.client.as_mut(),
+            &mut self.subscriptions_quotes,
+            cmd.instrument_id,
+            "quotes",
+            |client| client.subscribe_quotes(cmd),
+        )
     }
 
     /// Unsubscribes from quotes for an instrument, updating internal state and forwarding to the client.
@@ -432,10 +548,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        if Self::track_unsubscribe(&mut self.subscriptions_quotes, cmd.instrument_id, "quotes") {
-            self.client.unsubscribe_quotes(cmd)?;
-        }
-        Ok(())
+        Self::execute_tracked_unsubscribe(
+            self.client.as_mut(),
+            &mut self.subscriptions_quotes,
+            &cmd.instrument_id,
+            "quotes",
+            |client| client.unsubscribe_quotes(cmd),
+        )
     }
 
     /// Subscribes to trades for an instrument, updating internal state and forwarding to the client.
@@ -444,10 +563,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
-        if Self::track_subscribe(&mut self.subscriptions_trades, cmd.instrument_id, "trades") {
-            self.client.subscribe_trades(cmd)?;
-        }
-        Ok(())
+        Self::execute_tracked_subscribe(
+            self.client.as_mut(),
+            &mut self.subscriptions_trades,
+            cmd.instrument_id,
+            "trades",
+            |client| client.subscribe_trades(cmd),
+        )
     }
 
     /// Unsubscribes from trades for an instrument, updating internal state and forwarding to the client.
@@ -456,10 +578,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
-        if Self::track_unsubscribe(&mut self.subscriptions_trades, cmd.instrument_id, "trades") {
-            self.client.unsubscribe_trades(cmd)?;
-        }
-        Ok(())
+        Self::execute_tracked_unsubscribe(
+            self.client.as_mut(),
+            &mut self.subscriptions_trades,
+            &cmd.instrument_id,
+            "trades",
+            |client| client.unsubscribe_trades(cmd),
+        )
     }
 
     /// Subscribes to bars for a bar type, updating internal state and forwarding to the client.
@@ -468,10 +593,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
-        if Self::track_subscribe(&mut self.subscriptions_bars, cmd.bar_type, "bars") {
-            self.client.subscribe_bars(cmd)?;
-        }
-        Ok(())
+        Self::execute_tracked_subscribe(
+            self.client.as_mut(),
+            &mut self.subscriptions_bars,
+            cmd.bar_type,
+            "bars",
+            |client| client.subscribe_bars(cmd),
+        )
     }
 
     /// Unsubscribes from bars for a bar type, updating internal state and forwarding to the client.
@@ -480,10 +608,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        if Self::track_unsubscribe(&mut self.subscriptions_bars, cmd.bar_type, "bars") {
-            self.client.unsubscribe_bars(cmd)?;
-        }
-        Ok(())
+        Self::execute_tracked_unsubscribe(
+            self.client.as_mut(),
+            &mut self.subscriptions_bars,
+            &cmd.bar_type,
+            "bars",
+            |client| client.unsubscribe_bars(cmd),
+        )
     }
 
     /// Subscribes to mark price updates for an instrument, updating internal state and forwarding to the client.
@@ -492,14 +623,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
-        if Self::track_subscribe(
+        Self::execute_tracked_subscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_mark_prices,
             cmd.instrument_id,
             "mark prices",
-        ) {
-            self.client.subscribe_mark_prices(cmd)?;
-        }
-        Ok(())
+            |client| client.subscribe_mark_prices(cmd),
+        )
     }
 
     /// Unsubscribes from mark price updates for an instrument, updating internal state and forwarding to the client.
@@ -508,14 +638,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
-        if Self::track_unsubscribe(
+        Self::execute_tracked_unsubscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_mark_prices,
-            cmd.instrument_id,
+            &cmd.instrument_id,
             "mark prices",
-        ) {
-            self.client.unsubscribe_mark_prices(cmd)?;
-        }
-        Ok(())
+            |client| client.unsubscribe_mark_prices(cmd),
+        )
     }
 
     /// Subscribes to index price updates for an instrument, updating internal state and forwarding to the client.
@@ -524,14 +653,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
-        if Self::track_subscribe(
+        Self::execute_tracked_subscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_index_prices,
             cmd.instrument_id,
             "index prices",
-        ) {
-            self.client.subscribe_index_prices(cmd)?;
-        }
-        Ok(())
+            |client| client.subscribe_index_prices(cmd),
+        )
     }
 
     /// Unsubscribes from index price updates for an instrument, updating internal state and forwarding to the client.
@@ -540,14 +668,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
-        if Self::track_unsubscribe(
+        Self::execute_tracked_unsubscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_index_prices,
-            cmd.instrument_id,
+            &cmd.instrument_id,
             "index prices",
-        ) {
-            self.client.unsubscribe_index_prices(cmd)?;
-        }
-        Ok(())
+            |client| client.unsubscribe_index_prices(cmd),
+        )
     }
 
     /// Subscribes to funding rate updates for an instrument, updating internal state and forwarding to the client.
@@ -556,14 +683,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
-        if Self::track_subscribe(
+        Self::execute_tracked_subscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_funding_rates,
             cmd.instrument_id,
             "funding rates",
-        ) {
-            self.client.subscribe_funding_rates(cmd)?;
-        }
-        Ok(())
+            |client| client.subscribe_funding_rates(cmd),
+        )
     }
 
     /// Unsubscribes from funding rate updates for an instrument, updating internal state and forwarding to the client.
@@ -572,14 +698,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
-        if Self::track_unsubscribe(
+        Self::execute_tracked_unsubscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_funding_rates,
-            cmd.instrument_id,
+            &cmd.instrument_id,
             "funding rates",
-        ) {
-            self.client.unsubscribe_funding_rates(cmd)?;
-        }
-        Ok(())
+            |client| client.unsubscribe_funding_rates(cmd),
+        )
     }
 
     /// Subscribes to instrument status updates for the specified instrument.
@@ -591,14 +716,13 @@ impl DataClientAdapter {
         &mut self,
         cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        if Self::track_subscribe(
+        Self::execute_tracked_subscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_instrument_status,
             cmd.instrument_id,
             "instrument status",
-        ) {
-            self.client.subscribe_instrument_status(cmd)?;
-        }
-        Ok(())
+            |client| client.subscribe_instrument_status(cmd),
+        )
     }
 
     /// Unsubscribes from instrument status updates for the specified instrument.
@@ -610,14 +734,13 @@ impl DataClientAdapter {
         &mut self,
         cmd: &UnsubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        if Self::track_unsubscribe(
+        Self::execute_tracked_unsubscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_instrument_status,
-            cmd.instrument_id,
+            &cmd.instrument_id,
             "instrument status",
-        ) {
-            self.client.unsubscribe_instrument_status(cmd)?;
-        }
-        Ok(())
+            |client| client.unsubscribe_instrument_status(cmd),
+        )
     }
 
     /// Subscribes to instrument close events for the specified instrument.
@@ -626,14 +749,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_instrument_close(&mut self, cmd: SubscribeInstrumentClose) -> anyhow::Result<()> {
-        if Self::track_subscribe(
+        Self::execute_tracked_subscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_instrument_close,
             cmd.instrument_id,
             "instrument close",
-        ) {
-            self.client.subscribe_instrument_close(cmd)?;
-        }
-        Ok(())
+            |client| client.subscribe_instrument_close(cmd),
+        )
     }
 
     /// Unsubscribes from instrument close events for the specified instrument.
@@ -645,14 +767,13 @@ impl DataClientAdapter {
         &mut self,
         cmd: &UnsubscribeInstrumentClose,
     ) -> anyhow::Result<()> {
-        if Self::track_unsubscribe(
+        Self::execute_tracked_unsubscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_instrument_close,
-            cmd.instrument_id,
+            &cmd.instrument_id,
             "instrument close",
-        ) {
-            self.client.unsubscribe_instrument_close(cmd)?;
-        }
-        Ok(())
+            |client| client.unsubscribe_instrument_close(cmd),
+        )
     }
 
     /// Subscribes to option greeks for an instrument, updating internal state and forwarding to the client.
@@ -661,14 +782,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_option_greeks(&mut self, cmd: SubscribeOptionGreeks) -> anyhow::Result<()> {
-        if Self::track_subscribe(
+        Self::execute_tracked_subscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_option_greeks,
             cmd.instrument_id,
             "option greeks",
-        ) {
-            self.client.subscribe_option_greeks(cmd)?;
-        }
-        Ok(())
+            |client| client.subscribe_option_greeks(cmd),
+        )
     }
 
     /// Unsubscribes from option greeks for an instrument, updating internal state and forwarding to the client.
@@ -677,46 +797,62 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_option_greeks(&mut self, cmd: &UnsubscribeOptionGreeks) -> anyhow::Result<()> {
-        if Self::track_unsubscribe(
+        Self::execute_tracked_unsubscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_option_greeks,
-            cmd.instrument_id,
+            &cmd.instrument_id,
             "option greeks",
-        ) {
-            self.client.unsubscribe_option_greeks(cmd)?;
+            |client| client.unsubscribe_option_greeks(cmd),
+        )
+    }
+
+    pub(crate) fn execute_tracked_subscribe<T>(
+        client: &mut dyn DataClient,
+        set: &mut AHashSet<T>,
+        key: T,
+        data_type: &str,
+        subscribe: impl FnOnce(&mut dyn DataClient) -> anyhow::Result<()>,
+    ) -> anyhow::Result<()>
+    where
+        T: Eq + Hash + Display,
+    {
+        if set.contains(&key) {
+            return Ok(());
         }
+
+        subscribe(client)?;
+
+        if data_type.is_empty() {
+            log_info!("Subscribed {key}", color = LogColor::Blue);
+        } else {
+            log_info!("Subscribed {key} {data_type}", color = LogColor::Blue);
+        }
+        set.insert(key);
         Ok(())
     }
 
-    /// Inserts `key` into the tracking `set` and logs the subscription confirmation.
-    ///
-    /// Returns `true` when the subscription is new (the caller should forward the command to the
-    /// client), or `false` when already subscribed.
-    pub(crate) fn track_subscribe<T>(set: &mut AHashSet<T>, key: T, data_type: &str) -> bool
+    pub(crate) fn execute_tracked_unsubscribe<T>(
+        client: &mut dyn DataClient,
+        set: &mut AHashSet<T>,
+        key: &T,
+        data_type: &str,
+        unsubscribe: impl FnOnce(&mut dyn DataClient) -> anyhow::Result<()>,
+    ) -> anyhow::Result<()>
     where
-        T: Eq + Hash + Copy + Display,
+        T: Eq + Hash + Display,
     {
-        if set.contains(&key) {
-            return false;
+        if !set.contains(key) {
+            return Ok(());
         }
-        set.insert(key);
-        log_info!("Subscribed {key} {data_type}", color = LogColor::Blue);
-        true
-    }
 
-    /// Removes `key` from the tracking `set` and logs the unsubscription confirmation.
-    ///
-    /// Returns `true` when the subscription existed (the caller should forward the command to the
-    /// client), or `false` when not subscribed.
-    pub(crate) fn track_unsubscribe<T>(set: &mut AHashSet<T>, key: T, data_type: &str) -> bool
-    where
-        T: Eq + Hash + Copy + Display,
-    {
-        if !set.contains(&key) {
-            return false;
+        unsubscribe(client)?;
+        set.remove(key);
+        if data_type.is_empty() {
+            log_info!("Unsubscribed {key}", color = LogColor::Blue);
+        } else {
+            log_info!("Unsubscribed {key} {data_type}", color = LogColor::Blue);
         }
-        set.remove(&key);
-        log_info!("Unsubscribed {key} {data_type}", color = LogColor::Blue);
-        true
+        Ok(())
     }
 
     /// Sends a data request to the underlying client.

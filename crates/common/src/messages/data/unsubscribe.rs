@@ -556,6 +556,8 @@ pub struct UnsubscribeOptionChain {
     pub ts_init: UnixNanos,
     pub client_id: Option<ClientId>,
     pub venue: Option<Venue>,
+    #[serde(default)]
+    pub params: Option<Params>,
 }
 
 impl UnsubscribeOptionChain {
@@ -574,6 +576,7 @@ impl UnsubscribeOptionChain {
             ts_init,
             client_id,
             venue,
+            params: None,
         }
     }
 }

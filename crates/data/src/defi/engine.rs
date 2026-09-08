@@ -137,7 +137,7 @@ impl DataEngine {
 
         if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
             log::info!("Forwarding subscription to client {}", client.client_id);
-            client.execute_defi_subscribe(cmd.clone());
+            client.execute_defi_subscribe_with_retained(cmd.clone(), true);
         } else {
             log::error!(
                 "Cannot handle command: no client found for client_id={:?}, venue={:?}",

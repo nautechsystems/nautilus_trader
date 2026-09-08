@@ -67,12 +67,11 @@ use nautilus_common::{
             UnsubscribeTrades,
         },
     },
-    msgbus::{self, ShareableMessageHandler, switchboard::get_custom_topic},
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_data::client::DataClientAdapter;
 use nautilus_model::{
-    data::{BarType, CustomData, DataType},
+    data::{BarType, DataType},
     enums::BookType,
     identifiers::{ClientId, Venue},
     instruments::stubs::audusd_sim,
@@ -82,8 +81,8 @@ use rstest::{fixture, rstest};
 #[cfg(feature = "defi")]
 use {
     nautilus_common::messages::defi::{
-        DefiSubscribeCommand, DefiUnsubscribeCommand, SubscribeBlocks, SubscribePoolSwaps,
-        UnsubscribeBlocks, UnsubscribePoolSwaps,
+        DefiSubscribeCommand, DefiUnsubscribeCommand, SubscribeBlocks, SubscribePool,
+        SubscribePoolSwaps, UnsubscribeBlocks, UnsubscribePool, UnsubscribePoolSwaps,
     },
     nautilus_model::{defi::Blockchain, identifiers::InstrumentId},
 };
@@ -161,6 +160,145 @@ fn test_custom_data_subscription(
     adapter.execute_unsubscribe(&unsub);
 
     assert!(!adapter.subscriptions_custom.contains(&data_type));
+}
+
+#[rstest]
+fn test_custom_data_subscription_retries_after_client_failure(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    let client = Box::new(
+        MockDataClient::new_with_recorder(
+            clock,
+            cache,
+            client_id,
+            Some(venue),
+            Some(recorder.clone()),
+        )
+        .with_custom_subscribe_failure(),
+    );
+    let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+    let data_type = DataType::new("RetryType", None, None);
+    let subscribe = |command_id| {
+        SubscribeCommand::Data(SubscribeCustomData::new(
+            Some(client_id),
+            Some(venue),
+            data_type.clone(),
+            command_id,
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+    };
+
+    adapter.execute_subscribe(subscribe(UUID4::new()));
+    assert!(!adapter.subscriptions_custom.contains(&data_type));
+    assert!(recorder.borrow().is_empty());
+
+    adapter.execute_subscribe(subscribe(UUID4::new()));
+    assert!(adapter.subscriptions_custom.contains(&data_type));
+    assert_eq!(recorder.borrow().len(), 1);
+    recorder.borrow_mut().clear();
+
+    adapter.execute_unsubscribe(&UnsubscribeCommand::Data(UnsubscribeCustomData::new(
+        Some(client_id),
+        Some(venue),
+        data_type.clone(),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )));
+
+    assert!(!adapter.subscriptions_custom.contains(&data_type));
+    assert_eq!(recorder.borrow().len(), 1);
+}
+
+#[rstest]
+#[case::retry(false)]
+#[case::reacquire(true)]
+fn test_custom_data_unsubscription_retries_after_client_failure(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+    #[case] reacquire: bool,
+) {
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    let client = Box::new(
+        MockDataClient::new_with_recorder(
+            clock,
+            cache,
+            client_id,
+            Some(venue),
+            Some(recorder.clone()),
+        )
+        .with_custom_unsubscribe_failure(),
+    );
+    let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+    let data_type = DataType::new("RetryType", None, None);
+    let mut params = Params::new();
+    params.insert("route".to_string(), serde_json::json!(37));
+    adapter.execute_subscribe(SubscribeCommand::Data(SubscribeCustomData::new(
+        Some(client_id),
+        Some(venue),
+        data_type.clone(),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params.clone()),
+    )));
+    recorder.borrow_mut().clear();
+
+    let unsubscribe = |command_id, ts_init| {
+        UnsubscribeCommand::Data(UnsubscribeCustomData::new(
+            Some(client_id),
+            Some(venue),
+            data_type.clone(),
+            command_id,
+            ts_init,
+            None,
+            None,
+        ))
+    };
+    adapter.execute_unsubscribe(&unsubscribe(UUID4::new(), UnixNanos::from(1)));
+
+    assert!(adapter.subscriptions_custom.contains(&data_type));
+    assert!(recorder.borrow().is_empty());
+
+    if reacquire {
+        adapter.execute_subscribe(SubscribeCommand::Data(SubscribeCustomData::new(
+            Some(client_id),
+            Some(venue),
+            data_type.clone(),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )));
+    }
+    assert!(adapter.subscriptions_custom.contains(&data_type));
+    assert!(recorder.borrow().is_empty());
+
+    let retry = unsubscribe(UUID4::new(), UnixNanos::from(2));
+    adapter.execute_unsubscribe(&retry);
+
+    assert!(!adapter.subscriptions_custom.contains(&data_type));
+    let UnsubscribeCommand::Data(mut expected) = retry else {
+        unreachable!()
+    };
+    expected.params = Some(params);
+    let recorded = recorder.borrow();
+    let [DataCommand::Unsubscribe(UnsubscribeCommand::Data(actual))] = recorded.as_slice() else {
+        panic!("expected one successful custom data unsubscribe");
+    };
+    assert_eq!(
+        serde_json::to_value(actual).unwrap(),
+        serde_json::to_value(expected).unwrap()
+    );
 }
 
 #[rstest]
@@ -740,7 +878,6 @@ fn test_custom_data_unsubscribe_keeps_client_subscription_when_subscribers_remai
     client_id: ClientId,
     venue: Venue,
 ) {
-    msgbus::get_message_bus().borrow_mut().dispose();
     let recorder = Rc::new(RefCell::new(Vec::new()));
     let client = Box::new(MockDataClient::new_with_recorder(
         clock,
@@ -751,22 +888,34 @@ fn test_custom_data_unsubscribe_keeps_client_subscription_when_subscribers_remai
     ));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let data_type = DataType::new("SharedType", None, None);
-    let sub = SubscribeCommand::Data(SubscribeCustomData::new(
+    let mut first_params = Params::new();
+    first_params.insert("owner".to_string(), serde_json::json!(1));
+    let mut second_params = Params::new();
+    second_params.insert("owner".to_string(), serde_json::json!(2));
+    let first_subscribe = SubscribeCommand::Data(SubscribeCustomData::new(
         Some(client_id),
         Some(venue),
         data_type.clone(),
         UUID4::new(),
         UnixNanos::default(),
         None,
-        None,
+        Some(first_params.clone()),
     ));
-    adapter.execute_subscribe(sub);
+    let second_subscribe = SubscribeCommand::Data(SubscribeCustomData::new(
+        Some(client_id),
+        Some(venue),
+        data_type.clone(),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(second_params),
+    ));
+    adapter.execute_subscribe(first_subscribe);
+    adapter.execute_subscribe(second_subscribe);
+    assert_eq!(recorder.borrow().len(), 1);
     recorder.borrow_mut().clear();
 
-    let topic = get_custom_topic(&data_type);
-    let handler = ShareableMessageHandler::from_typed(|_data: &CustomData| {});
-    msgbus::subscribe_any(topic.into(), handler.clone(), None);
-    let unsub = UnsubscribeCommand::Data(UnsubscribeCustomData::new(
+    let first_unsubscribe = UnsubscribeCommand::Data(UnsubscribeCustomData::new(
         Some(client_id),
         Some(venue),
         data_type.clone(),
@@ -775,23 +924,32 @@ fn test_custom_data_unsubscribe_keeps_client_subscription_when_subscribers_remai
         None,
         None,
     ));
-    adapter.execute_unsubscribe(&unsub);
+    adapter.execute_unsubscribe(&first_unsubscribe);
 
     assert!(adapter.subscriptions_custom.contains(&data_type));
     assert!(recorder.borrow().is_empty());
 
-    msgbus::unsubscribe_any(topic.into(), &handler);
-    adapter.execute_unsubscribe(&unsub);
+    let second_unsubscribe = UnsubscribeCommand::Data(UnsubscribeCustomData::new(
+        Some(client_id),
+        Some(venue),
+        data_type.clone(),
+        UUID4::new(),
+        UnixNanos::from(2),
+        None,
+        None,
+    ));
+    adapter.execute_unsubscribe(&second_unsubscribe);
     let recorded = recorder.borrow();
 
     assert!(!adapter.subscriptions_custom.contains(&data_type));
-    assert_eq!(recorded.len(), 1);
-    assert!(
-        matches!(&recorded[0], DataCommand::Unsubscribe(UnsubscribeCommand::Data(cmd)) if cmd.data_type == data_type)
-    );
-
-    drop(recorded);
-    msgbus::get_message_bus().borrow_mut().dispose();
+    let [DataCommand::Unsubscribe(UnsubscribeCommand::Data(command))] = recorded.as_slice() else {
+        panic!("expected one retained custom-data unsubscribe, was {recorded:?}");
+    };
+    assert_eq!(command.data_type, data_type);
+    assert_eq!(command.client_id, Some(client_id));
+    assert_eq!(command.venue, Some(venue));
+    assert_eq!(command.ts_init, UnixNanos::from(2));
+    assert_eq!(command.params.as_ref(), Some(&first_params));
 }
 
 #[rstest]
@@ -1871,6 +2029,249 @@ fn test_defi_blocks_subscription(
     });
     adapter.execute_defi_unsubscribe(&unsub);
     assert!(!adapter.subscriptions_blocks.contains(&blockchain));
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_defi_pool_subscription(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    let client = Box::new(MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    ));
+    let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+    let instrument_id =
+        InstrumentId::from("0x11b815efB8f581194ae79006d24E0d814B7697F6.Arbitrum:UniswapV3");
+    let subscribe = DefiSubscribeCommand::Pool(SubscribePool {
+        instrument_id,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::from(1),
+        params: None,
+    });
+    let unsubscribe = DefiUnsubscribeCommand::Pool(UnsubscribePool {
+        instrument_id,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::from(2),
+        params: None,
+    });
+
+    adapter.execute_defi_subscribe(subscribe.clone());
+    adapter.execute_defi_unsubscribe(&unsubscribe);
+
+    assert!(!adapter.subscriptions_pools.contains(&instrument_id));
+    assert_eq!(
+        recorder.borrow().as_slice(),
+        &[
+            DataCommand::DefiSubscribe(subscribe),
+            DataCommand::DefiUnsubscribe(unsubscribe),
+        ]
+    );
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_defi_blocks_release_after_final_owner(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    let client = Box::new(MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    ));
+    let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+    let chain = Blockchain::Arbitrum;
+    let mut first_params = Params::new();
+    first_params.insert("owner".to_string(), serde_json::json!(1));
+
+    for params in [Some(first_params.clone()), None] {
+        adapter.execute_defi_subscribe(DefiSubscribeCommand::Blocks(SubscribeBlocks {
+            chain,
+            client_id: Some(client_id),
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            params,
+        }));
+    }
+    assert_eq!(recorder.borrow().len(), 1);
+
+    adapter.execute_defi_unsubscribe(&DefiUnsubscribeCommand::Blocks(UnsubscribeBlocks {
+        chain,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::from(1),
+        params: None,
+    }));
+    assert_eq!(recorder.borrow().len(), 1);
+    assert!(adapter.subscriptions_blocks.contains(&chain));
+
+    adapter.execute_defi_unsubscribe(&DefiUnsubscribeCommand::Blocks(UnsubscribeBlocks {
+        chain,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::from(2),
+        params: None,
+    }));
+
+    let recorded = recorder.borrow();
+    let [
+        DataCommand::DefiSubscribe(DefiSubscribeCommand::Blocks(_)),
+        DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::Blocks(command)),
+    ] = recorded.as_slice()
+    else {
+        panic!("expected one subscribe and one final unsubscribe, was {recorded:?}");
+    };
+    assert_eq!(command.chain, chain);
+    assert_eq!(command.client_id, Some(client_id));
+    assert_eq!(command.ts_init, UnixNanos::from(2));
+    assert_eq!(command.params.as_ref(), Some(&first_params));
+    assert!(!adapter.subscriptions_blocks.contains(&chain));
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_defi_blocks_subscription_retries_after_client_failure(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    let client = Box::new(
+        MockDataClient::new_with_recorder(
+            clock,
+            cache,
+            client_id,
+            Some(venue),
+            Some(recorder.clone()),
+        )
+        .with_blocks_subscribe_failure(),
+    );
+    let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+    let chain = Blockchain::Arbitrum;
+    let subscribe = |command_id| {
+        DefiSubscribeCommand::Blocks(SubscribeBlocks {
+            chain,
+            client_id: Some(client_id),
+            command_id,
+            ts_init: UnixNanos::default(),
+            params: None,
+        })
+    };
+
+    adapter.execute_defi_subscribe(subscribe(UUID4::new()));
+    assert!(!adapter.subscriptions_blocks.contains(&chain));
+    assert!(recorder.borrow().is_empty());
+
+    adapter.execute_defi_subscribe(subscribe(UUID4::new()));
+    assert!(adapter.subscriptions_blocks.contains(&chain));
+    assert_eq!(recorder.borrow().len(), 1);
+    recorder.borrow_mut().clear();
+
+    adapter.execute_defi_unsubscribe(&DefiUnsubscribeCommand::Blocks(UnsubscribeBlocks {
+        chain,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+    }));
+
+    assert!(!adapter.subscriptions_blocks.contains(&chain));
+    assert_eq!(recorder.borrow().len(), 1);
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+#[case::retry(false)]
+#[case::reacquire(true)]
+fn test_defi_blocks_unsubscription_retries_after_client_failure(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+    #[case] reacquire: bool,
+) {
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    let client = Box::new(
+        MockDataClient::new_with_recorder(
+            clock,
+            cache,
+            client_id,
+            Some(venue),
+            Some(recorder.clone()),
+        )
+        .with_blocks_unsubscribe_failure(),
+    );
+    let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+    let chain = Blockchain::Arbitrum;
+    let mut params = Params::new();
+    params.insert("route".to_string(), serde_json::json!(41));
+    adapter.execute_defi_subscribe(DefiSubscribeCommand::Blocks(SubscribeBlocks {
+        chain,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: Some(params.clone()),
+    }));
+    recorder.borrow_mut().clear();
+
+    let unsubscribe = |command_id, ts_init| {
+        DefiUnsubscribeCommand::Blocks(UnsubscribeBlocks {
+            chain,
+            client_id: Some(client_id),
+            command_id,
+            ts_init,
+            params: None,
+        })
+    };
+    adapter.execute_defi_unsubscribe(&unsubscribe(UUID4::new(), UnixNanos::from(1)));
+
+    assert!(adapter.subscriptions_blocks.contains(&chain));
+    assert!(recorder.borrow().is_empty());
+
+    if reacquire {
+        adapter.execute_defi_subscribe(DefiSubscribeCommand::Blocks(SubscribeBlocks {
+            chain,
+            client_id: Some(client_id),
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::from(2),
+            params: None,
+        }));
+        assert!(recorder.borrow().is_empty());
+    }
+    let retry = unsubscribe(UUID4::new(), UnixNanos::from(2));
+    adapter.execute_defi_unsubscribe(&retry);
+
+    assert!(!adapter.subscriptions_blocks.contains(&chain));
+    let DefiUnsubscribeCommand::Blocks(mut expected) = retry else {
+        unreachable!()
+    };
+    expected.params = Some(params);
+    let recorded = recorder.borrow();
+    let [DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::Blocks(actual))] =
+        recorded.as_slice()
+    else {
+        panic!("expected one successful blocks unsubscribe");
+    };
+    assert_eq!(
+        serde_json::to_value(actual).unwrap(),
+        serde_json::to_value(expected).unwrap()
+    );
 }
 
 #[cfg(feature = "defi")]

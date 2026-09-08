@@ -56,8 +56,23 @@ pub(crate) struct MockDataClient {
     pub client_id: ClientId,
     pub venue: Option<Venue>,
     pub recorder: Option<Rc<RefCell<Vec<DataCommand>>>>,
+    fail_next_custom_subscribe: bool,
+    fail_next_custom_unsubscribe: bool,
+    fail_next_subscribe: Option<MockSubscribeFailure>,
+    #[cfg(feature = "defi")]
+    fail_next_blocks_subscribe: bool,
+    #[cfg(feature = "defi")]
+    fail_next_blocks_unsubscribe: bool,
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MockSubscribeFailure {
+    BookDeltas,
+    BookDepth10,
+    Quotes,
+    Trades,
 }
 
 impl MockDataClient {
@@ -75,6 +90,13 @@ impl MockDataClient {
             client_id,
             venue,
             recorder: None,
+            fail_next_custom_subscribe: false,
+            fail_next_custom_unsubscribe: false,
+            fail_next_subscribe: None,
+            #[cfg(feature = "defi")]
+            fail_next_blocks_subscribe: false,
+            #[cfg(feature = "defi")]
+            fail_next_blocks_unsubscribe: false,
         }
     }
 
@@ -91,9 +113,48 @@ impl MockDataClient {
             client_id,
             venue,
             recorder,
+            fail_next_custom_subscribe: false,
+            fail_next_custom_unsubscribe: false,
+            fail_next_subscribe: None,
+            #[cfg(feature = "defi")]
+            fail_next_blocks_subscribe: false,
+            #[cfg(feature = "defi")]
+            fail_next_blocks_unsubscribe: false,
             clock,
             cache,
         }
+    }
+
+    #[must_use]
+    pub(crate) fn with_custom_subscribe_failure(mut self) -> Self {
+        self.fail_next_custom_subscribe = true;
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn with_custom_unsubscribe_failure(mut self) -> Self {
+        self.fail_next_custom_unsubscribe = true;
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn with_subscribe_failure(mut self, failure: MockSubscribeFailure) -> Self {
+        self.fail_next_subscribe = Some(failure);
+        self
+    }
+
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub(crate) fn with_blocks_subscribe_failure(mut self) -> Self {
+        self.fail_next_blocks_subscribe = true;
+        self
+    }
+
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub(crate) fn with_blocks_unsubscribe_failure(mut self) -> Self {
+        self.fail_next_blocks_unsubscribe = true;
+        self
     }
 }
 
@@ -142,6 +203,10 @@ impl DataClient for MockDataClient {
     // -- SUBSCRIPTION HANDLERS -------------------------------------------------------------------
 
     fn subscribe(&mut self, cmd: SubscribeCustomData) -> anyhow::Result<()> {
+        if std::mem::take(&mut self.fail_next_custom_subscribe) {
+            anyhow::bail!("test custom subscribe failure");
+        }
+
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
                 .push(DataCommand::Subscribe(SubscribeCommand::Data(cmd)));
@@ -166,6 +231,11 @@ impl DataClient for MockDataClient {
     }
 
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
+        if self.fail_next_subscribe == Some(MockSubscribeFailure::BookDeltas) {
+            self.fail_next_subscribe = None;
+            anyhow::bail!("test book deltas subscribe failure");
+        }
+
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
                 .push(DataCommand::Subscribe(SubscribeCommand::BookDeltas(cmd)));
@@ -174,6 +244,11 @@ impl DataClient for MockDataClient {
     }
 
     fn subscribe_book_depth10(&mut self, cmd: SubscribeBookDepth10) -> anyhow::Result<()> {
+        if self.fail_next_subscribe == Some(MockSubscribeFailure::BookDepth10) {
+            self.fail_next_subscribe = None;
+            anyhow::bail!("test book depth10 subscribe failure");
+        }
+
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
                 .push(DataCommand::Subscribe(SubscribeCommand::BookDepth10(cmd)));
@@ -182,6 +257,11 @@ impl DataClient for MockDataClient {
     }
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
+        if self.fail_next_subscribe == Some(MockSubscribeFailure::Quotes) {
+            self.fail_next_subscribe = None;
+            anyhow::bail!("test quotes subscribe failure");
+        }
+
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
                 .push(DataCommand::Subscribe(SubscribeCommand::Quotes(cmd)));
@@ -190,6 +270,11 @@ impl DataClient for MockDataClient {
     }
 
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
+        if self.fail_next_subscribe == Some(MockSubscribeFailure::Trades) {
+            self.fail_next_subscribe = None;
+            anyhow::bail!("test trades subscribe failure");
+        }
+
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
                 .push(DataCommand::Subscribe(SubscribeCommand::Trades(cmd)));
@@ -262,6 +347,10 @@ impl DataClient for MockDataClient {
 
     #[cfg(feature = "defi")]
     fn subscribe_blocks(&mut self, cmd: SubscribeBlocks) -> anyhow::Result<()> {
+        if std::mem::take(&mut self.fail_next_blocks_subscribe) {
+            anyhow::bail!("test blocks subscribe failure");
+        }
+
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
                 .push(DataCommand::DefiSubscribe(DefiSubscribeCommand::Blocks(
@@ -325,6 +414,10 @@ impl DataClient for MockDataClient {
     }
 
     fn unsubscribe(&mut self, cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
+        if std::mem::take(&mut self.fail_next_custom_unsubscribe) {
+            anyhow::bail!("test custom unsubscribe failure");
+        }
+
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
                 .push(DataCommand::Unsubscribe(UnsubscribeCommand::Data(
@@ -470,6 +563,10 @@ impl DataClient for MockDataClient {
 
     #[cfg(feature = "defi")]
     fn unsubscribe_blocks(&mut self, cmd: &UnsubscribeBlocks) -> anyhow::Result<()> {
+        if std::mem::take(&mut self.fail_next_blocks_unsubscribe) {
+            anyhow::bail!("test blocks unsubscribe failure");
+        }
+
         if let Some(rec) = &self.recorder {
             rec.borrow_mut().push(DataCommand::DefiUnsubscribe(
                 DefiUnsubscribeCommand::Blocks(cmd.clone()),

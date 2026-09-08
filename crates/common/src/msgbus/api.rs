@@ -935,6 +935,15 @@ pub fn exact_subscriber_count_option_greeks(topic: MStr<Topic>) -> usize {
         .exact_subscriber_count(topic)
 }
 
+/// Returns the exact subscriber count for option chains on a topic,
+/// excluding wildcard pattern subscriptions.
+pub fn exact_subscriber_count_option_chain(topic: MStr<Topic>) -> usize {
+    get_message_bus()
+        .borrow()
+        .router_option_chain
+        .exact_subscriber_count(topic)
+}
+
 /// Returns the exact subscriber count for bars on a topic,
 /// excluding wildcard pattern subscriptions.
 pub fn exact_subscriber_count_bars(topic: MStr<Topic>) -> usize {

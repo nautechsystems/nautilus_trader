@@ -86,6 +86,22 @@ impl DataCommand {
     pub fn as_any(&self) -> &dyn Any {
         self
     }
+
+    /// Converts a subscribe variant into its matching unsubscribe variant.
+    ///
+    /// Returns `None` for request and unsubscribe variants.
+    pub(crate) fn into_unsubscribe(self, command_id: UUID4, ts_init: UnixNanos) -> Option<Self> {
+        match self {
+            Self::Subscribe(command) => Some(Self::Unsubscribe(
+                command.into_unsubscribe(command_id, ts_init, None),
+            )),
+            #[cfg(feature = "defi")]
+            Self::DefiSubscribe(command) => Some(Self::DefiUnsubscribe(
+                command.into_unsubscribe(command_id, ts_init),
+            )),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -118,6 +134,178 @@ impl SubscribeCommand {
     /// Converts the command to a dyn Any trait object for messaging.
     pub fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    /// Converts this subscribe command into its matching unsubscribe command.
+    ///
+    /// Preserves the subscribed data identity and client route while replacing the command ID and
+    /// initialization timestamp. It also preserves parameters and sets the supplied correlation ID
+    /// when the matching unsubscribe command supports those fields.
+    #[must_use]
+    pub fn into_unsubscribe(
+        self,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+        correlation_id: Option<UUID4>,
+    ) -> UnsubscribeCommand {
+        match self {
+            Self::Data(cmd) => UnsubscribeCommand::Data(UnsubscribeCustomData::new(
+                cmd.client_id,
+                cmd.venue,
+                cmd.data_type,
+                command_id,
+                ts_init,
+                correlation_id,
+                cmd.params,
+            )),
+            Self::Instrument(cmd) => UnsubscribeCommand::Instrument(UnsubscribeInstrument::new(
+                cmd.instrument_id,
+                cmd.client_id,
+                cmd.venue,
+                command_id,
+                ts_init,
+                correlation_id,
+                cmd.params,
+            )),
+            Self::Instruments(cmd) => UnsubscribeCommand::Instruments(UnsubscribeInstruments::new(
+                cmd.client_id,
+                cmd.venue,
+                command_id,
+                ts_init,
+                correlation_id,
+                cmd.params,
+            )),
+            Self::BookDeltas(cmd) => UnsubscribeCommand::BookDeltas(UnsubscribeBookDeltas::new(
+                cmd.instrument_id,
+                cmd.client_id,
+                cmd.venue,
+                command_id,
+                ts_init,
+                correlation_id,
+                cmd.params,
+            )),
+            Self::BookDepth10(cmd) => UnsubscribeCommand::BookDepth10(UnsubscribeBookDepth10::new(
+                cmd.instrument_id,
+                cmd.client_id,
+                cmd.venue,
+                command_id,
+                ts_init,
+                correlation_id,
+                cmd.params,
+            )),
+            Self::BookSnapshots(cmd) => {
+                UnsubscribeCommand::BookSnapshots(UnsubscribeBookSnapshots::new(
+                    cmd.instrument_id,
+                    cmd.interval_ms,
+                    cmd.client_id,
+                    cmd.venue,
+                    command_id,
+                    ts_init,
+                    correlation_id,
+                    cmd.params,
+                ))
+            }
+            Self::Quotes(cmd) => UnsubscribeCommand::Quotes(UnsubscribeQuotes::new(
+                cmd.instrument_id,
+                cmd.client_id,
+                cmd.venue,
+                command_id,
+                ts_init,
+                correlation_id,
+                cmd.params,
+            )),
+            Self::Trades(cmd) => UnsubscribeCommand::Trades(UnsubscribeTrades::new(
+                cmd.instrument_id,
+                cmd.client_id,
+                cmd.venue,
+                command_id,
+                ts_init,
+                correlation_id,
+                cmd.params,
+            )),
+            Self::Bars(cmd) => UnsubscribeCommand::Bars(UnsubscribeBars::new(
+                cmd.bar_type,
+                cmd.client_id,
+                cmd.venue,
+                command_id,
+                ts_init,
+                correlation_id,
+                cmd.params,
+            )),
+            Self::MarkPrices(cmd) => UnsubscribeCommand::MarkPrices(UnsubscribeMarkPrices::new(
+                cmd.instrument_id,
+                cmd.client_id,
+                cmd.venue,
+                command_id,
+                ts_init,
+                correlation_id,
+                cmd.params,
+            )),
+            Self::IndexPrices(cmd) => UnsubscribeCommand::IndexPrices(UnsubscribeIndexPrices::new(
+                cmd.instrument_id,
+                cmd.client_id,
+                cmd.venue,
+                command_id,
+                ts_init,
+                correlation_id,
+                cmd.params,
+            )),
+            Self::FundingRates(cmd) => {
+                UnsubscribeCommand::FundingRates(UnsubscribeFundingRates::new(
+                    cmd.instrument_id,
+                    cmd.client_id,
+                    cmd.venue,
+                    command_id,
+                    ts_init,
+                    correlation_id,
+                    cmd.params,
+                ))
+            }
+            Self::InstrumentStatus(cmd) => {
+                UnsubscribeCommand::InstrumentStatus(UnsubscribeInstrumentStatus::new(
+                    cmd.instrument_id,
+                    cmd.client_id,
+                    cmd.venue,
+                    command_id,
+                    ts_init,
+                    correlation_id,
+                    cmd.params,
+                ))
+            }
+            Self::InstrumentClose(cmd) => {
+                UnsubscribeCommand::InstrumentClose(UnsubscribeInstrumentClose::new(
+                    cmd.instrument_id,
+                    cmd.client_id,
+                    cmd.venue,
+                    command_id,
+                    ts_init,
+                    correlation_id,
+                    cmd.params,
+                ))
+            }
+            Self::OptionGreeks(cmd) => {
+                UnsubscribeCommand::OptionGreeks(UnsubscribeOptionGreeks::new(
+                    cmd.instrument_id,
+                    cmd.client_id,
+                    cmd.venue,
+                    command_id,
+                    ts_init,
+                    correlation_id,
+                    cmd.params,
+                ))
+            }
+            Self::OptionChain(cmd) => {
+                let mut unsubscribe = UnsubscribeOptionChain::new(
+                    cmd.series_id,
+                    command_id,
+                    ts_init,
+                    cmd.client_id,
+                    cmd.venue,
+                );
+                unsubscribe.params = cmd.params;
+                UnsubscribeCommand::OptionChain(unsubscribe)
+            }
+        }
     }
 
     pub fn command_id(&self) -> UUID4 {
@@ -221,7 +409,7 @@ impl SubscribeCommand {
             Self::InstrumentStatus(cmd) => cmd.correlation_id,
             Self::InstrumentClose(cmd) => cmd.correlation_id,
             Self::OptionGreeks(cmd) => cmd.correlation_id,
-            Self::OptionChain(_) => None,
+            Self::OptionChain(cmd) => cmd.correlation_id,
         }
     }
 

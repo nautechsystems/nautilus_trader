@@ -250,6 +250,8 @@ Processes and routes market data throughout the system:
 
 - Handles quotes, trades, bars, order books, custom data, and other supported types.
 - Manages subscriptions and correlated request/response flows through data clients.
+- Keeps each client subscription active until its final owner releases it, retaining the original
+  client route and parameters for the final unsubscribe.
 - Routes resulting data to consumers according to their subscriptions and requests.
 - Manages data flow from external sources to internal components.
 
@@ -415,6 +417,7 @@ stateDiagram-v2
 
     RUNNING --> STOPPING : stop()
     STOPPING --> STOPPED
+    STOPPING --> DISPOSING : dispose()
     STOPPING --> FAULTING : fault()
 
     STOPPED --> RESETTING : reset()
@@ -434,6 +437,7 @@ stateDiagram-v2
 
     RUNNING --> FAULTING : fault()
     STOPPED --> FAULTING : fault()
+    FAULTING --> DISPOSING : dispose()
     FAULTING --> FAULTED
 
     READY --> RESETTING : reset()
@@ -468,6 +472,22 @@ stateDiagram-v2
 Transitional states cover the corresponding lifecycle callback and should remain brief. If a
 callback returns an error, the transition halts in its transitional state. `dispose()` is the
 exception: a failing `on_dispose` moves the component to FAULTED so it can still be retired.
+A failed `on_stop` or `on_fault` leaves the component in its transitional state, from which trader
+retirement can still invoke `dispose()` and finish cleanup.
+
+After a successful reset, the component releases its retained data subscriptions before returning
+to READY. Its next start acquires fresh subscriptions against the reset data engine. If `on_reset`
+fails, the component remains in RESETTING with its subscriptions intact.
+
+During normal retirement, the trader runs `on_dispose`, releases the component's retained data
+subscriptions, and then removes its registry and bookkeeping entries. If `on_dispose` fails, the
+component remains registered with its subscriptions intact. Retiring the resulting FAULTED
+component releases those subscriptions without invoking the failed disposal hook again.
+
+Each component release removes its message bus handlers and decrements ownership on the routed
+data client. The data client sends an upstream unsubscribe only after the final owner releases the
+same physical subscription. Engine-managed resources, including book snapshots, synthetic feeds,
+spread quotes, internal bars, and option chains, follow the same final-owner rule.
 
 #### Actor vs Component traits
 

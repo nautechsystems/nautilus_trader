@@ -140,6 +140,8 @@ pub mod python;
 #[cfg(feature = "defi")]
 pub mod defi;
 
+mod subscription;
+
 // Re-exports
 pub use aggregation::{
     FixedTickSchemeRounder, MapVegaProvider, SpreadPriceRounder, SpreadQuoteAggregator,
