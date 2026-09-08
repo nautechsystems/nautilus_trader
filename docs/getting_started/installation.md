@@ -296,7 +296,10 @@ The uv project environment lives at `python/.venv`, beside `python/pyproject.tom
 project commands from `python/` or pass `--project python` from the repository root.
 
 Set environment variables for PyO3 compilation (Linux and macOS only). Run these commands from
-the repository root after `make sync`:
+the repository root after `make sync` in Bash or Zsh. For Fish commands, see the developer guide's
+[environment setup](../developer_guide/environment_setup.md#4-configure-environment-variables).
+Set `PYO3_PYTHON` in each shell to this checkout's `python/.venv/bin/python`; replace any saved
+export that still points to the root `.venv/bin/python`.
 
 ```bash
 # Set the Python executable path for PyO3

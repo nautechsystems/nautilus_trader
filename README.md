@@ -474,7 +474,10 @@ It's possible to install from source using pip if you first install the build de
     project commands from `python/` or pass `--project python` from the repository root.
 
     For PyO3 compilation on Linux and macOS, run these commands from the repository root after
-    `make sync`:
+    `make sync` in Bash or Zsh. For Fish commands, see the developer guide's
+    [environment setup](docs/developer_guide/environment_setup.md#4-configure-environment-variables).
+    Set `PYO3_PYTHON` in each shell to this checkout's `python/.venv/bin/python`; replace any saved
+    export that still points to the root `.venv/bin/python`.
 
     ```bash
     # Set the Python executable path for PyO3

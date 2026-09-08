@@ -199,12 +199,19 @@ select the project themselves.
 If this checkout previously used the root `.venv`, remove any `UV_PROJECT_ENVIRONMENT` export from
 your shell startup files and the current shell before running Make or uv. This override takes
 precedence over uv's project discovery.
+Also replace any `PYO3_PYTHON` export that points to the root `.venv/bin/python` with this
+checkout's `python/.venv/bin/python`. Editing a startup file does not update existing shells or
+running applications: repeat the exports in each shell and restart applications that inherited
+the old environment.
 :::
 
 **Required for Rust/PyO3 (Linux and macOS)**: When using Python installed via `uv` on Linux or
 macOS, set the following environment variables from the repository root after `make sync`:
 
-```bash
+Use the commands for your shell. Bash and Zsh use `export` and `activate`; Fish uses `set -gx`
+and `activate.fish`. Source Fish scripts only from Fish.
+
+```bash tab="Bash / Zsh"
 # Set the Python executable path for PyO3
 export PYO3_PYTHON="$PWD/python/.venv/bin/python"
 
@@ -214,6 +221,17 @@ export LD_LIBRARY_PATH="$PYTHON_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 # Set the Python home path (required for Rust tests)
 export PYTHONHOME="$("$PYO3_PYTHON" -c 'import sys; print(sys.base_prefix)')"
+```
+
+```fish tab="Fish"
+set -gx PYO3_PYTHON "$PWD/python/.venv/bin/python"
+
+if test (uname -s) = Linux
+    set -l python_lib_dir ("$PYO3_PYTHON" -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')
+    set -gx LD_LIBRARY_PATH "$python_lib_dir" (string match -v "" -- $LD_LIBRARY_PATH)
+end
+
+set -gx PYTHONHOME ("$PYO3_PYTHON" -c 'import sys; print(sys.base_prefix)')
 ```
 
 :::note
@@ -342,6 +360,9 @@ source python/.venv/bin/activate
 command -v python
 python --version
 ```
+
+In Fish, use `source python/.venv/bin/activate.fish` for activation. Activation alone does not
+refresh `PYO3_PYTHON`; repeat the environment variable commands above for the selected checkout.
 
 ## Cap'n Proto
 
