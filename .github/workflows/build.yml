@@ -596,7 +596,8 @@ jobs:
           persist-credentials: false
 
       - name: Common setup
-        uses: $/.github/actions/common-setup
+        # Depot Windows/ARM runners need ./ until they support runner >=2.336.0
+        uses: ./.github/actions/common-setup # zizmor: ignore[self-repository]
         with:
           python-version: ${{ matrix.python-version }}
           free-disk-space: "true"
@@ -623,7 +624,8 @@ jobs:
         run: bash ../scripts/ci/test-wheel.bash
 
       - name: Upload wheel artifact
-        uses: $/.github/actions/upload-artifact-wheel
+        # Depot Windows/ARM runners need ./ until they support runner >=2.336.0
+        uses: ./.github/actions/upload-artifact-wheel # zizmor: ignore[self-repository]
         with:
           retention-days: ${{ github.ref_name == 'master' && '7' || '1' }}
 
@@ -731,7 +733,8 @@ jobs:
           persist-credentials: false
 
       - name: Common setup
-        uses: $/.github/actions/common-setup
+        # Depot Windows/ARM runners need ./ until they support runner >=2.336.0
+        uses: ./.github/actions/common-setup # zizmor: ignore[self-repository]
         with:
           python-version: ${{ matrix.python-version }}
           free-disk-space: "true"
@@ -761,7 +764,8 @@ jobs:
         run: bash ../scripts/ci/test-wheel.bash
 
       - name: Upload wheel artifact
-        uses: $/.github/actions/upload-artifact-wheel
+        # Depot Windows/ARM runners need ./ until they support runner >=2.336.0
+        uses: ./.github/actions/upload-artifact-wheel # zizmor: ignore[self-repository]
         with:
           retention-days: ${{ github.ref_name == 'master' && '7' || '1' }}
 

@@ -140,7 +140,8 @@ runs:
         sudo rm -rf /var/lib/apt/lists/*
 
     - name: Install Cap'n Proto
-      uses: $/.github/actions/install-capnp
+      # Depot Windows/ARM runners need ./ until they support runner >=2.336.0
+      uses: ./.github/actions/install-capnp # zizmor: ignore[self-repository]
       with:
         cache-enabled: ${{ inputs.capnp-cache-enabled }}
 
