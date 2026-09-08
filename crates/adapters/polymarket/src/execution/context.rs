@@ -13,95 +13,51 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Tracked own-order identity registry for the Polymarket execution client.
+//! Tracked own-order context registry for the Polymarket execution client.
 //!
 //! The user WebSocket dispatch runs on a spawned task without cache access, so it cannot
 //! resolve an [`OrderAny`](nautilus_model::orders::OrderAny) to build order events. The submit
-//! path captures the identity fields needed to construct `OrderAccepted` / `OrderFilled` /
+//! path captures shared order context needed to construct `OrderAccepted` / `OrderFilled` /
 //! `OrderCanceled` / `OrderRejected` / `OrderExpired` directly, keyed by venue order ID, and the
 //! dispatch consults this registry to emit events for tracked orders (reserving reports for
 //! externally-managed orders and reconciliation).
 
 use ahash::{AHashMap, AHashSet};
-use nautilus_model::{
-    enums::{OrderSide, OrderType, TimeInForce},
-    identifiers::{ClientOrderId, InstrumentId, StrategyId, VenueOrderId},
-    orders::{Order, OrderAny},
-};
+use nautilus_live::execution::context::OrderContext;
+use nautilus_model::identifiers::{ClientOrderId, VenueOrderId};
 use parking_lot::Mutex;
 
-/// Identity fields captured at submit so the cache-free WS dispatch can build order events.
-///
-/// `trader_id` and `account_id` are client-wide constants threaded from the dispatch context,
-/// so they are not stored here. Fill-specific values (`last_qty`, `last_px`, `trade_id`,
-/// `commission`) come from the venue trade payload.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct OrderIdentity {
-    pub client_order_id: ClientOrderId,
-    pub strategy_id: StrategyId,
-    pub instrument_id: InstrumentId,
-    pub order_side: OrderSide,
-    pub order_type: OrderType,
-    pub time_in_force: TimeInForce,
-}
-
-impl OrderIdentity {
-    /// Captures the identity from an order held by the submit path.
-    pub(crate) fn from_order(order: &OrderAny) -> Self {
-        Self {
-            client_order_id: order.client_order_id(),
-            strategy_id: order.strategy_id(),
-            instrument_id: order.instrument_id(),
-            order_side: order.order_side(),
-            order_type: order.order_type(),
-            time_in_force: order.time_in_force(),
-        }
-    }
-
-    /// Returns true when any taker fill implies full completion.
-    ///
-    /// FOK is atomic, so a sub-cent difference between its registered and filled quantities is
-    /// normalization. IOC maps to venue FAK: every positive remainder is canceled.
-    pub(crate) fn requires_terminal_quantity_normalization(&self) -> bool {
-        self.time_in_force == TimeInForce::Fok
-    }
-}
-
-/// Shared registry of tracked own-order identities, keyed by venue order ID.
+/// Shared registry of tracked own-order contexts, keyed by venue order ID.
 ///
 /// Populated by the submit path (which holds the `OrderAny`) and consulted by the WS dispatch
 /// and buffer-drain paths. Active identity and the accepted marker stay in unbounded maps so FIFO
 /// replay eviction cannot reclassify a still-owned update as external or emit a second
 /// `OrderAccepted`.
 #[derive(Debug, Default)]
-pub(crate) struct OrderIdentityRegistry {
+pub(crate) struct OrderContextRegistry {
     inner: Mutex<RegistryInner>,
 }
 
 #[derive(Debug, Default)]
 struct RegistryInner {
-    identities: AHashMap<VenueOrderId, OrderIdentity>,
+    contexts: AHashMap<VenueOrderId, OrderContext>,
     client_to_venue: AHashMap<ClientOrderId, VenueOrderId>,
     accepted: AHashSet<VenueOrderId>,
 }
 
-impl OrderIdentityRegistry {
-    /// Records the identity for a tracked order under its venue order ID.
-    pub(crate) fn register_order_identity(
-        &self,
-        venue_order_id: VenueOrderId,
-        identity: OrderIdentity,
-    ) {
+impl OrderContextRegistry {
+    /// Records the context for a tracked order under its venue order ID.
+    pub(crate) fn register_context(&self, venue_order_id: VenueOrderId, context: OrderContext) {
         let mut guard = self.inner.lock();
-        guard.identities.insert(venue_order_id, identity);
+        guard.contexts.insert(venue_order_id, context);
         guard
             .client_to_venue
-            .insert(identity.client_order_id, venue_order_id);
+            .insert(context.identity.client_order_id, venue_order_id);
     }
 
-    /// Returns the identity for a tracked order, if known.
-    pub(crate) fn get(&self, venue_order_id: &VenueOrderId) -> Option<OrderIdentity> {
-        self.inner.lock().identities.get(venue_order_id).copied()
+    /// Returns the context for a tracked order, if known.
+    pub(crate) fn get(&self, venue_order_id: &VenueOrderId) -> Option<OrderContext> {
+        self.inner.lock().contexts.get(venue_order_id).copied()
     }
 
     /// Returns the latest venue order ID captured for a tracked client order.
@@ -124,31 +80,52 @@ impl OrderIdentityRegistry {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_live::execution::context::OrderIdentity;
+    use nautilus_model::{
+        enums::{OrderSide, OrderType, TimeInForce},
+        identifiers::{InstrumentId, StrategyId},
+        types::{Price, Quantity},
+    };
     use rstest::rstest;
 
     use super::*;
 
-    fn test_identity() -> OrderIdentity {
-        OrderIdentity {
-            client_order_id: ClientOrderId::from("O-1"),
-            strategy_id: StrategyId::from("S-1"),
-            instrument_id: InstrumentId::from("TEST.POLYMARKET"),
-            order_side: OrderSide::Buy,
-            order_type: OrderType::Limit,
+    fn test_context() -> OrderContext {
+        OrderContext {
+            identity: OrderIdentity {
+                client_order_id: ClientOrderId::from("O-1"),
+                strategy_id: StrategyId::from("S-1"),
+                instrument_id: InstrumentId::from("TEST.POLYMARKET"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Limit,
+            },
+            quantity: Quantity::from("12.34"),
+            price: Some(Price::from("0.5678")),
+            trigger_price: None,
+            trigger_type: None,
             time_in_force: TimeInForce::Gtc,
+            is_post_only: true,
+            is_reduce_only: false,
+            is_quote_quantity: false,
         }
     }
 
     #[rstest]
-    fn test_register_and_get() {
-        let registry = OrderIdentityRegistry::default();
+    #[case(TimeInForce::Gtc)]
+    #[case(TimeInForce::Fok)]
+    #[case(TimeInForce::Ioc)]
+    fn test_register_and_get(#[case] time_in_force: TimeInForce) {
+        let registry = OrderContextRegistry::default();
         let vid = VenueOrderId::from("V-1");
         assert!(registry.get(&vid).is_none());
 
-        registry.register_order_identity(vid, test_identity());
-        let identity = registry.get(&vid).expect("identity registered");
-        assert_eq!(identity.client_order_id, ClientOrderId::from("O-1"));
-        assert_eq!(identity.order_side, OrderSide::Buy);
+        let expected = OrderContext {
+            time_in_force,
+            ..test_context()
+        };
+        registry.register_context(vid, expected);
+        let context = registry.get(&vid).expect("identity registered");
+        assert_eq!(context, expected);
         assert_eq!(
             registry.venue_order_id(&ClientOrderId::from("O-1")),
             Some(vid)
@@ -157,7 +134,7 @@ mod tests {
 
     #[rstest]
     fn test_mark_accepted_is_idempotent() {
-        let registry = OrderIdentityRegistry::default();
+        let registry = OrderContextRegistry::default();
         let vid = VenueOrderId::from("V-1");
 
         assert!(registry.mark_accepted(vid), "first mark is new");
@@ -166,7 +143,7 @@ mod tests {
 
     #[rstest]
     fn test_mark_accepted_retains_flag_after_later_capacity_flood() {
-        let registry = OrderIdentityRegistry::default();
+        let registry = OrderContextRegistry::default();
         let retained = VenueOrderId::from("V-RETAIN");
         assert!(registry.mark_accepted(retained));
 
@@ -181,24 +158,27 @@ mod tests {
 
     #[rstest]
     fn test_register_retains_identity_after_later_capacity_flood() {
-        let registry = OrderIdentityRegistry::default();
+        let registry = OrderContextRegistry::default();
         let retained = VenueOrderId::from("V-RETAIN");
-        registry.register_order_identity(retained, test_identity());
+        registry.register_context(retained, test_context());
 
         for index in 0..10_000 {
-            registry.register_order_identity(
+            registry.register_context(
                 VenueOrderId::from(format!("V-FLOOD-{index}").as_str()),
-                OrderIdentity {
-                    client_order_id: ClientOrderId::from(format!("O-FLOOD-{index}").as_str()),
-                    ..test_identity()
+                OrderContext {
+                    identity: OrderIdentity {
+                        client_order_id: ClientOrderId::from(format!("O-FLOOD-{index}").as_str()),
+                        ..test_context().identity
+                    },
+                    ..test_context()
                 },
             );
         }
 
-        let identity = registry
+        let context = registry
             .get(&retained)
             .expect("active identity must survive later registrations");
-        assert_eq!(identity.client_order_id, ClientOrderId::from("O-1"));
+        assert_eq!(context, test_context());
         assert_eq!(
             registry.venue_order_id(&ClientOrderId::from("O-1")),
             Some(retained)

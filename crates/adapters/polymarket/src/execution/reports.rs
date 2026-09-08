@@ -102,12 +102,12 @@ impl PolymarketExecutionClient {
         venue_order_id: VenueOrderId,
         requested_instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<TargetOrderAuthority> {
-        let identity = self.order_identities.get(&venue_order_id);
+        let context = self.order_contexts.get(&venue_order_id);
         let cached_client_order_id = self.core.cache().client_order_id(&venue_order_id).copied();
 
         let mut client_order_id = explicit_client_order_id;
         for candidate in [
-            identity.map(|value| value.client_order_id),
+            context.map(|value| value.identity.client_order_id),
             cached_client_order_id,
         ]
         .into_iter()
@@ -125,7 +125,7 @@ impl PolymarketExecutionClient {
 
         if let Some(client_order_id) = client_order_id
             && let Some(registered_venue_order_id) =
-                self.order_identities.venue_order_id(&client_order_id)
+                self.order_contexts.venue_order_id(&client_order_id)
         {
             anyhow::ensure!(
                 registered_venue_order_id == venue_order_id,
@@ -146,7 +146,7 @@ impl PolymarketExecutionClient {
                 anyhow::ensure!(
                     cached_client_order_id == client_order_id
                         || self
-                            .order_identities
+                            .order_contexts
                             .venue_order_id(&cached_order.client_order_id())
                             == Some(venue_order_id),
                     "cached client order {} has no association with requested venue order {venue_order_id}",
@@ -163,23 +163,23 @@ impl PolymarketExecutionClient {
             }
         }
 
-        if let Some(identity) = identity {
+        if let Some(context) = context {
             if let Some(requested_instrument_id) = requested_instrument_id {
                 anyhow::ensure!(
-                    identity.instrument_id == requested_instrument_id,
+                    context.identity.instrument_id == requested_instrument_id,
                     "registered order instrument {} does not match requested instrument {requested_instrument_id}",
-                    identity.instrument_id,
+                    context.identity.instrument_id,
                 );
             }
 
             if let Some(cached_order) = cached_order.as_ref() {
                 anyhow::ensure!(
-                    identity.client_order_id == cached_order.client_order_id()
-                        && identity.instrument_id == cached_order.instrument_id()
-                        && identity.order_side == cached_order.order_side()
-                        && identity.order_type == cached_order.order_type()
-                        && identity.time_in_force == cached_order.time_in_force(),
-                    "registered order identity for {venue_order_id} contradicts cached order {}",
+                    context.identity.client_order_id == cached_order.client_order_id()
+                        && context.identity.instrument_id == cached_order.instrument_id()
+                        && context.identity.order_side == cached_order.order_side()
+                        && context.identity.order_type == cached_order.order_type()
+                        && context.time_in_force == cached_order.time_in_force(),
+                    "registered order context for {venue_order_id} contradicts cached order {}",
                     cached_order.client_order_id(),
                 );
             }
@@ -187,11 +187,11 @@ impl PolymarketExecutionClient {
 
         Ok(TargetOrderAuthority {
             client_order_id,
-            instrument_id: identity
-                .map(|value| value.instrument_id)
+            instrument_id: context
+                .map(|value| value.identity.instrument_id)
                 .or_else(|| cached_order.as_ref().map(Order::instrument_id)),
-            order_side: identity
-                .map(|value| value.order_side)
+            order_side: context
+                .map(|value| value.identity.order_side)
                 .or_else(|| cached_order.as_ref().map(|order| order.order_side())),
             cached_order,
         })
@@ -635,7 +635,7 @@ impl PolymarketExecutionClient {
         client_order_id: Option<ClientOrderId>,
     ) -> Option<VenueOrderId> {
         venue_order_id
-            .or_else(|| client_order_id.and_then(|id| self.order_identities.venue_order_id(&id)))
+            .or_else(|| client_order_id.and_then(|id| self.order_contexts.venue_order_id(&id)))
             .or_else(|| {
                 client_order_id.and_then(|id| {
                     self.core
@@ -708,10 +708,10 @@ impl PolymarketExecutionClient {
                 continue;
             };
 
-            let identity = self
-                .order_identities
+            let context = self
+                .order_contexts
                 .get(&promotion.old_venue_order_id)
-                .context("pending modification has no old-leg identity")?;
+                .context("pending modification has no old-leg context")?;
             anyhow::ensure!(
                 report.quantity == promotion.leg_quantity,
                 "replacement venue-leg quantity {} does not match signed quantity {}",
@@ -725,10 +725,10 @@ impl PolymarketExecutionClient {
                 promotion.price,
             );
             anyhow::ensure!(
-                report.order_side == Some(identity.order_side),
+                report.order_side == Some(context.identity.order_side),
                 "replacement venue-leg side {:?} does not match logical order side {}",
                 report.order_side,
-                identity.order_side,
+                context.identity.order_side,
             );
             let cached_order = self
                 .core
@@ -768,7 +768,7 @@ impl PolymarketExecutionClient {
                 }
 
                 if self
-                    .order_identities
+                    .order_contexts
                     .venue_order_id(&promotion.client_order_id)
                     != Some(promotion.venue_order_id)
                 {
@@ -782,13 +782,13 @@ impl PolymarketExecutionClient {
                 &self.emitter,
                 self.clock,
                 &self.fill_tracker,
-                &self.order_identities,
+                &self.order_contexts,
                 &self.ws_dispatch_state,
             );
 
             if !promoted
                 && self
-                    .order_identities
+                    .order_contexts
                     .venue_order_id(&promotion.client_order_id)
                     != Some(promotion.venue_order_id)
             {

@@ -17,8 +17,8 @@
 //!
 //! Routes user-channel WS messages (order updates and trades) for orders submitted through this
 //! client into Nautilus order events (`OrderAccepted` / `OrderFilled` / `OrderFillVoided` /
-//! `OrderCanceled` / `OrderRejected` / `OrderExpired`), building them from the identity captured at
-//! submit (`OrderIdentityRegistry`). Order-channel messages drive lifecycle events; trade-channel
+//! `OrderCanceled` / `OrderRejected` / `OrderExpired`), building them from the context captured at
+//! submit (`OrderContextRegistry`). Order-channel messages drive lifecycle events; trade-channel
 //! messages drive fills, and acceptance is synthesized before a fill or cancel that races ahead.
 //! Messages are emitted once the order is known (accepted, or with a submit in flight), otherwise
 //! buffered until acceptance. Reports are reserved for the `generate_*` query and reconciliation
@@ -34,7 +34,7 @@ use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
 use nautilus_core::{
     UUID4, UnixNanos, collections::AtomicMap, string::secret::REDACTED, time::AtomicTime,
 };
-use nautilus_live::ExecutionEventEmitter;
+use nautilus_live::{ExecutionEventEmitter, execution::context::OrderContext};
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{
@@ -65,9 +65,8 @@ use crate::{
         parse::parse_decimal_exact,
     },
     execution::{
-        get_pusd_currency,
-        identity::{OrderIdentity, OrderIdentityRegistry},
-        is_post_only_crossing,
+        context::OrderContextRegistry,
+        get_pusd_currency, is_post_only_crossing,
         order_fill_tracker::{BufferedFill, FillCorrectionMetadata, OrderFillTrackerMap},
         parse::{
             build_maker_fill_report, compute_commission, determine_order_side,
@@ -514,7 +513,7 @@ pub(crate) struct WsDispatchContext<'a> {
     pub token_instruments: &'a AtomicMap<Ustr, InstrumentAny>,
     pub fill_tracker: &'a OrderFillTrackerMap,
     pub pending_submits: &'a PendingSubmitTracker,
-    pub order_identities: &'a OrderIdentityRegistry,
+    pub order_contexts: &'a OrderContextRegistry,
     pub emitter: &'a ExecutionEventEmitter,
     pub account_id: AccountId,
     pub clock: &'static AtomicTime,
@@ -528,7 +527,7 @@ impl Debug for WsDispatchContext<'_> {
             .field("token_instruments", &self.token_instruments)
             .field("fill_tracker", &self.fill_tracker)
             .field("pending_submits", &self.pending_submits)
-            .field("order_identities", &self.order_identities)
+            .field("order_contexts", &self.order_contexts)
             .field("emitter", &self.emitter)
             .field("account_id", &self.account_id)
             .field("clock", &self.clock)
@@ -670,14 +669,14 @@ fn dispatch_order_update(
         && state.suppress_modify_cancel(venue_order_id);
 
     // Tracked own orders route through order events; externally-managed orders
-    // (no captured identity) buffer until accepted or fall back to reports.
-    let identity = ctx.order_identities.get(&venue_order_id);
+    // (no captured context) buffer until accepted or fall back to reports.
+    let context = ctx.order_contexts.get(&venue_order_id);
 
     // Emit fills first: a terminal status would otherwise close the order ahead of them
     for fill in buffered_fills {
-        match identity {
-            Some(identity) => {
-                emit_buffered_order_filled(&identity, &fill, ctx);
+        match context {
+            Some(context) => {
+                emit_buffered_order_filled(&context, &fill, ctx);
             }
             None => ctx.emitter.send_fill_report(fill.report),
         }
@@ -690,8 +689,8 @@ fn dispatch_order_update(
                 .insert(venue_order_id, buffered.clone());
         }
 
-        if let Some(identity) = identity {
-            emit_tracked_order_status(&buffered, &identity, buffered.ts_last, ctx);
+        if let Some(context) = context {
+            emit_tracked_order_status(&buffered, &context, buffered.ts_last, ctx);
         }
     }
 
@@ -701,8 +700,8 @@ fn dispatch_order_update(
     }
 
     if is_accepted || local_client_order_id.is_some() {
-        match identity {
-            Some(identity) => emit_tracked_order_status(&report, &identity, ts_event, ctx),
+        match context {
+            Some(context) => emit_tracked_order_status(&report, &context, ts_event, ctx),
             None => ctx.emitter.send_order_status_report(report),
         }
     } else if let Some(report) = ctx
@@ -710,8 +709,8 @@ fn dispatch_order_update(
         .accept_or_buffer_report(venue_order_id, report)
     {
         // Registered between the early accepted-check and here: emit rather than buffer
-        match ctx.order_identities.get(&venue_order_id) {
-            Some(identity) => emit_tracked_order_status(&report, &identity, ts_event, ctx),
+        match ctx.order_contexts.get(&venue_order_id) {
+            Some(context) => emit_tracked_order_status(&report, &context, ts_event, ctx),
             None => ctx.emitter.send_order_status_report(report),
         }
     }
@@ -739,22 +738,23 @@ fn promote_modify_replacement_from_ws(
     buffered_reports: &mut Vec<OrderStatusReport>,
 ) -> Option<ClientOrderId> {
     let promotion = state.claim_modify_replacement(venue_order_id)?;
-    let Some(identity) = ctx.order_identities.get(&promotion.old_venue_order_id) else {
+    let Some(mut context) = ctx.order_contexts.get(&promotion.old_venue_order_id) else {
         log::error!(
-            "Cannot promote Polymarket replacement {venue_order_id}: old venue leg {} has no identity",
+            "Cannot promote Polymarket replacement {venue_order_id}: old venue leg {} has no context",
             promotion.old_venue_order_id,
         );
         return None;
     };
 
-    ctx.order_identities
-        .register_order_identity(venue_order_id, identity);
-    ctx.order_identities.mark_accepted(venue_order_id);
+    context.quantity = promotion.quantity;
+    context.price = Some(promotion.price);
+    ctx.order_contexts.register_context(venue_order_id, context);
+    ctx.order_contexts.mark_accepted(venue_order_id);
 
     let updated = OrderUpdated::new(
         ctx.emitter.trader_id(),
-        identity.strategy_id,
-        identity.instrument_id,
+        context.identity.strategy_id,
+        context.identity.instrument_id,
         promotion.client_order_id,
         promotion.quantity,
         UUID4::new(),
@@ -775,7 +775,7 @@ fn promote_modify_replacement_from_ws(
         venue_order_id,
         Some(promotion.client_order_id),
         promotion.leg_quantity,
-        identity.order_side,
+        context.identity.order_side,
     ));
     buffered_reports.extend(ctx.fill_tracker.take_pending_reports(&venue_order_id));
     Some(promotion.client_order_id)
@@ -801,7 +801,7 @@ fn reject_modify_replacement(
         return;
     };
 
-    let Some(identity) = ctx.order_identities.get(&old_venue_order_id) else {
+    let Some(context) = ctx.order_contexts.get(&old_venue_order_id) else {
         return;
     };
 
@@ -810,42 +810,36 @@ fn reject_modify_replacement(
         .as_deref()
         .unwrap_or("replacement order rejected");
     ctx.emitter.emit_order_modify_rejected_event(
-        identity.strategy_id,
-        identity.instrument_id,
-        identity.client_order_id,
+        context.identity.strategy_id,
+        context.identity.instrument_id,
+        context.identity.client_order_id,
         Some(old_venue_order_id),
         &sanitize_error_text(reason),
         ts_event,
     );
 
     if let Some(cancel_ts) = cancel_ts {
-        emit_order_canceled(&identity, old_venue_order_id, cancel_ts, ctx);
+        emit_order_canceled(&context, old_venue_order_id, cancel_ts, ctx);
     }
 }
 
 fn emit_buffered_order_filled(
-    identity: &OrderIdentity,
+    context: &OrderContext,
     buffered: &BufferedFill,
     ctx: &WsDispatchContext<'_>,
 ) {
     let fill = &buffered.report;
-    ensure_accepted(identity, fill.venue_order_id, fill.ts_event, ctx);
+    ensure_accepted(context, fill.venue_order_id, fill.ts_event, ctx);
 
     let info = buffered
         .correction
         .as_ref()
         .and_then(|correction| correction.info.clone());
-    let filled = build_order_filled(identity, fill, info, ctx);
+    let filled = build_order_filled(context, fill, info, ctx);
     ctx.fill_tracker
         .emit_buffered_fill(filled, buffered.correction.as_ref(), |filled, new_qty| {
             if let Some(new_qty) = new_qty {
-                emit_buy_overfill_update(
-                    identity,
-                    fill.venue_order_id,
-                    new_qty,
-                    fill.ts_event,
-                    ctx,
-                );
+                emit_buy_overfill_update(context, fill.venue_order_id, new_qty, fill.ts_event, ctx);
             }
             ctx.emitter.send_order_event(OrderEventAny::Filled(filled));
         });
@@ -874,8 +868,8 @@ fn emit_quantity_normalization_if_ready(
         return;
     };
 
-    let Some(identity) = ctx.order_identities.get(&venue_order_id) else {
-        log::warn!("Cannot normalize terminal order {venue_order_id} without a local identity");
+    let Some(context) = ctx.order_contexts.get(&venue_order_id) else {
+        log::warn!("Cannot normalize terminal order {venue_order_id} without a local context");
         return;
     };
 
@@ -883,7 +877,7 @@ fn emit_quantity_normalization_if_ready(
         .fill_tracker
         .check_terminal_quantity_normalization(&venue_order_id)
     {
-        emit_terminal_quantity_update(&identity, venue_order_id, quantity, pending.ts_event, ctx);
+        emit_terminal_quantity_update(&context, venue_order_id, quantity, pending.ts_event, ctx);
     }
 }
 
@@ -899,21 +893,21 @@ fn emit_taker_terminal_status(
 ) {
     let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
 
-    let Some(identity) = ctx.order_identities.get(&venue_order_id) else {
+    let Some(context) = ctx.order_contexts.get(&venue_order_id) else {
         return;
     };
 
-    if identity.requires_terminal_quantity_normalization() {
+    if context.time_in_force == TimeInForce::Fok {
         if let Some(quantity) = ctx
             .fill_tracker
             .check_terminal_quantity_normalization(&venue_order_id)
         {
-            emit_terminal_quantity_update(&identity, venue_order_id, quantity, ts_event, ctx);
+            emit_terminal_quantity_update(&context, venue_order_id, quantity, ts_event, ctx);
         }
         return;
     }
 
-    if identity.time_in_force == TimeInForce::Ioc
+    if context.time_in_force == TimeInForce::Ioc
         && let Some(remainder) = ctx
             .fill_tracker
             .take_terminal_ioc_remainder(&venue_order_id)
@@ -921,7 +915,7 @@ fn emit_taker_terminal_status(
         log::debug!(
             "Closing terminal IOC order {venue_order_id} as Canceled (unfilled remainder={remainder})"
         );
-        emit_order_canceled(&identity, venue_order_id, ts_event, ctx);
+        emit_order_canceled(&context, venue_order_id, ts_event, ctx);
     }
 }
 
@@ -1178,14 +1172,9 @@ fn dispatch_maker_fill_reports(
                 is_confirmed,
             },
         ) {
-            match ctx.order_identities.get(&maker_venue_order_id) {
-                Some(identity) => {
-                    fills.push(emit_order_filled(
-                        &identity,
-                        &report,
-                        fill_info.clone(),
-                        ctx,
-                    ));
+            match ctx.order_contexts.get(&maker_venue_order_id) {
+                Some(context) => {
+                    fills.push(emit_order_filled(&context, &report, fill_info.clone(), ctx));
                 }
                 None => ctx.emitter.send_fill_report(report),
             }
@@ -1271,9 +1260,9 @@ fn dispatch_taker_fill_report(
             is_confirmed,
         },
     ) {
-        match ctx.order_identities.get(&venue_order_id) {
-            Some(identity) => {
-                let fill = emit_order_filled(&identity, &report, trade_fill_info(trade), ctx);
+        match ctx.order_contexts.get(&venue_order_id) {
+            Some(context) => {
+                let fill = emit_order_filled(&context, &report, trade_fill_info(trade), ctx);
                 fills.push(fill);
             }
             None => ctx.emitter.send_fill_report(report),
@@ -1290,10 +1279,10 @@ fn emit_promoted_ws_fills(
     buffered_fills: Vec<BufferedFill>,
     ctx: &WsDispatchContext<'_>,
 ) {
-    let identity = ctx.order_identities.get(&venue_order_id);
+    let context = ctx.order_contexts.get(&venue_order_id);
     for fill in buffered_fills {
-        match identity {
-            Some(identity) => emit_buffered_order_filled(&identity, &fill, ctx),
+        match context {
+            Some(context) => emit_buffered_order_filled(&context, &fill, ctx),
             None => ctx.emitter.send_fill_report(fill.report),
         }
     }
@@ -1305,15 +1294,15 @@ fn emit_promoted_ws_reports(
     ctx: &WsDispatchContext<'_>,
     state: &mut WsDispatchState,
 ) {
-    let identity = ctx.order_identities.get(&venue_order_id);
+    let context = ctx.order_contexts.get(&venue_order_id);
 
     for report in buffered_reports {
         if report.order_status == OrderStatus::Canceled {
             state.record_terminal_cancel_report(report.clone());
         }
 
-        match identity {
-            Some(identity) => emit_tracked_order_status(&report, &identity, report.ts_last, ctx),
+        match context {
+            Some(context) => emit_tracked_order_status(&report, &context, report.ts_last, ctx),
             None => ctx.emitter.send_order_status_report(report),
         }
     }
@@ -1354,9 +1343,9 @@ fn reemit_terminal_cancel(
 
     if let Some(cancel_ts) = cancel_ts {
         log::debug!("Re-emitting cancel for {venue_order_id} after fill to restore terminal state");
-        match ctx.order_identities.get(&venue_order_id) {
-            Some(identity) => {
-                emit_order_canceled(&identity, venue_order_id, cancel_ts, ctx);
+        match ctx.order_contexts.get(&venue_order_id) {
+            Some(context) => {
+                emit_order_canceled(&context, venue_order_id, cancel_ts, ctx);
             }
             None => {
                 if let Some(cancel_report) = state.terminal_cancel_reports.get(&venue_order_id) {
@@ -1527,23 +1516,23 @@ fn build_ws_taker_fill_report(
 /// they only ensure acceptance has been emitted so the order lifecycle stays well-formed.
 fn emit_tracked_order_status(
     report: &OrderStatusReport,
-    identity: &OrderIdentity,
+    context: &OrderContext,
     ts_event: UnixNanos,
     ctx: &WsDispatchContext<'_>,
 ) {
     let venue_order_id = report.venue_order_id;
     match report.order_status {
-        OrderStatus::Accepted => ensure_accepted(identity, venue_order_id, ts_event, ctx),
+        OrderStatus::Accepted => ensure_accepted(context, venue_order_id, ts_event, ctx),
         OrderStatus::PartiallyFilled | OrderStatus::Filled => {
-            ensure_accepted(identity, venue_order_id, ts_event, ctx);
+            ensure_accepted(context, venue_order_id, ts_event, ctx);
         }
         OrderStatus::Canceled => {
-            ensure_accepted(identity, venue_order_id, ts_event, ctx);
-            emit_order_canceled(identity, venue_order_id, ts_event, ctx);
+            ensure_accepted(context, venue_order_id, ts_event, ctx);
+            emit_order_canceled(context, venue_order_id, ts_event, ctx);
         }
         OrderStatus::Expired => {
-            ensure_accepted(identity, venue_order_id, ts_event, ctx);
-            emit_order_expired(identity, venue_order_id, ts_event, ctx);
+            ensure_accepted(context, venue_order_id, ts_event, ctx);
+            emit_order_expired(context, venue_order_id, ts_event, ctx);
         }
         OrderStatus::Rejected => {
             let reason = report
@@ -1551,7 +1540,7 @@ fn emit_tracked_order_status(
                 .clone()
                 .unwrap_or_else(|| "REJECTED".to_string());
 
-            emit_order_rejected(identity, &reason, ts_event, ctx);
+            emit_order_rejected(context, &reason, ts_event, ctx);
         }
         other => log::debug!("No order event for status {other:?} on {venue_order_id}"),
     }
@@ -1563,20 +1552,20 @@ fn emit_tracked_order_status(
 /// fires exactly once across the submit confirmation and the WS stream, including when a fill or
 /// cancel races ahead of the acceptance message.
 fn ensure_accepted(
-    identity: &OrderIdentity,
+    context: &OrderContext,
     venue_order_id: VenueOrderId,
     ts_event: UnixNanos,
     ctx: &WsDispatchContext<'_>,
 ) {
-    if !ctx.order_identities.mark_accepted(venue_order_id) {
+    if !ctx.order_contexts.mark_accepted(venue_order_id) {
         return;
     }
 
     let accepted = OrderAccepted::new(
         ctx.emitter.trader_id(),
-        identity.strategy_id,
-        identity.instrument_id,
-        identity.client_order_id,
+        context.identity.strategy_id,
+        context.identity.instrument_id,
+        context.identity.client_order_id,
         venue_order_id,
         ctx.account_id,
         UUID4::new(),
@@ -1593,39 +1582,39 @@ fn ensure_accepted(
 /// `info` carries the venue fill metadata (the raw trade fields) for trade-sourced fills, and is
 /// `None` for order-path fills that have no originating trade payload.
 fn emit_order_filled(
-    identity: &OrderIdentity,
+    context: &OrderContext,
     fill: &FillReport,
     info: Option<IndexMap<Ustr, Ustr>>,
     ctx: &WsDispatchContext<'_>,
 ) -> OrderFilled {
-    ensure_accepted(identity, fill.venue_order_id, fill.ts_event, ctx);
+    ensure_accepted(context, fill.venue_order_id, fill.ts_event, ctx);
 
     if let Some(new_qty) = ctx.fill_tracker.buy_overfill_bump(&fill.venue_order_id) {
-        emit_buy_overfill_update(identity, fill.venue_order_id, new_qty, fill.ts_event, ctx);
+        emit_buy_overfill_update(context, fill.venue_order_id, new_qty, fill.ts_event, ctx);
     }
 
-    let filled = build_order_filled(identity, fill, info, ctx);
+    let filled = build_order_filled(context, fill, info, ctx);
     ctx.emitter
         .send_order_event(OrderEventAny::Filled(filled.clone()));
     filled
 }
 
 fn build_order_filled(
-    identity: &OrderIdentity,
+    context: &OrderContext,
     fill: &FillReport,
     info: Option<IndexMap<Ustr, Ustr>>,
     ctx: &WsDispatchContext<'_>,
 ) -> OrderFilled {
     OrderFilled::new(
         ctx.emitter.trader_id(),
-        identity.strategy_id,
-        identity.instrument_id,
-        identity.client_order_id,
+        context.identity.strategy_id,
+        context.identity.instrument_id,
+        context.identity.client_order_id,
         fill.venue_order_id,
         ctx.account_id,
         fill.trade_id,
-        identity.order_side,
-        identity.order_type,
+        context.identity.order_side,
+        context.identity.order_type,
         fill.last_qty,
         fill.last_px,
         get_pusd_currency(),
@@ -1701,7 +1690,7 @@ fn trade_fill_info(trade: &PolymarketUserTrade) -> Option<IndexMap<Ustr, Ustr>> 
 /// returns more shares than the nominal quantity. The engine rejects a fill past the order
 /// quantity, so the quantity is raised first. The price is left unchanged (`None`).
 fn emit_buy_overfill_update(
-    identity: &OrderIdentity,
+    context: &OrderContext,
     venue_order_id: VenueOrderId,
     new_qty: Quantity,
     ts_event: UnixNanos,
@@ -1709,9 +1698,9 @@ fn emit_buy_overfill_update(
 ) {
     let updated = OrderUpdated::new(
         ctx.emitter.trader_id(),
-        identity.strategy_id,
-        identity.instrument_id,
-        identity.client_order_id,
+        context.identity.strategy_id,
+        context.identity.instrument_id,
+        context.identity.client_order_id,
         new_qty,
         UUID4::new(),
         ts_event,
@@ -1730,7 +1719,7 @@ fn emit_buy_overfill_update(
 
 /// Emits an order-only reconciliation update which cannot change strategy position.
 fn emit_terminal_quantity_update(
-    identity: &OrderIdentity,
+    context: &OrderContext,
     venue_order_id: VenueOrderId,
     quantity: Quantity,
     ts_event: UnixNanos,
@@ -1738,9 +1727,9 @@ fn emit_terminal_quantity_update(
 ) {
     let updated = OrderUpdated::new(
         ctx.emitter.trader_id(),
-        identity.strategy_id,
-        identity.instrument_id,
-        identity.client_order_id,
+        context.identity.strategy_id,
+        context.identity.instrument_id,
+        context.identity.client_order_id,
         quantity,
         UUID4::new(),
         ts_event,
@@ -1758,16 +1747,16 @@ fn emit_terminal_quantity_update(
 }
 
 fn emit_order_canceled(
-    identity: &OrderIdentity,
+    context: &OrderContext,
     venue_order_id: VenueOrderId,
     ts_event: UnixNanos,
     ctx: &WsDispatchContext<'_>,
 ) {
     let canceled = OrderCanceled::new(
         ctx.emitter.trader_id(),
-        identity.strategy_id,
-        identity.instrument_id,
-        identity.client_order_id,
+        context.identity.strategy_id,
+        context.identity.instrument_id,
+        context.identity.client_order_id,
         UUID4::new(),
         ts_event,
         ctx.clock.get_time_ns(),
@@ -1781,16 +1770,16 @@ fn emit_order_canceled(
 }
 
 fn emit_order_expired(
-    identity: &OrderIdentity,
+    context: &OrderContext,
     venue_order_id: VenueOrderId,
     ts_event: UnixNanos,
     ctx: &WsDispatchContext<'_>,
 ) {
     let expired = OrderExpired::new(
         ctx.emitter.trader_id(),
-        identity.strategy_id,
-        identity.instrument_id,
-        identity.client_order_id,
+        context.identity.strategy_id,
+        context.identity.instrument_id,
+        context.identity.client_order_id,
         UUID4::new(),
         ts_event,
         ctx.clock.get_time_ns(),
@@ -1803,7 +1792,7 @@ fn emit_order_expired(
 }
 
 fn emit_order_rejected(
-    identity: &OrderIdentity,
+    context: &OrderContext,
     reason: &str,
     ts_event: UnixNanos,
     ctx: &WsDispatchContext<'_>,
@@ -1812,9 +1801,9 @@ fn emit_order_rejected(
 
     let rejected = OrderRejected::new(
         ctx.emitter.trader_id(),
-        identity.strategy_id,
-        identity.instrument_id,
-        identity.client_order_id,
+        context.identity.strategy_id,
+        context.identity.instrument_id,
+        context.identity.client_order_id,
         ctx.account_id,
         Ustr::from(&reason),
         UUID4::new(),
@@ -1831,6 +1820,7 @@ fn emit_order_rejected(
 mod tests {
     use nautilus_common::messages::{ExecutionEvent, ExecutionReport};
     use nautilus_core::time::AtomicTime;
+    use nautilus_live::execution::context::OrderIdentity;
     use nautilus_model::{
         enums::{AccountType, OrderSide, OrderStatus},
         events::OrderEventAny,
@@ -1847,22 +1837,31 @@ mod tests {
         parse::{create_instrument_from_def, parse_gamma_market},
     };
 
-    /// Registers a tracked-order identity so the dispatch routes the order through events.
-    fn register_identity(
-        order_identities: &OrderIdentityRegistry,
+    /// Registers a tracked-order context so the dispatch routes the order through events.
+    fn register_context(
+        order_contexts: &OrderContextRegistry,
         venue_order_id: VenueOrderId,
         instrument_id: InstrumentId,
         client_order_id: &str,
     ) {
-        order_identities.register_order_identity(
+        order_contexts.register_context(
             venue_order_id,
-            OrderIdentity {
-                client_order_id: ClientOrderId::from(client_order_id),
-                strategy_id: StrategyId::from("S-001"),
-                instrument_id,
-                order_side: OrderSide::Buy,
-                order_type: OrderType::Limit,
+            OrderContext {
+                identity: OrderIdentity {
+                    client_order_id: ClientOrderId::from(client_order_id),
+                    strategy_id: StrategyId::from("S-001"),
+                    instrument_id,
+                    order_side: OrderSide::Buy,
+                    order_type: OrderType::Limit,
+                },
+                quantity: Quantity::from("10"),
+                price: Some(Price::from("0.50")),
+                trigger_price: None,
+                trigger_type: None,
                 time_in_force: TimeInForce::Gtc,
+                is_post_only: false,
+                is_reduce_only: false,
+                is_quote_quantity: false,
             },
         );
     }
@@ -1895,7 +1894,7 @@ mod tests {
         let token_instruments = AtomicMap::new();
         let fill_tracker = OrderFillTrackerMap::new();
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
+        let order_contexts = OrderContextRegistry::default();
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
 
@@ -1905,24 +1904,33 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
             user_address: "0xtest",
             user_api_key: "test-key",
         };
-        let identity = OrderIdentity {
-            client_order_id: ClientOrderId::from("O-WS-REJECT"),
-            strategy_id: StrategyId::from("S-001"),
-            instrument_id: instrument.id(),
-            order_side: OrderSide::Buy,
-            order_type: OrderType::Limit,
+        let context = OrderContext {
+            identity: OrderIdentity {
+                client_order_id: ClientOrderId::from("O-WS-REJECT"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: instrument.id(),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Limit,
+            },
+            quantity: Quantity::from("10"),
+            price: Some(Price::from("0.50")),
+            trigger_price: None,
+            trigger_type: None,
             time_in_force: TimeInForce::Gtc,
+            is_post_only: false,
+            is_reduce_only: false,
+            is_quote_quantity: false,
         };
 
         emit_order_rejected(
-            &identity,
+            &context,
             "  invalid post-only order:\norder crosses book  ",
             UnixNanos::from(1_000_000_000),
             &ctx,
@@ -2142,14 +2150,14 @@ mod tests {
         // No registration: the submit response has not landed, so the order update registers it
         let fill_tracker = OrderFillTrackerMap::new();
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
+        let order_contexts = OrderContextRegistry::default();
         let emitter = test_emitter();
 
         let venue_order_id = VenueOrderId::from(order.id.as_str());
         let client_order_id = ClientOrderId::from("O-FOK-IN-FLIGHT");
         pending_submits.insert(venue_order_id, client_order_id);
-        register_identity(
-            &order_identities,
+        register_context(
+            &order_contexts,
             venue_order_id,
             instrument.id(),
             client_order_id.as_str(),
@@ -2159,7 +2167,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -2199,8 +2207,8 @@ mod tests {
         );
 
         let pending_submits = PendingSubmitTracker::default();
-        // No identity registered, so the order surfaces as a report for reconciliation
-        let order_identities = OrderIdentityRegistry::default();
+        // No context registered, so the order surfaces as a report for reconciliation
+        let order_contexts = OrderContextRegistry::default();
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -2209,7 +2217,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -2305,14 +2313,14 @@ mod tests {
 
         let fill_tracker = OrderFillTrackerMap::new();
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
+        let order_contexts = OrderContextRegistry::default();
         let emitter = test_emitter();
 
         let ctx = WsDispatchContext {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -2337,13 +2345,13 @@ mod tests {
         token_instruments.insert(order.asset_id, instrument);
         let fill_tracker = OrderFillTrackerMap::new();
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
+        let order_contexts = OrderContextRegistry::default();
         let emitter = test_emitter();
         let ctx = WsDispatchContext {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -2381,7 +2389,7 @@ mod tests {
 
         let fill_tracker = OrderFillTrackerMap::new();
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
+        let order_contexts = OrderContextRegistry::default();
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -2389,8 +2397,8 @@ mod tests {
         let venue_order_id = VenueOrderId::from(order.id.as_str());
         let client_order_id = ClientOrderId::from("O-UNKNOWN-SUBMIT");
         pending_submits.insert(venue_order_id, client_order_id);
-        register_identity(
-            &order_identities,
+        register_context(
+            &order_contexts,
             venue_order_id,
             test_instrument().id(),
             "O-UNKNOWN-SUBMIT",
@@ -2400,7 +2408,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -2441,13 +2449,13 @@ mod tests {
         token_instruments.insert(trade.maker_orders[0].asset_id, test_instrument());
         let fill_tracker = OrderFillTrackerMap::new();
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
+        let order_contexts = OrderContextRegistry::default();
         let emitter = test_emitter();
         let ctx = WsDispatchContext {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -2478,13 +2486,13 @@ mod tests {
         token_instruments.insert(trade.maker_orders[0].asset_id, test_instrument());
         let fill_tracker = OrderFillTrackerMap::new();
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
+        let order_contexts = OrderContextRegistry::default();
         let emitter = test_emitter();
         let ctx = WsDispatchContext {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -2517,14 +2525,14 @@ mod tests {
 
         let fill_tracker = OrderFillTrackerMap::new();
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
+        let order_contexts = OrderContextRegistry::default();
         let emitter = test_emitter();
 
         let ctx = WsDispatchContext {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -2568,14 +2576,14 @@ mod tests {
             valid_instrument.price_precision(),
         );
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
-        register_identity(
-            &order_identities,
+        let order_contexts = OrderContextRegistry::default();
+        register_context(
+            &order_contexts,
             venue_order_id,
             valid_instrument.id(),
             "O-COMMISSION-REPLAY",
         );
-        order_identities.mark_accepted(venue_order_id);
+        order_contexts.mark_accepted(venue_order_id);
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -2583,7 +2591,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -2637,13 +2645,13 @@ mod tests {
         let token_instruments = AtomicMap::new();
         let fill_tracker = OrderFillTrackerMap::new();
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
+        let order_contexts = OrderContextRegistry::default();
         let emitter = test_emitter();
         let ctx = WsDispatchContext {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -2676,13 +2684,13 @@ mod tests {
         token_instruments.insert(trade.asset_id, instrument);
         let fill_tracker = OrderFillTrackerMap::new();
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
+        let order_contexts = OrderContextRegistry::default();
         let emitter = test_emitter();
         let ctx = WsDispatchContext {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -2716,14 +2724,14 @@ mod tests {
             instrument.price_precision(),
         );
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
-        register_identity(
-            &order_identities,
+        let order_contexts = OrderContextRegistry::default();
+        register_context(
+            &order_contexts,
             venue_order_id,
             instrument.id(),
             "O-MATCHED-FAILED",
         );
-        order_identities.mark_accepted(venue_order_id);
+        order_contexts.mark_accepted(venue_order_id);
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -2731,7 +2739,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -2792,7 +2800,7 @@ mod tests {
 
         let fill_tracker = OrderFillTrackerMap::new();
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
+        let order_contexts = OrderContextRegistry::default();
         let emitter = test_emitter();
 
         let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
@@ -2803,7 +2811,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -2841,26 +2849,26 @@ mod tests {
         );
 
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
-        register_identity(
-            &order_identities,
+        let order_contexts = OrderContextRegistry::default();
+        register_context(
+            &order_contexts,
             venue_order_id,
             instrument.id(),
             "O-LATE-FILL",
         );
-        order_identities.mark_accepted(venue_order_id);
-        assert!(order_identities.get(&venue_order_id).is_some());
+        order_contexts.mark_accepted(venue_order_id);
+        assert!(order_contexts.get(&venue_order_id).is_some());
 
         for index in 0..10_000 {
             let later_venue_order_id = VenueOrderId::from(format!("V-LATER-{index}").as_str());
             let later_client_order_id = format!("O-LATER-{index}");
-            register_identity(
-                &order_identities,
+            register_context(
+                &order_contexts,
                 later_venue_order_id,
                 instrument.id(),
                 &later_client_order_id,
             );
-            order_identities.mark_accepted(later_venue_order_id);
+            order_contexts.mark_accepted(later_venue_order_id);
             fill_tracker.register(
                 later_venue_order_id,
                 Quantity::from("1"),
@@ -2870,7 +2878,7 @@ mod tests {
                 instrument.price_precision(),
             );
         }
-        assert!(order_identities.get(&venue_order_id).is_some());
+        assert!(order_contexts.get(&venue_order_id).is_some());
         assert!(fill_tracker.contains(&venue_order_id));
 
         let mut emitter = test_emitter();
@@ -2881,7 +2889,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -2939,9 +2947,9 @@ mod tests {
         );
 
         let pending_submits = PendingSubmitTracker::default();
-        // No identity registered, so the order surfaces as a report (the external/reconciliation
+        // No context registered, so the order surfaces as a report (the external/reconciliation
         // fallback), where filled_qty is capped to tracked fills.
-        let order_identities = OrderIdentityRegistry::default();
+        let order_contexts = OrderContextRegistry::default();
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -2950,7 +2958,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -2996,9 +3004,9 @@ mod tests {
         fill_tracker.record_fill(&venue_order_id, Quantity::new(50.0, 6));
 
         let pending_submits = PendingSubmitTracker::default();
-        // No identity registered, so the order surfaces as a report (the external/reconciliation
+        // No context registered, so the order surfaces as a report (the external/reconciliation
         // fallback), where filled_qty is capped to tracked fills.
-        let order_identities = OrderIdentityRegistry::default();
+        let order_contexts = OrderContextRegistry::default();
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -3007,7 +3015,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -3051,14 +3059,14 @@ mod tests {
         fill_tracker.record_fill(&venue_order_id, Quantity::new(99.995, 6));
 
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
-        register_identity(
-            &order_identities,
+        let order_contexts = OrderContextRegistry::default();
+        register_context(
+            &order_contexts,
             venue_order_id,
             instrument.id(),
             "O-MATCHED",
         );
-        order_identities.mark_accepted(venue_order_id);
+        order_contexts.mark_accepted(venue_order_id);
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -3072,7 +3080,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock,
@@ -3122,14 +3130,14 @@ mod tests {
             instrument.price_precision(),
         );
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
-        register_identity(
-            &order_identities,
+        let order_contexts = OrderContextRegistry::default();
+        register_context(
+            &order_contexts,
             venue_order_id,
             instrument.id(),
             "O-CONFIRMED-DUST",
         );
-        order_identities.mark_accepted(venue_order_id);
+        order_contexts.mark_accepted(venue_order_id);
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -3137,7 +3145,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -3193,14 +3201,9 @@ mod tests {
         );
 
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
-        register_identity(
-            &order_identities,
-            venue_order_id,
-            instrument.id(),
-            "O-CANCEL",
-        );
-        order_identities.mark_accepted(venue_order_id);
+        let order_contexts = OrderContextRegistry::default();
+        register_context(&order_contexts, venue_order_id, instrument.id(), "O-CANCEL");
+        order_contexts.mark_accepted(venue_order_id);
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -3209,7 +3212,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -3273,14 +3276,14 @@ mod tests {
 
         let client_order_id = ClientOrderId::from("O-MODIFIED-OLD-LEG");
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
-        register_identity(
-            &order_identities,
+        let order_contexts = OrderContextRegistry::default();
+        register_context(
+            &order_contexts,
             old_venue_order_id,
             instrument.id(),
             client_order_id.as_str(),
         );
-        order_identities.mark_accepted(old_venue_order_id);
+        order_contexts.mark_accepted(old_venue_order_id);
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -3288,7 +3291,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -3349,14 +3352,14 @@ mod tests {
         );
         let client_order_id = ClientOrderId::from("O-PENDING-MODIFY");
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
-        register_identity(
-            &order_identities,
+        let order_contexts = OrderContextRegistry::default();
+        register_context(
+            &order_contexts,
             old_venue_order_id,
             instrument.id(),
             client_order_id.as_str(),
         );
-        order_identities.mark_accepted(old_venue_order_id);
+        order_contexts.mark_accepted(old_venue_order_id);
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -3364,7 +3367,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -3382,6 +3385,8 @@ mod tests {
             Price::from("0.5"),
         ));
 
+        let original_context = order_contexts.get(&old_venue_order_id).unwrap();
+
         dispatch_user_message(&UserWsMessage::Order(replacement), &ctx, &mut state);
 
         match receiver.try_recv().expect("expected replacement update") {
@@ -3395,8 +3400,20 @@ mod tests {
         }
 
         assert_eq!(
-            order_identities.venue_order_id(&client_order_id),
+            order_contexts.venue_order_id(&client_order_id),
             Some(replacement_venue_order_id)
+        );
+        assert_eq!(
+            order_contexts.get(&old_venue_order_id),
+            Some(original_context)
+        );
+        assert_eq!(
+            order_contexts.get(&replacement_venue_order_id),
+            Some(OrderContext {
+                quantity: Quantity::from("120"),
+                price: Some(Price::from("0.5")),
+                ..original_context
+            })
         );
         assert!(receiver.try_recv().is_err());
     }
@@ -3426,14 +3443,14 @@ mod tests {
         );
         let client_order_id = ClientOrderId::from("O-REJECTED-MODIFY");
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
-        register_identity(
-            &order_identities,
+        let order_contexts = OrderContextRegistry::default();
+        register_context(
+            &order_contexts,
             old_venue_order_id,
             instrument.id(),
             client_order_id.as_str(),
         );
-        order_identities.mark_accepted(old_venue_order_id);
+        order_contexts.mark_accepted(old_venue_order_id);
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -3441,7 +3458,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -3508,14 +3525,14 @@ mod tests {
         );
         let client_order_id = ClientOrderId::from("O-PENDING-MODIFY-FILL");
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
-        register_identity(
-            &order_identities,
+        let order_contexts = OrderContextRegistry::default();
+        register_context(
+            &order_contexts,
             old_venue_order_id,
             instrument.id(),
             client_order_id.as_str(),
         );
-        order_identities.mark_accepted(old_venue_order_id);
+        order_contexts.mark_accepted(old_venue_order_id);
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -3523,7 +3540,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -3918,9 +3935,9 @@ mod tests {
             OrderSide::Buy,
         );
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
-        register_identity(
-            &order_identities,
+        let order_contexts = OrderContextRegistry::default();
+        register_context(
+            &order_contexts,
             venue_order_id,
             instrument.id(),
             "O-RECONCILED-FILL",
@@ -3932,7 +3949,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -3975,14 +3992,14 @@ mod tests {
         );
 
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
-        register_identity(
-            &order_identities,
+        let order_contexts = OrderContextRegistry::default();
+        register_context(
+            &order_contexts,
             venue_order_id,
             instrument.id(),
             "O-CANCEL-FULL",
         );
-        order_identities.mark_accepted(venue_order_id);
+        order_contexts.mark_accepted(venue_order_id);
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -3991,7 +4008,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -4028,14 +4045,14 @@ mod tests {
         let venue_order_id = VenueOrderId::from(cancel_order.id.as_str());
 
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
+        let order_contexts = OrderContextRegistry::default();
         let emitter = test_emitter();
 
         let ctx = WsDispatchContext {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -4097,9 +4114,9 @@ mod tests {
 
         let pending_submits = PendingSubmitTracker::default();
         pending_submits.insert(venue_order_id, client_order_id);
-        let order_identities = OrderIdentityRegistry::default();
-        register_identity(
-            &order_identities,
+        let order_contexts = OrderContextRegistry::default();
+        register_context(
+            &order_contexts,
             venue_order_id,
             instrument.id(),
             client_order_id.as_str(),
@@ -4112,7 +4129,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -4234,9 +4251,9 @@ mod tests {
         );
 
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
-        register_identity(&order_identities, venue_order_id, instrument.id(), "O-3797");
-        order_identities.mark_accepted(venue_order_id);
+        let order_contexts = OrderContextRegistry::default();
+        register_context(&order_contexts, venue_order_id, instrument.id(), "O-3797");
+        order_contexts.mark_accepted(venue_order_id);
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -4245,7 +4262,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -4422,14 +4439,14 @@ mod tests {
         );
 
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
-        register_identity(
-            &order_identities,
+        let order_contexts = OrderContextRegistry::default();
+        register_context(
+            &order_contexts,
             venue_order_id,
             instrument.id(),
             "O-OVERFILL",
         );
-        order_identities.mark_accepted(venue_order_id);
+        order_contexts.mark_accepted(venue_order_id);
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -4438,7 +4455,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -4582,19 +4599,28 @@ mod tests {
         );
 
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
-        order_identities.register_order_identity(
+        let order_contexts = OrderContextRegistry::default();
+        order_contexts.register_context(
             venue_order_id,
-            OrderIdentity {
-                client_order_id: ClientOrderId::from("O-ONE-SHOT"),
-                strategy_id: StrategyId::from("S-001"),
-                instrument_id: instrument.id(),
-                order_side,
-                order_type,
+            OrderContext {
+                identity: OrderIdentity {
+                    client_order_id: ClientOrderId::from("O-ONE-SHOT"),
+                    strategy_id: StrategyId::from("S-001"),
+                    instrument_id: instrument.id(),
+                    order_side,
+                    order_type,
+                },
+                quantity: submitted,
+                price: Some(Price::from("0.50")),
+                trigger_price: None,
+                trigger_type: None,
                 time_in_force,
+                is_post_only: false,
+                is_reduce_only: false,
+                is_quote_quantity: false,
             },
         );
-        order_identities.mark_accepted(venue_order_id);
+        order_contexts.mark_accepted(venue_order_id);
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -4603,7 +4629,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -4732,14 +4758,14 @@ mod tests {
         );
 
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
-        register_identity(
-            &order_identities,
+        let order_contexts = OrderContextRegistry::default();
+        register_context(
+            &order_contexts,
             venue_order_id,
             instrument.id(),
             "O-GROSS-OVERFILL",
         );
-        order_identities.mark_accepted(venue_order_id);
+        order_contexts.mark_accepted(venue_order_id);
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -4748,7 +4774,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -4845,14 +4871,14 @@ mod tests {
         );
 
         let pending_submits = PendingSubmitTracker::default();
-        let order_identities = OrderIdentityRegistry::default();
-        register_identity(
-            &order_identities,
+        let order_contexts = OrderContextRegistry::default();
+        register_context(
+            &order_contexts,
             venue_order_id,
             instrument.id(),
             "O-TERMINAL",
         );
-        order_identities.mark_accepted(venue_order_id);
+        order_contexts.mark_accepted(venue_order_id);
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -4861,7 +4887,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            order_identities: &order_identities,
+            order_contexts: &order_contexts,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),

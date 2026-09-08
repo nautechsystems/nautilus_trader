@@ -137,7 +137,7 @@ impl PolymarketExecutionClient {
             let client_order_id = cmd.client_order_id;
             let emitter = self.emitter.clone();
             let order = order_ref.clone();
-            let order_identities = self.order_identities.clone();
+            let order_contexts = self.order_contexts.clone();
             let pending_cancels = self.pending_cancels.clone();
             let submitter = self.submitter.clone();
             let ws_dispatch_state = self.ws_dispatch_state.clone();
@@ -157,7 +157,7 @@ impl PolymarketExecutionClient {
                         let venue_order_id = if is_modifying {
                             None
                         } else {
-                            order_identities.venue_order_id(&client_order_id)
+                            order_contexts.venue_order_id(&client_order_id)
                         };
                         (is_modifying, venue_order_id)
                     };
@@ -508,7 +508,7 @@ impl PolymarketExecutionClient {
     }
 
     fn cancel_venue_order_id(&self, order: &OrderAny) -> Option<VenueOrderId> {
-        self.order_identities
+        self.order_contexts
             .venue_order_id(&order.client_order_id())
             .or_else(|| order.venue_order_id())
             .or_else(|| {

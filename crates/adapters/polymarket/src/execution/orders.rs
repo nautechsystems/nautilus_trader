@@ -18,7 +18,7 @@ use std::time::Duration;
 use anyhow::Context;
 use nautilus_common::messages::execution::{ModifyOrder, SubmitOrder, SubmitOrderList};
 use nautilus_core::{string::secret::SecretString, time::AtomicTime};
-use nautilus_live::execution::failure::CommandFailure;
+use nautilus_live::execution::{context::OrderContext, failure::CommandFailure};
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType},
     events::OrderDeniedReason,
@@ -118,7 +118,7 @@ impl PolymarketExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let fill_tracker = self.fill_tracker.clone();
-        let order_identities = self.order_identities.clone();
+        let order_contexts = self.order_contexts.clone();
         let ws_dispatch_state = self.ws_dispatch_state.clone();
         let pending_submits = self.pending_submits.clone();
         let pending_cancels = self.pending_cancels.clone();
@@ -165,7 +165,7 @@ impl PolymarketExecutionClient {
                         &emitter,
                         clock,
                         &fill_tracker,
-                        &order_identities,
+                        &order_contexts,
                         &pending_cancels,
                         account_id,
                         size_precision,
@@ -189,7 +189,7 @@ impl PolymarketExecutionClient {
                             &order_id,
                             &order,
                             &fill_tracker,
-                            &order_identities,
+                            &order_contexts,
                             &ws_dispatch_state,
                             &emitter,
                             account_id,
@@ -210,7 +210,7 @@ impl PolymarketExecutionClient {
                             &emitter,
                             clock,
                             &fill_tracker,
-                            &order_identities,
+                            &order_contexts,
                             &pending_submits,
                             &pending_cancels,
                             account_id,
@@ -282,7 +282,7 @@ impl PolymarketExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let fill_tracker = self.fill_tracker.clone();
-        let order_identities = self.order_identities.clone();
+        let order_contexts = self.order_contexts.clone();
         let ws_dispatch_state = self.ws_dispatch_state.clone();
         let pending_submits = self.pending_submits.clone();
         let pending_cancels = self.pending_cancels.clone();
@@ -364,7 +364,7 @@ impl PolymarketExecutionClient {
                         &emitter,
                         clock,
                         &fill_tracker,
-                        &order_identities,
+                        &order_contexts,
                         &pending_cancels,
                         account_id,
                         size_precision,
@@ -388,7 +388,7 @@ impl PolymarketExecutionClient {
                             &order_id,
                             &order,
                             &fill_tracker,
-                            &order_identities,
+                            &order_contexts,
                             &ws_dispatch_state,
                             &emitter,
                             account_id,
@@ -430,7 +430,7 @@ impl PolymarketExecutionClient {
                             &emitter,
                             clock,
                             &fill_tracker,
-                            &order_identities,
+                            &order_contexts,
                             &pending_submits,
                             &pending_cancels,
                             account_id,
@@ -634,7 +634,7 @@ impl PolymarketExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let fill_tracker = self.fill_tracker.clone();
-        let order_identities = self.order_identities.clone();
+        let order_contexts = self.order_contexts.clone();
         let ws_dispatch_state = self.ws_dispatch_state.clone();
         let pending_submits = self.pending_submits.clone();
         let pending_cancels = self.pending_cancels.clone();
@@ -718,7 +718,7 @@ impl PolymarketExecutionClient {
                         &emitter,
                         clock,
                         &fill_tracker,
-                        &order_identities,
+                        &order_contexts,
                         &ws_dispatch_state,
                         &pending_submits,
                         &pending_cancels,
@@ -744,7 +744,7 @@ impl PolymarketExecutionClient {
                                 &emitter,
                                 clock,
                                 &fill_tracker,
-                                &order_identities,
+                                &order_contexts,
                                 &ws_dispatch_state,
                                 &pending_submits,
                                 &pending_cancels,
@@ -766,7 +766,7 @@ impl PolymarketExecutionClient {
                                             &emitter,
                                             clock,
                                             &fill_tracker,
-                                            &order_identities,
+                                            &order_contexts,
                                             &pending_submits,
                                             &pending_cancels,
                                             account_id,
@@ -824,7 +824,7 @@ impl PolymarketExecutionClient {
         };
 
         let venue_order_id = self
-            .order_identities
+            .order_contexts
             .venue_order_id(&cmd.client_order_id)
             .or_else(|| order.venue_order_id())
             .or_else(|| {
@@ -947,11 +947,9 @@ impl PolymarketExecutionClient {
             }
         }
 
-        if self.order_identities.get(&venue_order_id).is_none() {
-            self.order_identities.register_order_identity(
-                venue_order_id,
-                super::identity::OrderIdentity::from_order(&order),
-            );
+        if self.order_contexts.get(&venue_order_id).is_none() {
+            self.order_contexts
+                .register_context(venue_order_id, OrderContext::from(&order));
         }
 
         if !self.fill_tracker.contains(&venue_order_id) {
@@ -973,7 +971,7 @@ impl PolymarketExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let fill_tracker = self.fill_tracker.clone();
-        let order_identities = self.order_identities.clone();
+        let order_contexts = self.order_contexts.clone();
         let ws_dispatch_state = self.ws_dispatch_state.clone();
         let token_instruments = self.shared_token_instruments.clone();
         let pending_cancels = self.pending_cancels.clone();
@@ -1403,7 +1401,7 @@ impl PolymarketExecutionClient {
                             &emitter,
                             clock,
                             &fill_tracker,
-                            &order_identities,
+                            &order_contexts,
                             &ws_dispatch_state,
                         );
                     } else if response.success {

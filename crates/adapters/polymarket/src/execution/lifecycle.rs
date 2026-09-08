@@ -29,7 +29,7 @@ use nautilus_common::{
     msgbus::{self, TypedHandler},
 };
 use nautilus_core::{collections::AtomicMap, string::secret::SecretString, time::AtomicTime};
-use nautilus_live::task::TaskGroupGuard;
+use nautilus_live::{execution::context::OrderContext, task::TaskGroupGuard};
 use nautilus_model::{
     events::{OrderEventAny, OrderFilled, PositionEvent},
     identifiers::InstrumentId,
@@ -42,8 +42,7 @@ use ustr::Ustr;
 use super::PolymarketExecutionClient;
 use crate::{
     execution::{
-        identity::OrderIdentity, reconciliation::venue_leg_filled_before_and_quantity,
-        reports::fetch_and_emit_account_state,
+        reconciliation::venue_leg_filled_before_and_quantity, reports::fetch_and_emit_account_state,
     },
     http::{clob::HeartbeatResponse, error::Error as HttpError},
     websocket::{
@@ -312,7 +311,7 @@ impl PolymarketExecutionClient {
 
         let fill_tracker = self.fill_tracker.clone();
         let pending_submits = self.pending_submits.clone();
-        let order_identities = self.order_identities.clone();
+        let order_contexts = self.order_contexts.clone();
         let ws_dispatch_state = self.ws_dispatch_state.clone();
         let session_spawner = self
             .session_tasks
@@ -324,7 +323,7 @@ impl PolymarketExecutionClient {
                 token_instruments: &token_instruments,
                 fill_tracker: &fill_tracker,
                 pending_submits: &pending_submits,
-                order_identities: &order_identities,
+                order_contexts: &order_contexts,
                 emitter: &emitter,
                 account_id,
                 clock,
@@ -512,9 +511,9 @@ impl PolymarketExecutionClient {
                     "Skipping stale cache restore for replaced Polymarket venue order ID {venue_order_id}"
                 );
             } else {
-                self.order_identities
-                    .register_order_identity(venue_order_id, OrderIdentity::from_order(order));
-                self.order_identities.mark_accepted(venue_order_id);
+                self.order_contexts
+                    .register_context(venue_order_id, OrderContext::from(order));
+                self.order_contexts.mark_accepted(venue_order_id);
                 let (prior_filled, current_leg_quantity) =
                     match venue_leg_filled_before_and_quantity(
                         order,
@@ -1335,14 +1334,14 @@ mod tests {
         client.load_orders_from_cache();
 
         let key = "trade-restart-V-001";
-        let identity = client
-            .order_identities
+        let context = client
+            .order_contexts
             .get(&venue_order_id)
-            .expect("order identity restored");
+            .expect("order context restored");
         let state = client.ws_dispatch_state.lock();
 
-        assert_eq!(identity.client_order_id, order.client_order_id());
-        assert!(!client.order_identities.mark_accepted(venue_order_id));
+        assert_eq!(context, OrderContext::from(&order));
+        assert!(!client.order_contexts.mark_accepted(venue_order_id));
         assert_eq!(
             client.fill_tracker.get_cumulative_filled(&venue_order_id),
             Some(order.filled_qty())
@@ -1368,10 +1367,10 @@ mod tests {
 
         client.load_orders_from_cache();
 
-        let identity = client
-            .order_identities
+        let context = client
+            .order_contexts
             .get(&old_venue_order_id)
-            .expect("old venue identity loaded");
+            .expect("old venue context loaded");
         {
             let mut state = client.ws_dispatch_state.lock();
             assert!(state.begin_modify(
@@ -1389,9 +1388,14 @@ mod tests {
             assert!(state.claim_modify_replacement(new_venue_order_id).is_some());
         }
 
+        let replacement_context = OrderContext {
+            quantity: ModelQuantity::from("12"),
+            price: Some(ModelPrice::from("0.6000")),
+            ..context
+        };
         client
-            .order_identities
-            .register_order_identity(new_venue_order_id, identity);
+            .order_contexts
+            .register_context(new_venue_order_id, replacement_context);
         client.fill_tracker.restore_order(
             new_venue_order_id,
             ModelQuantity::new(12.0, 0),
@@ -1403,8 +1407,16 @@ mod tests {
         client.load_orders_from_cache();
 
         assert_eq!(
+            client.order_contexts.get(&new_venue_order_id),
+            Some(replacement_context)
+        );
+        assert_eq!(
+            client.order_contexts.get(&old_venue_order_id),
+            Some(context)
+        );
+        assert_eq!(
             client
-                .order_identities
+                .order_contexts
                 .venue_order_id(&order.client_order_id()),
             Some(new_venue_order_id)
         );
