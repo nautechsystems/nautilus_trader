@@ -721,8 +721,23 @@ connection failure, clean up resources already started and leave state consisten
 disposal.
 
 When an execution client uses
-[`ExecutionEventEmitter`](../../crates/live/src/execution/emitter.rs), install its sender during
-`start` before any task can emit.
+[`ExecutionEventEmitter`](../../crates/live/src/execution/emitter.rs), resolve the execution event
+sender with `try_get_exec_event_sender` and install it in the factory's `create`, before the client
+is returned. `LiveNodeBuilder` binds the runner's senders to thread-local storage before it calls
+any registered factory, so `create` runs with the sender available. `None` from
+`try_get_exec_event_sender` means the calling thread has no bound senders, which is expected in a
+factory unit test or in a host that binds later; it is not a construction failure. Install the
+sender in `start` as well, from `get_exec_event_sender`, and do so unconditionally: `LiveNode`
+rebinds the runner's senders on the calling thread before it starts clients, so the `start` install
+is the authoritative one, and the emitter shares one sender slot across its clones, so it reaches
+every clone taken during construction, including those handed to client-owned tasks. A host that
+calls a factory outside `LiveNodeBuilder` binds the runner's senders on the client's thread before
+`start`: the `start` install resolves through `get_exec_event_sender`, which reads only the
+thread-local slot and panics when nothing has bound it, so a sender passed through the host's own
+factory or client constructor - which reaches the emitter's shared slot via `set_sender` but not
+the thread-local slot - does not satisfy that lookup on its own. Constructor injection stands
+alone only for a client whose `start` accepts an already-installed sender instead of performing
+the unconditional lookup; the emitter-backed execution clients in this repository all perform it.
 
 #### Bootstrap ordering
 

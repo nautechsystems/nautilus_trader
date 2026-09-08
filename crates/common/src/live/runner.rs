@@ -21,7 +21,7 @@ use std::cell::RefCell;
 
 use crate::messages::{DataEvent, ExecutionEvent, SystemCommand, SystemEvent};
 
-/// Gets the global data event sender.
+/// Gets the thread-local data event sender.
 ///
 /// # Panics
 ///
@@ -37,7 +37,7 @@ pub fn get_data_event_sender() -> tokio::sync::mpsc::UnboundedSender<DataEvent> 
     })
 }
 
-/// Attempts to get the global data event sender without panicking.
+/// Attempts to get the thread-local data event sender without panicking.
 ///
 /// Returns `None` if the sender is not initialized (e.g., in Python/v1 bridge environments
 /// before a runner or adapter bridge has registered a sender).
@@ -46,7 +46,7 @@ pub fn try_get_data_event_sender() -> Option<tokio::sync::mpsc::UnboundedSender<
     DATA_EVENT_SENDER.with(|sender| sender.borrow().as_ref().cloned())
 }
 
-/// Sets the global data event sender.
+/// Sets the thread-local data event sender.
 ///
 /// Can only be called once per thread.
 ///
@@ -61,14 +61,14 @@ pub fn set_data_event_sender(sender: tokio::sync::mpsc::UnboundedSender<DataEven
     });
 }
 
-/// Replaces the global data event sender for the current thread.
+/// Replaces the data event sender for the current thread.
 pub fn replace_data_event_sender(sender: tokio::sync::mpsc::UnboundedSender<DataEvent>) {
     DATA_EVENT_SENDER.with(|s| {
         *s.borrow_mut() = Some(sender);
     });
 }
 
-/// Gets the global system event sender.
+/// Gets the thread-local system event sender.
 ///
 /// # Panics
 ///
@@ -84,7 +84,7 @@ pub fn get_system_event_sender() -> tokio::sync::mpsc::UnboundedSender<SystemEve
     })
 }
 
-/// Attempts to get the global system event sender without panicking.
+/// Attempts to get the thread-local system event sender without panicking.
 ///
 /// Returns `None` if the sender is not initialized (e.g., in test environments).
 #[must_use]
@@ -92,7 +92,7 @@ pub fn try_get_system_event_sender() -> Option<tokio::sync::mpsc::UnboundedSende
     SYSTEM_EVENT_SENDER.with(|sender| sender.borrow().as_ref().cloned())
 }
 
-/// Sets the global system event sender.
+/// Sets the thread-local system event sender.
 ///
 /// Can only be called once per thread.
 ///
@@ -107,14 +107,14 @@ pub fn set_system_event_sender(sender: tokio::sync::mpsc::UnboundedSender<System
     });
 }
 
-/// Replaces the global system event sender for the current thread.
+/// Replaces the system event sender for the current thread.
 pub fn replace_system_event_sender(sender: tokio::sync::mpsc::UnboundedSender<SystemEvent>) {
     SYSTEM_EVENT_SENDER.with(|s| {
         *s.borrow_mut() = Some(sender);
     });
 }
 
-/// Gets the global system command sender.
+/// Gets the thread-local system command sender.
 ///
 /// # Panics
 ///
@@ -130,7 +130,7 @@ pub fn get_system_command_sender() -> tokio::sync::mpsc::UnboundedSender<SystemC
     })
 }
 
-/// Attempts to get the global system command sender without panicking.
+/// Attempts to get the thread-local system command sender without panicking.
 ///
 /// Returns `None` if the sender is not initialized.
 #[must_use]
@@ -139,7 +139,7 @@ pub fn try_get_system_command_sender() -> Option<tokio::sync::mpsc::UnboundedSen
     SYSTEM_COMMAND_SENDER.with(|sender| sender.borrow().as_ref().cloned())
 }
 
-/// Sets the global system command sender.
+/// Sets the thread-local system command sender.
 ///
 /// Can only be called once per thread.
 ///
@@ -154,14 +154,14 @@ pub fn set_system_command_sender(sender: tokio::sync::mpsc::UnboundedSender<Syst
     });
 }
 
-/// Replaces the global system command sender for the current thread.
+/// Replaces the system command sender for the current thread.
 pub fn replace_system_command_sender(sender: tokio::sync::mpsc::UnboundedSender<SystemCommand>) {
     SYSTEM_COMMAND_SENDER.with(|s| {
         *s.borrow_mut() = Some(sender);
     });
 }
 
-/// Gets the global execution event sender.
+/// Gets the thread-local execution event sender.
 ///
 /// # Panics
 ///
@@ -177,7 +177,7 @@ pub fn get_exec_event_sender() -> tokio::sync::mpsc::UnboundedSender<ExecutionEv
     })
 }
 
-/// Attempts to get the global execution event sender without panicking.
+/// Attempts to get the thread-local execution event sender without panicking.
 ///
 /// Returns `None` if the sender is not initialized (e.g., in test environments).
 #[must_use]
@@ -185,7 +185,7 @@ pub fn try_get_exec_event_sender() -> Option<tokio::sync::mpsc::UnboundedSender<
     EXEC_EVENT_SENDER.with(|sender| sender.borrow().as_ref().cloned())
 }
 
-/// Sets the global execution event sender.
+/// Sets the thread-local execution event sender.
 ///
 /// Can only be called once per thread.
 ///
@@ -203,7 +203,7 @@ pub fn set_exec_event_sender(sender: tokio::sync::mpsc::UnboundedSender<Executio
     });
 }
 
-/// Replaces the global execution event sender for the current thread.
+/// Replaces the execution event sender for the current thread.
 pub fn replace_exec_event_sender(sender: tokio::sync::mpsc::UnboundedSender<ExecutionEvent>) {
     EXEC_EVENT_SENDER.with(|s| {
         *s.borrow_mut() = Some(sender);
