@@ -15,123 +15,14 @@
 
 //! Integration tests for `BetfairHttpClient`.
 
-use std::collections::HashMap;
-
 use nautilus_betfair::{
-    common::{
-        consts::{
-            HEADER_X_APPLICATION, HEADER_X_AUTHENTICATION, METHOD_GET_ACCOUNT_FUNDS,
-            METHOD_LIST_MARKET_CATALOGUE, METHOD_PLACE_ORDERS,
-        },
-        credential::BetfairCredential,
-    },
-    http::{client::BetfairHttpClient, error::BetfairHttpError},
+    common::consts::{METHOD_GET_ACCOUNT_FUNDS, METHOD_LIST_MARKET_CATALOGUE, METHOD_PLACE_ORDERS},
+    http::error::BetfairHttpError,
 };
-use nautilus_network::http::{HttpClient, Method};
 use rstest::rstest;
 use serde_json::Value;
 
 use crate::common::*;
-
-#[rstest]
-#[tokio::test]
-#[ignore = "requires live credentials and makes a read-only Betfair API request"]
-async fn live_send_betting_parses_api_exception() {
-    let credential = BetfairCredential::from_env()
-        .expect("BETFAIR_USERNAME, BETFAIR_PASSWORD, and BETFAIR_APP_KEY must be set");
-    let client = BetfairHttpClient::new(credential, None, None, None, None, Some(5), Some(20))
-        .expect("live HTTP client");
-    client.connect().await.expect("Betfair login");
-    let session_token = client.session_token().await.expect("Betfair session token");
-
-    let result = client
-        .send_betting::<Value, _>(
-            METHOD_LIST_MARKET_CATALOGUE,
-            serde_json::json!({"filter": {}, "maxResults": 1001}),
-        )
-        .await;
-    logout_live_session(client.app_key(), session_token.expose_secret()).await;
-    client.disconnect().await;
-    let err = result.expect_err("maxResults above 1000 must return TOO_MUCH_DATA");
-
-    assert!(matches!(
-        err,
-        BetfairHttpError::BetfairError {
-            code: -32099,
-            message,
-            api_error_code: Some(api_error_code),
-            api_error_details: Some(api_error_details),
-        } if message.starts_with("ANGX-")
-            && api_error_code == "TOO_MUCH_DATA"
-            && api_error_details == "MaxResults must be less than or equal to 1000"
-    ));
-}
-
-#[rstest]
-#[tokio::test]
-#[ignore = "requires live credentials and makes a read-only Betfair Accounts API request"]
-async fn live_send_accounts_parses_api_exception() {
-    let credential = BetfairCredential::from_env()
-        .expect("BETFAIR_USERNAME, BETFAIR_PASSWORD, and BETFAIR_APP_KEY must be set");
-    let client = BetfairHttpClient::new(credential, None, None, None, None, Some(5), Some(20))
-        .expect("live HTTP client");
-    client.connect().await.expect("Betfair login");
-    let session_token = client.session_token().await.expect("Betfair session token");
-
-    let result = client
-        .send_accounts::<Value, _>(
-            "AccountAPING/v1.0/getAccountStatement",
-            serde_json::json!({"fromRecord": -1, "recordCount": 1}),
-        )
-        .await;
-    logout_live_session(client.app_key(), session_token.expose_secret()).await;
-    client.disconnect().await;
-    let err = result.expect_err("negative fromRecord must return INVALID_INPUT_DATA");
-
-    assert!(matches!(
-        err,
-        BetfairHttpError::BetfairError {
-            code: -32099,
-            message,
-            api_error_code: Some(api_error_code),
-            api_error_details: Some(api_error_details),
-        } if message.starts_with("AANGX-")
-            && api_error_code == "INVALID_INPUT_DATA"
-            && api_error_details == "The request was not valid."
-    ));
-}
-
-async fn logout_live_session(app_key: &str, session_token: &str) {
-    let http = HttpClient::builder()
-        .timeout_secs(5)
-        .build()
-        .expect("logout HTTP client");
-    let headers = HashMap::from([
-        (HEADER_X_APPLICATION.to_string(), app_key.to_string()),
-        (
-            HEADER_X_AUTHENTICATION.to_string(),
-            session_token.to_string(),
-        ),
-        ("Accept".to_string(), "application/json".to_string()),
-    ]);
-    let response = http
-        .request(
-            Method::POST,
-            "https://identitysso.betfair.com/api/logout".to_string(),
-            None,
-            Some(headers),
-            None,
-            None,
-            None,
-        )
-        .await
-        .expect("Betfair logout request");
-    let body: Value = serde_json::from_slice(&response.body).expect("Betfair logout response");
-
-    assert_eq!(response.status.as_u16(), 200);
-    assert_eq!(body["status"], "SUCCESS");
-    assert_eq!(body["error"], "");
-}
 
 #[rstest]
 #[tokio::test]

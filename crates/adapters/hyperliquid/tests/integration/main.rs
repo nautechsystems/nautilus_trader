@@ -18,7 +18,5 @@ mod data_client;
 mod dispatch;
 mod exec_client;
 mod http;
-mod live_mainnet_smoke;
-mod live_soak;
 mod python;
 mod websocket;

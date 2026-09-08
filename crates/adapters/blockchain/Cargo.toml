@@ -89,7 +89,6 @@ turmoil = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-model = { workspace = true, features = ["test-support"] }
-nautilus-trading = { workspace = true }
 
 axum = { workspace = true }
 rstest = { workspace = true }

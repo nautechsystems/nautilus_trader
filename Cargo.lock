@@ -5613,7 +5613,6 @@ dependencies = [
  "nautilus-model",
  "nautilus-network",
  "nautilus-system",
- "nautilus-trading",
  "parking_lot",
  "pyo3",
  "pyo3-stub-gen",

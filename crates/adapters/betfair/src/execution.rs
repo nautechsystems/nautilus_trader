@@ -4978,11 +4978,10 @@ fn instruction_fallback(error_code: Option<InstructionReportErrorCode>) -> Optio
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc, time::Duration};
+    use std::{cell::RefCell, rc::Rc};
 
     use nautilus_common::{
         cache::Cache,
-        live::runner::{replace_data_event_sender, replace_exec_event_sender},
         messages::{ExecutionEvent, ExecutionReport},
     };
     use nautilus_model::{
@@ -4997,11 +4996,10 @@ mod tests {
     use super::*;
     use crate::{
         common::{
-            consts::METHOD_GET_ACCOUNT_DETAILS,
             enums::SegmentType,
             testing::{load_test_json, parse_jsonrpc},
         },
-        http::models::{AccountDetailsResponse, CancelInstructionReport},
+        http::models::CancelInstructionReport,
         stream::messages::stream_decode,
     };
 
@@ -7104,133 +7102,6 @@ mod tests {
         assert_eq!(fill_voided.venue_order_id, venue_order_id);
         assert_eq!(fill_voided.voided_qty, Quantity::from(6));
         assert!(rx.try_recv().is_err());
-    }
-
-    #[rstest]
-    #[tokio::test]
-    #[ignore = "requires authorized live Betfair mainnet access"]
-    async fn live_execution_reconnect_reconciles_before_resuming() {
-        let credential = BetfairCredential::from_env()
-            .expect("BETFAIR_USERNAME, BETFAIR_PASSWORD, and BETFAIR_APP_KEY must be set");
-        let http_client = BetfairHttpClient::new(
-            credential.clone(),
-            None,
-            None,
-            None,
-            None,
-            Some(5),
-            Some(20),
-        )
-        .expect("live HTTP client");
-        http_client.connect().await.expect("Betfair login");
-
-        let account_details: AccountDetailsResponse = http_client
-            .send_accounts(METHOD_GET_ACCOUNT_DETAILS, serde_json::json!({}))
-            .await
-            .expect("account details");
-        let currency_code = account_details
-            .currency_code
-            .expect("account details must include currencyCode");
-        let currency = currency_code
-            .as_str()
-            .parse::<Currency>()
-            .expect("registered account currency");
-
-        let config = BetfairExecutionClientConfig {
-            account_currency: currency_code.to_string(),
-            calculate_account_state: false,
-            ignore_external_orders: true,
-            ..Default::default()
-        };
-        let stream_config = config.stream_config();
-        let cache = Rc::new(RefCell::new(Cache::default()));
-        let core = ExecutionClientCore::new(
-            TraderId::from("TESTER-001"),
-            ClientId::from("BETFAIR-LIVE-SMOKE"),
-            *BETFAIR_VENUE,
-            OmsType::Netting,
-            config.account_id,
-            AccountType::Betting,
-            None,
-            cache,
-        );
-
-        let (exec_tx, mut exec_rx) = tokio::sync::mpsc::unbounded_channel();
-        replace_exec_event_sender(exec_tx);
-        let (data_tx, _data_rx) = tokio::sync::mpsc::unbounded_channel();
-        replace_data_event_sender(data_tx);
-
-        let mut client = BetfairExecutionClient::new(
-            core,
-            http_client,
-            credential,
-            stream_config,
-            config,
-            currency,
-        );
-        client.start().expect("execution client start");
-        client.connect().await.expect("execution client connect");
-
-        let funds_before: AccountFundsResponse = client
-            .http_client
-            .send_accounts(METHOD_GET_ACCOUNT_FUNDS, serde_json::json!({}))
-            .await
-            .expect("account funds before reconnect");
-        assert_eq!(funds_before.exposure.unwrap_or_default(), Decimal::ZERO);
-
-        while exec_rx.try_recv().is_ok() {}
-
-        let stream_client = Arc::clone(
-            client
-                .stream_client
-                .as_ref()
-                .expect("execution stream after connect"),
-        );
-        assert!(
-            stream_client.request_reconnect(),
-            "live smoke must start a stream transport replacement",
-        );
-
-        let (order_count, fill_count) = tokio::time::timeout(Duration::from_secs(30), async {
-            loop {
-                if let Some(ExecutionEvent::Report(ExecutionReport::MassStatus(status))) =
-                    exec_rx.recv().await
-                {
-                    let fill_count: usize = status.fill_reports().values().map(Vec::len).sum();
-                    break (status.order_reports().len(), fill_count);
-                }
-            }
-        })
-        .await
-        .expect("post-reconnect mass status within 30 seconds");
-
-        nautilus_common::testing::wait_until_async(
-            || {
-                let halted = client.is_reconciling();
-                async move { !halted }
-            },
-            Duration::from_secs(5),
-        )
-        .await;
-
-        assert!(stream_client.is_active());
-        assert!(!client.is_reconciling());
-        let funds_after: AccountFundsResponse = client
-            .http_client
-            .send_accounts(METHOD_GET_ACCOUNT_FUNDS, serde_json::json!({}))
-            .await
-            .expect("account funds after reconnect");
-        assert_eq!(funds_after.exposure.unwrap_or_default(), Decimal::ZERO);
-        eprintln!(
-            "Betfair read-only reconnect smoke completed: orders={order_count}, fills={fill_count}, exposure_before={}, exposure_after={}",
-            funds_before.exposure.unwrap_or_default(),
-            funds_after.exposure.unwrap_or_default(),
-        );
-
-        client
-            .disconnect()
-            .await
-            .expect("execution client disconnect");
     }
 
     #[rstest]

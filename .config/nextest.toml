@@ -15,9 +15,7 @@ slow-timeout = { period = "120s", terminate-after = 5 }
 
 [[profile.default.overrides]]
 # Blockchain execution client tests use per-test PostgreSQL pools that can exhaust connections.
-# The two gated Anvil fork suites also share the PostgreSQL schema-creation path and the fork
-# evidence directory, so they serialize with each other and with the client tests.
-filter = 'test(serial_tests) | (package(nautilus-blockchain) & (test(execution::client::tests) | (binary(integration) & (test(/^execution_fork::/) | test(/^execution_livenode_fork::/)))))'
+filter = 'test(serial_tests) | (package(nautilus-blockchain) & test(execution::client::tests))'
 test-group = 'serial-tests'
 
 [[profile.default.overrides]]

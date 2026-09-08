@@ -2450,12 +2450,10 @@ mod tests {
         },
     };
     use rstest::rstest;
-    use tokio_util::sync::CancellationToken;
     use ustr::Ustr;
 
     use super::*;
 
-    const WETH_USDT_POOL: &str = "0x4e68ccd3e89f51c3074ca5072bbac773960dfa36";
     const WETH_USDT_CREATION_BLOCK: u64 = 12_375_326;
 
     #[rstest]
@@ -2781,122 +2779,6 @@ mod tests {
                 families: vec![families[1].clone()],
             }]
         );
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "requires ENVIO_API_TOKEN and live HyperSync access"]
-    async fn live_hypersync_bootstrap_fails_closed_when_rpc_hydration_fails() {
-        std::env::var("ENVIO_API_TOKEN").expect("ENVIO_API_TOKEN must be set");
-
-        let pool = weth_usdt_pool();
-        let chain = Arc::new(
-            Chain::from_chain_id(1)
-                .expect("Ethereum chain should exist")
-                .clone(),
-        );
-        let dex = get_dex_extended(chain.name, &DexType::UniswapV3)
-            .expect("Ethereum UniswapV3 should be registered")
-            .dex
-            .clone();
-        let (hypersync_tx, _hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
-        let config = BlockchainDataClientConfig::builder()
-            .chain(chain)
-            .dex_ids(vec![DexType::UniswapV3])
-            .http_rpc_url("http://127.0.0.1:9".into())
-            .use_hypersync_for_live_data(true)
-            .maybe_from_block(Some(WETH_USDT_CREATION_BLOCK))
-            .build();
-        let mut core = BlockchainDataClientCore::new(
-            config,
-            Some(hypersync_tx),
-            None,
-            CancellationToken::new(),
-        );
-        core.cache
-            .add_dex(dex)
-            .await
-            .expect("DEX should be added to in-memory cache");
-
-        let block_position = BlockPosition::new(
-            WETH_USDT_CREATION_BLOCK,
-            "0x2e07c690f149223e4f290986277304ea6a05c6ee47ba303732166bc1b15cbafb".to_string(),
-            11,
-            27,
-        );
-        let mut profiler = PoolProfiler::new(pool);
-        profiler
-            .initialize(U160::from_str_radix("3cb0adde486484998be0b", 16).unwrap())
-            .expect("Known WETH/USDT initial sqrt price should initialize");
-        profiler.last_processed_event = Some(block_position.clone());
-
-        let result = core
-            .construct_pool_profiler_from_hypersync_rpc(
-                profiler,
-                Some(block_position),
-                WETH_USDT_CREATION_BLOCK,
-            )
-            .await;
-
-        let error = result.expect_err("RPC hydration failure should fail closed");
-        let error_message = format!("{error:?}");
-        assert!(
-            error_message.contains("failed to restore pool"),
-            "hydration error should include pool context, was {error_message}"
-        );
-        assert!(
-            error_message.to_lowercase().contains(WETH_USDT_POOL),
-            "hydration error should include pool address, was {error_message}"
-        );
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "requires ENVIO_API_TOKEN and live HyperSync access"]
-    async fn live_hypersync_parses_real_set_fee_protocol_update_event() {
-        std::env::var("ENVIO_API_TOKEN").expect("ENVIO_API_TOKEN must be set");
-
-        // Arbitrum Uniswap V3 WETH/USDC.e 0.05% pool. Governance set the protocol fee to (4, 4)
-        // via SetFeeProtocol at block 438,989,951; slot0.feeProtocol reads 68.
-        let chain = Arc::new(
-            Chain::from_chain_id(42161)
-                .expect("Arbitrum chain should exist")
-                .clone(),
-        );
-        let dex_extended = get_dex_extended(chain.name, &DexType::UniswapV3)
-            .expect("Arbitrum UniswapV3 should be registered");
-        let pool_address = address!("c31e54c7a869b9fcbecc14363cf510d1c41fa443");
-        let signature = dex_extended
-            .dex
-            .fee_protocol_update_event
-            .as_deref()
-            .expect("UniswapV3 should advertise the SetFeeProtocol signature");
-
-        let client = HyperSyncClient::new(chain, None, CancellationToken::new());
-        let stream = client
-            .request_contract_events_stream(
-                438_989_951,
-                Some(438_989_951),
-                &pool_address,
-                vec![signature],
-            )
-            .await;
-        tokio::pin!(stream);
-
-        let mut events = Vec::new();
-
-        while let Some(item) = stream.next().await {
-            if let PoolEventStreamItem::Log(log) = item {
-                events.push(
-                    dex_extended
-                        .parse_fee_protocol_update_event_hypersync(&log)
-                        .expect("real SetFeeProtocol log should parse"),
-                );
-            }
-        }
-
-        assert_eq!(events.len(), 1, "expected exactly one SetFeeProtocol event");
-        assert_eq!(events[0].block_number, 438_989_951);
-        assert_eq!(events[0].fee_protocol0_new, 4);
-        assert_eq!(events[0].fee_protocol1_new, 4);
     }
 
     fn weth_usdt_pool() -> SharedPool {

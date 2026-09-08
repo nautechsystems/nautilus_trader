@@ -4,8 +4,7 @@
 
 The blockchain adapter ingests DeFi data from EVM chains and exposes it through the
 NautilusTrader data model. It also includes an execution client for locally signed Uniswap V3
-market swaps. Fork tests exercise the supported path end to end on Arbitrum, but the execution
-client is not production-ready. The adapter uses three backends:
+market swaps. The execution client is not production-ready. The adapter uses three backends:
 
 - HyperSync: high-throughput historical blocks and contract logs. See the
   [Envio HyperSync docs](https://docs.envio.dev/docs/HyperSync/hypersync-usage) for query shape,
@@ -664,8 +663,7 @@ PancakeSwap V3 reuses the Uniswap V3 read contract because `slot0`, `ticks`, `po
 :::warning
 The execution client is not production-ready. `BlockchainExecutionClient` implements preflight,
 explicit WETH wrap and ERC-20 approval, local EIP-1559 signing, durable reconciliation, and one
-Uniswap V3 swap flow. Arbitrum Uniswap V3 is the only chain and DEX combination covered by
-end-to-end fork tests. Other order operations fail closed with no on-chain or durable side effects.
+Uniswap V3 swap flow. Other order operations fail closed with no on-chain or durable side effects.
 :::
 
 Execution uses these terms throughout this section:
@@ -785,8 +783,7 @@ base assets against them. Equal `Token::get_token_priority` values are ambiguous
 order.
 
 Venue routing admits Uniswap V3 on any configured chain whose venue matches. Swap preparation also
-requires a registered Uniswap V3 deployment and factory for that chain. Only Arbitrum Uniswap V3
-has end-to-end adapter coverage, including the fork tests described below.
+requires a registered Uniswap V3 deployment and factory for that chain.
 
 Order lists deny each open order with `OrderDenied`; modify, cancel, and batch-cancel commands
 reject each referenced cached order with `OrderModifyRejected` or `OrderCancelRejected`; cancel-all
@@ -1356,13 +1353,12 @@ quote_spend_limits = [
 
 ### Validation coverage
 
-The execution tests have three layers:
+The execution tests have two layers:
 
 | Layer           | External state                            | Main coverage                                                      |
 | --------------- | ----------------------------------------- | ------------------------------------------------------------------ |
 | Unit/mocked RPC | Scripted three-source JSON-RPC responses. | Typed outcomes, hostile disagreement, signing, and reconciliation. |
 | Postgres        | Temporary schema when Postgres is active. | Evidence ordering, migration, nonce ownership, and crash recovery. |
-| Anvil fork      | Local chain plus read-only archive RPC.   | Three-origin transport, contract calls, swaps, and restart paths.  |
 
 Default tests do not connect to a live chain. They cover:
 
@@ -1386,48 +1382,8 @@ Default tests do not connect to a live chain. They cover:
 JSON-RPC fixtures live under `crates/adapters/blockchain/test_data/execution/`. The shared network
 HTTP unit suite covers redirect rejection.
 
-#### Anvil fork coverage
-
-The opt-in fork suites use a pinned Arbitrum One state and one deterministic Anvil process behind
-three localhost proxy origins. A fresh funded key sends transactions only to the authoritative
-proxy, while both verifier proxies reject `eth_sendRawTransaction`. This topology proves transport
-separation and read-only verifier enforcement; one shared Anvil process does not model operational
-provider independence or Arbitrum ArbOS gas pricing.
-
-Request counters require reads from every proxy, broadcasts only through the authoritative proxy,
-and no broadcast attempt through either verifier. The direct-client suite covers these scenarios:
-
-| Scenario                                             | Expected result                                                        |
-| ---------------------------------------------------- | ---------------------------------------------------------------------- |
-| PancakeSwap V3 market SELL.                          | `OrderDenied`; no nonce use or durable intent.                         |
-| Uniswap V3 limit SELL.                               | `OrderDenied`; no nonce use or durable intent.                         |
-| Uniswap V3 market BUY without the reverse pair.      | `OrderDenied`; no nonce use or durable intent.                         |
-| Uniswap V3 market SELL before approval.              | `OrderDenied`; no nonce use or durable intent.                         |
-| WETH wrap and router approval.                       | Successful receipts, balance delta, allowance, and terminal records.   |
-| WETH to USDC Uniswap V3 market SELL.                 | Exact submitted/fill events, asset deltas, gas, and final transitions. |
-| USDC to WETH Uniswap V3 market BUY.                  | Exact submitted/fill events, asset deltas, gas, and reconnect.         |
-| Disconnect and reconnect after finality.             | No nonce use, rebroadcast, or repeated order event.                    |
-| Restart a dropped wrap or approve.                   | Call identity and postcondition pass; the intent becomes inactive.     |
-| Restart after a multi-window mismatched replacement. | The first scan persists its bounded cursor; the next fails closed.     |
-
-The LiveNode suite covers factory registration, venue routing, and a strategy submitting BUY and
-SELL market orders through the risk and execution engines to finalized fills with refreshed wallet
-state. A second node reconnects without new nonce use, intent, transaction hash, or repeated terminal
-event. Operator wrap and router approval use direct client construction because they precede node
-routing.
-
-Its data-client stub replaces only the HyperSync-backed venue boundary because HyperSync serves the
-live chain instead of the fork's pinned state. The stub derives a synthetic risk price from the
-pool's on-chain price; the pool, instrument, profiler, risk, execution, and persistence paths remain
-production code.
-
-The fork suites run only when `BLOCKCHAIN_FORK_TESTS=1`; otherwise their early returns appear as
-passes even though no fork or transaction ran. An enabled run requires an archive-capable fork
-source, Postgres, and a compatible Anvil installation. The two suites serialize their shared
-database and fork environment.
-
 Execution validation on public networks must remain read-only and must not load a signer or call
-`eth_sendRawTransaction`. State-changing validation belongs on the three-origin localhost fork.
+`eth_sendRawTransaction`. State-changing validation requires an isolated local environment.
 
 ## Limitations
 
