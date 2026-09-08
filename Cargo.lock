@@ -6464,6 +6464,8 @@ dependencies = [
  "dashmap",
  "futures-util",
  "http",
+ "hyper",
+ "hyper-util",
  "log",
  "madsim",
  "nautilus-common",

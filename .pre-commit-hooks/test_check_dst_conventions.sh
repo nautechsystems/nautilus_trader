@@ -180,4 +180,21 @@ for expected in \
   fi
 done
 
+adapter_case="$CASE_ROOT/adapter"
+create_case "$adapter_case"
+mkdir -p "$adapter_case/crates/adapters/okx/src"
+printf '%s\n' 'pub async fn run() { tokio::time::sleep(delay).await; }' \
+  'use tokio::time;' \
+  'pub async fn imported() { time::sleep(delay).await; }' \
+  > "$adapter_case/crates/adapters/okx/src/data.rs"
+run_hook "$adapter_case"
+if [ "$RUN_STATUS" -ne 1 ]; then
+  echo "Expected the audited OKX path to reject a raw Tokio timer"
+  cat "$adapter_case/output.txt"
+  exit 1
+fi
+strip_color "$adapter_case/output.txt" > "$adapter_case/plain.txt"
+rg -Fq "Error (rule7): crates/adapters/okx/src/data.rs:1" "$adapter_case/plain.txt"
+rg -Fq "Error (rule7): crates/adapters/okx/src/data.rs:2" "$adapter_case/plain.txt"
+
 echo "DST convention hook tests passed"

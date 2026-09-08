@@ -22,6 +22,8 @@
 
 use std::{collections::VecDeque, pin::pin, sync::atomic::AtomicU8, time::Duration};
 
+#[cfg(all(feature = "simulation", madsim))]
+use madsim::rand::Rng;
 use nautilus_core::correctness::{check_in_range_inclusive_f64, check_predicate_true};
 use rand::RngExt;
 
@@ -161,7 +163,14 @@ impl ExponentialBackoff {
         }
 
         // Generate random jitter
-        let jitter = rand::rng().random_range(0..=self.jitter_ms); // dst-ok: transport-layer reconnect jitter, out of DST scope
+        #[cfg(not(all(feature = "simulation", madsim)))]
+        let jitter = rand::rng().random_range(0..=self.jitter_ms);
+        #[cfg(all(feature = "simulation", madsim))]
+        let jitter = if madsim::runtime::Handle::try_current().is_ok() {
+            madsim::rand::thread_rng().gen_range(0..=self.jitter_ms)
+        } else {
+            rand::rng().random_range(0..=self.jitter_ms) // dst-ok: callers outside a simulation runtime
+        };
 
         // Cap the jittered base below delay_max so the spread survives saturation at the cap
         let base = std::cmp::min(

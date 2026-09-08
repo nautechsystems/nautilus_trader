@@ -23,7 +23,12 @@ crate-type = ["rlib"]
 default = ["transport-sockudo"]
 extension-module = ["python", "pyo3/extension-module"]
 python = ["pyo3", "pyo3-stub-gen"]
-simulation = ["dep:madsim", "nautilus-core/simulation"]
+simulation = [
+  "dep:madsim",
+  "dep:hyper",
+  "dep:hyper-util",
+  "nautilus-core/simulation",
+]
 turmoil = ["dep:turmoil"]
 # Backend selection for the WebSocket transport abstraction.
 # `tokio-tungstenite` is always compiled; `transport-sockudo` (enabled by
@@ -49,6 +54,8 @@ bytes = { workspace = true }
 dashmap = { workspace = true }
 futures-util = { workspace = true }
 http = { workspace = true }
+hyper = { workspace = true, optional = true }
+hyper-util = { workspace = true, optional = true }
 log = { workspace = true }
 parking_lot = { workspace = true }
 rand = { workspace = true }

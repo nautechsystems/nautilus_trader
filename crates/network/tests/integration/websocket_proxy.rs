@@ -22,8 +22,8 @@
 //! `WebSocketConfig.proxy_url` follows for plain `ws://` upstreams.
 
 #![cfg(not(feature = "turmoil"))]
-// Transport-layer I/O is not simulated under DST (see docs/concepts/dst.md
-// "Transport-layer I/O is not simulated"); these proxy/integration tests rely
+// Proxy I/O is outside the DST transport scope (see docs/concepts/dst.md
+// "Transport scope limits"); these proxy/integration tests rely
 // on real localhost sockets and panic when madsim's time primitives are
 // reached outside a runtime.
 #![cfg(not(all(feature = "simulation", madsim)))]

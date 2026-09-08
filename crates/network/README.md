@@ -27,7 +27,9 @@ This crate provides feature flags to control source code inclusion during compil
 - `extension-module`: Builds as a Python extension module.
 - `python`: Exposes the `TransportBackend` enum through [PyO3](https://pyo3.rs).
 - `simulation`: Enables deterministic simulation testing with
-  [MadSim](https://crates.io/crates/madsim).
+  [MadSim](https://crates.io/crates/madsim). With `cfg(madsim)`, plaintext HTTP/1.1 and Tungstenite
+  WebSocket connections use simulated byte streams. See the
+  [DST transport contract](../../docs/concepts/dst.md#simulated-http-and-websocket-transport) for limits.
 - `transport-sockudo` (default): Adds the [sockudo-ws](https://crates.io/crates/sockudo-ws)
   WebSocket backend, selectable through `WebSocketConfig.backend`.
 - `turmoil`: Enables deterministic network simulation testing with

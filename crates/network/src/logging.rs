@@ -29,6 +29,7 @@ pub(crate) fn log_task_aborted(task_name: &str) {
 }
 
 #[cfg(test)]
+#[cfg(not(all(feature = "simulation", madsim)))]
 #[cfg(target_os = "linux")]
 pub(crate) mod tests {
     use std::sync::Once;

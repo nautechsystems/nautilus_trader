@@ -48,6 +48,9 @@ pub mod client;
 pub mod error;
 pub mod types;
 
+#[cfg(all(feature = "simulation", madsim))]
+mod simulation;
+
 // Re-exports
 pub use client::{HttpClient, HttpRedirectPolicy, InnerHttpClient};
 pub use error::HttpClientError;

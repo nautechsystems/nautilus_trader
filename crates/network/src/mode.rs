@@ -317,7 +317,7 @@ const CONTROLLER_REQUEST_MASK: usize = CONTROLLER_CLOSED - 1;
 
 pub(crate) struct ControllerLifecycle {
     state: AtomicUsize,
-    abort_handle: OnceLock<tokio::task::AbortHandle>,
+    abort_handle: OnceLock<Box<dyn Fn() + Send + Sync>>,
 }
 
 impl ControllerLifecycle {
@@ -345,9 +345,9 @@ impl ControllerLifecycle {
             .map(|_| ControllerRequest(self))
     }
 
-    pub(crate) fn set_abort_handle(&self, abort_handle: tokio::task::AbortHandle) {
+    pub(crate) fn set_abort(&self, abort: impl Fn() + Send + Sync + 'static) {
         assert!(
-            self.abort_handle.set(abort_handle).is_ok(),
+            self.abort_handle.set(Box::new(abort)).is_ok(),
             "controller abort handle already set"
         );
     }
@@ -369,7 +369,7 @@ impl ControllerLifecycle {
 
     fn abort(&self) {
         if let Some(abort_handle) = self.abort_handle.get() {
-            abort_handle.abort();
+            abort_handle();
         }
     }
 }

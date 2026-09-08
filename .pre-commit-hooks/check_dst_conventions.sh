@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Enforces deterministic simulation testing (DST) path bans in the in-scope crates.
 #
-# Rules (all applied to production code in the 17 in-scope crates):
+# Rules (production paths are selected separately for each rule):
 #   1. No direct std::time::Instant::now(), std::time::SystemTime::now(),
 #      jiff::Timestamp::now(), or jiff::Zoned::now() reads
 #   2. No raw RNG entries (rand::thread_rng, rand::rng(), fastrand::,
@@ -42,6 +42,15 @@ IN_SCOPE_CRATES=(
   "risk" "serialization" "system" "trading"
 )
 
+# Audited public Spot state paths; execution and other products are not covered.
+ADAPTER_PATHS=(
+  "crates/adapters/okx/src/book_sync.rs"
+  "crates/adapters/okx/src/data.rs"
+  "crates/adapters/okx/src/http/client.rs"
+  "crates/adapters/okx/src/websocket/client.rs"
+  "crates/adapters/okx/src/websocket/handler.rs"
+)
+
 # Rule-1 L-dispositioned sites from the codebase audit: log timing, progress
 # reporting, and audit-only uses that do not affect DST-path state.
 # Logging files appear here because timestamp generation for log records is
@@ -57,6 +66,9 @@ RULE1_ALLOWLIST=(
 GLOBS=()
 for c in "${IN_SCOPE_CRATES[@]}"; do
   GLOBS+=(--glob "crates/$c/src/**/*.rs")
+done
+for path in "${ADAPTER_PATHS[@]}"; do
+  GLOBS+=(--glob "$path")
 done
 
 NL='
@@ -489,15 +501,17 @@ done < <(rg -n --no-heading \
 
 echo "Checking raw Tokio facade bypasses..."
 
-# Only these crates participate in the madsim build path that imports
-# `nautilus_common::live::dst`. Network and persistence own separate runtime
-# and transport seams, so the four-module facade does not apply to them.
+# These crates use the common madsim facade. Selected adapter paths and the
+# network WebSocket client use their corresponding facades and join this scan below.
 RULE7_CRATES=(
   "common" "core" "data" "execution" "live" "portfolio" "risk" "system" "trading"
 )
 RULE7_GLOBS=()
 for c in "${RULE7_CRATES[@]}"; do
   RULE7_GLOBS+=(--glob "crates/$c/src/**/*.rs")
+done
+for path in "${ADAPTER_PATHS[@]}" "crates/network/src/websocket/client.rs"; do
+  RULE7_GLOBS+=(--glob "$path")
 done
 
 # The facade and the process-wide real Tokio runtime define the seam and are
@@ -571,22 +585,20 @@ done < <(rg -n --no-heading \
   'tokio::(time|task|runtime|signal)::|\btokio::spawn\s*\(' \
   "${RULE7_GLOBS[@]}" --type rust crates 2> /dev/null || true)
 
-for c in "${RULE7_CRATES[@]}"; do
-  while IFS= read -r file; do
-    while IFS=: read -r line_num content; do
-      [[ -z "$line_num" ]] && continue
-      is_test_path "$file" && continue
-      is_in_test_module "$file" "$line_num" && continue
-      [[ "$content" =~ $ALLOW_MARKER ]] && continue
-      is_in_rule7_allowlist "$file" && continue
+while IFS= read -r file; do
+  while IFS=: read -r line_num content; do
+    [[ -z "$line_num" ]] && continue
+    is_test_path "$file" && continue
+    is_in_test_module "$file" "$line_num" && continue
+    [[ "$content" =~ $ALLOW_MARKER ]] && continue
+    is_in_rule7_allowlist "$file" && continue
 
-      has_preceding_dst_cfg "$file" "$line_num" && continue
+    has_preceding_dst_cfg "$file" "$line_num" && continue
 
-      report "rule7" "$file" "$line_num" "$content" \
-        "Import time, task, runtime, and signal through nautilus_common::live::dst or cfg-gate the site"
-    done < <(find_raw_tokio_facade_imports "$file")
-  done < <(rg --files --type rust "crates/$c/src")
-done
+    report "rule7" "$file" "$line_num" "$content" \
+      "Import time, task, runtime, and signal through nautilus_common::live::dst or cfg-gate the site"
+  done < <(find_raw_tokio_facade_imports "$file")
+done < <(rg --files "${RULE7_GLOBS[@]}" --type rust crates)
 
 ################################################################################
 # Summary

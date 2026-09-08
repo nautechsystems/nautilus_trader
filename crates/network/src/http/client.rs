@@ -57,8 +57,10 @@ pub enum HttpRedirectPolicy {
 
 /// An asynchronous HTTP client with rate limiting, timeouts, and custom headers.
 ///
-/// The client uses `reqwest` for I/O and supports default and per-key quotas. Multiple clients
-/// can share the same rate limiter when their requests consume one quota budget.
+/// The client uses `reqwest` for normal I/O and supports default and per-key quotas. Multiple
+/// clients can share the same rate limiter when their requests consume one quota budget.
+/// With `simulation` and `cfg(madsim)`, plaintext HTTP/1.1 uses simulated byte streams;
+/// HTTPS, explicit proxies, and redirect following are unsupported.
 #[derive(Clone, Debug)]
 pub struct HttpClient {
     pub(crate) client: InnerHttpClient,
@@ -145,6 +147,16 @@ impl HttpClient {
             header_map.insert(header_name, header_value);
         }
 
+        // Simulation mirrors default headers, timeout precedence, and redirect policy;
+        // keep new request-affecting builder options aligned with that execution path.
+        #[cfg(all(feature = "simulation", madsim))]
+        let simulation = super::simulation::Client::new(
+            header_map.clone(),
+            timeout_secs,
+            redirect_policy,
+            proxy_url.as_deref(),
+        )?;
+
         let mut client_builder = reqwest::Client::builder()
             .default_headers(header_map)
             .tcp_nodelay(true)
@@ -189,6 +201,8 @@ impl HttpClient {
 
         let client = InnerHttpClient {
             client,
+            #[cfg(all(feature = "simulation", madsim))]
+            simulation,
             response_headers: Arc::from(response_headers),
             max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
         };
@@ -454,6 +468,8 @@ impl HttpClient {
 /// retain only configured header fields, and bodies larger than `max_response_bytes` are rejected.
 #[derive(Clone, Debug)]
 pub struct InnerHttpClient {
+    #[cfg(all(feature = "simulation", madsim))]
+    simulation: super::simulation::Client,
     pub(crate) client: reqwest::Client,
     pub(crate) response_headers: Arc<[(String, HeaderName)]>,
     pub(crate) max_response_bytes: usize,
@@ -671,13 +687,33 @@ impl InnerHttpClient {
             request.method(),
         );
 
-        let response = self
-            .client
-            .execute(request)
-            .await
-            .map_err(|e| http_client_error(e, redact_url))?;
+        #[cfg(all(feature = "simulation", madsim))]
+        {
+            let duration = self.simulation.timeout(&request);
+            let operation = Box::pin(async {
+                let (response, _connection) = self.simulation.send(request).await?;
+                self.to_response_internal(response, redact_url).await
+            });
 
-        self.to_response_internal(response, redact_url).await
+            match duration {
+                Some(duration) => crate::dst::time::timeout(duration, operation)
+                    .await
+                    .map_err(|_| {
+                        HttpClientError::TimeoutError("simulated request deadline elapsed".into())
+                    })?,
+                None => operation.await,
+            }
+        }
+        #[cfg(not(all(feature = "simulation", madsim)))]
+        {
+            let response = self
+                .client
+                .execute(request)
+                .await
+                .map_err(|e| http_client_error(e, redact_url))?;
+
+            self.to_response_internal(response, redact_url).await
+        }
     }
 
     /// Converts a `reqwest::Response` into an `HttpResponse`.
@@ -819,6 +855,8 @@ impl Default for InnerHttpClient {
         let client = reqwest::Client::new();
         Self {
             client,
+            #[cfg(all(feature = "simulation", madsim))]
+            simulation: super::simulation::Client::default(),
             response_headers: Arc::default(),
             max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
         }
@@ -926,8 +964,9 @@ mod encode_url_params_tests {
 
 #[cfg(test)]
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
+#[cfg(not(all(feature = "simulation", madsim)))]
 mod tests {
-    use std::{net::SocketAddr, num::NonZeroU32};
+    use std::net::SocketAddr;
 
     use axum::{
         Router,
@@ -940,11 +979,7 @@ mod tests {
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
     use http::status::StatusCode;
     use log::Level;
-    #[cfg(all(feature = "simulation", madsim))]
-    use madsim::task as test_task;
     use rstest::rstest;
-    #[cfg(not(all(feature = "simulation", madsim)))]
-    use tokio::task as test_task;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         sync::oneshot,
@@ -1082,103 +1117,6 @@ mod tests {
         });
 
         (addr, request_rx)
-    }
-
-    #[tokio::test]
-    async fn test_http_client_awaits_multiple_rate_limiters() {
-        let quota = Quota::per_minute(NonZeroU32::MIN);
-        let request_key = Ustr::from("scope:request");
-        let order_key = Ustr::from("scope:order");
-        let request_limiter = Arc::new(RateLimiter::new_with_quota(
-            None,
-            vec![(request_key, quota)],
-        ));
-        let order_limiter = Arc::new(RateLimiter::new_with_quota(None, vec![(order_key, quota)]));
-        let client = HttpClient::builder()
-            .rate_limiters(vec![
-                Arc::clone(&request_limiter),
-                Arc::clone(&order_limiter),
-            ])
-            .build()
-            .unwrap();
-
-        client
-            .await_rate_limits(Some(&[request_key, order_key]))
-            .await;
-
-        assert!(request_limiter.check_key(&request_key).is_err());
-        assert!(order_limiter.check_key(&order_key).is_err());
-    }
-
-    #[cfg_attr(
-        not(all(feature = "simulation", madsim)),
-        tokio::test(start_paused = true)
-    )]
-    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
-    async fn test_http_client_reserves_multiple_rate_limits_together() {
-        let global_key = Ustr::from("scope:global");
-        let order_key = Ustr::from("scope:order");
-        let global_limiter = Arc::new(RateLimiter::new_with_quota(
-            None,
-            vec![(
-                global_key,
-                Quota::with_period(Duration::from_secs(1)).unwrap(),
-            )],
-        ));
-        let order_limiter = Arc::new(RateLimiter::new_with_quota(
-            None,
-            vec![(
-                order_key,
-                Quota::with_period(Duration::from_secs(10)).unwrap(),
-            )],
-        ));
-        order_limiter.check_key(&order_key).unwrap();
-
-        let client = HttpClient::builder()
-            .rate_limiters(vec![
-                Arc::clone(&global_limiter),
-                Arc::clone(&order_limiter),
-            ])
-            .build()
-            .unwrap();
-
-        let request = test_task::spawn(async move {
-            client
-                .await_rate_limits(Some(&[global_key, order_key]))
-                .await;
-        });
-        test_task::yield_now().await;
-
-        global_limiter.check_key(&global_key).unwrap();
-        assert!(!request.is_finished());
-
-        advance_test_clock(Duration::from_millis(9_999)).await;
-        global_limiter.until_key_ready(&global_key).await;
-        global_limiter.until_key_ready(&global_key).await;
-        advance_test_clock(Duration::from_millis(1)).await;
-        test_task::yield_now().await;
-        assert!(!request.is_finished());
-
-        advance_test_clock(Duration::from_millis(998)).await;
-        test_task::yield_now().await;
-        assert!(!request.is_finished());
-
-        advance_test_clock(Duration::from_millis(1)).await;
-        request.await.unwrap();
-
-        assert!(global_limiter.check_key(&global_key).is_err());
-        assert!(order_limiter.check_key(&order_key).is_err());
-    }
-
-    #[cfg(all(feature = "simulation", madsim))]
-    async fn advance_test_clock(duration: Duration) {
-        madsim::time::advance(duration);
-        test_task::yield_now().await;
-    }
-
-    #[cfg(not(all(feature = "simulation", madsim)))]
-    async fn advance_test_clock(duration: Duration) {
-        tokio::time::advance(duration).await;
     }
 
     #[tokio::test]
@@ -1987,5 +1925,116 @@ mod tests {
         let response = client.delete(url, None, None, None, None).await.unwrap();
 
         assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
+    }
+}
+
+#[cfg(test)]
+mod rate_limit_tests {
+    use std::{num::NonZeroU32, sync::Arc, time::Duration};
+
+    #[cfg(all(feature = "simulation", madsim))]
+    use madsim::task as test_task;
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    use tokio::task as test_task;
+    use ustr::Ustr;
+
+    use super::HttpClient;
+    use crate::ratelimiter::{RateLimiter, quota::Quota};
+
+    #[tokio::test]
+    async fn test_http_client_awaits_multiple_rate_limiters() {
+        let quota = Quota::per_minute(NonZeroU32::MIN);
+        let request_key = Ustr::from("scope:request");
+        let order_key = Ustr::from("scope:order");
+        let request_limiter = Arc::new(RateLimiter::new_with_quota(
+            None,
+            vec![(request_key, quota)],
+        ));
+        let order_limiter = Arc::new(RateLimiter::new_with_quota(None, vec![(order_key, quota)]));
+        let client = HttpClient::builder()
+            .rate_limiters(vec![
+                Arc::clone(&request_limiter),
+                Arc::clone(&order_limiter),
+            ])
+            .build()
+            .unwrap();
+
+        client
+            .await_rate_limits(Some(&[request_key, order_key]))
+            .await;
+
+        assert!(request_limiter.check_key(&request_key).is_err());
+        assert!(order_limiter.check_key(&order_key).is_err());
+    }
+
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_http_client_reserves_multiple_rate_limits_together() {
+        let global_key = Ustr::from("scope:global");
+        let order_key = Ustr::from("scope:order");
+        let global_limiter = Arc::new(RateLimiter::new_with_quota(
+            None,
+            vec![(
+                global_key,
+                Quota::with_period(Duration::from_secs(1)).unwrap(),
+            )],
+        ));
+        let order_limiter = Arc::new(RateLimiter::new_with_quota(
+            None,
+            vec![(
+                order_key,
+                Quota::with_period(Duration::from_secs(10)).unwrap(),
+            )],
+        ));
+        order_limiter.check_key(&order_key).unwrap();
+
+        let client = HttpClient::builder()
+            .rate_limiters(vec![
+                Arc::clone(&global_limiter),
+                Arc::clone(&order_limiter),
+            ])
+            .build()
+            .unwrap();
+
+        let request = test_task::spawn(async move {
+            client
+                .await_rate_limits(Some(&[global_key, order_key]))
+                .await;
+        });
+        test_task::yield_now().await;
+
+        global_limiter.check_key(&global_key).unwrap();
+        assert!(!request.is_finished());
+
+        advance_test_clock(Duration::from_millis(9_999)).await;
+        global_limiter.until_key_ready(&global_key).await;
+        global_limiter.until_key_ready(&global_key).await;
+        advance_test_clock(Duration::from_millis(1)).await;
+        test_task::yield_now().await;
+        assert!(!request.is_finished());
+
+        advance_test_clock(Duration::from_millis(998)).await;
+        test_task::yield_now().await;
+        assert!(!request.is_finished());
+
+        advance_test_clock(Duration::from_millis(1)).await;
+        request.await.unwrap();
+
+        assert!(global_limiter.check_key(&global_key).is_err());
+        assert!(order_limiter.check_key(&order_key).is_err());
+    }
+
+    #[cfg(all(feature = "simulation", madsim))]
+    async fn advance_test_clock(duration: Duration) {
+        madsim::time::advance(duration);
+        test_task::yield_now().await;
+    }
+
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    async fn advance_test_clock(duration: Duration) {
+        tokio::time::advance(duration).await;
     }
 }

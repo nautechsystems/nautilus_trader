@@ -92,6 +92,9 @@
 // macro expansion; an item-level `allow` cannot reach the expansion
 #![allow(clippy::clone_on_copy)]
 
+#[cfg(all(feature = "simulation", madsim, feature = "turmoil"))]
+compile_error!("madsim simulation and turmoil must run in separate builds");
+
 pub mod backoff;
 pub mod dst;
 pub mod http;

@@ -1011,8 +1011,7 @@ endif
 # tests are gated out at the source. The lane also runs the LiveNode startup
 # reconciliation timeout regression and the cross-crate seam pinning tests in
 # nautilus-core.
-# Each leg runs with the standard fixed-precision build first, then again
-# under `high-precision` for the crates that consume `nautilus-model` types,
+# Precision-sensitive common and execution tests also run under `high-precision`,
 # so the seam-routed code paths are exercised under both `QuantityRaw` /
 # `PriceRaw` widths (u64 vs u128). See docs/concepts/dst.md for the full
 # DST scope.

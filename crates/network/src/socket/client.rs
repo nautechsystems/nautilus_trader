@@ -1095,7 +1095,8 @@ impl SocketClient {
             post_reconnection,
             reconnect_replay,
         );
-        controller_lifecycle.set_abort_handle(controller_task.abort_handle());
+        let abort_handle = controller_task.abort_handle();
+        controller_lifecycle.set_abort(move || abort_handle.abort());
 
         Ok(Self {
             controller_task,
@@ -2360,7 +2361,8 @@ mod rust_tests {
     ) -> SocketClient {
         let (writer_tx, _writer_rx) = tokio::sync::mpsc::unbounded_channel();
         let controller_lifecycle = Arc::new(ControllerLifecycle::new());
-        controller_lifecycle.set_abort_handle(controller_task.abort_handle());
+        let abort_handle = controller_task.abort_handle();
+        controller_lifecycle.set_abort(move || abort_handle.abort());
 
         SocketClient {
             controller_task,
