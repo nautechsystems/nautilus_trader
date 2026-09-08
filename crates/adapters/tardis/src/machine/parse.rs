@@ -101,7 +101,7 @@ pub fn parse_tardis_ws_message(
                         info.size_precision,
                         info.instrument_id,
                     ) {
-                        Ok(depth10) => Some(Data::BookDepth10(Box::new(depth10))),
+                        Ok(depth10) => Some(Data::BookDepth(Box::new(depth10))),
                         Err(e) => {
                             log::error!("Failed to parse book snapshot as depth10: {e}");
                             None
@@ -1000,7 +1000,7 @@ mod tests {
         let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Depth10);
 
         assert!(result.is_some());
-        assert!(matches!(result.unwrap(), Data::BookDepth10(_)));
+        assert!(matches!(result.unwrap(), Data::BookDepth(_)));
     }
 
     #[rstest]
@@ -1032,7 +1032,7 @@ mod tests {
         let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Depth10);
 
         assert!(result.is_some());
-        assert!(matches!(result.unwrap(), Data::BookDepth10(_)));
+        assert!(matches!(result.unwrap(), Data::BookDepth(_)));
     }
 
     #[rstest]

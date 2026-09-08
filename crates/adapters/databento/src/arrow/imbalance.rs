@@ -16,7 +16,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use arrow::{
-    array::{FixedSizeBinaryArray, FixedSizeBinaryBuilder, Int8Array, UInt8Array, UInt64Array},
+    array::{Decimal128Array, Int8Array, TimestampNanosecondArray},
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
     record_batch::RecordBatch,
@@ -24,49 +24,30 @@ use arrow::{
 use nautilus_model::{
     data::{Data, custom::CustomData},
     enums::OrderSide,
-    types::fixed::PRECISION_BYTES,
 };
 use nautilus_serialization::arrow::{
     ArrowSchemaProvider, DecodeDataFromRecordBatch, EncodeToRecordBatch, EncodingError,
-    decode_price, decode_quantity, extract_column, validate_precision_bytes,
+    decode_decimal_price, decode_decimal_quantity, decode_timestamp, enum_dictionary_array,
+    enum_dictionary_data_type, extract_column, fixed_decimal_data_type, price_decimal_array,
+    quantity_decimal_array, timestamp_array, timestamp_data_type,
 };
 
-use super::parse_metadata;
+use super::{EnumColumn, parse_metadata};
 use crate::types::DatabentoImbalance;
 
 impl ArrowSchemaProvider for DatabentoImbalance {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
         let fields = vec![
-            Field::new(
-                "ref_price",
-                DataType::FixedSizeBinary(PRECISION_BYTES),
-                false,
-            ),
-            Field::new(
-                "cont_book_clr_price",
-                DataType::FixedSizeBinary(PRECISION_BYTES),
-                false,
-            ),
-            Field::new(
-                "auct_interest_clr_price",
-                DataType::FixedSizeBinary(PRECISION_BYTES),
-                false,
-            ),
-            Field::new(
-                "paired_qty",
-                DataType::FixedSizeBinary(PRECISION_BYTES),
-                false,
-            ),
-            Field::new(
-                "total_imbalance_qty",
-                DataType::FixedSizeBinary(PRECISION_BYTES),
-                false,
-            ),
-            Field::new("side", DataType::UInt8, false),
+            Field::new("ref_price", fixed_decimal_data_type(), false),
+            Field::new("cont_book_clr_price", fixed_decimal_data_type(), false),
+            Field::new("auct_interest_clr_price", fixed_decimal_data_type(), false),
+            Field::new("paired_qty", fixed_decimal_data_type(), false),
+            Field::new("total_imbalance_qty", fixed_decimal_data_type(), false),
+            Field::new("side", enum_dictionary_data_type(), false),
             Field::new("significant_imbalance", DataType::Int8, false),
-            Field::new("ts_event", DataType::UInt64, false),
-            Field::new("ts_recv", DataType::UInt64, false),
-            Field::new("ts_init", DataType::UInt64, false),
+            Field::new("ts_event", timestamp_data_type(), false),
+            Field::new("ts_recv", timestamp_data_type(), false),
+            Field::new("ts_init", timestamp_data_type(), false),
         ];
 
         match metadata {
@@ -78,72 +59,72 @@ impl ArrowSchemaProvider for DatabentoImbalance {
 
 impl EncodeToRecordBatch for DatabentoImbalance {
     #[expect(clippy::unnecessary_cast)] // c_char is u8 on some targets
-    fn encode_batch(
+    fn encode_batch<T>(
         metadata: &HashMap<String, String>,
-        data: &[Self],
-    ) -> Result<RecordBatch, ArrowError> {
-        let mut ref_price_builder =
-            FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
-        let mut cont_book_clr_price_builder =
-            FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
-        let mut auct_interest_clr_price_builder =
-            FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
-        let mut paired_qty_builder =
-            FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
-        let mut total_imbalance_qty_builder =
-            FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
-        let mut side_builder = UInt8Array::builder(data.len());
+        data: &[T],
+    ) -> Result<RecordBatch, ArrowError>
+    where
+        T: std::borrow::Borrow<Self>,
+    {
         let mut significant_imbalance_builder = Int8Array::builder(data.len());
-        let mut ts_event_builder = UInt64Array::builder(data.len());
-        let mut ts_recv_builder = UInt64Array::builder(data.len());
-        let mut ts_init_builder = UInt64Array::builder(data.len());
 
-        for item in data {
-            ref_price_builder
-                .append_value(item.ref_price.raw().to_le_bytes())
-                .unwrap();
-            cont_book_clr_price_builder
-                .append_value(item.cont_book_clr_price.raw().to_le_bytes())
-                .unwrap();
-            auct_interest_clr_price_builder
-                .append_value(item.auct_interest_clr_price.raw().to_le_bytes())
-                .unwrap();
-            paired_qty_builder
-                .append_value(item.paired_qty.raw().to_le_bytes())
-                .unwrap();
-            total_imbalance_qty_builder
-                .append_value(item.total_imbalance_qty.raw().to_le_bytes())
-                .unwrap();
-            side_builder.append_value(item.side.map_or(0, |side| side as u8));
+        for item in data.iter().map(std::borrow::Borrow::borrow) {
             significant_imbalance_builder.append_value(item.significant_imbalance as i8);
-            ts_event_builder.append_value(item.ts_event.as_u64());
-            ts_recv_builder.append_value(item.ts_recv.as_u64());
-            ts_init_builder.append_value(item.ts_init.as_u64());
         }
 
         RecordBatch::try_new(
             Self::get_schema(Some(metadata.clone())).into(),
             vec![
-                Arc::new(ref_price_builder.finish()),
-                Arc::new(cont_book_clr_price_builder.finish()),
-                Arc::new(auct_interest_clr_price_builder.finish()),
-                Arc::new(paired_qty_builder.finish()),
-                Arc::new(total_imbalance_qty_builder.finish()),
-                Arc::new(side_builder.finish()),
+                Arc::new(price_decimal_array(
+                    data.iter().map(|item| item.borrow().ref_price.raw),
+                    "ref_price",
+                )?),
+                Arc::new(price_decimal_array(
+                    data.iter()
+                        .map(|item| item.borrow().cont_book_clr_price.raw),
+                    "cont_book_clr_price",
+                )?),
+                Arc::new(price_decimal_array(
+                    data.iter()
+                        .map(|item| item.borrow().auct_interest_clr_price.raw),
+                    "auct_interest_clr_price",
+                )?),
+                Arc::new(quantity_decimal_array(
+                    data.iter().map(|item| item.borrow().paired_qty.raw),
+                    "paired_qty",
+                )?),
+                Arc::new(quantity_decimal_array(
+                    data.iter()
+                        .map(|item| item.borrow().total_imbalance_qty.raw),
+                    "total_imbalance_qty",
+                )?),
+                Arc::new(enum_dictionary_array(data.iter().map(|item| {
+                    item.borrow()
+                        .side
+                        .map_or_else(|| "NO_ORDER_SIDE".to_string(), |side| side.to_string())
+                }))?),
                 Arc::new(significant_imbalance_builder.finish()),
-                Arc::new(ts_event_builder.finish()),
-                Arc::new(ts_recv_builder.finish()),
-                Arc::new(ts_init_builder.finish()),
+                Arc::new(timestamp_array(
+                    data.iter().map(|item| item.borrow().ts_event.as_u64()),
+                )?),
+                Arc::new(timestamp_array(
+                    data.iter().map(|item| item.borrow().ts_recv.as_u64()),
+                )?),
+                Arc::new(timestamp_array(
+                    data.iter().map(|item| item.borrow().ts_init.as_u64()),
+                )?),
             ],
         )
     }
 
     fn metadata(&self) -> HashMap<String, String> {
-        Self::get_metadata(
+        let mut metadata = Self::get_metadata(
             &self.instrument_id,
             self.ref_price.precision,
             self.paired_qty.precision,
-        )
+        );
+        metadata.insert("type_name".to_string(), "DatabentoImbalance".to_string());
+        metadata
     }
 }
 
@@ -172,93 +153,60 @@ pub fn decode_imbalance_batch(
     let (instrument_id, price_precision, size_precision) = parse_metadata(metadata)?;
     let cols = record_batch.columns();
 
-    let ref_price_values = extract_column::<FixedSizeBinaryArray>(
-        cols,
-        "ref_price",
-        0,
-        DataType::FixedSizeBinary(PRECISION_BYTES),
-    )?;
-    let cont_book_clr_price_values = extract_column::<FixedSizeBinaryArray>(
-        cols,
-        "cont_book_clr_price",
-        1,
-        DataType::FixedSizeBinary(PRECISION_BYTES),
-    )?;
-    let auct_interest_clr_price_values = extract_column::<FixedSizeBinaryArray>(
+    let decimal_type = fixed_decimal_data_type();
+    let ref_price_values =
+        extract_column::<Decimal128Array>(cols, "ref_price", 0, decimal_type.clone())?;
+    let cont_book_clr_price_values =
+        extract_column::<Decimal128Array>(cols, "cont_book_clr_price", 1, decimal_type.clone())?;
+    let auct_interest_clr_price_values = extract_column::<Decimal128Array>(
         cols,
         "auct_interest_clr_price",
         2,
-        DataType::FixedSizeBinary(PRECISION_BYTES),
+        decimal_type.clone(),
     )?;
-    let paired_qty_values = extract_column::<FixedSizeBinaryArray>(
-        cols,
-        "paired_qty",
-        3,
-        DataType::FixedSizeBinary(PRECISION_BYTES),
-    )?;
-    let total_imbalance_qty_values = extract_column::<FixedSizeBinaryArray>(
-        cols,
-        "total_imbalance_qty",
-        4,
-        DataType::FixedSizeBinary(PRECISION_BYTES),
-    )?;
-    let side_values = extract_column::<UInt8Array>(cols, "side", 5, DataType::UInt8)?;
+    let paired_qty_values =
+        extract_column::<Decimal128Array>(cols, "paired_qty", 3, decimal_type.clone())?;
+    let total_imbalance_qty_values =
+        extract_column::<Decimal128Array>(cols, "total_imbalance_qty", 4, decimal_type)?;
     let significant_imbalance_values =
         extract_column::<Int8Array>(cols, "significant_imbalance", 6, DataType::Int8)?;
-    let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 7, DataType::UInt64)?;
-    let ts_recv_values = extract_column::<UInt64Array>(cols, "ts_recv", 8, DataType::UInt64)?;
-    let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 9, DataType::UInt64)?;
-
-    validate_precision_bytes(ref_price_values, "ref_price")?;
-    validate_precision_bytes(cont_book_clr_price_values, "cont_book_clr_price")?;
-    validate_precision_bytes(auct_interest_clr_price_values, "auct_interest_clr_price")?;
-    validate_precision_bytes(paired_qty_values, "paired_qty")?;
-    validate_precision_bytes(total_imbalance_qty_values, "total_imbalance_qty")?;
+    let side_column = EnumColumn::try_from_column(&cols[5], "side", 5)?;
+    let ts_event_values =
+        extract_column::<TimestampNanosecondArray>(cols, "ts_event", 7, timestamp_data_type())?;
+    let ts_recv_values =
+        extract_column::<TimestampNanosecondArray>(cols, "ts_recv", 8, timestamp_data_type())?;
+    let ts_init_values =
+        extract_column::<TimestampNanosecondArray>(cols, "ts_init", 9, timestamp_data_type())?;
 
     (0..record_batch.num_rows())
         .map(|row| {
-            let ref_price = decode_price(
-                ref_price_values.value(row),
-                price_precision,
-                "ref_price",
-                row,
-            )?;
-            let cont_book_clr_price = decode_price(
-                cont_book_clr_price_values.value(row),
+            let ref_price =
+                decode_decimal_price(ref_price_values, price_precision, "ref_price", row)?;
+            let cont_book_clr_price = decode_decimal_price(
+                cont_book_clr_price_values,
                 price_precision,
                 "cont_book_clr_price",
                 row,
             )?;
-            let auct_interest_clr_price = decode_price(
-                auct_interest_clr_price_values.value(row),
+            let auct_interest_clr_price = decode_decimal_price(
+                auct_interest_clr_price_values,
                 price_precision,
                 "auct_interest_clr_price",
                 row,
             )?;
-            let paired_qty = decode_quantity(
-                paired_qty_values.value(row),
-                size_precision,
-                "paired_qty",
-                row,
-            )?;
-            let total_imbalance_qty = decode_quantity(
-                total_imbalance_qty_values.value(row),
+            let paired_qty =
+                decode_decimal_quantity(paired_qty_values, size_precision, "paired_qty", row)?;
+            let total_imbalance_qty = decode_decimal_quantity(
+                total_imbalance_qty_values,
                 size_precision,
                 "total_imbalance_qty",
                 row,
             )?;
-            let side_value = side_values.value(row);
-            let side = match side_value {
-                0 => None,
+            let side = side_column.decode_optional(row, "NO_ORDER_SIDE", |value| match value {
                 1 => Some(OrderSide::Buy),
                 2 => Some(OrderSide::Sell),
-                _ => {
-                    return Err(EncodingError::ParseError(
-                        "Option<OrderSide>",
-                        format!("Invalid enum value, was {side_value}"),
-                    ));
-                }
-            };
+                _ => None,
+            })?;
             let significant_imbalance = significant_imbalance_values.value(row) as std::ffi::c_char;
 
             Ok(DatabentoImbalance {
@@ -270,9 +218,9 @@ pub fn decode_imbalance_batch(
                 total_imbalance_qty,
                 side,
                 significant_imbalance,
-                ts_event: ts_event_values.value(row).into(),
-                ts_recv: ts_recv_values.value(row).into(),
-                ts_init: ts_init_values.value(row).into(),
+                ts_event: decode_timestamp(ts_event_values, "ts_event", row)?.into(),
+                ts_recv: decode_timestamp(ts_recv_values, "ts_recv", row)?.into(),
+                ts_init: decode_timestamp(ts_init_values, "ts_init", row)?.into(),
             })
         })
         .collect()
@@ -297,6 +245,7 @@ pub fn imbalance_to_arrow_record_batch(
 
 #[cfg(test)]
 mod tests {
+    use arrow::array::UInt8Array;
     use nautilus_model::{
         enums::OrderSide,
         identifiers::InstrumentId,
@@ -341,6 +290,9 @@ mod tests {
         assert_eq!(schema.field(0).name(), "ref_price");
         assert_eq!(schema.field(5).name(), "side");
         assert_eq!(schema.field(9).name(), "ts_init");
+        assert_eq!(schema.field(0).data_type(), &fixed_decimal_data_type());
+        assert_eq!(schema.field(5).data_type(), &enum_dictionary_data_type());
+        assert_eq!(schema.field(8).data_type(), &timestamp_data_type());
     }
 
     #[rstest]
@@ -386,6 +338,30 @@ mod tests {
         assert_eq!(decoded[0].ts_event, original[0].ts_event);
         assert_eq!(decoded[0].ts_recv, original[0].ts_recv);
         assert_eq!(decoded[0].ts_init, original[0].ts_init);
+    }
+
+    #[rstest]
+    fn test_decode_legacy_side_column() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let metadata = test_metadata();
+        let original = test_imbalance(instrument_id);
+        let batch =
+            DatabentoImbalance::encode_batch(&metadata, std::slice::from_ref(&original)).unwrap();
+        let mut fields = batch.schema().fields().to_vec();
+        fields[5] = Arc::new(Field::new("side", DataType::UInt8, false));
+        let mut columns = batch.columns().to_vec();
+        columns[5] = Arc::new(UInt8Array::from(vec![
+            original.side.map_or(0, |side| side as u8),
+        ]));
+        let legacy_batch = RecordBatch::try_new(
+            Arc::new(Schema::new_with_metadata(fields, metadata.clone())),
+            columns,
+        )
+        .unwrap();
+
+        let decoded = decode_imbalance_batch(&metadata, &legacy_batch).unwrap();
+
+        assert_eq!(decoded, vec![original]);
     }
 
     #[rstest]

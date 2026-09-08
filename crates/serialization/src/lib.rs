@@ -177,3 +177,7 @@ include_capnp_module!(instruments_capnp, "/data/instruments_capnp.rs");
 
 #[cfg(feature = "python")]
 pub mod python;
+
+/// Generates typed Arrow encoding for custom data.
+#[cfg(feature = "arrow")]
+pub use nautilus_macros::arrow_custom_data;

@@ -15,15 +15,14 @@
 
 //! Display-mode Arrow encoders for Nautilus types.
 //!
-//! These encoders emit schemas compatible with display pipelines that cannot
-//! consume `FixedSizeBinary` columns.
+//! These encoders emit schemas suited to display pipelines rather than exact decimal analysis.
 //! Prices and quantities render as `Float64` via `.as_f64()`, `instrument_id` becomes a
 //! `Utf8` column rather than batch metadata (so mixed-instrument batches work), and
-//! timestamps render as `Timestamp(Nanosecond, None)` rather than `UInt64`.
+//! timestamps render as `Timestamp(Nanosecond, Some("UTC"))` rather than `UInt64`.
 //!
 //! The conversion is lossy: precision metadata is discarded when values cast to `f64`.
-//! For catalog storage that must round-trip, use the `FixedSizeBinary` encoders in
-//! the parent [`crate::arrow`] module instead.
+//! For catalog storage that must round-trip, use the `Decimal128` encoders in the parent
+//! [`crate::arrow`] module instead.
 
 pub mod account_state;
 pub mod bar;
@@ -39,9 +38,11 @@ pub mod quote;
 pub mod report;
 pub mod trade;
 
-use arrow::datatypes::{DataType, Field, TimeUnit};
+use arrow::datatypes::{DataType, Field};
 use nautilus_model::types::{Money, Price, Quantity, fixed::MAX_FLOAT_PRECISION};
 use rust_decimal::prelude::ToPrimitive;
+
+use crate::arrow::timestamp_data_type;
 
 /// Upper bound on precision the display encoders accept. Values above this are
 /// treated as pathological sentinels (most notably `ERROR_PRICE`, which carries
@@ -79,13 +80,9 @@ pub(super) fn uint64_field(name: &str, nullable: bool) -> Field {
     Field::new(name, DataType::UInt64, nullable)
 }
 
-/// Builds a `Timestamp(Nanosecond, None)` field with the given name and nullability.
+/// Builds a `Timestamp(Nanosecond, Some("UTC"))` field with the given name and nullability.
 pub(super) fn timestamp_field(name: &str, nullable: bool) -> Field {
-    Field::new(
-        name,
-        DataType::Timestamp(TimeUnit::Nanosecond, None),
-        nullable,
-    )
+    Field::new(name, timestamp_data_type(), nullable)
 }
 
 /// Converts a `u64` nanosecond timestamp to the `i64` expected by Arrow.

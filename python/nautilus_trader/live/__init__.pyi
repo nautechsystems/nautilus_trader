@@ -8,6 +8,7 @@ import typing
 from nautilus_trader import common
 from nautilus_trader import core
 from nautilus_trader import model
+from nautilus_trader import persistence
 from nautilus_trader import portfolio
 from nautilus_trader import trading
 from nautilus_trader.portfolio import PortfolioConfig
@@ -240,6 +241,10 @@ class LiveExecutionEngineConfig:
 @typing.final
 class LiveNodeConfig:
     @property
+    def streaming(self) -> persistence.StreamingConfig | None: ...
+    @property
+    def catalogs(self) -> list[persistence.DataCatalogConfig]: ...
+    @property
     def environment(self) -> common.Environment: ...
     @property
     def trader_id(self) -> model.TraderId: ...
@@ -310,6 +315,8 @@ class LiveNodeConfig:
         exec_engine: LiveExecutionEngineConfig | None = None,
         controller: trading.ImportableControllerConfig | None = None,
         plugins: typing.Sequence[PluginConfig] | None = None,
+        streaming: persistence.StreamingConfig | None = None,
+        catalogs: typing.Sequence[persistence.DataCatalogConfig] | None = None,
     ) -> LiveNodeConfig: ...
 
 @typing.final

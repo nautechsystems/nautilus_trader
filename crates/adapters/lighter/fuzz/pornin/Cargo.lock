@@ -1364,6 +1364,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-macros"
+version = "0.64.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.5",
+]
+
+[[package]]
 name = "nautilus-model"
 version = "0.64.0"
 dependencies = [
@@ -1378,12 +1387,14 @@ dependencies = [
  "jiff",
  "log",
  "nautilus-core",
+ "nautilus-macros",
  "parking_lot",
  "ruint",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
  "serde_json",
+ "smallvec",
  "strum",
  "tabled",
  "thiserror",

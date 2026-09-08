@@ -471,7 +471,7 @@ impl LighterDataClient {
                             }
                             Some(NautilusWsMessage::Depth10(depth)) => {
                                 if let Err(e) =
-                                    data_sender.send(DataEvent::Data(Data::BookDepth10(depth)))
+                                    data_sender.send(DataEvent::Data(Data::BookDepth(depth)))
                                 {
                                     log::error!("Failed to send order book depth10: {e}");
                                 }

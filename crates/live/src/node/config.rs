@@ -41,10 +41,9 @@ use nautilus_model::{
 };
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
-use nautilus_system::{
-    config::{NautilusKernelConfig, StreamingConfig},
-    event_store::EventStoreConfig,
-};
+#[cfg(feature = "streaming")]
+use nautilus_system::config::{DataCatalogConfig, StreamingConfig};
+use nautilus_system::{config::NautilusKernelConfig, event_store::EventStoreConfig};
 use nautilus_trading::ImportableControllerConfig;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -798,7 +797,12 @@ pub struct LiveNodeConfig {
     /// The order emulator configuration.
     pub emulator: Option<OrderEmulatorConfig>,
     /// The configuration for streaming to feather files.
+    #[cfg(feature = "streaming")]
     pub streaming: Option<StreamingConfig>,
+    /// Catalogs registered with the data engine.
+    #[cfg(feature = "streaming")]
+    #[builder(default)]
+    pub catalogs: Vec<DataCatalogConfig>,
     /// The optional runner queue pressure monitor configuration.
     pub queue_monitor: Option<QueueMonitorConfig>,
     /// The event-store configuration.
@@ -849,11 +853,6 @@ impl LiveNodeConfig {
     pub(crate) fn validate_runtime_support(&self) -> ConfigResult<()> {
         let mut collector = ConfigErrorCollector::new();
 
-        collector.collect(check_supported_field(
-            "LiveNodeConfig.streaming",
-            self.streaming.is_none(),
-            RUST_RUNTIME_UNSUPPORTED,
-        ));
         collector.collect(check_supported_field(
             "LiveNodeConfig.emulator",
             self.emulator.is_none(),
@@ -1153,6 +1152,12 @@ impl NautilusKernelConfig for LiveNodeConfig {
         self.portfolio
     }
 
+    #[cfg(feature = "streaming")]
+    fn catalogs(&self) -> Vec<DataCatalogConfig> {
+        self.catalogs.clone()
+    }
+
+    #[cfg(feature = "streaming")]
     fn streaming(&self) -> Option<StreamingConfig> {
         self.streaming.clone()
     }
@@ -1160,6 +1165,7 @@ impl NautilusKernelConfig for LiveNodeConfig {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "streaming")]
     use nautilus_system::config::RotationConfig;
     use rstest::rstest;
 
@@ -1289,7 +1295,8 @@ mean_dispatch_ns_clear = 700
     }
 
     #[rstest]
-    fn test_validate_runtime_support_rejects_streaming_config() {
+    #[cfg(feature = "streaming")]
+    fn test_validate_runtime_support_accepts_streaming_config() {
         let config = LiveNodeConfig {
             streaming: Some(StreamingConfig::new(
                 "catalog".to_string(),
@@ -1301,11 +1308,7 @@ mean_dispatch_ns_clear = 700
             ..Default::default()
         };
 
-        let error = config.validate_runtime_support().unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            "LiveNodeConfig.streaming is not supported by the Rust live runtime yet"
-        );
+        assert_eq!(config.validate_runtime_support(), Ok(()));
     }
 
     #[rstest]
@@ -1315,13 +1318,7 @@ mean_dispatch_ns_clear = 700
                 external_streams: Some(vec!["stream".to_string()]),
                 ..Default::default()
             }),
-            streaming: Some(StreamingConfig::new(
-                "catalog".to_string(),
-                "file".to_string(),
-                1_000,
-                false,
-                RotationConfig::NoRotation,
-            )),
+            emulator: Some(OrderEmulatorConfig::default()),
             loop_debug: true,
             ..Default::default()
         };
@@ -1334,7 +1331,7 @@ mean_dispatch_ns_clear = 700
                 assert_eq!(
                     errors[0],
                     ConfigError::UnsupportedField {
-                        field: "LiveNodeConfig.streaming".to_string(),
+                        field: "LiveNodeConfig.emulator".to_string(),
                         reason: RUST_RUNTIME_UNSUPPORTED.to_string(),
                     },
                 );

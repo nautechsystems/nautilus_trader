@@ -5468,7 +5468,6 @@ dependencies = [
  "nautilus-live",
  "nautilus-model",
  "nautilus-network",
- "nautilus-persistence-macros",
  "nautilus-serialization",
  "nautilus-system",
  "nautilus-testkit",
@@ -5694,8 +5693,10 @@ dependencies = [
  "nautilus-core",
  "nautilus-infrastructure",
  "nautilus-model",
+ "nautilus-persistence",
  "rstest",
  "serde_json",
+ "tempfile",
  "tokio",
  "tokio-util",
  "ustr",
@@ -5941,7 +5942,6 @@ dependencies = [
  "nautilus-live",
  "nautilus-model",
  "nautilus-network",
- "nautilus-persistence-macros",
  "nautilus-serialization",
  "nautilus-system",
  "nautilus-testkit",
@@ -6146,7 +6146,6 @@ dependencies = [
  "nautilus-model",
  "nautilus-network",
  "nautilus-persistence",
- "nautilus-persistence-macros",
  "nautilus-serialization",
  "nautilus-system",
  "nautilus-testkit",
@@ -6414,6 +6413,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-macros"
+version = "0.64.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "rstest",
+ "syn 3.0.5",
+]
+
+[[package]]
 name = "nautilus-model"
 version = "0.64.0"
 dependencies = [
@@ -6432,16 +6441,19 @@ dependencies = [
  "jiff",
  "log",
  "nautilus-core",
+ "nautilus-macros",
  "parking_lot",
  "proptest",
  "pyo3",
  "pyo3-stub-gen",
+ "rmp-serde",
  "rstest",
  "ruint",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
  "serde_json",
+ "smallvec",
  "strum 0.28.0",
  "tabled",
  "tempfile",
@@ -6560,7 +6572,9 @@ dependencies = [
  "ahash",
  "anyhow",
  "arrow 59.3.0",
- "arrow-row",
+ "async-trait",
+ "blake3",
+ "bon",
  "codspeed-criterion-compat",
  "datafusion",
  "futures",
@@ -6570,7 +6584,6 @@ dependencies = [
  "nautilus-common",
  "nautilus-core",
  "nautilus-model",
- "nautilus-persistence-macros",
  "nautilus-serialization",
  "nautilus-testkit",
  "object_store",
@@ -6584,21 +6597,12 @@ dependencies = [
  "rust_decimal",
  "serde",
  "serde_json",
+ "strum 0.28.0",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
- "unbounded-interval-tree",
+ "toml 1.1.5+spec-1.1.0",
  "url",
-]
-
-[[package]]
-name = "nautilus-persistence-macros"
-version = "0.64.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "rstest",
- "syn 2.0.119",
 ]
 
 [[package]]
@@ -6638,7 +6642,6 @@ dependencies = [
  "nautilus-live",
  "nautilus-model",
  "nautilus-network",
- "nautilus-persistence-macros",
  "nautilus-sandbox",
  "nautilus-system",
  "nautilus-testkit",
@@ -6799,6 +6802,7 @@ dependencies = [
  "codspeed-criterion-compat",
  "indexmap 2.14.2",
  "nautilus-core",
+ "nautilus-macros",
  "nautilus-model",
  "pretty_assertions",
  "pyo3",
@@ -10339,15 +10343,6 @@ name = "unarray"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eaea85b334db583fe3274d12b4cd1880032beab409c0d774be044d4480ab9a94"
-
-[[package]]
-name = "unbounded-interval-tree"
-version = "1.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fac967d0ba617b6fd7f558750a2924a7086998ae52524b75aba74a719c11264"
-dependencies = [
- "rand 0.8.8",
-]
 
 [[package]]
 name = "unic-char-property"

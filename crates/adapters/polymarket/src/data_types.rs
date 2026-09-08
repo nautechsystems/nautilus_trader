@@ -19,15 +19,14 @@
 //! [`CustomData`](nautilus_model::data::CustomData).
 
 use nautilus_core::UnixNanos;
-use nautilus_model::types::Price;
-use nautilus_persistence_macros::custom_data;
+use nautilus_model::{custom_data, types::Price};
 use rust_decimal::Decimal;
 
 /// Polymarket RTDS crypto price sample from the `crypto_prices` topic.
 ///
 /// The adapter normalizes both live `update` frames and `subscribe` backfill
 /// snapshots into this per-tick custom data type.
-#[custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.adapters.polymarket")]
+#[custom_data(pyo3, stub_module = "nautilus_trader.adapters.polymarket")]
 pub struct PolymarketRtdsCryptoPrice {
     /// Lowercase venue symbol, e.g. `btcusdt`.
     pub symbol: String,
@@ -55,7 +54,7 @@ pub struct PolymarketRtdsCryptoPrice {
 /// The adapter suppresses older observations and exact same-timestamp redeliveries. A changed
 /// value at the same observation timestamp is reported as a protocol error and is not emitted.
 /// The previous observation remains authoritative, so emission resumes only at a newer timestamp.
-#[custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.adapters.polymarket")]
+#[custom_data(pyo3, stub_module = "nautilus_trader.adapters.polymarket")]
 pub struct PolymarketRtdsCryptoTwap {
     /// Lowercase slash-delimited venue symbol, e.g. `btc/usd`.
     pub symbol: String,
@@ -78,7 +77,7 @@ pub struct PolymarketRtdsCryptoTwap {
 ///
 /// The adapter normalizes both live `update` frames and `subscribe` backfill
 /// snapshots into this per-tick custom data type.
-#[custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.adapters.polymarket")]
+#[custom_data(pyo3, stub_module = "nautilus_trader.adapters.polymarket")]
 pub struct PolymarketRtdsEquityPrice {
     /// Lowercase venue symbol, e.g. `aapl`, `eurusd`, or `xauusd`.
     pub symbol: String,

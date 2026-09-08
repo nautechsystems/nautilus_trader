@@ -1007,25 +1007,33 @@ fn test_order_book_deltas_with_multiple_deltas() {
 }
 
 #[rstest]
-fn test_order_book_depth10_roundtrip() {
-    let bids = std::array::from_fn(|i| {
-        BookOrder::new(
-            OrderSide::Buy,
-            Price::from_decimal_dp(Decimal::new(10_000 - 50 * i as i64, 2), 2).unwrap(),
-            Quantity::from_decimal_dp(Decimal::new(100 + i as i64, 1), 1).unwrap(),
-            0,
-        )
-    });
-    let asks = std::array::from_fn(|i| {
-        BookOrder::new(
-            OrderSide::Sell,
-            Price::from_decimal_dp(Decimal::new(10_050 + 50 * i as i64, 2), 2).unwrap(),
-            Quantity::from_decimal_dp(Decimal::new(200 + i as i64, 1), 1).unwrap(),
-            0,
-        )
-    });
-    let bid_counts = std::array::from_fn(|i| i as u32 + 1);
-    let ask_counts = std::array::from_fn(|i| i as u32 + 11);
+#[case(0)]
+#[case(3)]
+#[case(10)]
+#[case(25)]
+fn test_order_book_depth_roundtrip(#[case] levels: usize) {
+    let bids = (0..levels)
+        .map(|i| {
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from_decimal_dp(Decimal::new(10_000 - 50 * i as i64, 2), 2).unwrap(),
+                Quantity::from_decimal_dp(Decimal::new(100 + i as i64, 1), 1).unwrap(),
+                0,
+            )
+        })
+        .collect::<Vec<_>>();
+    let asks = (0..levels)
+        .map(|i| {
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from_decimal_dp(Decimal::new(10_050 + 50 * i as i64, 2), 2).unwrap(),
+                Quantity::from_decimal_dp(Decimal::new(200 + i as i64, 1), 1).unwrap(),
+                0,
+            )
+        })
+        .collect::<Vec<_>>();
+    let bid_counts = (0..levels).map(|i| i as u32 + 1).collect::<Vec<_>>();
+    let ask_counts = (0..levels).map(|i| i as u32 + 11).collect::<Vec<_>>();
 
     let depth = OrderBookDepth10::new(
         InstrumentId::from("BTCUSDT.BINANCE"),
@@ -1056,13 +1064,13 @@ fn test_order_book_depth10_roundtrip() {
 
     assert_eq!(depth.instrument_id, decoded.instrument_id);
 
-    for i in 0..10 {
+    for i in 0..levels {
         assert_eq!(depth.bids[i].side, decoded.bids[i].side);
         assert_eq!(depth.bids[i].price, decoded.bids[i].price);
         assert_eq!(depth.bids[i].size, decoded.bids[i].size);
     }
 
-    for i in 0..10 {
+    for i in 0..levels {
         assert_eq!(depth.asks[i].side, decoded.asks[i].side);
         assert_eq!(depth.asks[i].price, decoded.asks[i].price);
         assert_eq!(depth.asks[i].size, decoded.asks[i].size);

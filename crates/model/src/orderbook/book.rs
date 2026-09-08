@@ -553,7 +553,7 @@ impl OrderBook {
         self.bids.clear();
         self.asks.clear();
 
-        for order in depth.bids {
+        for &order in &depth.bids {
             // Skip padding entries
             if order.side.is_none() || !order.size.is_positive() {
                 continue;
@@ -578,7 +578,7 @@ impl OrderBook {
             self.bids.add(order, depth.flags);
         }
 
-        for order in depth.asks {
+        for &order in &depth.asks {
             // Skip padding entries
             if order.side.is_none() || !order.size.is_positive() {
                 continue;

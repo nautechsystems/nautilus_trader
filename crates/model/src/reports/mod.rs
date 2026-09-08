@@ -56,8 +56,3 @@ impl HasTsInit for ExecutionMassStatus {
         self.ts_init
     }
 }
-
-crate::impl_catalog_path_prefix!(FillReport, "fill_report");
-crate::impl_catalog_path_prefix!(OrderStatusReport, "order_status_report");
-crate::impl_catalog_path_prefix!(PositionStatusReport, "position_status_report");
-crate::impl_catalog_path_prefix!(ExecutionMassStatus, "execution_mass_status");

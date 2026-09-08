@@ -13,17 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::io::Cursor;
+use std::{io::Cursor, sync::Arc};
 
 use arrow::{
+    datatypes::Schema,
+    ffi_stream::FFI_ArrowArrayStream,
     ipc::{reader::StreamReader, writer::StreamWriter},
-    record_batch::RecordBatch,
+    record_batch::{RecordBatch, RecordBatchIterator},
 };
 use nautilus_core::python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err};
 use nautilus_model::{
     data::{
-        Bar, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta,
-        OrderBookDepth10, QuoteTick, TradeTick, close::InstrumentClose,
+        Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OptionGreeks,
+        OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick, close::InstrumentClose,
     },
     python::data::{
         pyobjects_to_bars, pyobjects_to_book_deltas, pyobjects_to_index_prices,
@@ -34,13 +36,13 @@ use nautilus_model::{
 use pyo3::{
     conversion::IntoPyObjectExt,
     prelude::*,
-    types::{PyBytes, PyType},
+    types::{PyBytes, PyCapsule, PyType},
 };
 
 use crate::arrow::{
     ArrowSchemaProvider, DecodeFromRecordBatch, DecodeTypedFromRecordBatch,
     bars_to_arrow_record_batch_bytes, book_deltas_to_arrow_record_batch_bytes,
-    book_depth10_to_arrow_record_batch_bytes, index_prices_to_arrow_record_batch_bytes,
+    book_depths_to_arrow_record_batch_bytes, index_prices_to_arrow_record_batch_bytes,
     instrument_closes_to_arrow_record_batch_bytes, instrument_status_to_arrow_record_batch_bytes,
     mark_prices_to_arrow_record_batch_bytes, option_greeks_to_arrow_record_batch_bytes,
     quotes_to_arrow_record_batch_bytes, trades_to_arrow_record_batch_bytes,
@@ -52,13 +54,26 @@ use crate::arrow::{
 ///
 /// Returns a `PyErr` if writing the Arrow IPC stream fails.
 pub fn arrow_record_batch_to_pybytes(py: Python, batch: &RecordBatch) -> PyResult<Py<PyBytes>> {
-    // Create a cursor to write to a byte array in memory
+    arrow_record_batches_to_pybytes(py, &batch.schema(), std::slice::from_ref(batch))
+}
+
+/// Transforms the given record `batches` into Python `bytes` as a single Arrow IPC stream.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if writing the Arrow IPC stream fails.
+pub fn arrow_record_batches_to_pybytes(
+    py: Python,
+    schema: &Schema,
+    batches: &[RecordBatch],
+) -> PyResult<Py<PyBytes>> {
     let mut cursor = Cursor::new(Vec::new());
     {
-        let mut writer =
-            StreamWriter::try_new(&mut cursor, &batch.schema()).map_err(to_pyruntime_err)?;
+        let mut writer = StreamWriter::try_new(&mut cursor, schema).map_err(to_pyruntime_err)?;
 
-        writer.write(batch).map_err(to_pyruntime_err)?;
+        for batch in batches {
+            writer.write(batch).map_err(to_pyruntime_err)?;
+        }
 
         writer.finish().map_err(to_pyruntime_err)?;
     }
@@ -67,6 +82,24 @@ pub fn arrow_record_batch_to_pybytes(py: Python, batch: &RecordBatch) -> PyResul
     let pybytes = PyBytes::new(py, &buffer);
 
     Ok(pybytes.into())
+}
+
+/// Exports the given record `batches` as an Arrow C stream PyCapsule.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if creating the PyCapsule fails.
+pub fn arrow_record_batches_to_pyarrow_stream(
+    py: Python<'_>,
+    schema: &Schema,
+    batches: Vec<RecordBatch>,
+) -> PyResult<Py<PyAny>> {
+    let reader = RecordBatchIterator::new(batches.into_iter().map(Ok), Arc::new(schema.clone()));
+    let stream = FFI_ArrowArrayStream::new(Box::new(reader));
+
+    // The Arrow PyCapsule protocol requires this exact name for ArrowArrayStream values.
+    let capsule = PyCapsule::new_with_value(py, stream, c"arrow_array_stream")?;
+    Ok(capsule.into_any().unbind())
 }
 
 /// Returns a mapping from field names to Arrow data types for the given Rust data class.
@@ -80,12 +113,13 @@ pub fn get_arrow_schema_map(py: Python<'_>, cls: &Bound<'_, PyType>) -> PyResult
     let cls_str: String = cls.getattr("__name__")?.extract()?;
     let result_map = match cls_str.as_str() {
         stringify!(OrderBookDelta) => OrderBookDelta::get_schema_map(),
-        stringify!(OrderBookDepth10) => OrderBookDepth10::get_schema_map(),
+        stringify!(OrderBookDepth) | "OrderBookDepth10" => OrderBookDepth::get_schema_map(),
         stringify!(QuoteTick) => QuoteTick::get_schema_map(),
         stringify!(TradeTick) => TradeTick::get_schema_map(),
         stringify!(Bar) => Bar::get_schema_map(),
         stringify!(MarkPriceUpdate) => MarkPriceUpdate::get_schema_map(),
         stringify!(IndexPriceUpdate) => IndexPriceUpdate::get_schema_map(),
+        stringify!(FundingRateUpdate) => FundingRateUpdate::get_schema_map(),
         stringify!(InstrumentStatus) => InstrumentStatus::get_schema_map(),
         stringify!(OptionGreeks) => OptionGreeks::get_schema_map(),
         stringify!(InstrumentClose) => InstrumentClose::get_schema_map(),
@@ -97,6 +131,37 @@ pub fn get_arrow_schema_map(py: Python<'_>, cls: &Bound<'_, PyType>) -> PyResult
     };
 
     result_map.into_py_any(py)
+}
+
+/// Returns an Arrow IPC stream containing the Rust schema for the given data class.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if the class name is not recognized or schema serialization fails.
+#[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
+pub fn get_arrow_schema_bytes(py: Python<'_>, cls: &Bound<'_, PyType>) -> PyResult<Py<PyBytes>> {
+    let cls_str: String = cls.getattr("__name__")?.extract()?;
+    let schema = match cls_str.as_str() {
+        stringify!(OrderBookDelta) => OrderBookDelta::get_schema(None),
+        stringify!(OrderBookDepth) | "OrderBookDepth10" => OrderBookDepth::get_schema(None),
+        stringify!(QuoteTick) => QuoteTick::get_schema(None),
+        stringify!(TradeTick) => TradeTick::get_schema(None),
+        stringify!(Bar) => Bar::get_schema(None),
+        stringify!(MarkPriceUpdate) => MarkPriceUpdate::get_schema(None),
+        stringify!(IndexPriceUpdate) => IndexPriceUpdate::get_schema(None),
+        stringify!(FundingRateUpdate) => FundingRateUpdate::get_schema(None),
+        stringify!(InstrumentStatus) => InstrumentStatus::get_schema(None),
+        stringify!(OptionGreeks) => OptionGreeks::get_schema(None),
+        stringify!(InstrumentClose) => InstrumentClose::get_schema(None),
+        _ => {
+            return Err(to_pytype_err(format!(
+                "Arrow schema for `{cls_str}` is not currently implemented in Rust."
+            )));
+        }
+    };
+
+    arrow_record_batches_to_pybytes(py, &schema, &[])
 }
 
 /// Converts a vector of `OrderBookDelta` into an Arrow `RecordBatch`.
@@ -123,12 +188,12 @@ pub fn pyobjects_to_arrow_record_batch_bytes(
             let deltas = pyobjects_to_book_deltas(data)?;
             py_book_deltas_to_arrow_record_batch_bytes(py, deltas)
         }
-        stringify!(OrderBookDepth10) => {
-            let depth_snapshots: Vec<OrderBookDepth10> = data
+        stringify!(OrderBookDepth) => {
+            let depth_snapshots: Vec<OrderBookDepth> = data
                 .into_iter()
-                .map(|obj| obj.extract::<OrderBookDepth10>().map_err(Into::into))
-                .collect::<PyResult<Vec<OrderBookDepth10>>>()?;
-            py_book_depth10_to_arrow_record_batch_bytes(py, depth_snapshots)
+                .map(|obj| obj.extract::<OrderBookDepth>().map_err(Into::into))
+                .collect::<PyResult<Vec<OrderBookDepth>>>()?;
+            py_book_depths_to_arrow_record_batch_bytes(py, depth_snapshots)
         }
         stringify!(QuoteTick) => {
             let quotes = pyobjects_to_quotes(data)?;
@@ -190,7 +255,7 @@ pub fn py_book_deltas_to_arrow_record_batch_bytes(
     }
 }
 
-/// Converts a vector of `OrderBookDepth10` into an Arrow `RecordBatch`.
+/// Converts a vector of `OrderBookDepth` into an Arrow `RecordBatch`.
 ///
 /// # Errors
 ///
@@ -198,18 +263,45 @@ pub fn py_book_deltas_to_arrow_record_batch_bytes(
 /// - `data` is empty: `EncodingError::EmptyData`.
 /// - Metadata differs between rows: `EncodingError::MixedMetadata`.
 /// - Encoding fails: `EncodingError::ArrowError`.
-#[pyfunction(name = "book_depth10_to_arrow_record_batch_bytes")]
+#[pyfunction(name = "book_depths_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 #[expect(clippy::needless_pass_by_value)]
-pub fn py_book_depth10_to_arrow_record_batch_bytes(
+pub fn py_book_depths_to_arrow_record_batch_bytes(
     py: Python,
-    data: Vec<OrderBookDepth10>,
+    data: Vec<OrderBookDepth>,
 ) -> PyResult<Py<PyBytes>> {
-    match book_depth10_to_arrow_record_batch_bytes(&data) {
+    match book_depths_to_arrow_record_batch_bytes(&data) {
         Ok(batch) => arrow_record_batch_to_pybytes(py, &batch),
         Err(e) => Err(to_pyvalue_err(e)),
     }
 }
+
+#[allow(
+    deprecated,
+    reason = "generated code references the one-release Python compatibility alias"
+)]
+mod depth10_compat {
+    use super::{
+        OrderBookDepth, Py, PyBytes, PyResult, Python, py_book_depths_to_arrow_record_batch_bytes,
+        pyfunction,
+    };
+
+    #[pyfunction(name = "book_depth10_to_arrow_record_batch_bytes")]
+    #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
+    #[deprecated(note = "use book_depths_to_arrow_record_batch_bytes")]
+    pub fn py_book_depth10_to_arrow_record_batch_bytes(
+        py: Python,
+        data: Vec<OrderBookDepth>,
+    ) -> PyResult<Py<PyBytes>> {
+        py_book_depths_to_arrow_record_batch_bytes(py, data)
+    }
+}
+
+#[allow(
+    deprecated,
+    reason = "re-exports the one-release Python compatibility alias"
+)]
+pub use depth10_compat::py_book_depth10_to_arrow_record_batch_bytes;
 
 /// Converts a vector of `QuoteTick` into an Arrow `RecordBatch`.
 ///

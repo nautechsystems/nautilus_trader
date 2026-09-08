@@ -86,7 +86,7 @@ class TardisDeltaStreamIterator:
 @typing.final
 class TardisDepth10StreamIterator:
     def __iter__(self) -> TardisDepth10StreamIterator: ...
-    def __next__(self) -> list[model.OrderBookDepth10] | None: ...
+    def __next__(self) -> list[model.OrderBookDepth] | None: ...
 
 @typing.final
 class TardisFundingRateStreamIterator:
@@ -212,14 +212,14 @@ def load_tardis_depth10_from_snapshot25(
     size_precision: int | None = None,
     instrument_id: model.InstrumentId | None = None,
     limit: int | None = None,
-) -> list[model.OrderBookDepth10]: ...
+) -> list[model.OrderBookDepth]: ...
 def load_tardis_depth10_from_snapshot5(
     filepath: str | os.PathLike | pathlib.Path,
     price_precision: int | None = None,
     size_precision: int | None = None,
     instrument_id: model.InstrumentId | None = None,
     limit: int | None = None,
-) -> list[model.OrderBookDepth10]: ...
+) -> list[model.OrderBookDepth]: ...
 def load_tardis_funding_rates(
     filepath: str | os.PathLike | pathlib.Path,
     instrument_id: model.InstrumentId | None = None,

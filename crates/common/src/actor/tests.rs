@@ -363,7 +363,7 @@ impl DataActor for TestDataActor {
     }
 
     fn on_book_depth(&mut self, depth: &OrderBookDepth10) -> anyhow::Result<()> {
-        self.received_depths.push(*depth);
+        self.received_depths.push(depth.clone());
         Ok(())
     }
 
@@ -405,7 +405,7 @@ impl DataActor for TestDataActor {
     }
 
     fn on_historical_book_depth(&mut self, depths: &[OrderBookDepth10]) -> anyhow::Result<()> {
-        self.received_depths.extend(depths);
+        self.received_depths.extend(depths.iter().cloned());
         Ok(())
     }
 
@@ -4093,7 +4093,7 @@ fn test_request_book_depth(
         request_id,
         client_id,
         audusd_sim.id,
-        vec![depth],
+        vec![depth.clone()],
         None,
         None,
         UnixNanos::default(),

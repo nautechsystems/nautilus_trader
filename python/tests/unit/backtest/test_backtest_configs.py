@@ -56,6 +56,7 @@ from nautilus_trader.model import OtoTriggerMode
 from nautilus_trader.model import PriceType
 from nautilus_trader.model import StandardMarginModel
 from nautilus_trader.persistence import DataCatalogConfig
+from nautilus_trader.persistence import RotationConfig
 from nautilus_trader.persistence import StreamingConfig
 from nautilus_trader.risk import RiskEngineConfig
 from nautilus_trader.trading import ImportableControllerConfig
@@ -204,6 +205,35 @@ def test_streaming_config_consumes_rotation_inputs() -> None:
     assert config.rotation_mode == "SCHEDULED_DATES"
     assert config.rotation_interval_ns == 5_000
     assert config.schedule_ns == 750
+
+
+def test_streaming_config_exposes_shared_rotation() -> None:
+    """
+    Retain shared rotation and legacy readback properties.
+    """
+    config = StreamingConfig(
+        catalog_path="catalog",
+        rotation_config=RotationConfig.interval(17),
+        writer_backend="parquet",
+    )
+    assert config.rotation_config.mode == "interval"
+    assert config.rotation_config.interval_ns == 17
+    assert config.rotation_mode == "INTERVAL"
+    assert config.rotation_interval_ns == 17
+    assert config.writer_backend == "Parquet"
+
+
+def test_streaming_config_rejects_ambiguous_rotation() -> None:
+    """
+    Reject conflicting rotation representations.
+    """
+    with pytest.raises(ValueError, match="cannot be combined"):
+        StreamingConfig(
+            catalog_path="catalog",
+            rotation_config=RotationConfig.size(17),
+            rotation_mode="SIZE",
+            max_file_size=23,
+        )
 
 
 def test_venue_config_required_params() -> None:

@@ -59,13 +59,17 @@ rustdoc-args = ["--cfg", "docsrs"]
 nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
 nautilus-model = { workspace = true }
-nautilus-persistence-macros = { workspace = true }
-nautilus-serialization = { workspace = true, features = ["arrow"] }
+nautilus-serialization = { workspace = true, features = [
+  "arrow",
+  "arrow-display",
+] }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
 arrow = { workspace = true }
-arrow-row = { workspace = true }
+async-trait = { workspace = true }
+blake3 = { workspace = true }
+bon = { workspace = true }
 datafusion = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }
@@ -76,9 +80,9 @@ parking_lot = { workspace = true }
 parquet = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+strum = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-unbounded-interval-tree = { workspace = true }
 url = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
@@ -96,6 +100,7 @@ proptest = { workspace = true }
 rstest = { workspace = true }
 rust_decimal = { workspace = true }
 tempfile = { workspace = true }
+toml = { workspace = true }
 
 [[bench]]
 name = "persistence"

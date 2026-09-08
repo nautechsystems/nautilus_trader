@@ -65,11 +65,7 @@ impl NautilusDataType {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DataBackendSession {
-    /// Provides a DataFusion session and registers DataFusion queries.
-    ///
-    /// The session is used to register data sources and make queries on them. A
-    /// query returns a Chunk of Arrow records. It is decoded and converted into
-    /// a Vec of data by types that implement `DecodeDataFromRecordBatch`.
+    /// Provides a DataFusion session for registering and querying catalog table sources.
     #[new]
     #[pyo3(signature=(chunk_size=10_000))]
     fn py_new(chunk_size: usize) -> PyResult<Self> {

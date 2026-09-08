@@ -1,11 +1,11 @@
 [package]
-name = "nautilus-persistence-macros"
+name = "nautilus-macros"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Procedural macros for custom data types (e.g. #[custom_data])"
+description = "Procedural macros for Nautilus model and serialization types"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true
@@ -19,9 +19,10 @@ workspace = true
 proc-macro = true
 
 [dependencies]
-proc-macro2 = "1.0.107"
-quote = "1.0.47"
-syn = { version = "2.0.119", features = ["full"] }
+proc-macro2 = { workspace = true }
+quote = { workspace = true }
+syn = { workspace = true, features = ["extra-traits"] }
+
 
 [dev-dependencies]
 rstest = { workspace = true }

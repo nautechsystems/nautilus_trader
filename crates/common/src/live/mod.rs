@@ -34,5 +34,8 @@ pub use runner::{
     set_system_command_sender, set_system_event_sender, try_get_data_event_sender,
     try_get_exec_event_sender, try_get_system_command_sender, try_get_system_event_sender,
 };
-pub use runtime::{get_runtime, set_runtime, shutdown_runtime};
+pub use runtime::{
+    block_in_place_on_nautilus, block_on_nautilus, block_on_nautilus_with, get_runtime,
+    set_runtime, shutdown_runtime,
+};
 pub use timer::LiveTimer;

@@ -874,7 +874,7 @@ pub fn parse_book10_msg_vec(
             size_precision,
             ts_init,
         )?;
-        depth10_updates.push(Data::BookDepth10(Box::new(depth10)));
+        depth10_updates.push(Data::BookDepth(Box::new(depth10)));
     }
 
     Ok(depth10_updates)
@@ -3325,7 +3325,7 @@ mod tests {
 
         assert_eq!(depth10_vec.len(), 1);
 
-        if let Data::BookDepth10(d) = &depth10_vec[0] {
+        if let Data::BookDepth(d) = &depth10_vec[0] {
             assert_eq!(d.instrument_id, instrument_id);
             assert_eq!(d.sequence, 123_456);
             assert_eq!(d.bids[0].price, Price::from("8476.97"));

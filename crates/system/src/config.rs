@@ -16,21 +16,16 @@
 use std::{fmt::Debug, time::Duration};
 
 use nautilus_common::{
-    cache::CacheConfig,
-    config::{ConfigError, ConfigErrorCollector, ConfigResult},
-    enums::Environment,
-    logging::logger::LoggerConfig,
-    msgbus::MessageBusConfig,
+    cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig, msgbus::MessageBusConfig,
 };
-use nautilus_core::{DurationNanos, UUID4, UnixNanos};
+use nautilus_core::UUID4;
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::engine::config::ExecutionEngineConfig;
 use nautilus_model::identifiers::TraderId;
 #[cfg(feature = "streaming")]
-use nautilus_persistence::config::DataCatalogConfig;
+pub use nautilus_persistence::config::{DataCatalogConfig, RotationConfig, StreamingConfig};
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
-use serde::{Deserialize, Serialize};
 
 /// Configuration trait for a `NautilusKernel` core system instance.
 pub trait NautilusKernelConfig: Debug {
@@ -75,7 +70,10 @@ pub trait NautilusKernelConfig: Debug {
     /// Returns the portfolio configuration.
     fn portfolio(&self) -> Option<PortfolioConfig>;
     /// Returns the configuration for streaming to feather files.
-    fn streaming(&self) -> Option<StreamingConfig>;
+    #[cfg(feature = "streaming")]
+    fn streaming(&self) -> Option<StreamingConfig> {
+        None
+    }
     /// Returns configurations for existing data catalogs.
     #[cfg(feature = "streaming")]
     fn catalogs(&self) -> Vec<DataCatalogConfig> {
@@ -139,6 +137,7 @@ pub struct KernelConfig {
     /// The portfolio configuration.
     pub portfolio: Option<PortfolioConfig>,
     /// The configuration for streaming to feather files.
+    #[cfg(feature = "streaming")]
     pub streaming: Option<StreamingConfig>,
     /// Configurations for existing data catalogs.
     #[cfg(feature = "streaming")]
@@ -223,6 +222,7 @@ impl NautilusKernelConfig for KernelConfig {
         self.portfolio
     }
 
+    #[cfg(feature = "streaming")]
     fn streaming(&self) -> Option<StreamingConfig> {
         self.streaming.clone()
     }
@@ -239,129 +239,9 @@ impl Default for KernelConfig {
     }
 }
 
-/// Configuration for file rotation in streaming output.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RotationConfig {
-    /// Rotate based on file size.
-    Size {
-        /// Maximum buffer size in bytes before rotation.
-        max_size: u64,
-    },
-    /// Rotate based on a time interval.
-    Interval {
-        /// Interval in nanoseconds.
-        interval_ns: DurationNanos,
-    },
-    /// Rotate based on scheduled dates.
-    ScheduledDates {
-        /// Interval in nanoseconds.
-        interval_ns: DurationNanos,
-        /// Start of the scheduled rotation period.
-        schedule_ns: UnixNanos,
-    },
-    /// No automatic rotation.
-    NoRotation,
-}
-
-/// Configuration for streaming live or backtest runs to the catalog in feather format.
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.persistence", from_py_object, frozen)
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.persistence")
-)]
-#[cfg_attr(
-    feature = "python",
-    expect(
-        clippy::unsafe_derive_deserialize,
-        reason = "config deserializes plain fields; unsafe methods come from generated PyO3 integration"
-    )
-)]
-#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
-#[builder(finish_fn(name = build_inner, vis = ""))]
-#[serde(deny_unknown_fields)]
-pub struct StreamingConfig {
-    /// The path to the data catalog.
-    pub catalog_path: String,
-    /// The `fsspec` filesystem protocol for the catalog.
-    pub fs_protocol: String,
-    /// The flush interval (milliseconds) for writing chunks.
-    pub flush_interval_ms: u64,
-    /// If any existing feather files should be replaced.
-    pub replace_existing: bool,
-    /// Rotation configuration.
-    pub rotation_config: RotationConfig,
-}
-
-impl<S: streaming_config_builder::IsComplete> StreamingConfigBuilder<S> {
-    /// Validates and builds the [`StreamingConfig`].
-    ///
-    /// # Errors
-    ///
-    /// Returns a [`ConfigError`] if any field fails validation
-    /// (see [`StreamingConfig::validate`]).
-    pub fn build(self) -> ConfigResult<StreamingConfig> {
-        let config = self.build_inner();
-        config.validate()?;
-        Ok(config)
-    }
-}
-
-impl StreamingConfig {
-    /// Creates a new [`StreamingConfig`] instance.
-    #[must_use]
-    pub const fn new(
-        catalog_path: String,
-        fs_protocol: String,
-        flush_interval_ms: u64,
-        replace_existing: bool,
-        rotation_config: RotationConfig,
-    ) -> Self {
-        Self {
-            catalog_path,
-            fs_protocol,
-            flush_interval_ms,
-            replace_existing,
-            rotation_config,
-        }
-    }
-
-    /// Validates the streaming configuration, collecting every field violation.
-    ///
-    /// # Errors
-    ///
-    /// Returns a [`ConfigError`] (a [`ConfigError::Multiple`] when more than one field is
-    /// invalid) if any field fails validation.
-    pub fn validate(&self) -> ConfigResult<()> {
-        let mut errors = ConfigErrorCollector::new();
-
-        errors.check(
-            !self.catalog_path.trim().is_empty(),
-            ConfigError::empty_field("catalog_path"),
-        );
-        errors.check(
-            !self.fs_protocol.trim().is_empty(),
-            ConfigError::empty_field("fs_protocol"),
-        );
-
-        let flush_interval_ms = self.flush_interval_ms;
-        errors.check(
-            flush_interval_ms > 0,
-            ConfigError::range(
-                "flush_interval_ms",
-                format!("must be a positive number of milliseconds, was {flush_interval_ms}"),
-            ),
-        );
-
-        errors.into_result()
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use nautilus_common::config::ConfigError;
     use rstest::rstest;
 
     use super::*;

@@ -1048,15 +1048,15 @@ pub fn parse_bsp_book_deltas(
     ] {
         for pv in levels {
             let action = if pv.volume == Decimal::ZERO {
-                BookAction::Delete as u32
+                BookAction::Delete
             } else {
-                BookAction::Update as u32
+                BookAction::Update
             };
 
             result.push(BetfairBspBookDelta::new(
                 instrument_id,
                 action,
-                side as u32,
+                side,
                 pv.price,
                 pv.volume,
                 ts_event,
@@ -2566,14 +2566,14 @@ mod tests {
         assert_eq!(deltas.len(), spb_count + spl_count);
 
         // SPB entries are Sell side
-        assert_eq!(deltas[0].side, OrderSide::Sell as u32);
+        assert_eq!(deltas[0].side, OrderSide::Sell);
         assert_eq!(deltas[0].price, Decimal::new(1000, 0));
         assert_eq!(deltas[0].size, Decimal::new(3338, 2));
-        assert_eq!(deltas[0].action, BookAction::Update as u32);
+        assert_eq!(deltas[0].action, BookAction::Update);
 
         // SPL entries are Buy side
         let spl_start = spb_count;
-        assert_eq!(deltas[spl_start].side, OrderSide::Buy as u32);
+        assert_eq!(deltas[spl_start].side, OrderSide::Buy);
         assert_eq!(deltas[spl_start].price, Decimal::new(7, 0));
         assert_eq!(deltas[spl_start].size, Decimal::new(10, 0));
     }
@@ -2606,7 +2606,7 @@ mod tests {
         let deltas = parse_bsp_book_deltas(instrument_id, &rc, ts, ts);
 
         assert_eq!(deltas.len(), 1);
-        assert_eq!(deltas[0].action, BookAction::Delete as u32);
+        assert_eq!(deltas[0].action, BookAction::Delete);
         assert_eq!(deltas[0].price, Decimal::new(5, 0));
         assert_eq!(deltas[0].size, Decimal::ZERO);
     }

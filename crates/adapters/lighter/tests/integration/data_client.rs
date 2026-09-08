@@ -922,13 +922,13 @@ async fn test_subscribe_book_depth10_emits_depth10_only() {
     assert_eq!(state.subscribes().await[0]["channel"], "order_book/0");
 
     let event = next_event_matching(&mut rx, Duration::from_secs(2), |e| {
-        matches!(e, DataEvent::Data(Data::BookDepth10(_)))
+        matches!(e, DataEvent::Data(Data::BookDepth(_)))
     })
     .await
     .expect("expected Depth10 event");
 
     match event {
-        DataEvent::Data(Data::BookDepth10(depth)) => {
+        DataEvent::Data(Data::BookDepth(depth)) => {
             assert_eq!(depth.instrument_id, instrument_id);
         }
         other => panic!("expected Depth10 event, was {other:?}"),
@@ -1505,13 +1505,13 @@ async fn test_book_deltas_and_depth10_share_order_book_stream() {
     assert_eq!(subs[0]["channel"], "order_book/0");
 
     let event = next_event_matching(&mut rx, Duration::from_secs(2), |e| {
-        matches!(e, DataEvent::Data(Data::BookDepth10(_)))
+        matches!(e, DataEvent::Data(Data::BookDepth(_)))
     })
     .await
     .expect("expected cached Depth10 event");
 
     match event {
-        DataEvent::Data(Data::BookDepth10(depth)) => {
+        DataEvent::Data(Data::BookDepth(depth)) => {
             assert_eq!(depth.instrument_id, instrument_id);
         }
         other => panic!("expected Depth10 event, was {other:?}"),
@@ -1590,13 +1590,13 @@ async fn test_book_depth10_and_deltas_share_order_book_stream() {
     await_subscribe_count(&state, 1).await;
 
     let event = next_event_matching(&mut rx, Duration::from_secs(2), |e| {
-        matches!(e, DataEvent::Data(Data::BookDepth10(_)))
+        matches!(e, DataEvent::Data(Data::BookDepth(_)))
     })
     .await
     .expect("expected initial Depth10 event");
 
     match event {
-        DataEvent::Data(Data::BookDepth10(depth)) => {
+        DataEvent::Data(Data::BookDepth(depth)) => {
             assert_eq!(depth.instrument_id, instrument_id);
         }
         other => panic!("expected Depth10 event, was {other:?}"),
@@ -1641,7 +1641,7 @@ async fn test_book_depth10_and_deltas_share_order_book_stream() {
 
     let next = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await;
     assert!(
-        !matches!(next, Ok(Some(DataEvent::Data(Data::BookDepth10(_))))),
+        !matches!(next, Ok(Some(DataEvent::Data(Data::BookDepth(_))))),
         "late deltas subscriber must not re-emit depth10",
     );
 

@@ -18,18 +18,17 @@
 use std::iter::Peekable;
 
 use ahash::{AHashMap, AHashSet};
-use nautilus_core::UnixNanos;
+use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
-    data::{
-        Bar, Data, FundingRateUpdate, HasTsInit, IndexPriceUpdate, InstrumentClose,
-        InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDepth10,
-        QuoteTick, TradeTick,
-    },
+    data::{Data, HasTsInit, NautilusDataType as CatalogDataType},
     enums::{BookType, OtoTriggerMode},
     identifiers::{InstrumentId, Venue},
     types::Money,
 };
-use nautilus_persistence::backend::{catalog::ParquetDataCatalog, session::QueryResult};
+use nautilus_persistence::{
+    catalog::traits::{CatalogInstrumentQuery, CatalogQuery, DataCatalogBox},
+    config::DataCatalogConfig,
+};
 
 use crate::{
     config::{BacktestDataConfig, BacktestRunConfig, NautilusDataType, SimulatedVenueConfig},
@@ -39,7 +38,7 @@ use crate::{
 
 /// Orchestrates catalog-driven backtests from run configurations.
 ///
-/// `BacktestNode` connects the [`ParquetDataCatalog`] with [`BacktestEngine`] to load
+/// `BacktestNode` connects the a catalog with [`BacktestEngine`] to load
 /// historical data and run backtests. Supports both oneshot and streaming modes.
 #[derive(Debug)]
 #[cfg_attr(
@@ -183,12 +182,12 @@ impl BacktestNode {
         Ok(results)
     }
 
-    /// Creates a [`ParquetDataCatalog`] from a data config.
+    /// Creates a a catalog from a data config.
     ///
     /// # Errors
     ///
     /// Returns an error if the catalog cannot be created from the URI.
-    pub fn load_catalog(config: &BacktestDataConfig) -> anyhow::Result<ParquetDataCatalog> {
+    pub fn load_catalog(config: &BacktestDataConfig) -> anyhow::Result<DataCatalogBox> {
         create_catalog(config)
     }
 
@@ -281,7 +280,7 @@ fn build_engine(config: &BacktestRunConfig) -> anyhow::Result<BacktestEngine> {
     }
 
     for data_config in config.data() {
-        let catalog = create_catalog(data_config)?;
+        let mut catalog = create_catalog(data_config)?;
         let instr_ids: Vec<InstrumentId> = data_config.get_instrument_ids()?;
         let filter: Option<Vec<String>> = if instr_ids.is_empty() {
             None
@@ -289,7 +288,8 @@ fn build_engine(config: &BacktestRunConfig) -> anyhow::Result<BacktestEngine> {
             Some(instr_ids.iter().map(ToString::to_string).collect())
         };
 
-        let instruments = catalog.query_instruments(filter.as_deref())?;
+        let instruments =
+            catalog.instruments(&CatalogInstrumentQuery::new().with_instrument_ids(filter))?;
 
         if !instr_ids.is_empty() && instruments.is_empty() {
             let ids: Vec<String> = instr_ids.iter().map(ToString::to_string).collect();
@@ -417,9 +417,7 @@ fn run_streaming(
 
     for (catalog, data_config) in catalogs.iter_mut().zip(data_configs) {
         let result = dispatch_query(catalog, data_config, config.start(), config.end())?;
-        let mut stream = result
-            .map(|item| item.map_err(anyhow::Error::from))
-            .peekable();
+        let mut stream = result.peekable();
 
         match stream.peek() {
             Some(Ok(_)) => streams.push(stream),
@@ -539,16 +537,19 @@ fn take_aligned_chunk<I: Iterator<Item = anyhow::Result<Data>>>(
     Ok(chunk)
 }
 
-fn create_catalog(config: &BacktestDataConfig) -> anyhow::Result<ParquetDataCatalog> {
-    let uri = match config.catalog_fs_protocol() {
-        Some(protocol) => format!("{protocol}://{}", config.catalog_path()),
-        None => config.catalog_path().to_string(),
-    };
-    let storage_options = config
-        .catalog_fs_rust_storage_options()
-        .cloned()
-        .or_else(|| config.catalog_fs_storage_options().cloned());
-    ParquetDataCatalog::from_uri(&uri, storage_options, None, None, None)
+fn create_catalog(config: &BacktestDataConfig) -> anyhow::Result<DataCatalogBox> {
+    DataCatalogConfig::new(
+        config.catalog_path().to_string(),
+        config.catalog_fs_protocol().map(str::to_string),
+        Some(config.catalog_backend()),
+    )
+    .with_storage_options(
+        config
+            .catalog_fs_rust_storage_options()
+            .cloned()
+            .or_else(|| config.catalog_fs_storage_options().cloned()),
+    )
+    .create_catalog()
 }
 
 fn load_data(
@@ -558,58 +559,55 @@ fn load_data(
 ) -> anyhow::Result<Vec<Data>> {
     let mut catalog = create_catalog(config)?;
     let result = dispatch_query(&mut catalog, config, run_start, run_end)?;
-    Ok(result.collect::<Result<Vec<_>, _>>()?)
+    result.collect::<Result<Vec<_>, _>>()
 }
 
 fn dispatch_query(
-    catalog: &mut ParquetDataCatalog,
+    catalog: &mut DataCatalogBox,
     config: &BacktestDataConfig,
-    run_start: Option<UnixNanos>,
-    run_end: Option<UnixNanos>,
-) -> anyhow::Result<QueryResult> {
+    start: Option<UnixNanos>,
+    end: Option<UnixNanos>,
+) -> anyhow::Result<Box<dyn Iterator<Item = anyhow::Result<Data>>>> {
     catalog.reset_session();
+    let data_type = match config.data_type() {
+        NautilusDataType::OrderBookDepth10 => CatalogDataType::OrderBookDepth,
+        other => other.to_string().parse::<CatalogDataType>()?,
+    };
+    let mut query = CatalogQuery::new(data_type)
+        .with_identifiers(config.query_identifiers())
+        .with_range(
+            max_opt(config.start_time(), start),
+            min_opt(config.end_time(), end),
+        )
+        .with_where_clause(config.filter_expr().map(str::to_string));
+    let mut params = Params::new();
+    params.insert(
+        "optimize_file_loading".to_string(),
+        config.optimize_file_loading().into(),
+    );
+    query.params = Some(params);
+    let mut session = catalog.query_batch_session(&query, None)?;
+    let mut failed = false;
+    Ok(Box::new(
+        std::iter::from_fn(move || {
+            if failed {
+                return None;
+            }
 
-    let identifiers = config.query_identifiers();
-    let start = max_opt(config.start_time(), run_start);
-    let end = min_opt(config.end_time(), run_end);
-    let filter = config.filter_expr();
-    let optimize = config.optimize_file_loading();
-
-    match config.data_type() {
-        NautilusDataType::QuoteTick => {
-            catalog.query::<QuoteTick>(identifiers, start, end, filter, None, optimize)
-        }
-        NautilusDataType::TradeTick => {
-            catalog.query::<TradeTick>(identifiers, start, end, filter, None, optimize)
-        }
-        NautilusDataType::Bar => {
-            catalog.query::<Bar>(identifiers, start, end, filter, None, optimize)
-        }
-        NautilusDataType::OrderBookDelta => {
-            catalog.query::<OrderBookDelta>(identifiers, start, end, filter, None, optimize)
-        }
-        NautilusDataType::OrderBookDepth10 => {
-            catalog.query::<OrderBookDepth10>(identifiers, start, end, filter, None, optimize)
-        }
-        NautilusDataType::MarkPriceUpdate => {
-            catalog.query::<MarkPriceUpdate>(identifiers, start, end, filter, None, optimize)
-        }
-        NautilusDataType::IndexPriceUpdate => {
-            catalog.query::<IndexPriceUpdate>(identifiers, start, end, filter, None, optimize)
-        }
-        NautilusDataType::FundingRateUpdate => {
-            catalog.query::<FundingRateUpdate>(identifiers, start, end, filter, None, optimize)
-        }
-        NautilusDataType::InstrumentStatus => {
-            catalog.query::<InstrumentStatus>(identifiers, start, end, filter, None, optimize)
-        }
-        NautilusDataType::OptionGreeks => {
-            catalog.query::<OptionGreeks>(identifiers, start, end, filter, None, optimize)
-        }
-        NautilusDataType::InstrumentClose => {
-            catalog.query::<InstrumentClose>(identifiers, start, end, filter, None, optimize)
-        }
-    }
+            match session.next_batch() {
+                Ok(Some(batch)) => Some(Ok(batch.to_data_vec_for_compat())),
+                Ok(None) => None,
+                Err(e) => {
+                    failed = true;
+                    Some(Err(e))
+                }
+            }
+        })
+        .flat_map(|batch| match batch {
+            Ok(rows) => rows.into_iter().map(Ok).collect::<Vec<_>>(),
+            Err(e) => vec![Err(e)],
+        }),
+    ))
 }
 
 fn max_opt(a: Option<UnixNanos>, b: Option<UnixNanos>) -> Option<UnixNanos> {
@@ -635,6 +633,7 @@ mod tests {
     #[cfg(feature = "python")]
     use nautilus_model::enums::{AccountType, OmsType};
     use nautilus_model::{
+        data::{QuoteTick, TradeTick},
         enums::AggressorSide,
         identifiers::{InstrumentId, TradeId},
         types::{Price, Quantity},

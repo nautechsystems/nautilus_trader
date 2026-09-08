@@ -95,6 +95,27 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::types::balance::MarginBalance>()?;
     m.add_class::<crate::python::common::EnumIterator>()?;
     // Data
+    m.add_class::<data::PyNautilusDataType>()?;
+    m.add_class::<data::PyNautilusRecordType>()?;
+    m.add_class::<instruments::PyNautilusInstrumentType>()?;
+    for record_type in <crate::data::NautilusRecordType as strum::IntoEnumIterator>::iter() {
+        m.getattr("NautilusRecordType")?.setattr(
+            record_type.to_string(),
+            Py::new(m.py(), data::PyNautilusRecordType::new(record_type))?,
+        )?;
+    }
+
+    for instrument_type in
+        <crate::instruments::NautilusInstrumentType as strum::IntoEnumIterator>::iter()
+    {
+        m.getattr("NautilusInstrumentType")?.setattr(
+            instrument_type.to_string(),
+            Py::new(
+                m.py(),
+                instruments::PyNautilusInstrumentType::new(instrument_type),
+            )?,
+        )?;
+    }
     m.add_class::<crate::data::DataType>()?;
     m.add_class::<crate::data::CustomData>()?;
     m.add_function(pyo3::wrap_pyfunction!(
@@ -119,7 +140,8 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::data::prices::IndexPriceUpdate>()?;
     m.add_class::<crate::data::delta::OrderBookDelta>()?;
     m.add_class::<crate::data::deltas::OrderBookDeltas>()?;
-    m.add_class::<crate::data::depth::OrderBookDepth10>()?;
+    m.add_class::<crate::data::depth::OrderBookDepth>()?;
+    m.add("OrderBookDepth10", m.getattr("OrderBookDepth")?)?;
     m.add_class::<crate::data::quote::QuoteTick>()?;
     m.add_class::<crate::data::status::InstrumentStatus>()?;
     m.add_class::<crate::data::trade::TradeTick>()?;

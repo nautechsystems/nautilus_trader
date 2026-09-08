@@ -43,6 +43,7 @@ use url::Url;
 use super::{
     compare::Compare,
     kmerge_batch::{EagerStream, ElementBatchIter, KMerge},
+    parquet::io::normalize_legacy_parquet_columns,
 };
 
 #[derive(Debug, Default)]
@@ -108,6 +109,39 @@ pub struct QueryResult {
 }
 
 impl QueryResult {
+    /// Adapts typed catalog pages for callers of the existing row iterator API.
+    #[must_use]
+    pub fn from_typed_pages<T>(
+        pages: Box<dyn Iterator<Item = anyhow::Result<Vec<T>>> + Send>,
+    ) -> Self
+    where
+        T: Into<Data> + Send + 'static,
+    {
+        let error = Arc::new(ErrorSlot::default());
+        let pages = pages.map(|page| {
+            page.map(|rows| {
+                rows.into_iter()
+                    .map(Into::into)
+                    .collect::<Vec<Data>>()
+                    .into_iter()
+            })
+            .map_err(|e| match e.downcast::<EncodingError>() {
+                Ok(e) => QueryError::Decode(e),
+                Err(e) => QueryError::Stream(DataFusionError::External(e.into())),
+            })
+        });
+        let stream = BatchStream {
+            inner: EagerStream::from_stream_with_runtime(
+                futures::stream::iter(pages),
+                get_runtime().handle().clone(),
+            ),
+            error: Arc::clone(&error),
+        };
+        let mut merge = KMerge::new(TsInitComparator);
+        merge.push_iter(stream);
+        Self { merge, error }
+    }
+
     /// Discards the remaining data streams without draining them.
     pub fn clear(&mut self) {
         self.merge.clear();
@@ -412,7 +446,8 @@ fn decode_batch<T>(
 where
     T: DecodeDataFromRecordBatch,
 {
-    let batch = result?;
+    let batch = normalize_legacy_parquet_columns(&result?)
+        .map_err(|e| DataFusionError::External(e.into()))?;
     let mut metadata: std::collections::HashMap<String, String> = batch.schema().metadata().clone();
 
     if let Some(type_name) = custom_type_name {

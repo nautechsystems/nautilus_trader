@@ -1845,7 +1845,8 @@ impl DataEngine {
         match data {
             DataRef::BookDelta(delta) => self.handle_delta(*delta),
             DataRef::BookDeltas(deltas) => self.handle_deltas(deltas),
-            DataRef::BookDepth10(depth) => self.handle_depth10(*depth),
+            DataRef::Instrument(instrument) => self.handle_instrument(instrument),
+            DataRef::BookDepth(depth) => self.handle_depth10(depth),
             DataRef::Quote(quote) => {
                 self.handle_quote(*quote);
                 self.drain_deferred_commands();
@@ -1927,7 +1928,8 @@ impl DataEngine {
         match data {
             Data::BookDelta(delta) => self.handle_delta_pipeline(delta),
             Data::BookDeltas(deltas) => self.handle_deltas_pipeline(&deltas),
-            Data::BookDepth10(depth) => self.handle_depth10_pipeline(*depth),
+            Data::Instrument(instrument) => self.handle_instrument(&instrument),
+            Data::BookDepth(depth) => self.handle_depth10_pipeline(&depth),
             Data::Quote(quote) => self.handle_quote_pipeline(quote),
             Data::Trade(trade) => self.handle_trade_pipeline(trade),
             Data::Bar(bar) => self.handle_bar_pipeline(bar),
@@ -2591,12 +2593,12 @@ impl DataEngine {
         }
     }
 
-    fn handle_depth10(&self, depth: OrderBookDepth10) {
+    fn handle_depth10(&self, depth: &OrderBookDepth10) {
         let topic = switchboard::get_book_depth10_topic(depth.instrument_id);
-        msgbus::publish_depth10(topic, &depth);
+        msgbus::publish_depth10(topic, depth);
 
         if self.config.emit_quotes_from_book_depths
-            && let Some(quote) = derive_quote_from_depth(&depth)
+            && let Some(quote) = derive_quote_from_depth(depth)
         {
             book::publish_quote_if_changed(&self.cache, quote);
         }
@@ -2925,9 +2927,9 @@ impl DataEngine {
         msgbus::publish_deltas(topic, deltas);
     }
 
-    fn handle_depth10_pipeline(&self, depth: OrderBookDepth10) {
+    fn handle_depth10_pipeline(&self, depth: &OrderBookDepth10) {
         let topic = switchboard::get_pipeline_book_depth10_topic(depth.instrument_id);
-        msgbus::publish_depth10(topic, &depth);
+        msgbus::publish_depth10(topic, depth);
     }
 
     fn handle_quote_pipeline(&self, quote: QuoteTick) {

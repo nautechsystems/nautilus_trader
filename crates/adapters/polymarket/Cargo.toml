@@ -59,7 +59,6 @@ nautilus-execution = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true, features = ["transport-sockudo"] }
-nautilus-persistence-macros = { workspace = true }
 nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }

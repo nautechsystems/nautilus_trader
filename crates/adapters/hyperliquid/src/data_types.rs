@@ -22,11 +22,13 @@ use std::collections::HashMap;
 
 use nautilus_core::UnixNanos;
 use nautilus_model::{
+    custom_data,
     enums::{AggressorSide, OrderSide},
     identifiers::InstrumentId,
     types::{Price, Quantity},
 };
-use nautilus_persistence_macros::custom_data;
+#[cfg(feature = "arrow")]
+use nautilus_serialization::arrow_custom_data;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -35,12 +37,9 @@ use crate::common::enums::HyperliquidTwapStatus;
 /// Hyperliquid all mid prices snapshot from the `allMids` WebSocket channel.
 #[cfg_attr(
     feature = "arrow",
-    custom_data(pyo3, stub_module = "nautilus_trader.adapters.hyperliquid")
+    arrow_custom_data(pyo3, stub_module = "nautilus_trader.adapters.hyperliquid")
 )]
-#[cfg_attr(
-    not(feature = "arrow"),
-    custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.adapters.hyperliquid")
-)]
+#[custom_data(pyo3, stub_module = "nautilus_trader.adapters.hyperliquid")]
 pub struct HyperliquidAllMids {
     /// Mapping of instrument ID to mid price for all tradable coins.
     #[custom_data_field(serde)]
@@ -57,17 +56,13 @@ pub struct HyperliquidAllMids {
 /// `ts_event` mirrors `ts_init` like the peer asset-context update types.
 #[cfg_attr(
     feature = "arrow",
-    custom_data(pyo3, stub_module = "nautilus_trader.adapters.hyperliquid")
+    arrow_custom_data(pyo3, stub_module = "nautilus_trader.adapters.hyperliquid")
 )]
-#[cfg_attr(
-    not(feature = "arrow"),
-    custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.adapters.hyperliquid")
-)]
+#[custom_data(pyo3, stub_module = "nautilus_trader.adapters.hyperliquid")]
 pub struct HyperliquidOpenInterest {
     /// The instrument ID for this open interest update.
     pub instrument_id: InstrumentId,
     /// The current open interest for the perpetual instrument.
-    #[custom_data_field(serde)]
     pub open_interest: Decimal,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
@@ -82,23 +77,18 @@ pub struct HyperliquidOpenInterest {
 /// so one catalog stream can be recorded and replayed without joining sidecar data.
 #[cfg_attr(
     feature = "arrow",
-    custom_data(pyo3, stub_module = "nautilus_trader.adapters.hyperliquid")
+    arrow_custom_data(pyo3, stub_module = "nautilus_trader.adapters.hyperliquid")
 )]
-#[cfg_attr(
-    not(feature = "arrow"),
-    custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.adapters.hyperliquid")
-)]
+#[custom_data(pyo3, stub_module = "nautilus_trader.adapters.hyperliquid")]
 pub struct HyperliquidPublicTrade {
     /// The instrument ID for this trade.
     pub instrument_id: InstrumentId,
     /// The trade price normalized to the instrument's precision.
-    #[custom_data_field(serde)]
     pub price: Price,
     /// The trade size normalized to the instrument's precision.
-    #[custom_data_field(serde)]
     pub size: Quantity,
     /// The aggressor side reported by Hyperliquid.
-    #[custom_data_field(serde)]
+    #[custom_data_field(native_enum)]
     pub aggressor_side: AggressorSide,
     /// Hyperliquid venue trade identifier.
     pub trade_id: String,
@@ -155,7 +145,7 @@ pub struct HyperliquidDexAssetCtx {
 /// Hyperliquid normalized aggregate snapshot from the `allDexsAssetCtxs` WebSocket channel.
 ///
 /// This feed is live-only and intentionally JSON-backed; it is not coupled to Arrow persistence.
-#[custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.adapters.hyperliquid")]
+#[custom_data(pyo3, stub_module = "nautilus_trader.adapters.hyperliquid")]
 pub struct HyperliquidAllDexsAssetCtxs {
     /// Normalized per-instrument entries across all perp dexes.
     #[custom_data_field(serde)]
@@ -171,12 +161,9 @@ pub struct HyperliquidAllDexsAssetCtxs {
 /// Opt-in custom data (not part of default user execution subscriptions).
 #[cfg_attr(
     feature = "arrow",
-    custom_data(pyo3, stub_module = "nautilus_trader.adapters.hyperliquid")
+    arrow_custom_data(pyo3, stub_module = "nautilus_trader.adapters.hyperliquid")
 )]
-#[cfg_attr(
-    not(feature = "arrow"),
-    custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.adapters.hyperliquid")
-)]
+#[custom_data(pyo3, stub_module = "nautilus_trader.adapters.hyperliquid")]
 pub struct HyperliquidTwapHistory {
     /// User address from the subscription envelope.
     pub user: String,
@@ -226,12 +213,9 @@ pub struct HyperliquidTwapHistory {
 /// Opt-in custom data (not part of default user execution subscriptions).
 #[cfg_attr(
     feature = "arrow",
-    custom_data(pyo3, stub_module = "nautilus_trader.adapters.hyperliquid")
+    arrow_custom_data(pyo3, stub_module = "nautilus_trader.adapters.hyperliquid")
 )]
-#[cfg_attr(
-    not(feature = "arrow"),
-    custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.adapters.hyperliquid")
-)]
+#[custom_data(pyo3, stub_module = "nautilus_trader.adapters.hyperliquid")]
 pub struct HyperliquidTwapSliceFill {
     /// User address from the subscription envelope.
     pub user: String,
@@ -331,9 +315,15 @@ mod tests {
         assert_eq!(schema.field(0).name(), "mids");
         assert_eq!(schema.field(0).data_type(), &DataType::Utf8);
         assert_eq!(schema.field(1).name(), "ts_event");
-        assert_eq!(schema.field(1).data_type(), &DataType::UInt64);
+        assert_eq!(
+            schema.field(1).data_type(),
+            &nautilus_serialization::arrow::timestamp_data_type(),
+        );
         assert_eq!(schema.field(2).name(), "ts_init");
-        assert_eq!(schema.field(2).data_type(), &DataType::UInt64);
+        assert_eq!(
+            schema.field(2).data_type(),
+            &nautilus_serialization::arrow::timestamp_data_type(),
+        );
     }
 
     #[cfg(feature = "arrow")]
@@ -351,14 +341,17 @@ mod tests {
             DataType::Utf8 | DataType::Utf8View
         ));
         assert_eq!(schema.field(1).name(), "open_interest");
-        assert!(matches!(
-            schema.field(1).data_type(),
-            DataType::Utf8 | DataType::Utf8View
-        ));
+        assert_eq!(schema.field(1).data_type(), &DataType::Decimal128(38, 16));
         assert_eq!(schema.field(2).name(), "ts_event");
-        assert_eq!(schema.field(2).data_type(), &DataType::UInt64);
+        assert_eq!(
+            schema.field(2).data_type(),
+            &nautilus_serialization::arrow::timestamp_data_type(),
+        );
         assert_eq!(schema.field(3).name(), "ts_init");
-        assert_eq!(schema.field(3).data_type(), &DataType::UInt64);
+        assert_eq!(
+            schema.field(3).data_type(),
+            &nautilus_serialization::arrow::timestamp_data_type(),
+        );
     }
 
     #[cfg(feature = "arrow")]
@@ -424,6 +417,14 @@ mod tests {
         let batch =
             HyperliquidPublicTrade::encode_batch(&metadata, std::slice::from_ref(&original))
                 .unwrap();
+        assert_eq!(
+            batch
+                .schema()
+                .field_with_name("aggressor_side")
+                .unwrap()
+                .data_type(),
+            &nautilus_serialization::arrow::enum_dictionary_data_type(),
+        );
         let decoded = HyperliquidPublicTrade::decode_data_batch(&metadata, batch).unwrap();
 
         let Data::Custom(custom) = &decoded[0] else {
@@ -439,6 +440,7 @@ mod tests {
         assert_eq!(trade.hash, original.hash);
         assert_eq!(trade.price, original.price);
         assert_eq!(trade.size, original.size);
+        assert_eq!(trade.aggressor_side, original.aggressor_side);
     }
 
     #[cfg(feature = "arrow")]
@@ -469,7 +471,7 @@ mod tests {
         }
         assert_eq!(
             schema.field_with_name("ts_init").unwrap().data_type(),
-            &DataType::UInt64
+            &nautilus_serialization::arrow::timestamp_data_type()
         );
     }
 

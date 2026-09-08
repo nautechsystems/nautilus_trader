@@ -42,6 +42,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 nautilus-core = { workspace = true }
+nautilus-macros = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -59,6 +60,7 @@ rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+smallvec = { workspace = true }
 strum = { workspace = true }
 tabled = { workspace = true }
 thiserror = { workspace = true }
@@ -74,6 +76,7 @@ rstest = { workspace = true, optional = true }
 criterion = { workspace = true }
 iai = { workspace = true }
 proptest = { workspace = true }
+rmp-serde = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }
 

@@ -26,14 +26,15 @@ use jiff::{Timestamp, civil::Date, tz::Offset};
 use nautilus_core::{UnixNanos, datetime::unix_nanos_to_iso8601, string::formatting::Separable};
 use nautilus_model::{
     data::{
-        Bar, BarType, CatalogPathPrefix, Data, OptionGreeks, OrderBookDelta, OrderBookDeltas,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, BarType, Data, OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth10,
+        QuoteTick, TradeTick,
     },
     identifiers::InstrumentId,
 };
+use nautilus_persistence::common::paths::CatalogPathPrefix;
 use nautilus_serialization::arrow::{
     bars_to_arrow_record_batch_bytes, book_deltas_to_arrow_record_batch_bytes,
-    book_depth10_to_arrow_record_batch_bytes, option_greeks_to_arrow_record_batch_bytes,
+    book_depths_to_arrow_record_batch_bytes, option_greeks_to_arrow_record_batch_bytes,
     quotes_to_arrow_record_batch_bytes, trades_to_arrow_record_batch_bytes,
 };
 use parquet::{arrow::ArrowWriter, basic::Compression, file::properties::WriterProperties};
@@ -195,7 +196,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
                             compression,
                         );
                     }
-                    Data::BookDepth10(msg) => {
+                    Data::BookDepth(msg) => {
                         handle_depth10_msg(
                             *msg,
                             &mut depths_map,
@@ -506,7 +507,7 @@ fn batch_and_write_depths(
     path: &Path,
     compression: Compression,
 ) {
-    match book_depth10_to_arrow_record_batch_bytes(depths) {
+    match book_depths_to_arrow_record_batch_bytes(depths) {
         Ok(batch) => write_batch(
             &batch,
             OrderBookDepth10::path_prefix(),

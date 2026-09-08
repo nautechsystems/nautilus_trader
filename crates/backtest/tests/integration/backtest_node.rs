@@ -41,7 +41,9 @@ use nautilus_model::{
     instruments::{CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     types::{Price, Quantity},
 };
-use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+use nautilus_persistence::{
+    backend::catalog::ParquetDataCatalog, catalog::types::CatalogInstrumentQuery,
+};
 use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, nautilus_strategy};
 use rstest::*;
 use rust_decimal::Decimal;
@@ -910,9 +912,9 @@ fn test_load_catalog(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let (_temp_dir, catalog_path) = create_catalog_with_quotes(&instrument, 5, 1_000_000_000);
 
     let config = data_config(&catalog_path, instrument.id());
-    let catalog = BacktestNode::load_catalog(&config).unwrap();
+    let mut catalog = BacktestNode::load_catalog(&config).unwrap();
 
-    let instruments = catalog.query_instruments(None).unwrap();
+    let instruments = catalog.instruments(&CatalogInstrumentQuery::new()).unwrap();
     assert_eq!(instruments.len(), 1);
 }
 

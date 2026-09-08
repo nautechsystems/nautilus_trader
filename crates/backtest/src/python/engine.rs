@@ -1609,7 +1609,7 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
     }
 
     if let Ok(depth) = obj.extract::<OrderBookDepth10>() {
-        return Ok(Data::BookDepth10(Box::new(depth)));
+        return Ok(Data::BookDepth(Box::new(depth)));
     }
 
     if let Ok(mark) = obj.extract::<MarkPriceUpdate>() {

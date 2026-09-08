@@ -17,28 +17,28 @@ use std::{collections::HashMap, sync::Arc};
 
 use arrow::{
     array::{
-        FixedSizeBinaryArray, FixedSizeBinaryBuilder, Int32Array, UInt8Array, UInt16Array,
-        UInt32Array, UInt64Array,
+        Array, Decimal128Array, Int32Array, TimestampNanosecondArray, UInt8Array, UInt16Array,
+        UInt32Array,
     },
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
     record_batch::RecordBatch,
 };
+use databento::dbn;
 use nautilus_model::{
     data::{Data, custom::CustomData},
-    enums::FromU8,
-    types::{
-        PRICE_UNDEF, QUANTITY_UNDEF,
-        fixed::{FIXED_PRECISION, PRECISION_BYTES},
-    },
+    identifiers::InstrumentId,
+    types::{PRICE_UNDEF, QUANTITY_UNDEF, fixed::FIXED_PRECISION},
 };
 use nautilus_serialization::arrow::{
     ArrowSchemaProvider, DecodeDataFromRecordBatch, EncodeToRecordBatch, EncodingError,
-    decode_price_with_sentinel, decode_quantity_with_sentinel, extract_column,
-    validate_precision_bytes,
+    KEY_TYPE_NAME, decode_decimal_price, decode_decimal_quantity, decode_timestamp,
+    enum_dictionary_array, enum_dictionary_data_type, extract_column, fixed_decimal_data_type,
+    optional_timestamp_array, price_decimal_array, quantity_decimal_array, timestamp_array,
+    timestamp_data_type,
 };
 
-use super::parse_metadata;
+use super::{EnumColumn, parse_metadata};
 use crate::{
     enums::{DatabentoStatisticType, DatabentoStatisticUpdateAction},
     types::DatabentoStatistics,
@@ -47,22 +47,18 @@ use crate::{
 impl ArrowSchemaProvider for DatabentoStatistics {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
         let fields = vec![
-            Field::new("stat_type", DataType::UInt8, false),
-            Field::new("update_action", DataType::UInt8, false),
-            Field::new("price", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new(
-                "quantity",
-                DataType::FixedSizeBinary(PRECISION_BYTES),
-                false,
-            ),
+            Field::new("stat_type", enum_dictionary_data_type(), false),
+            Field::new("update_action", enum_dictionary_data_type(), false),
+            Field::new("price", fixed_decimal_data_type(), true),
+            Field::new("quantity", fixed_decimal_data_type(), true),
             Field::new("channel_id", DataType::UInt16, false),
             Field::new("stat_flags", DataType::UInt8, false),
             Field::new("sequence", DataType::UInt32, false),
-            Field::new("ts_ref", DataType::UInt64, false),
+            Field::new("ts_ref", timestamp_data_type(), true),
             Field::new("ts_in_delta", DataType::Int32, false),
-            Field::new("ts_event", DataType::UInt64, false),
-            Field::new("ts_recv", DataType::UInt64, false),
-            Field::new("ts_init", DataType::UInt64, false),
+            Field::new("ts_event", timestamp_data_type(), false),
+            Field::new("ts_recv", timestamp_data_type(), false),
+            Field::new("ts_init", timestamp_data_type(), false),
         ];
 
         match metadata {
@@ -73,85 +69,97 @@ impl ArrowSchemaProvider for DatabentoStatistics {
 }
 
 impl EncodeToRecordBatch for DatabentoStatistics {
-    fn encode_batch(
+    fn encode_batch<T>(
         metadata: &HashMap<String, String>,
-        data: &[Self],
-    ) -> Result<RecordBatch, ArrowError> {
-        let mut stat_type_builder = UInt8Array::builder(data.len());
-        let mut update_action_builder = UInt8Array::builder(data.len());
-        let mut price_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
-        let mut quantity_builder =
-            FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
+        data: &[T],
+    ) -> Result<RecordBatch, ArrowError>
+    where
+        T: std::borrow::Borrow<Self>,
+    {
         let mut channel_id_builder = UInt16Array::builder(data.len());
         let mut stat_flags_builder = UInt8Array::builder(data.len());
         let mut sequence_builder = UInt32Array::builder(data.len());
-        let mut ts_ref_builder = UInt64Array::builder(data.len());
         let mut ts_in_delta_builder = Int32Array::builder(data.len());
-        let mut ts_event_builder = UInt64Array::builder(data.len());
-        let mut ts_recv_builder = UInt64Array::builder(data.len());
-        let mut ts_init_builder = UInt64Array::builder(data.len());
 
-        for item in data {
-            stat_type_builder.append_value(item.stat_type as u8);
-            update_action_builder.append_value(item.update_action as u8);
-            let price_raw = item.price.map_or(PRICE_UNDEF, |p| p.raw());
-            price_builder.append_value(price_raw.to_le_bytes()).unwrap();
-            let quantity_raw = item.quantity.map_or(QUANTITY_UNDEF, |q| q.raw());
-            quantity_builder
-                .append_value(quantity_raw.to_le_bytes())
-                .unwrap();
+        for item in data.iter().map(std::borrow::Borrow::borrow) {
             channel_id_builder.append_value(item.channel_id);
             stat_flags_builder.append_value(item.stat_flags);
             sequence_builder.append_value(item.sequence);
-            ts_ref_builder.append_value(item.ts_ref.as_u64());
             ts_in_delta_builder.append_value(item.ts_in_delta);
-            ts_event_builder.append_value(item.ts_event.as_u64());
-            ts_recv_builder.append_value(item.ts_recv.as_u64());
-            ts_init_builder.append_value(item.ts_init.as_u64());
         }
 
         RecordBatch::try_new(
             Self::get_schema(Some(metadata.clone())).into(),
             vec![
-                Arc::new(stat_type_builder.finish()),
-                Arc::new(update_action_builder.finish()),
-                Arc::new(price_builder.finish()),
-                Arc::new(quantity_builder.finish()),
+                Arc::new(enum_dictionary_array(
+                    data.iter().map(|item| item.borrow().stat_type),
+                )?),
+                Arc::new(enum_dictionary_array(
+                    data.iter().map(|item| item.borrow().update_action),
+                )?),
+                Arc::new(price_decimal_array(
+                    data.iter()
+                        .map(|item| item.borrow().price.map_or(PRICE_UNDEF, |value| value.raw)),
+                    "price",
+                )?),
+                Arc::new(quantity_decimal_array(
+                    data.iter().map(|item| {
+                        item.borrow()
+                            .quantity
+                            .map_or(QUANTITY_UNDEF, |value| value.raw)
+                    }),
+                    "quantity",
+                )?),
                 Arc::new(channel_id_builder.finish()),
                 Arc::new(stat_flags_builder.finish()),
                 Arc::new(sequence_builder.finish()),
-                Arc::new(ts_ref_builder.finish()),
+                Arc::new(optional_timestamp_array(data.iter().map(|item| {
+                    let value = item.borrow().ts_ref.as_u64();
+                    (value != dbn::UNDEF_TIMESTAMP).then_some(value)
+                }))?),
                 Arc::new(ts_in_delta_builder.finish()),
-                Arc::new(ts_event_builder.finish()),
-                Arc::new(ts_recv_builder.finish()),
-                Arc::new(ts_init_builder.finish()),
+                Arc::new(timestamp_array(
+                    data.iter().map(|item| item.borrow().ts_event.as_u64()),
+                )?),
+                Arc::new(timestamp_array(
+                    data.iter().map(|item| item.borrow().ts_recv.as_u64()),
+                )?),
+                Arc::new(timestamp_array(
+                    data.iter().map(|item| item.borrow().ts_init.as_u64()),
+                )?),
             ],
         )
     }
 
     fn metadata(&self) -> HashMap<String, String> {
-        Self::get_metadata(
+        statistics_metadata(
             &self.instrument_id,
             self.price.map_or(FIXED_PRECISION, |p| p.precision),
             self.quantity.map_or(FIXED_PRECISION, |q| q.precision),
         )
     }
 
-    fn chunk_metadata(chunk: &[Self]) -> HashMap<String, String> {
+    fn chunk_metadata<T>(chunk: &[T]) -> HashMap<String, String>
+    where
+        T: std::borrow::Borrow<Self>,
+    {
         let first = chunk
             .first()
+            .map(std::borrow::Borrow::borrow)
             .expect("Chunk should have at least one element to encode");
 
         let price_precision = chunk
             .iter()
+            .map(std::borrow::Borrow::borrow)
             .find_map(|s| s.price.map(|p| p.precision))
             .unwrap_or(FIXED_PRECISION);
         let size_precision = chunk
             .iter()
+            .map(std::borrow::Borrow::borrow)
             .find_map(|s| s.quantity.map(|q| q.precision))
             .unwrap_or(FIXED_PRECISION);
 
-        Self::get_metadata(&first.instrument_id, price_precision, size_precision)
+        statistics_metadata(&first.instrument_id, price_precision, size_precision)
     }
 }
 
@@ -180,72 +188,37 @@ pub fn decode_statistics_batch(
     let (instrument_id, price_precision, size_precision) = parse_metadata(metadata)?;
     let cols = record_batch.columns();
 
-    let stat_type_values = extract_column::<UInt8Array>(cols, "stat_type", 0, DataType::UInt8)?;
-    let update_action_values =
-        extract_column::<UInt8Array>(cols, "update_action", 1, DataType::UInt8)?;
-    let price_values = extract_column::<FixedSizeBinaryArray>(
-        cols,
-        "price",
-        2,
-        DataType::FixedSizeBinary(PRECISION_BYTES),
-    )?;
-    let quantity_values = extract_column::<FixedSizeBinaryArray>(
-        cols,
-        "quantity",
-        3,
-        DataType::FixedSizeBinary(PRECISION_BYTES),
-    )?;
+    let price_values =
+        extract_column::<Decimal128Array>(cols, "price", 2, fixed_decimal_data_type())?;
+    let quantity_values =
+        extract_column::<Decimal128Array>(cols, "quantity", 3, fixed_decimal_data_type())?;
     let channel_id_values = extract_column::<UInt16Array>(cols, "channel_id", 4, DataType::UInt16)?;
     let stat_flags_values = extract_column::<UInt8Array>(cols, "stat_flags", 5, DataType::UInt8)?;
     let sequence_values = extract_column::<UInt32Array>(cols, "sequence", 6, DataType::UInt32)?;
-    let ts_ref_values = extract_column::<UInt64Array>(cols, "ts_ref", 7, DataType::UInt64)?;
+    let ts_ref_values =
+        extract_column::<TimestampNanosecondArray>(cols, "ts_ref", 7, timestamp_data_type())?;
     let ts_in_delta_values = extract_column::<Int32Array>(cols, "ts_in_delta", 8, DataType::Int32)?;
-    let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 9, DataType::UInt64)?;
-    let ts_recv_values = extract_column::<UInt64Array>(cols, "ts_recv", 10, DataType::UInt64)?;
-    let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 11, DataType::UInt64)?;
-
-    validate_precision_bytes(price_values, "price")?;
-    validate_precision_bytes(quantity_values, "quantity")?;
+    let ts_event_values =
+        extract_column::<TimestampNanosecondArray>(cols, "ts_event", 9, timestamp_data_type())?;
+    let ts_recv_values =
+        extract_column::<TimestampNanosecondArray>(cols, "ts_recv", 10, timestamp_data_type())?;
+    let ts_init_values =
+        extract_column::<TimestampNanosecondArray>(cols, "ts_init", 11, timestamp_data_type())?;
+    let stat_type_column = EnumColumn::try_from_column(&cols[0], "stat_type", 0)?;
+    let update_action_column = EnumColumn::try_from_column(&cols[1], "update_action", 1)?;
 
     (0..record_batch.num_rows())
         .map(|row| {
-            let stat_type_value = stat_type_values.value(row);
-            let stat_type = DatabentoStatisticType::from_u8(stat_type_value).ok_or_else(|| {
-                EncodingError::ParseError(
-                    stringify!(DatabentoStatisticType),
-                    format!("Invalid enum value, was {stat_type_value}"),
-                )
-            })?;
-            let update_action_value = update_action_values.value(row);
-            let update_action = DatabentoStatisticUpdateAction::from_u8(update_action_value)
-                .ok_or_else(|| {
-                    EncodingError::ParseError(
-                        stringify!(DatabentoStatisticUpdateAction),
-                        format!("Invalid enum value, was {update_action_value}"),
-                    )
-                })?;
+            let stat_type = stat_type_column.decode::<DatabentoStatisticType>(row)?;
+            let update_action =
+                update_action_column.decode::<DatabentoStatisticUpdateAction>(row)?;
 
-            let price_decoded =
-                decode_price_with_sentinel(price_values.value(row), price_precision, "price", row)?;
-
-            let price = if price_decoded.is_undefined() {
-                None
-            } else {
-                Some(price_decoded)
-            };
-
-            let quantity_decoded = decode_quantity_with_sentinel(
-                quantity_values.value(row),
-                size_precision,
-                "quantity",
-                row,
-            )?;
-
-            let quantity = if quantity_decoded.is_undefined() {
-                None
-            } else {
-                Some(quantity_decoded)
-            };
+            let price = (!price_values.is_null(row))
+                .then(|| decode_decimal_price(price_values, price_precision, "price", row))
+                .transpose()?;
+            let quantity = (!quantity_values.is_null(row))
+                .then(|| decode_decimal_quantity(quantity_values, size_precision, "quantity", row))
+                .transpose()?;
 
             Ok(DatabentoStatistics {
                 instrument_id,
@@ -256,14 +229,29 @@ pub fn decode_statistics_batch(
                 channel_id: channel_id_values.value(row),
                 stat_flags: stat_flags_values.value(row),
                 sequence: sequence_values.value(row),
-                ts_ref: ts_ref_values.value(row).into(),
+                ts_ref: if ts_ref_values.is_null(row) {
+                    dbn::UNDEF_TIMESTAMP.into()
+                } else {
+                    decode_timestamp(ts_ref_values, "ts_ref", row)?.into()
+                },
                 ts_in_delta: ts_in_delta_values.value(row),
-                ts_event: ts_event_values.value(row).into(),
-                ts_recv: ts_recv_values.value(row).into(),
-                ts_init: ts_init_values.value(row).into(),
+                ts_event: decode_timestamp(ts_event_values, "ts_event", row)?.into(),
+                ts_recv: decode_timestamp(ts_recv_values, "ts_recv", row)?.into(),
+                ts_init: decode_timestamp(ts_init_values, "ts_init", row)?.into(),
             })
         })
         .collect()
+}
+
+fn statistics_metadata(
+    instrument_id: &InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+) -> HashMap<String, String> {
+    let mut metadata =
+        DatabentoStatistics::get_metadata(instrument_id, price_precision, size_precision);
+    metadata.insert(KEY_TYPE_NAME.to_string(), "DatabentoStatistics".to_string());
+    metadata
 }
 
 /// Encodes a vector of [`DatabentoStatistics`] into an Arrow `RecordBatch`.
@@ -331,6 +319,11 @@ mod tests {
         assert_eq!(schema.fields().len(), 12);
         assert_eq!(schema.field(0).name(), "stat_type");
         assert_eq!(schema.field(11).name(), "ts_init");
+        assert_eq!(schema.field(0).data_type(), &enum_dictionary_data_type());
+        assert_eq!(schema.field(2).data_type(), &fixed_decimal_data_type());
+        assert!(schema.field(2).is_nullable());
+        assert!(schema.field(7).is_nullable());
+        assert_eq!(schema.field(10).data_type(), &timestamp_data_type());
     }
 
     #[rstest]
@@ -369,6 +362,30 @@ mod tests {
     }
 
     #[rstest]
+    fn test_decode_legacy_enum_columns() {
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let metadata = test_metadata();
+        let original = test_statistics(instrument_id);
+        let batch =
+            DatabentoStatistics::encode_batch(&metadata, std::slice::from_ref(&original)).unwrap();
+        let mut fields = batch.schema().fields().to_vec();
+        fields[0] = Arc::new(Field::new("stat_type", DataType::UInt8, false));
+        fields[1] = Arc::new(Field::new("update_action", DataType::UInt8, false));
+        let mut columns = batch.columns().to_vec();
+        columns[0] = Arc::new(UInt8Array::from(vec![original.stat_type as u8]));
+        columns[1] = Arc::new(UInt8Array::from(vec![original.update_action as u8]));
+        let legacy_batch = RecordBatch::try_new(
+            Arc::new(Schema::new_with_metadata(fields, metadata.clone())),
+            columns,
+        )
+        .unwrap();
+
+        let decoded = decode_statistics_batch(&metadata, &legacy_batch).unwrap();
+
+        assert_eq!(decoded, vec![original]);
+    }
+
+    #[rstest]
     fn test_encode_decode_round_trip_with_none_values() {
         let instrument_id = InstrumentId::from("ESM4.GLBX");
         let metadata = test_metadata();
@@ -381,7 +398,7 @@ mod tests {
             1,
             0,
             42,
-            1_000_000_000.into(),
+            dbn::UNDEF_TIMESTAMP.into(),
             500,
             2_000_000_000.into(),
             3_000_000_000.into(),
@@ -392,8 +409,15 @@ mod tests {
         let decoded = decode_statistics_batch(&metadata, &batch).unwrap();
 
         assert_eq!(decoded.len(), 1);
+        let ts_ref = batch
+            .column(7)
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .unwrap();
+        assert!(ts_ref.is_null(0));
         assert_eq!(decoded[0].price, None);
         assert_eq!(decoded[0].quantity, None);
+        assert_eq!(decoded[0].ts_ref.as_u64(), dbn::UNDEF_TIMESTAMP);
     }
 
     #[rstest]

@@ -397,7 +397,7 @@ impl DeriveDataClient {
                         instrument.size_precision(),
                         ts_init,
                     ) {
-                        Ok(depth) => Self::send_data(ctx, Data::BookDepth10(Box::new(depth))),
+                        Ok(depth) => Self::send_data(ctx, Data::BookDepth(Box::new(depth))),
                         Err(e) => log::warn!("Failed to parse Derive orderbook depth10: {e}"),
                     }
                 }
@@ -2775,7 +2775,7 @@ mod tests {
         DeriveDataClient::handle_ws_message(DeriveWsMessage::Subscription(payload), &ctx);
 
         match rx.try_recv().unwrap() {
-            DataEvent::Data(Data::BookDepth10(depth)) => {
+            DataEvent::Data(Data::BookDepth(depth)) => {
                 assert_eq!(depth.instrument_id, instrument_id);
                 assert_eq!(depth.bids[0].price, Price::from("3500.00"));
                 assert_eq!(depth.bids[0].size, Quantity::from("1.000"));
