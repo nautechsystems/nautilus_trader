@@ -35,7 +35,9 @@ use super::{
     PolymarketExecutionClient,
     cancellations::execute_deferred_cancel,
     order_builder::PolymarketOrderBuilder,
-    parse::{compute_commission, instrument_fee_exponent, instrument_taker_fee},
+    parse::{
+        InvalidMarketPriceError, compute_commission, instrument_fee_exponent, instrument_taker_fee,
+    },
     reconciliation::{
         FillContext, FillReportScope, TargetOrderReportScope, build_fill_reports_from_trades,
         build_target_order_report, confirmed_filled_quantities,
@@ -49,7 +51,7 @@ use super::{
         reject_submit_order,
     },
     submitter::{
-        InvalidMarketPriceError, MarketBuyFeeContext, MarketOrderSubmitRequest, UnknownSubmitError,
+        MarketBuyFeeContext, MarketOrderSubmitRequest, UnknownSubmitError,
         immediate_rejection_reason, submit_response_venue_order_id,
     },
     types::{BatchLimitOrderContext, LimitOrderSubmitRequest, classify_http_command_failure},
@@ -263,9 +265,15 @@ impl PolymarketExecutionClient {
             Decimal::ZERO
         };
         let fee_exponent = if needs_fee_adjustment {
-            instrument_fee_exponent(&instrument)
+            match instrument_fee_exponent(&instrument) {
+                Ok(exponent) => exponent,
+                Err(e) => {
+                    self.emitter.emit_order_denied(&order, &e.to_string());
+                    return;
+                }
+            }
         } else {
-            1.0
+            Decimal::ONE
         };
 
         let submitter = self.submitter.clone();
@@ -1513,7 +1521,7 @@ pub(super) fn calculate_commission(
     liquidity_side: LiquiditySide,
 ) -> anyhow::Result<Money> {
     let fee_rate = instrument_taker_fee(instrument);
-    let fee_exponent = instrument_fee_exponent(instrument);
+    let fee_exponent = instrument_fee_exponent(instrument)?;
 
     let commission = compute_commission(
         fee_rate,
@@ -1521,7 +1529,7 @@ pub(super) fn calculate_commission(
         last_qty.as_decimal(),
         last_px.as_decimal(),
         liquidity_side,
-    );
+    )?;
 
     Money::from_decimal(commission, instrument.quote_currency()).with_context(|| {
         format!(
@@ -1555,11 +1563,12 @@ mod tests {
             commission.as_decimal(),
             compute_commission(
                 instrument_taker_fee(&instrument),
-                instrument_fee_exponent(&instrument),
+                instrument_fee_exponent(&instrument).unwrap(),
                 dec!(100),
                 dec!(0.50),
                 LiquiditySide::Taker,
             )
+            .unwrap()
         );
     }
 

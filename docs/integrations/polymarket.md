@@ -691,6 +691,12 @@ order ID. The same venue event yields the same trade ID across replays.
 For historical Data API trades, the loader uses
 `{transactionHash[-24:]}-{asset[-4:]}-{seq:06d}` to distinguish fills in one transaction.
 
+## Numeric precision
+
+Financial wire values are decoded directly as decimals. Values outside the supported decimal or
+domain-type range fail HTTP decoding or report construction. WebSocket and RTDS handlers log and
+skip invalid updates. Report construction does not substitute zero for an invalid price or quantity.
+
 ## Fees
 
 The adapter reads each instrument's `fee_schedule` and applies its `rate` and `exponent` as:
@@ -721,6 +727,12 @@ Every order signed by the adapter carries the hard-coded Nautilus builder code. 
 rate is fixed at zero and is not configurable.
 
 ### Fill commission handling
+
+Instrument `fee_schedule` metadata stores decimal parameters as strings; readers also accept legacy
+numeric metadata.
+
+The live fee curve retains the reference SDK's floating-point power calculation. Fee inputs remain
+decimals until that step; negative rates or exponents and arithmetic overflow return errors.
 
 `FillReport.commission` is denominated in pUSD and rounds the platform fee to five decimal places.
 If the exact result cannot be represented as `Money`, the adapter returns an error instead of using
@@ -1695,7 +1707,13 @@ also fails clearly when Gamma has no matching slug or CLOB has not populated usa
 ### Public discovery
 
 Static query methods return stable Python mappings and lists while Rust owns validation and
-pagination:
+pagination. Fractional JSON numbers become `decimal.Decimal`, including nested event markets,
+fee schedules, and CLOB rewards. Integer tokens remain Python `int`, strings remain strings, and
+nulls remain `None`. A financial field can therefore be `int` or `Decimal`, depending on its JSON
+token. JSON-encoded strings such as `outcomePrices` remain strings; this conversion does not parse
+their contents. Use decimal operands when calculating with these values; Python does not mix
+`Decimal` and `float` arithmetic. The Gamma competitiveness score is returned as `Decimal` after
+an approximate Rust floating-point conversion.
 
 ```python
 market = await PolymarketDataLoader.query_market_by_slug("some-market")

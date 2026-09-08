@@ -38,7 +38,7 @@ use thiserror::Error;
 
 use super::{
     order_builder::PolymarketOrderBuilder,
-    parse::{adjust_market_buy_amount, calculate_market_price},
+    parse::{InvalidMarketPriceError, adjust_market_buy_amount, calculate_market_price},
     types::{LimitOrderSubmitRequest, SignedLimitOrderSubmission},
 };
 use crate::{
@@ -61,7 +61,7 @@ use crate::{
 pub(crate) struct MarketBuyFeeContext {
     pub user_pusd_balance: Decimal,
     pub fee_rate: Decimal,
-    pub fee_exponent: f64,
+    pub fee_exponent: Decimal,
     pub builder_taker_fee_rate: Decimal,
 }
 
@@ -98,10 +98,6 @@ pub(super) enum SubmitResponseOutcome {
     Rejected,
     Unknown,
 }
-
-#[derive(Debug, Error)]
-#[error("{0}")]
-pub(crate) struct InvalidMarketPriceError(String);
 
 /// HTTP order submission and cancellation facade.
 ///
@@ -176,8 +172,10 @@ impl OrderSubmitter {
             PolymarketOrderSide::Sell => &book.bids,
         };
 
-        let result = calculate_market_price(levels, amount_dec, poly_side)
-            .map_err(|e| anyhow::anyhow!("Market price calculation failed: {e}"))?;
+        let result = calculate_market_price(levels, amount_dec, poly_side).map_err(|e| {
+            let message = format!("Market price calculation failed: {e}");
+            e.context(message)
+        })?;
         let price = PolymarketOrderBuilder::normalize_market_price(
             result.crossing_price,
             tick_size,

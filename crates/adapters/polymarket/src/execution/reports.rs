@@ -313,8 +313,7 @@ impl PolymarketExecutionClient {
 
         let total_filled_dec = sum_filled_quantity(&order_fills);
         let avg_px = weighted_average_price(&order_fills, total_filled_dec);
-        let raw_filled_qty = Quantity::from_decimal_dp(total_filled_dec, size_prec)
-            .unwrap_or_else(|_| Quantity::zero(size_prec));
+        let raw_filled_qty = Quantity::from_decimal_dp(total_filled_dec, size_prec)?;
         let order_side = cached_side.unwrap_or(order_fills[0].order_side);
         let ts_event = order_fills
             .iter()

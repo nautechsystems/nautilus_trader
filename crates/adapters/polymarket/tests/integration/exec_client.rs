@@ -7876,7 +7876,7 @@ async fn test_submit_market_buy_uses_normalized_price_for_fee_adjustment() {
     false,
     "0.0025",
     "1.0000",
-    "Derived market price 1 outside Polymarket range [0.0025, 0.9975]"
+    "market-book price must be in (0, 1)"
 )]
 #[case::buy_off_half_cent(
     OrderSide::Buy,

@@ -32,6 +32,7 @@ use super::models::{CryptoMarketConfig, FeeSchedule, GammaMarket};
 use crate::common::{
     consts::{POLYMARKET_PRICE_PRECISION, POLYMARKET_VENUE, PUSD},
     enums::PolymarketOutcome,
+    parse::parse_decimal_exact,
 };
 
 const DEFAULT_TICK_SIZE: Decimal = dec!(0.001);
@@ -274,8 +275,7 @@ pub fn rebuild_instrument_with_tick_size(
         other => anyhow::bail!("Expected BinaryOption, was {other:?}"),
     };
 
-    let tick_size: Decimal = new_tick_size
-        .parse()
+    let tick_size = parse_decimal_exact(new_tick_size)
         .map_err(|e| anyhow::anyhow!("Failed to parse tick size '{new_tick_size}': {e}"))?;
     let (min_price, max_price) = tick_relative_price_bounds(tick_size)?;
     let price_increment = min_price;
@@ -403,10 +403,8 @@ fn build_info_json(def: &PolymarketInstrumentDef) -> serde_json::Value {
         );
     }
 
-    if let Some(fee_schedule) = &def.fee_schedule
-        && let Ok(value) = serde_json::to_value(fee_schedule)
-    {
-        map.insert("fee_schedule".to_string(), value);
+    if let Some(fee_schedule) = &def.fee_schedule {
+        map.insert("fee_schedule".to_string(), fee_schedule.to_info());
     }
 
     if let Some(game_id) = &def.game_id {

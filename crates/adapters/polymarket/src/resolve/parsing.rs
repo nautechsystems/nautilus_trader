@@ -18,7 +18,7 @@ use nautilus_model::identifiers::InstrumentId;
 use rust_decimal::Decimal;
 
 use crate::{
-    common::consts::POLYMARKET_VENUE,
+    common::{consts::POLYMARKET_VENUE, parse::decimal_from_json},
     http::models::{ClobMarketResponse, GammaMarket},
     providers::extract_condition_id,
 };
@@ -62,15 +62,11 @@ fn parse_string_array_param(value: &serde_json::Value) -> Option<Vec<String>> {
 
 fn parse_outcome_prices(raw: &Option<String>) -> Option<Vec<Decimal>> {
     let raw = raw.as_ref()?;
-    let encoded = serde_json::from_str::<Vec<serde_json::Value>>(raw).ok()?;
+    let encoded = serde_json::from_str::<Vec<Box<serde_json::value::RawValue>>>(raw).ok()?;
     let mut values = Vec::with_capacity(encoded.len());
 
     for value in encoded {
-        let value = match value {
-            serde_json::Value::Number(value) => value.to_string().parse::<Decimal>().ok()?,
-            serde_json::Value::String(value) => value.parse::<Decimal>().ok()?,
-            _ => return None,
-        };
+        let value = decimal_from_json(&value).ok()?;
 
         if !(Decimal::ZERO..=Decimal::ONE).contains(&value) {
             return None;
@@ -315,6 +311,21 @@ mod tests {
             .join(filename);
         let content = std::fs::read_to_string(path).expect("fixture missing");
         serde_json::from_str(&content).expect("invalid clob fixture json")
+    }
+
+    #[rstest]
+    #[case(
+        "[0.9989999999999999999999999999,0.0010000000000000000000000001]",
+        None
+    )]
+    #[case("[0.999,0.001]", Some(0))]
+    #[case("[9.99e-1,1e-3]", Some(0))]
+    fn test_numeric_outcome_prices_preserve_resolution_thresholds(
+        #[case] raw: &str,
+        #[case] expected: Option<usize>,
+    ) {
+        let prices = parse_outcome_prices(&Some(raw.to_string())).unwrap();
+        assert_eq!(strict_winner_index(&prices), expected);
     }
 
     #[rstest]

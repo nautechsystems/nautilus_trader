@@ -1089,17 +1089,19 @@ fn handle_fok_rest_status(
                 .emit_order_expired(ctx.order, Some(venue_order_id), ts_now);
         }
         OrderStatus::Filled => {
-            let quantity = Quantity::from_decimal_dp(venue_order.original_size, ctx.size_precision)
-                .unwrap_or_else(|_| Quantity::zero(ctx.size_precision));
-            let filled_qty =
-                Quantity::from_decimal_dp(venue_order.size_matched, ctx.size_precision)
-                    .unwrap_or_else(|_| Quantity::zero(ctx.size_precision));
+            let (Ok(quantity), Ok(filled_qty), Ok(price)) = (
+                Quantity::from_decimal_dp(venue_order.original_size, ctx.size_precision),
+                Quantity::from_decimal_dp(venue_order.size_matched, ctx.size_precision),
+                Price::from_decimal_dp(venue_order.price, ctx.price_precision),
+            ) else {
+                log::warn!("FOK status check rejected unrepresentable values for order {order_id}");
+                return;
+            };
+
             let confirmed_filled = ctx
                 .fill_tracker
                 .get_cumulative_filled(&venue_order_id)
                 .unwrap_or_else(|| Quantity::zero(ctx.size_precision));
-            let price = Price::from_decimal_dp(venue_order.price, ctx.price_precision)
-                .unwrap_or_else(|_| Price::zero(ctx.price_precision));
 
             let mut report = OrderStatusReport::new(
                 ctx.account_id,
@@ -1362,6 +1364,63 @@ mod tests {
         );
 
         assert_eq!(fok_check_order_id(&response, TimeInForce::Fok), None);
+    }
+
+    #[rstest]
+    #[case::rejected(PolymarketOrderStatus::Invalid, OrderStatus::Rejected, 1)]
+    #[case::canceled(PolymarketOrderStatus::Canceled, OrderStatus::Canceled, 2)]
+    #[case::expired(PolymarketOrderStatus::CanceledMarketResolved, OrderStatus::Expired, 2)]
+    #[case::filled(PolymarketOrderStatus::Matched, OrderStatus::Accepted, 1)]
+    fn test_handle_fok_rest_status_unrepresentable_price(
+        #[case] status: PolymarketOrderStatus,
+        #[case] expected_status: OrderStatus,
+        #[case] expected_event_count: usize,
+    ) {
+        let instrument = test_instrument();
+        let mut order = test_fractional_fok_limit_order(instrument.id());
+        order
+            .apply(TestOrderEventStubs::submitted(
+                &order,
+                AccountId::from("POLY-001"),
+            ))
+            .unwrap();
+        let mut venue_order: PolymarketOpenOrder = load("http_open_order.json");
+        venue_order.status = status;
+        venue_order.original_size = order.quantity().as_decimal();
+        venue_order.size_matched = Decimal::ZERO;
+        venue_order.price = Decimal::MAX;
+        let venue_order_id = VenueOrderId::from(venue_order.id.as_str());
+        let fill_tracker = OrderFillTrackerMap::new();
+        let order_identities = OrderIdentityRegistry::default();
+        let ws_dispatch_state = Mutex::new(WsDispatchState::default());
+        let (emitter, mut receiver) = test_emitter();
+        let ctx = FokRestStatusContext {
+            order: &order,
+            fill_tracker: &fill_tracker,
+            order_identities: &order_identities,
+            ws_dispatch_state: &ws_dispatch_state,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            size_precision: instrument.size_precision(),
+            price_precision: instrument.price_precision(),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+        };
+
+        handle_fok_rest_status(&venue_order, venue_order_id, &ctx);
+
+        let mut event_count = 0;
+
+        while let Ok(event) = receiver.try_recv() {
+            let ExecutionEvent::Order(event) = event else {
+                panic!("invalid numeric values must not produce a status report");
+            };
+            order.apply(event).unwrap();
+            event_count += 1;
+        }
+
+        assert_eq!(order.status(), expected_status);
+        assert_eq!(event_count, expected_event_count);
+        assert_eq!(order.quantity(), Quantity::from("23.45"));
     }
 
     #[rstest]

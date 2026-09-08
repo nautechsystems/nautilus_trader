@@ -28,7 +28,7 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
-    common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE,
+    common::{consts::GAMMA_CONDITION_IDS_BATCH_SIZE, parse::parse_decimal_exact},
     config::PolymarketInstrumentProviderConfig,
     filters::InstrumentFilter,
     http::{
@@ -989,8 +989,7 @@ fn parse_gamma_filter_u64(scope: &str, key: &str, value: &str) -> anyhow::Result
 }
 
 fn parse_gamma_filter_decimal(scope: &str, key: &str, value: &str) -> anyhow::Result<Decimal> {
-    value
-        .parse::<Decimal>()
+    parse_decimal_exact(value)
         .map_err(|e| anyhow::anyhow!("Gamma {scope} filter '{key}' must be a decimal number: {e}"))
 }
 

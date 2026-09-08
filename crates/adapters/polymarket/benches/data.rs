@@ -382,7 +382,8 @@ fn bench_order_event(c: &mut Criterion) {
                 px_prec,
                 sz_prec,
                 ts_init,
-            );
+            )
+            .unwrap();
             black_box(report);
         });
     });
@@ -397,7 +398,7 @@ fn bench_order_fill(c: &mut Criterion) {
     let account_id = common::account_id();
     let currency = Currency::pUSD();
     let taker_fee = dec!(0.03);
-    let fee_exponent = 2.0;
+    let fee_exponent = dec!(2);
     let ts_init = UnixNanos::default();
 
     let mut group = c.benchmark_group("inbound_pipeline");

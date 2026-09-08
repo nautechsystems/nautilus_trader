@@ -15,8 +15,6 @@
 
 //! Parse functions for converting Polymarket WebSocket messages to Nautilus data types.
 
-use std::str::FromStr;
-
 use aws_lc_rs::digest::{SHA1_FOR_LEGACY_USE_ONLY, digest};
 use nautilus_core::{
     UnixNanos,
@@ -37,7 +35,10 @@ use super::messages::{
     PolymarketBestBidAsk, PolymarketBookLevel, PolymarketBookSnapshot, PolymarketQuote,
     PolymarketTrade,
 };
-use crate::common::{enums::PolymarketOrderSide, parse::determine_trade_id};
+use crate::common::{
+    enums::PolymarketOrderSide,
+    parse::{determine_trade_id, parse_decimal_exact},
+};
 
 /// Parses a millisecond epoch timestamp string into [`UnixNanos`].
 pub fn parse_timestamp_ms(ts: &str) -> anyhow::Result<UnixNanos> {
@@ -51,14 +52,14 @@ pub fn parse_timestamp_ms(ts: &str) -> anyhow::Result<UnixNanos> {
 }
 
 pub(crate) fn parse_price(s: &str, precision: u8) -> CorrectnessResult<Price> {
-    let value = Decimal::from_str(s).map_err(|e| CorrectnessError::PredicateViolation {
+    let value = parse_decimal_exact(s).map_err(|e| CorrectnessError::PredicateViolation {
         message: format!("Invalid price '{s}': {e}"),
     })?;
     Price::from_decimal_dp(value, precision)
 }
 
 pub(crate) fn parse_quantity(s: &str, precision: u8) -> CorrectnessResult<Quantity> {
-    let value = Decimal::from_str(s).map_err(|e| CorrectnessError::PredicateViolation {
+    let value = parse_decimal_exact(s).map_err(|e| CorrectnessError::PredicateViolation {
         message: format!("Invalid quantity '{s}': {e}"),
     })?;
     Quantity::from_decimal_dp(value, precision)
@@ -544,7 +545,7 @@ fn parse_best_bid_ask_top(
     let Some(value) = value else {
         return Ok(BestBidAskTop::Missing);
     };
-    let decimal = Decimal::from_str(value).map_err(|e| CorrectnessError::PredicateViolation {
+    let decimal = parse_decimal_exact(value).map_err(|e| CorrectnessError::PredicateViolation {
         message: format!("Invalid price '{value}': {e}"),
     })?;
 
@@ -581,7 +582,7 @@ fn parse_top_price(
     let Some(value) = value else {
         return Ok(None);
     };
-    let decimal = Decimal::from_str(value).map_err(|e| CorrectnessError::PredicateViolation {
+    let decimal = parse_decimal_exact(value).map_err(|e| CorrectnessError::PredicateViolation {
         message: format!("Invalid price '{value}': {e}"),
     })?;
 

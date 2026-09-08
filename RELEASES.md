@@ -92,6 +92,8 @@ Released on TBD (UTC).
 - Fixed OKX mass status succeeding with incomplete pending algo-order coverage (#4924), thanks @silarin
 - Fixed OKX retries to honor `Retry-After`, preserve request identity, and avoid ambiguous order replay
 - Fixed OKX execution connecting with missing instruments for a configured type or family
+- Fixed Polymarket precision loss in financial data and execution reports
+- Fixed Polymarket invalid numeric values silently producing zero prices, quantities, or fees
 
 ### Internal Improvements
 

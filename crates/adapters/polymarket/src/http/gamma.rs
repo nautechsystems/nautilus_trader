@@ -38,8 +38,9 @@ use nautilus_network::{
     retry::{RetryConfig, RetryManager},
     websocket::proxy::ProxyUrl,
 };
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use serde_json::Value;
+use serde_json::{Value, value::RawValue};
 
 use crate::{
     common::urls::gamma_api_url,
@@ -155,23 +156,10 @@ impl PolymarketGammaRawHttpClient {
         params: GetGammaMarketsParams,
     ) -> Result<Vec<GammaMarket>> {
         let query_params = gamma_markets_query_params(params)?;
-        let value: Value = self
+        let raw: Box<RawValue> = self
             .send_get_query_map("/markets", Some(&query_params))
             .await?;
-
-        let array = match value {
-            Value::Array(_) => value,
-            Value::Object(ref map) if map.contains_key("data") => {
-                map.get("data").cloned().unwrap_or(Value::Array(vec![]))
-            }
-            _ => {
-                return Err(Error::decode(
-                    "Unrecognized Gamma markets response schema".to_string(),
-                ));
-            }
-        };
-
-        serde_json::from_value(array).map_err(Error::Serde)
+        parse_gamma_markets_response(&raw)
     }
 
     async fn get_gamma_markets_keyset(
@@ -792,36 +780,36 @@ impl PolymarketGammaHttpClient {
                 let cmp = match order_field.as_str() {
                     "liquidity" => a
                         .liquidity_num
-                        .unwrap_or(0.0)
-                        .partial_cmp(&b.liquidity_num.unwrap_or(0.0)),
+                        .unwrap_or(Decimal::ZERO)
+                        .partial_cmp(&b.liquidity_num.unwrap_or(Decimal::ZERO)),
                     "volume" => a
                         .volume_num
-                        .unwrap_or(0.0)
-                        .partial_cmp(&b.volume_num.unwrap_or(0.0)),
+                        .unwrap_or(Decimal::ZERO)
+                        .partial_cmp(&b.volume_num.unwrap_or(Decimal::ZERO)),
                     "volume24hr" => a
                         .volume_24hr
-                        .unwrap_or(0.0)
-                        .partial_cmp(&b.volume_24hr.unwrap_or(0.0)),
+                        .unwrap_or(Decimal::ZERO)
+                        .partial_cmp(&b.volume_24hr.unwrap_or(Decimal::ZERO)),
                     "competitive" => a
                         .competitive
                         .unwrap_or(0.0)
                         .partial_cmp(&b.competitive.unwrap_or(0.0)),
                     "spread" => a
                         .spread
-                        .unwrap_or(f64::MAX)
-                        .partial_cmp(&b.spread.unwrap_or(f64::MAX)),
+                        .unwrap_or(Decimal::MAX)
+                        .partial_cmp(&b.spread.unwrap_or(Decimal::MAX)),
                     "best_bid" => a
                         .best_bid
-                        .unwrap_or(0.0)
-                        .partial_cmp(&b.best_bid.unwrap_or(0.0)),
+                        .unwrap_or(Decimal::ZERO)
+                        .partial_cmp(&b.best_bid.unwrap_or(Decimal::ZERO)),
                     "one_day_price_change" => a
                         .one_day_price_change
-                        .unwrap_or(0.0)
-                        .partial_cmp(&b.one_day_price_change.unwrap_or(0.0)),
+                        .unwrap_or(Decimal::ZERO)
+                        .partial_cmp(&b.one_day_price_change.unwrap_or(Decimal::ZERO)),
                     "volume_1wk" => a
                         .volume_1wk
-                        .unwrap_or(0.0)
-                        .partial_cmp(&b.volume_1wk.unwrap_or(0.0)),
+                        .unwrap_or(Decimal::ZERO)
+                        .partial_cmp(&b.volume_1wk.unwrap_or(Decimal::ZERO)),
                     _ => None,
                 };
                 let cmp = cmp.unwrap_or(std::cmp::Ordering::Equal);
@@ -948,5 +936,125 @@ impl PolymarketGammaHttpClient {
     #[must_use]
     pub fn inner(&self) -> &Arc<PolymarketGammaRawHttpClient> {
         &self.inner
+    }
+}
+
+fn parse_gamma_markets_response(raw: &RawValue) -> Result<Vec<GammaMarket>> {
+    #[derive(Deserialize)]
+    struct MarketsEnvelope {
+        data: Vec<GammaMarket>,
+    }
+
+    if raw.get().starts_with('[') {
+        return serde_json::from_str(raw.get()).map_err(Error::Serde);
+    }
+    serde_json::from_str::<MarketsEnvelope>(raw.get())
+        .map(|envelope| envelope.data)
+        .map_err(Error::Serde)
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use rust_decimal_macros::dec;
+
+    use super::*;
+
+    #[rstest]
+    #[case("liquidity")]
+    #[case("volume")]
+    #[case("volume24hr")]
+    #[case("spread")]
+    #[case("best_bid")]
+    #[case("one_day_price_change")]
+    #[case("volume_1wk")]
+    #[tokio::test]
+    async fn test_event_sort_preserves_adjacent_decimal_values(#[case] field: &str) {
+        use nautilus_model::instruments::Instrument;
+
+        let mut lower: GammaMarket =
+            serde_json::from_str(include_str!("../../test_data/gamma_market.json")).unwrap();
+        lower.clob_token_ids = serde_json::to_string(&["1", "2"]).unwrap();
+        let mut higher = lower.clone();
+        higher.clob_token_ids = serde_json::to_string(&["3", "4"]).unwrap();
+
+        for (market, value) in [
+            (&mut lower, dec!(0.1234567890123456789012345678)),
+            (&mut higher, dec!(0.1234567890123456789012345679)),
+        ] {
+            match field {
+                "liquidity" => market.liquidity_num = Some(value),
+                "volume" => market.volume_num = Some(value),
+                "volume24hr" => market.volume_24hr = Some(value),
+                "spread" => market.spread = Some(value),
+                "best_bid" => market.best_bid = Some(value),
+                "one_day_price_change" => market.one_day_price_change = Some(value),
+                "volume_1wk" => market.volume_1wk = Some(value),
+                _ => unreachable!(),
+            }
+        }
+        let mut event: GammaEvent =
+            serde_json::from_str(include_str!("../../test_data/decimal_precision_event.json"))
+                .unwrap();
+        event.markets = vec![lower, higher];
+        let response = serde_json::to_string(&vec![event]).unwrap();
+        let router = axum::Router::new().route(
+            "/events",
+            axum::routing::get(move || {
+                let response = response.clone();
+                async move { response }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let client = PolymarketGammaHttpClient::new(
+            Some(format!("http://{address}")),
+            5,
+            RetryConfig::default(),
+        )
+        .unwrap();
+        let instruments = client
+            .request_instruments_by_event_query(
+                "precision",
+                GetGammaMarketsParams {
+                    order: Some(field.into()),
+                    ascending: Some(false),
+                    max_markets: Some(1),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        server.abort();
+        assert_eq!(instruments.len(), 2);
+        assert_eq!(instruments[0].raw_symbol().as_str(), "3");
+        assert_eq!(instruments[1].raw_symbol().as_str(), "4");
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_markets_response_preserves_decimal_precision(#[case] enveloped: bool) {
+        let market = include_str!("../../test_data/decimal_precision_market.json");
+        let array = format!("[{market}]");
+        let raw = if enveloped {
+            format!("{{\"data\":{array}}}")
+        } else {
+            array
+        };
+        let markets =
+            parse_gamma_markets_response(&serde_json::from_str::<Box<RawValue>>(&raw).unwrap())
+                .unwrap();
+        assert_eq!(markets.len(), 1);
+        assert_eq!(
+            markets[0].best_bid,
+            Some(dec!(0.1234567890123456789012345678))
+        );
+        assert_eq!(markets[0].volume_num, Some(dec!(12345678901.123457)));
+        assert_eq!(
+            markets[0].fee_schedule.as_ref().unwrap().rate,
+            dec!(0.1234567890123456789012345678)
+        );
     }
 }

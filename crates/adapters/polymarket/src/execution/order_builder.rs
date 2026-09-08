@@ -1391,9 +1391,15 @@ mod tests {
     #[rstest]
     fn test_build_market_buy_order_rejects_fee_adjusted_amount_below_lot_size() {
         let builder = make_test_builder();
-        let adjusted =
-            adjust_market_buy_amount(dec!(10), dec!(0.009), dec!(0.5), dec!(0.04), 1.0, dec!(0))
-                .unwrap();
+        let adjusted = adjust_market_buy_amount(
+            dec!(10),
+            dec!(0.009),
+            dec!(0.5),
+            dec!(0.04),
+            dec!(1),
+            dec!(0),
+        )
+        .unwrap();
         assert_eq!(adjusted, dec!(0.008823));
 
         let err = builder

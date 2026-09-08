@@ -719,7 +719,7 @@ fn build_order_report_from_order(
             expire_time: validated.expire_time,
             ts_init,
         },
-    );
+    )?;
     Ok(OrderRowResult {
         report: Some(report),
         counted_filtered: false,
@@ -986,7 +986,7 @@ fn build_admitted_target_fill(
             trade_id,
         } => {
             let taker_fee_rate = instrument_taker_fee(&admitted.instrument);
-            let fee_exponent = instrument_fee_exponent(&admitted.instrument);
+            let fee_exponent = instrument_fee_exponent(&admitted.instrument)?;
             parse_validated_fill_report(
                 trade,
                 TakerFillParseContext {
@@ -1320,7 +1320,7 @@ pub(crate) fn build_fill_reports_from_trades(
             let price_prec = last_px.precision;
             let size_prec = instrument.size_precision();
             let taker_fee_rate = instrument_taker_fee(&instrument);
-            let fee_exponent = instrument_fee_exponent(&instrument);
+            let fee_exponent = instrument_fee_exponent(&instrument)?;
 
             let report = parse_validated_fill_report(
                 trade,
@@ -1899,6 +1899,35 @@ mod tests {
             "../../test_data/data_api_positions_response.json"
         ))
         .expect("valid Data API position fixture")
+    }
+
+    #[rstest]
+    fn test_position_report_preserves_decimal_ingress() {
+        let position: DataApiPosition = serde_json::from_str(include_str!(
+            "../../test_data/decimal_precision_position.json"
+        ))
+        .unwrap();
+        let ts = UnixNanos::from(123_456_789u64);
+        let account_id = AccountId::from("POLYMARKET-001");
+        let report =
+            build_position_report_from_reportable_position(&position, account_id, ts).unwrap();
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(
+            report.instrument_id,
+            instrument_id_from_market_token("0xprecision", "precision-asset")
+        );
+        assert_eq!(report.position_side, PositionSide::Long);
+        assert_eq!(
+            report.quantity.as_decimal(),
+            Decimal::from_str_exact("12345678901.123456").unwrap()
+        );
+        assert_eq!(report.quantity.precision, USDC_DECIMALS as u8);
+        assert_eq!(
+            report.avg_px_open,
+            Some(Decimal::from_str_exact("0.1234567890123456789012345678").unwrap())
+        );
+        assert_eq!(report.ts_last, ts);
+        assert_eq!(report.ts_init, ts);
     }
 
     #[rstest]

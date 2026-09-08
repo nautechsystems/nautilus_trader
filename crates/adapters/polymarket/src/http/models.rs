@@ -29,7 +29,8 @@ use crate::common::{
     },
     models::PolymarketMakerOrder,
     parse::{
-        deserialize_decimal_from_json_number, deserialize_decimal_from_str,
+        deserialize_decimal_from_json, deserialize_decimal_from_json_number,
+        deserialize_decimal_from_str, deserialize_optional_decimal_from_json,
         deserialize_optional_decimal_from_json_number, deserialize_optional_polymarket_game_id,
         serialize_decimal_as_json_number, serialize_decimal_as_str,
         serialize_optional_decimal_as_json_number,
@@ -219,39 +220,109 @@ pub struct GammaMarket {
     #[serde(rename = "negRisk")]
     pub neg_risk: Option<bool>,
     /// Numeric liquidity value for sorting.
-    pub liquidity_num: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub liquidity_num: Option<Decimal>,
     /// Numeric volume value for sorting.
-    pub volume_num: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub volume_num: Option<Decimal>,
     /// 24-hour trading volume.
     #[serde(rename = "volume24hr")]
-    pub volume_24hr: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub volume_24hr: Option<Decimal>,
     /// JSON-encoded outcome prices (e.g. `["0.60", "0.40"]`).
     pub outcome_prices: Option<String>,
     /// Best bid price.
-    pub best_bid: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub best_bid: Option<Decimal>,
     /// Best ask price.
-    pub best_ask: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub best_ask: Option<Decimal>,
     /// Bid-ask spread.
-    pub spread: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub spread: Option<Decimal>,
     /// Last trade price.
-    pub last_trade_price: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub last_trade_price: Option<Decimal>,
     /// 1-day price change.
-    pub one_day_price_change: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub one_day_price_change: Option<Decimal>,
     /// 1-week price change.
-    pub one_week_price_change: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub one_week_price_change: Option<Decimal>,
     /// 1-week volume.
     #[serde(rename = "volume1wk")]
-    pub volume_1wk: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub volume_1wk: Option<Decimal>,
     /// 1-month volume.
     #[serde(rename = "volume1mo")]
-    pub volume_1mo: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub volume_1mo: Option<Decimal>,
     /// 1-year volume.
     #[serde(rename = "volume1yr")]
-    pub volume_1yr: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub volume_1yr: Option<Decimal>,
     /// Minimum size for rewards eligibility.
-    pub rewards_min_size: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub rewards_min_size: Option<Decimal>,
     /// Maximum spread for rewards eligibility.
-    pub rewards_max_spread: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub rewards_max_spread: Option<Decimal>,
     /// Competitiveness score.
     pub competitive: Option<f64>,
     /// Market category.
@@ -276,20 +347,31 @@ pub struct GammaMarket {
 pub struct FeeSchedule {
     #[serde(
         serialize_with = "serialize_decimal_as_json_number",
-        deserialize_with = "deserialize_decimal_from_json_number"
+        deserialize_with = "deserialize_decimal_from_json"
     )]
     pub exponent: Decimal,
     #[serde(
         serialize_with = "serialize_decimal_as_json_number",
-        deserialize_with = "deserialize_decimal_from_json_number"
+        deserialize_with = "deserialize_decimal_from_json"
     )]
     pub rate: Decimal,
     pub taker_only: bool,
     #[serde(
         serialize_with = "serialize_decimal_as_json_number",
-        deserialize_with = "deserialize_decimal_from_json_number"
+        deserialize_with = "deserialize_decimal_from_json"
     )]
     pub rebate_rate: Decimal,
+}
+
+impl FeeSchedule {
+    pub(crate) fn to_info(&self) -> serde_json::Value {
+        serde_json::json!({
+            "exponent": self.exponent.to_string(),
+            "rate": self.rate.to_string(),
+            "takerOnly": self.taker_only,
+            "rebateRate": self.rebate_rate.to_string(),
+        })
+    }
 }
 
 /// Crypto market resolution configuration returned by Gamma.
@@ -335,14 +417,34 @@ pub struct GammaEvent {
     #[serde(default)]
     pub markets: Vec<GammaMarket>,
     /// Event-level liquidity.
-    pub liquidity: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub liquidity: Option<Decimal>,
     /// Event-level volume.
-    pub volume: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub volume: Option<Decimal>,
     /// Event-level open interest.
-    pub open_interest: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub open_interest: Option<Decimal>,
     /// 24-hour event volume.
     #[serde(rename = "volume24hr")]
-    pub volume_24hr: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub volume_24hr: Option<Decimal>,
     /// Event category.
     pub category: Option<String>,
     /// Whether event uses neg-risk.
@@ -510,8 +612,14 @@ pub struct DataApiPosition {
     pub asset: String,
     #[serde(alias = "conditionId", alias = "condition_id")]
     pub condition_id: String,
+    #[serde(deserialize_with = "deserialize_decimal_from_json")]
     pub size: Decimal,
-    #[serde(alias = "avgPrice", alias = "avg_price")]
+    #[serde(
+        default,
+        alias = "avgPrice",
+        alias = "avg_price",
+        deserialize_with = "deserialize_optional_decimal_from_json"
+    )]
     pub avg_price: Option<Decimal>,
 }
 
@@ -554,6 +662,72 @@ mod tests {
         let path = format!("test_data/{filename}");
         let content = std::fs::read_to_string(path).expect("Failed to read test data");
         serde_json::from_str(&content).expect("Failed to parse test data")
+    }
+
+    #[rstest]
+    #[case::market(include_str!("../../test_data/decimal_precision_market.json"), false)]
+    #[case::event(include_str!("../../test_data/decimal_precision_event.json"), true)]
+    fn test_gamma_financial_fields_round_trip_exactly(#[case] raw: &str, #[case] event: bool) {
+        let encoded = if event {
+            serde_json::to_string(&serde_json::from_str::<GammaEvent>(raw).unwrap()).unwrap()
+        } else {
+            serde_json::to_string(&serde_json::from_str::<GammaMarket>(raw).unwrap()).unwrap()
+        };
+        let expected: std::collections::BTreeMap<String, Box<serde_json::value::RawValue>> =
+            serde_json::from_str(raw).unwrap();
+        let actual: std::collections::BTreeMap<String, Box<serde_json::value::RawValue>> =
+            serde_json::from_str(&encoded).unwrap();
+
+        for (field, value) in expected {
+            if value.get().starts_with(|c: char| c.is_ascii_digit()) {
+                assert_eq!(actual[&field].get(), value.get(), "{field}");
+            }
+        }
+    }
+
+    #[rstest]
+    fn test_data_api_position_preserves_decimal_precision() {
+        let raw = include_str!("../../test_data/decimal_precision_position.json");
+        let position: DataApiPosition = serde_json::from_str(raw).unwrap();
+        assert_eq!(position.asset, "precision-asset");
+        assert_eq!(position.condition_id, "0xprecision");
+        assert_eq!(position.size, dec!(12345678901.123456));
+        assert_eq!(
+            position.avg_price,
+            Some(dec!(0.1234567890123456789012345678))
+        );
+        let strings = raw
+            .replace("12345678901.123456", "\"12345678901.123456\"")
+            .replace(
+                "0.1234567890123456789012345678",
+                "\"0.1234567890123456789012345678\"",
+            );
+        let string_position: DataApiPosition = serde_json::from_str(&strings).unwrap();
+        assert_eq!(string_position.size, position.size);
+        assert_eq!(string_position.avg_price, position.avg_price);
+    }
+
+    #[rstest]
+    fn test_gamma_financial_fields_and_fee_info_preserve_decimal_precision() {
+        let market: GammaMarket = serde_json::from_str(include_str!(
+            "../../test_data/decimal_precision_market.json"
+        ))
+        .unwrap();
+        assert_eq!(market.best_bid, Some(dec!(0.1234567890123456789012345678)));
+        assert_eq!(market.best_ask, Some(dec!(0.2345678901234567890123456789)));
+        assert_eq!(market.liquidity_num, Some(dec!(12345678901.123456)));
+        assert_eq!(market.volume_num, Some(dec!(12345678901.123457)));
+        let fee = market.fee_schedule.unwrap();
+        let info = fee.to_info();
+        assert_eq!(info["exponent"], "1.234567890123456789012345678");
+        assert_eq!(info["rate"], "0.1234567890123456789012345678");
+        assert_eq!(info["rebateRate"], "0.0234567890123456789012345678");
+        assert_eq!(info["takerOnly"], true);
+        let restored: FeeSchedule = serde_json::from_value(info).unwrap();
+        assert_eq!(restored.exponent, fee.exponent);
+        assert_eq!(restored.rate, fee.rate);
+        assert_eq!(restored.rebate_rate, fee.rebate_rate);
+        assert_eq!(restored.taker_only, fee.taker_only);
     }
 
     #[rstest]
@@ -938,17 +1112,17 @@ mod tests {
             market.event_start_time.as_deref(),
             Some("2026-03-12T09:20:00Z")
         );
-        assert_eq!(market.best_bid, Some(0.5));
-        assert_eq!(market.best_ask, Some(0.51));
-        assert_eq!(market.spread, Some(0.009));
-        assert_eq!(market.last_trade_price, Some(0.51));
+        assert_eq!(market.best_bid, Some(dec!(0.5)));
+        assert_eq!(market.best_ask, Some(dec!(0.51)));
+        assert_eq!(market.spread, Some(dec!(0.009)));
+        assert_eq!(market.last_trade_price, Some(dec!(0.51)));
         assert!(market.one_day_price_change.is_none());
         assert!(market.one_week_price_change.is_none());
-        assert_eq!(market.volume_1wk, Some(9.999997));
-        assert_eq!(market.volume_1mo, Some(9.999997));
-        assert_eq!(market.volume_1yr, Some(9.999997));
-        assert_eq!(market.rewards_min_size, Some(50.0));
-        assert_eq!(market.rewards_max_spread, Some(4.5));
+        assert_eq!(market.volume_1wk, Some(dec!(9.999997)));
+        assert_eq!(market.volume_1mo, Some(dec!(9.999997)));
+        assert_eq!(market.volume_1yr, Some(dec!(9.999997)));
+        assert_eq!(market.rewards_min_size, Some(dec!(50.0)));
+        assert_eq!(market.rewards_max_spread, Some(dec!(4.5)));
         assert_eq!(market.competitive, Some(0.9999750006249843));
         assert!(market.category.is_none());
         assert!(market.neg_risk_market_id.is_none());
@@ -990,10 +1164,10 @@ mod tests {
         let events: Vec<GammaEvent> = load("gamma_event.json");
         let event = &events[0];
 
-        assert_eq!(event.liquidity, Some(43042905.16152));
-        assert_eq!(event.volume, Some(799823812.487094));
-        assert_eq!(event.open_interest, Some(0.0));
-        assert_eq!(event.volume_24hr, Some(5669354.219446001));
+        assert_eq!(event.liquidity, Some(dec!(43042905.16152)));
+        assert_eq!(event.volume, Some(dec!(799823812.487094)));
+        assert_eq!(event.open_interest, Some(dec!(0.0)));
+        assert_eq!(event.volume_24hr, Some(dec!(5669354.219446001)));
         assert!(event.category.is_none());
         assert_eq!(event.neg_risk, Some(true));
         assert_eq!(

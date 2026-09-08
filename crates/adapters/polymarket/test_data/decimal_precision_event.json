@@ -1,0 +1,8 @@
+{
+  "id": "precision-event",
+  "liquidity": 12345678901.123456,
+  "volume": 12345678901.123457,
+  "openInterest": 12345678901.123458,
+  "volume24hr": 12345678901.123459,
+  "markets": []
+}

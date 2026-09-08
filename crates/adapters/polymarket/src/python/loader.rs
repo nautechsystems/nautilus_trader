@@ -30,7 +30,11 @@ use nautilus_model::{
     instruments::{BinaryOption, InstrumentAny},
 };
 use nautilus_network::retry::RetryConfig;
-use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyList};
+use pyo3::{
+    conversion::IntoPyObjectExt,
+    prelude::*,
+    types::{PyDict, PyList},
+};
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -602,8 +606,15 @@ fn extract_filters(filters: Option<&Bound<'_, PyAny>>) -> PyResult<HashMap<Strin
 }
 
 fn serialize_to_py<T: Serialize>(py: Python<'_>, value: &T) -> PyResult<Py<PyAny>> {
-    let value = serde_json::to_value(value).map_err(to_pyruntime_err)?;
-    value_to_pyobject(py, &value)
+    let encoded = serde_json::to_string(value).map_err(to_pyruntime_err)?;
+    let kwargs = PyDict::new(py);
+    kwargs.set_item(
+        "parse_float",
+        PyModule::import(py, "decimal")?.getattr("Decimal")?,
+    )?;
+    Ok(PyModule::import(py, "json")?
+        .call_method("loads", (encoded,), Some(&kwargs))?
+        .unbind())
 }
 
 fn trades_to_py(py: Python<'_>, trades: Vec<TradeTick>) -> PyResult<Py<PyAny>> {
@@ -621,6 +632,138 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[rstest]
+    fn test_discovery_python_decimal_precision() {
+        let market: GammaMarket = serde_json::from_str(include_str!(
+            "../../test_data/decimal_precision_market.json"
+        ))
+        .unwrap();
+        Python::initialize();
+        Python::attach(|py| {
+            let output = serialize_to_py(py, &vec![market]).unwrap();
+            let market = output.bind(py).get_item(0).unwrap();
+            let decimal = py.import("decimal").unwrap().getattr("Decimal").unwrap();
+
+            for (field, expected) in [
+                ("bestBid", "0.1234567890123456789012345678"),
+                ("bestAsk", "0.2345678901234567890123456789"),
+                ("liquidityNum", "12345678901.123456"),
+                ("volumeNum", "12345678901.123457"),
+            ] {
+                let actual = market.get_item(field).unwrap();
+                assert!(actual.is_instance(&decimal).unwrap());
+                assert_eq!(actual.str().unwrap().to_str().unwrap(), expected);
+            }
+            let fee = market.get_item("feeSchedule").unwrap();
+            assert_eq!(
+                fee.get_item("exponent")
+                    .unwrap()
+                    .str()
+                    .unwrap()
+                    .to_str()
+                    .unwrap(),
+                "1.234567890123456789012345678"
+            );
+            assert!(
+                fee.get_item("takerOnly")
+                    .unwrap()
+                    .extract::<bool>()
+                    .unwrap()
+            );
+        });
+    }
+
+    #[rstest]
+    fn test_nested_discovery_python_decimal_precision() {
+        let market: GammaMarket = serde_json::from_str(include_str!(
+            "../../test_data/decimal_precision_market.json"
+        ))
+        .unwrap();
+        let mut event: GammaEvent =
+            serde_json::from_str(include_str!("../../test_data/decimal_precision_event.json"))
+                .unwrap();
+        event.markets = vec![market.clone()];
+        let search = crate::http::models::SearchResponse {
+            markets: Some(vec![market]),
+            events: Some(vec![event]),
+        };
+        let clob_raw = include_str!("../../test_data/clob_market_response.json")
+            .replace(
+                "\"max_spread\": 4.5",
+                "\"max_spread\": 0.1234567890123456789012345678",
+            )
+            .replace(
+                "\"price\": 0.715",
+                "\"price\": 0.2345678901234567890123456789",
+            );
+        let clob: ClobMarketResponse = serde_json::from_str(&clob_raw).unwrap();
+        Python::initialize();
+        Python::attach(|py| {
+            let result = serialize_to_py(py, &search).unwrap();
+            let event = result
+                .bind(py)
+                .get_item("events")
+                .unwrap()
+                .get_item(0)
+                .unwrap();
+            let market = event.get_item("markets").unwrap().get_item(0).unwrap();
+            let details = serialize_to_py(py, &clob).unwrap();
+            let decimal = py.import("decimal").unwrap().getattr("Decimal").unwrap();
+            for (actual, expected) in [
+                (event.get_item("volume").unwrap(), "12345678901.123457"),
+                (
+                    market.get_item("bestAsk").unwrap(),
+                    "0.2345678901234567890123456789",
+                ),
+                (
+                    market
+                        .get_item("feeSchedule")
+                        .unwrap()
+                        .get_item("rate")
+                        .unwrap(),
+                    "0.1234567890123456789012345678",
+                ),
+                (
+                    details
+                        .bind(py)
+                        .get_item("rewards")
+                        .unwrap()
+                        .get_item("max_spread")
+                        .unwrap(),
+                    "0.1234567890123456789012345678",
+                ),
+                (
+                    details
+                        .bind(py)
+                        .get_item("tokens")
+                        .unwrap()
+                        .get_item(0)
+                        .unwrap()
+                        .get_item("price")
+                        .unwrap(),
+                    "0.2345678901234567890123456789",
+                ),
+            ] {
+                assert!(actual.is_instance(&decimal).unwrap());
+                assert_eq!(actual.str().unwrap().to_str().unwrap(), expected);
+            }
+            assert_eq!(
+                details
+                    .bind(py)
+                    .get_item("seconds_delay")
+                    .unwrap()
+                    .extract::<i64>()
+                    .unwrap(),
+                1
+            );
+            assert!(market.get_item("closed").unwrap().is_none());
+            assert_eq!(
+                market.get_item("id").unwrap().extract::<String>().unwrap(),
+                "precision-market"
+            );
+        });
+    }
 
     fn gamma_market() -> GammaMarket {
         serde_json::from_value(json!({
