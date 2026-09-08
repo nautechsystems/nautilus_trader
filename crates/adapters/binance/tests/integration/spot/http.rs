@@ -63,6 +63,7 @@ const ORDER_TEMPLATE_ID: u16 = 304;
 const CANCEL_ORDER_TEMPLATE_ID: u16 = 305;
 const CANCEL_OPEN_ORDERS_TEMPLATE_ID: u16 = 306;
 const CANCEL_ORDER_LIST_TEMPLATE_ID: u16 = 312;
+const CANCEL_REPLACE_TEMPLATE_ID: u16 = 307;
 const ACCOUNT_TEMPLATE_ID: u16 = 400;
 const ORDERS_TEMPLATE_ID: u16 = 308;
 const ACCOUNT_TRADES_TEMPLATE_ID: u16 = 401;
@@ -1074,7 +1075,16 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                             .cloned()
                             .unwrap_or_else(|| "replace-order".to_string());
                         *state.cancel_replace_params.lock() = Some(params);
-                        sbe_response(build_new_order_response(
+                        let canceled = build_cancel_order_response(
+                            12345,
+                            &symbol,
+                            "CR-test",
+                            "original-order",
+                            100_000_000_000,
+                            10_000_000,
+                            0,
+                        );
+                        let replacement = build_new_order_response(
                             99998,
                             &symbol,
                             &client_order_id,
@@ -1082,8 +1092,19 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                             10_000_000,
                             0,
                             1,
-                        ))
-                        .into_response()
+                        );
+                        let mut response =
+                            create_sbe_header(2, CANCEL_REPLACE_TEMPLATE_ID).to_vec();
+                        response.extend_from_slice(&[0, 0]);
+                        response.extend_from_slice(
+                            &u16::try_from(canceled.len()).unwrap().to_le_bytes(),
+                        );
+                        response.extend_from_slice(&canceled);
+                        response.extend_from_slice(
+                            &u32::try_from(replacement.len()).unwrap().to_le_bytes(),
+                        );
+                        response.extend_from_slice(&replacement);
+                        sbe_response(response).into_response()
                     }
                 },
             ),

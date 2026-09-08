@@ -22,7 +22,7 @@
 //! - Untracked orders fall back to execution reports for reconciliation.
 
 use dashmap::DashMap;
-use nautilus_common::cache::fifo::FifoCache;
+use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
@@ -51,6 +51,22 @@ pub struct PendingRequest {
     pub client_order_id: ClientOrderId,
     pub venue_order_id: Option<VenueOrderId>,
     pub operation: PendingOperation,
+}
+
+/// Outcome of a cancel-replace request, tracked by its `cancelNewClientOrderId`.
+///
+/// The cancel half's `CANCELED` report and the venue's response arrive in either
+/// order, so whichever comes second completes the picture.
+#[derive(Debug, Clone)]
+enum CancelReplaceOutcome {
+    Pending,
+    /// The cancel report arrived; withheld while the replacement is pending or succeeded.
+    Canceled {
+        venue_order_id: VenueOrderId,
+        ts_event: UnixNanos,
+    },
+    /// The venue rejected the request before any cancel report arrived.
+    Rejected,
 }
 
 /// Order identity context stored at submission time.
@@ -88,7 +104,9 @@ pub struct WsDispatchState {
     replacements: DashMap<ClientOrderId, PendingReplacement>,
     emitted_accepted: Mutex<FifoCache<ClientOrderId, 10_000>>,
     filled_orders: Mutex<FifoCache<ClientOrderId, 10_000>>,
-    cancel_replace_cancel_ids: Mutex<FifoCache<String, 10_000>>,
+    /// Cancel-replace request IDs mapped to their `cancelNewClientOrderId`.
+    pub cancel_replace_request_ids: DashMap<String, String>,
+    cancel_replace_outcomes: Mutex<FifoCacheMap<String, CancelReplaceOutcome, 10_000>>,
 }
 
 impl Default for WsDispatchState {
@@ -101,7 +119,8 @@ impl Default for WsDispatchState {
             replacements: DashMap::new(),
             emitted_accepted: Mutex::new(FifoCache::new()),
             filled_orders: Mutex::new(FifoCache::new()),
-            cancel_replace_cancel_ids: Mutex::new(FifoCache::new()),
+            cancel_replace_request_ids: DashMap::new(),
+            cancel_replace_outcomes: Mutex::new(FifoCacheMap::new()),
         }
     }
 }
@@ -125,15 +144,62 @@ impl WsDispatchState {
         self.filled_orders.lock().add(cid);
     }
 
-    pub fn is_cancel_replace_cancel_id(&self, id: &str) -> bool {
-        self.cancel_replace_cancel_ids
+    /// Records the `cancelNewClientOrderId` sent with a cancel-replace request.
+    pub fn insert_cancel_replace(&self, cancel_id: String) {
+        self.cancel_replace_outcomes
             .lock()
-            .contains(&id.to_string())
+            .insert(cancel_id, CancelReplaceOutcome::Pending);
     }
 
-    /// Records the `cancelNewClientOrderId` sent with a cancel-replace request.
-    pub fn insert_cancel_replace_cancel_id(&self, id: String) {
-        self.cancel_replace_cancel_ids.lock().add(id);
+    /// Records the cancel half's `CANCELED` report for a cancel-replace request.
+    ///
+    /// Returns `true` when the report must be withheld because the replacement is
+    /// pending or succeeded, and `false` when it should dispatch as a standalone
+    /// cancel because the venue already rejected the replacement or the ID is not
+    /// one this client issued.
+    pub fn on_cancel_replace_canceled(
+        &self,
+        cancel_id: &str,
+        venue_order_id: VenueOrderId,
+        ts_event: UnixNanos,
+    ) -> bool {
+        let mut outcomes = self.cancel_replace_outcomes.lock();
+        let Some(outcome) = outcomes.get_mut(&cancel_id.to_string()) else {
+            return false;
+        };
+
+        match outcome {
+            CancelReplaceOutcome::Pending => {
+                *outcome = CancelReplaceOutcome::Canceled {
+                    venue_order_id,
+                    ts_event,
+                };
+                true
+            }
+            CancelReplaceOutcome::Canceled { .. } => true,
+            CancelReplaceOutcome::Rejected => false,
+        }
+    }
+
+    /// Records a rejected cancel-replace request.
+    ///
+    /// Returns the confirmed cancellation when its report already arrived, so the
+    /// caller can emit `OrderCanceled` for the original order.
+    pub fn on_cancel_replace_rejected(&self, cancel_id: &str) -> Option<(VenueOrderId, UnixNanos)> {
+        let mut outcomes = self.cancel_replace_outcomes.lock();
+        let outcome = outcomes.get_mut(&cancel_id.to_string())?;
+
+        match outcome {
+            CancelReplaceOutcome::Pending => {
+                *outcome = CancelReplaceOutcome::Rejected;
+                None
+            }
+            CancelReplaceOutcome::Canceled {
+                venue_order_id,
+                ts_event,
+            } => Some((*venue_order_id, *ts_event)),
+            CancelReplaceOutcome::Rejected => None,
+        }
     }
 
     pub fn insert_algo_order_id(&self, cid: ClientOrderId, venue_order_id: VenueOrderId) {
