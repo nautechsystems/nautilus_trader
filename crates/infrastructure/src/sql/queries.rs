@@ -61,11 +61,11 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!("Failed to truncate tables: {e}"))
     }
 
-    /// Inserts a raw key-value entry into the `general` table via the provided `pool`.
+    /// Inserts or replaces a raw key-value entry in the `general` table via the provided `pool`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the INSERT operation fails.
+    /// Returns an error if the INSERT or UPDATE operation fails.
     pub async fn add(pool: &PgPool, key: String, value: Vec<u8>) -> anyhow::Result<()> {
         sqlx::query(
             "INSERT INTO general (id, value) VALUES ($1, $2) \

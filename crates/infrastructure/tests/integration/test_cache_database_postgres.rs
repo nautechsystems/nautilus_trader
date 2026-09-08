@@ -118,7 +118,7 @@ mod serial_tests {
         );
 
         // Re-adding an existing key must update the stored value, matching the
-        // in-memory cache's insert semantics, rather than fail on the primary key
+        // in-memory cache's insert semantics, rather than fail on the primary key.
         pg_cache.add(key.clone(), second.clone()).unwrap();
         wait_until(
             || pg_cache.load().unwrap().get(&key) == Some(&second),
