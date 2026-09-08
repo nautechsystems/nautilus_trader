@@ -48,6 +48,7 @@ use nautilus_model::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEmulated,
         OrderEventAny, OrderFilled, OrderPendingCancel, OrderRejected, OrderReleased,
         OrderSnapshot, OrderSubmitted, OrderUpdated,
+        account::stubs::cash_account_state_million_usd,
         order::spec::{
             OrderCanceledSpec, OrderEmulatedSpec, OrderFilledSpec, OrderReleasedSpec,
             OrderUpdatedSpec,
@@ -5134,6 +5135,75 @@ fn test_cache_account_for_venue_return_correct(mut cache: Cache) {
     let result = cache.account_for_venue(&venue);
     assert!(result.is_some());
     assert_eq!(*result.unwrap(), account);
+}
+
+#[rstest]
+fn test_cache_account_for_instrument_falls_back_from_venue_miss(mut cache: Cache) {
+    // Account issuer and instrument venue deliberately differ, as they do for broker-routed
+    // instruments (account under the broker venue, instrument under the routing venue/MIC).
+    let account = AccountAny::default();
+    let account_id = account.last_event().unwrap().account_id;
+    cache.add_account(account).unwrap();
+
+    let instrument_id = InstrumentId::from("AAPL.SMART");
+    assert!(
+        cache.account_for_venue(&instrument_id.venue).is_none(),
+        "precondition: the instrument's venue has no account"
+    );
+
+    // No position yet, so nothing to fall back to.
+    assert!(cache.account_for_instrument(&instrument_id, None).is_none());
+
+    // An explicit account_id always wins.
+    assert_eq!(
+        cache
+            .account_for_instrument(&instrument_id, Some(&account_id))
+            .map(|a| a.id()),
+        Some(account_id)
+    );
+}
+
+#[rstest]
+fn test_cache_account_for_instrument_uses_position_owning_account(mut cache: Cache) {
+    // Account registered under the broker venue `IB`, not the instrument's own venue.
+    let broker_account_id = AccountId::from("IB-DU123456");
+    let mut state = cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD");
+    state.account_id = broker_account_id;
+    cache.add_account(AccountAny::from(state)).unwrap();
+
+    let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim());
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &audusd_sim,
+        Some(TradeId::new("T-1")),
+        Some(PositionId::new("P-1")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        Some(UnixNanos::from(1_000_000_000)),
+        Some(broker_account_id),
+    );
+    let position = Position::new(&audusd_sim, fill.into());
+    let instrument_id = position.instrument_id;
+    cache.add_position(&position, OmsType::Netting).unwrap();
+
+    assert!(
+        cache.account_for_venue(&instrument_id.venue).is_none(),
+        "precondition: the instrument's venue has no account of its own"
+    );
+    assert_eq!(
+        cache
+            .account_for_instrument(&instrument_id, None)
+            .map(|a| a.id()),
+        Some(broker_account_id),
+        "resolves via the account owning a position for the instrument"
+    );
 }
 
 #[rstest]

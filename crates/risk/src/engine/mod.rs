@@ -82,9 +82,10 @@ fn cash_or_wallet_account(account: &AccountAny) -> Option<&dyn Account> {
 /// 1. Exact venue match (the common case; unchanged behaviour).
 /// 2. The account of the execution client routing the order, when the order carries an
 ///    explicit `client_id`.
-/// 3. The account owning an existing position for the instrument (mirrors the portfolio
-///    resolution added for broker-routed instruments).
+/// 3. The account owning an existing position for the instrument.
 /// 4. The sole registered account, when the cache holds exactly one.
+///
+/// Steps 1 and 3 are shared with the portfolio via [`Cache::account_for_instrument`].
 ///
 /// Steps 2 to 4 matter specifically for *pre-trade* checks. A new order usually has no
 /// `account_id` and no position yet, so for a broker-routed instrument steps 1 and 3 both
@@ -109,17 +110,9 @@ fn resolve_account_for_instrument(
         }
     }
 
-    if let Some(account) = cache
-        .positions(None, Some(instrument_id), None, None, None)
-        .into_iter()
-        .next()
-        .and_then(|position| cache.account(&position.account_id))
-    {
-        return Some(account.clone_without_events());
-    }
-
     cache
-        .account_sole()
+        .account_for_instrument(instrument_id, None)
+        .or_else(|| cache.account_sole())
         .map(|account| account.clone_without_events())
 }
 
