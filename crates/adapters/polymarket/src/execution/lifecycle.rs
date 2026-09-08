@@ -229,11 +229,19 @@ impl PolymarketExecutionClient {
     }
 
     pub(super) async fn refresh_account_state(&self) -> anyhow::Result<()> {
+        let user_address = self
+            .secrets
+            .funder
+            .clone()
+            .unwrap_or_else(|| self.secrets.address.clone());
+        let api_key = SecretString::from(self.secrets.credential.api_key_str().to_string());
         fetch_and_emit_account_state(
             &self.http_client,
             &self.emitter,
             self.clock,
             self.config.signature_type,
+            &user_address,
+            api_key.expose_secret(),
         )
         .await
     }
@@ -344,10 +352,17 @@ impl PolymarketExecutionClient {
                             let http = http_client.clone();
                             let emit = emitter.clone();
                             let session_spawner = session_spawner.clone();
+                            let refresh_user_address = user_address.clone();
+                            let refresh_api_key = user_api_key.clone();
 
                             let future = async move {
                                 match fetch_and_emit_account_state(
-                                    &http, &emit, clock, signature_type,
+                                    &http,
+                                    &emit,
+                                    clock,
+                                    signature_type,
+                                    &refresh_user_address,
+                                    refresh_api_key.expose_secret(),
                                 )
                                 .await
                                 {
@@ -375,9 +390,18 @@ impl PolymarketExecutionClient {
 
                         let http = http_client.clone();
                         let emit = emitter.clone();
+                        let refresh_user_address = user_address.clone();
+                        let refresh_api_key = user_api_key.clone();
                         let future = async move {
-                            match fetch_and_emit_account_state(&http, &emit, clock, signature_type)
-                                .await
+                            match fetch_and_emit_account_state(
+                                &http,
+                                &emit,
+                                clock,
+                                signature_type,
+                                &refresh_user_address,
+                                refresh_api_key.expose_secret(),
+                            )
+                            .await
                             {
                                 Ok(()) => {
                                     log::info!("Account state refreshed after WebSocket reconnect");

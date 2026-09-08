@@ -369,6 +369,111 @@ async fn test_exec_client_poly1271_uses_signer_for_api_auth() {
 
 #[rstest]
 #[tokio::test]
+async fn test_query_account_reports_locked_from_owned_open_orders() {
+    let state = TestServerState::default();
+    let page = load_json("http_open_orders_page.json");
+    let owned_buy = {
+        let mut order = page["data"][0].clone(); // BUY, owned via the account api key
+        order["original_size"] = json!("10");
+        order["size_matched"] = json!("4");
+        order["price"] = json!("0.40"); // remaining 6 x 0.40 = 2.40 pUSD
+        order
+    };
+    let owned_sell = page["data"][1].clone(); // SELL reserves tokens, not collateral
+    let foreign_buy = {
+        let mut order = page["data"][0].clone();
+        order["maker_address"] = json!("0x1111111111111111111111111111111111111111");
+        order["owner"] = json!("foreign-api-key");
+        order
+    };
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [owned_buy, owned_sell, foreign_buy],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, _cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let cmd = QueryAccount::new(
+        TraderId::from("TESTER-001"),
+        Some(*POLYMARKET_CLIENT_ID),
+        AccountId::from("POLYMARKET-001"),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    client.query_account(cmd).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let ExecutionEvent::Account(account_state) = event else {
+        panic!("Expected Account event, was {event:?}");
+    };
+
+    // Balance fixture total is 37.506152 pUSD; only the owned resting BUY reserves
+    let currency = Currency::pUSD();
+    let balance = &account_state.balances[0];
+    assert_eq!(
+        balance.total,
+        Money::from_decimal(dec!(37.506152), currency).unwrap()
+    );
+    assert_eq!(
+        balance.locked,
+        Money::from_decimal(dec!(2.40), currency).unwrap()
+    );
+    assert_eq!(
+        balance.free,
+        Money::from_decimal(dec!(35.106152), currency).unwrap()
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_query_account_reports_zero_locked_when_orders_request_fails() {
+    let state = TestServerState::default();
+    *state.orders_response_status.lock().await = StatusCode::INTERNAL_SERVER_ERROR;
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, _cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let cmd = QueryAccount::new(
+        TraderId::from("TESTER-001"),
+        Some(*POLYMARKET_CLIENT_ID),
+        AccountId::from("POLYMARKET-001"),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    client.query_account(cmd).unwrap();
+
+    // The balance update degrades to the previous behavior rather than failing
+    let event = tokio::time::timeout(Duration::from_secs(10), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let ExecutionEvent::Account(account_state) = event else {
+        panic!("Expected Account event, was {event:?}");
+    };
+
+    let currency = Currency::pUSD();
+    let balance = &account_state.balances[0];
+    assert_eq!(
+        balance.total,
+        Money::from_decimal(dec!(37.506152), currency).unwrap()
+    );
+    assert_eq!(
+        balance.locked,
+        Money::from_decimal(Decimal::ZERO, currency).unwrap()
+    );
+    assert_eq!(balance.free, balance.total);
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_exec_client_not_connected_initially() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;

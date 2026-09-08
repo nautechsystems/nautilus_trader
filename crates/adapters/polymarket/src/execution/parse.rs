@@ -38,7 +38,7 @@ use crate::{
             PolymarketEventType, PolymarketLiquiditySide, PolymarketOrderSide,
             PolymarketOrderStatus,
         },
-        models::PolymarketMakerOrder,
+        models::{PolymarketMakerOrder, is_owned_by_account},
         parse::parse_decimal_exact,
     },
     http::models::{ClobBookLevel, PolymarketOpenOrder, PolymarketTradeReport},
@@ -708,13 +708,40 @@ const USDC_SCALE: Decimal = Decimal::from_parts(1_000_000, 0, 0, false, 0);
 /// The API returns balances as integer micro-pUSD (e.g. `20000000` = 20 pUSD).
 /// This divides by 10^6 and constructs Money via `Money::from_decimal`, matching
 /// the pattern used by dYdX, Deribit, OKX, and other adapters.
+/// `locked` is whole-pUSD collateral committed to resting BUY orders (see
+/// [`locked_from_open_orders`]), clamped into `[0, total]` with `free = total - locked`.
 pub fn parse_balance_allowance(
     balance_raw: Decimal,
+    locked: Decimal,
     currency: Currency,
 ) -> anyhow::Result<AccountBalance> {
     let balance_pusd = balance_raw / USDC_SCALE;
-    AccountBalance::from_total_and_locked(balance_pusd, Decimal::ZERO, currency)
+    AccountBalance::from_total_and_locked(balance_pusd, locked, currency)
         .map_err(|e| anyhow::anyhow!("Failed to convert balance: {e}"))
+}
+
+/// Sums the whole-pUSD collateral committed by the account's resting BUY orders.
+///
+/// The venue holds the remaining (unmatched) size of each resting BUY; matched-but-unsettled
+/// spend has already left the open-order set, so `locked` sits under the venue's hold while
+/// fills settle. SELL orders reserve conditional tokens, not collateral. Rows not owned by
+/// the account are dropped, applying the same ownership rule as reconciliation.
+pub fn locked_from_open_orders(
+    orders: &[PolymarketOpenOrder],
+    user_address: &str,
+    api_key: &str,
+) -> Decimal {
+    orders
+        .iter()
+        .filter(|order| {
+            order.side == PolymarketOrderSide::Buy
+                && is_owned_by_account(&order.maker_address, &order.owner, user_address, api_key)
+        })
+        .map(|order| {
+            let remaining = (order.original_size - order.size_matched).max(Decimal::ZERO);
+            remaining * order.price
+        })
+        .sum()
 }
 
 /// Result of walking the order book to compute market order parameters.
@@ -973,7 +1000,7 @@ mod tests {
     #[case(dec!(12345678901123456), dec!(12345678901.123456))]
     fn test_parse_balance_allowance(#[case] raw: Decimal, #[case] expected: Decimal) {
         let currency = Currency::pUSD();
-        let balance = parse_balance_allowance(raw, currency).unwrap();
+        let balance = parse_balance_allowance(raw, Decimal::ZERO, currency).unwrap();
         assert_eq!(
             balance.total,
             Money::from_decimal(expected, currency).unwrap()
@@ -982,6 +1009,137 @@ mod tests {
         assert_eq!(
             balance.locked,
             Money::from_decimal(Decimal::ZERO, currency).unwrap()
+        );
+    }
+
+    #[rstest]
+    #[case(dec!(20_000_000), dec!(5), dec!(5), dec!(15))] // partial reservation
+    #[case(dec!(20_000_000), dec!(0), dec!(0), dec!(20))] // nothing resting
+    #[case(dec!(20_000_000), dec!(20), dec!(20), dec!(0))] // fully committed
+    #[case(dec!(20_000_000), dec!(25), dec!(20), dec!(0))] // clamped into [0, total]
+    fn test_parse_balance_allowance_with_locked(
+        #[case] raw: Decimal,
+        #[case] locked: Decimal,
+        #[case] expected_locked: Decimal,
+        #[case] expected_free: Decimal,
+    ) {
+        let currency = Currency::pUSD();
+        let balance = parse_balance_allowance(raw, locked, currency).unwrap();
+        assert_eq!(
+            balance.locked,
+            Money::from_decimal(expected_locked, currency).unwrap()
+        );
+        assert_eq!(
+            balance.free,
+            Money::from_decimal(expected_free, currency).unwrap()
+        );
+    }
+
+    const STUB_USER_ADDRESS: &str = "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266";
+    const STUB_API_KEY: &str = "00000000-0000-0000-0000-000000000001";
+
+    fn stub_open_order(
+        side: &str,
+        original_size: &str,
+        size_matched: &str,
+        price: &str,
+        maker_address: &str,
+        owner: &str,
+    ) -> PolymarketOpenOrder {
+        serde_json::from_value(serde_json::json!({
+            "associate_trades": [],
+            "id": "0xaaaa000000000000000000000000000000000000000000000000000000000001",
+            "status": "LIVE",
+            "market": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+            "original_size": original_size,
+            "outcome": "Yes",
+            "maker_address": maker_address,
+            "owner": owner,
+            "price": price,
+            "side": side,
+            "size_matched": size_matched,
+            "asset_id": "71321045679252212594626385532706912750332728571942532289631379312455583992563",
+            "expiration": null,
+            "order_type": "GTC",
+            "created_at": 1703875200u64,
+        }))
+        .unwrap()
+    }
+
+    fn owned_open_order(
+        side: &str,
+        original_size: &str,
+        size_matched: &str,
+        price: &str,
+    ) -> PolymarketOpenOrder {
+        stub_open_order(
+            side,
+            original_size,
+            size_matched,
+            price,
+            STUB_USER_ADDRESS,
+            STUB_API_KEY,
+        )
+    }
+
+    #[rstest]
+    fn test_locked_from_open_orders_sums_remaining_owned_buy_notional() {
+        let orders = vec![
+            owned_open_order("BUY", "10", "0", "0.40"), // 4.00 resting
+            owned_open_order("BUY", "10", "4", "0.50"), // 3.00 remaining after partial match
+            owned_open_order("SELL", "10", "0", "0.90"), // reserves tokens, not collateral
+            // Foreign rows are dropped by the same ownership rule as reconciliation
+            stub_open_order(
+                "BUY",
+                "10",
+                "0",
+                "0.60",
+                "0x1111111111111111111111111111111111111111",
+                "foreign-api-key",
+            ),
+        ];
+        assert_eq!(
+            locked_from_open_orders(&orders, STUB_USER_ADDRESS, STUB_API_KEY),
+            dec!(7.00)
+        );
+    }
+
+    #[rstest]
+    fn test_locked_from_open_orders_empty_and_overmatched() {
+        assert_eq!(
+            locked_from_open_orders(&[], STUB_USER_ADDRESS, STUB_API_KEY),
+            Decimal::ZERO
+        );
+        // Venue-side rounding can overshoot size_matched; remaining clamps at zero
+        let overmatched = vec![owned_open_order("BUY", "10", "10.000001", "0.50")];
+        assert_eq!(
+            locked_from_open_orders(&overmatched, STUB_USER_ADDRESS, STUB_API_KEY),
+            Decimal::ZERO
+        );
+    }
+
+    /// Pins the accepted limitation (#4916): matched-but-unsettled spend has left
+    /// `GET /data/orders`, so open-order `locked` sits under the venue's hold and `free`
+    /// over-reports while fills settle. Figures are from the #4911 capture, where the
+    /// venue held a further 21.949680 of matched spend and real availability was negative.
+    #[rstest]
+    fn test_locked_from_open_orders_documents_unsettled_spend_gap() {
+        // Venue reject payload: balance: 66698599, sum of active orders: 48400000,
+        // sum of matched orders: 21949680 -> real available = -3.651081
+        let currency = Currency::pUSD();
+        let balance_raw = dec!(66_698_599);
+        let venue_matched = dec!(21.949680);
+        let orders = vec![owned_open_order("BUY", "100", "0", "0.484")]; // 48.400 resting
+
+        let locked = locked_from_open_orders(&orders, STUB_USER_ADDRESS, STUB_API_KEY);
+        assert_eq!(locked, dec!(48.400));
+
+        let balance = parse_balance_allowance(balance_raw, locked, currency).unwrap();
+        let venue_available = balance.total.as_decimal() - locked - venue_matched;
+        assert!(venue_available < Decimal::ZERO);
+        assert_eq!(
+            balance.free,
+            Money::from_decimal(dec!(18.298599), currency).unwrap()
         );
     }
 

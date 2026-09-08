@@ -187,8 +187,8 @@ BUY orders as `locked`, with `free = total - locked`. Three behaviors follow:
 - Collateral spent on matched-but-unsettled fills has already left the open-order set but is not
   yet reflected in the cached total, so `locked` sits under the venue's real hold while fills
   settle.
-- `locked` is computed at each refresh (finalized trade, reconnect, mass status) and is stale
-  between refreshes.
+- `locked` is computed at each refresh (connect, finalized trade, reconnect, and
+  `QueryAccount`) and is stale between refreshes.
 
 If the open-orders request fails, the refresh logs a warning and reports `locked = 0` so the
 balance update itself is not blocked.

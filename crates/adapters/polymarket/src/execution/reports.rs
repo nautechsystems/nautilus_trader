@@ -362,9 +362,23 @@ impl PolymarketExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let signature_type = self.config.signature_type;
+        let user_address = self
+            .secrets
+            .funder
+            .clone()
+            .unwrap_or_else(|| self.secrets.address.clone());
+        let api_key = SecretString::from(self.secrets.credential.api_key_str().to_string());
 
         self.spawn_task("query_account", async move {
-            fetch_and_emit_account_state(&http_client, &emitter, clock, signature_type).await
+            fetch_and_emit_account_state(
+                &http_client,
+                &emitter,
+                clock,
+                signature_type,
+                &user_address,
+                api_key.expose_secret(),
+            )
+            .await
         });
     }
 
@@ -1051,6 +1065,8 @@ pub(super) async fn fetch_and_emit_account_state(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
     signature_type: SignatureType,
+    user_address: &str,
+    api_key: &str,
 ) -> anyhow::Result<()> {
     let params = GetBalanceAllowanceParams {
         asset_type: Some(crate::http::query::AssetType::Collateral),
@@ -1066,7 +1082,7 @@ pub(super) async fn fetch_and_emit_account_state(
     );
     let balance = balance_res.context("failed to fetch balance")?;
     let locked = match orders_res {
-        Ok(orders) => locked_from_open_orders(&orders),
+        Ok(orders) => locked_from_open_orders(&orders, user_address, api_key),
         Err(e) => {
             // Degrade rather than block the balance update: total-only is stale but usable
             log::warn!("Failed to fetch open orders for locked balance, reporting locked=0: {e}");
