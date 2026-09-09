@@ -261,11 +261,19 @@ mod tests {
     fn round_trip_ping_pong() {
         let ping = tungstenite::Message::Ping(Bytes::from_static(b"p"));
         let neutral: Message = ping.into();
-        assert!(neutral.is_ping());
+        assert_eq!(neutral, Message::Ping(Bytes::from_static(b"p")));
+        assert_eq!(
+            tungstenite::Message::try_from(neutral).unwrap(),
+            tungstenite::Message::Ping(Bytes::from_static(b"p")),
+        );
 
         let pong = tungstenite::Message::Pong(Bytes::from_static(b"q"));
         let neutral: Message = pong.into();
-        assert!(neutral.is_pong());
+        assert_eq!(neutral, Message::Pong(Bytes::from_static(b"q")));
+        assert_eq!(
+            tungstenite::Message::try_from(neutral).unwrap(),
+            tungstenite::Message::Pong(Bytes::from_static(b"q")),
+        );
     }
 
     #[rstest]

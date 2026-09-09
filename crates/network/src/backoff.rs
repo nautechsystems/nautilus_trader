@@ -181,8 +181,7 @@ impl ExponentialBackoff {
         let delay_with_jitter = base + Duration::from_millis(jitter);
 
         // The floor keeps a jitter range wider than delay_max from producing a zero delay
-        let floor = std::cmp::min(self.delay_initial, self.delay_max);
-        let clamped_delay = delay_with_jitter.clamp(floor, self.delay_max);
+        let clamped_delay = delay_with_jitter.clamp(self.delay_initial, self.delay_max);
 
         // The constructor guarantees both values fit in u64 nanoseconds. Float-to-integer casts
         // saturate, so the final min preserves the configured cap even if multiplication overflows.
@@ -579,6 +578,53 @@ mod tests {
             );
             assert!(delay <= max, "Delay {delay:?} exceeded max {max:?}");
         }
+    }
+
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    #[tokio::test(start_paused = true)]
+    async fn test_reconnect_delay_ignores_notifications_until_elapsed() {
+        let mode = AtomicU8::new(ConnectionMode::Reconnect.as_u8());
+        let notify = tokio::sync::Notify::new();
+        let mut wait = pin!(wait_reconnect_delay(Duration::from_secs(5), &mode, &notify));
+
+        assert!(futures_util::poll!(&mut wait).is_pending());
+        notify.notify_waiters();
+        assert!(futures_util::poll!(&mut wait).is_pending());
+        tokio::time::advance(Duration::from_secs(4)).await;
+        assert!(futures_util::poll!(&mut wait).is_pending());
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert_eq!(futures_util::poll!(&mut wait), std::task::Poll::Ready(true));
+    }
+
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    #[rstest]
+    #[case::disconnect_before_wait(ConnectionMode::Disconnect, false)]
+    #[case::closed_before_wait(ConnectionMode::Closed, false)]
+    #[case::disconnect_during_wait(ConnectionMode::Disconnect, true)]
+    #[case::closed_during_wait(ConnectionMode::Closed, true)]
+    #[tokio::test(start_paused = true)]
+    async fn test_reconnect_delay_stops_on_terminal_state(
+        #[case] terminal: ConnectionMode,
+        #[case] during_wait: bool,
+    ) {
+        let mode = AtomicU8::new(if during_wait {
+            ConnectionMode::Reconnect.as_u8()
+        } else {
+            terminal.as_u8()
+        });
+        let notify = tokio::sync::Notify::new();
+        let mut wait = pin!(wait_reconnect_delay(Duration::from_secs(5), &mode, &notify));
+
+        if during_wait {
+            assert!(futures_util::poll!(&mut wait).is_pending());
+            mode.store(terminal.as_u8(), std::sync::atomic::Ordering::SeqCst);
+            notify.notify_waiters();
+        }
+
+        assert_eq!(
+            futures_util::poll!(&mut wait),
+            std::task::Poll::Ready(false)
+        );
     }
 
     // Time-dependent throttle tests need an exact paused clock; under the sim build

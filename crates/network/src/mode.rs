@@ -400,6 +400,68 @@ mod tests {
     use super::*;
 
     #[rstest]
+    #[case::no_requests(0)]
+    #[case::one_request(1)]
+    #[case::multiple_requests(3)]
+    fn controller_close_waits_for_last_request(#[case] count: usize) {
+        let lifecycle = ControllerLifecycle::new();
+        let aborts = Arc::new(AtomicUsize::new(0));
+        let aborts_callback = Arc::clone(&aborts);
+        lifecycle.set_abort(move || {
+            aborts_callback.fetch_add(1, Ordering::SeqCst);
+        });
+        let mut requests: Vec<_> = (0..count)
+            .map(|_| lifecycle.enter_request().unwrap())
+            .collect();
+
+        lifecycle.close_and_abort();
+
+        assert!(lifecycle.enter_request().is_none());
+        assert_eq!(aborts.load(Ordering::SeqCst), usize::from(count == 0));
+
+        while let Some(request) = requests.pop() {
+            drop(request);
+            assert_eq!(
+                aborts.load(Ordering::SeqCst),
+                usize::from(requests.is_empty()),
+            );
+        }
+
+        assert_eq!(aborts.load(Ordering::SeqCst), 1);
+        assert!(lifecycle.enter_request().is_none());
+    }
+
+    #[rstest]
+    fn controller_request_completion_keeps_admission_open() {
+        let lifecycle = ControllerLifecycle::new();
+        let aborts = Arc::new(AtomicUsize::new(0));
+        let aborts_callback = Arc::clone(&aborts);
+        lifecycle.set_abort(move || {
+            aborts_callback.fetch_add(1, Ordering::SeqCst);
+        });
+
+        drop(lifecycle.enter_request().unwrap());
+        drop(lifecycle.enter_request().unwrap());
+
+        assert_eq!(aborts.load(Ordering::SeqCst), 0);
+    }
+
+    #[rstest]
+    fn controller_activity_drop_closes_admission_without_aborting() {
+        let lifecycle = Arc::new(ControllerLifecycle::new());
+        let aborts = Arc::new(AtomicUsize::new(0));
+        let aborts_callback = Arc::clone(&aborts);
+        lifecycle.set_abort(move || {
+            aborts_callback.fetch_add(1, Ordering::SeqCst);
+        });
+
+        drop(lifecycle.activity());
+
+        assert!(lifecycle.enter_request().is_none());
+        assert_eq!(aborts.load(Ordering::SeqCst), 0);
+    }
+
+    #[rstest]
     #[case(ConnectionMode::Active, true, ConnectionMode::Reconnect)]
     #[case(ConnectionMode::Reconnect, false, ConnectionMode::Reconnect)]
     #[case(ConnectionMode::Disconnect, false, ConnectionMode::Disconnect)]

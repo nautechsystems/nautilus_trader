@@ -99,3 +99,56 @@ pub(super) fn response_error(error: HttpClientError, url: Option<&Url>) -> HttpC
         (error, _) => error,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+
+    use http::{HeaderMap, HeaderValue, header::HeaderName};
+    use http_body::Frame;
+    use http_body_util::StreamBody;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn read_chunk_skips_trailers_and_preserves_data() {
+        let trailers = HeaderMap::from_iter([(
+            HeaderName::from_static("x-checksum"),
+            HeaderValue::from_static("receipt-83"),
+        )]);
+        let frames: Vec<Result<_, io::Error>> = vec![
+            Ok(Frame::data(Bytes::from_static(b"first"))),
+            Ok(Frame::data(Bytes::from_static(b"second"))),
+            Ok(Frame::trailers(trailers)),
+        ];
+        let mut body = StreamBody::new(futures_util::stream::iter(frames));
+
+        let first = read_chunk(&mut body, None).await.unwrap();
+        let second = read_chunk(&mut body, None).await.unwrap();
+        let end = read_chunk(&mut body, None).await.unwrap();
+
+        assert_eq!(first, Some(Bytes::from_static(b"first")));
+        assert_eq!(second, Some(Bytes::from_static(b"second")));
+        assert_eq!(end, None);
+    }
+
+    #[rstest]
+    #[case::transport(io::ErrorKind::UnexpectedEof, false)]
+    #[case::timeout(io::ErrorKind::TimedOut, true)]
+    #[tokio::test]
+    async fn read_chunk_propagates_body_error(#[case] kind: io::ErrorKind, #[case] timeout: bool) {
+        let frames = vec![Err::<Frame<Bytes>, _>(io::Error::new(kind, "body failure"))];
+        let mut body = StreamBody::new(futures_util::stream::iter(frames));
+
+        let error = read_chunk(&mut body, None).await.unwrap_err();
+
+        match (error, timeout) {
+            (HttpClientError::TimeoutError(message), true)
+            | (HttpClientError::TransportError(message), false) => {
+                assert_eq!(message, "body failure");
+            }
+            (error, _) => panic!("unexpected classification: {error:?}"),
+        }
+    }
+}

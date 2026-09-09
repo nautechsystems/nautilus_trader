@@ -1278,6 +1278,14 @@ mod tests {
     #[rstest]
     fn test_http_retry_manager_config() {
         let manager = create_http_retry_manager::<TestError>();
+        assert_eq!(manager.config.initial_delay_ms, 1_000);
+        assert_eq!(manager.config.max_delay_ms, 10_000);
+        #[allow(clippy::float_cmp, reason = "test asserts the preset backoff factor")]
+        {
+            assert_eq!(manager.config.backoff_factor, 2.0);
+        }
+        assert_eq!(manager.config.jitter_ms, 1_000);
+        assert_eq!(manager.config.operation_timeout_ms, Some(60_000));
         assert_eq!(manager.config.max_retries, 3);
         assert!(!manager.config.immediate_first);
         assert_eq!(manager.config.max_elapsed_ms, Some(180_000));
@@ -1286,6 +1294,14 @@ mod tests {
     #[rstest]
     fn test_websocket_retry_manager_config() {
         let manager = create_websocket_retry_manager::<TestError>();
+        assert_eq!(manager.config.initial_delay_ms, 1_000);
+        assert_eq!(manager.config.max_delay_ms, 10_000);
+        #[allow(clippy::float_cmp, reason = "test asserts the preset backoff factor")]
+        {
+            assert_eq!(manager.config.backoff_factor, 2.0);
+        }
+        assert_eq!(manager.config.jitter_ms, 1_000);
+        assert_eq!(manager.config.operation_timeout_ms, Some(30_000));
         assert_eq!(manager.config.max_retries, 5);
         assert!(manager.config.immediate_first);
         assert_eq!(manager.config.max_elapsed_ms, Some(120_000));

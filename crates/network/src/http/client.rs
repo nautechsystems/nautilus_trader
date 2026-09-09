@@ -1040,8 +1040,8 @@ mod tests {
     fn create_router() -> Router {
         Router::new()
             .route("/get", get(|| async { "hello-world!" }))
-            .route("/post", post(|| async { StatusCode::OK }))
-            .route("/patch", patch(|| async { StatusCode::OK }))
+            .route("/post", post(|body: Bytes| async move { body }))
+            .route("/patch", patch(|body: Bytes| async move { body }))
             .route("/delete", delete(|| async { StatusCode::OK }))
             .route("/capture", any(capture_request))
             .route("/notfound", get(|| async { StatusCode::NOT_FOUND }))
@@ -1176,7 +1176,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
-        assert_eq!(String::from_utf8_lossy(&response.body), "hello-world!");
+        assert_eq!(response.headers, HashMap::new());
+        assert_eq!(response.body.as_ref(), b"hello-world!");
     }
 
     #[tokio::test]
@@ -1247,6 +1248,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
+        assert_eq!(response.headers, HashMap::new());
         assert_eq!(
             response.body.as_ref(),
             b"POST\n/capture\n\ndefault-secret\nrequest-secret\ncredential-body"
@@ -1342,6 +1344,28 @@ mod tests {
         );
     }
 
+    #[rstest]
+    #[case::empty_at_zero_cap(b"", 0)]
+    #[case::at_cap(b"body-37", 7)]
+    #[case::below_cap(b"body-37", 8)]
+    #[tokio::test]
+    async fn test_declared_response_body_at_or_below_cap_is_returned(
+        #[case] bytes: &'static [u8],
+        #[case] max_response_bytes: usize,
+    ) {
+        let client = InnerHttpClient {
+            max_response_bytes,
+            ..Default::default()
+        };
+        let response = http::Response::new(Full::new(Bytes::from_static(bytes)));
+
+        let response = client.consume_response(response, None).await.unwrap();
+
+        assert_eq!(response.status.as_u16(), 200);
+        assert_eq!(response.headers, HashMap::new());
+        assert_eq!(response.body.as_ref(), bytes);
+    }
+
     #[tokio::test]
     async fn test_response_body_within_cap_is_returned() {
         let addr = start_test_server().await.unwrap();
@@ -1359,7 +1383,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
-        assert_eq!(response.body.len(), 1024 * 1024);
+        assert_eq!(response.headers, HashMap::new());
+        assert_eq!(response.body.as_ref(), vec![b'x'; 1024 * 1024]);
     }
 
     #[tokio::test]
@@ -1378,10 +1403,44 @@ mod tests {
             .await;
 
         let err = result.expect_err("oversized response body should be rejected");
-        assert!(
-            err.to_string().contains("exceeds maximum"),
-            "unexpected error: {err}",
+        let HttpClientError::Error(message) = err else {
+            panic!("expected HTTP error, was {err:?}");
+        };
+        assert_eq!(
+            message,
+            "HTTP response body of 1048576 bytes exceeds maximum of 16384 bytes"
         );
+    }
+
+    #[rstest]
+    #[case::at_cap(11)]
+    #[case::below_cap(12)]
+    #[tokio::test]
+    async fn test_chunked_response_body_at_or_below_cap_is_returned(
+        #[case] max_response_bytes: usize,
+    ) {
+        let (addr, server_task) = spawn_chunked_response_server().await;
+        let client = InnerHttpClient {
+            max_response_bytes,
+            ..Default::default()
+        };
+
+        let response = client
+            .send_request(
+                Method::GET,
+                format!("http://{addr}"),
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        server_task.await.unwrap();
+
+        assert_eq!(response.status.as_u16(), 200);
+        assert_eq!(response.headers, HashMap::new());
+        assert_eq!(response.body.as_ref(), b"firstsecond");
     }
 
     #[tokio::test]
@@ -1427,6 +1486,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
+        assert_eq!(response.headers, HashMap::new());
+        assert_eq!(response.body.as_ref(), b"");
     }
 
     #[tokio::test]
@@ -1455,13 +1516,15 @@ mod tests {
                 format!("{url}/post"),
                 None,
                 None,
-                Some(body_bytes),
+                Some(body_bytes.clone()),
                 None,
             )
             .await
             .unwrap();
 
         assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
+        assert_eq!(response.headers, HashMap::new());
+        assert_eq!(response.body.as_ref(), body_bytes);
     }
 
     #[tokio::test]
@@ -1483,6 +1546,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
+        assert_eq!(response.headers, HashMap::new());
+        assert_eq!(response.body.as_ref(), b"");
     }
 
     #[tokio::test]
@@ -1504,6 +1569,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
+        assert_eq!(response.headers, HashMap::new());
+        assert_eq!(response.body.as_ref(), b"");
     }
 
     #[tokio::test]
@@ -1519,6 +1586,8 @@ mod tests {
 
         assert!(response.status.is_client_error());
         assert_eq!(response.status.as_u16(), 404);
+        assert_eq!(response.headers, HashMap::new());
+        assert_eq!(response.body.as_ref(), b"");
     }
 
     #[tokio::test]
@@ -1902,7 +1971,8 @@ mod tests {
         let response = client.get(url, None, None, None, None).await.unwrap();
 
         assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
-        assert_eq!(String::from_utf8_lossy(&response.body), "hello-world!");
+        assert_eq!(response.headers, HashMap::new());
+        assert_eq!(response.body.as_ref(), b"hello-world!");
     }
 
     #[tokio::test]
@@ -1912,11 +1982,13 @@ mod tests {
 
         let client = HttpClient::builder().build().unwrap();
         let response = client
-            .post(url, None, None, None, None, None)
+            .post(url, None, None, Some(b"post-body-73".to_vec()), None, None)
             .await
             .unwrap();
 
         assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
+        assert_eq!(response.headers, HashMap::new());
+        assert_eq!(response.body.as_ref(), b"post-body-73");
     }
 
     #[tokio::test]
@@ -1926,11 +1998,13 @@ mod tests {
 
         let client = HttpClient::builder().build().unwrap();
         let response = client
-            .patch(url, None, None, None, None, None)
+            .patch(url, None, None, Some(b"patch-body-91".to_vec()), None, None)
             .await
             .unwrap();
 
         assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
+        assert_eq!(response.headers, HashMap::new());
+        assert_eq!(response.body.as_ref(), b"patch-body-91");
     }
 
     #[tokio::test]
@@ -1942,6 +2016,8 @@ mod tests {
         let response = client.delete(url, None, None, None, None).await.unwrap();
 
         assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
+        assert_eq!(response.headers, HashMap::new());
+        assert_eq!(response.body.as_ref(), b"");
     }
 }
 

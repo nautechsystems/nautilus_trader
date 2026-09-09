@@ -38,7 +38,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use dashmap::DashMap;
-use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use parking_lot::RwLock;
 use ustr::Ustr;
 
 /// Marker for channel-level subscriptions (no specific symbol).
@@ -134,21 +134,21 @@ impl SubscriptionState {
     /// Returns a read-only snapshot of confirmed subscriptions.
     #[must_use]
     pub fn confirmed(&self) -> SubscriptionSnapshot {
-        let _guard = self.lock_state_read();
+        let _guard = self.state_lock.read();
         snapshot(&self.confirmed)
     }
 
     /// Returns a read-only snapshot of pending subscriptions.
     #[must_use]
     pub fn pending_subscribe(&self) -> SubscriptionSnapshot {
-        let _guard = self.lock_state_read();
+        let _guard = self.state_lock.read();
         snapshot(&self.pending_subscribe)
     }
 
     /// Returns a read-only snapshot of pending unsubscriptions.
     #[must_use]
     pub fn pending_unsubscribe(&self) -> SubscriptionSnapshot {
-        let _guard = self.lock_state_read();
+        let _guard = self.state_lock.read();
         snapshot(&self.pending_unsubscribe)
     }
 
@@ -157,14 +157,14 @@ impl SubscriptionState {
     /// Counts both channel-level and symbol-level subscriptions.
     #[must_use]
     pub fn len(&self) -> usize {
-        let _guard = self.lock_state_read();
+        let _guard = self.state_lock.read();
         self.confirmed.iter().map(|entry| entry.value().len()).sum()
     }
 
     /// Returns true if there are no subscriptions (confirmed or pending).
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        let _guard = self.lock_state_read();
+        let _guard = self.state_lock.read();
         self.confirmed.is_empty()
             && self.pending_subscribe.is_empty()
             && self.pending_unsubscribe.is_empty()
@@ -174,7 +174,7 @@ impl SubscriptionState {
     /// Returns true if a channel:symbol pair is subscribed (confirmed or pending subscribe).
     #[must_use]
     pub fn is_subscribed(&self, channel: &Ustr, symbol: &Ustr) -> bool {
-        let _guard = self.lock_state_read();
+        let _guard = self.state_lock.read();
 
         if let Some(symbols) = self.confirmed.get(channel)
             && symbols.contains(symbol)
@@ -193,14 +193,14 @@ impl SubscriptionState {
     /// Returns all pending subscribe topics as strings.
     #[must_use]
     pub fn pending_subscribe_topics(&self) -> Vec<String> {
-        let _guard = self.lock_state_read();
+        let _guard = self.state_lock.read();
         self.topics_from_map(&self.pending_subscribe)
     }
 
     /// Returns all pending unsubscribe topics as strings.
     #[must_use]
     pub fn pending_unsubscribe_topics(&self) -> Vec<String> {
-        let _guard = self.lock_state_read();
+        let _guard = self.state_lock.read();
         self.topics_from_map(&self.pending_unsubscribe)
     }
 
@@ -210,7 +210,7 @@ impl SubscriptionState {
     /// unsubscribe topics.
     #[must_use]
     pub fn all_topics(&self) -> Vec<String> {
-        let _guard = self.lock_state_read();
+        let _guard = self.state_lock.read();
         let mut topics = self.topics_from_map(&self.confirmed);
         topics.extend(self.topics_from_map(&self.pending_subscribe));
         topics
@@ -221,7 +221,7 @@ impl SubscriptionState {
     /// Call this after sending a subscribe request. This operation is idempotent for a confirmed
     /// topic and cancels any pending unsubscription for the same topic.
     pub fn mark_subscribe(&self, topic: &str) {
-        let _guard = self.lock_state_write();
+        let _guard = self.state_lock.write();
         let (channel, symbol) = split_topic(topic, self.delimiter);
         track_topic(&self.desired, channel, symbol);
 
@@ -244,7 +244,7 @@ impl SubscriptionState {
     /// The check and state transition are atomic across concurrent subscribe calls.
     #[must_use]
     pub fn try_mark_subscribe(&self, topic: &str) -> bool {
-        let _guard = self.lock_state_write();
+        let _guard = self.state_lock.write();
         let (channel, symbol) = split_topic(topic, self.delimiter);
 
         // If already desired, no action needed
@@ -265,7 +265,7 @@ impl SubscriptionState {
     /// Call this when the server acknowledges a subscribe request. A late confirmation cannot
     /// restore a topic that is no longer desired.
     pub fn confirm_subscribe(&self, topic: &str) {
-        let _guard = self.lock_state_write();
+        let _guard = self.state_lock.write();
         let (channel, symbol) = split_topic(topic, self.delimiter);
 
         if !is_tracked(&self.desired, channel, symbol)
@@ -283,7 +283,7 @@ impl SubscriptionState {
     /// Removes the topic from confirmed and `pending_subscribe` state before adding it to
     /// `pending_unsubscribe`. This also handles unsubscription before initial confirmation.
     pub fn mark_unsubscribe(&self, topic: &str) {
-        let _guard = self.lock_state_write();
+        let _guard = self.state_lock.write();
         let (channel, symbol) = split_topic(topic, self.delimiter);
         untrack_topic(&self.desired, channel, symbol);
         track_topic(&self.pending_unsubscribe, channel, symbol);
@@ -297,7 +297,7 @@ impl SubscriptionState {
     /// ignored if the topic is no longer pending unsubscription. `pending_subscribe` remains intact
     /// so an immediate resubscription survives a late unsubscribe acknowledgment.
     pub fn confirm_unsubscribe(&self, topic: &str) {
-        let _guard = self.lock_state_write();
+        let _guard = self.state_lock.write();
         let (channel, symbol) = split_topic(topic, self.delimiter);
 
         // Only process if topic is actually pending unsubscription
@@ -316,7 +316,7 @@ impl SubscriptionState {
     /// This keeps failed subscriptions available for retry after reconnect. A topic pending
     /// unsubscription is unchanged because its subscription was cancelled.
     pub fn mark_failure(&self, topic: &str) {
-        let _guard = self.lock_state_write();
+        let _guard = self.state_lock.write();
         let (channel, symbol) = split_topic(topic, self.delimiter);
 
         if !is_tracked(&self.desired, channel, symbol)
@@ -339,7 +339,7 @@ impl SubscriptionState {
         reason = "some adapters replay from separate subscription registries"
     )]
     pub fn reset_after_reconnect(&self) -> Vec<String> {
-        let _guard = self.lock_state_write();
+        let _guard = self.state_lock.write();
         let mut topics = self.topics_from_map(&self.confirmed);
         topics.extend(self.topics_from_map(&self.pending_subscribe));
 
@@ -434,7 +434,7 @@ impl SubscriptionState {
     ///
     /// This resets desired intent, acknowledgment state, and reference counts.
     pub fn clear(&self) {
-        let _guard = self.lock_state_write();
+        let _guard = self.state_lock.write();
         self.confirmed.clear();
         self.pending_subscribe.clear();
         self.pending_unsubscribe.clear();
@@ -468,14 +468,6 @@ impl SubscriptionState {
         // across runs; both the outer DashMap and the inner symbol sets are unordered.
         topics.sort();
         topics
-    }
-
-    fn lock_state_read(&self) -> RwLockReadGuard<'_, ()> {
-        self.state_lock.read()
-    }
-
-    fn lock_state_write(&self) -> RwLockWriteGuard<'_, ()> {
-        self.state_lock.write()
     }
 }
 
@@ -615,9 +607,10 @@ mod tests {
         state.confirm_subscribe("tickers.ETHUSDT");
 
         assert_eq!(state.len(), 2);
-        let topics = state.all_topics();
-        assert!(topics.contains(&"tickers.BTCUSDT".to_string()));
-        assert!(topics.contains(&"tickers.ETHUSDT".to_string()));
+        assert_eq!(
+            state.all_topics(),
+            vec!["tickers.BTCUSDT", "tickers.ETHUSDT"]
+        );
     }
 
     #[rstest]
@@ -636,32 +629,27 @@ mod tests {
         assert_eq!(state.len(), 2);
 
         // Both should be present
-        let topics = state.all_topics();
-        assert_eq!(topics.len(), 2);
-        assert!(topics.contains(&"tickers".to_string()));
-        assert!(topics.contains(&"tickers.BTCUSDT".to_string()));
+        assert_eq!(state.all_topics(), vec!["tickers", "tickers.BTCUSDT"]);
 
         // Add another symbol
         state.mark_subscribe("tickers.ETHUSDT");
         state.confirm_subscribe("tickers.ETHUSDT");
         assert_eq!(state.len(), 3);
 
-        let topics = state.all_topics();
-        assert_eq!(topics.len(), 3);
-        assert!(topics.contains(&"tickers".to_string()));
-        assert!(topics.contains(&"tickers.BTCUSDT".to_string()));
-        assert!(topics.contains(&"tickers.ETHUSDT".to_string()));
+        assert_eq!(
+            state.all_topics(),
+            vec!["tickers", "tickers.BTCUSDT", "tickers.ETHUSDT"]
+        );
 
         // Unsubscribe from channel-level only
         state.mark_unsubscribe("tickers");
         state.confirm_unsubscribe("tickers");
         assert_eq!(state.len(), 2);
 
-        let topics = state.all_topics();
-        assert_eq!(topics.len(), 2);
-        assert!(!topics.contains(&"tickers".to_string()));
-        assert!(topics.contains(&"tickers.BTCUSDT".to_string()));
-        assert!(topics.contains(&"tickers.ETHUSDT".to_string()));
+        assert_eq!(
+            state.all_topics(),
+            vec!["tickers.BTCUSDT", "tickers.ETHUSDT"]
+        );
     }
 
     #[rstest]
@@ -679,10 +667,7 @@ mod tests {
         assert_eq!(state.len(), 2);
 
         // Both should be present after reconnect
-        let topics = state.all_topics();
-        assert_eq!(topics.len(), 2);
-        assert!(topics.contains(&"tickers".to_string()));
-        assert!(topics.contains(&"tickers.BTCUSDT".to_string()));
+        assert_eq!(state.all_topics(), vec!["tickers", "tickers.BTCUSDT"]);
     }
 
     #[rstest]
@@ -860,10 +845,10 @@ mod tests {
         state.confirm_subscribe("tickers.BTCUSDT");
         state.mark_subscribe("tickers.ETHUSDT");
 
-        let topics = state.all_topics();
-        assert_eq!(topics.len(), 2);
-        assert!(topics.contains(&"tickers.BTCUSDT".to_string()));
-        assert!(topics.contains(&"tickers.ETHUSDT".to_string()));
+        assert_eq!(
+            state.all_topics(),
+            vec!["tickers.BTCUSDT", "tickers.ETHUSDT"]
+        );
     }
 
     #[rstest]

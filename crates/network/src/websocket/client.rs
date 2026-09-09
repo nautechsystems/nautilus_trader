@@ -877,14 +877,9 @@ impl WebSocketClientInner {
         // Use one path for uniform error logging and ownership of
         // stream construction since sockudo's high-level client drops the
         // handshake leftover.
-        let handshake = client_handshake_with_headers(
-            &mut stream,
-            &target.host_header,
-            &target.path,
-            None,
-            headers,
-        )
-        .await?;
+        let handshake =
+            client_handshake_with_headers(&mut stream, &target.host_header, &target.path, headers)
+                .await?;
 
         // Reading the HTTP 101 may also read the first WebSocket frame prefix;
         // replay it only when present so the ordinary path stays unwrapped.
@@ -1433,24 +1428,19 @@ impl WebSocketClientInner {
             return Ok(ReconnectOutcome::Aborted);
         }
 
-        if self.handler.is_some() {
-            let read_fence = ReadSessionFence::new();
-            self.read_task = Some(Self::spawn_message_handler_task(
-                self.connection_mode.clone(),
-                self.state_notify.clone(),
-                read_fence.clone(),
-                reader,
-                connection_epoch,
-                self.handler.as_ref(),
-                self.ping_handler.as_ref(),
-                self.config.idle_timeout_ms,
-                self.heartbeat_timeout,
-            ));
-            self.read_fence = Some(read_fence);
-        } else {
-            self.read_task = None;
-            self.read_fence = None;
-        }
+        let read_fence = ReadSessionFence::new();
+        self.read_task = Some(Self::spawn_message_handler_task(
+            self.connection_mode.clone(),
+            self.state_notify.clone(),
+            read_fence.clone(),
+            reader,
+            connection_epoch,
+            self.handler.as_ref(),
+            self.ping_handler.as_ref(),
+            self.config.idle_timeout_ms,
+            self.heartbeat_timeout,
+        ));
+        self.read_fence = Some(read_fence);
 
         log::info!("Reconnect succeeded");
         Ok(ReconnectOutcome::Reconnected)
