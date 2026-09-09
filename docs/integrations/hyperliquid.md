@@ -615,7 +615,7 @@ To pick up newly listed markets on the data side, issue a `RequestInstruments` o
 data client; either refetches and recaches the whole universe. The execution client bootstraps
 its own asset-index map once on first connect and never refreshes it, so trading a market listed
 after that bootstrap requires a process restart. Submitting for a symbol the execution client
-never loaded is denied with `Asset index not found`.
+never loaded is denied with `INSTRUMENT_NOT_FOUND`.
 
 Failures degrade per product rather than aborting the load: missing spot or perp metadata is
 logged as a warning and that product is skipped, and an absent `outcomeMeta` payload is skipped
@@ -991,6 +991,9 @@ instructions apply to both.
 Conditional orders (stop and if-touched) are implemented using Hyperliquid's native trigger
 order functionality with automatic TP/SL mode detection. All trigger orders are evaluated
 against the [mark price](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/robust-price-indices).
+
+Standalone trigger orders rest on the venue until triggered, independent of the reduce-only
+flag. Grouped (bracket) TP/SL children are always submitted as reduce-only by the adapter.
 :::
 
 :::note
@@ -1041,6 +1044,12 @@ def round_to_sig_figs(price: Decimal, sig_figs: int = 5) -> Decimal:
         return (price / factor).to_integral_value() * factor
     return round(price, shift)
 ```
+
+When normalization is disabled, the adapter validates each outgoing limit and trigger price
+against the instrument's decimal limit and denies the order locally when the price carries more
+decimal places. The venue parses prices into its canonical form before verifying the request
+signature, so an over-precise price fails signature verification and the venue answers with a
+misleading "user or API wallet does not exist" error instead of an order validation error.
 
 :::
 
@@ -1094,10 +1103,11 @@ Cancels prefer `cancelByCloid` and fall back to `cancel` by numeric OID when no 
 fast and standard cancels dispatch as separate batched actions, so one cancel request can produce
 more than one venue call.
 
-When the venue returns an authoritative per-order rejection inside a batch-cancel response (for
-example `MissingOrder` for an already-terminal order), the adapter emits a per-order
-`OrderCancelRejected` event and leaves the other cancels intact. Whole-request failures with
-unknown venue outcome do not carry this per-order evidence.
+Definite local cancel failures and authoritative venue rejections emit `OrderCancelRejected` for
+each affected order. Per-order errors in a batch response leave the other cancels intact; an
+explicit whole-request rejection applies to every cancel in that dispatched action. Rejection
+events preserve the venue's error message. After dispatch, transport failures and responses that
+leave the venue outcome unknown keep orders available for reconciliation.
 :::
 
 :::info
@@ -1156,11 +1166,12 @@ paired cancel of the old leg never reaches it.
 If Hyperliquid delivers `CANCELED(old_oid)` before `ACCEPTED(new_oid)` for an in-flight modify,
 a pending-modify intent lets the dispatch drop the old leg's cancel and still route the
 subsequent `ACCEPTED` through the `OrderUpdated` path. The intent is queued before the HTTP call,
-so an early cancel is suppressed even while the request is still in flight. A modify the venue
-rejects clears its own intent; a transport failure keeps it, so a modify that reaches the venue
-despite a client-side timeout still suppresses the early `CANCELED(old_oid)` and promotes the
-eventual `ACCEPTED(new_oid)` to `OrderUpdated` (detection otherwise falls back to the cached
-`venue_order_id`, which the late `ACCEPTED` no longer matches). See
+so an early cancel is suppressed even while the request is still in flight. If the request fails
+before dispatch, or the venue rejects it, the adapter emits `OrderModifyRejected` and clears its
+own intent. A failure after dispatch with an unknown venue outcome keeps the intent, so a modify
+that reaches the venue despite a client-side timeout still suppresses the early `CANCELED(old_oid)`
+and promotes the eventual `ACCEPTED(new_oid)` to `OrderUpdated` (detection otherwise falls back to
+the cached `venue_order_id`, which the late `ACCEPTED` no longer matches). See
 [GH-3827](https://github.com/nautechsystems/nautilus_trader/issues/3827).
 
 Rapid repeated modifies under the same `cloid` queue as a chain of in-flight intents rather than

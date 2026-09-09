@@ -217,6 +217,47 @@ pub fn normalize_quantity(qty: Decimal, decimals: u8) -> Decimal {
     (qty * scale).floor() / scale
 }
 
+/// Validates venue canonical wire form for a price submitted with price
+/// normalization disabled: at most `price_decimals` fractional digits. The
+/// venue parses prices into its canonical form before verifying the action
+/// signature, so a price with excess decimals fails signature verification
+/// and surfaces as a misleading "wallet does not exist" error instead of an
+/// order validation error.
+fn ensure_canonical_wire_price(
+    label: &str,
+    price: Decimal,
+    price_decimals: u8,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        price.scale() <= u32::from(price_decimals),
+        "{label} {price} exceeds the instrument maximum of {price_decimals} decimal places; \
+         enable normalize_prices or adjust the price"
+    );
+    Ok(())
+}
+
+/// Normalizes a price to the venue wire form, or validates the canonical
+/// form when normalization is disabled. Validation is skipped when the
+/// instrument decimal cap is unknown (`None`): the prior raw passthrough is
+/// preserved rather than validating against a placeholder. See
+/// [`ensure_canonical_wire_price`].
+pub(crate) fn normalize_or_validate_wire_price(
+    raw: Decimal,
+    label: &str,
+    price_decimals: Option<u8>,
+    should_normalize_prices: bool,
+) -> anyhow::Result<Decimal> {
+    if should_normalize_prices {
+        Ok(normalize_price(raw, price_decimals.unwrap_or(2)).normalize())
+    } else {
+        let value = raw.normalize();
+        if let Some(decimals) = price_decimals {
+            ensure_canonical_wire_price(label, value, decimals)?;
+        }
+        Ok(value)
+    }
+}
+
 /// Complete normalization for an order including price, quantity, and notional validation
 pub fn normalize_order(
     price: Decimal,
@@ -505,21 +546,40 @@ pub fn order_to_hyperliquid_request_with_asset_and_cloid(
     slippage_bps: u32,
     cloid: Option<Cloid>,
 ) -> anyhow::Result<HyperliquidExchangePlaceOrderRequest> {
+    order_to_hyperliquid_request_with_optional_decimals(
+        order,
+        asset,
+        Some(price_decimals),
+        should_normalize_prices,
+        slippage_bps,
+        cloid,
+    )
+}
+
+/// Converts a Nautilus order to Hyperliquid request when the instrument
+/// decimal cap may be unknown. A `None` cap disables local wire-price
+/// validation and falls back to the default two-decimal normalization.
+pub(crate) fn order_to_hyperliquid_request_with_optional_decimals(
+    order: &OrderAny,
+    asset: u32,
+    price_decimals: Option<u8>,
+    should_normalize_prices: bool,
+    slippage_bps: u32,
+    cloid: Option<Cloid>,
+) -> anyhow::Result<HyperliquidExchangePlaceOrderRequest> {
     let is_buy = matches!(order.order_side(), OrderSide::Buy);
     let reduce_only = order.is_reduce_only();
     let order_side = order.order_side();
     let order_type = order.order_type();
 
+    let normalize_or_validate = |raw: Decimal, label: &str| {
+        normalize_or_validate_wire_price(raw, label, price_decimals, should_normalize_prices)
+    };
+
     // Normalize decimals to strip trailing zeros, matching the server's
     // canonical form used for EIP-712 signing hash verification.
     let price_decimal = if let Some(price) = order.price() {
-        let raw = price.as_decimal();
-
-        if should_normalize_prices {
-            normalize_price(raw, price_decimals).normalize()
-        } else {
-            raw.normalize()
-        }
+        normalize_or_validate(price.as_decimal(), "Price")?
     } else if matches!(order_type, OrderType::Market) {
         Decimal::ZERO
     } else if matches!(
@@ -531,7 +591,8 @@ pub fn order_to_hyperliquid_request_with_asset_and_cloid(
                 let base = tp.as_decimal().normalize();
                 let derived = derive_limit_from_trigger(base, is_buy, slippage_bps);
                 let sig_rounded = round_to_sig_figs(derived, 5);
-                clamp_price_to_precision(sig_rounded, price_decimals, is_buy).normalize()
+                clamp_price_to_precision(sig_rounded, price_decimals.unwrap_or(2), is_buy)
+                    .normalize()
             }
             None => Decimal::ZERO,
         }
@@ -557,12 +618,8 @@ pub fn order_to_hyperliquid_request_with_asset_and_cloid(
         }
         OrderType::StopMarket => {
             if let Some(trigger_price) = order.trigger_price() {
-                let raw = trigger_price.as_decimal();
-                let trigger_price_decimal = if should_normalize_prices {
-                    normalize_price(raw, price_decimals).normalize()
-                } else {
-                    raw.normalize()
-                };
+                let trigger_price_decimal =
+                    normalize_or_validate(trigger_price.as_decimal(), "Trigger price")?;
                 let tpsl = determine_tpsl_type(order_type, order_side, trigger_price_decimal, None);
                 HyperliquidExchangeOrderKind::Trigger {
                     trigger: HyperliquidExchangeTriggerParams {
@@ -577,12 +634,8 @@ pub fn order_to_hyperliquid_request_with_asset_and_cloid(
         }
         OrderType::StopLimit => {
             if let Some(trigger_price) = order.trigger_price() {
-                let raw = trigger_price.as_decimal();
-                let trigger_price_decimal = if should_normalize_prices {
-                    normalize_price(raw, price_decimals).normalize()
-                } else {
-                    raw.normalize()
-                };
+                let trigger_price_decimal =
+                    normalize_or_validate(trigger_price.as_decimal(), "Trigger price")?;
                 let tpsl = determine_tpsl_type(order_type, order_side, trigger_price_decimal, None);
                 HyperliquidExchangeOrderKind::Trigger {
                     trigger: HyperliquidExchangeTriggerParams {
@@ -597,12 +650,8 @@ pub fn order_to_hyperliquid_request_with_asset_and_cloid(
         }
         OrderType::MarketIfTouched => {
             if let Some(trigger_price) = order.trigger_price() {
-                let raw = trigger_price.as_decimal();
-                let trigger_price_decimal = if should_normalize_prices {
-                    normalize_price(raw, price_decimals).normalize()
-                } else {
-                    raw.normalize()
-                };
+                let trigger_price_decimal =
+                    normalize_or_validate(trigger_price.as_decimal(), "Trigger price")?;
                 HyperliquidExchangeOrderKind::Trigger {
                     trigger: HyperliquidExchangeTriggerParams {
                         is_market: true,
@@ -616,12 +665,8 @@ pub fn order_to_hyperliquid_request_with_asset_and_cloid(
         }
         OrderType::LimitIfTouched => {
             if let Some(trigger_price) = order.trigger_price() {
-                let raw = trigger_price.as_decimal();
-                let trigger_price_decimal = if should_normalize_prices {
-                    normalize_price(raw, price_decimals).normalize()
-                } else {
-                    raw.normalize()
-                };
+                let trigger_price_decimal =
+                    normalize_or_validate(trigger_price.as_decimal(), "Trigger price")?;
                 HyperliquidExchangeOrderKind::Trigger {
                     trigger: HyperliquidExchangeTriggerParams {
                         is_market: false,
@@ -800,7 +845,15 @@ pub fn extract_error_message(response: &HyperliquidExchangeResponse) -> String {
                 "Operation successful".to_string()
             } else {
                 // Try to extract error message from response data
-                if let Some(error_msg) = response.get("error").and_then(|v| v.as_str()) {
+                if let Some(error_msg) = response
+                    .as_str()
+                    .or_else(|| response.get("error").and_then(|v| v.as_str()))
+                    .or_else(|| {
+                        (response.get("type").and_then(|v| v.as_str()) == Some("error"))
+                            .then(|| response.get("data").and_then(|v| v.as_str()))
+                            .flatten()
+                    })
+                {
                     error_msg.to_string()
                 } else {
                     format!("Request failed with status: {status}")
@@ -1099,7 +1152,7 @@ mod tests {
     use nautilus_model::{
         enums::{OrderSide, TimeInForce, TriggerType},
         identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId},
-        orders::{OrderAny, StopMarketOrder},
+        orders::{LimitOrder, OrderAny, StopMarketOrder},
         types::{Price, Quantity},
     };
     use rstest::rstest;
@@ -2414,5 +2467,121 @@ mod tests {
         assert_eq!(balances.len(), 1);
         assert_eq!(balances[0].currency.code, "USDC");
         assert_eq!(balances[0].total.as_decimal(), dec!(50));
+    }
+
+    fn limit_order(price: &str) -> OrderAny {
+        OrderAny::Limit(LimitOrder::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("S-001"),
+            InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"),
+            ClientOrderId::from("O-1"),
+            OrderSide::Buy,
+            Quantity::from(1),
+            Price::from(price),
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Default::default(),
+            Default::default(),
+        ))
+    }
+
+    #[rstest]
+    // Venue-accepted forms pass: at the cap, integer, zero, trailing zeros
+    #[case("78764.5", 1)]
+    #[case("102393", 1)]
+    #[case("0", 0)]
+    #[case("0.11525", 5)]
+    #[case("0.10", 1)]
+    fn test_ensure_canonical_wire_price_accepts(#[case] price: &str, #[case] decimals: u8) {
+        let value = Decimal::from_str(price).unwrap().normalize();
+        ensure_canonical_wire_price("Price", value, decimals).unwrap();
+    }
+
+    #[rstest]
+    // Six significant figures with one decimal inside the cap: the venue
+    // accepts these at signing (live-probed), so no false rejection.
+    #[case("78764.5", 1)]
+    #[case("102393", 1)]
+    fn test_order_to_request_raw_price_accepts_canonical_boundary(
+        #[case] price: &str,
+        #[case] decimals: u8,
+    ) {
+        let request =
+            order_to_hyperliquid_request_with_asset(&limit_order(price), 0, decimals, false, 50)
+                .unwrap();
+        assert_eq!(request.price, Decimal::from_str(price).unwrap());
+    }
+
+    #[rstest]
+    fn test_order_to_request_raw_price_rejects_excess_decimals() {
+        let err = order_to_hyperliquid_request_with_asset(&limit_order("0.62201"), 0, 4, false, 50)
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("Price 0.62201"), "unexpected message: {msg}");
+        assert!(
+            msg.contains("4 decimal places"),
+            "unexpected message: {msg}"
+        );
+    }
+
+    #[rstest]
+    fn test_order_to_request_normalize_still_accepts_excess_decimals() {
+        let request =
+            order_to_hyperliquid_request_with_asset(&limit_order("0.62201"), 0, 4, true, 50)
+                .unwrap();
+        assert_eq!(request.price, dec!(0.622));
+    }
+
+    #[rstest]
+    fn test_order_to_request_raw_trigger_price_rejects_excess_decimals() {
+        let order = stop_market_order(OrderSide::Sell, "0.62201");
+        let err = order_to_hyperliquid_request_with_asset(&order, 0, 4, false, 50).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Trigger price 0.62201"),
+            "unexpected message: {msg}"
+        );
+        assert!(
+            msg.contains("4 decimal places"),
+            "unexpected message: {msg}"
+        );
+    }
+
+    #[rstest]
+    // Unknown instrument cap: validation is skipped and the prior raw
+    // passthrough is preserved rather than validating against a placeholder.
+    #[case(false)]
+    // Unknown cap with normalization enabled: falls back to two decimals
+    #[case(true)]
+    fn test_order_to_request_optional_decimals_unknown_cap(#[case] normalize: bool) {
+        let request = order_to_hyperliquid_request_with_optional_decimals(
+            &limit_order("0.123456"),
+            0,
+            None,
+            normalize,
+            50,
+            None,
+        )
+        .unwrap();
+        let expected = if normalize {
+            dec!(0.12)
+        } else {
+            dec!(0.123456)
+        };
+        assert_eq!(request.price, expected);
     }
 }

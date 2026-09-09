@@ -97,6 +97,7 @@ use ustr::Ustr;
 
 #[derive(Clone)]
 struct TestServerState {
+    command_response_override: Arc<tokio::sync::Mutex<Option<Value>>>,
     exchange_request_count: Arc<tokio::sync::Mutex<usize>>,
     info_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
     last_exchange_action: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -152,6 +153,7 @@ struct TestServerState {
 impl Default for TestServerState {
     fn default() -> Self {
         Self {
+            command_response_override: Arc::new(tokio::sync::Mutex::new(None)),
             exchange_request_count: Arc::new(tokio::sync::Mutex::new(0)),
             info_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             last_exchange_action: Arc::new(tokio::sync::Mutex::new(None)),
@@ -738,6 +740,13 @@ async fn handle_ws_post(socket: &mut WebSocket, state: &TestServerState, payload
                 }
             }
         });
+        return send_ws_post_action_response(socket, id, response).await;
+    }
+
+    if let Some(response) = state.command_response_override.lock().await.take() {
+        if !send_ws_post_action_response(socket, id, response.clone()).await {
+            return false;
+        }
         return send_ws_post_action_response(socket, id, response).await;
     }
 
@@ -2918,8 +2927,9 @@ async fn test_modify_order_rejection_does_not_mark_pending_modify() {
     state.reject_next_order.store(true, Ordering::Relaxed);
     let addr = start_mock_server(state).await;
 
-    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
     client.connect().await.unwrap();
 
     let order = make_limit_order("O-MOD-REJ");
@@ -2966,6 +2976,15 @@ async fn test_modify_order_rejection_does_not_mark_pending_modify() {
         "failed modify must not leave a pending-modify marker",
     );
 
+    let events = drain_modify_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(
+        events,
+        vec![(
+            order.client_order_id(),
+            "Order rejected: insufficient margin".to_string()
+        )]
+    );
+
     client.disconnect().await.unwrap();
 }
 
@@ -2980,8 +2999,9 @@ async fn test_modify_order_inner_error_clears_pending_modify() {
     state.inner_order_error_next.store(true, Ordering::Relaxed);
     let addr = start_mock_server(state).await;
 
-    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
     client.connect().await.unwrap();
 
     let order = make_limit_order("O-MOD-INNER-ERR");
@@ -3023,21 +3043,28 @@ async fn test_modify_order_inner_error_clears_pending_modify() {
         "inner-error modify must not leave a pending-modify marker",
     );
 
+    let events = drain_modify_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(
+        events,
+        vec![(
+            order.client_order_id(),
+            "Order rejected: insufficient margin".to_string()
+        )]
+    );
+
     client.disconnect().await.unwrap();
 }
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_modify_order_post_error_clears_pending_modify() {
-    // The post request returns an upstream error. The marker is set before
-    // the post await, so the Err branch must clear it; otherwise a later
-    // legitimate CANCELED for the same client_order_id is wrongly suppressed.
+async fn test_modify_order_post_error_preserves_pending_modify() {
     let state = TestServerState::default();
     state.fail_next_exchange.store(true, Ordering::Relaxed);
     let addr = start_mock_server(state).await;
 
-    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
     client.connect().await.unwrap();
 
     let order = make_limit_order("O-MOD-TRANSPORT");
@@ -3071,13 +3098,20 @@ async fn test_modify_order_post_error_clears_pending_modify() {
     )
     .await;
 
-    assert!(
+    let events = drain_modify_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(
         client
             .ws_dispatch_state()
-            .pending_modify(&order.client_order_id())
-            .is_none(),
-        "transport-failure modify must not leave a pending-modify marker",
+            .pending_modify(&order.client_order_id()),
+        Some(old_voi)
     );
+    assert_eq!(
+        client
+            .ws_dispatch_state()
+            .pending_modify_target_qty(&order.client_order_id()),
+        Some(Quantity::from("0.0002"))
+    );
+    assert!(events.is_empty());
 
     client.disconnect().await.unwrap();
 }
@@ -3512,38 +3546,14 @@ async fn drain_cancel_rejected_events(
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
         match tokio::time::timeout_at(deadline, rx.recv()).await {
-            Ok(Some(ExecutionEvent::Order(event))) => {
-                let msg = format!("{event:?}");
-
-                if msg.contains("OrderCancelRejected")
-                    && let Some(coid) = extract_coid(&msg)
-                {
-                    let reason = extract_reason(&msg).unwrap_or_default();
-                    out.push((coid, reason));
-                }
+            Ok(Some(ExecutionEvent::Order(OrderEventAny::CancelRejected(event)))) => {
+                out.push((event.client_order_id, event.reason.to_string()));
             }
             Ok(Some(_)) => {}
             Ok(None) | Err(_) => break,
         }
     }
     out
-}
-
-fn extract_coid(debug: &str) -> Option<ClientOrderId> {
-    // Pull "client_order_id=<value>" from the event Debug output.
-    let key = "client_order_id=";
-    let start = debug.find(key)? + key.len();
-    let tail = &debug[start..];
-    let end = tail.find([',', ' ', ')']).unwrap_or(tail.len());
-    Some(ClientOrderId::new(&tail[..end]))
-}
-
-fn extract_reason(debug: &str) -> Option<String> {
-    let key = "reason='";
-    let start = debug.find(key)? + key.len();
-    let tail = &debug[start..];
-    let end = tail.find('\'')?;
-    Some(tail[..end].to_string())
 }
 
 #[rstest]
@@ -3712,7 +3722,7 @@ async fn test_batch_cancel_orders_post_error_emits_no_cancel_rejected() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_batch_cancel_orders_missing_asset_index_logs_and_skips() {
+async fn test_batch_cancel_orders_missing_asset_index_rejects_only_invalid_entry() {
     // No trading action should happen for an entry whose instrument symbol
     // is unknown. The valid entry should still dispatch.
     let state = TestServerState::default();
@@ -3761,9 +3771,12 @@ async fn test_batch_cancel_orders_missing_asset_index_logs_and_skips() {
     .await;
 
     let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
-    assert!(
-        events.is_empty(),
-        "local cancel validation should not emit OrderCancelRejected: {events:?}",
+    assert_eq!(
+        events,
+        vec![(
+            unknown_coid,
+            "Asset index not found for symbol NOPE-USD-PERP".to_string()
+        )]
     );
     assert_eq!(*state.exchange_request_count.lock().await, 1);
 
@@ -3772,7 +3785,7 @@ async fn test_batch_cancel_orders_missing_asset_index_logs_and_skips() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_batch_cancel_orders_invalid_venue_id_logs_and_dispatches_valid() {
+async fn test_batch_cancel_orders_invalid_venue_id_rejects_only_invalid_entry() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
@@ -3819,9 +3832,9 @@ async fn test_batch_cancel_orders_invalid_venue_id_logs_and_dispatches_valid() {
     .await;
 
     let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
-    assert!(
-        events.is_empty(),
-        "invalid venue ID should not emit OrderCancelRejected: {events:?}",
+    assert_eq!(
+        events,
+        vec![(invalid_coid, "Invalid venue order ID format".to_string())]
     );
     assert_eq!(*state.exchange_request_count.lock().await, 1);
 
@@ -4057,9 +4070,9 @@ async fn test_cancel_all_orders_post_error_emits_no_cancel_rejected() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_cancel_all_orders_missing_asset_index_logs_and_emits_no_cancel_rejected() {
+async fn test_cancel_all_orders_missing_asset_index_rejects_each_order() {
     // Instrument symbol is not registered with the asset-index map, so
-    // no trading action happens and no venue-backed rejection exists.
+    // no trading action happens.
     const UNKNOWN_INSTRUMENT: &str = "NOPE-USD-PERP.HYPERLIQUID";
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
@@ -4151,9 +4164,18 @@ async fn test_cancel_all_orders_missing_asset_index_logs_and_emits_no_cancel_rej
     .await;
 
     let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
-    assert!(
-        events.is_empty(),
-        "local cancel-all validation should not emit OrderCancelRejected: {events:?}",
+    assert_eq!(
+        events,
+        vec![
+            (
+                a_coid,
+                "Asset index not found for symbol NOPE-USD-PERP".to_string()
+            ),
+            (
+                b_coid,
+                "Asset index not found for symbol NOPE-USD-PERP".to_string()
+            )
+        ]
     );
     assert_eq!(*state.exchange_request_count.lock().await, 0);
 
@@ -4207,7 +4229,7 @@ async fn test_cancel_order_post_error_emits_no_cancel_rejected() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_cancel_order_missing_asset_index_logs_and_emits_no_cancel_rejected() {
+async fn test_cancel_order_missing_asset_index_emits_cancel_rejected() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
@@ -4237,9 +4259,12 @@ async fn test_cancel_order_missing_asset_index_logs_and_emits_no_cancel_rejected
     .await;
 
     let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
-    assert!(
-        events.is_empty(),
-        "local cancel validation should not emit OrderCancelRejected: {events:?}",
+    assert_eq!(
+        events,
+        vec![(
+            ClientOrderId::new("O-CANCEL-UNKNOWN-ASSET"),
+            "Asset index not found for symbol NOPE-USD-PERP".to_string()
+        )]
     );
     assert_eq!(*state.exchange_request_count.lock().await, 0);
 
@@ -4248,7 +4273,7 @@ async fn test_cancel_order_missing_asset_index_logs_and_emits_no_cancel_rejected
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_cancel_order_invalid_venue_id_logs_and_emits_no_cancel_rejected() {
+async fn test_cancel_order_invalid_venue_id_emits_cancel_rejected() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
@@ -4278,9 +4303,12 @@ async fn test_cancel_order_invalid_venue_id_logs_and_emits_no_cancel_rejected() 
     .await;
 
     let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
-    assert!(
-        events.is_empty(),
-        "invalid venue ID should not emit OrderCancelRejected: {events:?}",
+    assert_eq!(
+        events,
+        vec![(
+            ClientOrderId::new("O-CANCEL-BAD-VOI"),
+            "Invalid venue order ID format".to_string()
+        )]
     );
     assert_eq!(*state.exchange_request_count.lock().await, 0);
 
@@ -5010,10 +5038,7 @@ async fn test_submit_order_unsupported_symbol_emits_denied(
         .unwrap();
 
     let result = client.submit_order(make_submit_cmd(&order));
-    assert!(
-        result.is_err(),
-        "validate_order_submission should bubble up"
-    );
+    result.unwrap();
 
     let events = drain_denied_events(&mut rx, Duration::from_millis(250)).await;
     assert_eq!(events.len(), 1);
@@ -5024,6 +5049,217 @@ async fn test_submit_order_unsupported_symbol_emits_denied(
         events[0].1,
     );
     assert_eq!(*exchange_count.lock().await, 0);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_submit_order_raw_price_excess_decimals_emits_denied() {
+    // With normalize_prices disabled, a price carrying more decimals than the
+    // instrument cap cannot be signed in the venue's canonical form: the venue
+    // fails signature verification and answers with a misleading wallet error.
+    // The client must deny the order locally before any dispatch.
+    let state = TestServerState::default();
+    let exchange_count = state.exchange_request_count.clone();
+    let addr = start_mock_server(state).await;
+    let config = HyperliquidExecutionClientConfig {
+        normalize_prices: false,
+        ..create_test_exec_config(addr)
+    };
+    let (mut client, mut rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    // BTC mock meta has szDecimals=5, capping prices at 1 decimal place
+    let order = OrderAny::Limit(LimitOrder::new(
+        TraderId::from("TESTER-001"),
+        StrategyId::from("S-001"),
+        InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT),
+        ClientOrderId::from("O-RAW-PX-DENIED"),
+        OrderSide::Buy,
+        Quantity::from("0.0001"),
+        Price::from("56730.55"),
+        TimeInForce::Gtc,
+        None,
+        false,
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    ));
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client.submit_order(make_submit_cmd(&order)).unwrap();
+
+    let denied = drain_denied_events(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(denied.len(), 1);
+    assert_eq!(denied[0].0, order.client_order_id());
+    assert!(denied[0].1.contains("56730.55"), "reason: {}", denied[0].1);
+    assert!(
+        denied[0].1.contains("decimal places"),
+        "reason: {}",
+        denied[0].1
+    );
+    assert_eq!(*exchange_count.lock().await, 0);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_submit_order_raw_price_at_decimal_cap_dispatches() {
+    // A raw price exactly at the instrument decimal cap is venue-signable and
+    // must not be denied locally, even with six significant figures.
+    let state = TestServerState::default();
+    let exchange_count = state.exchange_request_count.clone();
+    let addr = start_mock_server(state).await;
+    let config = HyperliquidExecutionClientConfig {
+        normalize_prices: false,
+        ..create_test_exec_config(addr)
+    };
+    let (mut client, mut rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let order = OrderAny::Limit(LimitOrder::new(
+        TraderId::from("TESTER-001"),
+        StrategyId::from("S-001"),
+        InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT),
+        ClientOrderId::from("O-RAW-PX-CAP"),
+        OrderSide::Buy,
+        Quantity::from("0.0001"),
+        Price::from("56730.5"),
+        TimeInForce::Gtc,
+        None,
+        false,
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    ));
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client.submit_order(make_submit_cmd(&order)).unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+    let denied = drain_denied_events(&mut rx, Duration::from_millis(250)).await;
+    assert!(denied.is_empty(), "unexpected denial: {denied:?}");
+    assert_eq!(*exchange_count.lock().await, 1);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_modify_order_raw_price_excess_decimals_emits_modify_rejected() {
+    // The modify overwrite applies command prices after the conversion guard,
+    // so it must re-validate the effective replacement price: an over-cap
+    // modify is rejected locally instead of dispatching an unsignable payload.
+    let state = TestServerState::default();
+    let exchange_count = state.exchange_request_count.clone();
+    let addr = start_mock_server(state).await;
+    let config = HyperliquidExecutionClientConfig {
+        normalize_prices: false,
+        ..create_test_exec_config(addr)
+    };
+    let (mut client, mut rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let order = open_limit_order_in_cache(&cache, "O-MOD-RAW-DENIED", "700");
+    let mut cmd = make_modify_cmd(&order, Some(VenueOrderId::from("700")));
+    cmd.price = Some(Price::from("56730.55"));
+    client.modify_order(cmd).unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+    let rejected = drain_modify_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(rejected.len(), 1);
+    assert_eq!(rejected[0].0, order.client_order_id());
+    assert!(
+        rejected[0].1.contains("56730.55"),
+        "reason: {}",
+        rejected[0].1
+    );
+    assert!(
+        rejected[0].1.contains("decimal places"),
+        "reason: {}",
+        rejected[0].1
+    );
+    assert_eq!(*exchange_count.lock().await, 0);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_modify_order_raw_price_at_decimal_cap_dispatches() {
+    // A modify exactly at the instrument decimal cap is venue-signable and
+    // must dispatch without a local rejection.
+    let state = TestServerState::default();
+    let exchange_count = state.exchange_request_count.clone();
+    let addr = start_mock_server(state).await;
+    let config = HyperliquidExecutionClientConfig {
+        normalize_prices: false,
+        ..create_test_exec_config(addr)
+    };
+    let (mut client, mut rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let order = open_limit_order_in_cache(&cache, "O-MOD-RAW-CAP", "700");
+    let mut cmd = make_modify_cmd(&order, Some(VenueOrderId::from("700")));
+    cmd.price = Some(Price::from("56730.5"));
+    client.modify_order(cmd).unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+    let rejected = drain_modify_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    assert!(rejected.is_empty(), "unexpected rejection: {rejected:?}");
+    assert_eq!(*exchange_count.lock().await, 1);
 
     client.disconnect().await.unwrap();
 }
@@ -5053,7 +5289,7 @@ async fn test_submit_order_after_stop_emits_denied() {
         denied,
         vec![(
             order.client_order_id(),
-            "Hyperliquid execution client is shutting down".to_string()
+            "SUBMIT_FAILED: Hyperliquid execution client is shutting down".to_string()
         )]
     );
     assert_eq!(*exchange_count.lock().await, 0);
@@ -5112,7 +5348,7 @@ async fn test_submit_order_list_after_stop_emits_denied() {
         denied,
         vec![(
             client_order_id,
-            "Hyperliquid execution client is shutting down".to_string()
+            "SUBMIT_FAILED: Hyperliquid execution client is shutting down".to_string()
         )]
     );
     assert_eq!(*exchange_count.lock().await, 0);
@@ -5338,10 +5574,9 @@ async fn test_submit_order_asset_index_missing_emits_denied() {
     let events = drain_denied_events(&mut rx, Duration::from_millis(250)).await;
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].0, order.client_order_id());
-    assert!(
-        events[0].1.contains("Asset index not found"),
-        "reason: {}",
+    assert_eq!(
         events[0].1,
+        "INSTRUMENT_NOT_FOUND: NOPE-USD-PERP.HYPERLIQUID"
     );
     assert_eq!(*exchange_count.lock().await, 0);
 
@@ -5373,10 +5608,9 @@ async fn test_submit_order_market_no_quote_emits_denied() {
     let events = drain_denied_events(&mut rx, Duration::from_millis(250)).await;
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].0, order.client_order_id());
-    assert!(
-        events[0].1.contains("subscribe to quote data"),
-        "reason: {}",
+    assert_eq!(
         events[0].1,
+        "MARKET_PRICE_UNAVAILABLE: order_type=MARKET, instrument_id=BTC-USD-PERP.HYPERLIQUID"
     );
     assert_eq!(*exchange_count.lock().await, 0);
 
@@ -6224,10 +6458,9 @@ async fn test_submit_order_list_market_no_quote_emits_denied() {
     let denied = drain_denied_events(&mut rx, Duration::from_millis(250)).await;
     assert_eq!(denied.len(), 1);
     assert_eq!(denied[0].0, cid);
-    assert!(
-        denied[0].1.contains("subscribe to quote data"),
-        "reason: {}",
+    assert_eq!(
         denied[0].1,
+        "MARKET_PRICE_UNAVAILABLE: order_type=MARKET, instrument_id=BTC-USD-PERP.HYPERLIQUID"
     );
     assert_eq!(
         *exchange_count.lock().await,
@@ -6379,15 +6612,14 @@ async fn test_submit_order_list_market_bracket_no_quote_denies_children() {
     let denied = drain_denied_events(&mut rx, Duration::from_millis(250)).await;
     assert_eq!(denied.len(), 3);
     assert_eq!(denied[0].0, cid_p);
-    assert!(
-        denied[0].1.contains("subscribe to quote data"),
-        "reason: {}",
+    assert_eq!(
         denied[0].1,
+        "MARKET_PRICE_UNAVAILABLE: order_type=MARKET, instrument_id=BTC-USD-PERP.HYPERLIQUID"
     );
     assert_eq!(denied[1].0, cid_sl);
-    assert_eq!(denied[1].1, "Bracket entry order was denied");
+    assert_eq!(denied[1].1, "ORDER_LIST_DENIED: bracket-no-quote-1");
     assert_eq!(denied[2].0, cid_tp);
-    assert_eq!(denied[2].1, "Bracket entry order was denied");
+    assert_eq!(denied[2].1, "ORDER_LIST_DENIED: bracket-no-quote-1");
     assert_eq!(
         *exchange_count.lock().await,
         0,
@@ -7385,4 +7617,299 @@ async fn test_connect_times_out_when_account_never_registers() {
 
     assert!(!client.is_connected());
     assert!(client.pending_tasks_all_finished());
+}
+
+#[rstest]
+#[case("submit", false)]
+#[case("submit", true)]
+#[case("list", false)]
+#[case("list", true)]
+#[case("modify", false)]
+#[case("modify", true)]
+#[case("cancel", false)]
+#[case("cancel", true)]
+#[case("batch_cancel", false)]
+#[case("batch_cancel", true)]
+#[case("cancel_all", false)]
+#[case("cancel_all", true)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_command_venue_rejection_preserves_reason_once(
+    #[case] command: &str,
+    #[case] whole_request: bool,
+) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let fixture = load_json("exchange_error_messages.json");
+    let errors = fixture["errors"].as_array().unwrap();
+    assert_eq!(errors.len(), 17);
+    let cancel = matches!(command, "cancel" | "batch_cancel" | "cancel_all");
+    let batch = matches!(command, "list" | "batch_cancel" | "cancel_all");
+    let response_type = if cancel {
+        "cancel"
+    } else if command == "modify" {
+        "modify"
+    } else {
+        "order"
+    };
+
+    for (index, error) in errors.iter().enumerate() {
+        if cancel != (error["source"] == "Cancel") {
+            continue;
+        }
+        let reason = error["message"].as_str().unwrap();
+        let mut orders = Vec::new();
+
+        for item in 0..if batch { 2 } else { 1 } {
+            let id = format!("O-REJECTION-{index}-{item}");
+            let order = if cancel {
+                open_limit_order_in_cache(&cache, &id, &(81000 + item).to_string())
+            } else {
+                let order = make_limit_order(&id);
+                cache
+                    .borrow_mut()
+                    .add_order(order.clone(), None, None, false)
+                    .unwrap();
+                order
+            };
+            orders.push(order);
+        }
+        *state.command_response_override.lock().await = Some(if whole_request {
+            json!({"status": "err", "response": reason})
+        } else {
+            json!({"status": "ok", "response": {"type": response_type, "data": {
+                "statuses": orders.iter().map(|_| json!({"error": reason})).collect::<Vec<_>>()
+            }}})
+        });
+
+        match command {
+            "submit" => client.submit_order(make_submit_cmd(&orders[0])).unwrap(),
+            "modify" => client
+                .modify_order(make_modify_cmd(
+                    &orders[0],
+                    Some(VenueOrderId::from("81234")),
+                ))
+                .unwrap(),
+            "cancel" => client
+                .cancel_order(make_cancel_entry(
+                    orders[0].client_order_id(),
+                    orders[0].venue_order_id().unwrap(),
+                ))
+                .unwrap(),
+            "list" => {
+                let order = &orders[0];
+                let list = OrderList::new(
+                    OrderListId::from("L-REJECTION"),
+                    order.instrument_id(),
+                    order.strategy_id(),
+                    orders.iter().map(Order::client_order_id).collect(),
+                    UnixNanos::default(),
+                );
+                client
+                    .submit_order_list(SubmitOrderList::new(
+                        order.trader_id(),
+                        Some(*HYPERLIQUID_CLIENT_ID),
+                        order.strategy_id(),
+                        list,
+                        orders.iter().map(|o| o.init_event().clone()).collect(),
+                        None,
+                        None,
+                        None,
+                        UUID4::new(),
+                        UnixNanos::default(),
+                        None,
+                    ))
+                    .unwrap();
+            }
+            "batch_cancel" => {
+                let order = &orders[0];
+                client
+                    .batch_cancel_orders(BatchCancelOrders::new(
+                        order.trader_id(),
+                        Some(*HYPERLIQUID_CLIENT_ID),
+                        order.strategy_id(),
+                        order.instrument_id(),
+                        orders
+                            .iter()
+                            .map(|o| {
+                                make_cancel_entry(o.client_order_id(), o.venue_order_id().unwrap())
+                            })
+                            .collect(),
+                        UUID4::new(),
+                        UnixNanos::default(),
+                        None,
+                        None,
+                    ))
+                    .unwrap();
+            }
+            "cancel_all" => client
+                .cancel_all_orders(make_cancel_all_cmd(
+                    HYPERLIQUID_TEST_INSTRUMENT,
+                    OrderSide::Buy,
+                ))
+                .unwrap(),
+            _ => unreachable!(),
+        }
+        wait_until_async(
+            || async { client.pending_tasks_all_finished() },
+            Duration::from_secs(5),
+        )
+        .await;
+        let mut outcomes = Vec::new();
+
+        while let Ok(event) = rx.try_recv() {
+            if let ExecutionEvent::Order(event) = event {
+                match event {
+                    OrderEventAny::Submitted(_) => {}
+                    OrderEventAny::Rejected(rejected) if matches!(command, "submit" | "list") => {
+                        assert_eq!(rejected.reason.as_str(), reason);
+                        assert!(!rejected.reconciliation);
+                        assert_eq!(rejected.causation_id, None);
+                        outcomes.push(OrderEventAny::Rejected(rejected));
+                    }
+                    OrderEventAny::ModifyRejected(rejected) if command == "modify" => {
+                        assert_eq!(rejected.reason.as_str(), reason);
+                        assert!(!rejected.reconciliation);
+                        assert_eq!(rejected.causation_id, None);
+                        outcomes.push(OrderEventAny::ModifyRejected(rejected));
+                    }
+                    OrderEventAny::CancelRejected(rejected) if cancel => {
+                        assert_eq!(rejected.reason.as_str(), reason);
+                        assert!(!rejected.reconciliation);
+                        assert_eq!(rejected.causation_id, None);
+                        outcomes.push(OrderEventAny::CancelRejected(rejected));
+                    }
+                    other => panic!("Unexpected event: {other:?}"),
+                }
+            }
+        }
+        assert_eq!(outcomes.len(), orders.len(), "{command}: {reason}");
+        for (event, order) in outcomes.iter().zip(&orders) {
+            assert_eq!(event.trader_id(), order.trader_id());
+            assert_eq!(event.strategy_id(), order.strategy_id());
+            assert_eq!(event.instrument_id(), order.instrument_id());
+            assert_eq!(event.client_order_id(), order.client_order_id());
+            assert_eq!(event.account_id(), Some(AccountId::from("HYPERLIQUID-001")));
+            assert_eq!(
+                event.venue_order_id(),
+                if command == "modify" {
+                    Some(VenueOrderId::from("81234"))
+                } else {
+                    order.venue_order_id()
+                }
+            );
+        }
+    }
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case("modify")]
+#[case("cancel")]
+#[case("batch_cancel")]
+#[case("cancel_all")]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_command_after_stop_emits_rejection(#[case] command: &str) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let order = open_limit_order_in_cache(&cache, "O-STOPPED-COMMAND", "87654");
+    client.stop().unwrap();
+    match command {
+        "modify" => client
+            .modify_order(make_modify_cmd(&order, order.venue_order_id()))
+            .unwrap(),
+        "cancel" => client
+            .cancel_order(make_cancel_entry(
+                order.client_order_id(),
+                order.venue_order_id().unwrap(),
+            ))
+            .unwrap(),
+        "batch_cancel" => client
+            .batch_cancel_orders(BatchCancelOrders::new(
+                order.trader_id(),
+                Some(*HYPERLIQUID_CLIENT_ID),
+                order.strategy_id(),
+                order.instrument_id(),
+                vec![make_cancel_entry(
+                    order.client_order_id(),
+                    order.venue_order_id().unwrap(),
+                )],
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap(),
+        "cancel_all" => client
+            .cancel_all_orders(make_cancel_all_cmd(
+                HYPERLIQUID_TEST_INSTRUMENT,
+                OrderSide::Buy,
+            ))
+            .unwrap(),
+        _ => unreachable!(),
+    }
+    let events = if command == "modify" {
+        drain_modify_rejected_events(&mut rx, Duration::from_millis(250)).await
+    } else {
+        drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await
+    };
+    assert_eq!(
+        events,
+        vec![(
+            order.client_order_id(),
+            "Hyperliquid execution client is shutting down".to_string()
+        )]
+    );
+    assert_eq!(*state.exchange_request_count.lock().await, 0);
+    assert_eq!(
+        client
+            .ws_dispatch_state()
+            .pending_modify(&order.client_order_id()),
+        None
+    );
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_modify_order_missing_asset_emits_rejection() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let order = make_limit_order_on_instrument(
+        "O-MODIFY-MISSING-ASSET",
+        InstrumentId::from("NOPE-USD-PERP.HYPERLIQUID"),
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    client
+        .modify_order(make_modify_cmd(&order, Some(VenueOrderId::from("92345"))))
+        .unwrap();
+    let events = drain_modify_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(
+        events,
+        vec![(
+            order.client_order_id(),
+            "Asset index not found for symbol NOPE-USD-PERP".to_string()
+        )]
+    );
+    assert_eq!(*state.exchange_request_count.lock().await, 0);
+    assert_eq!(
+        client
+            .ws_dispatch_state()
+            .pending_modify(&order.client_order_id()),
+        None
+    );
+    client.disconnect().await.unwrap();
 }

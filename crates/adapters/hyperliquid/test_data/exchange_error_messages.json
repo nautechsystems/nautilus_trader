@@ -1,0 +1,90 @@
+{
+  "source": "https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/error-responses",
+  "errors": [
+    {
+      "type": "Tick",
+      "message": "Price must be divisible by tick size.",
+      "source": "Order"
+    },
+    {
+      "type": "MinTradeNtl",
+      "message": "Order must have minimum value of $10.",
+      "source": "Order"
+    },
+    {
+      "type": "MinTradeSpotNtl",
+      "message": "Order must have minimum value of 10 {quote_token}.",
+      "source": "Order"
+    },
+    {
+      "type": "PerpMargin",
+      "message": "Insufficient margin to place order.",
+      "source": "Order"
+    },
+    {
+      "type": "ReduceOnly",
+      "message": "Reduce only order would increase position.",
+      "source": "Order"
+    },
+    {
+      "type": "BadAloPx",
+      "message": "Post only order would have immediately matched, bbo was {bbo}.",
+      "source": "Order"
+    },
+    {
+      "type": "IocCancel",
+      "message": "Order could not immediately match against any resting orders.",
+      "source": "Order"
+    },
+    {
+      "type": "BadTriggerPx",
+      "message": "Invalid TP/SL price.",
+      "source": "Order"
+    },
+    {
+      "type": "MarketOrderNoLiquidity",
+      "message": "No liquidity available for market order.",
+      "source": "Order"
+    },
+    {
+      "type": "PositionIncreaseAtOpenInterestCap",
+      "message": "Order would increase open interest while open interest is capped",
+      "source": "Order"
+    },
+    {
+      "type": "PositionFlipAtOpenInterestCap",
+      "message": "Order would increase open interest while open interest is capped",
+      "source": "Order"
+    },
+    {
+      "type": "TooAggressiveAtOpenInterestCap",
+      "message": "Order rejected due to price more aggressive than oracle while at open interest cap",
+      "source": "Order"
+    },
+    {
+      "type": "OpenInterestIncrease",
+      "message": "Order would increase open interest too quickly",
+      "source": "Order"
+    },
+    {
+      "type": "InsufficientSpotBalance",
+      "message": "(Spot-only) Order has insufficient spot balance to trade",
+      "source": "Order"
+    },
+    {
+      "type": "Oracle",
+      "message": "Order price too far from oracle",
+      "source": "Order"
+    },
+    {
+      "type": "PerpMaxPosition",
+      "message": "Order would cause position to exceed margin tier limit at current leverage",
+      "source": "Order"
+    },
+    {
+      "type": "MissingOrder",
+      "message": "Order was never placed, already canceled, or filled.",
+      "source": "Cancel"
+    }
+  ]
+}

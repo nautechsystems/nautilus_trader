@@ -74,7 +74,7 @@ use crate::{
         parse::{
             bar_type_to_interval, cache_alias_for_symbol, clamp_price_to_precision,
             derive_limit_from_trigger, determine_order_list_grouping, extract_inner_error,
-            normalize_price, order_to_hyperliquid_request_with_asset_and_cloid,
+            normalize_or_validate_wire_price, order_to_hyperliquid_request_with_optional_decimals,
             parse_combined_account_balances_and_margins, parse_spot_account_balances,
             parse_trigger_order_type, round_to_sig_figs, time_in_force_to_hyperliquid_tif,
         },
@@ -2025,13 +2025,15 @@ impl HyperliquidHttpClient {
         };
 
         let is_buy = matches!(order_side, OrderSide::Buy);
-        let decimals = self.get_price_precision_for_symbol(symbol).unwrap_or(2);
+        let decimals = self.get_price_precision_for_symbol(symbol);
 
-        let normalized_price = if self.normalize_prices {
-            normalize_price(price.as_decimal(), decimals).normalize()
-        } else {
-            price.as_decimal().normalize()
-        };
+        let normalized_price = normalize_or_validate_wire_price(
+            price.as_decimal(),
+            "Price",
+            decimals,
+            self.normalize_prices,
+        )
+        .map_err(|e| Error::bad_request(format!("{e}")))?;
 
         let size = quantity.as_decimal().normalize();
 
@@ -2053,11 +2055,13 @@ impl HyperliquidHttpClient {
             | OrderType::MarketIfTouched
             | OrderType::LimitIfTouched => {
                 if let Some(trig_px) = trigger_price {
-                    let trigger_price_decimal = if self.normalize_prices {
-                        normalize_price(trig_px.as_decimal(), decimals).normalize()
-                    } else {
-                        trig_px.as_decimal().normalize()
-                    };
+                    let trigger_price_decimal = normalize_or_validate_wire_price(
+                        trig_px.as_decimal(),
+                        "Trigger price",
+                        decimals,
+                        self.normalize_prices,
+                    )
+                    .map_err(|e| Error::bad_request(format!("{e}")))?;
                     let tpsl = match order_type {
                         OrderType::StopMarket | OrderType::StopLimit => HyperliquidExchangeTpSl::Sl,
                         _ => HyperliquidExchangeTpSl::Tp,
@@ -3112,13 +3116,16 @@ impl HyperliquidHttpClient {
         })?;
 
         let is_buy = matches!(order_side, OrderSide::Buy);
-        let price_precision = self.get_price_precision_for_symbol(symbol).unwrap_or(2);
+        let price_precision = self.get_price_precision_for_symbol(symbol);
 
         let price_decimal = match price {
-            Some(px) if self.normalize_prices => {
-                normalize_price(px.as_decimal(), price_precision).normalize()
-            }
-            Some(px) => px.as_decimal().normalize(),
+            Some(px) => normalize_or_validate_wire_price(
+                px.as_decimal(),
+                "Price",
+                price_precision,
+                self.normalize_prices,
+            )
+            .map_err(|e| Error::bad_request(format!("{e}")))?,
             None if matches!(order_type, OrderType::Market) => Decimal::ZERO,
             None if matches!(
                 order_type,
@@ -3133,7 +3140,8 @@ impl HyperliquidHttpClient {
                             self.market_order_slippage_bps,
                         );
                         let sig_rounded = round_to_sig_figs(derived, 5);
-                        clamp_price_to_precision(sig_rounded, price_precision, is_buy).normalize()
+                        clamp_price_to_precision(sig_rounded, price_precision.unwrap_or(2), is_buy)
+                            .normalize()
                     }
                     None => Decimal::ZERO,
                 }
@@ -3176,11 +3184,13 @@ impl HyperliquidHttpClient {
             | OrderType::MarketIfTouched
             | OrderType::LimitIfTouched => {
                 if let Some(trig_px) = trigger_price {
-                    let trigger_price_decimal = if self.normalize_prices {
-                        normalize_price(trig_px.as_decimal(), price_precision).normalize()
-                    } else {
-                        trig_px.as_decimal().normalize()
-                    };
+                    let trigger_price_decimal = normalize_or_validate_wire_price(
+                        trig_px.as_decimal(),
+                        "Trigger price",
+                        price_precision,
+                        self.normalize_prices,
+                    )
+                    .map_err(|e| Error::bad_request(format!("{e}")))?;
 
                     // Determine TP/SL type based on order type
                     // StopMarket/StopLimit are always Sl (protective stops)
@@ -3347,8 +3357,8 @@ impl HyperliquidHttpClient {
                     "Asset index not found for symbol: {symbol}. Ensure instruments are loaded."
                 ))
             })?;
-            let price_decimals = self.get_price_precision_for_symbol(symbol).unwrap_or(2);
-            let request = order_to_hyperliquid_request_with_asset_and_cloid(
+            let price_decimals = self.get_price_precision_for_symbol(symbol);
+            let request = order_to_hyperliquid_request_with_optional_decimals(
                 order,
                 asset,
                 price_decimals,

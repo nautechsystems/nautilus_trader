@@ -14,22 +14,24 @@ Released on TBD (UTC).
 - Added user-defined portfolio statistics via `Portfolio.register_statistic()` and Python `PortfolioStatistic`
 - Added rolling `ZScore` indicator for Rust and Python (#4868), thanks @graceyangfan
 - Added named task identity and lifecycle observation to live `TaskGroup`
+- Added typed external MessageBus streaming for control, execution, and reconciliation messages
+- Added public `ExecutionEventEmitter.try_send_account_state(...)` (#4907), thanks @folknor
+- Added cache-backed claims that route external orders, fills, and reconciliation activity to the strategy
+- Added `SubscribeOptionChain.correlation_id` and `UnsubscribeOptionChain.params` for tracking edits across client routes
+- Added `UnixNanos::saturating_duration_since` for non-negative time differences
+- Added `BacktestEngine::add_data_batch` for typed data batches that replay without per-item `Data` values, thanks @faysou
 - Added Python enum surface (`from_str`, `name`, `value`, `variants`) to `BarIntervalType`
 - Added Python `OrderBook.to_deltas(...)` and `OrderBook.get_all_crossed_levels(...)`
 - Added Python `OrderBook` pickle and deep-copy support and `BookLevel` comparisons
 - Added Python `OrderBookDelta.is_add`, `is_update`, `is_delete`, `is_clear`, and `OrderBookDeltas.is_snapshot`
 - Added Python `activation_utc` and `expiration_utc` properties to expiring instruments
 - Added Python `symbol` and `venue` properties to regular and synthetic instruments
-- Added `UnixNanos::saturating_duration_since` for non-negative time differences
-- Added `BacktestEngine::add_data_batch` for typed data batches that replay without per-item `Data` values, thanks @faysou
-- Added typed external MessageBus streaming for control, execution, and reconciliation messages
-- Added public `ExecutionEventEmitter.try_send_account_state(...)` (#4907), thanks @folknor
-- Added cache-backed claims that route external orders, fills, and reconciliation activity to the strategy
 - Added Bybit self-match prevention, set with `smp_type` on the execution client config or per order
+- Added Hyperliquid definite rejection events for submit, modify, and cancel command paths
+- Added Hyperliquid local denial of over-decimal order prices when `normalize_prices` is disabled
 - Added Polymarket collateral-sized limit BUY orders with exact limit price preservation
 - Added Polymarket limit order modification support
 - Added Polymarket resolution subscriptions for data-only clients (#4895), thanks @mystic-io
-- Added `SubscribeOptionChain.correlation_id` and `UnsubscribeOptionChain.params` for tracking edits across client routes
 
 ### Breaking Changes
 
@@ -126,6 +128,7 @@ Released on TBD (UTC).
 - Added acceptance tests running the documentation guides and resolving their documented imports
 - Replaced Reqwest HTTP execution with Hyper and removed direct Reqwest dependencies
 - Improved Betfair execution client test synchronization (#4866), thanks @folknor
+- Improved Hyperliquid exchange error message fixtures and rejection routing tests
 - Pinned docs.rs checks to a compatible nightly toolchain
 - Refined Arrow serialization schemas and column resolution
 - Refined Cap'n Proto serialization conversions and wire contracts
@@ -175,6 +178,7 @@ Released on TBD (UTC).
 - Updated persistence catalog migration commands to kebab-case binary names
 - Updated migration guidance for order books and instrument inspection
 - Updated Makefile help output to match the startup log header
+- Updated Hyperliquid guide for rejection events, price guard, and trigger-order resting
 - Restructured execution documentation around algorithms, policies, reconciliation, and live recovery
 - Standardized Rust documentation links and added offline link coverage
 - Fixed the actor configuration example rejecting a positional argument

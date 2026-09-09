@@ -66,8 +66,8 @@ use crate::{
         parse::{
             bar_type_to_interval, clamp_price_to_precision, derive_limit_from_trigger,
             determine_order_list_grouping, extract_error_message, extract_inner_error,
-            extract_inner_errors, normalize_price,
-            order_to_hyperliquid_request_with_asset_and_cloid, round_to_sig_figs,
+            extract_inner_errors, normalize_or_validate_wire_price,
+            order_to_hyperliquid_request_with_optional_decimals, round_to_sig_figs,
             time_in_force_to_hyperliquid_tif,
         },
     },
@@ -626,40 +626,76 @@ impl HyperliquidWebSocketClient {
         timeout: Duration,
         expires_after: Option<u64>,
     ) -> HyperliquidResult<HyperliquidExchangeResponse> {
-        let weight = exec_action_weight(action);
+        self.post_action_result(signer, action, timeout, expires_after)
+            .await
+            .map_err(PostRequestError::into_error)
+    }
 
-        let payload = signer.sign_action_exec_request(action, expires_after)?;
+    pub(crate) async fn post_action_command(
+        &self,
+        signer: &HyperliquidHttpClient,
+        action: &HyperliquidExchangeAction,
+    ) -> Result<HyperliquidExchangeResponse, PostRequestError> {
+        self.post_action_result(signer, action, self.post_timeout, None)
+            .await
+    }
+
+    async fn post_action_result(
+        &self,
+        signer: &HyperliquidHttpClient,
+        action: &HyperliquidExchangeAction,
+        timeout: Duration,
+        expires_after: Option<u64>,
+    ) -> Result<HyperliquidExchangeResponse, PostRequestError> {
+        let weight = exec_action_weight(action);
+        let payload = signer
+            .sign_action_exec_request(action, expires_after)
+            .map_err(PostRequestError::BeforeDispatch)?;
         let response = self
-            .send_post_request(PostRequest::Action { payload }, timeout)
+            .send_post_request_result(PostRequest::Action { payload }, timeout)
             .await?;
 
         match response.response {
             PostResponsePayload::Action { payload } => {
-                let parsed: HyperliquidExchangeResponse =
-                    serde_json::from_value(payload).map_err(HyperliquidError::Serde)?;
+                let parsed: HyperliquidExchangeResponse = serde_json::from_value(payload)
+                    .map_err(HyperliquidError::Serde)
+                    .map_err(PostRequestError::AfterDispatch)?;
 
                 match &parsed {
-                    HyperliquidExchangeResponse::Status {
-                        status,
-                        response: response_data,
-                    } if status != RESPONSE_STATUS_OK => {
-                        let error_msg = response_data
+                    HyperliquidExchangeResponse::Status { status, response }
+                        if status != RESPONSE_STATUS_OK =>
+                    {
+                        let reason = response
                             .as_str()
-                            .map_or_else(|| response_data.to_string(), |s| s.to_string());
-                        Err(HyperliquidError::bad_request(format!(
-                            "API error: {error_msg}"
-                        )))
+                            .map_or_else(|| response.to_string(), str::to_string);
+                        let error = HyperliquidError::bad_request(format!("API error: {reason}"));
+
+                        if status == "err" {
+                            Err(PostRequestError::Rejected {
+                                error,
+                                reason: extract_error_message(&parsed),
+                            })
+                        } else {
+                            Err(PostRequestError::AfterDispatch(error))
+                        }
                     }
                     HyperliquidExchangeResponse::Error { error } => {
-                        Err(HyperliquidError::bad_request(format!("API error: {error}")))
+                        Err(PostRequestError::Rejected {
+                            error: HyperliquidError::bad_request(format!("API error: {error}")),
+                            reason: error.clone(),
+                        })
                     }
                     _ => Ok(parsed),
                 }
             }
-            PostResponsePayload::Error { payload } => Err(map_post_payload_error(payload, weight)),
-            PostResponsePayload::Info { payload } => Err(HyperliquidError::decode(format!(
-                "expected action post response, received info payload: {payload}"
-            ))),
+            PostResponsePayload::Error { payload } => Err(PostRequestError::AfterDispatch(
+                map_post_payload_error(payload, weight),
+            )),
+            PostResponsePayload::Info { payload } => {
+                Err(PostRequestError::AfterDispatch(HyperliquidError::decode(
+                    format!("expected action post response, received info payload: {payload}"),
+                )))
+            }
         }
     }
 
@@ -698,13 +734,16 @@ impl HyperliquidWebSocketClient {
             ))
         })?;
         let is_buy = matches!(order_side, OrderSide::Buy);
-        let price_precision = signer.get_price_precision_for_symbol(symbol).unwrap_or(2);
+        let price_precision = signer.get_price_precision_for_symbol(symbol);
 
         let price_decimal = match price {
-            Some(px) if signer.normalize_prices() => {
-                normalize_price(px.as_decimal(), price_precision).normalize()
-            }
-            Some(px) => px.as_decimal().normalize(),
+            Some(px) => normalize_or_validate_wire_price(
+                px.as_decimal(),
+                "Price",
+                price_precision,
+                signer.normalize_prices(),
+            )
+            .map_err(|e| HyperliquidError::bad_request(format!("{e}")))?,
             None if matches!(order_type, OrderType::Market) => Decimal::ZERO,
             None if matches!(
                 order_type,
@@ -719,7 +758,8 @@ impl HyperliquidWebSocketClient {
                             signer.market_order_slippage_bps(),
                         );
                         let sig_rounded = round_to_sig_figs(derived, 5);
-                        clamp_price_to_precision(sig_rounded, price_precision, is_buy).normalize()
+                        clamp_price_to_precision(sig_rounded, price_precision.unwrap_or(2), is_buy)
+                            .normalize()
                     }
                     None => Decimal::ZERO,
                 }
@@ -808,8 +848,8 @@ impl HyperliquidWebSocketClient {
                     "Asset index not found for symbol: {symbol}. Ensure instruments are loaded."
                 ))
             })?;
-            let price_decimals = signer.get_price_precision_for_symbol(symbol).unwrap_or(2);
-            let request = order_to_hyperliquid_request_with_asset_and_cloid(
+            let price_decimals = signer.get_price_precision_for_symbol(symbol);
+            let request = order_to_hyperliquid_request_with_optional_decimals(
                 order,
                 asset,
                 price_decimals,
@@ -1072,12 +1112,14 @@ impl HyperliquidWebSocketClient {
             }
         };
         let is_buy = matches!(order_side, OrderSide::Buy);
-        let price_decimals = signer.get_price_precision_for_symbol(symbol).unwrap_or(2);
-        let price = if signer.normalize_prices() {
-            normalize_price(price.as_decimal(), price_decimals).normalize()
-        } else {
-            price.as_decimal().normalize()
-        };
+        let price_decimals = signer.get_price_precision_for_symbol(symbol);
+        let price = normalize_or_validate_wire_price(
+            price.as_decimal(),
+            "Price",
+            price_decimals,
+            signer.normalize_prices(),
+        )
+        .map_err(|e| HyperliquidError::bad_request(format!("{e}")))?;
         let kind = hyperliquid_order_kind(
             order_type,
             time_in_force,
@@ -1114,16 +1156,26 @@ impl HyperliquidWebSocketClient {
         request: PostRequest,
         timeout: Duration,
     ) -> HyperliquidResult<PostResponse> {
+        self.send_post_request_result(request, timeout)
+            .await
+            .map_err(PostRequestError::into_error)
+    }
+
+    async fn send_post_request_result(
+        &self,
+        request: PostRequest,
+        timeout: Duration,
+    ) -> Result<PostResponse, PostRequestError> {
         let id = self.post_ids.next();
         let Some(deadline) = tokio::time::Instant::now().checked_add(timeout) else {
-            return Err(HyperliquidError::Timeout);
+            return Err(PostRequestError::BeforeDispatch(HyperliquidError::Timeout));
         };
 
         let cancellation_token = CancellationToken::new();
         let rx = tokio::select! {
             biased;
-            () = tokio::time::sleep_until(deadline) => return Err(HyperliquidError::Timeout),
-            result = self.post_router.register_with_cancellation(id, &cancellation_token) => result?,
+            () = tokio::time::sleep_until(deadline) => return Err(PostRequestError::BeforeDispatch(HyperliquidError::Timeout)),
+            result = self.post_router.register_with_cancellation(id, &cancellation_token) => result.map_err(PostRequestError::BeforeDispatch)?,
         };
 
         let _cancellation_guard = cancellation_token.drop_guard_ref();
@@ -1133,14 +1185,14 @@ impl HyperliquidWebSocketClient {
                 biased;
                 () = tokio::time::sleep_until(deadline) => {
                     self.cancel_post_registration(id, &cancellation_token).await;
-                    return Err(HyperliquidError::Timeout);
+                    return Err(PostRequestError::BeforeDispatch(HyperliquidError::Timeout));
                 }
                 cmd_tx = self.cmd_tx.read() => cmd_tx,
             };
 
             if cancellation_token.is_cancelled() || tokio::time::Instant::now() >= deadline {
                 self.cancel_post_registration(id, &cancellation_token).await;
-                return Err(HyperliquidError::Timeout);
+                return Err(PostRequestError::BeforeDispatch(HyperliquidError::Timeout));
             }
 
             cmd_tx.send(HandlerCommand::Post {
@@ -1153,13 +1205,14 @@ impl HyperliquidWebSocketClient {
 
         if let Err(e) = send_result {
             self.cancel_post_registration(id, &cancellation_token).await;
-            return Err(HyperliquidError::transport(format!(
-                "post command channel closed: {e}"
-            )));
+            return Err(PostRequestError::BeforeDispatch(
+                HyperliquidError::transport(format!("post command channel closed: {e}")),
+            ));
         }
 
         self.await_post_response(id, rx, deadline, &cancellation_token)
             .await
+            .map_err(PostRequestError::AfterDispatch)
     }
 
     async fn await_post_response(
@@ -2160,6 +2213,26 @@ impl Drop for HyperliquidWebSocketClient {
     }
 }
 
+#[derive(Debug)]
+pub(crate) enum PostRequestError {
+    BeforeDispatch(HyperliquidError),
+    AfterDispatch(HyperliquidError),
+    Rejected {
+        error: HyperliquidError,
+        reason: String,
+    },
+}
+
+impl PostRequestError {
+    fn into_error(self) -> HyperliquidError {
+        match self {
+            Self::BeforeDispatch(error)
+            | Self::AfterDispatch(error)
+            | Self::Rejected { error, .. } => error,
+        }
+    }
+}
+
 fn cancel_errors_for_requests(
     errors: Vec<Option<String>>,
     request_count: usize,
@@ -2211,7 +2284,7 @@ fn hyperliquid_order_kind(
     post_only: bool,
     trigger_price: Option<Price>,
     normalize_prices_enabled: bool,
-    price_precision: u8,
+    price_precision: Option<u8>,
 ) -> HyperliquidResult<HyperliquidExchangeOrderKind> {
     match order_type {
         OrderType::Market => Ok(HyperliquidExchangeOrderKind::Limit {
@@ -2233,11 +2306,13 @@ fn hyperliquid_order_kind(
             let trigger_price = trigger_price.ok_or_else(|| {
                 HyperliquidError::bad_request("Trigger orders require a trigger price")
             })?;
-            let trigger_px = if normalize_prices_enabled {
-                normalize_price(trigger_price.as_decimal(), price_precision).normalize()
-            } else {
-                trigger_price.as_decimal().normalize()
-            };
+            let trigger_px = normalize_or_validate_wire_price(
+                trigger_price.as_decimal(),
+                "Trigger price",
+                price_precision,
+                normalize_prices_enabled,
+            )
+            .map_err(|e| HyperliquidError::bad_request(format!("{e}")))?;
             let tpsl = match order_type {
                 OrderType::StopMarket | OrderType::StopLimit => HyperliquidExchangeTpSl::Sl,
                 OrderType::MarketIfTouched | OrderType::LimitIfTouched => {
@@ -2606,6 +2681,31 @@ mod tests {
         assert_eq!(client.clone().post_timeout, timeout);
     }
 
+    #[rstest]
+    #[tokio::test]
+    async fn post_action_command_without_credentials_is_not_sent() {
+        let client = HyperliquidWebSocketClient::new(
+            None,
+            HyperliquidEnvironment::Testnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        let signer = HyperliquidHttpClient::new(HyperliquidEnvironment::Testnet, 10, None).unwrap();
+        let action = HyperliquidExchangeAction::Cancel {
+            cancels: Vec::new(),
+            fast: None,
+        };
+        let result = client.post_action_command(&signer, &action).await;
+        let PostRequestError::BeforeDispatch(error) = result.unwrap_err() else {
+            panic!("Expected failure before dispatch");
+        };
+        assert_eq!(
+            error.to_string(),
+            "auth error: credentials required for exchange operations"
+        );
+    }
+
     #[tokio::test]
     async fn failed_connect_releases_connection_slot() {
         let mut client = HyperliquidWebSocketClient::new(
@@ -2627,6 +2727,71 @@ mod tests {
             client.rate_limits.connection_slots.available_permits(),
             available_before
         );
+    }
+
+    #[rstest]
+    #[case::before_dispatch(false)]
+    #[case::after_dispatch(true)]
+    #[tokio::test(start_paused = true)]
+    async fn post_request_timeout_preserves_dispatch_evidence(#[case] dispatched: bool) {
+        let client = HyperliquidWebSocketClient::new(
+            None,
+            HyperliquidEnvironment::Testnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        *client.cmd_tx.write().await = tx;
+        let timeout = if dispatched {
+            Duration::from_millis(100)
+        } else {
+            Duration::ZERO
+        };
+        let started = tokio::time::Instant::now();
+        let failure = client
+            .send_post_request_result(
+                PostRequest::Info {
+                    payload: serde_json::json!({"type": "meta"}),
+                },
+                timeout,
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(tokio::time::Instant::now() - started, timeout);
+
+        if dispatched {
+            assert!(matches!(
+                failure,
+                PostRequestError::AfterDispatch(HyperliquidError::Timeout)
+            ));
+            let HandlerCommand::Post {
+                id,
+                request,
+                deadline,
+                cancellation_token,
+            } = rx.try_recv().unwrap()
+            else {
+                panic!("Expected post command");
+            };
+            assert_eq!(id, 1);
+            assert_eq!(
+                serde_json::to_value(request).unwrap(),
+                serde_json::json!({"type": "info", "payload": {"type": "meta"}})
+            );
+            assert_eq!(deadline, started + timeout);
+            assert!(cancellation_token.is_cancelled());
+        } else {
+            assert!(matches!(
+                failure,
+                PostRequestError::BeforeDispatch(HyperliquidError::Timeout)
+            ));
+        }
+        assert!(matches!(
+            rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
     }
 
     #[rstest]
