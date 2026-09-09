@@ -1187,6 +1187,12 @@ impl BinanceFuturesOrder {
             Some(UUID4::new()),
         );
 
+        report.post_only = self.order_type == BinanceFuturesOrderType::Limit
+            && matches!(
+                self.time_in_force,
+                BinanceTimeInForce::Gtx | BinanceTimeInForce::Rpi
+            );
+
         if let Some(price) = price {
             report = report.with_price(price);
         }
@@ -1231,7 +1237,7 @@ impl BinanceTimeInForce {
             Self::Fok => TimeInForce::Fok,
             Self::Gtx => TimeInForce::Gtc, // GTX is GTC with post-only
             Self::Gtd => TimeInForce::Gtd,
-            Self::Rpi => TimeInForce::Ioc, // RPI behaves as immediate
+            Self::Rpi => TimeInForce::Gtc,
             Self::Unknown => anyhow::bail!("unknown Binance time in force"),
         })
     }
@@ -2109,6 +2115,27 @@ mod tests {
             order.self_trade_prevention_mode,
             Some(BinanceSelfTradePreventionMode::None)
         );
+    }
+
+    #[rstest]
+    fn test_order_to_report_maps_rpi_to_gtc_post_only() {
+        let mut order = order_with_price("50000.00");
+        order.order_type = BinanceFuturesOrderType::Limit;
+        order.time_in_force = BinanceTimeInForce::Rpi;
+
+        let report = order
+            .to_order_status_report(
+                AccountId::from("BINANCE-FUTURES-001"),
+                InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+                2,
+                3,
+                false,
+                UnixNanos::from(1_000_000_000u64),
+            )
+            .unwrap();
+
+        assert_eq!(report.time_in_force, TimeInForce::Gtc);
+        assert!(report.post_only);
     }
 
     #[rstest]

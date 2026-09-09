@@ -111,7 +111,10 @@ pub fn parse_futures_order_update_to_order_status(
 
     report.price = Some(price);
     report.post_only = order.order_type == BinanceFuturesOrderType::Limit
-        && order.time_in_force == BinanceTimeInForce::Gtx;
+        && matches!(
+            order.time_in_force,
+            BinanceTimeInForce::Gtx | BinanceTimeInForce::Rpi
+        );
 
     match parse_good_till_date(order.good_till_date) {
         Ok(expire_time) => report.expire_time = expire_time,
@@ -592,6 +595,28 @@ mod tests {
         assert_eq!(report.order_type, OrderType::TrailingStopMarket);
         assert_eq!(report.venue_order_id, VenueOrderId::new("8886774"));
         assert_eq!(report.client_order_id, Some(ClientOrderId::from("TEST")));
+    }
+
+    #[rstest]
+    fn test_parse_order_update_to_order_status_maps_rpi_to_gtc_post_only() {
+        let mut msg: BinanceFuturesOrderUpdateMsg = load_user_data_fixture("order_update_new.json");
+        msg.order.order_type = BinanceFuturesOrderType::Limit;
+        msg.order.time_in_force = BinanceTimeInForce::Rpi;
+        msg.order.original_price = "50000.00".to_string();
+
+        let report = parse_futures_order_update_to_order_status(
+            &msg,
+            instrument_id(),
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            account_id(),
+            false,
+            UnixNanos::from(1_000_000_000u64),
+        )
+        .unwrap();
+
+        assert_eq!(report.time_in_force, TimeInForce::Gtc);
+        assert!(report.post_only);
     }
 
     #[rstest]

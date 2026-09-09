@@ -383,7 +383,7 @@ pub enum BinanceTimeInForce {
     Gtx,
     /// Good till date.
     Gtd,
-    /// Request-for-quote interactive (USD-M Futures).
+    /// Retail Price Improvement (USD-M Futures).
     Rpi,
     /// Unknown or undocumented value.
     #[serde(other)]

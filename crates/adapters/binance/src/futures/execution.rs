@@ -536,6 +536,11 @@ impl BinanceFuturesExecutionClient {
             .as_ref()
             .and_then(|p| p.get_bool(PARAMS_CLOSE_POSITION))
             .unwrap_or(false);
+        let rpi = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get_bool("rpi"))
+            .unwrap_or(false);
 
         let use_algo_api = is_algo_order_type(order_type);
         let use_ws = self.ws_trading_active() && !use_algo_api;
@@ -593,7 +598,9 @@ impl BinanceFuturesExecutionClient {
             let symbol = format_binance_symbol(&instrument_id);
             let binance_side = BinanceSide::try_from(order_side)?;
             let binance_order_type = order_type_to_binance_futures(order_type)?;
-            let binance_tif = if post_only {
+            let binance_tif = if rpi {
+                BinanceTimeInForce::Rpi
+            } else if post_only {
                 BinanceTimeInForce::Gtx
             } else {
                 BinanceTimeInForce::try_from(time_in_force)?
@@ -707,6 +714,7 @@ impl BinanceFuturesExecutionClient {
                         trigger_price,
                         reduce_only,
                         post_only,
+                        rpi,
                         position_side,
                         price_match,
                         good_till_date,
@@ -3170,6 +3178,20 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             return Ok(());
         }
 
+        let rpi = cmd
+            .params
+            .as_ref()
+            .and_then(|params| params.get_bool("rpi"))
+            .unwrap_or(false);
+
+        if rpi {
+            let reason = "rpi is only supported for individual Binance Futures order submission";
+            for order in &orders {
+                self.emitter.emit_order_denied(order, reason);
+            }
+            return Ok(());
+        }
+
         let close_position = cmd
             .params
             .as_ref()
@@ -3760,6 +3782,32 @@ fn validate_order(
         .as_ref()
         .and_then(|params| params.get_bool(PARAMS_CLOSE_POSITION))
         .unwrap_or(false);
+
+    let rpi = cmd
+        .params
+        .as_ref()
+        .and_then(|params| params.get_bool("rpi"))
+        .unwrap_or(false);
+
+    if rpi {
+        if client.product_type != BinanceProductType::UsdM {
+            return Err(OrderDeniedReason::ValidationFailed {
+                detail: "rpi is only supported for Binance USD-M Futures".to_string(),
+            });
+        }
+
+        if order.order_type() != OrderType::Limit {
+            return Err(OrderDeniedReason::ValidationFailed {
+                detail: "rpi is only supported for LIMIT orders".to_string(),
+            });
+        }
+
+        if !order.is_post_only() {
+            return Err(OrderDeniedReason::ValidationFailed {
+                detail: "rpi requires post_only=true".to_string(),
+            });
+        }
+    }
 
     if close_position {
         let order_type = order.order_type();
