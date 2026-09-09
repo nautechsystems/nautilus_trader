@@ -121,7 +121,7 @@ pub struct InteractiveBrokersDataClientConfig {
     /// `AllLast` includes trade types which are not part of the price-forming tape, such as
     /// combos, derivatively-priced and average-price prints. `Last` returns regular trades
     /// only, which is usually what should be recorded for replay. Defaults to `true` to
-    /// preserve existing behaviour.
+    /// preserve existing behavior.
     #[builder(default = true)]
     pub all_last_trades: bool,
     /// Instrument provider configuration.
@@ -414,7 +414,7 @@ mod tests {
 
     #[rstest]
     fn data_client_config_defaults_to_all_last_trades() {
-        // Defaults must preserve the previous behaviour for existing users.
+        // Defaults must preserve the previous behavior for existing users.
         let config = InteractiveBrokersDataClientConfig::default();
         assert!(config.all_last_trades);
     }
@@ -442,7 +442,7 @@ mod tests {
     #[rstest]
     fn data_client_config_omitted_all_last_trades_deserializes_to_default() {
         // `#[serde(default)]` on the struct means an existing config file without the new
-        // field must still deserialize, and keep the previous behaviour.
+        // field must still deserialize, and keep the previous behavior.
         let decoded: InteractiveBrokersDataClientConfig =
             serde_json::from_str(r#"{"host":"127.0.0.1","port":7497}"#).unwrap();
 
