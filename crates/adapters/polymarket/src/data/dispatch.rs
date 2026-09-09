@@ -6625,7 +6625,9 @@ mod tests {
         );
         let addr = start_scripted_auto_load_test_server(state.clone()).await;
         let (mut client, mut data_rx) = create_test_client(addr);
-        client.config.auto_load_debounce_ms = 0;
+        // Zero debounce would let the auto-load task drain between the paired
+        // resolution subscribes and misalign the positional scripted replies.
+        client.config.auto_load_debounce_ms = 100;
         client.config.resolve_poll_enabled = true;
         client.config.resolve_poll_interval_secs = 1;
         client.config.resolve_poll_grace_secs = 0;
@@ -6719,7 +6721,9 @@ mod tests {
         );
         let addr = start_scripted_auto_load_test_server(state.clone()).await;
         let (mut client, mut data_rx) = create_test_client_with_new_markets(addr, true);
-        client.config.auto_load_debounce_ms = 0;
+        // Zero debounce would let the auto-load task drain between the paired
+        // resolution subscribes and misalign the positional scripted replies.
+        client.config.auto_load_debounce_ms = 100;
         client.connect().await.unwrap();
         let instrument_id = fixture_yes_instrument_id();
         subscribe_test_resolution(&mut client, instrument_id);
@@ -6950,7 +6954,9 @@ mod tests {
         );
         let addr = start_scripted_auto_load_test_server(state.clone()).await;
         let (mut client, mut data_rx) = create_test_client(addr);
-        client.config.auto_load_debounce_ms = 0;
+        // Zero debounce would let the auto-load task drain between the paired
+        // resolution subscribes and misalign the positional scripted replies.
+        client.config.auto_load_debounce_ms = 100;
         client.config.auto_load_max_retries = 0;
         client.connect().await.unwrap();
         let guard = client.ws_sub_mutex.clone().lock_owned().await;
@@ -7710,7 +7716,9 @@ mod tests {
         );
         let addr = start_scripted_auto_load_test_server(state.clone()).await;
         let (mut client, mut data_rx) = create_test_client(addr);
-        client.config.auto_load_debounce_ms = 0;
+        // Zero debounce would let the auto-load task drain between the paired
+        // resolution subscribes and misalign the positional scripted replies.
+        client.config.auto_load_debounce_ms = 100;
         client.config.auto_load_max_retries = 1;
         client.config.auto_load_retry_delay_initial_secs = 0.0;
         client.config.auto_load_retry_delay_max_secs = 0.0;
@@ -7811,7 +7819,9 @@ mod tests {
         );
         let addr = start_scripted_auto_load_test_server(state.clone()).await;
         let (mut client, mut data_rx) = create_test_client(addr);
-        client.config.auto_load_debounce_ms = 0;
+        // Zero debounce would let the auto-load task drain between the paired
+        // resolution subscribes and misalign the positional scripted replies.
+        client.config.auto_load_debounce_ms = 100;
         client.config.auto_load_max_retries = 1;
         client.config.auto_load_retry_delay_initial_secs = 0.0;
         client.config.auto_load_retry_delay_max_secs = 0.0;
@@ -8510,19 +8520,13 @@ mod tests {
         let open_id = fixture_instrument_id(OPEN_CONDITION, OPEN_TOKEN);
         let closed_id = fixture_instrument_id(CLOSED_CONDITION, CLOSED_TOKEN);
         let unknown_id = fixture_instrument_id(UNKNOWN_CONDITION, UNKNOWN_TOKEN);
+        // Stage all misses before the auto-load task exists; a partial drain
+        // would misalign the positional scripted replies.
         for instrument_id in [open_id, closed_id, unknown_id] {
-            client
-                .subscribe_quotes(SubscribeQuotes::new(
-                    instrument_id,
-                    Some(client.client_id),
-                    Some(*POLYMARKET_VENUE),
-                    UUID4::new(),
-                    UnixNanos::default(),
-                    None,
-                    None,
-                ))
-                .expect("subscribe_quotes should queue auto-load");
+            client.active_quote_subs.insert(instrument_id);
+            client.pending_auto_loads.lock().insert(instrument_id);
         }
+        client.queue_pending_load(open_id);
 
         wait_until_async(
             || {
@@ -8981,19 +8985,13 @@ mod tests {
             instrument_ids.push(fixture_instrument_id(&condition_id, &token_id));
         }
 
+        // Stage all misses before the auto-load task exists; a partial drain
+        // would misalign the positional scripted replies.
         for instrument_id in instrument_ids {
-            client
-                .subscribe_quotes(SubscribeQuotes::new(
-                    instrument_id,
-                    Some(client.client_id),
-                    Some(*POLYMARKET_VENUE),
-                    UUID4::new(),
-                    UnixNanos::default(),
-                    None,
-                    None,
-                ))
-                .expect("subscribe_quotes should queue auto-load");
+            client.active_quote_subs.insert(instrument_id);
+            client.pending_auto_loads.lock().insert(instrument_id);
         }
+        client.queue_pending_load(first_id);
 
         wait_until_async(
             || {
