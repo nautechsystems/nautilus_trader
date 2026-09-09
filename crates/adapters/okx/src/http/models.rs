@@ -17,7 +17,7 @@
 
 use nautilus_core::serialization::deserialize_optional_decimal;
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de::IntoDeserializer};
 use ustr::Ustr;
 
 use crate::common::{
@@ -76,9 +76,10 @@ pub struct OKXCandlestick(
 
 use crate::common::{
     enums::{
-        OKXAlgoOrderStatus, OKXAlgoOrderType, OKXExecType, OKXInstrumentType, OKXMarginMode,
-        OKXOrderCategory, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide, OKXSpreadState,
-        OKXSpreadType, OKXTargetCurrency, OKXTradeMode, OKXTriggerType, OKXVipLevel,
+        OKXAccountLevel, OKXAlgoOrderStatus, OKXAlgoOrderType, OKXApiKeyPermission, OKXExecType,
+        OKXFeeType, OKXInstrumentType, OKXMarginMode, OKXOrderCategory, OKXOrderStatus,
+        OKXOrderType, OKXPositionMode, OKXPositionSide, OKXSide, OKXSpreadState, OKXSpreadType,
+        OKXTargetCurrency, OKXTradeMode, OKXTriggerType, OKXVipLevel,
     },
     parse::deserialize_string_to_u64,
 };
@@ -520,6 +521,32 @@ pub struct OKXPositionTier {
     pub quote_max_loan: String,
     /// Base currency borrowing amount.
     pub base_max_loan: String,
+}
+
+/// Represents configuration evidence from `GET /api/v5/account/config`.
+///
+/// The configuration fields are required and unknown enum values are rejected.
+/// Account-mode and API-key-permission policy remains the caller's responsibility.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXAccountConfiguration {
+    /// Account mode.
+    #[serde(rename = "acctLv", deserialize_with = "deserialize_configuration_enum")]
+    pub account_level: OKXAccountLevel,
+    /// Position mode.
+    #[serde(
+        rename = "posMode",
+        deserialize_with = "deserialize_configuration_enum"
+    )]
+    pub position_mode: OKXPositionMode,
+    /// Whether automatic borrowing is enabled.
+    pub auto_loan: bool,
+    /// Configured fee-charging currency.
+    #[serde(deserialize_with = "deserialize_configuration_enum")]
+    pub fee_type: OKXFeeType,
+    /// Permissions of the requesting API key or access token, in response order.
+    #[serde(rename = "perm", with = "account_permissions")]
+    pub permissions: Vec<OKXApiKeyPermission>,
 }
 
 /// Represents an account balance snapshot from `GET /api/v5/account/balance`.
@@ -1593,6 +1620,47 @@ pub struct OKXFeeRate {
     /// Data return timestamp (Unix timestamp in milliseconds).
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub ts: u64,
+}
+
+fn deserialize_configuration_enum<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    let value = String::deserialize(deserializer)?;
+    T::deserialize(value.into_deserializer())
+}
+
+mod account_permissions {
+    use serde::{Deserialize, Deserializer, Serializer, de::IntoDeserializer};
+
+    use crate::common::enums::OKXApiKeyPermission;
+
+    pub(super) fn serialize<S>(
+        permissions: &[OKXApiKeyPermission],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let value = permissions
+            .iter()
+            .map(AsRef::as_ref)
+            .collect::<Vec<_>>()
+            .join(",");
+        serializer.serialize_str(&value)
+    }
+
+    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Vec<OKXApiKeyPermission>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        value
+            .split(',')
+            .map(|permission| OKXApiKeyPermission::deserialize(permission.into_deserializer()))
+            .collect()
+    }
 }
 
 #[cfg(test)]
