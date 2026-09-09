@@ -4,12 +4,6 @@
 
 set -euo pipefail
 
-# Exit cleanly if ripgrep is not installed
-if ! command -v rg &> /dev/null; then
-  echo "WARNING: ripgrep not found, skipping formatting checks (Rust)"
-  exit 0
-fi
-
 # Color output
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
@@ -33,23 +27,75 @@ VIOLATIONS=0
 # f) `for`, `while`, and `loop` follow a loop label
 # g) `spawn` continues a method chain
 #
-# One awk pass reads every file and applies the rules; bash only formats the
-# violations it reports.
+# One awk pass reads each changed file and applies the rules; bash filters the
+# diagnostics to changed boundaries and formats the violations it reports.
 # ---------------------------------------------------------------------------
 
-# rg exits 0 (files listed), 1 (no files), or 2+ (error)
-rg_exit=0
-rust_files=$(rg --files crates examples docs --type rust --sort path 2> /dev/null) || rg_exit=$?
-if [ $rg_exit -gt 1 ]; then
-  echo "ERROR: ripgrep failed with exit code $rg_exit"
-  exit 1
+REPO_ROOT=$(git rev-parse --show-toplevel)
+cd "$REPO_ROOT"
+
+if [[ -n "${CHANGED_BASE_SHA:-}" ]]; then
+  if ! base=$(git merge-base "$CHANGED_BASE_SHA" HEAD 2> /dev/null); then
+    echo "Cannot resolve CHANGED_BASE_SHA; checking all tracked Rust files"
+    base=$(git hash-object -t tree /dev/null)
+  fi
+elif git rev-parse --verify HEAD > /dev/null 2>&1; then
+  base=HEAD
+else
+  base=$(git hash-object -t tree /dev/null)
 fi
+
+scope_dir=$(mktemp -d)
+trap 'rm -rf "$scope_dir"' EXIT
+scope_file="$scope_dir/lines"
+: > "$scope_file"
+
+# Read full changed files for context, but report only boundaries touched by the diff
+rust_files=""
+git diff --no-color --no-ext-diff --no-textconv --no-renames --name-only --diff-filter=ACM -z "$base" -- \
+  crates examples docs > "$scope_dir/files"
+while IFS= read -r -d '' file; do
+  [[ "$file" == *.rs ]] || continue
+  rust_files+="$file"$'\n'
+  git diff --no-color --no-ext-diff --no-textconv --no-renames --unified=0 "$base" -- "$file" > "$scope_dir/diff"
+  MATCH_FILE="$file" awk '
+    /^@@ / {
+      range = $3
+      sub(/^\+/, "", range)
+      count = split(range, parts, ",")
+      first = parts[1] + 0
+      span_length = count == 1 ? 1 : parts[2] + 0
+      if (span_length == 0) first++
+      last = span_length == 0 ? first : first + span_length - 1
+      printf "%d\t%d\t%s\n", first, last, ENVIRON["MATCH_FILE"]
+    }
+  ' "$scope_dir/diff" >> "$scope_file"
+done < "$scope_dir/files"
+rust_files=${rust_files%$'\n'}
+
+boundary_changed() {
+  MATCH_FILE="$1" MATCH_LINE="$2" MATCH_START="${3:-$(($2 - 1))}" awk '
+    BEGIN {
+      first = ENVIRON["MATCH_START"] + 0
+      last = ENVIRON["MATCH_LINE"] + 0
+    }
+    {
+      start = $1
+      end = $2
+      path = $0
+      sub(/^[^\t]*\t[^\t]*\t/, "", path)
+      if (path == ENVIRON["MATCH_FILE"] && start <= last && end >= first) found = 1
+    }
+    END { exit !found }
+  ' "$scope_file"
+}
 
 control_flow_output=""
 if [[ -n "$rust_files" ]]; then
   control_flow_output=$(LC_ALL=C awk '
     function is_match_guard(start,    j) {
       for (j = start; j <= total; j++) {
+        if (j > inspected_end) inspected_end = j
         if (j > start && lines[j] ~ /^[[:space:]]*if[[:space:]]/) return 0
         if (lines[j] ~ /=>[[:space:]]*$/) return 1
         if (lines[j] ~ /[{;]/) return 0
@@ -156,9 +202,10 @@ if [[ -n "$rust_files" ]]; then
           previous = lines[i - 1]
           prev_trimmed = previous
           sub(/^[[:space:]]+/, "", prev_trimmed)
+          inspected_end = i < total ? i + 1 : i
           if (is_exempt(keyword, i, trimmed, previous, prev_trimmed)) continue
           violations[keyword]++
-          records[keyword, violations[keyword]] = keyword "\t" i "\t" file "\n" trimmed "\n" prev_trimmed
+          records[keyword, violations[keyword]] = keyword "\t" i "\t" inspected_end "\t" file "\n" trimmed "\n" prev_trimmed
         }
       }
       split("", lines)
@@ -173,17 +220,18 @@ if [[ -n "$rust_files" ]]; then
   ' <<< "$rust_files")
 fi
 
-# Each violation is a keyword, line, and path record followed by the offending
+# Each violation records its location, inspected end line, and path, followed by the offending
 # line and the line above on their own lines, so source text never splits fields
 # and the path, as the last field, keeps any tab it contains.
 report_control_flow() {
   local keyword="$1"
-  local record_keyword line_num file current previous
+  local record_keyword line_num inspected_end file current previous
 
-  while IFS=$'\t' read -r record_keyword line_num file &&
+  while IFS=$'\t' read -r record_keyword line_num inspected_end file &&
     IFS= read -r current &&
     IFS= read -r previous; do
     [[ "$record_keyword" == "$keyword" ]] || continue
+    boundary_changed "$file" "$inspected_end" "$((line_num - 1))" || continue
 
     echo -e "${RED}Error:${NC} Missing blank line above \`$keyword\` in $file:$line_num"
     echo "  ${current:0:100}"
@@ -223,8 +271,10 @@ CONTROL_FLOW_VIOLATIONS=$VIOLATIONS
 MODULE_ORDER_VIOLATIONS=0
 
 while IFS= read -r file; do
+  [[ "$file" == */mod.rs && "$file" != */generated/* ]] || continue
   module_output=$(LC_ALL=C awk '
     function reset_block() {
+      previous_line = 0
       previous_category = -1
       highest_category = -1
       previous_name = ""
@@ -244,7 +294,7 @@ while IFS= read -r file; do
     }
 
     function report(message) {
-      printf "%d\t%s\n", FNR, message
+      printf "%d\t%d\t%s\n", FNR, previous_line, message
     }
 
     function has_direct_test(attributes, start, rest, position, character, depth, token) {
@@ -372,6 +422,7 @@ while IFS= read -r file; do
           report(message category_name(category) " section")
         }
 
+        previous_line = FNR
         previous_category = category
         previous_name = name
         blank_lines = 0
@@ -391,12 +442,13 @@ while IFS= read -r file; do
     continue
   fi
 
-  while IFS=$'\t' read -r line_num message; do
+  while IFS=$'\t' read -r line_num previous_line message; do
+    boundary_changed "$file" "$line_num" "$previous_line" || continue
     echo -e "${RED}Error:${NC} $message in $file:$line_num"
     echo
     MODULE_ORDER_VIOLATIONS=$((MODULE_ORDER_VIOLATIONS + 1))
   done <<< "$module_output"
-done < <(rg --files crates examples docs -g 'mod.rs' -g '!**/generated/**' 2> /dev/null)
+done <<< "$rust_files"
 
 VIOLATIONS=$((VIOLATIONS + MODULE_ORDER_VIOLATIONS))
 

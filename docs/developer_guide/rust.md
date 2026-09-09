@@ -177,10 +177,23 @@ Leave one blank line:
 - Between functions, including tests.
 - Above each `///` or `//!` doc comment.
 - Above standalone `if`, `match`, `for`, `while`, and `loop` expressions.
-- Above task spawn calls.
+- Above task spawn calls, including `spawn_local` and `spawn_blocking`.
+- Before multiline `let` statements, unless they start a block.
+- After completed multiline braced statements, before the next statement in the same block.
 
 The control-flow and spawn rules do not apply when the expression starts a block, continues the
 previous operation, or has an attached comment or attribute.
+
+Keep comments and attributes attached to their statement when inserting a separator. Apply the
+multiline statement rules around changed code; leave unrelated code alone. Add only blank lines
+that `rustfmt` preserves.
+
+The formatting hook checks existing control-flow and module-ordering rules at changed boundaries.
+It compares staged and unstaged changes against `HEAD`, or against the merge base with
+`CHANGED_BASE_SHA` when set. An unavailable CI base falls back to checking all tracked Rust files.
+It reads complete changed files for context and includes lines used by exemption checks when
+selecting diagnostics. It does not modify files. The multiline statement spacing rules and
+`spawn_local`/`spawn_blocking` spacing remain review conventions.
 
 Use inline format arguments for existing variables:
 

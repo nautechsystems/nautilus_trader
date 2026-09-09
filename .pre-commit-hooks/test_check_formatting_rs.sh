@@ -20,18 +20,26 @@ write_rs() {
 
   mkdir -p "$(dirname "$path")"
   printf '%s\n' "$@" > "$path"
+  git -C "$(dirname "$path")" add -- "$(basename "$path")"
 }
 
 create_case() {
   local case_dir="$1"
 
   mkdir -p "$case_dir"/{crates/common/src,tests,examples,docs}
+  git -C "$case_dir" init -q
+  git -C "$case_dir" config user.name "Formatting test"
+  git -C "$case_dir" config user.email "formatting@example.invalid"
+  git -C "$case_dir" config commit.gpgsign false
 }
 
 run_hook() {
   local case_dir="$1"
 
-  (cd "$case_dir" && bash "$HOOK") > "$case_dir/output.txt" 2>&1
+  (
+    unset CHANGED_BASE_SHA
+    cd "$case_dir" && bash "$HOOK"
+  ) > "$case_dir/output.txt" 2>&1
 }
 
 expect_failure() {
@@ -298,5 +306,118 @@ write_rs "$test_section_case/crates/common/src/mod.rs" \
   '' \
   'mod internal;'
 expect_failure "$test_section_case" "Module .*internal.* is in the wrong section"
+
+scope_case="$CASE_ROOT/changed-lines"
+create_case "$scope_case"
+write_rs "$scope_case/crates/common/src/lib.rs" \
+  'fn existing() {' \
+  '    prepare();' \
+  '    if ready { run(); }' \
+  '}' \
+  '' \
+  'fn changed() {' \
+  '    prepare();' \
+  '' \
+  '    if enabled { run(); }' \
+  '}'
+git -C "$scope_case" commit -qm Baseline
+expect_success "$scope_case"
+
+# An unrelated edit in the same file must not expose the old violation
+printf '\n// Changed comment\n' >> "$scope_case/crates/common/src/lib.rs"
+expect_success "$scope_case"
+
+# Removing the separator must report the newly adjacent boundary
+awk 'NR != 8' "$scope_case/crates/common/src/lib.rs" > "$scope_case/edited"
+mv "$scope_case/edited" "$scope_case/crates/common/src/lib.rs"
+expect_failure "$scope_case" 'crates/common/src/lib.rs:8'
+violation_count=$(rg -c 'Missing blank line above' "$scope_case/output.txt")
+[[ "$violation_count" -eq 1 ]]
+git -C "$scope_case" add -- crates/common/src/lib.rs
+expect_failure "$scope_case" 'crates/common/src/lib.rs:8'
+
+base=$(git -C "$scope_case" rev-parse HEAD)
+git -C "$scope_case" commit -qm Changed
+expect_success "$scope_case"
+if (cd "$scope_case" && CHANGED_BASE_SHA="$base" bash "$HOOK") > "$scope_case/output.txt" 2>&1; then
+  echo "Expected the base-ref diff to report the committed violation"
+  exit 1
+fi
+rg -q 'crates/common/src/lib.rs:8' "$scope_case/output.txt"
+
+module_scope_case="$CASE_ROOT/changed-module-boundary"
+create_case "$module_scope_case"
+write_rs "$module_scope_case/crates/common/src/mod.rs" \
+  'pub mod alpha;' \
+  'pub mod beta;'
+git -C "$module_scope_case" commit -qm Baseline
+write_rs "$module_scope_case/crates/common/src/mod.rs" \
+  'pub mod zeta;' \
+  'pub mod beta;'
+expect_failure "$module_scope_case" 'Module .*beta.* is not alphabetized'
+
+lookahead_case="$CASE_ROOT/changed-exemption-input"
+create_case "$lookahead_case"
+write_rs "$lookahead_case/crates/common/src/lib.rs" \
+  'fn check() {' \
+  '    prepare(value);' \
+  '    if ready {' \
+  '        consume(value);' \
+  '    }' \
+  '}'
+git -C "$lookahead_case" commit -qm Baseline
+write_rs "$lookahead_case/crates/common/src/lib.rs" \
+  'fn check() {' \
+  '    prepare(value);' \
+  '    if ready {' \
+  '        consume(other);' \
+  '    }' \
+  '}'
+expect_failure "$lookahead_case" 'crates/common/src/lib.rs:3'
+
+forward_case="$CASE_ROOT/changed-forward-scan"
+create_case "$forward_case"
+write_rs "$forward_case/crates/common/src/lib.rs" \
+  'fn check() {' \
+  '    prepare();' \
+  '    if ready' \
+  '        && enabled' \
+  '        && active =>' \
+  '    {' \
+  '        run();' \
+  '    }' \
+  '}'
+git -C "$forward_case" commit -qm Baseline
+write_rs "$forward_case/crates/common/src/lib.rs" \
+  'fn check() {' \
+  '    prepare();' \
+  '    if ready' \
+  '        && enabled' \
+  '        && active' \
+  '    {' \
+  '        run();' \
+  '    }' \
+  '}'
+expect_failure "$forward_case" 'crates/common/src/lib.rs:3'
+
+fallback_case="$CASE_ROOT/unavailable-ci-base"
+create_case "$fallback_case"
+write_rs "$fallback_case/crates/common/src/lib.rs" 'fn check() {}'
+git -C "$fallback_case" commit -qm Baseline
+for unavailable in 0000000000000000000000000000000000000000 missing-ref; do
+  (cd "$fallback_case" && CHANGED_BASE_SHA="$unavailable" bash "$HOOK") > "$fallback_case/output.txt" 2>&1
+  rg -q 'checking all tracked Rust files' "$fallback_case/output.txt"
+done
+write_rs "$fallback_case/crates/common/src/lib.rs" \
+  'fn check() {' \
+  '    prepare();' \
+  '    if ready { run(); }' \
+  '}'
+git -C "$fallback_case" commit -qm Changed
+if (cd "$fallback_case" && CHANGED_BASE_SHA=missing-ref bash "$HOOK") > "$fallback_case/output.txt" 2>&1; then
+  echo "Expected the unavailable-base fallback to detect a committed violation"
+  exit 1
+fi
+rg -q 'crates/common/src/lib.rs:3' "$fallback_case/output.txt"
 
 echo "Rust formatting hook tests passed"
