@@ -613,11 +613,8 @@ mod tests {
     fn proxy_target_basic_auth() {
         let proxy =
             ProxyTarget::parse("http://proxytest:fixture42@proxy.example.com:8080").unwrap();
-        // base64("proxytest:fixture42") == "cHJveHl0ZXN0OmZpeHR1cmU0Mg=="
-        assert_eq!(
-            proxy.auth_header.unwrap(),
-            "Basic cHJveHl0ZXN0OmZpeHR1cmU0Mg=="
-        );
+        let expected = format!("Basic {}", BASE64.encode("proxytest:fixture42"));
+        assert_eq!(proxy.auth_header.unwrap(), expected);
     }
 
     #[rstest]
@@ -625,15 +622,16 @@ mod tests {
         // `p%40ss` should decode to `p@ss` before assembling Basic credentials
         let proxy = ProxyTarget::parse("http://us%2Fer:p%40ss@proxy.example.com:8080").unwrap();
         let header = proxy.auth_header.unwrap();
-        // base64("us/er:p@ss") == "dXMvZXI6cEBzcw=="
-        assert_eq!(header, "Basic dXMvZXI6cEBzcw==");
+        let expected = format!("Basic {}", BASE64.encode("us/er:p@ss"));
+        assert_eq!(header, expected);
     }
 
     #[rstest]
     fn proxy_target_basic_auth_with_empty_username() {
         let proxy = ProxyTarget::parse("http://:fixture42@proxy.example.com:8080").unwrap();
+        let expected = format!("Basic {}", BASE64.encode(":fixture42"));
 
-        assert_eq!(proxy.auth_header.unwrap(), "Basic OmZpeHR1cmU0Mg==");
+        assert_eq!(proxy.auth_header.unwrap(), expected);
     }
 
     #[rstest]
@@ -681,13 +679,14 @@ mod tests {
             }
 
             let request = String::from_utf8(request).unwrap();
-            assert_eq!(
-                request,
+            let expected = format!(
                 "CONNECT example.com:80 HTTP/1.1\r\n\
                  Host: example.com:80\r\n\
                  Proxy-Connection: Keep-Alive\r\n\
-                 Proxy-Authorization: Basic cHJveHl0ZXN0OmZpeHR1cmU0Mg==\r\n\r\n"
+                 Proxy-Authorization: Basic {}\r\n\r\n",
+                BASE64.encode("proxytest:fixture42")
             );
+            assert_eq!(request, expected);
             server
                 .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
                 .await

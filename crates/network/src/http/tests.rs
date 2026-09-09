@@ -17,6 +17,7 @@
 
 use std::{collections::HashMap, time::Duration};
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use bytes::Bytes;
 use http::Method;
 use rstest::rstest;
@@ -185,6 +186,9 @@ async fn body_deadline_overrides_default_and_closes_connection() {
 
 #[tokio::test]
 async fn http_proxy_preserves_absolute_target_and_authentication() {
+    const USERNAME: &str = "user";
+    const PASSWORD: &str = "secret";
+
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let peer = tokio::spawn(async move {
@@ -196,7 +200,7 @@ async fn http_proxy_preserves_absolute_target_and_authentication() {
             .unwrap();
         headers
     });
-    let proxy = format!("http://user:secret@{addr}");
+    let proxy = format!("http://{USERNAME}:{PASSWORD}@{addr}");
     let client = HttpClient::builder()
         .proxy_url(proxy.clone())
         .timeout_secs(3)
@@ -216,10 +220,11 @@ async fn http_proxy_preserves_absolute_target_and_authentication() {
         "{headers}"
     );
     assert!(headers.contains("host: 127.0.0.1:9\r\n"), "{headers}");
-    assert!(
-        headers.contains("proxy-authorization: Basic dXNlcjpzZWNyZXQ=\r\n"),
-        "{headers}"
+    let expected_auth = format!(
+        "proxy-authorization: Basic {}\r\n",
+        BASE64.encode(format!("{USERNAME}:{PASSWORD}"))
     );
+    assert!(headers.contains(&expected_auth), "{headers}");
     assert_eq!(response.status.as_u16(), 202);
     assert_eq!(response.headers, HashMap::new());
     assert_eq!(response.body, Bytes::from_static(b"proxied"));

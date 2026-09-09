@@ -553,9 +553,10 @@ async fn websocket_client_emits_proxy_authorization_header(#[case] backend: Tran
         .iter()
         .find(|h| h.to_ascii_lowercase().starts_with("proxy-authorization:"))
         .expect("expected Proxy-Authorization header on CONNECT");
+    let expected = format!("Basic {}", BASE64.encode("proxytest:fixture42"));
     assert_eq!(
         auth.split_once(':').expect("authorization header").1.trim(),
-        "Basic cHJveHl0ZXN0OmZpeHR1cmU0Mg=="
+        expected
     );
 }
 
