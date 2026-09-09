@@ -135,6 +135,7 @@ Released on TBD (UTC).
 - Optimized DataEngine and backtest dispatch through borrowed data views (#4900), thanks @faysou
 - Standardized repository Python text reads on UTF-8 across supported platforms
 - Standardized uv commands, CI, Docker, and documentation on the default `python/.venv` project environment
+- Upgraded Rust (MSRV) to 1.98.1
 - Upgraded `prek` tool to v0.5.2
 - Upgraded `uv` tool to v0.12.9
 - Upgraded `typos` pre-commit hook to v1.50.1

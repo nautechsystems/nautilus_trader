@@ -2,7 +2,7 @@
 name = "lighter-rust-data-client"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.98.0"
+rust-version = "1.98.1"
 publish = false
 
 [workspace]
