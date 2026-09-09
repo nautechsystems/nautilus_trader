@@ -512,20 +512,31 @@ Binance RPI (Retail Price Improvement) uses `timeInForce=RPI`. It is post-only a
 eligible retail orders from the Binance App or Web. Nautilus exposes it through the Binance-specific
 `rpi` parameter; use it only with a USD-M LIMIT order whose `post_only=true`. It is supported only
 for individual `SubmitOrder` commands; `SubmitOrderList` is denied. Without `rpi`, regular post-only
-orders continue to use `GTX`. See Binance's [USD-M Futures API definitions](https://developers.binance.com/zh-CN/docs/products/derivatives-trading-usds-futures/common-definition)
+orders continue to use `GTX`. See Binance's [USD-M Futures API definitions](https://developers.binance.com/docs/derivatives/usds-margined-futures/common-definition)
 for venue details.
 
+RPI is available only for symbols whose `permissionSets` contains `RPI` in the
+`GET /fapi/v1/exchangeInfo` response. Check symbol eligibility before submitting an RPI order;
+see Binance's [RPI guide](https://www.binance.com/en/support/faq/detail/92c83c53173947c4a44f9a7277c3b9ce).
+
+The Rust example assumes `order` is a post-only LIMIT order for an eligible symbol. For Python,
+set `instrument_id` to an eligible instrument and choose `quantity` (`Quantity`) and `price` (`Price`)
+that meet its trading rules.
+
 ```rust tab="Rust"
-let params = Params::from([("rpi", true.into())]);
+use nautilus_core::params::Params;
+
+let mut params = Params::new();
+params.insert("rpi".to_string(), true.into());
 self.submit_order(order, None, None, Some(params))?;
 ```
 
 ```python tab="Python"
 order = strategy.order_factory.limit(
-    instrument_id=InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
+    instrument_id=instrument_id,
     order_side=OrderSide.BUY,
-    quantity=Quantity.from_int(1),
-    price=Price.from_str("65000"),
+    quantity=quantity,
+    price=price,
     post_only=True,
 )
 
