@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_network::http::{HttpClientError, ReqwestError};
+use nautilus_network::http::HttpClientError;
 use thiserror::Error;
 
 /// Error type for Coinbase operations.
@@ -112,27 +112,6 @@ impl Error {
             429 => Self::rate_limit(None),
             500..=599 => Self::exchange(format!("HTTP {status}: {message}")),
             _ => Self::http(status, message),
-        }
-    }
-
-    /// Maps reqwest errors to appropriate error types.
-    #[expect(clippy::needless_pass_by_value)]
-    pub fn from_reqwest(error: ReqwestError) -> Self {
-        if error.is_timeout() {
-            Self::Timeout
-        } else if let Some(status) = error.status() {
-            let status_code = status.as_u16();
-            match status_code {
-                401 | 403 => Self::auth(format!("HTTP {status_code}: authentication failed")),
-                400 => Self::bad_request(format!("HTTP {status_code}: bad request")),
-                429 => Self::rate_limit(None),
-                500..=599 => Self::exchange(format!("HTTP {status_code}: server error")),
-                _ => Self::http(status_code, format!("HTTP error: {error}")),
-            }
-        } else if error.is_connect() || error.is_request() {
-            Self::transport(format!("Request error: {error}"))
-        } else {
-            Self::transport(format!("Unknown reqwest error: {error}"))
         }
     }
 

@@ -18,8 +18,7 @@
 use std::{collections::HashMap, hash::Hash};
 
 use bytes::Bytes;
-use http::{StatusCode, status::InvalidStatusCode};
-use reqwest::Method;
+use http::{Method, StatusCode, status::InvalidStatusCode};
 
 /// An HTTP status code.
 ///

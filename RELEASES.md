@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 
+- Added `HttpClient::get_stream` and `HttpResponseStream` for HTTP bodies consumed without full buffering
 - Added `Cache` APIs and Redis/PostgreSQL persistence for `InstrumentClose` data
 - Added `avg_px` and report window fields to persisted execution reports
 - Added a `causation_id` property to every order event, and a `protection_price` property to `OrderUpdated`
@@ -31,6 +32,8 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 
+- Removed Rust `Response` and `ReqwestError` exports from `nautilus_network::http`
+- Removed `InnerHttpClient::to_response` and `from_reqwest` error conversions; use `HttpClientError`
 - Added the required Rust `Instrument::info` method; custom implementations must return their metadata or `None`
 - Removed Coinbase `CreateOrderRequest.reduce_only`; reduce-only orders are rejected before submission
 - Removed the dormant `PortfolioStatistic::calculate_from_orders` trait method; no analyzer supplied order data to statistics
@@ -117,6 +120,7 @@ Released on TBD (UTC).
 - Added crate feature documentation checks for README and Rustdoc lists
 - Added Cargo convention checks for redundant README keys, uninherited workspace fields, and binary target naming
 - Added acceptance tests running the documentation guides and resolving their documented imports
+- Replaced Reqwest HTTP execution with Hyper and removed direct Reqwest dependencies
 - Improved Betfair execution client test synchronization (#4866), thanks @folknor
 - Pinned docs.rs checks to a compatible nightly toolchain
 - Refined Arrow serialization schemas and column resolution

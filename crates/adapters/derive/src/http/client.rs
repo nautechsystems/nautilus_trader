@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! `reqwest`-backed REST client for the Derive API.
+//! REST client for the Derive API using the shared HTTP transport.
 //!
 //! [`DeriveHttpClient`] exposes typed `send_public` / `send_private`
 //! dispatchers plus thin wrappers for the two endpoints that establish the

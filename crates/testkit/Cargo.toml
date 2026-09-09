@@ -31,7 +31,6 @@ datasets = [
   "dep:nautilus-serialization",
   "dep:parquet",
   "dep:rand",
-  "dep:reqwest",
   "dep:serde_json",
 ]
 testers = [
@@ -102,7 +101,6 @@ log = { workspace = true, optional = true }
 parking_lot = { workspace = true }
 parquet = { workspace = true, features = ["zstd"], optional = true }
 rand = { workspace = true, optional = true }
-reqwest = { workspace = true, features = ["blocking"], optional = true }
 rust_decimal = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }

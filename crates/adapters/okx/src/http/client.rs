@@ -4243,10 +4243,13 @@ impl OKXHttpClient {
             let pending = self.paginate_orders_pending(&pending_base, limit).await?;
             (pending.items, pending.complete)
         } else {
-            let (history, pending) = tokio::try_join!(
-                self.paginate_orders_history(&history_base, limit),
-                self.paginate_orders_pending(&pending_base, limit),
-            )?;
+            let (history, pending) = Box::pin(async {
+                tokio::try_join!(
+                    self.paginate_orders_history(&history_base, limit),
+                    self.paginate_orders_pending(&pending_base, limit),
+                )
+            })
+            .await?;
             let mut combined_resp = history.items;
             combined_resp.extend(pending.items);
             (combined_resp, history.complete && pending.complete)
@@ -4532,10 +4535,13 @@ impl OKXHttpClient {
                 .await?;
             (pending.items, pending.complete)
         } else {
-            let (history, pending) = tokio::try_join!(
-                self.paginate_spread_orders_history(&history_base, limit),
-                self.paginate_spread_orders_pending(&pending_base, limit),
-            )?;
+            let (history, pending) = Box::pin(async {
+                tokio::try_join!(
+                    self.paginate_spread_orders_history(&history_base, limit),
+                    self.paginate_spread_orders_pending(&pending_base, limit),
+                )
+            })
+            .await?;
             let mut combined_resp = history.items;
             combined_resp.extend(pending.items);
             (combined_resp, history.complete && pending.complete)

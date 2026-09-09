@@ -202,6 +202,9 @@ skip = [
   { crate = "reqwest" },
   { crate = "wasm-streams" },
 
+  # Reqwest requires tower-http 0.6; the direct HTTP transport uses 0.7
+  { crate = "tower-http@0.6.11" },
+
   # Protobuf runtime - dYdX/cosmos/tonic use 0.13, ibapi uses 0.14
   { crate = "prost" },
   { crate = "prost-derive" },

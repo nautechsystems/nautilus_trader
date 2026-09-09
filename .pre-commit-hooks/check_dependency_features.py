@@ -89,7 +89,7 @@ ALLOY_PACKAGE_FEATURES = {
     "nautilus-derive": frozenset({"signer-local", "sol-types"}),
     "nautilus-hyperliquid": frozenset({"signer-local", "sol-types"}),
     "nautilus-polymarket": frozenset(
-        {"contract", "provider-http", "reqwest", "signer-local"},
+        {"contract", "provider-http", "reqwest", "reqwest-rustls-tls", "signer-local"},
     ),
 }
 

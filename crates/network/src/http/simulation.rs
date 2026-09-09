@@ -15,29 +15,22 @@
 
 //! HTTP/1.1 exchange over the deterministic Madsim byte stream.
 
-use std::time::Duration;
-
-use http::{
-    HeaderMap, HeaderValue,
-    header::{ACCEPT, HOST},
-};
+use bytes::Bytes;
+use http::{HeaderValue, Request, Response, header::HOST};
+use http_body_util::Full;
+use hyper::body::Incoming;
 use hyper_util::rt::TokioIo;
-use reqwest::{Request, Response};
-use url::Position;
+use url::{Position, Url};
 
 use super::{HttpClientError, HttpRedirectPolicy};
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct Client {
-    headers: HeaderMap,
-    timeout: Option<Duration>,
     redirects: HttpRedirectPolicy,
 }
 
 impl Client {
     pub(super) fn new(
-        headers: HeaderMap,
-        timeout_secs: Option<u64>,
         redirects: HttpRedirectPolicy,
         proxy: Option<&str>,
     ) -> Result<Self, HttpClientError> {
@@ -46,22 +39,14 @@ impl Client {
                 "HTTP proxies are unsupported under simulation".into(),
             ));
         }
-        Ok(Self {
-            headers,
-            timeout: timeout_secs.map(Duration::from_secs),
-            redirects,
-        })
-    }
-
-    pub(super) fn timeout(&self, request: &Request) -> Option<Duration> {
-        request.timeout().copied().or(self.timeout)
+        Ok(Self { redirects })
     }
 
     pub(super) async fn send(
         &self,
-        mut request: Request,
-    ) -> Result<(Response, Connection), HttpClientError> {
-        let url = request.url().clone();
+        mut request: Request<Full<Bytes>>,
+        url: &Url,
+    ) -> Result<(Response<Incoming>, Connection), HttpClientError> {
         if url.scheme() != "http" {
             return Err(HttpClientError::Error(
                 "HTTP simulation supports plaintext http:// endpoints only".into(),
@@ -73,18 +58,6 @@ impl Client {
         let port = url
             .port_or_known_default()
             .ok_or_else(|| HttpClientError::Error("missing HTTP port".into()))?;
-
-        for (name, value) in &self.headers {
-            if !request.headers().contains_key(name) {
-                request.headers_mut().insert(name.clone(), value.clone());
-            }
-        }
-
-        if !request.headers().contains_key(ACCEPT) {
-            request
-                .headers_mut()
-                .insert(ACCEPT, HeaderValue::from_static("*/*"));
-        }
 
         if !request.headers().contains_key(HOST) {
             let authority = &url[Position::BeforeHost..Position::AfterPort];
@@ -101,12 +74,11 @@ impl Client {
             .collect();
         headers.sort_by(|(a, _), (b, _)| a.as_str().cmp(b.as_str()));
         request.headers_mut().clear();
+
         for (name, value) in headers {
             request.headers_mut().append(name, value);
         }
-        let mut wire: http::Request<reqwest::Body> = request.try_into().map_err(|_| {
-            HttpClientError::Error("failed to construct simulated HTTP request".into())
-        })?;
+        let mut wire = request;
         *wire.uri_mut() = url[Position::BeforePath..Position::AfterQuery]
             .parse()
             .map_err(|_| HttpClientError::Error("invalid HTTP request target".into()))?;
@@ -136,8 +108,7 @@ impl Client {
                 "HTTP redirect following is unsupported under simulation".into(),
             ));
         }
-        let response = response.map(reqwest::Body::wrap);
-        Ok((response.into(), connection))
+        Ok((response, connection))
     }
 }
 
@@ -158,6 +129,40 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     use crate::http::{HttpClient, HttpClientError, HttpRedirectPolicy};
+
+    #[madsim::test]
+    async fn streamed_body_retains_simulated_connection() {
+        let listener = crate::dst::net::TcpListener::bind("127.0.0.1:18080")
+            .await
+            .unwrap();
+        let peer = madsim::task::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            read_headers(&mut stream).await;
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\nabc")
+                .await
+                .unwrap();
+            stream.flush().await.unwrap();
+            madsim::time::sleep(Duration::from_secs(1)).await;
+            stream.write_all(b"defgh").await.unwrap();
+            stream.flush().await.unwrap();
+        });
+
+        let mut client = HttpClient::builder().timeout_secs(3).build().unwrap();
+        client.client.max_response_bytes = 4;
+        let mut response = client
+            .get_stream("http://127.0.0.1:18080/stream".into())
+            .await
+            .unwrap();
+        let status = response.status();
+        let mut body = Vec::new();
+        while let Some(chunk) = response.chunk().await.unwrap() {
+            body.extend_from_slice(&chunk);
+        }
+        peer.await.unwrap();
+        assert_eq!(status, http::StatusCode::OK);
+        assert_eq!(body, b"abcdefgh");
+    }
 
     #[madsim::test]
     async fn request_uses_simulated_stream_and_preserves_response() {

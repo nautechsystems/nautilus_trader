@@ -68,6 +68,7 @@ alloy = { workspace = true, features = [
   "signer-local",
   "provider-http",
   "reqwest",
+  "reqwest-rustls-tls",
 ] }
 alloy-primitives = { workspace = true }
 anyhow = { workspace = true }

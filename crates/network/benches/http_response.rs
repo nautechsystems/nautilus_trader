@@ -48,7 +48,7 @@ fn bench_send_request_roundtrip(c: &mut Criterion) {
                     black_box(
                         client
                             .send_request(
-                                reqwest::Method::GET,
+                                http::Method::GET,
                                 black_box(url.clone()),
                                 None,
                                 None,
@@ -109,7 +109,7 @@ fn bench_send_request_with_headers(c: &mut Criterion) {
                         black_box(
                             client
                                 .send_request(
-                                    reqwest::Method::GET,
+                                    http::Method::GET,
                                     black_box(url.clone()),
                                     None,
                                     headers.clone(),

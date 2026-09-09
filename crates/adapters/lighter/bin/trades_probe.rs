@@ -25,7 +25,7 @@
 //!
 //! Read-only: no orders are placed.
 
-use std::{borrow::Cow, error::Error as _};
+use std::borrow::Cow;
 
 use nautilus_common::logging::{init_logging, logger::LoggerConfig};
 use nautilus_core::{UUID4, string::secret::REDACTED};
@@ -40,6 +40,7 @@ use nautilus_lighter::{
     signing::auth_token::build_auth_token_for,
 };
 use nautilus_model::identifiers::TraderId;
+use nautilus_network::http::{HttpClient, Method};
 
 type RawQueryParam<'a> = (&'static str, Cow<'a, str>);
 type RawQueryProbe<'a> = (&'static str, Vec<RawQueryParam<'a>>);
@@ -305,18 +306,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         limit: LIGHTER_REST_PAGE_SIZE,
         aggregate: None,
     };
-    let serialized = reqwest::Client::new()
-        .get("https://x/api/v1/trades")
-        .query(&probe1)
-        .build()
-        .unwrap()
-        .url()
-        .to_string();
-    println!("  URL: {}", redact_auth(&serialized));
+    let mut serialized = url::Url::parse("https://x/api/v1/trades")?;
+    serialized.set_query(Some(&serde_urlencoded::to_string(&probe1)?));
+    println!("  URL: {}", redact_auth(serialized.as_str()));
 
     println!();
-    println!("=== Raw reqwest probes (bypass our query struct) ===");
-    let raw = reqwest::Client::new();
+    println!("=== Raw HTTP probes (bypass our query struct) ===");
+    let raw = HttpClient::builder().build()?;
     let base = "https://mainnet.zklighter.elliot.ai/api/v1/trades";
     let auth_param = auth.expose_secret();
     let url_variants: &[RawQueryProbe<'_>] = &[
@@ -476,12 +472,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     for (label, params) in url_variants {
-        let resp = raw.get(base).query(&params).send().await;
+        let mut url = url::Url::parse(base)?;
+        url.set_query(Some(&serde_urlencoded::to_string(params)?));
+        let resp = raw
+            .request_with_params_url_redacted(
+                Method::GET,
+                base.to_owned(),
+                Some(params),
+                None,
+                None,
+                None,
+                None,
+            )
+            .await;
+
         match resp {
             Ok(r) => {
-                let status = r.status();
-                let url = r.url().clone();
-                let body = r.text().await.unwrap_or_else(|_| "<bin>".into());
+                let status = r.status.as_u16();
+                let body = String::from_utf8_lossy(&r.body).into_owned();
                 let preview = if body.len() > 220 {
                     format!("{}...(+{} bytes)", &body[..220], body.len() - 220)
                 } else {
@@ -493,11 +501,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("  BODY: {preview}");
             }
             Err(e) => {
-                // `reqwest::Error`'s Display can include the offending
-                // URL (auth-bearing). Strip the URL and surface only the
-                // source chain.
-                let chained = e.source().map_or_else(|| e.to_string(), |s| s.to_string());
-                println!("Probe {label}: transport err: {chained}");
+                println!("Probe {label}: transport err: {e}");
             }
         }
     }

@@ -225,12 +225,13 @@ slice: static coverage alone does not establish their runtime eligibility.
 ## Simulated HTTP and WebSocket transport
 
 With `simulation` and `cfg(madsim)`, `nautilus-network` executes plaintext HTTP/1.1 requests and
-Tungstenite WebSocket connections over Madsim byte streams. HTTP keeps Reqwest request construction
-and the shared response validation, including body limits and a deadline covering the body read.
-The simulation branch in `crates/network/src/http/simulation.rs` uses Hyper for the HTTP/1.1
-exchange and owns its Madsim connection task. WebSocket traffic uses the existing Tungstenite codec;
-`crates/network/src/dst.rs` routes its owned tasks and transport streams to Madsim. Normal builds
-retain their existing transports and Tokio tasks.
+Tungstenite WebSocket connections over Madsim byte streams. Production and simulated HTTP share
+request defaults, URL and query encoding, and response validation, including buffered body limits
+and a deadline covering the body read. The simulation branch in
+`crates/network/src/http/simulation.rs` uses Hyper for the HTTP/1.1 exchange and owns its Madsim
+connection task. WebSocket traffic uses the Tungstenite codec; `crates/network/src/dst.rs` routes
+its owned tasks and transport streams to Madsim. Normal builds use pooled Hyper HTTP connections
+and Tokio tasks.
 
 Configure controlled `http://` and `ws://` endpoints and select `TransportBackend::Tungstenite`.
 Simulation rejects HTTPS/WSS, explicit proxies, and Sockudo before opening a connection.
@@ -500,7 +501,8 @@ A global Tokio network replacement would also affect dependencies such as:
 
 - `tokio-tungstenite`
 - `tokio-rustls`
-- `reqwest`
+- `hyper-util`
+- `hyper-rustls`
 
 The network-local boundary avoids that global replacement by supplying a stream to Hyper and
 Tungstenite. TLS remains outside its simulation scope.
@@ -600,7 +602,8 @@ The following dependencies use real `tokio` internally:
 
 - `tokio-tungstenite`
 - `tokio-rustls`
-- `reqwest`
+- `hyper-util`
+- `hyper-rustls`
 - `redis`
 - `sqlx`
 
@@ -613,6 +616,7 @@ The following test modules drive real localhost sockets and are cfg-gated out un
 `all(feature = "simulation", madsim)`:
 
 - `crates/network/src/http/client.rs::tests`
+- `crates/network/src/http/tests.rs`
 - `crates/network/src/socket/client.rs::tests`
 - `crates/network/src/socket/client.rs::rust_tests`
 - `crates/network/src/websocket/client.rs::tests`

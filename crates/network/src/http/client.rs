@@ -17,25 +17,34 @@
 
 use std::{borrow::Cow, collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use bytes::Bytes;
+use http::{
+    Method,
+    header::{HeaderMap, HeaderName, HeaderValue},
+};
+use http_body_util::Full;
 use nautilus_core::{collections::into_ustr_vec, string::secret::SecretString};
 use nautilus_cryptography::providers::install_cryptographic_provider;
-use reqwest::{
-    Method, Response, Url,
-    header::{HeaderMap, HeaderName, HeaderValue},
-    redirect::Policy,
-};
+use url::Url;
 use ustr::Ustr;
 
-use super::{HttpClientError, HttpResponse, HttpStatus};
+use super::{
+    HttpClientError, HttpResponse, HttpResponseStream, HttpStatus,
+    stream::{read_chunk, response_error},
+};
 use crate::ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota};
 
 /// Default maximum idle connections per host.
+#[cfg(not(all(feature = "simulation", madsim)))]
 const DEFAULT_POOL_MAX_IDLE_PER_HOST: usize = 32;
 
 /// Default idle connection timeout in seconds.
+#[cfg(not(all(feature = "simulation", madsim)))]
 const DEFAULT_POOL_IDLE_TIMEOUT_SECS: u64 = 60;
 
 /// Default HTTP/2 keep-alive interval in seconds.
+#[cfg(not(all(feature = "simulation", madsim)))]
 const DEFAULT_HTTP2_KEEP_ALIVE_SECS: u64 = 30;
 
 /// Default maximum HTTP response body size in bytes (100 MiB).
@@ -45,10 +54,15 @@ const DEFAULT_HTTP2_KEEP_ALIVE_SECS: u64 = 30;
 /// caps already enforced on the WebSocket and raw-socket paths.
 const DEFAULT_MAX_RESPONSE_BYTES: usize = 100 * 1024 * 1024;
 
+#[cfg(all(feature = "simulation", madsim))]
+pub(super) const REQUEST_TIMEOUT_MESSAGE: &str = "simulated request deadline elapsed";
+#[cfg(not(all(feature = "simulation", madsim)))]
+pub(super) const REQUEST_TIMEOUT_MESSAGE: &str = "request deadline elapsed";
+
 /// Controls whether an HTTP client follows redirects.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum HttpRedirectPolicy {
-    /// Follow up to ten redirects, matching the existing client behavior.
+    /// Follow up to ten redirects.
     #[default]
     Follow,
     /// Reject every redirect response.
@@ -57,7 +71,7 @@ pub enum HttpRedirectPolicy {
 
 /// An asynchronous HTTP client with rate limiting, timeouts, and custom headers.
 ///
-/// The client uses `reqwest` for normal I/O and supports default and per-key quotas. Multiple
+/// The client uses Hyper for normal I/O and supports default and per-key quotas. Multiple
 /// clients can share the same rate limiter when their requests consume one quota budget.
 /// With `simulation` and `cfg(madsim)`, plaintext HTTP/1.1 uses simulated byte streams;
 /// HTTPS, explicit proxies, and redirect following are unsupported.
@@ -82,7 +96,11 @@ impl HttpClient {
     /// Returns an error if:
     /// - Shared rate limiters are combined with quota configuration.
     /// - The proxy URL is malformed.
-    /// - Building the underlying `reqwest::Client` fails.
+    /// - Building the underlying HTTP transport fails.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "owned proxy URLs are part of the public builder API"
+    )]
     #[builder(finish_fn = build)]
     pub fn builder(
         #[builder(default)] headers: HashMap<String, String>,
@@ -117,7 +135,7 @@ impl HttpClient {
             headers,
             header_keys,
             timeout_secs,
-            proxy_url,
+            proxy_url.as_deref(),
             rate_limiters,
             redirect_policy,
             use_system_proxy,
@@ -128,14 +146,13 @@ impl HttpClient {
         headers: HashMap<String, String>,
         header_keys: Vec<String>,
         timeout_secs: Option<u64>,
-        proxy_url: Option<String>,
+        proxy_url: Option<&str>,
         rate_limiters: Vec<Arc<RateLimiter<Ustr, MonotonicClock>>>,
         redirect_policy: HttpRedirectPolicy,
         use_system_proxy: bool,
     ) -> Result<Self, HttpClientError> {
         install_cryptographic_provider();
 
-        // Build default headers
         let mut header_map = HeaderMap::new();
 
         for (key, value) in headers {
@@ -147,45 +164,22 @@ impl HttpClient {
             header_map.insert(header_name, header_value);
         }
 
-        // Simulation mirrors default headers, timeout precedence, and redirect policy;
-        // keep new request-affecting builder options aligned with that execution path.
         #[cfg(all(feature = "simulation", madsim))]
-        let simulation = super::simulation::Client::new(
-            header_map.clone(),
-            timeout_secs,
-            redirect_policy,
-            proxy_url.as_deref(),
+        let simulation = super::simulation::Client::new(redirect_policy, proxy_url)?;
+
+        #[cfg(not(all(feature = "simulation", madsim)))]
+        let client = super::transport::Client::new(
+            proxy_url,
+            use_system_proxy,
+            super::transport::Settings {
+                pool_max_idle_per_host: DEFAULT_POOL_MAX_IDLE_PER_HOST,
+                pool_idle_timeout: Duration::from_secs(DEFAULT_POOL_IDLE_TIMEOUT_SECS),
+                keep_alive_interval: Some(Duration::from_secs(DEFAULT_HTTP2_KEEP_ALIVE_SECS)),
+                adaptive_window: true,
+            },
         )?;
-
-        let mut client_builder = reqwest::Client::builder()
-            .default_headers(header_map)
-            .tcp_nodelay(true)
-            .pool_max_idle_per_host(DEFAULT_POOL_MAX_IDLE_PER_HOST)
-            .pool_idle_timeout(Duration::from_secs(DEFAULT_POOL_IDLE_TIMEOUT_SECS))
-            .http2_keep_alive_interval(Duration::from_secs(DEFAULT_HTTP2_KEEP_ALIVE_SECS))
-            .http2_keep_alive_while_idle(true)
-            .http2_adaptive_window(true)
-            .redirect(match redirect_policy {
-                HttpRedirectPolicy::Follow => Policy::limited(10),
-                HttpRedirectPolicy::Reject => Policy::none(),
-            });
-
-        if let Some(timeout_secs) = timeout_secs {
-            client_builder = client_builder.timeout(Duration::from_secs(timeout_secs));
-        }
-
-        // Configure proxy if provided
-        if let Some(proxy_url) = proxy_url {
-            let proxy = reqwest::Proxy::all(&proxy_url)
-                .map_err(|_| HttpClientError::InvalidProxy("proxy URL is malformed".to_string()))?;
-            client_builder = client_builder.proxy(proxy);
-        } else if !use_system_proxy {
-            client_builder = client_builder.no_proxy();
-        }
-
-        let client = client_builder
-            .build()
-            .map_err(|e| HttpClientError::ClientBuildError(e.to_string()))?;
+        #[cfg(all(feature = "simulation", madsim))]
+        let _ = use_system_proxy;
 
         // Pre-intern header keys as HeaderName. An invalid key is an error: a silent drop would
         // make response extraction read nothing.
@@ -200,7 +194,12 @@ impl HttpClient {
             .collect::<Result<Vec<_>, _>>()?;
 
         let client = InnerHttpClient {
+            #[cfg(not(all(feature = "simulation", madsim)))]
             client,
+            headers: header_map,
+            timeout: timeout_secs.map(Duration::from_secs),
+            #[cfg(not(all(feature = "simulation", madsim)))]
+            redirect_policy,
             #[cfg(all(feature = "simulation", madsim))]
             simulation,
             response_headers: Arc::from(response_headers),
@@ -296,8 +295,7 @@ impl HttpClient {
     /// Sends an HTTP request with serializable query parameters.
     ///
     /// This method accepts any type implementing `Serialize` for query parameters,
-    /// which will be automatically encoded into the URL query string using reqwest's
-    /// `.query()` method, avoiding unnecessary `HashMap` allocations.
+    /// which are URL-encoded directly into the query string without an intermediate `HashMap`.
     ///
     /// # Errors
     ///
@@ -345,6 +343,32 @@ impl HttpClient {
 
         self.client
             .send_request_with_query_url_redacted(method, url, params, headers, body, timeout_secs)
+            .await
+    }
+
+    /// Sends a GET request and returns its response body as a stream.
+    ///
+    /// Applies default headers and the client timeout. No rate-limit keys are supplied, so no
+    /// quota is consumed. One absolute deadline covers response headers and the whole body,
+    /// including time spent processing chunks. Streaming has no total body size limit; callers
+    /// must process or discard each chunk without accumulating an unbounded body.
+    /// Dropping the response releases the unfinished exchange, including its simulated driver.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if request preparation, connection, or response headers fail or time out.
+    pub async fn get_stream(&self, url: String) -> Result<HttpResponseStream, HttpClientError> {
+        self.await_rate_limits(None).await;
+        self.client
+            .send_stream_internal::<[(String, String); 0]>(
+                Method::GET,
+                &url,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
             .await
     }
 
@@ -464,13 +488,18 @@ impl HttpClient {
 
 /// Internal implementation backing [`HttpClient`].
 ///
-/// The underlying [`reqwest::Client`] reuses pooled connections and is cheap to clone. Responses
+/// The underlying Hyper client reuses pooled connections and is cheap to clone. Responses
 /// retain only configured header fields, and bodies larger than `max_response_bytes` are rejected.
 #[derive(Clone, Debug)]
 pub struct InnerHttpClient {
     #[cfg(all(feature = "simulation", madsim))]
     simulation: super::simulation::Client,
-    pub(crate) client: reqwest::Client,
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    client: super::transport::Client,
+    headers: HeaderMap,
+    timeout: Option<Duration>,
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    redirect_policy: HttpRedirectPolicy,
     pub(crate) response_headers: Arc<[(String, HeaderName)]>,
     pub(crate) max_response_bytes: usize,
 }
@@ -568,7 +597,7 @@ impl InnerHttpClient {
         .await
     }
 
-    /// Sends an HTTP request with query parameters using reqwest's `.query()` method.
+    /// Sends an HTTP request with URL-encoded serializable query parameters.
     ///
     /// This method accepts any type implementing `Serialize` for query parameters,
     /// avoiding `HashMap` conversion overhead.
@@ -634,155 +663,157 @@ impl InnerHttpClient {
         timeout_secs: Option<u64>,
         redact_url: bool,
     ) -> Result<HttpResponse, HttpClientError> {
-        let reqwest_url =
-            Url::parse(url).map_err(|e| HttpClientError::from(format!("URL parse error: {e}")))?;
+        let stream = self
+            .send_stream_internal(method, url, query, headers, body, timeout_secs, redact_url)
+            .await?;
+        let result = self
+            .consume_response(stream.response, stream.deadline)
+            .await;
+        result.map_err(|e| response_error(e, stream.url.as_ref()))
+    }
 
-        let mut request_builder = self.client.request(method, reqwest_url);
+    #[expect(clippy::too_many_arguments)]
+    async fn send_stream_internal<Q: serde::Serialize>(
+        &self,
+        method: Method,
+        url: &str,
+        query: Option<&Q>,
+        headers: Option<HashMap<String, String>>,
+        body: Option<RequestBody>,
+        timeout_secs: Option<u64>,
+        redact_url: bool,
+    ) -> Result<HttpResponseStream, HttpClientError> {
+        let mut url =
+            Url::parse(url).map_err(|e| HttpClientError::from(format!("URL parse error: {e}")))?;
+        if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+            return Err(HttpClientError::Error(
+                "unsupported HTTP URL scheme or hostname".into(),
+            ));
+        }
+
+        let mut header_map = self.headers.clone();
+
+        if let Ok(username) = percent_encoding::percent_decode_str(url.username()).decode_utf8() {
+            let password = url.password().and_then(|password| {
+                percent_encoding::percent_decode_str(password)
+                    .decode_utf8()
+                    .ok()
+            });
+
+            if !username.is_empty() || password.is_some() {
+                let mut value = HeaderValue::from_str(&format!(
+                    "Basic {}",
+                    BASE64.encode(format!(
+                        "{username}:{}",
+                        password.as_deref().unwrap_or_default()
+                    ))
+                ))
+                .map_err(|e| HttpClientError::Error(e.to_string()))?;
+                value.set_sensitive(true);
+                header_map.insert(http::header::AUTHORIZATION, value);
+                let _ = url.set_username("");
+                let _ = url.set_password(None);
+            }
+        }
+
         let extra_header_count = headers.as_ref().map_or(0, HashMap::len);
-        let body_len = body.as_ref().map_or(0, RequestBody::len);
 
         if let Some(headers) = headers {
-            let mut header_map = HeaderMap::with_capacity(headers.len());
-            for (header_key, header_value) in &headers {
-                let key = HeaderName::from_bytes(header_key.as_bytes())
+            for (key, value) in headers {
+                let key = HeaderName::from_bytes(key.as_bytes())
                     .map_err(|e| HttpClientError::from(format!("Invalid header name: {e}")))?;
-
-                if header_map
-                    .insert(
-                        key.clone(),
-                        header_value.parse().map_err(|e| {
-                            HttpClientError::from(format!("Invalid header value: {e}"))
-                        })?,
-                    )
-                    .is_some()
-                {
+                let value = HeaderValue::from_str(&value)
+                    .map_err(|e| HttpClientError::from(format!("Invalid header value: {e}")))?;
+                if header_map.insert(key.clone(), value).is_some() {
                     log::trace!("Replaced duplicate request header '{key}'");
                 }
             }
-            request_builder = request_builder.headers(header_map);
         }
 
-        if let Some(q) = query {
-            request_builder = request_builder.query(q);
+        if let Some(query) = query {
+            {
+                let mut pairs = url.query_pairs_mut();
+                let serializer = serde_urlencoded::Serializer::new(&mut pairs);
+                query
+                    .serialize(serializer)
+                    .map_err(|e| HttpClientError::Error(e.to_string()))?;
+            }
+
+            if url.query() == Some("") {
+                url.set_query(None);
+            }
         }
 
-        if let Some(timeout_secs) = timeout_secs {
-            request_builder = request_builder.timeout(Duration::new(timeout_secs, 0));
+        if !header_map.contains_key(http::header::ACCEPT) {
+            header_map.insert(http::header::ACCEPT, HeaderValue::from_static("*/*"));
         }
 
-        let request = match body {
-            Some(body) => request_builder
-                .body(body.into_reqwest())
-                .build()
-                .map_err(|e| http_client_error(e, redact_url))?,
-            None => request_builder
-                .build()
-                .map_err(|e| http_client_error(e, redact_url))?,
-        };
-
-        let query_len = request.url().query().map_or(0, str::len);
+        let body = body.map(RequestBody::into_bytes).unwrap_or_default();
+        let body_len = body.len();
+        let query_len = url.query().map_or(0, str::len);
+        let mut request = http::Request::new(Full::new(body));
+        *request.method_mut() = method;
+        *request.uri_mut() = url[..url::Position::AfterQuery]
+            .parse()
+            .map_err(|_| HttpClientError::Error("invalid HTTP request target".into()))?;
+        *request.headers_mut() = header_map;
         log::trace!(
             "Sending HTTP request: method={} extra_headers={extra_header_count} \
              query_bytes={query_len} body_bytes={body_len}",
             request.method(),
         );
 
-        #[cfg(all(feature = "simulation", madsim))]
-        {
-            let duration = self.simulation.timeout(&request);
-            let operation = Box::pin(async {
-                let (response, _connection) = self.simulation.send(request).await?;
-                self.to_response_internal(response, redact_url).await
-            });
+        let duration = timeout_secs.map(Duration::from_secs).or(self.timeout);
+        let deadline = duration.map(|duration| crate::dst::time::Instant::now() + duration);
+        let operation = async {
+            #[cfg(all(feature = "simulation", madsim))]
+            let (response, connection) = self.simulation.send(request, &url).await?;
+            #[cfg(not(all(feature = "simulation", madsim)))]
+            let response = self.client.send(request, self.redirect_policy).await?;
+            Ok(HttpResponseStream {
+                response,
+                deadline,
+                url: (!redact_url).then(|| url.clone()),
+                #[cfg(all(feature = "simulation", madsim))]
+                _connection: connection,
+            })
+        };
 
-            match duration {
-                Some(duration) => crate::dst::time::timeout(duration, operation)
-                    .await
-                    .map_err(|_| {
-                        HttpClientError::TimeoutError("simulated request deadline elapsed".into())
-                    })?,
-                None => operation.await,
-            }
-        }
-        #[cfg(not(all(feature = "simulation", madsim)))]
-        {
-            let response = self
-                .client
-                .execute(request)
-                .await
-                .map_err(|e| http_client_error(e, redact_url))?;
-
-            self.to_response_internal(response, redact_url).await
-        }
+        let result = match deadline {
+            Some(deadline) => tokio::select! {
+                biased;
+                () = crate::dst::time::sleep_until(deadline) => Err(HttpClientError::TimeoutError(REQUEST_TIMEOUT_MESSAGE.into())),
+                result = operation => result,
+            },
+            None => operation.await,
+        };
+        result.map_err(|e| response_error(e, (!redact_url).then_some(&url)))
     }
 
-    /// Converts a `reqwest::Response` into an `HttpResponse`.
-    ///
-    /// Uses pre-interned `HeaderName` values to avoid string-to-header parsing per response.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if unable to send request or times out.
-    pub async fn to_response(&self, response: Response) -> Result<HttpResponse, HttpClientError> {
-        self.to_response_internal(response, false).await
-    }
-
-    async fn to_response_internal(
+    async fn consume_response<B>(
         &self,
-        response: Response,
-        redact_url: bool,
-    ) -> Result<HttpResponse, HttpClientError> {
-        let status_code = response.status();
-        let resp_headers = response.headers();
-        let header_count = resp_headers.len();
-        let mut headers = HashMap::with_capacity(std::cmp::min(
-            self.response_headers.len(),
-            resp_headers.len(),
-        ));
-
+        response: http::Response<B>,
+        deadline: Option<crate::dst::time::Instant>,
+    ) -> Result<HttpResponse, HttpClientError>
+    where
+        B: http_body::Body<Data = Bytes> + Unpin,
+        B::Error: std::error::Error + 'static,
+    {
+        let (parts, mut body) = response.into_parts();
+        let mut headers =
+            HashMap::with_capacity(self.response_headers.len().min(parts.headers.len()));
         for (key, name) in self.response_headers.iter() {
-            if let Some(val) = resp_headers.get(name)
-                && let Ok(v) = val.to_str()
+            if let Some(value) = parts
+                .headers
+                .get(name)
+                .and_then(|value| value.to_str().ok())
             {
-                headers.insert(key.clone(), v.to_owned());
+                headers.insert(key.clone(), value.to_owned());
             }
         }
 
-        let status = HttpStatus::new(status_code);
-        let body = self.read_body_capped(response, redact_url).await?;
-
-        log::trace!(
-            "Received HTTP response: status={status_code} headers={header_count} body_bytes={}",
-            body.len(),
-        );
-
-        Ok(HttpResponse {
-            status,
-            headers,
-            body,
-        })
-    }
-
-    /// Reads the response body, rejecting any body that exceeds `max_response_bytes`.
-    ///
-    /// A `Content-Length` larger than the cap is rejected up front; otherwise the
-    /// body is streamed chunk-by-chunk and aborted as soon as the accumulated size
-    /// would exceed the cap, so an oversized or unbounded (chunked) body is never
-    /// fully buffered into memory.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the body exceeds the configured maximum size, or if
-    /// reading a chunk fails.
-    async fn read_body_capped(
-        &self,
-        mut response: Response,
-        redact_url: bool,
-    ) -> Result<bytes::Bytes, HttpClientError> {
         let max = self.max_response_bytes;
-
-        // Fast path: reject up front when the advertised length already exceeds the cap.
-        if let Some(len) = response.content_length()
+        if let Some(len) = body.size_hint().exact()
             && len > max as u64
         {
             return Err(HttpClientError::Error(format!(
@@ -791,13 +822,8 @@ impl InnerHttpClient {
         }
 
         let mut buf = bytes::BytesMut::new();
-
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|e| http_client_error(e, redact_url))?
-        {
-            if buf.len() + chunk.len() > max {
+        while let Some(chunk) = read_chunk(&mut body, deadline).await? {
+            if chunk.len() > max - buf.len() {
                 return Err(HttpClientError::Error(format!(
                     "HTTP response body exceeds maximum of {max} bytes",
                 )));
@@ -805,7 +831,17 @@ impl InnerHttpClient {
             buf.extend_from_slice(&chunk);
         }
 
-        Ok(buf.freeze())
+        log::trace!(
+            "Received HTTP response: status={} headers={} body_bytes={}",
+            parts.status,
+            parts.headers.len(),
+            buf.len()
+        );
+        Ok(HttpResponse {
+            status: HttpStatus::new(parts.status),
+            headers,
+            body: buf.freeze(),
+        })
     }
 }
 
@@ -815,17 +851,10 @@ enum RequestBody {
 }
 
 impl RequestBody {
-    fn len(&self) -> usize {
-        match self {
-            Self::Plain(body) => body.len(),
-            Self::Secret(body) => body.expose_secret().len(),
-        }
-    }
-
-    fn into_reqwest(self) -> reqwest::Body {
+    fn into_bytes(self) -> Bytes {
         match self {
             Self::Plain(body) => body.into(),
-            Self::Secret(body) => bytes::Bytes::from_owner(SecretBody(body)).into(),
+            Self::Secret(body) => Bytes::from_owner(SecretBody(body)),
         }
     }
 }
@@ -838,23 +867,28 @@ impl AsRef<[u8]> for SecretBody {
     }
 }
 
-fn http_client_error(error: reqwest::Error, redact_url: bool) -> HttpClientError {
-    if redact_url {
-        HttpClientError::from(error.without_url())
-    } else {
-        HttpClientError::from(error)
-    }
-}
-
 impl Default for InnerHttpClient {
     /// Creates a new default [`InnerHttpClient`] instance.
     ///
-    /// The default client is initialized with an empty list of header keys and a new `reqwest::Client`.
+    /// The default client has an empty list of response header keys. Production clients reuse a
+    /// connection pool; simulated clients open a connection per request.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the production HTTP transport cannot be initialized.
     fn default() -> Self {
         install_cryptographic_provider();
-        let client = reqwest::Client::new();
+        #[cfg(not(all(feature = "simulation", madsim)))]
+        let client =
+            super::transport::Client::new(None, true, super::transport::Settings::default())
+                .expect("failed to build default HTTP client");
         Self {
+            #[cfg(not(all(feature = "simulation", madsim)))]
             client,
+            headers: HeaderMap::new(),
+            timeout: None,
+            #[cfg(not(all(feature = "simulation", madsim)))]
+            redirect_policy: HttpRedirectPolicy::default(),
             #[cfg(all(feature = "simulation", madsim))]
             simulation: super::simulation::Client::default(),
             response_headers: Arc::default(),
@@ -976,7 +1010,6 @@ mod tests {
         routing::{any, delete, get, patch, post},
         serve,
     };
-    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
     use http::status::StatusCode;
     use log::Level;
     use rstest::rstest;
@@ -1119,6 +1152,18 @@ mod tests {
         (addr, request_rx)
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn test_body_ready_at_deadline_is_rejected() {
+        let client = InnerHttpClient::default();
+        let response = http::Response::new(Full::new(Bytes::from_static(b"ready")));
+        let result = client
+            .consume_response(response, Some(crate::dst::time::Instant::now()))
+            .await;
+        assert!(
+            matches!(result, Err(HttpClientError::TimeoutError(message)) if message == REQUEST_TIMEOUT_MESSAGE)
+        );
+    }
+
     #[tokio::test]
     async fn test_get() {
         let addr = start_test_server().await.unwrap();
@@ -1126,14 +1171,7 @@ mod tests {
 
         let client = InnerHttpClient::default();
         let response = client
-            .send_request(
-                reqwest::Method::GET,
-                format!("{url}/get"),
-                None,
-                None,
-                None,
-                None,
-            )
+            .send_request(Method::GET, format!("{url}/get"), None, None, None, None)
             .await
             .unwrap();
 
@@ -1316,14 +1354,7 @@ mod tests {
         };
 
         let response = client
-            .send_request(
-                reqwest::Method::GET,
-                format!("{url}/large"),
-                None,
-                None,
-                None,
-                None,
-            )
+            .send_request(Method::GET, format!("{url}/large"), None, None, None, None)
             .await
             .unwrap();
 
@@ -1343,14 +1374,7 @@ mod tests {
         };
 
         let result = client
-            .send_request(
-                reqwest::Method::GET,
-                format!("{url}/large"),
-                None,
-                None,
-                None,
-                None,
-            )
+            .send_request(Method::GET, format!("{url}/large"), None, None, None, None)
             .await;
 
         let err = result.expect_err("oversized response body should be rejected");
@@ -1371,7 +1395,7 @@ mod tests {
 
         let error = client
             .send_request(
-                reqwest::Method::GET,
+                Method::GET,
                 format!("http://{addr}"),
                 None,
                 None,
@@ -1398,14 +1422,7 @@ mod tests {
 
         let client = InnerHttpClient::default();
         let response = client
-            .send_request(
-                reqwest::Method::POST,
-                format!("{url}/post"),
-                None,
-                None,
-                None,
-                None,
-            )
+            .send_request(Method::POST, format!("{url}/post"), None, None, None, None)
             .await
             .unwrap();
 
@@ -1434,7 +1451,7 @@ mod tests {
 
         let response = client
             .send_request(
-                reqwest::Method::POST,
+                Method::POST,
                 format!("{url}/post"),
                 None,
                 None,
@@ -1455,7 +1472,7 @@ mod tests {
         let client = InnerHttpClient::default();
         let response = client
             .send_request(
-                reqwest::Method::PATCH,
+                Method::PATCH,
                 format!("{url}/patch"),
                 None,
                 None,
@@ -1476,7 +1493,7 @@ mod tests {
         let client = InnerHttpClient::default();
         let response = client
             .send_request(
-                reqwest::Method::DELETE,
+                Method::DELETE,
                 format!("{url}/delete"),
                 None,
                 None,
@@ -1496,7 +1513,7 @@ mod tests {
         let client = InnerHttpClient::default();
 
         let response = client
-            .send_request(reqwest::Method::GET, url, None, None, None, None)
+            .send_request(Method::GET, url, None, None, None, None)
             .await
             .unwrap();
 
@@ -1512,7 +1529,7 @@ mod tests {
 
         // We'll set a 1-second timeout for a route that sleeps 2 seconds
         let result = client
-            .send_request(reqwest::Method::GET, url, None, None, None, Some(1))
+            .send_request(Method::GET, url, None, None, None, Some(1))
             .await;
 
         assert!(
@@ -1841,7 +1858,7 @@ mod tests {
 
     #[rstest]
     fn test_http_client_with_malformed_proxy() {
-        // Note: reqwest::Proxy::all() is lenient and accepts most strings.
+        // Proxy parsing accepts scheme-less hostnames.
         // It only fails on obviously malformed URLs like "://invalid" or "http://".
         // More subtle issues (like "not-a-valid-url") are caught when connecting.
         let result = HttpClient::builder()

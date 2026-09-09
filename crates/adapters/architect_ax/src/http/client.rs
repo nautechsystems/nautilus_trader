@@ -27,6 +27,7 @@ use std::{
 
 use anyhow::Context;
 use arc_swap::ArcSwapOption;
+use http::{Method, header::USER_AGENT};
 use jiff::{Timestamp, civil::Date};
 use nautilus_core::{
     AtomicMap, AtomicTime, UUID4, consts::NAUTILUS_USER_AGENT, nanos::UnixNanos,
@@ -48,7 +49,6 @@ use nautilus_network::{
     retry::{RetryConfig, RetryError, RetryManager},
 };
 use parking_lot::RwLock;
-use reqwest::{Method, header::USER_AGENT};
 use rust_decimal::Decimal;
 use serde::{Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;

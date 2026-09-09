@@ -23,7 +23,7 @@ crate-type = ["rlib"]
 default = ["high-precision"]
 fuzz = ["nautilus-live/fuzz"]
 examples = [
-  "dep:reqwest",
+  "dep:serde_urlencoded",
   "nautilus-live/node",
   "nautilus-network/transport-sockudo",
 ]
@@ -84,11 +84,11 @@ jiff = { workspace = true }
 log = { workspace = true }
 parking_lot = { workspace = true }
 rand = { workspace = true }
-reqwest = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_repr = { workspace = true }
+serde_urlencoded = { workspace = true, optional = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

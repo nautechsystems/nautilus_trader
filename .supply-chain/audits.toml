@@ -2617,6 +2617,12 @@ criteria = "safe-to-deploy"
 delta = "1.1.1+spec-1.1.0 -> 1.1.2+spec-1.1.0"
 notes = "Uses saturating quote counters to prevent overflow on strings with more than 255 consecutive quotes. No new unsafe, dependencies, build script, filesystem, process, or network behavior."
 
+[[audits.tower-http]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.6.11 -> 0.7.1"
+notes = "Reviewed the published delta, including cumulative redirect credential filtering and extension retention, compression negotiation and stream termination, CSRF and header validation, body deadlines, tracing, and filesystem backend, path, validator, and range handling. Filesystem access remains explicit through ServeDir; no new build script, process execution, or automatic network destination. The only added unsafe block queries a live Windows file handle in a unit test; runtime code remains free of unsafe blocks."
+
 [[audits.tungstenite]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"

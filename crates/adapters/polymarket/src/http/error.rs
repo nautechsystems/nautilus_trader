@@ -17,7 +17,7 @@
 
 use std::time::Duration;
 
-use nautilus_network::http::{HttpClientError, HttpResponse, ReqwestError, StatusCode};
+use nautilus_network::http::{HttpClientError, HttpResponse, StatusCode};
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 
@@ -167,24 +167,6 @@ impl Error {
         match status {
             429 => Self::rate_limit_response("unknown", 0, None, message, false),
             _ => Self::http(status, message),
-        }
-    }
-
-    /// Classifies a reqwest error into the appropriate error variant.
-    #[expect(clippy::needless_pass_by_value)]
-    pub fn from_reqwest(error: ReqwestError) -> Self {
-        if error.is_timeout() {
-            Self::Timeout
-        } else if let Some(status) = error.status() {
-            let status_code = status.as_u16();
-            match status_code {
-                429 => Self::rate_limit("unknown", 0, None),
-                _ => Self::http(status_code, format!("HTTP error: {error}")),
-            }
-        } else if error.is_connect() || error.is_request() {
-            Self::transport(format!("Request error: {error}"))
-        } else {
-            Self::transport(format!("Unknown reqwest error: {error}"))
         }
     }
 

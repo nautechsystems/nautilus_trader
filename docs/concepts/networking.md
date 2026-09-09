@@ -7,7 +7,7 @@ replay coordination, and bounded reads.
 
 | Client         | Underlying transport                | Use when                           | Added policy                                                                                    |
 | -------------- | ----------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------- |
-| HTTP           | `reqwest`                           | Finite request/response operations | Layered quotas, pooled connections, keepalive, timeouts, proxy routing, and bounded bodies      |
+| HTTP           | Hyper                               | Finite request/response operations | Layered quotas, pooled connections, keepalive, timeouts, proxy routing, and bounded bodies      |
 | WebSocket      | `tokio-tungstenite` or `sockudo-ws` | Long-lived framed streams          | Runtime backend selection, quotas, heartbeats, liveness checks, reconnects, and session fencing |
 | Raw TCP socket | Tokio and `rustls`                  | Suffix-framed byte streams         | Framing, initial retries, heartbeats, liveness checks, reconnects, and ordered replay           |
 
@@ -16,7 +16,7 @@ Nautilus domain messages. This page covers the shared transport behavior beneath
 
 ## HTTP client
 
-[`HttpClient`](../../crates/network/src/http/client.rs) wraps one reusable `reqwest::Client` and one
+[`HttpClient`](../../crates/network/src/http/client.rs) wraps one reusable Hyper client and one
 or more shared rate limiters. A request waits for every applicable quota before the inner client
 builds and executes it.
 
@@ -30,18 +30,21 @@ flowchart LR
         inner[InnerHttpClient]
     end
 
-    reqwest["reqwest::Client<br/>pool and keepalive"]
+    hyper["Hyper client<br/>pool and keepalive"]
     endpoint[HTTP endpoint]
 
     adapter --> client
     client -->|await quotas| limiter
     client -->|execute| inner
-    inner <--> reqwest
-    reqwest <--> endpoint
+    inner <--> hyper
+    hyper <--> endpoint
 ```
 
 The outer client applies quota policy; the reusable inner client owns connection and response
 policy.
+
+The Rust API exposes `http::Method`, `http::StatusCode`, and `url::Url`. Requests return
+`HttpResponse` or `HttpResponseStream`, and failures return `HttpClientError`.
 
 ### Rate limiting and requests
 
@@ -57,23 +60,62 @@ all requests unless a request supplies its own timeout. An optional proxy applie
 HTTPS traffic.
 
 HTTP status errors remain normal `HttpResponse` values so each adapter can interpret the venue's
-body and retry rules. The client reports transport and timeout failures but does not retry requests
-automatically. Adapters can wrap retryable operations with the separate
-[`RetryManager`](../../crates/network/src/retry.rs), but the adapter must decide which venue errors
-and operations are safe to retry.
+body and retry rules. The transport retries requests canceled before transmission on reused
+connections, and allows two retries for remote HTTP/2 `GOAWAY(NO_ERROR)` or `REFUSED_STREAM` errors.
+Other transport failures and HTTP status codes do not trigger retries. Adapters can wrap retryable
+operations with [`RetryManager`](../../crates/network/src/retry.rs), but the adapter must decide
+which venue errors and operations are safe to retry.
 
 ### Connection reuse and response bounds
 
-Each client enables `TCP_NODELAY`, keeps up to 32 idle connections per host, and retains an idle
-connection for up to 60 seconds. HTTP/2 connections send keepalive probes every 30 seconds even
+Each production `HttpClient` enables `TCP_NODELAY`, keeps up to 32 idle connections per host, and
+retains an idle connection for up to 60 seconds. HTTP/2 connections send keepalive probes every 30 seconds even
 while idle and use adaptive flow-control windows. Reusing a client preserves the pool and avoids a
 new TCP and TLS handshake for each request.
 
-Responses contain the status, only the header names selected when the client was built, and the raw
+Buffered responses contain the status, only the header names selected when the client was built, and the raw
 body bytes. The client rejects a declared body larger than 100 MiB before reading it. For chunked
 or unbounded responses, it stops as soon as accumulated bytes would cross the same limit. Endpoints
 whose path or query can contain credentials can use the redacted request path, which removes the URL
 from transport errors and logs.
+
+`HttpClient::get_stream` returns status and body chunks without accumulating the complete response
+or applying the buffered size limit. One absolute deadline covers headers and the whole body,
+including time spent processing chunks. No rate-limit keys are supplied, so no quota is consumed.
+Dropping an unfinished response releases the exchange, including its owned connection task
+[under simulation](dst.md#simulated-http-and-websocket-transport). Dataset downloads use this path
+to stream to a temporary file before renaming it. Downloads configure a separate timeout for
+response headers and for each body read, allowing a progressing transfer to exceed that duration.
+
+### HTTP transport benchmarks
+
+The [HTTP comparison](../../crates/network/benches/BENCHMARKS.md#http-transport-comparison), measured
+2026-09-09 on an AMD Ryzen Threadripper 9980X, compares the previous Reqwest 0.13.4 client with the
+direct Hyper implementation. Both run in the same `bench-lto` binary with fat LTO and one codegen
+unit. The CPU governor is `performance`, ASLR is disabled per process, and client and server threads
+are pinned to separate physical cores. Accepted sessions have no sampled Cargo or compiler activity.
+
+Five independent sessions provide 60 paired samples per workload. The following 64 KiB cases
+summarize GET and POST at concurrency 1 and 16; the full report includes 1 KiB and 1 MiB responses,
+p99 values, uncertainty intervals, and resource measurements.
+
+| 64 KiB workload      | Reqwest req/s | Hyper req/s | Paired throughput change | Paired p99 change |
+| -------------------- | ------------- | ----------- | ------------------------ | ----------------- |
+| GET, concurrency 1   | 29,516        | 30,645      | +3.6%                    | -3.1%             |
+| POST, concurrency 1  | 27,054        | 28,223      | +4.1%                    | -3.4%             |
+| GET, concurrency 16  | 55,870        | 55,460      | -0.5%                    | +0.4%             |
+| POST, concurrency 16 | 47,779        | 47,631      | -0.3%                    | +0.2%             |
+
+Throughput columns are medians of sample summaries. Changes are medians of paired within-round
+ratios; positive throughput changes and negative p99 changes favor Hyper.
+
+Serial throughput for 1 KiB and 64 KiB responses improves by 3.6% to 5.0%. Concurrent cases range
+from -2.6% to +0.2%, and the 1 KiB concurrent POST case has a paired p99 increase of 1.8%. These
+results support a modest serial improvement, with regressions in some concurrent workloads.
+
+The benchmark exercises complete requests and validates response bodies, status, headers, and
+connection reuse over loopback HTTP/1.1. It excludes TLS, HTTP/2, proxies, WAN latency, and adapter
+parsing, so the results do not establish a production-wide speedup.
 
 ## WebSocket client
 
@@ -242,7 +284,7 @@ received its Ping.
 
 ### Backend benchmarks
 
-The [latest checked-in network benchmark](../../crates/network/benches/BENCHMARKS.md) was measured on
+The [WebSocket benchmark](../../crates/network/benches/BENCHMARKS.md) was measured on
 2026-07-29. The following 512 B results are the median of three back-to-back runs on the same AMD
 Ryzen Threadripper 9980X host:
 
@@ -260,9 +302,9 @@ trips.
 
 These are backend frame-transport microbenchmarks over established, uncompressed 1 MiB in-memory
 Tokio duplex streams. They exclude DNS, TCP connect, TLS, HTTP upgrade, kernel network I/O,
-external latency, keepalive traffic, and the reconnecting client lifecycle. The report does not
-publish HTTP or raw TCP client results, and its absolute values should only be compared on the same
-machine.
+external latency, keepalive traffic, and the reconnecting client lifecycle. These WebSocket
+measurements do not cover HTTP or raw TCP clients, and their absolute values should only be
+compared on the same machine.
 
 ## Raw TCP socket client
 
@@ -390,8 +432,10 @@ socket client.
 ## TCP socket options
 
 The WebSocket and raw TCP socket clients apply the same options to every outbound connection,
-including the hop to an HTTP `CONNECT` proxy. The HTTP client is not covered: `reqwest` owns its own
-sockets and its own pooling.
+including the hop to an HTTP `CONNECT` proxy. The HTTP client uses a separate Hyper connector with
+`TCP_NODELAY`, keepalive after 15 seconds idle with 15 seconds between probes and three retries, and
+a 30-second `TCP_USER_TIMEOUT` on Linux, Android, and Fuchsia. The table below applies to WebSocket
+and raw TCP clients.
 
 | Option             | Value                           | Detects or prevents                                       |
 | ------------------ | ------------------------------- | --------------------------------------------------------- |

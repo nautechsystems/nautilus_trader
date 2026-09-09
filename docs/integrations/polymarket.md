@@ -1498,7 +1498,7 @@ user WebSocket through it. Configure the same value on both clients when running
 together.
 
 SOCKS URLs and malformed URLs fail configuration validation. When `proxy_url` is `None`, the adapter
-does not configure an explicit proxy: HTTP retains reqwest's environment-proxy behavior and
+does not configure an explicit proxy: HTTP uses environment proxy settings and
 WebSockets connect directly. Treat credential-bearing proxy URLs as secrets because serialized
 configs contain the supplied URL. Python exposes only `has_proxy_url`; configuration `Debug` output
 and transport diagnostics redact proxy credentials.
