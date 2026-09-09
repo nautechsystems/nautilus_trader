@@ -58,7 +58,7 @@ use crate::defi;
 #[allow(unused_imports)]
 use crate::defi::data_actor as _; // Brings DeFi impl blocks into scope
 #[cfg(feature = "python")]
-use crate::python::component_msgbus::ComponentMessageBus;
+use crate::python::msgbus::PyMessageBusScope;
 use crate::{
     cache::{Cache, CacheApi},
     clock::{Clock, ClockApi},
@@ -3087,6 +3087,10 @@ pub struct DataActorCore {
     funding_rate_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<FundingRateUpdate>>>,
     option_greeks_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<OptionGreeks>>>,
     option_chain_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<OptionChainSlice>>>,
+    indicators: Indicators,
+    warning_events: AHashSet<String>, // TODO: TBD
+    pending_requests: AHashMap<UUID4, Option<RequestCallback>>,
+    signal_classes: AHashMap<String, String>,
     #[cfg(feature = "defi")]
     block_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<Block>>>,
     #[cfg(feature = "defi")]
@@ -3099,12 +3103,8 @@ pub struct DataActorCore {
     pool_collect_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<PoolFeeCollect>>>,
     #[cfg(feature = "defi")]
     pool_flash_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<PoolFlash>>>,
-    warning_events: AHashSet<String>, // TODO: TBD
-    pending_requests: AHashMap<UUID4, Option<RequestCallback>>,
-    signal_classes: AHashMap<String, String>,
     #[cfg(feature = "python")]
-    message_bus: Rc<ComponentMessageBus>,
-    indicators: Indicators,
+    message_bus: Rc<PyMessageBusScope>,
 }
 
 #[derive(Clone)]
@@ -3975,6 +3975,10 @@ impl DataActorCore {
             funding_rate_handlers: AHashMap::new(),
             option_greeks_handlers: AHashMap::new(),
             option_chain_handlers: AHashMap::new(),
+            indicators: Indicators::default(),
+            warning_events: AHashSet::new(),
+            pending_requests: AHashMap::new(),
+            signal_classes: AHashMap::new(),
             #[cfg(feature = "defi")]
             block_handlers: AHashMap::new(),
             #[cfg(feature = "defi")]
@@ -3987,12 +3991,8 @@ impl DataActorCore {
             pool_collect_handlers: AHashMap::new(),
             #[cfg(feature = "defi")]
             pool_flash_handlers: AHashMap::new(),
-            warning_events: AHashSet::new(),
-            pending_requests: AHashMap::new(),
-            signal_classes: AHashMap::new(),
             #[cfg(feature = "python")]
             message_bus: Rc::default(),
-            indicators: Indicators::default(),
         }
     }
 
@@ -4189,7 +4189,7 @@ impl DataActorCore {
 
     /// Returns this component's shared Python message-bus state.
     #[cfg(feature = "python")]
-    pub fn message_bus(&self) -> Rc<ComponentMessageBus> {
+    pub fn message_bus(&self) -> Rc<PyMessageBusScope> {
         Rc::clone(&self.message_bus)
     }
 

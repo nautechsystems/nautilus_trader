@@ -27,7 +27,6 @@
 pub mod actor;
 pub mod cache;
 pub mod clock;
-pub mod component_msgbus;
 pub mod custom;
 pub mod enums;
 pub mod factory;

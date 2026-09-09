@@ -28,7 +28,7 @@ use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::identifiers::ComponentId;
 use pyo3::prelude::*;
 
-use super::component_msgbus::ComponentMessageBus;
+use super::msgbus::PyMessageBusScope;
 
 thread_local! {
     static PYTHON_WRAPPERS: RefCell<AHashMap<ComponentId, RegisteredWrapper>> =
@@ -39,7 +39,7 @@ thread_local! {
 pub fn retain_python_wrapper(
     component_id: ComponentId,
     wrapper: Py<PyAny>,
-    message_bus: Rc<ComponentMessageBus>,
+    message_bus: Rc<PyMessageBusScope>,
 ) {
     let displaced = PYTHON_WRAPPERS.with_borrow_mut(|wrappers| {
         wrappers.insert(
@@ -87,7 +87,7 @@ pub fn get_python_wrapper(component_id: ComponentId) -> Option<Py<PyAny>> {
 /// # Errors
 ///
 /// Returns a runtime error when this thread does not retain the wrapper.
-pub fn get_python_message_bus(wrapper: &Bound<'_, PyAny>) -> PyResult<Rc<ComponentMessageBus>> {
+pub fn get_python_message_bus(wrapper: &Bound<'_, PyAny>) -> PyResult<Rc<PyMessageBusScope>> {
     PYTHON_WRAPPERS.with_borrow(|wrappers| {
         wrappers
             .values()
@@ -101,7 +101,7 @@ pub fn get_python_message_bus(wrapper: &Bound<'_, PyAny>) -> PyResult<Rc<Compone
 
 struct RegisteredWrapper {
     wrapper: Py<PyAny>,
-    message_bus: Rc<ComponentMessageBus>,
+    message_bus: Rc<PyMessageBusScope>,
 }
 
 #[cfg(test)]
