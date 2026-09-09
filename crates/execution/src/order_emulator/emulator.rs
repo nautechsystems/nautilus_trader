@@ -1220,7 +1220,7 @@ impl OrderEmulator {
             return None;
         }
 
-        Some(released_price.unwrap())
+        released_price
     }
 
     /// # Panics

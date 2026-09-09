@@ -98,13 +98,16 @@ mod tests {
 
         let result = protection_price_calculate(Price::new(0.01, 2), &order, 600, None, None);
 
-        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Invalid `OrderType` LIMIT for protection price calculation"
+        );
     }
 
     #[rstest]
-    #[case(OrderSide::Buy)]
-    #[case(OrderSide::Sell)]
-    fn test_calculate_requires_opposite_quote(#[case] side: OrderSide) {
+    #[case(OrderSide::Buy, "Ask required")]
+    #[case(OrderSide::Sell, "Bid required")]
+    fn test_calculate_requires_opposite_quote(#[case] side: OrderSide, #[case] expected: &str) {
         let order = build_stop_order(OrderType::StopMarket, side);
         let price_increment = Price::new(0.01, 2);
 
@@ -115,7 +118,7 @@ mod tests {
 
         let result = protection_price_calculate(price_increment, &order, 25, bid, ask);
 
-        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), expected);
     }
 
     #[rstest]
@@ -203,5 +206,25 @@ mod tests {
 
         // protection_price = 50001.0 + (100_000 * 0.01) = 50001.0 + 1000.0 = 51001.0
         assert_eq!(protection_price.as_f64(), 51001.0);
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, "123.45682")]
+    #[case(OrderSide::Sell, "123.45667")]
+    fn test_protection_price_preserves_increment_precision(
+        #[case] side: OrderSide,
+        #[case] expected: &str,
+    ) {
+        let order = build_stop_order(OrderType::Market, side);
+        let (bid, ask) = match side {
+            OrderSide::Buy => (None, Some(Price::from("123.456790"))),
+            OrderSide::Sell => (Some(Price::from("123.456700")), None),
+        };
+
+        let price =
+            protection_price_calculate(Price::from("0.00001"), &order, 3, bid, ask).unwrap();
+
+        assert_eq!(price.raw, Price::from(expected).raw);
+        assert_eq!(price.precision, 5);
     }
 }

@@ -163,12 +163,11 @@ impl OrderManager {
             correlation_id,
         );
 
+        self.cache_submit_order_command(submit.clone());
+
         if order.emulation_trigger().is_some() {
-            self.cache_submit_order_command(submit.clone());
             actions.push(OrderManagerAction::SubmitToEmulator(submit));
         } else {
-            self.cache_submit_order_command(submit.clone());
-
             match order.exec_algorithm_id() {
                 Some(exec_algorithm_id) => {
                     actions.push(OrderManagerAction::SubmitToAlgorithm {
