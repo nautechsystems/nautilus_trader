@@ -640,7 +640,20 @@ rate differ by product and Spot transport:
 
 - **Spot SBE**: `<symbol>@depth`, 25ms.
 - **Spot JSON**: `<symbol>@depth`, at Binance's default update speed for that stream (1000ms).
-- **Futures**: `<symbol>@depth@0ms`, unthrottled.
+- **Futures diff-depth**: `<symbol>@depth@0ms`, unthrottled.
+
+Futures `L2_MBP` subscriptions with depth 5, 10, or 20 use the partial-depth stream
+`<symbol>@depth<levels>@100ms`. Binance provides partial-depth streams only at these depths.
+Each message is a snapshot of both sides of the book, emitted as a `Clear` delta followed by
+the snapshot levels. This removes absent prices and keeps at most the requested number of
+levels per side. These subscriptions do not request a REST snapshot, including after reconnects.
+
+Futures subscriptions without a depth, or with depth 50, 100, 500, or 1000, use the diff-depth
+stream. The depth limits the initial and reconnect REST snapshots, not the maintained book;
+omitting it selects a 1000-level snapshot. Subsequent updates can add levels beyond that depth.
+The `OrderBook.bids(depth=...)` and `OrderBook.asks(depth=...)` accessors limit their returned
+results without removing stored levels. Other `L2_MBP` subscription depths are rejected.
+Unsubscribe before changing an instrument's subscription depth.
 
 `L1_MBP` subscriptions require depth 1 and use the Spot `bestBidAsk` or `bookTicker`
 stream and the Futures `bookTicker` stream. Each update emits the normal `QuoteTick`
@@ -666,8 +679,8 @@ data WebSocket reconnect. The rebuild runs in this order:
 7. The remaining deltas are sent to the `DataEngine`.
 
 :::note
-This snapshot-and-buffer sequence applies to Futures and Spot `BookDeltas`
-subscriptions without an explicit depth. Spot partial-depth subscriptions deliver
+This snapshot-and-buffer sequence applies to Futures diff-depth subscriptions and Spot
+`BookDeltas` subscriptions without an explicit depth. Spot partial-depth subscriptions deliver
 self-contained top-N snapshots. SBE partial books require depth 20; use JSON market data
 for depth 5 or 10. Unsupported SBE partial depths are rejected before subscription.
 See [Spot market data mode](#spot-market-data-mode).

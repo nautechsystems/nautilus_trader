@@ -54,6 +54,7 @@ Released on TBD (UTC).
 - Changed PostgreSQL instrument storage to preserve `info`; run `nautilus database init` to add the column before starting the cache
 - Changed PostgreSQL cache startup to require the `instrument_close` table; run `nautilus database init`
 - Changed PostgreSQL `order_event` and `position_event` tables to carry the order event fields that were previously dropped; run `nautilus database init` to add the columns, as cache startup now fails fast when they are missing. `OrderReleased` and `OrderFillVoided` rows written before the upgrade cannot be restored, because their `released_price` and `correction_id` were never stored; delete those rows if startup reports them
+- Changed Binance Futures book subscriptions to reject depth changes until unsubscribed
 - Changed Binance `close_position` orders to require `reduce_only=true` in Nautilus
 - Changed Arrow instrument `asset_class` and `option_kind` columns to the canonical enum labels such as `EQUITY` and `CALL`; existing catalogs still decode, but earlier versions cannot read newly written files
 - Renamed Rust `Data::Delta`, `Data::Deltas`, and `Data::Depth10` variants to `Data::BookDelta`, `Data::BookDeltas`, and `Data::BookDepth10`; JSON and SBE wire formats are unchanged
@@ -101,6 +102,7 @@ Released on TBD (UTC).
 - Fixed Python `Money.zero` aborting for valid currencies with 17 or 18 decimal precision
 - Fixed Betfair fill report queries ignoring instrument and order filters
 - Fixed Betfair order status queries ignoring instrument filters and time bounds for closed orders
+- Fixed Binance Futures order books exceeding requested depths of 5, 10, or 20 levels
 - Fixed Binance Spot cancel-all decoding and lifecycle handling for OCO order lists
 - Fixed Binance Spot `MIN_NOTIONAL` and `NOTIONAL` filters being omitted from instrument constraints
 - Fixed Bybit funding settlements being treated as fills (#4937), thanks for reporting @luk911

@@ -186,6 +186,23 @@ pub fn parse_depth_update(
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> BinanceWsResult<OrderBookDeltas> {
+    parse_book_depth(msg, instrument, ts_init, false)
+}
+
+pub(crate) fn parse_depth_snapshot(
+    msg: &BinanceFuturesDepthUpdateMsg,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> BinanceWsResult<OrderBookDeltas> {
+    parse_book_depth(msg, instrument, ts_init, true)
+}
+
+fn parse_book_depth(
+    msg: &BinanceFuturesDepthUpdateMsg,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+    snapshot: bool,
+) -> BinanceWsResult<OrderBookDeltas> {
     let instrument_id = instrument.id();
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
@@ -196,7 +213,15 @@ pub fn parse_depth_update(
         ts_init,
     );
 
-    let mut deltas = Vec::with_capacity(msg.bids.len() + msg.asks.len());
+    let mut deltas = Vec::with_capacity(msg.bids.len() + msg.asks.len() + usize::from(snapshot));
+    if snapshot {
+        deltas.push(OrderBookDelta::clear(
+            instrument_id,
+            msg.final_update_id,
+            ts_event,
+            ts_init,
+        ));
+    }
 
     // Process bids
     for (i, bid) in msg.bids.iter().enumerate() {
@@ -207,6 +232,8 @@ pub fn parse_depth_update(
 
         let action = if size.is_zero() {
             BookAction::Delete
+        } else if snapshot {
+            BookAction::Add
         } else {
             BookAction::Update
         };
@@ -236,6 +263,8 @@ pub fn parse_depth_update(
 
         let action = if size.is_zero() {
             BookAction::Delete
+        } else if snapshot {
+            BookAction::Add
         } else {
             BookAction::Update
         };
@@ -254,6 +283,10 @@ pub fn parse_depth_update(
             ts_event,
             ts_init,
         ));
+    }
+
+    if snapshot && let Some(last) = deltas.last_mut() {
+        last.flags |= RecordFlag::F_LAST as u8;
     }
 
     Ok(OrderBookDeltas::new(instrument_id, deltas))
@@ -502,7 +535,7 @@ pub fn extract_event_type(json: &serde_json::Value) -> Option<BinanceWsEventType
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::types::Quantity;
+    use nautilus_model::{enums::BookType, orderbook::OrderBook, types::Quantity};
     use rstest::rstest;
     use rust_decimal_macros::dec;
     use serde::de::DeserializeOwned;
@@ -680,6 +713,86 @@ mod tests {
             Quantity::new(100.0, SIZE_PRECISION)
         );
         assert_eq!(deltas.deltas[1].flags, RecordFlag::F_LAST as u8);
+    }
+
+    #[rstest]
+    #[case::five(5)]
+    #[case::ten(10)]
+    #[case::twenty(20)]
+    fn test_parse_depth_snapshot_replaces_levels(#[case] depth: usize) {
+        let instrument = sample_instrument();
+        let mut msg: BinanceFuturesDepthUpdateMsg = load_market_fixture("depth_update_stream.json");
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+        let mut book = OrderBook::new(instrument.id(), BookType::L2_MBP);
+
+        for offset in [0, 100] {
+            msg.bids = (0..depth)
+                .map(|i| [(1000 - offset - i).to_string(), "2.000".into()])
+                .collect();
+            msg.asks = (0..depth)
+                .map(|i| [(2000 + offset + i).to_string(), "3.000".into()])
+                .collect();
+            let snapshot = parse_depth_snapshot(&msg, &instrument, ts_init).unwrap();
+            let mut expected = vec![OrderBookDelta::clear(
+                instrument.id(),
+                msg.final_update_id,
+                snapshot.ts_event,
+                ts_init,
+            )];
+
+            for (side, levels) in [(OrderSide::Buy, &msg.bids), (OrderSide::Sell, &msg.asks)] {
+                for level in levels {
+                    expected.push(OrderBookDelta::new(
+                        instrument.id(),
+                        BookAction::Add,
+                        BookOrder::new(
+                            side,
+                            Price::from_str(&format!("{}.00000000", level[0])).unwrap(),
+                            Quantity::from_str(&level[1]).unwrap(),
+                            0,
+                        ),
+                        0,
+                        msg.final_update_id,
+                        UnixNanos::from(123_456_788_000_000u64),
+                        ts_init,
+                    ));
+                }
+            }
+            expected.last_mut().unwrap().flags = RecordFlag::F_LAST as u8;
+            assert_eq!(snapshot.instrument_id, instrument.id());
+            assert_eq!(snapshot.sequence, msg.final_update_id);
+            assert_eq!(snapshot.deltas, expected);
+            book.apply_deltas(&snapshot).unwrap();
+            assert_eq!(book.bids(None).count(), depth);
+            assert_eq!(book.asks(None).count(), depth);
+            for (actual, input) in book.bids(None).zip(&msg.bids) {
+                assert_eq!(
+                    actual.price.value.as_decimal(),
+                    Decimal::from_str(&input[0]).unwrap()
+                );
+                assert_eq!(actual.size_decimal(), dec!(2));
+            }
+
+            for (actual, input) in book.asks(None).zip(&msg.asks) {
+                assert_eq!(
+                    actual.price.value.as_decimal(),
+                    Decimal::from_str(&input[0]).unwrap()
+                );
+                assert_eq!(actual.size_decimal(), dec!(3));
+            }
+        }
+
+        msg.bids.clear();
+        msg.asks.clear();
+        let empty = parse_depth_snapshot(&msg, &instrument, ts_init).unwrap();
+        book.apply_deltas(&empty).unwrap();
+        assert_eq!(empty.deltas.len(), 1);
+        assert_eq!(
+            empty.deltas[0].flags,
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+        );
+        assert_eq!(book.bids(None).count(), 0);
+        assert_eq!(book.asks(None).count(), 0);
     }
 
     #[rstest]

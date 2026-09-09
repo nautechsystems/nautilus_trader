@@ -247,7 +247,7 @@ pub(crate) fn dispatch_ws_message(
                 log::warn!("Recovery channel closed, cannot trigger listen key rotation");
             }
         }
-        BinanceFuturesWsStreamsMessage::Reconnected => {
+        BinanceFuturesWsStreamsMessage::Reconnected(_) => {
             // A transport-level reconnect (not a listenKey expiry) still loses
             // any events that arrived during the outage. Trigger recovery to
             // rotate the key and replay the current venue state.
@@ -272,7 +272,8 @@ pub(crate) fn dispatch_ws_message(
         | BinanceFuturesWsStreamsMessage::MarkPrice(_)
         | BinanceFuturesWsStreamsMessage::Kline(_)
         | BinanceFuturesWsStreamsMessage::ForceOrder(_)
-        | BinanceFuturesWsStreamsMessage::Ticker(_) => {}
+        | BinanceFuturesWsStreamsMessage::Ticker(_)
+        | BinanceFuturesWsStreamsMessage::Unsubscribed { .. } => {}
     }
 }
 
