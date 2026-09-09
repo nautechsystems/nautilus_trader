@@ -1257,6 +1257,7 @@ impl DataClient for InteractiveBrokersDataClient {
         let client_clone = client.as_arc().clone();
         let subscription_token_clone = subscription_token.clone();
         let data_farm_state = Arc::clone(&self.data_farm_state);
+        let all_last_trades = self.config.all_last_trades;
 
         let task = async move {
             if let Err(e) = handle_trade_subscription(
@@ -1269,6 +1270,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 clock,
                 subscription_token_clone,
                 data_farm_state,
+                all_last_trades,
             )
             .await
             {

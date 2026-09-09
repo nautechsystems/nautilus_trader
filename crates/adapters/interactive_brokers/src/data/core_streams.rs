@@ -1108,8 +1108,13 @@ pub(super) async fn handle_trade_subscription(
     clock: &'static AtomicTime,
     cancellation_token: CancellationToken,
     data_farm_state: Arc<DataFarmConnectionState>,
+    all_last: bool,
 ) -> anyhow::Result<()> {
-    tracing::debug!("Starting trade subscription for {}", instrument_id);
+    tracing::debug!(
+        "Starting trade subscription for {} ({})",
+        instrument_id,
+        if all_last { "AllLast" } else { "Last" }
+    );
 
     let mut farm_generation = data_farm_state.recovery_generation();
 
@@ -1118,11 +1123,20 @@ pub(super) async fn handle_trade_subscription(
             break;
         }
 
-        let mut subscription = client
-            .tick_by_tick(&contract, 0)
-            .all_last()
-            .await
-            .context("Failed to create tick-by-tick trade subscription")?;
+        // `AllLast` includes trade types which are not part of the price-forming tape
+        // (combos, derivatively-priced and average-price prints); `Last` excludes them.
+        let builder = client.tick_by_tick(&contract, 0);
+        let mut subscription = if all_last {
+            builder
+                .all_last()
+                .await
+                .context("Failed to create tick-by-tick AllLast trade subscription")?
+        } else {
+            builder
+                .last()
+                .await
+                .context("Failed to create tick-by-tick Last trade subscription")?
+        };
 
         let action = process_trade_stream(
             &mut subscription,
