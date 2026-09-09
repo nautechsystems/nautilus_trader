@@ -330,6 +330,25 @@ The low-level Rust clients expose the same single and batch matrix:
 The WebSocket batch amend tuple accepts an optional request ID and serializes it as `reqId`; it
 does not replace the order's client ID.
 
+### RPI minimum notional
+
+RPI maker orders must meet both the instrument's `minSz` and the
+[RPI minimum notional](https://www.okx.com/docs-v5/log_en/#2026-08-18-rpi-maker-minimum-notional-amount):
+
+- `SWAP` and `FUTURES`: 10,000 USD.
+- `SPOT`: 1,000 USD.
+- `EVENTS`: exempt from the RPI minimum notional.
+
+OKX rejects an order below the applicable notional threshold with `54051`; the execution client emits
+`OrderRejected` for a rejected placement. An amend that includes `newSz` is checked again, with or
+without `newPx`. A rejected amend leaves the original order active; the adapter emits
+`OrderModifyRejected` and stops tracking the amend as pending. A price-only amend does not trigger
+this check. Each sub-order in a batch place or amend request is checked independently.
+
+Orders already on the book when the rule took effect in production on August 18, 2026, are grandfathered.
+Non-RPI orders, including orders with `rpiTakerAccess: true`, are exempt from this notional rule.
+An order that meets `minSz` can still fail the RPI minimum-notional check.
+
 ### RPI responses and lifecycle
 
 Private order messages parse both `ordType: rpi` and the migration alias `ordType: elp`. If an

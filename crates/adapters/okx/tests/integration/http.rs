@@ -6893,6 +6893,148 @@ async fn test_rpi_rest_batch_preserves_partial_success_items() {
     );
 }
 
+#[rstest]
+#[case("order", false)]
+#[case("amend-order", false)]
+#[case("batch-orders", false)]
+#[case("batch-orders", true)]
+#[case("batch-amend-orders", false)]
+#[case("batch-amend-orders", true)]
+#[case("order-code", false)]
+#[case("amend-order-code", false)]
+#[tokio::test]
+async fn test_rpi_minimum_notional_rest_rejections(#[case] case: &str, #[case] reverse: bool) {
+    let mut fixture = load_test_data("rpi_minimum_notional.json")[case].clone();
+    if reverse {
+        fixture["request"].as_array_mut().unwrap().reverse();
+        fixture["response"]["data"]
+            .as_array_mut()
+            .unwrap()
+            .reverse();
+    }
+    let response = fixture["response"].clone();
+    let expected_request = fixture["request"].clone();
+    let requests = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    let captured = requests.clone();
+    let op = response["op"].as_str().unwrap();
+    let path = match op {
+        "batch-amend-orders" => "/api/v5/trade/amend-batch-orders".to_string(),
+        _ => format!("/api/v5/trade/{op}"),
+    };
+    let reply = response.clone();
+    let router = Router::new().route(
+        &path,
+        post(move |Json(body): Json<Value>| {
+            let captured = captured.clone();
+            let reply = reply.clone();
+            async move {
+                captured.lock().await.push(body);
+                Json(reply)
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{addr}")),
+        5,
+        0,
+        100,
+        100,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+    let request = fixture["request"].clone();
+    let result = match op {
+        "order" => client
+            .place_order(serde_json::from_value(request).unwrap())
+            .await
+            .map(|item| vec![item]),
+        "amend-order" => client
+            .amend_order(serde_json::from_value(request).unwrap())
+            .await
+            .map(|item| vec![item]),
+        "batch-orders" => {
+            client
+                .place_orders(serde_json::from_value(request).unwrap())
+                .await
+        }
+        "batch-amend-orders" => {
+            client
+                .amend_orders(serde_json::from_value(request).unwrap())
+                .await
+        }
+        _ => panic!("Unexpected fixture operation: {op}"),
+    };
+    server.abort();
+
+    let requests = requests.lock().await;
+    assert_eq!(requests.len(), 1);
+    let actual = &requests[0];
+    let expected_items = expected_request
+        .as_array()
+        .map_or_else(|| vec![&expected_request], |items| items.iter().collect());
+    let actual_items = actual
+        .as_array()
+        .map_or_else(|| vec![actual], |items| items.iter().collect());
+    assert_eq!(actual_items.len(), expected_items.len());
+    for (actual, expected) in actual_items.iter().zip(expected_items) {
+        for (field, value) in expected.as_object().unwrap() {
+            assert_eq!(&actual[field], value, "request field {field}");
+        }
+    }
+
+    if op.starts_with("batch-") {
+        let items = result.unwrap();
+        assert_eq!(items.len(), 2);
+        for (item, expected) in items.iter().zip(response["data"].as_array().unwrap()) {
+            assert_eq!(
+                item.cl_ord_id.as_ref().map(Ustr::as_str),
+                expected["clOrdId"].as_str()
+            );
+            assert_eq!(
+                item.ord_id.as_ref().map(Ustr::as_str),
+                expected["ordId"].as_str()
+            );
+            assert_eq!(item.s_code.as_deref(), expected["sCode"].as_str());
+            assert_eq!(item.s_msg.as_deref(), expected["sMsg"].as_str());
+            assert_eq!(
+                item.req_id.as_ref().map(Ustr::as_str),
+                expected["reqId"].as_str()
+            );
+        }
+    } else {
+        let error = result.unwrap_err();
+        assert!(matches!(
+            classify_okx_http_failure(&error),
+            CommandFailure::VenueRejected(_)
+        ));
+        let OKXHttpError::OkxError {
+            error_code,
+            message,
+        } = error
+        else {
+            panic!("Expected explicit venue rejection");
+        };
+        assert_eq!(error_code, "54051");
+        let expected = if response["data"].as_array().unwrap().is_empty() {
+            &response["msg"]
+        } else {
+            &response["data"][0]["sMsg"]
+        };
+        assert_eq!(message, expected.as_str().unwrap());
+    }
+}
+
 #[tokio::test]
 async fn test_rpi_account_instrument_permission_reachable() {
     let mut response = load_test_data("http_get_instruments_spot.json");

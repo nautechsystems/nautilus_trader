@@ -1,0 +1,179 @@
+{
+  "order": {
+    "request": {
+      "instId": "BTC-USDT",
+      "tdMode": "cash",
+      "clOrdId": "ORPI002",
+      "side": "sell",
+      "ordType": "rpi",
+      "sz": "0.001",
+      "px": "65000",
+      "rpiPxRound": true
+    },
+    "response": {
+      "id": "rpi-rejection",
+      "op": "order",
+      "code": "1",
+      "msg": "All operations failed",
+      "data": [
+        {
+          "ordId": "",
+          "clOrdId": "ORPI002",
+          "sCode": "54051",
+          "sMsg": "RPI order rejected. The order value is below the minimum required for RPI orders (1000 USD)."
+        }
+      ]
+    }
+  },
+  "batch-orders": {
+    "request": [
+      {
+        "instId": "BTC-USDT",
+        "tdMode": "cash",
+        "clOrdId": "ORPI001",
+        "side": "sell",
+        "ordType": "rpi",
+        "sz": "0.1",
+        "px": "65000",
+        "rpiPxRound": true
+      },
+      {
+        "instId": "BTC-USDT",
+        "tdMode": "cash",
+        "clOrdId": "ORPI002",
+        "side": "sell",
+        "ordType": "rpi",
+        "sz": "0.001",
+        "px": "65000",
+        "rpiPxRound": true
+      }
+    ],
+    "response": {
+      "id": "rpi-batch-rejection",
+      "op": "batch-orders",
+      "code": "2",
+      "msg": "Bulk operation partially successful",
+      "data": [
+        {
+          "ordId": "2500000000000000001",
+          "clOrdId": "ORPI001",
+          "sCode": "0",
+          "sMsg": ""
+        },
+        {
+          "ordId": "",
+          "clOrdId": "ORPI002",
+          "sCode": "54051",
+          "sMsg": "RPI order rejected. The order value is below the minimum required for RPI orders (1000 USD)."
+        }
+      ]
+    }
+  },
+  "order-code": {
+    "request": {
+      "instId": "BTC-USDT",
+      "tdMode": "cash",
+      "clOrdId": "ORPI002",
+      "side": "sell",
+      "ordType": "rpi",
+      "sz": "0.001",
+      "px": "65000",
+      "rpiPxRound": true
+    },
+    "response": {
+      "id": "rpi-code-rejection",
+      "op": "order",
+      "code": "54051",
+      "msg": "RPI order rejected. The order value is below the minimum required for RPI orders (1000 USD).",
+      "data": []
+    }
+  },
+  "amend-order": {
+    "request": {
+      "instId": "BTC-USDT",
+      "ordId": "2500000000000000002",
+      "clOrdId": "ORPI002",
+      "reqId": "RPI-AMEND-2",
+      "newSz": "0.001",
+      "newPx": "65000",
+      "rpiPxRound": true
+    },
+    "response": {
+      "id": "rpi-rejection",
+      "op": "amend-order",
+      "code": "1",
+      "msg": "All operations failed",
+      "data": [
+        {
+          "ordId": "2500000000000000002",
+          "clOrdId": "ORPI002",
+          "sCode": "54051",
+          "sMsg": "RPI order rejected. The order value is below the minimum required for RPI orders (1000 USD).",
+          "reqId": "RPI-AMEND-2"
+        }
+      ]
+    }
+  },
+  "batch-amend-orders": {
+    "request": [
+      {
+        "instId": "BTC-USDT",
+        "ordId": "2500000000000000001",
+        "clOrdId": "ORPI001",
+        "reqId": "RPI-AMEND-1",
+        "newSz": "0.1",
+        "newPx": "65000",
+        "rpiPxRound": true
+      },
+      {
+        "instId": "BTC-USDT",
+        "ordId": "2500000000000000002",
+        "clOrdId": "ORPI002",
+        "reqId": "RPI-AMEND-2",
+        "newSz": "0.001",
+        "newPx": "65000",
+        "rpiPxRound": true
+      }
+    ],
+    "response": {
+      "id": "rpi-batch-rejection",
+      "op": "batch-amend-orders",
+      "code": "2",
+      "msg": "Bulk operation partially successful",
+      "data": [
+        {
+          "ordId": "2500000000000000001",
+          "clOrdId": "ORPI001",
+          "sCode": "0",
+          "sMsg": "",
+          "reqId": "RPI-AMEND-1"
+        },
+        {
+          "ordId": "2500000000000000002",
+          "clOrdId": "ORPI002",
+          "sCode": "54051",
+          "sMsg": "RPI order rejected. The order value is below the minimum required for RPI orders (1000 USD).",
+          "reqId": "RPI-AMEND-2"
+        }
+      ]
+    }
+  },
+  "amend-order-code": {
+    "request": {
+      "instId": "BTC-USDT",
+      "ordId": "2500000000000000002",
+      "clOrdId": "ORPI002",
+      "reqId": "RPI-AMEND-2",
+      "newSz": "0.001",
+      "newPx": "65000",
+      "rpiPxRound": true
+    },
+    "response": {
+      "id": "rpi-code-rejection",
+      "op": "amend-order",
+      "code": "54051",
+      "msg": "RPI order rejected. The order value is below the minimum required for RPI orders (1000 USD).",
+      "data": []
+    }
+  }
+}

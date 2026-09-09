@@ -3328,6 +3328,162 @@ mod tests {
     }
 
     #[rstest]
+    #[case("order", false, false)]
+    #[case("batch-orders", false, false)]
+    #[case("batch-orders", false, true)]
+    #[case("amend-order", true, false)]
+    #[case("batch-amend-orders", true, false)]
+    #[case("batch-amend-orders", true, true)]
+    fn rpi_minimum_notional_rejection_preserves_order_lifecycle(
+        #[case] case: &str,
+        #[case] amend: bool,
+        #[case] reverse: bool,
+    ) {
+        let fixtures: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/rpi_minimum_notional.json"))
+                .unwrap();
+        let mut response = fixtures[case]["response"].clone();
+        if reverse {
+            response["data"].as_array_mut().unwrap().reverse();
+        }
+        let frame: OKXWsFrame = serde_json::from_value(response.clone()).unwrap();
+        let OKXWsFrame::OrderResponse {
+            id,
+            op,
+            code,
+            msg,
+            data,
+        } = frame
+        else {
+            panic!("Expected order response");
+        };
+        let state = WsDispatchState::default();
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        let strategy_id = StrategyId::from("RPI-003");
+        let pending = if amend {
+            &state.pending_amends
+        } else {
+            &state.pending_orders
+        };
+        let unrelated = "ORPI003";
+        pending.insert(
+            unrelated.to_string(),
+            PendingOrderInfo {
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id,
+                instrument_id,
+            },
+        );
+        let mut originals = Vec::new();
+        for item in &data {
+            let client_order_id = ClientOrderId::new(item["clOrdId"].as_str().unwrap());
+            let context = OrderContext {
+                identity: OrderIdentity {
+                    client_order_id,
+                    strategy_id,
+                    instrument_id,
+                    order_side: OrderSide::Sell,
+                    order_type: OrderType::Limit,
+                },
+                quantity: Quantity::from("0.2"),
+                price: Some(Price::from("65123")),
+                trigger_price: None,
+                trigger_type: None,
+                time_in_force: TimeInForce::Gtc,
+                is_post_only: true,
+                is_reduce_only: false,
+                is_quote_quantity: false,
+            };
+            state.track_order_context(context);
+            state
+                .order_identities
+                .insert(client_order_id, context.identity);
+            pending.insert(
+                client_order_id.to_string(),
+                PendingOrderInfo {
+                    trader_id: TraderId::from("TRADER-001"),
+                    strategy_id,
+                    instrument_id,
+                },
+            );
+            originals.push(context);
+        }
+        let (emitter, mut receiver) = test_execution_emitter();
+
+        dispatch_test_message(
+            OKXWsMessage::OrderResponse {
+                id,
+                op,
+                code,
+                msg,
+                data,
+            },
+            &emitter,
+            &state,
+            &AtomicMap::new(),
+        );
+
+        let events = drain_execution_events(&mut receiver);
+        assert_eq!(events.len(), 1);
+        let rejected_id = ClientOrderId::from("ORPI002");
+        let reason = response["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["sCode"] == "54051")
+            .unwrap()["sMsg"]
+            .as_str()
+            .unwrap();
+
+        match &events[0] {
+            ExecutionEvent::Order(OrderEventAny::Rejected(event)) if !amend => {
+                assert_eq!(event.trader_id, TraderId::from("TRADER-001"));
+                assert_eq!(event.strategy_id, strategy_id);
+                assert_eq!(event.instrument_id, instrument_id);
+                assert_eq!(event.client_order_id, rejected_id);
+                assert_eq!(event.account_id, AccountId::from("OKX-001"));
+                assert_eq!(event.reason.as_str(), reason);
+                assert!(!event.reconciliation);
+                assert!(!event.due_post_only);
+            }
+            ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) if amend => {
+                assert_eq!(event.trader_id, TraderId::from("TRADER-001"));
+                assert_eq!(event.strategy_id, strategy_id);
+                assert_eq!(event.instrument_id, instrument_id);
+                assert_eq!(event.client_order_id, rejected_id);
+                assert_eq!(event.account_id, Some(AccountId::from("OKX-001")));
+                assert_eq!(
+                    event.venue_order_id,
+                    Some(VenueOrderId::from("2500000000000000002"))
+                );
+                assert_eq!(event.reason.as_str(), reason);
+                assert!(!event.reconciliation);
+            }
+            event => panic!("Unexpected event: {event:?}"),
+        }
+        assert_eq!(pending.len(), 1);
+        assert!(pending.contains_key(unrelated));
+
+        for original in originals {
+            let client_order_id = original.identity.client_order_id;
+            if amend || client_order_id != rejected_id {
+                assert_eq!(
+                    *state.order_identities.get(&client_order_id).unwrap(),
+                    original.identity
+                );
+                assert_eq!(
+                    *state.order_contexts.get(&client_order_id).unwrap(),
+                    original
+                );
+                assert!(!state.terminal_orders.contains(&client_order_id));
+            } else {
+                assert!(!state.order_identities.contains_key(&client_order_id));
+                assert!(!state.order_contexts.contains_key(&client_order_id));
+            }
+        }
+    }
+
+    #[rstest]
     #[case::ambiguous(OKXWsError::SendFailed("connection reset".to_string()), true)]
     #[case::not_sent(OKXWsError::NoActiveClient, false)]
     fn send_failure_preserves_only_ambiguous_pending_orders(

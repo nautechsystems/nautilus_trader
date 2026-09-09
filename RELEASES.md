@@ -129,6 +129,7 @@ Released on TBD (UTC).
 - Replaced Reqwest HTTP execution with Hyper and removed direct Reqwest dependencies
 - Improved Betfair execution client test synchronization (#4866), thanks @folknor
 - Improved Hyperliquid exchange error message fixtures and rejection routing tests
+- Improved OKX RPI minimum-notional rejection tests for place, amend, and batch orders
 - Pinned docs.rs checks to a compatible nightly toolchain
 - Refined Arrow serialization schemas and column resolution
 - Refined Cap'n Proto serialization conversions and wire contracts
@@ -172,6 +173,7 @@ Released on TBD (UTC).
 - Added the NumPy and pandas prerequisites the wheel does not install
 - Added an environment report snippet to the bug report template
 - Added an explicit statement that the documentation covers v2 only
+- Added OKX RPI minimum-notional thresholds and amend rejection rules
 - Changed install commands to require `--pre` for the v2 wheel (#4919), thanks for reporting @pcoughlin
 - Changed the getting started and tutorial guides to run on bundled sample data without a download
 - Simplified documented `StrategyConfig` and `DataActorConfig` subclassing to keyword-only fields
