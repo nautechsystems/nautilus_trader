@@ -139,6 +139,12 @@ Use parametrized tests and fixtures (e.g., `@pytest.mark.parametrize`) to avoid 
 
 ## Running tests
 
+CI runs `scripts/ci/check_test_network.py` through `make test-scripts` to flag direct network calls
+with non-local literal addresses, explicit live-test switches, and fork-RPC options. It checks test
+directories and Rust files from their named test module onward. Loopback addresses and reserved
+fixture domains are allowed. This is a heuristic regression check: it does not resolve variable
+destinations, follow calls into other code, or enforce network isolation.
+
 ### Python tests
 
 The Python test suite lives under `python/tests/` and tests the Rust-backed PyO3 package. It requires

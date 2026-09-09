@@ -886,6 +886,8 @@ test-scripts:  #-- Run repository script tests
 	$Q bash scripts/test-clippy-strict-audit.bash
 	$Q bash scripts/test-update-cargo-dependencies.bash
 	$Q python3 -B scripts/ci/test_check_commit_message.py
+	$Q python3 -B scripts/ci/test_check_test_network.py
+	$Q python3 -B scripts/ci/check_test_network.py
 	@printf "$(GREEN)Script tests passed$(RESET)\n"
 
 .PHONY: test-scripts-quiet
