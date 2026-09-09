@@ -104,6 +104,7 @@ use crate::{
     },
 };
 
+const BOOK_DEPTHS_JSON: [usize; 3] = [5, 10, 20];
 const MAX_SNAPSHOT_RETRIES: u32 = 5;
 const MAX_BUFFERED_DEPTH_UPDATES: usize = 10_000;
 const SNAPSHOT_RETRY_BACKOFF_BASE_MS: u64 = 250;
@@ -1857,14 +1858,21 @@ impl DataClient for BinanceSpotDataClient {
         let ws = self.ws_client.clone();
         let symbol_lower = instrument_id.symbol.as_str().to_lowercase();
 
-        if self.spot_market_data_mode == BinanceSpotMarketDataMode::Json && cmd.depth.is_some() {
+        if self.spot_market_data_mode == BinanceSpotMarketDataMode::Json
+            && let Some(depth) = cmd.depth
+        {
             // Explicit depth requests use partial-book streams. Full-depth JSON
             // subscriptions fall through to the REST snapshot + @depth diff path.
-            let depth_level = match cmd.depth.map(|d| d.get()) {
-                Some(1..=5) => 5,
-                Some(6..=10) => 10,
-                _ => 20,
-            };
+            let depth = depth.get();
+
+            if !BOOK_DEPTHS_JSON.contains(&depth) {
+                anyhow::bail!(
+                    "Invalid depth {depth} for Binance Spot JSON order book. \
+                    Valid values: {BOOK_DEPTHS_JSON:?}"
+                );
+            }
+
+            let depth_level = depth as u32;
             self.book_subscriptions.insert(instrument_id, depth_level);
 
             let stream = format!("{symbol_lower}@depth{depth_level}");

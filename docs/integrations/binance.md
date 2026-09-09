@@ -638,12 +638,17 @@ web UI, or raw venue payloads.
 Order books can be maintained at full or partial depths. The diff-depth stream and its update
 rate differ by product and Spot transport:
 
-- **Spot SBE**: `<symbol>@depth`, 25ms.
-- **Spot JSON**: `<symbol>@depth`, at Binance's default update speed for that stream (1000ms).
-- **Futures diff-depth**: `<symbol>@depth@0ms`, unthrottled.
+| Product / transport | Diff-depth stream    | Update rate      |
+| ------------------- | -------------------- | ---------------- |
+| Spot SBE            | `<symbol>@depth`     | 25ms             |
+| Spot JSON           | `<symbol>@depth`     | 1000ms (default) |
+| Futures             | `<symbol>@depth@0ms` | Unthrottled      |
+
+### Futures L2 subscriptions
 
 Futures `L2_MBP` subscriptions with depth 5, 10, or 20 use the partial-depth stream
 `<symbol>@depth<levels>@100ms`. Binance provides partial-depth streams only at these depths.
+
 Each message is a snapshot of both sides of the book, emitted as a `Clear` delta followed by
 the snapshot levels. This removes absent prices and keeps at most the requested number of
 levels per side. These subscriptions do not request a REST snapshot, including after reconnects.
@@ -651,40 +656,61 @@ levels per side. These subscriptions do not request a REST snapshot, including a
 Futures subscriptions without a depth, or with depth 50, 100, 500, or 1000, use the diff-depth
 stream. The depth limits the initial and reconnect REST snapshots, not the maintained book;
 omitting it selects a 1000-level snapshot. Subsequent updates can add levels beyond that depth.
+
 The `OrderBook.bids(depth=...)` and `OrderBook.asks(depth=...)` accessors limit their returned
-results without removing stored levels. Other `L2_MBP` subscription depths are rejected.
-Unsubscribe before changing an instrument's subscription depth.
+results without removing stored levels.
+
+Other `L2_MBP` subscription depths are rejected. Unsubscribe before changing an instrument's
+subscription depth.
+
+### Spot L2 subscriptions
+
+Spot partial-depth subscriptions deliver self-contained top-N snapshots. The supported depths
+depend on the market data mode:
+
+- **JSON**: Explicit depths 5, 10, or 20 use the `<symbol>@depth<levels>` partial-depth stream.
+  Other explicit depths, including 50, 100, 500, and 1000, are rejected before subscription with
+  an error listing the valid depths.
+- **SBE**: Partial books require depth 20. Other partial depths are rejected before subscription;
+  use JSON market data for depth 5 or 10.
+
+Omit depth to use the diff-depth stream in either mode, seeded by a 5000-level REST snapshot.
+Unsubscribe before changing an instrument's subscription depth; a new partial-depth subscription
+does not remove the previous stream.
+
+See [Spot market data mode](#spot-market-data-mode) for transport configuration.
+
+### L1 top-of-book subscriptions
 
 `L1_MBP` subscriptions require depth 1 and use the Spot `bestBidAsk` or `bookTicker`
 stream and the Futures `bookTicker` stream. Each update emits the normal `QuoteTick`
 and a two-sided `OrderBookDeltas` batch with `F_MBP` flags so a managed L1 book receives
-the same top-of-book state. Quote and L1 subscriptions share the venue stream through
-reference counting. The client rejects concurrent L1 and L2 subscriptions for the same
-instrument.
+the same top-of-book state.
 
-Explicit order-book snapshot requests are supported separately from subscription
-synchronization. Spot accepts depths from 1 through 5000. Futures accepts 5, 10, 20,
-50, 100, 500, or 1000.
+Quote and L1 subscriptions share the venue stream through reference counting. The client
+rejects concurrent L1 and L2 subscriptions for the same instrument.
 
-An order book snapshot rebuild is triggered on the initial order book subscription and on every
-data WebSocket reconnect. The rebuild runs in this order:
+### Snapshot requests
+
+Explicit order-book snapshot requests are supported separately from subscription synchronization:
+
+- **Spot**: Depths in [1, 5000].
+- **Futures**: Depths 5, 10, 20, 50, 100, 500, or 1000.
+
+### Snapshot synchronization
+
+Futures diff-depth subscriptions and Spot `BookDeltas` subscriptions without an explicit depth
+rebuild the order book on the initial subscription and on every data WebSocket reconnect.
+The rebuild runs in this order:
 
 1. Buffering of incoming deltas starts.
-2. The snapshot is requested and awaited.
-3. The snapshot response is parsed to `OrderBookDeltas`.
-4. The snapshot deltas are sent to the `DataEngine`.
-5. Buffered deltas are iterated, dropping those whose sequence number is not greater than the last
+1. The snapshot is requested and awaited.
+1. The snapshot response is parsed to `OrderBookDeltas`.
+1. The snapshot deltas are sent to the `DataEngine`.
+1. Buffered deltas are iterated, dropping those whose sequence number is not greater than the last
    delta in the snapshot.
-6. Buffering stops.
-7. The remaining deltas are sent to the `DataEngine`.
-
-:::note
-This snapshot-and-buffer sequence applies to Futures diff-depth subscriptions and Spot
-`BookDeltas` subscriptions without an explicit depth. Spot partial-depth subscriptions deliver
-self-contained top-N snapshots. SBE partial books require depth 20; use JSON market data
-for depth 5 or 10. Unsupported SBE partial depths are rejected before subscription.
-See [Spot market data mode](#spot-market-data-mode).
-:::
+1. Buffering stops.
+1. The remaining deltas are sent to the `DataEngine`.
 
 ## Quote timestamps
 
@@ -1164,9 +1190,10 @@ transport. It affects Spot only; Futures is unchanged.
 
 `Sbe` (default) uses Binance Simple Binary Encoding streams and requires Ed25519
 keys (see [Key types](#key-types)); the client refuses to connect without them.
-`Json` uses public streams with no credentials. Full Spot `BookDeltas`
-subscriptions use the `<symbol>@depth` diff-depth stream on the selected transport, with REST
-snapshot synchronization. Explicit depth subscriptions use partial-book snapshots
+`Json` uses public streams with no credentials.
+
+Full Spot `BookDeltas` subscriptions use the `<symbol>@depth` diff-depth stream on the selected
+transport, with REST snapshot synchronization. Explicit depth subscriptions use partial-book snapshots
 (see [Order books](#order-books)).
 
 :::note

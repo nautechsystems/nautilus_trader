@@ -57,6 +57,7 @@ Released on TBD (UTC).
 - Changed PostgreSQL cache startup to require the `instrument_close` table; run `nautilus database init`
 - Changed PostgreSQL `order_event` and `position_event` tables to carry the order event fields that were previously dropped; run `nautilus database init` to add the columns, as cache startup now fails fast when they are missing. `OrderReleased` and `OrderFillVoided` rows written before the upgrade cannot be restored, because their `released_price` and `correction_id` were never stored; delete those rows if startup reports them
 - Changed Binance Futures book subscriptions to reject depth changes until unsubscribed
+- Changed Binance Spot JSON book subscriptions to reject unsupported explicit depths; use 5, 10, or 20
 - Changed Binance `close_position` orders to require `reduce_only=true` in Nautilus
 - Changed Arrow instrument `asset_class` and `option_kind` columns to the canonical enum labels such as `EQUITY` and `CALL`; existing catalogs still decode, but earlier versions cannot read newly written files
 - Renamed Rust `Data::Delta`, `Data::Deltas`, and `Data::Depth10` variants to `Data::BookDelta`, `Data::BookDeltas`, and `Data::BookDepth10`; JSON and SBE wire formats are unchanged

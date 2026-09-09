@@ -466,9 +466,9 @@ fn build_json_depth_diff_stream_event(
     .to_string()
 }
 
-fn build_json_partial_depth_stream_event(symbol: &str) -> String {
+fn build_json_partial_depth_stream_event(stream: &str) -> String {
     json!({
-        "stream": format!("{}@depth20", symbol.to_lowercase()),
+        "stream": stream,
         "data": {
             "lastUpdateId": 99_999,
             "bids": [["42000.00", "1.00000"]],
@@ -683,7 +683,7 @@ async fn handle_ws_connection(mut socket: WebSocket, config: DataTestServerConfi
                                 tokio::time::sleep(Duration::from_millis(50)).await;
 
                                 if config.json_ws_streams {
-                                    let data = build_json_partial_depth_stream_event(&symbol);
+                                    let data = build_json_partial_depth_stream_event(&stream);
                                     let _result = socket.send(Message::Text(data.into())).await;
                                 } else {
                                     let data = build_sbe_depth_snapshot_stream_event(&symbol);
@@ -1625,6 +1625,139 @@ async fn test_subscribe_book_deltas_rejects_unsupported_sbe_depth(#[case] depth:
         error.to_string(),
         "Binance Spot SBE partial books support depth 20 only; use JSON market data for other depths",
     );
+}
+
+#[rstest]
+#[case(1)]
+#[case(4)]
+#[case(6)]
+#[case(7)]
+#[case(9)]
+#[case(11)]
+#[case(19)]
+#[case(21)]
+#[case(50)]
+#[case(100)]
+#[case(500)]
+#[case(1000)]
+#[case(usize::MAX)]
+#[tokio::test]
+async fn test_subscribe_book_deltas_rejects_unsupported_json_depth(#[case] depth: usize) {
+    let (mut client, _rx) = create_test_data_client_with_mode(
+        "http://127.0.0.1:1".to_string(),
+        "ws://127.0.0.1:1/ws".to_string(),
+        BinanceSpotMarketDataMode::Json,
+    );
+    let cmd = SubscribeBookDeltas::new(
+        InstrumentId::from("BTCUSDT.BINANCE"),
+        BookType::L2_MBP,
+        Some(*BINANCE_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        NonZeroUsize::new(depth),
+        false,
+        None,
+        None,
+    );
+
+    let error = client.subscribe_book_deltas(cmd).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "Invalid depth {depth} for Binance Spot JSON order book. Valid values: [5, 10, 20]"
+        ),
+    );
+
+    client
+        .subscribe_book_deltas(SubscribeBookDeltas::new(
+            InstrumentId::from("BTCUSDT.BINANCE"),
+            BookType::L1_MBP,
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            NonZeroUsize::new(1),
+            false,
+            None,
+            None,
+        ))
+        .unwrap();
+}
+
+#[rstest]
+#[case(5)]
+#[case(10)]
+#[case(20)]
+#[tokio::test]
+async fn test_subscribe_book_deltas_json_partial_depth_stream(#[case] depth: usize) {
+    let config = DataTestServerConfig {
+        json_ws_streams: true,
+        ..Default::default()
+    };
+    let subscriptions = config.subscriptions.clone();
+    let addr = start_data_test_server_with_config(config).await;
+    let (mut client, mut rx) = create_test_data_client_with_mode(
+        format!("http://{addr}"),
+        format!("ws://{addr}/ws"),
+        BinanceSpotMarketDataMode::Json,
+    );
+    client.connect().await.unwrap();
+
+    let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+    client
+        .subscribe_book_deltas(SubscribeBookDeltas::new(
+            instrument_id,
+            BookType::L2_MBP,
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            NonZeroUsize::new(depth),
+            false,
+            None,
+            None,
+        ))
+        .unwrap();
+
+    let data = recv_data(&mut rx, Duration::from_secs(5))
+        .await
+        .expect("expected JSON partial depth snapshot");
+    let Data::BookDeltas(deltas) = data else {
+        panic!("expected order book deltas");
+    };
+    let ts_init = deltas.ts_init;
+    let expected = OrderBookDeltas::new(
+        instrument_id,
+        vec![
+            OrderBookDelta::clear(instrument_id, 0, ts_init, ts_init),
+            OrderBookDelta::new(
+                instrument_id,
+                BookAction::Add,
+                BookOrder::new(OrderSide::Buy, "42000.00".into(), "1.00000".into(), 0),
+                0,
+                0,
+                ts_init,
+                ts_init,
+            ),
+            OrderBookDelta::new(
+                instrument_id,
+                BookAction::Add,
+                BookOrder::new(OrderSide::Sell, "42001.00".into(), "0.50000".into(), 0),
+                RecordFlag::F_LAST as u8,
+                0,
+                ts_init,
+                ts_init,
+            ),
+        ],
+    );
+
+    assert_eq!(
+        *subscriptions.lock(),
+        vec![vec![format!("btcusdt@depth{depth}")]]
+    );
+    assert_eq!(*deltas, expected);
 }
 
 #[rstest]
