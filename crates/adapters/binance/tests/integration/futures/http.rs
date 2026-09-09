@@ -43,7 +43,7 @@ use nautilus_binance::{
         query::{BinanceNewOrderParamsBuilder, BinanceOpenInterestHistParams},
     },
 };
-use nautilus_common::cache::InstrumentLookupError;
+use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
 use nautilus_core::time::get_atomic_clock_realtime;
 use nautilus_model::{
     data::BarType,
@@ -52,6 +52,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     types::Quantity,
 };
+use nautilus_network::http::HttpClient;
 use parking_lot::Mutex;
 use rstest::rstest;
 use rust_decimal_macros::dec;
@@ -428,7 +429,18 @@ async fn start_test_server(
         axum::serve(listener, router).await.unwrap();
     });
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    let health_url = format!("http://{addr}/fapi/v1/ping");
+    let http_client = HttpClient::builder().build().unwrap();
+    wait_until_async(
+        || {
+            let url = health_url.clone();
+            let client = http_client.clone();
+            async move { client.get(url, None, None, Some(1), None).await.is_ok() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
     Ok(addr)
 }
 

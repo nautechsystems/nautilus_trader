@@ -456,6 +456,9 @@ zeroization conventions.
 
 - Define environment variable names once and select them from typed environment and product values.
 - Document the established environment variable names in the adapter's integration guide.
+- Register every adapter environment variable in `scripts/strip-adapter-env.bash`. `make pre-flight`
+  runs through that wrapper with all of them unset, so an unregistered variable can let a test pass
+  locally while depending on ambient credentials.
 - Resolve all fields as one credential set. Public clients may remain unauthenticated, but an
   authenticated client rejects an incomplete or invalid set before sending a request.
 - Convert config and environment strings into zeroizing owners at the credential boundary. Do not

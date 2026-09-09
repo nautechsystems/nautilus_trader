@@ -484,6 +484,12 @@ pre-flight:  #-- Run pre-flight checks (format, tests, build, generated drift, a
 		printf "$(YELLOW)Stage your changes first:$(RESET) git add .\n"; \
 		exit 1; \
 	fi
+	@bash scripts/strip-adapter-env.bash $(MAKE) --no-print-directory pre-flight-steps
+
+# Adapter environment variables are stripped so tests cannot depend on locally
+# configured venue credentials (see scripts/strip-adapter-env.bash).
+.PHONY: pre-flight-steps
+pre-flight-steps:
 	@$(timer_start) \
 		$(MAKE) --no-print-directory sync \
 		&& $(MAKE) --no-print-directory format \

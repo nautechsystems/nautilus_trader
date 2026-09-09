@@ -274,7 +274,12 @@ async fn start_test_server()
         axum::serve(listener, router).await.unwrap();
     });
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    wait_until_async(
+        || async { tokio::net::TcpStream::connect(addr).await.is_ok() },
+        Duration::from_secs(5),
+    )
+    .await;
+
     Ok((addr, state))
 }
 

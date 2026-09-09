@@ -1515,6 +1515,18 @@ async fn start_exec_test_server_with_fill_fixture(
             .unwrap();
     });
 
+    let health_url = format!("http://{addr}/api/v3/ping");
+    let http_client = HttpClient::builder().build().unwrap();
+    wait_until_async(
+        || {
+            let url = health_url.clone();
+            let client = http_client.clone();
+            async move { client.get(url, None, None, Some(1), None).await.is_ok() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
     (addr, captured_queries)
 }
 
@@ -1883,6 +1895,8 @@ async fn test_mass_status_respects_explicit_instrument_scope(
 #[tokio::test]
 async fn test_single_order_probe_rejects_excluded_instrument() {
     let config = BinanceExecutionClientConfig {
+        api_key: Some("test_api_key".into()),
+        api_secret: Some("test_api_secret".into()),
         instrument_provider: BinanceInstrumentProviderConfig {
             load_all: false,
             load_ids: Some(vec!["ETHUSDT.BINANCE".to_string()]),

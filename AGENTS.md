@@ -22,6 +22,8 @@ standard for correctness, reliability, testing, clarity, and maintainability.**
   result. Fix the underlying problem and preserve the behavior the tests are intended to protect.
   Change a test only when the task intentionally changes the required behavior or when you can
   independently verify that the test is wrong.
+- Do not let tests depend on adapter environment variables; `make pre-flight` runs with all of
+  them unset via `scripts/strip-adapter-env.bash`. Register new adapter environment variables there.
 - Expose the minimum public API and keep the patch focused. Avoid drive-by refactors, renames, and
   abstractions unrelated to the contribution.
 - Change generated artifacts through their source and generator. Never edit them by hand.
