@@ -640,7 +640,7 @@ impl OKXWebSocketClient {
             headers,
             heartbeat_interval_secs: self.heartbeat,
             heartbeat_payload: Some(TEXT_PING.to_string()),
-            connect_timeout_ms: Some(5_000),
+            connect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
             reconnect_delay_max_ms: None,
             reconnect_backoff_factor: None,

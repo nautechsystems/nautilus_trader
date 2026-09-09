@@ -99,6 +99,7 @@ struct TestServerState {
     control_ping_count: Arc<tokio::sync::Mutex<usize>>,
     fail_next_login: Arc<AtomicBool>,
     reject_upgrades: Arc<AtomicBool>,
+    upgrade_delay: Duration,
 }
 
 fn data_path() -> PathBuf {
@@ -304,6 +305,10 @@ async fn handle_ws_upgrade(
 ) -> Response {
     if state.reject_upgrades.load(Ordering::Relaxed) {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+
+    if !state.upgrade_delay.is_zero() {
+        tokio::time::sleep(state.upgrade_delay).await;
     }
 
     ws.on_upgrade(move |socket| handle_socket(socket, state))
@@ -1741,6 +1746,34 @@ async fn test_rpi_websocket_subscription_and_single_batch_order_matrix() {
     assert!(messages[3]["args"][0].get("newClOrdId").is_none());
     assert_eq!(messages[3]["args"][0]["rpiTakerAccess"], false);
     assert_eq!(messages[3]["args"][0]["rpiPxRound"], true);
+
+    client.close().await.expect("close failed");
+}
+
+#[rstest]
+#[case::slow_handshake(6, None)]
+#[case::stalled_handshake(12, Some("I/O error: connection timed out after 10s"))]
+#[tokio::test]
+async fn test_websocket_connection_uses_default_timeout(
+    #[case] delay_secs: u64,
+    #[case] expected_error: Option<&str>,
+) {
+    let state = Arc::new(TestServerState {
+        upgrade_delay: Duration::from_secs(delay_secs),
+        ..Default::default()
+    });
+    let addr = start_ws_server(state).await;
+    let mut client = connect_client(&format!("ws://{addr}/ws")).await;
+
+    let result = tokio::time::timeout(Duration::from_secs(15), client.connect())
+        .await
+        .expect("connection attempt exceeded test deadline");
+
+    assert_eq!(
+        result.as_ref().err().map(ToString::to_string).as_deref(),
+        expected_error
+    );
+    assert_eq!(client.is_active(), expected_error.is_none());
 
     client.close().await.expect("close failed");
 }
