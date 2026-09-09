@@ -817,28 +817,9 @@ pub fn unsubscribe_defi_flash(pattern: MStr<Pattern>, handler: &TypedHandler<Poo
 
 /// Unsubscribes a handler from a pattern (Any-based).
 pub fn unsubscribe_any(pattern: MStr<Pattern>, handler: &ShareableMessageHandler) {
-    log::debug!("Unsubscribing {handler:?} from pattern '{pattern}'");
-
-    let handler_id = handler.0.id();
-    let bus_rc = get_message_bus();
-    let mut bus = bus_rc.borrow_mut();
-
-    let count_before = bus.subscriptions.len();
-
-    bus.topics.values_mut().for_each(|subs| {
-        subs.retain(|s| !(s.pattern == pattern && s.handler_id == handler_id));
-    });
-
-    bus.subscriptions
-        .retain(|s| !(s.pattern == pattern && s.handler_id == handler_id));
-
-    let removed = bus.subscriptions.len() < count_before;
-
-    if removed {
-        log::debug!("Handler for pattern '{pattern}' was removed");
-    } else {
-        log::debug!("No matching handler for pattern '{pattern}' was found");
-    }
+    get_message_bus()
+        .borrow_mut()
+        .unsubscribe_any(pattern, handler);
 }
 
 /// Checks if a handler is subscribed to a pattern (Any-based).

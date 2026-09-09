@@ -55,7 +55,7 @@ rewriting the original.
 ## Data and signal publishing
 
 While the `MessageBus` is a lower-level component that users typically interact with indirectly,
-`DataActor` and `Strategy` provide typed methods built on top of it:
+`DataActor`, `Strategy`, and `ExecutionAlgorithm` provide typed methods built on top of it:
 
 ```python
 def publish_data(self, data_type: DataType, data: CustomData) -> None:
@@ -64,24 +64,89 @@ def publish_signal(self, name: str, value, ts_event: int = 0) -> None:
 
 These methods publish custom data and signals without exposing the raw message bus to Python.
 
-## Direct access
+## Python topic messaging
 
-The Python `DataActor` and `Strategy` APIs do not expose `self.msgbus`. Use custom data or
-signals for supported Python component messaging. Rust components can use the typed message-bus
-facade directly.
+Registered Python `DataActor`, `Strategy`, and `ExecutionAlgorithm` components publish arbitrary
+Python objects through `publish_message(topic, message)`. Use
+`subscribe_topic(topic, handler, priority=0)` and `unsubscribe_topic(topic, handler)` to manage
+callbacks on the same runtime bus.
+These methods do not construct, replace, or dispose the bus, and do not expose `self.msgbus`.
+
+Subscribe from a component callback such as `on_start`:
+
+```python
+from nautilus_trader.common import DataActor
+
+
+class RiskObserver(DataActor):
+    def on_start(self) -> None:
+        self.subscribe_topic("app.risk.*", self.on_risk, priority=10)
+
+    def on_risk(self, message: object) -> None:
+        self.log.info(f"Risk update: {message}")
+```
+
+From another registered component, publish on a matching topic:
+
+```python
+self.publish_message("app.risk.limit", {"instrument": "BTCUSDT", "limit": 3})
+```
+
+Publication requires a non-empty concrete topic without wildcards. Subscription patterns accept
+`*` for zero or more characters and `?` for exactly one character. Wildcards can cross dots, so
+`app.risk.*` also matches `app.risk.limit.eu`.
+
+Handlers receive the original object without copying, string conversion, or serialization. Follow
+[message integrity](#message-integrity): treat published objects as immutable. Use application-owned
+topics such as `app.risk.limit`; system data and event topics carry their own payload types.
+These callbacks receive objects published through `publish_message`, not typed market data or signals.
+Use the corresponding typed subscription methods for those payloads.
+Patterns that also match signals or custom data log an error for each incompatible payload instead
+of invoking the Python callback.
+Python object publication does not send the object to external message-bus storage or transport.
+
+Delivery is synchronous. Nested publication finishes before the publishing callback continues.
+Higher subscription priorities run first; equal priority does not imply subscription insertion order.
+Use distinct priorities when callback order matters, including reproducible backtests.
+A handler exception is logged, and delivery continues to the remaining handlers. This delivery model
+does not make it safe to re-enter a component that is already executing in the publishing call stack.
+
+Subscriptions belong to the subscribing component:
+
+- Repeating the same pattern and callable is a no-op, including attempts to change its priority.
+  Unsubscribe first to change priority.
+- Python-defined bound methods match by receiver and function, so repeated `self.on_risk` lookups identify
+  the same handler. Other callables, including bound built-in methods, match by object identity.
+  Keep a reference to these other callables for later unsubscription.
+  Neither equality nor representation methods run.
+- Unsubscription removes only the exact pattern and callable owned by that component. An absent
+  subscription is a no-op. Other components' subscriptions remain independent.
+- A callback already selected for a publication can still run if it is unsubscribed during that
+  publication.
+
+Stopping retains subscriptions, and raw topic callbacks can run while a component is stopped.
+Resuming keeps those subscriptions. Successful reset and disposal release the component's
+subscriptions and retained callables; successful reset requires subscribing again. A failed disposal
+retains subscriptions until retirement cleanup succeeds. Fault cleanup also releases subscriptions.
+
+These methods raise `RuntimeError` before runtime registration, after successful disposal, from a
+foreign thread, while releasing subscriptions, or when the registered bus is unavailable or replaced.
+Invalid topics and patterns raise `ValueError`; a non-callable handler raises `TypeError`.
+Priority must be an integer in `[0, 4294967295]`; values outside this range raise `OverflowError`.
 
 ## Messaging styles
 
 NautilusTrader is an **event-driven** framework where components communicate by sending and receiving messages.
 Understanding the different messaging styles helps when building trading systems.
 
-This guide explains the three primary messaging patterns available in NautilusTrader:
+This guide explains the four primary messaging patterns available in NautilusTrader:
 
-| **Messaging style**                   | **Purpose**                          | **Best for**                                          |
-| :------------------------------------ | :----------------------------------- | :---------------------------------------------------- |
-| **Custom data publish/subscribe**     | Structured trading data exchange     | Trading metrics, indicators, data needing persistence |
-| **Signal publish/subscribe**          | Lightweight notifications            | Simple alerts, flags, and status updates              |
-| **Rust MessageBus publish/subscribe** | Low-level, typed topic communication | Native runtime components                             |
+| **Messaging style**                                            | **Purpose**                          | **Best for**                                          |
+| :------------------------------------------------------------- | :----------------------------------- | :---------------------------------------------------- |
+| **Custom data publish/subscribe**                              | Structured trading data exchange     | Trading metrics, indicators, data needing persistence |
+| **Signal publish/subscribe**                                   | Lightweight notifications            | Simple alerts, flags, and status updates              |
+| [**Python object publish/subscribe**](#python-topic-messaging) | In-process Python object exchange    | Application topics shared by Python components        |
+| **Rust MessageBus publish/subscribe**                          | Low-level, typed topic communication | Native runtime components                             |
 
 Each approach serves different purposes. Use this guide to decide which pattern to use.
 
@@ -247,6 +312,7 @@ def on_signal(self, signal):
 | :------------------------------------- | :---------------------------------- | :---------------------------------------- |
 | Native system-level communication      | Rust `MessageBus` publish/subscribe | Typed topic and handler                   |
 | Structured Python component data       | `DataActor` custom data methods     | `DataType`, `CustomData`, and `on_data()` |
+| Arbitrary in-process Python objects    | Component topic methods             | Application topic and callable            |
 | Simple Python alerts and notifications | `DataActor` signal methods          | Signal name and `on_signal()`             |
 
 ## External egress and ingress

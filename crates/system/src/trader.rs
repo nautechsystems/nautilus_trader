@@ -3879,6 +3879,133 @@ mod tests {
 
     #[cfg(feature = "python")]
     #[rstest]
+    fn test_component_message_bus_across_registered_python_components() {
+        use nautilus_trading::python::algorithm::PyExecutionAlgorithm;
+
+        Python::initialize();
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let bus = msgbus::get_message_bus();
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+        Python::attach(|py| {
+            let locals = PyDict::new(py);
+            locals
+                .set_item("DataActor", py.get_type::<PyDataActor>())
+                .unwrap();
+            locals
+                .set_item("Strategy", py.get_type::<PyStrategy>())
+                .unwrap();
+            locals
+                .set_item("ExecutionAlgorithm", py.get_type::<PyExecutionAlgorithm>())
+                .unwrap();
+            py.run(
+                c_str!(
+                    r#"
+import weakref
+import threading
+class Hooks:
+    def on_start(self): self.subscribe_topic("app.shared", self.receive)
+    def on_stop(self): pass
+    def on_resume(self): pass
+    def on_dispose(self): pass
+    def receive(self, value): self.received.append(value)
+class Actor(Hooks, DataActor): pass
+class TradingStrategy(Hooks, Strategy): pass
+class Algorithm(Hooks, ExecutionAlgorithm): pass
+actor = Actor()
+strategy = TradingStrategy()
+algorithm = Algorithm()
+components = [actor, strategy, algorithm]
+for component in components: component.received = []
+references = [weakref.ref(component) for component in components]
+"#
+                ),
+                Some(&locals),
+                None,
+            )
+            .unwrap();
+            let actor = locals.get_item("actor").unwrap().unwrap().unbind();
+            let strategy = locals.get_item("strategy").unwrap().unwrap().unbind();
+            let algorithm = locals.get_item("algorithm").unwrap().unwrap().unbind();
+            let actor_id = ActorId::from("Actor");
+            trader.add_python_actor_instance(&actor, actor_id).unwrap();
+            trader.add_python_strategy_instance(&strategy).unwrap();
+            let native_algorithm = algorithm
+                .bind(py)
+                .extract::<PyRef<PyExecutionAlgorithm>>()
+                .unwrap()
+                .clone();
+            trader
+                .add_py_execution_algorithm_instance(native_algorithm, &algorithm)
+                .unwrap();
+            drop((actor, strategy, algorithm));
+            py.run(
+                c_str!(
+                    r#"
+
+for component in components: component.start()
+message = {"symbol": "example", "weights": [13, 29]}
+for component in components: component.publish_message("app.shared", message)
+for component in components:
+    assert len(component.received) == 3
+    assert all(value is message for value in component.received)
+errors = []
+def foreign():
+
+    for component in components:
+        for name, args in [("publish_message", ("app.shared", message)),
+                           ("subscribe_topic", ("app.shared", component.receive)),
+                           ("unsubscribe_topic", ("app.shared", component.receive))]:
+            try: getattr(component, name)(*args)
+            except RuntimeError: pass
+            except BaseException as error: errors.append(type(error).__name__)
+            else: errors.append(name)
+thread = threading.Thread(target=foreign)
+thread.start()
+thread.join()
+assert errors == []
+
+for component in components:
+    component.unsubscribe_topic("app.shared", component.receive)
+    component.subscribe_topic("app.shared", component.receive)
+    component.stop()
+"#
+                ),
+                Some(&locals),
+                None,
+            )
+            .unwrap();
+            assert!(Rc::ptr_eq(&bus, &msgbus::get_message_bus()));
+            trader.dispose_components().unwrap();
+            py.run(
+                c_str!(
+                    r#"
+
+for component in components:
+    try: component.subscribe_topic("app.shared", component.receive)
+    except RuntimeError: pass
+    else: raise AssertionError("disposed component accepted a subscription")
+del component, components, actor, strategy, algorithm
+assert [reference() for reference in references] == [None, None, None]
+"#
+                ),
+                Some(&locals),
+                None,
+            )
+            .unwrap();
+            locals.clear();
+        });
+    }
+
+    #[cfg(feature = "python")]
+    #[rstest]
     fn test_python_actor_and_strategy_state_callbacks_use_registered_types() {
         pyo3::Python::initialize();
 

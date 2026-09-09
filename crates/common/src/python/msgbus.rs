@@ -309,7 +309,11 @@ impl PyCallableHandler {
     pub fn new(py: Python<'_>, callable: Py<PyAny>) -> PyResult<Self> {
         let repr_str = callable.bind(py).repr()?.to_string();
         let id = Ustr::from(&repr_str);
-        Ok(Self { id, callable })
+        Ok(Self::with_id(id, callable))
+    }
+
+    pub(crate) fn with_id(id: Ustr, callable: Py<PyAny>) -> Self {
+        Self { id, callable }
     }
 }
 

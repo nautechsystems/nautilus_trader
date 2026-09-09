@@ -25,7 +25,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use nautilus_common::{
-    actor::data_actor::ImportableActorConfig,
+    actor::{DataActorNative, data_actor::ImportableActorConfig},
     python::{
         actor::{
             PyDataActor, PyDataActorInner, prepare_python_actor,
@@ -349,6 +349,7 @@ impl Trader {
         let component_id = ComponentId::from(exec_algorithm_id);
         self.ensure_component_id_available(component_id)?;
 
+        let message_bus = algorithm.core().message_bus();
         if let Err(e) = self.add_exec_algorithm(algorithm) {
             // Without this the guard sees the stranded clock and dead-ends this ID until disposal
             self.release_component(component_id);
@@ -356,7 +357,7 @@ impl Trader {
         }
 
         Python::attach(|py| {
-            retain_python_wrapper(component_id, wrapper.clone_ref(py));
+            retain_python_wrapper(component_id, wrapper.clone_ref(py), message_bus);
         });
 
         Ok(exec_algorithm_id)

@@ -57,6 +57,8 @@ use crate::defi;
 #[cfg(feature = "defi")]
 #[allow(unused_imports)]
 use crate::defi::data_actor as _; // Brings DeFi impl blocks into scope
+#[cfg(feature = "python")]
+use crate::python::component_msgbus::ComponentMessageBus;
 use crate::{
     cache::{Cache, CacheApi},
     clock::{Clock, ClockApi},
@@ -2991,6 +2993,12 @@ where
     fn transition_state(&mut self, trigger: ComponentTrigger) -> anyhow::Result<()> {
         let core = self.core_mut();
         core.state = core.state.transition(&trigger)?;
+
+        #[cfg(feature = "python")]
+        if core.state == ComponentState::Disposed {
+            core.message_bus.invalidate();
+        }
+
         log::info!(
             component = core.actor_id.inner().as_str();
             "{}",
@@ -3094,6 +3102,8 @@ pub struct DataActorCore {
     warning_events: AHashSet<String>, // TODO: TBD
     pending_requests: AHashMap<UUID4, Option<RequestCallback>>,
     signal_classes: AHashMap<String, String>,
+    #[cfg(feature = "python")]
+    message_bus: Rc<ComponentMessageBus>,
     indicators: Indicators,
 }
 
@@ -3887,6 +3897,8 @@ impl DataActorCore {
                 self.send_data_cmd(command);
             }
         }
+        #[cfg(feature = "python")]
+        self.message_bus.clear();
     }
 
     #[cfg(feature = "defi")]
@@ -3978,6 +3990,8 @@ impl DataActorCore {
             warning_events: AHashSet::new(),
             pending_requests: AHashMap::new(),
             signal_classes: AHashMap::new(),
+            #[cfg(feature = "python")]
+            message_bus: Rc::default(),
             indicators: Indicators::default(),
         }
     }
@@ -4142,6 +4156,9 @@ impl DataActorCore {
             let _cache_borrow = cache.borrow();
         }
 
+        #[cfg(feature = "python")]
+        self.message_bus.register();
+
         self.trader_id = Some(trader_id);
         self.clock = Some(clock);
         self.cache = Some(cache);
@@ -4168,6 +4185,12 @@ impl DataActorCore {
     pub fn deregister_warning_event(&mut self, event_type: &str) {
         self.warning_events.remove(event_type);
         log::debug!("Deregistered event type '{event_type}' from warning logs");
+    }
+
+    /// Returns this component's shared Python message-bus state.
+    #[cfg(feature = "python")]
+    pub fn message_bus(&self) -> Rc<ComponentMessageBus> {
+        Rc::clone(&self.message_bus)
     }
 
     pub fn is_registered(&self) -> bool {

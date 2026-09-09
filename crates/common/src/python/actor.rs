@@ -81,7 +81,7 @@ use crate::{
         clock::PyClock,
         indicators::{registered_python_indicators, wrap_python_indicator},
         logging::PyLogger,
-        wrappers::retain_python_wrapper,
+        wrappers::{get_python_message_bus, retain_python_wrapper},
     },
     signal::Signal,
     timer::{TimeEvent, TimeEventCallback},
@@ -993,7 +993,7 @@ impl PyDataActor {
         let actor_trait_ref: Rc<UnsafeCell<dyn Actor>> = inner_ref;
         with_actor_registry(|registry| registry.insert(actor_id, actor_trait_ref));
 
-        retain_python_wrapper(component_id, wrapper);
+        retain_python_wrapper(component_id, wrapper, inner.core.message_bus());
 
         Ok(())
     }
@@ -2565,6 +2565,44 @@ impl PyDataActor {
     #[pyo3(name = "on_historical_index_prices")]
     fn py_on_historical_index_prices(&mut self, index_prices: Vec<IndexPriceUpdate>) {
         // Default implementation - can be overridden in Python subclasses
+    }
+}
+
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pyo3::pymethods]
+impl PyDataActor {
+    #[pyo3(name = "publish_message", signature = (topic, message))]
+    fn py_publish_message(
+        slf: &Bound<'_, Self>,
+        topic: &str,
+        #[gen_stub(override_type(type_repr = "object"))] message: Py<PyAny>,
+    ) -> PyResult<()> {
+        let messages = get_python_message_bus(slf.as_any())?;
+        messages.publish_message(topic, message)
+    }
+
+    #[pyo3(name = "subscribe_topic")]
+    #[pyo3(signature = (topic, handler, priority=0))]
+    fn py_subscribe_topic(
+        slf: &Bound<'_, Self>,
+        topic: &str,
+        #[gen_stub(override_type(type_repr = "collections.abc.Callable[[object], None]", imports = ("collections.abc",)))]
+        handler: Py<PyAny>,
+        priority: u32,
+    ) -> PyResult<()> {
+        let messages = get_python_message_bus(slf.as_any())?;
+        messages.subscribe_topic(slf.py(), topic, handler, priority)
+    }
+
+    #[pyo3(name = "unsubscribe_topic", signature = (topic, handler))]
+    fn py_unsubscribe_topic(
+        slf: &Bound<'_, Self>,
+        topic: &str,
+        #[gen_stub(override_type(type_repr = "collections.abc.Callable[[object], None]", imports = ("collections.abc",)))]
+        handler: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
+        let messages = get_python_message_bus(slf.as_any())?;
+        messages.unsubscribe_topic(topic, handler)
     }
 }
 

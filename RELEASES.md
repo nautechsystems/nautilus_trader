@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 
 - Added `HttpClient::get_stream` and `HttpResponseStream` for HTTP bodies consumed without full buffering
+- Added `publish_message(...)`, `subscribe_topic(...)`, and `unsubscribe_topic(...)` for Python `DataActor`, `Strategy`, and `ExecutionAlgorithm`
 - Added `Cache` APIs and Redis/PostgreSQL persistence for `InstrumentClose` data
 - Added `avg_px` and report window fields to persisted execution reports
 - Added a `causation_id` property to every order event, and a `protection_price` property to `OrderUpdated`

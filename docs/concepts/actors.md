@@ -164,23 +164,26 @@ component; registering the same name replaces the existing timer.
 
 Actors have access to core system components:
 
-| API                                       | Description                                          |
-| ----------------------------------------- | ---------------------------------------------------- |
-| `self.cache`                              | Shared state for instruments, orders, and positions. |
-| `self.clock`                              | Current time and timer or alert scheduling.          |
-| `self.log`                                | Structured logging.                                  |
-| `publish_data()` / `subscribe_data()`     | Structured custom data messaging.                    |
-| `publish_signal()` / `subscribe_signal()` | Lightweight alerts and notifications.                |
-| `subscribe_queue_state()`                 | Live runner queue pressure state changes.            |
-| `subscribe_socket_state()`                | Live socket transport state changes.                 |
-| `reconnect_socket()`                      | Request recovery of one live socket endpoint.        |
-| `unsubscribe_queue_state()`               | Stop receiving runner queue pressure state changes.  |
-| `unsubscribe_socket_state()`              | Stop receiving socket transport state changes.       |
-| `on_queue_state()`                        | Handle a runner queue pressure state change.         |
-| `on_socket_state()`                       | Handle a socket transport state change.              |
+| API                                         | Description                                          |
+| ------------------------------------------- | ---------------------------------------------------- |
+| `self.cache`                                | Shared state for instruments, orders, and positions. |
+| `self.clock`                                | Current time and timer or alert scheduling.          |
+| `self.log`                                  | Structured logging.                                  |
+| `publish_data()` / `subscribe_data()`       | Structured custom data messaging.                    |
+| `publish_signal()` / `subscribe_signal()`   | Lightweight alerts and notifications.                |
+| `publish_message()`                         | Publish a Python object on an application topic.     |
+| `subscribe_topic()` / `unsubscribe_topic()` | Manage Python object callbacks.                      |
+| `subscribe_queue_state()`                   | Live runner queue pressure state changes.            |
+| `subscribe_socket_state()`                  | Live socket transport state changes.                 |
+| `reconnect_socket()`                        | Request recovery of one live socket endpoint.        |
+| `unsubscribe_queue_state()`                 | Stop receiving runner queue pressure state changes.  |
+| `unsubscribe_socket_state()`                | Stop receiving socket transport state changes.       |
+| `on_queue_state()`                          | Handle a runner queue pressure state change.         |
+| `on_socket_state()`                         | Handle a socket transport state change.              |
 
 The Python `DataActor` and `Strategy` APIs do not expose `self.msgbus`. Use custom data for
-structured payloads and signals for lightweight values.
+structured payloads, signals for lightweight values, or
+[topic messaging](message_bus.md#python-topic-messaging) for arbitrary in-process Python objects.
 
 ### Queue pressure state
 

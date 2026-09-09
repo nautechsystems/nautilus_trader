@@ -641,26 +641,31 @@ v1 default did not fan out order lists.
 
 The supported authoring surface has these v1 dispositions:
 
-| V1 `ExecAlgorithm` / `Actor` capability | Python v2 contract                                                            |
-| --------------------------------------- | ----------------------------------------------------------------------------- |
-| `cache`                                 | Available as a read-only property after node or engine registration.          |
-| `portfolio`                             | Available as a read-only property after node or engine registration.          |
-| `greeks`                                | Construct `GreeksCalculator(self.cache, self.clock)` after registration.      |
-| `msgbus`                                | Not exposed; use signals for supported custom messaging.                      |
-| Registered indicators                   | Use `DataActor` or `Strategy` for indicator-driven workflows.                 |
-| Market-data subscriptions and callbacks | Use `DataActor` or `Strategy`; algorithms inspect cache and routed events.    |
-| Lifecycle state and control             | Use `is_*()` and lifecycle methods; the Rust component remains authoritative. |
-| Direct `register(...)`                  | Use `BacktestEngine.add_exec_algorithm` or `LiveNode.add_exec_algorithm`.     |
+| V1 `ExecAlgorithm` / `Actor` capability | Python v2 contract                                                                |
+| --------------------------------------- | --------------------------------------------------------------------------------- |
+| `cache`                                 | Available as a read-only property after node or engine registration.              |
+| `portfolio`                             | Available as a read-only property after node or engine registration.              |
+| `greeks`                                | Construct `GreeksCalculator(self.cache, self.clock)` after registration.          |
+| `msgbus`                                | Use component topic methods for Python objects or signals for lightweight values. |
+| Registered indicators                   | Use `DataActor` or `Strategy` for indicator-driven workflows.                     |
+| Market-data subscriptions and callbacks | Use `DataActor` or `Strategy`; algorithms inspect cache and routed events.        |
+| Lifecycle state and control             | Use `is_*()` and lifecycle methods; the Rust component remains authoritative.     |
+| Direct `register(...)`                  | Use `BacktestEngine.add_exec_algorithm` or `LiveNode.add_exec_algorithm`.         |
 
-Signals replace direct message-bus access on Python v2 `DataActor`, `Strategy`, and
-`ExecutionAlgorithm`:
+Python v2 `DataActor`, `Strategy`, and `ExecutionAlgorithm` expose `publish_message(topic, message)`,
+`subscribe_topic(topic, handler, priority=0)`, and `unsubscribe_topic(topic, handler)` for arbitrary
+in-process Python objects. Handlers receive the original object synchronously, and subscriptions
+belong to the subscribing component. See [Python topic messaging](docs/concepts/message_bus.md#python-topic-messaging)
+for callable identity, lifecycle, and thread requirements.
+
+For lightweight signals:
 
 - Call `subscribe_signal(name)` during `on_start`.
 - Handle `on_signal(signal)`.
 - Call `publish_signal(name, value)`.
 
-Signal values use their string representation. Raw message-bus endpoints and handlers remain
-runtime internals.
+Signal values use their string representation. Raw message-bus endpoint registration remains
+a runtime internal API.
 
 ```python
 from nautilus_trader.common import GreeksCalculator

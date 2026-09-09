@@ -826,6 +826,33 @@ impl MessageBus {
 
         Ok(())
     }
+
+    pub(crate) fn unsubscribe_any(
+        &mut self,
+        pattern: MStr<Pattern>,
+        handler: &ShareableMessageHandler,
+    ) {
+        log::debug!("Unsubscribing {handler:?} from pattern '{pattern}'");
+
+        let handler_id = handler.0.id();
+
+        let count_before = self.subscriptions.len();
+
+        self.topics.values_mut().for_each(|subs| {
+            subs.retain(|s| !(s.pattern == pattern && s.handler_id == handler_id));
+        });
+
+        self.subscriptions
+            .retain(|s| !(s.pattern == pattern && s.handler_id == handler_id));
+
+        let removed = self.subscriptions.len() < count_before;
+
+        if removed {
+            log::debug!("Handler for pattern '{pattern}' was removed");
+        } else {
+            log::debug!("No matching handler for pattern '{pattern}' was found");
+        }
+    }
 }
 
 #[cfg(test)]
