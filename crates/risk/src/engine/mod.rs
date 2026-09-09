@@ -79,7 +79,7 @@ fn cash_or_wallet_account(account: &AccountAny) -> Option<&dyn Account> {
 /// When the lookup misses, every account-scoped check is skipped, so the resolution is
 /// attempted in the following order:
 ///
-/// 1. Exact venue match (the common case; unchanged behaviour).
+/// 1. Exact venue match (the common case; unchanged behavior).
 /// 2. The account of the execution client routing the order, when the order carries an
 ///    explicit `client_id`.
 /// 3. The account owning an existing position for the instrument.
@@ -92,7 +92,7 @@ fn cash_or_wallet_account(account: &AccountAny) -> Option<&dyn Account> {
 /// miss on the first order of a session, which is precisely when the limits should apply.
 ///
 /// Returns `None` when no account can be resolved, in which case the caller keeps the
-/// existing fail-open behaviour.
+/// existing fail-open behavior.
 fn resolve_account_for_instrument(
     cache: &Cache,
     instrument_id: &InstrumentId,

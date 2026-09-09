@@ -10036,7 +10036,7 @@ fn test_account_scoped_checks_still_skipped_when_no_account_registered(
 
     let mut cache = Cache::default();
     cache.add_instrument(instrument.clone()).unwrap();
-    // Deliberately no account registered: fail-open behaviour must be preserved.
+    // Deliberately no account registered: fail-open behavior must be preserved.
 
     let mut risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
     risk_engine.set_max_notional_per_order(instrument.id(), Decimal::from_i64(1).unwrap());
