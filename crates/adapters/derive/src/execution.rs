@@ -734,132 +734,9 @@ impl ExecutionClient for DeriveExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        if cmd.venue_order_id.is_none() && cmd.client_order_id.is_none() {
-            log::warn!(
-                "Derive generate_order_status_report requires venue_order_id or client_order_id"
-            );
-            return Ok(None);
-        }
-
-        let subaccount_id = self.credential.subaccount_id();
-        let order = if let Some(venue_order_id) = cmd.venue_order_id {
-            match self
-                .http_client
-                .get_order(&DeriveGetOrderParams::new(
-                    subaccount_id,
-                    venue_order_id.as_str(),
-                ))
-                .await
-            {
-                Ok(order) => Some(order),
-                Err(e) => {
-                    let trigger_orders = self
-                        .http_client
-                        .get_trigger_orders(&DeriveGetTriggerOrdersParams::new(subaccount_id))
-                        .await?
-                        .orders;
-
-                    match trigger_orders
-                        .into_iter()
-                        .find(|o| o.order_id.as_str() == venue_order_id.as_str())
-                    {
-                        Some(order) => Some(order),
-                        None => return Err(e.into()),
-                    }
-                }
-            }
-        } else {
-            // Derive has no by-label lookup endpoint; scan open orders first,
-            // then trigger orders, then fall through to paginated history so
-            // terminal orders resolve for reconcilers that only carry the
-            // client_order_id.
-            let label = cmd.client_order_id.expect("guarded above");
-            let open_orders = self
-                .http_client
-                .get_open_orders(&DeriveGetOpenOrdersParams::new(subaccount_id))
-                .await?
-                .orders;
-            let mut found = open_orders.into_iter().find(|o| o.label == label.as_str());
-
-            if found.is_none() {
-                let trigger_orders = self
-                    .http_client
-                    .get_trigger_orders(&DeriveGetTriggerOrdersParams::new(subaccount_id))
-                    .await?
-                    .orders;
-                found = trigger_orders
-                    .into_iter()
-                    .find(|o| o.label == label.as_str());
-            }
-
-            if found.is_none() {
-                let instrument_name = cmd.instrument_id.map(|id| id.symbol.as_str().to_string());
-                let mut page: u32 = 1;
-
-                'history: loop {
-                    let mut params = DeriveGetOrderHistoryParams::new(
-                        subaccount_id,
-                        page,
-                        DERIVE_PRIVATE_PAGE_SIZE,
-                    );
-
-                    if let Some(name) = instrument_name.as_deref() {
-                        params = params.with_instrument_name(name);
-                    }
-
-                    let result = self.http_client.get_order_history(&params).await?;
-                    let total_pages = result.pagination.num_pages;
-
-                    for order in result.orders {
-                        if order.label == label.as_str() {
-                            found = Some(order);
-                            break 'history;
-                        }
-                    }
-
-                    if (page as i64) >= total_pages || total_pages == 0 {
-                        break;
-                    }
-                    page += 1;
-                }
-            }
-            found
-        };
-
-        let Some(order) = order else {
-            return Ok(None);
-        };
-
-        if let Some(instrument_id) = cmd.instrument_id
-            && InstrumentId::new(Symbol::new(order.instrument_name), *DERIVE_VENUE) != instrument_id
-        {
-            log::warn!(
-                "Derive order {} is for {} but report requested {}",
-                order.order_id,
-                order.instrument_name.as_str(),
-                instrument_id,
-            );
-            return Ok(None);
-        }
-
-        let (price_precision, size_precision) =
-            report_precision(&self.dispatch_state, order.instrument_name.as_str());
-        let ts_init = self.clock.get_time_ns();
-        let mut report = parse_derive_order_to_report_with_precision(
-            &order,
-            self.core.account_id,
-            price_precision,
-            size_precision,
-            ts_init,
-        )?;
-        // Prefer the parsed label (the venue's source of truth); only stamp
-        // the cmd's id when the venue order has no label at all.
-        if report.client_order_id.is_none()
-            && let Some(client_order_id) = cmd.client_order_id
-        {
-            report = report.with_client_order_id(client_order_id);
-        }
-        Ok(Some(report))
+        self.reconciliation_context()
+            .generate_order_status_report(cmd)
+            .await
     }
 
     async fn generate_order_status_reports(
@@ -1954,65 +1831,39 @@ impl ExecutionClient for DeriveExecutionClient {
     }
 
     fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
-        let Some(venue_order_id) = cmd.venue_order_id else {
-            log::warn!(
-                "Derive query_order requires venue_order_id (client_order_id={})",
-                cmd.client_order_id,
-            );
-            return Ok(());
-        };
-        let http_client = self.http_client.clone();
-        let subaccount_id = self.credential.subaccount_id();
-        let account_id = self.core.account_id;
-        let emitter = self.emitter.clone();
-        let clock = self.clock;
-        let dispatch_state = Arc::clone(&self.dispatch_state);
-        let voi = venue_order_id.to_string();
+        let context = self.reconciliation_context();
+
+        let report_cmd = GenerateOrderStatusReport::new(
+            cmd.command_id,
+            cmd.ts_init,
+            Some(cmd.instrument_id),
+            Some(cmd.client_order_id),
+            cmd.venue_order_id,
+            cmd.params,
+            cmd.correlation_id,
+        );
 
         self.spawn_task("query_order", async move {
-            let order = match http_client
-                .get_order(&DeriveGetOrderParams::new(subaccount_id, voi.as_str()))
+            let report = context
+                .generate_order_status_report(&report_cmd)
                 .await
-            {
-                Ok(o) => o,
-                Err(e) => {
-                    let trigger_orders = match http_client
-                        .get_trigger_orders(&DeriveGetTriggerOrdersParams::new(subaccount_id))
-                        .await
-                    {
-                        Ok(result) => result.orders,
-                        Err(trigger_err) => {
-                            log::warn!(
-                                "Failed to fetch Derive order {voi}: {e}; trigger lookup also failed: {trigger_err}",
-                            );
-                            return Ok(());
-                        }
-                    };
+                .with_context(|| {
+                    format!(
+                        "failed to query Derive order: client_order_id={}, venue_order_id={:?}",
+                        cmd.client_order_id, cmd.venue_order_id,
+                    )
+                })?;
 
-                    match trigger_orders
-                        .into_iter()
-                        .find(|o| o.order_id.as_str() == voi.as_str())
-                    {
-                        Some(order) => order,
-                        None => {
-                            log::warn!("Failed to fetch Derive order {voi}: {e}");
-                            return Ok(());
-                        }
-                    }
-                }
-            };
+            if let Some(report) = report {
+                context.emitter.send_order_status_report(report);
+            } else {
+                log::debug!(
+                    "Derive order not found: client_order_id={}, venue_order_id={:?}",
+                    cmd.client_order_id,
+                    cmd.venue_order_id,
+                );
+            }
 
-            let (price_precision, size_precision) =
-                report_precision(&dispatch_state, order.instrument_name.as_str());
-            let ts_init = clock.get_time_ns();
-            let report = parse_derive_order_to_report_with_precision(
-                &order,
-                account_id,
-                price_precision,
-                size_precision,
-                ts_init,
-            )?;
-            emitter.send_order_status_report(report);
             Ok(())
         });
         Ok(())
@@ -2057,6 +1908,145 @@ impl DeriveReconciliationContext {
             "Derive post-reconnect reconciliation submitted: orders={order_count}, fills={fill_count}, positions={position_count}",
         );
         Ok(())
+    }
+
+    async fn generate_order_status_report(
+        &self,
+        cmd: &GenerateOrderStatusReport,
+    ) -> anyhow::Result<Option<OrderStatusReport>> {
+        if cmd.venue_order_id.is_none() && cmd.client_order_id.is_none() {
+            log::warn!(
+                "Derive generate_order_status_report requires venue_order_id or client_order_id"
+            );
+            return Ok(None);
+        }
+
+        let subaccount_id = self.subaccount_id;
+
+        let order = if let Some(venue_order_id) = cmd.venue_order_id {
+            match self
+                .http_client
+                .get_order(&DeriveGetOrderParams::new(
+                    subaccount_id,
+                    venue_order_id.as_str(),
+                ))
+                .await
+            {
+                Ok(order) => Some(order),
+                Err(e) => {
+                    let trigger_orders = self
+                        .http_client
+                        .get_trigger_orders(&DeriveGetTriggerOrdersParams::new(subaccount_id))
+                        .await?
+                        .orders;
+
+                    match trigger_orders
+                        .into_iter()
+                        .find(|o| o.order_id.as_str() == venue_order_id.as_str())
+                    {
+                        Some(order) => Some(order),
+                        None => return Err(e.into()),
+                    }
+                }
+            }
+        } else {
+            // Derive has no by-label lookup endpoint; scan open orders first,
+            // then trigger orders, then fall through to paginated history so
+            // terminal orders resolve for reconcilers that only carry the
+            // client_order_id.
+            let label = cmd.client_order_id.expect("guarded above");
+
+            let open_orders = self
+                .http_client
+                .get_open_orders(&DeriveGetOpenOrdersParams::new(subaccount_id))
+                .await?
+                .orders;
+            let mut found = open_orders.into_iter().find(|o| o.label == label.as_str());
+
+            if found.is_none() {
+                let trigger_orders = self
+                    .http_client
+                    .get_trigger_orders(&DeriveGetTriggerOrdersParams::new(subaccount_id))
+                    .await?
+                    .orders;
+                found = trigger_orders
+                    .into_iter()
+                    .find(|o| o.label == label.as_str());
+            }
+
+            if found.is_none() {
+                let instrument_name = cmd.instrument_id.map(|id| id.symbol.as_str().to_string());
+                let mut page: u32 = 1;
+
+                'history: loop {
+                    let mut params = DeriveGetOrderHistoryParams::new(
+                        subaccount_id,
+                        page,
+                        DERIVE_PRIVATE_PAGE_SIZE,
+                    );
+
+                    if let Some(name) = instrument_name.as_deref() {
+                        params = params.with_instrument_name(name);
+                    }
+
+                    let result = self.http_client.get_order_history(&params).await?;
+                    let total_pages = result.pagination.num_pages;
+
+                    for order in result.orders {
+                        if order.label == label.as_str() {
+                            found = Some(order);
+                            break 'history;
+                        }
+                    }
+
+                    if (page as i64) >= total_pages || total_pages == 0 {
+                        break;
+                    }
+
+                    page += 1;
+                }
+            }
+
+            found
+        };
+
+        let Some(order) = order else {
+            return Ok(None);
+        };
+
+        if let Some(instrument_id) = cmd.instrument_id
+            && InstrumentId::new(Symbol::new(order.instrument_name), *DERIVE_VENUE) != instrument_id
+        {
+            log::warn!(
+                "Derive order {} is for {} but report requested {}",
+                order.order_id,
+                order.instrument_name.as_str(),
+                instrument_id,
+            );
+            return Ok(None);
+        }
+
+        let (price_precision, size_precision) =
+            report_precision(&self.dispatch_state, order.instrument_name.as_str());
+        let ts_init = self.clock.get_time_ns();
+
+        let mut report = parse_derive_order_to_report_with_precision(
+            &order,
+            self.account_id,
+            price_precision,
+            size_precision,
+            ts_init,
+        )?;
+
+        // Prefer the parsed label (the venue's source of truth); only stamp
+        // the cmd's id when the venue order has no label at all.
+        if report.client_order_id.is_none()
+            && let Some(client_order_id) = cmd.client_order_id
+        {
+            report = report.with_client_order_id(client_order_id);
+        }
+
+        Ok(Some(report))
     }
 
     async fn generate_order_status_reports(
@@ -2282,6 +2272,7 @@ impl DeriveReconciliationContext {
             .map(DurationNanos::try_from_mins)
             .transpose()?
             .map(|lookback| ts_now.saturating_sub(lookback));
+
         let open_order_cmd = GenerateOrderStatusReports::new(
             UUID4::new(),
             ts_now,

@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added `publish_message(...)`, `subscribe_topic(...)`, and `unsubscribe_topic(...)` for Python `DataActor`, `Strategy`, and `ExecutionAlgorithm`
 - Added `Cache` APIs and Redis/PostgreSQL persistence for `InstrumentClose` data
 - Added `avg_px` and report window fields to persisted execution reports
+- Added optional `BinaryOption.event_id` with Python and Arrow support
 - Added a `causation_id` property to every order event, and a `protection_price` property to `OrderUpdated`
 - Added `due_post_only` to the `OrderRejected` constructor, defaulting to `false`
 - Added remote resolution for `TestDataProvider` CSV loaders so they work from an installed wheel
@@ -34,6 +35,7 @@ Released on TBD (UTC).
 - Added OKX raw HTTP account configuration queries (#4943), thanks @silarin
 - Added Polymarket collateral-sized limit BUY orders with exact limit price preservation
 - Added Polymarket limit order modification support
+- Added Polymarket parent event IDs and raw Gamma market and event metadata
 - Added Polymarket resolution subscriptions for data-only clients (#4895), thanks @mystic-io
 
 ### Breaking Changes
@@ -52,6 +54,7 @@ Released on TBD (UTC).
 - Renamed Rust `Data::Delta`, `Data::Deltas`, and `Data::Depth10` variants to `Data::BookDelta`, `Data::BookDeltas`, and `Data::BookDepth10`; JSON and SBE wire formats are unchanged
 - Renamed `StrategyConfig.external_order_claims` to `external_order_instrument_ids`; use `Strategy.set_external_order_instrument_ids()` after registration to replace active claims
 - Changed Rust mixed-scale addition/subtraction to panic; use `checked_add`/`checked_sub` for fallible handling
+- Changed Rust `BinaryOption` constructors to require an `event_id` argument; pass `None` when unknown
 - Changed`OrderCanceled::new` to require an optional cancellation reason (#4903), thanks @folknor
 - Changed FFI `orderbook_deltas_is_snapshot` to use `F_SNAPSHOT` instead of the first delta action
 - Changed `PortfolioAnalyzer.realized_pnls()` to return records in ascending event-time order rather than position-derived records followed by recorded ones
@@ -131,6 +134,7 @@ Released on TBD (UTC).
 - Fixed Bybit funding settlements being treated as fills (#4937), thanks for reporting @luk911
 - Fixed Bybit incorrect book quotes and zero sizes from deleted levels, thanks for reporting @xsidorov
 - Fixed Bybit quote and book cleanup after unsubscribe or subscription failure, thanks for reporting @xsidorov
+- Fixed Derive order queries without venue order IDs (#4958), thanks for reporting @Aviksaikat
 - Fixed Hyperliquid shared REST quotas and WebSocket rate and capacity limits
 - Fixed Hyperliquid WebSocket post deadlines across queueing, transport writes, and replies
 - Fixed Kraken Futures silently returning partial catalogs when instrument precision is unsupported

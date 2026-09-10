@@ -5000,8 +5000,10 @@ async fn test_batch_cancel_orders_fans_out_per_order() {
 }
 
 #[rstest]
+#[case::venue_id(Some(VenueOrderId::from("ord-mock-1")))]
+#[case::client_label(None)]
 #[tokio::test]
-async fn test_query_order_emits_order_status_report() {
+async fn test_query_order_emits_order_status_report(#[case] venue_order_id: Option<VenueOrderId>) {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
     let mut tc = build_client(rest_state.clone(), ws_state).await;
@@ -5013,7 +5015,7 @@ async fn test_query_order_emits_order_status_report() {
         StrategyId::from("S-1"),
         InstrumentId::from("ETH-PERP.DERIVE"),
         ClientOrderId::from("STRAT-O-1"),
-        Some(VenueOrderId::from("ord-mock-1")),
+        venue_order_id,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -5029,11 +5031,84 @@ async fn test_query_order_emits_order_status_report() {
     .await;
 
     if let ExecutionEvent::Report(ExecutionReport::Order(report)) = event {
-        assert_eq!(report.venue_order_id.as_str(), "ord-mock-1");
+        let mut expected = OrderStatusReport::new(
+            AccountId::from("DERIVE-001"),
+            InstrumentId::from("ETH-PERP.DERIVE"),
+            None,
+            VenueOrderId::from("ord-mock-1"),
+            Some(OrderSide::Buy),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            Quantity::from("1"),
+            Quantity::from("0"),
+            UnixNanos::from(1_700_000_000_000_000_000),
+            UnixNanos::from(1_700_000_001_000_000_000),
+            report.ts_init,
+            Some(report.report_id),
+        )
+        .with_client_order_id(ClientOrderId::from("STRAT-O-1"))
+        .with_price(Price::from("3500"));
+        expected.avg_px = Some(dec!(3500));
+        assert_eq!(*report, expected);
     } else {
         unreachable!();
     }
 
+    tc.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[case::missing_label("UNKNOWN", "ETH-PERP.DERIVE", false)]
+#[case::instrument_mismatch("STRAT-O-1", "BTC-PERP.DERIVE", false)]
+#[case::malformed_response("STRAT-O-1", "ETH-PERP.DERIVE", true)]
+#[tokio::test]
+async fn test_query_order_by_label_does_not_emit_invalid_report(
+    #[case] label: &str,
+    #[case] instrument: &str,
+    #[case] malformed: bool,
+) {
+    let rest_state = RestState::default();
+    if malformed {
+        *rest_state.open_orders_response.lock().await = json!({});
+    }
+
+    let mut tc = build_client(rest_state.clone(), WsState::default()).await;
+    tc.client.connect().await.expect("connect succeeds");
+    tc.client
+        .query_order(QueryOrder::new(
+            TraderId::from("TRADER-001"),
+            Some(ClientId::from("DERIVE")),
+            StrategyId::from("S-1"),
+            InstrumentId::from(instrument),
+            ClientOrderId::from(label),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .expect("query_order succeeds");
+
+    wait_until_async(
+        || async { !rest_state.open_orders_calls.lock().await.is_empty() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let outcome = tokio::time::timeout(Duration::from_millis(200), async {
+        loop {
+            if let Some(ExecutionEvent::Report(ExecutionReport::Order(report))) = tc.rx.recv().await
+            {
+                return report;
+            }
+        }
+    })
+    .await;
+
+    assert!(outcome.is_err(), "unexpected report: {outcome:?}");
+    assert_eq!(rest_state.open_orders_calls.lock().await.len(), 1);
+    assert!(rest_state.get_order_calls.lock().await.is_empty());
     tc.client.disconnect().await.expect("disconnect");
 }
 
@@ -5361,21 +5436,43 @@ async fn test_generate_order_status_reports_open_only_ignores_time_window() {
 }
 
 #[rstest]
+#[case::status_report(false)]
+#[case::query_order(true)]
 #[tokio::test]
-async fn test_generate_order_status_report_falls_back_to_history_by_label() {
+async fn test_generate_order_status_report_falls_back_to_history_by_label(
+    #[case] query_order: bool,
+) {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
     *rest_state.open_orders_response.lock().await = json!({
         "orders": [],
         "subaccount_id": TEST_SUBACCOUNT,
     });
-    *rest_state.order_history_response.lock().await = json!({
-        "orders": [order_json_with(
-            "ord-hist-1", "STRAT-LABEL", "buy", "ETH-PERP", 1, "filled",
-        )],
-        "pagination": {"count": 1, "num_pages": 1},
-        "subaccount_id": TEST_SUBACCOUNT,
-    });
+
+    let mut filled_order = order_json_with(
+        "ord-hist-1",
+        "STRAT-LABEL",
+        "sell",
+        "ETH-PERP",
+        1_700_000_001_000,
+        "filled",
+    );
+    filled_order["amount"] = json!("1.25");
+    filled_order["filled_amount"] = json!("1.25");
+    *rest_state.order_history_pages.lock().await = vec![
+        json!({
+            "orders": [order_json_with(
+                "ord-unrelated", "OTHER-LABEL", "buy", "ETH-PERP", 1_700_000_000_500, "filled",
+            )],
+            "pagination": {"count": 2, "num_pages": 2},
+            "subaccount_id": TEST_SUBACCOUNT,
+        }),
+        json!({
+            "orders": [filled_order],
+            "pagination": {"count": 2, "num_pages": 2},
+            "subaccount_id": TEST_SUBACCOUNT,
+        }),
+    ];
     let mut tc = build_client(rest_state.clone(), ws_state).await;
     tc.client.connect().await.expect("connect succeeds");
 
@@ -5388,23 +5485,58 @@ async fn test_generate_order_status_report_falls_back_to_history_by_label() {
         None,
         None,
     );
-    let report = tc
-        .client
-        .generate_order_status_report(&cmd)
-        .await
-        .expect("report")
-        .expect("some");
-    assert_eq!(report.venue_order_id.as_str(), "ord-hist-1");
-    assert!(!rest_state.order_history_calls.lock().await.is_empty());
-    let calls = rest_state.order_history_calls.lock().await;
-    assert_eq!(calls[0]["page_size"].as_u64(), Some(500));
+
+    let report = if query_order {
+        query_order_report(&mut tc, &cmd).await
+    } else {
+        tc.client
+            .generate_order_status_report(&cmd)
+            .await
+            .expect("report")
+            .expect("some")
+    };
+
+    let mut expected = OrderStatusReport::new(
+        AccountId::from("DERIVE-001"),
+        InstrumentId::from("ETH-PERP.DERIVE"),
+        None,
+        VenueOrderId::from("ord-hist-1"),
+        Some(OrderSide::Sell),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Filled,
+        Quantity::from("1.25"),
+        Quantity::from("1.25"),
+        UnixNanos::from(1_700_000_000_000_000_000),
+        UnixNanos::from(1_700_000_001_000_000_000),
+        report.ts_init,
+        Some(report.report_id),
+    )
+    .with_client_order_id(ClientOrderId::from("STRAT-LABEL"))
+    .with_price(Price::from("3500"));
+    expected.avg_px = Some(dec!(3500));
+    assert_eq!(report, expected);
+    assert!(rest_state.get_order_calls.lock().await.is_empty());
+    assert_eq!(rest_state.open_orders_calls.lock().await.len(), 1);
+    assert_eq!(rest_state.trigger_orders_calls.lock().await.len(), 1);
+    assert_eq!(
+        *rest_state.order_history_calls.lock().await,
+        vec![
+            json!({"subaccount_id": TEST_SUBACCOUNT, "page": 1, "page_size": 500, "instrument_name": "ETH-PERP"}),
+            json!({"subaccount_id": TEST_SUBACCOUNT, "page": 2, "page_size": 500, "instrument_name": "ETH-PERP"}),
+        ],
+    );
 
     tc.client.disconnect().await.expect("disconnect");
 }
 
 #[rstest]
+#[case::status_report(false)]
+#[case::query_order(true)]
 #[tokio::test]
-async fn test_generate_order_status_report_finds_trigger_order_by_label_before_history() {
+async fn test_generate_order_status_report_finds_trigger_order_by_label_before_history(
+    #[case] query_order: bool,
+) {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
     *rest_state.open_orders_response.lock().await = json!({
@@ -5446,17 +5578,38 @@ async fn test_generate_order_status_report_finds_trigger_order_by_label_before_h
         None,
         None,
     );
-    let report = tc
-        .client
-        .generate_order_status_report(&cmd)
-        .await
-        .expect("report")
-        .expect("some");
-    assert_eq!(report.venue_order_id.as_str(), "trig-label-1");
-    assert_eq!(report.order_type, OrderType::LimitIfTouched);
-    assert_eq!(report.order_status, OrderStatus::Accepted);
-    assert_eq!(report.price, Some(Price::from("3700")));
-    assert_eq!(report.trigger_price, Some(Price::from("3800")));
+
+    let report = if query_order {
+        query_order_report(&mut tc, &cmd).await
+    } else {
+        tc.client
+            .generate_order_status_report(&cmd)
+            .await
+            .expect("report")
+            .expect("some")
+    };
+
+    let expected = OrderStatusReport::new(
+        AccountId::from("DERIVE-001"),
+        InstrumentId::from("ETH-PERP.DERIVE"),
+        None,
+        VenueOrderId::from("trig-label-1"),
+        Some(OrderSide::Sell),
+        OrderType::LimitIfTouched,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        Quantity::from("1"),
+        Quantity::from("0"),
+        UnixNanos::from(1_700_000_000_000_000_000),
+        UnixNanos::from(1_700_000_001_000_000_000),
+        report.ts_init,
+        Some(report.report_id),
+    )
+    .with_client_order_id(ClientOrderId::from("STRAT-TRIG-LABEL"))
+    .with_price(Price::from("3700"))
+    .with_trigger_price(Price::from("3800"))
+    .with_trigger_type(TriggerType::MarkPrice);
+    assert_eq!(report, expected);
     assert!(!rest_state.open_orders_calls.lock().await.is_empty());
     assert!(!rest_state.trigger_orders_calls.lock().await.is_empty());
     assert!(
@@ -9147,4 +9300,37 @@ async fn test_submit_spot_reduce_only_lazy_resolution_is_rejected() {
     assert!(ws_state.submitted_orders.lock().await.is_empty());
 
     tc.client.disconnect().await.expect("disconnect");
+}
+
+async fn query_order_report(
+    tc: &mut TestClient,
+    cmd: &GenerateOrderStatusReport,
+) -> OrderStatusReport {
+    tc.client
+        .query_order(QueryOrder::new(
+            TraderId::from("TRADER-001"),
+            Some(ClientId::from("DERIVE")),
+            StrategyId::from("S-1"),
+            cmd.instrument_id.unwrap(),
+            cmd.client_order_id.unwrap(),
+            None,
+            cmd.command_id,
+            cmd.ts_init,
+            None,
+            None,
+        ))
+        .expect("query_order succeeds");
+
+    let event = drain_until(
+        &mut tc.rx,
+        |event| matches!(event, ExecutionEvent::Report(ExecutionReport::Order(_))),
+        "OrderStatusReport event",
+    )
+    .await;
+
+    let ExecutionEvent::Report(ExecutionReport::Order(report)) = event else {
+        unreachable!();
+    };
+
+    *report
 }
