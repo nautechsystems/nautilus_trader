@@ -66,7 +66,7 @@ def test_streaming_feather_writer_option_greeks_marks_run_non_empty(tmp_path: Pa
     writer.flush()
 
     manifest_path = path / "_nautilus_run_manifest.json"
-    manifest = json.loads(manifest_path.read_text())
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert {
         key: manifest[key] for key in ["schema_version", "kind", "instance_id", "status", "empty"]
     } == {
@@ -77,7 +77,7 @@ def test_streaming_feather_writer_option_greeks_marks_run_non_empty(tmp_path: Pa
         "empty": False,
     }
     writer.close()
-    manifest = json.loads(manifest_path.read_text())
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert {
         key: manifest[key] for key in ["schema_version", "kind", "instance_id", "status", "empty"]
     } == {

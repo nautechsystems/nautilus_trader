@@ -21,7 +21,6 @@
     reason = "query methods forward DataFusion errors and underscore fields mirror SQL aliases"
 )]
 
-use futures::StreamExt;
 use nautilus_model::instruments::NautilusInstrumentType;
 use nautilus_serialization::arrow::{
     catalog_identifier_from_metadata, instrument::decode_instrument_any_batch,
@@ -39,7 +38,7 @@ use super::{
     is_monotonically_increasing_by_init, make_object_store_path, make_sql_safe_identifier,
     parquet_data_path_prefix, parse_filename_timestamps, query_intersects_filename,
     read_parquet_from_object_store, read_parquet_schema_from_object_store,
-    session::{MergedPages, TypedPages},
+    session::{MergedPages, TypedPages, decode_typed_pages},
     urisafe_instrument_id,
 };
 use crate::common::arrow::empty_display_batch_with_identifier;
@@ -477,11 +476,7 @@ impl ParquetDataCatalog {
             let stream = self
                 .session
                 .parquet_files_batch_stream(&table, vec![path], Some(&sql))?;
-            let metadata = stream.schema().metadata().clone();
-            let pages = stream.map(move |batch| {
-                let batch = batch?;
-                T::decode_typed_batch(&metadata, batch).map_err(anyhow::Error::from)
-            });
+            let pages = decode_typed_pages::<T>(stream);
             sources.push(
                 Box::new(datafusion::BlockingBatchStream::from_stream_with_runtime(
                     pages,
