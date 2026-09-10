@@ -63,9 +63,10 @@ run_make() (
 
   unset PYTHONWARNDEFAULTENCODING PYTHONWARNINGS
 
+  # Cooldown failure ordering is covered by test-check-cargo-cooldown.bash.
   PATH="$MOCK_BIN:$PATH" \
     UV_LOG="$UV_LOG" \
-    make -C "$REPO_ROOT" --no-print-directory \
+    make -C "$REPO_ROOT" --no-print-directory -o check-cargo-cooldown \
     TARGET_DIR="$TARGET_DIR" \
     CARGO_CI_PROFILE=nextest \
     PY_STUB_INPUTS="$inputs" \

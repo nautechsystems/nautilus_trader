@@ -851,6 +851,7 @@ check-dependency-features:  #-- Check dependency feature policy
 	$Q python3 -B .pre-commit-hooks/check_dependency_features.py
 
 .PHONY: test-scripts
+test-scripts: export CI = true
 test-scripts:  #-- Run repository script tests
 	$(info $(M) Running script tests...)
 	$Q bash .pre-commit-hooks/test_cargo_machete.sh

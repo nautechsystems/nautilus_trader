@@ -20,6 +20,15 @@ repos:
         always_run: true
   # nautilus-engineering: sync end
 
+  - repo: local
+    hooks:
+      - id: test-scripts
+        name: script tests
+        entry: make test-scripts-quiet
+        language: system
+        pass_filenames: false
+        always_run: true
+
   ##############################################################################
   #  General checks
   ##############################################################################
