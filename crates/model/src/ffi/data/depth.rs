@@ -128,19 +128,17 @@ pub unsafe extern "C" fn orderbook_depth10_new(
         let ask_counts: [u32; DEPTH10_LEN] =
             ask_counts_slice.try_into().expect("Slice length != 10");
 
-        OrderBookDepth10::new(
+        OrderBookDepth10Ffi {
             instrument_id,
-            bids.map(Into::into),
-            asks.map(Into::into),
+            bids,
+            asks,
             bid_counts,
             ask_counts,
             flags,
             sequence,
             ts_event,
             ts_init,
-        )
-        .try_into()
-        .expect("Ten-level depth fits the legacy FFI")
+        }
     })
 }
 
@@ -188,6 +186,86 @@ mod tests {
 
     use super::*;
     use crate::data::{BookOrder, stubs::stub_depth10};
+
+    #[rstest]
+    #[case::populated(10, 10)]
+    #[case::padded(3, 6)]
+    #[case::empty(0, 0)]
+    fn legacy_constructor_preserves_slots_and_metadata(
+        #[case] bid_levels: usize,
+        #[case] ask_levels: usize,
+    ) {
+        let depth = stub_depth10();
+        let bids: [BookOrderFfi; DEPTH10_LEN] = std::array::from_fn(|i| {
+            if i < bid_levels {
+                depth.bids[i].into()
+            } else {
+                BookOrder::default().into()
+            }
+        });
+        let asks: [BookOrderFfi; DEPTH10_LEN] = std::array::from_fn(|i| {
+            if i < ask_levels {
+                depth.asks[i].into()
+            } else {
+                BookOrder::default().into()
+            }
+        });
+        let bid_counts = std::array::from_fn::<_, DEPTH10_LEN, _>(|i| i as u32 + 11);
+        let ask_counts = std::array::from_fn::<_, DEPTH10_LEN, _>(|i| i as u32 + 31);
+
+        // SAFETY: All pointers refer to live arrays with exactly DEPTH10_LEN initialized slots
+        let actual = unsafe {
+            orderbook_depth10_new(
+                depth.instrument_id,
+                bids.as_ptr(),
+                asks.as_ptr(),
+                bid_counts.as_ptr(),
+                ask_counts.as_ptr(),
+                17,
+                23,
+                UnixNanos::from(41),
+                UnixNanos::from(43),
+            )
+        };
+
+        assert_eq!(actual.instrument_id, depth.instrument_id);
+        for (actual, expected) in actual
+            .bids
+            .into_iter()
+            .chain(actual.asks)
+            .zip(bids.into_iter().chain(asks))
+        {
+            assert_eq!(
+                (
+                    actual.side,
+                    actual.price.raw,
+                    actual.price.precision,
+                    actual.size.raw,
+                    actual.size.precision,
+                    actual.order_id
+                ),
+                (
+                    expected.side,
+                    expected.price.raw,
+                    expected.price.precision,
+                    expected.size.raw,
+                    expected.size.precision,
+                    expected.order_id
+                ),
+            );
+        }
+        assert_eq!(actual.bid_counts, bid_counts);
+        assert_eq!(actual.ask_counts, ask_counts);
+        assert_eq!(
+            (
+                actual.flags,
+                actual.sequence,
+                actual.ts_event,
+                actual.ts_init
+            ),
+            (17, 23, UnixNanos::from(41), UnixNanos::from(43))
+        );
+    }
 
     #[rstest]
     fn legacy_depth_conversion_preserves_all_fields() {
