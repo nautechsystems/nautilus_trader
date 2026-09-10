@@ -176,6 +176,27 @@ The balance-allowance endpoint has two decoding paths:
 Use the strict path whenever a decision depends on allowance evidence so ambiguous wire data cannot
 become approval authority.
 
+### Account balances
+
+Balance refreshes use the venue-reported pUSD total and derive locked collateral from the
+adapter's local cache of open BUY order reservations for the execution client's account. Each
+reservation uses the cached limit price and remaining quantity. Submitted orders awaiting
+acceptance and orders absent from the execution cache are not included. SELL orders reserve
+outcome tokens rather than pUSD and do not contribute to locked collateral. Locked collateral is
+capped at the reported total, with free balance equal to total minus locked, following the
+[balance model](../concepts/accounting.md#balance-model).
+
+The adapter seeds this cache from the execution cache at connect and updates it as the core
+processes order events, including reconciled events. The initial balance refresh precedes startup
+reconciliation; orders discovered during reconciliation affect balances on the next refresh.
+Refreshes occur at connect, on account queries, after finalized trade updates, and on user
+WebSocket reconnect. Account balances do not change on each order event. Balance refreshes do not
+request open orders.
+
+These balances are estimates: HTTP balance responses and order events can reflect different
+points in time. They do not guarantee funds are reserved before submission or account for
+spending on trades awaiting settlement.
+
 ## API keys
 
 The execution client requires CLOB L2 credentials. Create or derive them with Polymarket's

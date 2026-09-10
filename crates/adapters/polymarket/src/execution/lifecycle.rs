@@ -29,13 +29,16 @@ use nautilus_common::{
     msgbus::{self, TypedHandler},
 };
 use nautilus_core::{collections::AtomicMap, string::secret::SecretString, time::AtomicTime};
-use nautilus_live::{execution::context::OrderContext, task::TaskGroupGuard};
+use nautilus_live::{ExecutionClientCore, execution::context::OrderContext, task::TaskGroupGuard};
 use nautilus_model::{
+    enums::OrderSide,
     events::{OrderEventAny, OrderFilled, PositionEvent},
-    identifiers::InstrumentId,
+    identifiers::{ClientOrderId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     orders::Order,
+    types::Money,
 };
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -87,8 +90,14 @@ impl PolymarketExecutionClient {
         let clock = self.clock;
         let shared_token_instruments = self.shared_token_instruments.clone();
         let neg_risk_index = self.neg_risk_index.clone();
+        let order_reservations = self.order_reservations.clone();
         let handler = TypedHandler::from(move |event: &OrderEventAny| {
-            if !is_terminal_order_event(event) || event.instrument_id().venue != core.venue {
+            if event.instrument_id().venue != core.venue {
+                return;
+            }
+
+            update_order_reservation(&core, &order_reservations, event.client_order_id());
+            if !is_terminal_order_event(event) {
                 return;
             }
 
@@ -233,6 +242,7 @@ impl PolymarketExecutionClient {
             &self.emitter,
             self.clock,
             self.config.signature_type,
+            &self.order_reservations,
         )
         .await
     }
@@ -296,6 +306,7 @@ impl PolymarketExecutionClient {
         };
 
         let emitter = self.emitter.clone();
+        let order_reservations = self.order_reservations.clone();
         let token_instruments = self.shared_token_instruments.clone();
         let account_id = self.core.account_id;
         let http_client = self.http_client.clone();
@@ -342,11 +353,12 @@ impl PolymarketExecutionClient {
                         if refresh.is_some() {
                             let http = http_client.clone();
                             let emit = emitter.clone();
+                            let reservations = order_reservations.clone();
                             let session_spawner = session_spawner.clone();
 
                             let future = async move {
                                 match fetch_and_emit_account_state(
-                                    &http, &emit, clock, signature_type,
+                                    &http, &emit, clock, signature_type, &reservations,
                                 )
                                 .await
                                 {
@@ -374,8 +386,9 @@ impl PolymarketExecutionClient {
 
                         let http = http_client.clone();
                         let emit = emitter.clone();
+                        let reservations = order_reservations.clone();
                         let future = async move {
-                            match fetch_and_emit_account_state(&http, &emit, clock, signature_type)
+                            match fetch_and_emit_account_state(&http, &emit, clock, signature_type, &reservations)
                                 .await
                             {
                                 Ok(()) => {
@@ -493,6 +506,16 @@ impl PolymarketExecutionClient {
             .map(|order| order.cloned())
             .collect();
         drop(cache);
+
+        self.order_reservations.lock().clear();
+
+        for order in &orders {
+            update_order_reservation(
+                &self.core,
+                &self.order_reservations,
+                order.client_order_id(),
+            );
+        }
 
         let mut matched_fills: AHashMap<String, Vec<OrderFilled>> = AHashMap::new();
         let mut voided_trades = AHashSet::new();
@@ -624,6 +647,7 @@ impl PolymarketExecutionClient {
         self.clear_position_event_subscription();
         self.shared_token_instruments.store(AHashMap::new());
         self.neg_risk_index.store(AHashMap::new());
+        self.order_reservations.lock().clear();
         self.ws_dispatch_state.lock().reset_session();
     }
 
@@ -674,6 +698,7 @@ impl PolymarketExecutionClient {
             );
         }
 
+        self.ensure_order_event_subscription();
         self.load_instruments_from_cache();
         self.load_orders_from_cache();
         self.core.set_instruments_initialized();
@@ -686,7 +711,6 @@ impl PolymarketExecutionClient {
             }
             return Err(e);
         }
-        self.ensure_order_event_subscription();
         self.ensure_position_event_subscription();
 
         let post_ws = async {
@@ -870,6 +894,40 @@ fn polymarket_trade_key(info: Option<&IndexMap<Ustr, Ustr>>) -> Option<String> {
     Some(format!("{trade_id}-{taker_order_id}"))
 }
 
+fn update_order_reservation(
+    core: &ExecutionClientCore,
+    reservations: &Mutex<AHashMap<ClientOrderId, Money>>,
+    client_order_id: ClientOrderId,
+) {
+    let cache = core.cache();
+    let order = cache.order(&client_order_id);
+    let Some(order) = order.filter(|order| {
+        order.account_id() == Some(core.account_id)
+            && order.instrument_id().venue == core.venue
+            && order.is_open()
+            && order.ts_accepted().is_some()
+            && order.order_side() == OrderSide::Buy
+    }) else {
+        reservations.lock().remove(&client_order_id);
+        return;
+    };
+    let Some(price) = order.price() else {
+        reservations.lock().remove(&client_order_id);
+        return;
+    };
+    let Some(instrument) = cache.instrument(&order.instrument_id()) else {
+        log::error!("Cannot calculate Polymarket reservation: no instrument for {client_order_id}");
+        return;
+    };
+
+    match instrument.try_calculate_notional_value(order.leaves_qty(), price, None) {
+        Ok(locked) => {
+            reservations.lock().insert(client_order_id, locked);
+        }
+        Err(e) => log::error!("Cannot calculate Polymarket reservation for {client_order_id}: {e}"),
+    }
+}
+
 fn upsert_execution_lookup(
     shared_token_instruments: &AtomicMap<Ustr, InstrumentAny>,
     neg_risk_index: &AtomicMap<InstrumentId, bool>,
@@ -898,7 +956,7 @@ fn remove_execution_lookup(
 }
 
 fn sync_execution_lookup_for_instrument(
-    core: &nautilus_live::ExecutionClientCore,
+    core: &ExecutionClientCore,
     clock: &'static AtomicTime,
     shared_token_instruments: &AtomicMap<Ustr, InstrumentAny>,
     neg_risk_index: &AtomicMap<InstrumentId, bool>,
@@ -969,7 +1027,13 @@ mod tests {
     use nautilus_live::ExecutionClientCore;
     use nautilus_model::{
         enums::{AccountType, OmsType, OrderSide, OrderStatus, PositionSide, TimeInForce},
-        events::{OrderEventAny, PositionClosed, PositionEvent, order::spec::OrderFillVoidedSpec},
+        events::{
+            OrderEventAny, PositionClosed, PositionEvent,
+            order::spec::{
+                OrderFillVoidedSpec, OrderPendingCancelSpec, OrderPendingUpdateSpec,
+                OrderUpdatedSpec,
+            },
+        },
         identifiers::{
             AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId,
             TraderId, VenueOrderId,
@@ -1698,6 +1762,125 @@ mod tests {
     }
 
     #[rstest]
+    fn order_reservations_follow_acceptance_and_reconciled_updates() {
+        let (mut client, cache) = test_client();
+        let instrument = test_binary_option("0xRESERVATION", false, false);
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        client.ensure_order_event_subscription();
+        let order = cache_accepted_open_order(&mut cache.borrow_mut(), instrument.id());
+        let accepted = TestOrderEventStubs::accepted(
+            &order,
+            client.core.account_id,
+            order.venue_order_id().unwrap(),
+        );
+        publish_order_event(
+            msgbus::switchboard::get_event_order_topic(order.strategy_id()),
+            &accepted,
+        );
+        assert_eq!(
+            *client.order_reservations.lock(),
+            AHashMap::from([(order.client_order_id(), Money::from("5 pUSD"))])
+        );
+
+        let updated = OrderEventAny::Updated(
+            OrderUpdatedSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(order.client_order_id())
+                .account_id(client.core.account_id)
+                .venue_order_id(order.venue_order_id().unwrap())
+                .quantity(Quantity::from("12"))
+                .price(Price::from("0.7000"))
+                .reconciliation(true)
+                .build(),
+        );
+        cache.borrow_mut().update_order(&updated).unwrap();
+
+        for _ in 0..2 {
+            publish_order_event(
+                msgbus::switchboard::get_event_order_topic(order.strategy_id()),
+                &updated,
+            );
+        }
+        assert_eq!(
+            *client.order_reservations.lock(),
+            AHashMap::from([(order.client_order_id(), Money::from("8.4 pUSD"))])
+        );
+    }
+
+    #[rstest]
+    #[case::unaccepted_cancel(false, true)]
+    #[case::accepted_cancel(true, true)]
+    #[case::unaccepted_update(false, false)]
+    #[case::accepted_update(true, false)]
+    fn order_reservations_require_acceptance_in_pending_states(
+        #[case] accepted: bool,
+        #[case] cancel: bool,
+    ) {
+        let (mut client, cache) = test_client();
+        let instrument = test_binary_option("0xPENDING_RESERVATION", false, false);
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        client.ensure_order_event_subscription();
+        let order = if accepted {
+            cache_accepted_open_order(&mut cache.borrow_mut(), instrument.id())
+        } else {
+            let order = open_limit_order(instrument.id());
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+            cache
+                .borrow_mut()
+                .update_order(&TestOrderEventStubs::submitted(
+                    &order,
+                    client.core.account_id,
+                ))
+                .unwrap()
+        };
+        let event = if cancel {
+            OrderEventAny::PendingCancel(
+                OrderPendingCancelSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .account_id(client.core.account_id)
+                    .maybe_venue_order_id(order.venue_order_id())
+                    .build(),
+            )
+        } else {
+            OrderEventAny::PendingUpdate(
+                OrderPendingUpdateSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .account_id(client.core.account_id)
+                    .maybe_venue_order_id(order.venue_order_id())
+                    .build(),
+            )
+        };
+        cache.borrow_mut().update_order(&event).unwrap();
+        publish_order_event(
+            msgbus::switchboard::get_event_order_topic(order.strategy_id()),
+            &event,
+        );
+        let expected = if accepted {
+            AHashMap::from([(order.client_order_id(), Money::from("5 pUSD"))])
+        } else {
+            AHashMap::new()
+        };
+        assert_eq!(*client.order_reservations.lock(), expected);
+    }
+
+    #[rstest]
     fn reset_clears_subscriptions_and_lookup_state() {
         let (mut client, _cache) = test_client();
         let expired = test_binary_option("0xRESET", true, true);
@@ -1710,8 +1893,14 @@ mod tests {
             .processed_fills
             .add("trade-1".to_string());
 
+        client
+            .order_reservations
+            .lock()
+            .insert(ClientOrderId::from("RESET-ORDER"), Money::from("5 pUSD"));
+
         client.reset_client();
 
+        assert!(client.order_reservations.lock().is_empty());
         assert!(client.order_event_handler.is_none());
         assert!(client.position_event_handler.is_none());
         assert!(

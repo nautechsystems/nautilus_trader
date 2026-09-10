@@ -21,6 +21,7 @@ use axum::http::{HeaderMap, HeaderName, StatusCode};
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
+    clock::TestClock,
     enums::LogLevel,
     live::runner::{replace_system_event_sender, set_exec_event_sender},
     messages::{
@@ -32,9 +33,11 @@ use nautilus_common::{
         },
         system::SocketState,
     },
+    msgbus::{self, MessageBus},
     testing::wait_until_async,
 };
 use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_execution::engine::ExecutionEngine;
 use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     accounts::{AccountAny, cash::CashAccount},
@@ -15265,10 +15268,240 @@ async fn test_query_order_does_not_emit_report_for_target_fill_contradiction(
 }
 
 #[rstest]
+#[case::cancel(false)]
+#[case::fill(true)]
+#[tokio::test]
+async fn test_account_refresh_uses_own_order_reservations(#[case] fill_remaining: bool) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let state = TestServerState::default();
+    state.balance_response.lock().await["balance"] = Value::String("100000000".into());
+    let addr = start_mock_server(state.clone()).await;
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, mut rx, cache) = registry.scope(|| create_test_execution_client(addr));
+    let account_id = AccountId::from("POLYMARKET-001");
+    let instrument_id = InstrumentId::from("RESERVATIONS.POLYMARKET");
+    add_test_account_to_cache(&cache, account_id);
+    add_instrument_to_cache(&cache, instrument_id);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    let mut buy = None;
+
+    for (id, side, owner) in [
+        ("BUY-1", OrderSide::Buy, account_id),
+        ("SELL-1", OrderSide::Sell, account_id),
+        (
+            "FOREIGN-1",
+            OrderSide::Buy,
+            AccountId::from("POLYMARKET-OTHER"),
+        ),
+    ] {
+        let order = make_limit_order_at_price_and_quantity(
+            id,
+            instrument_id,
+            side,
+            false,
+            false,
+            false,
+            TimeInForce::Gtc,
+            Price::from("0.4000"),
+            Quantity::from("10.00"),
+        );
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .update_order(&TestOrderEventStubs::submitted(&order, owner))
+            .unwrap();
+
+        if id == "FOREIGN-1" {
+            continue;
+        }
+        let accepted = TestOrderEventStubs::accepted(&order, owner, VenueOrderId::from(id));
+        let order = cache.borrow_mut().update_order(&accepted).unwrap();
+        if id == "BUY-1" {
+            buy = Some(order);
+        }
+    }
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let mut engine = ExecutionEngine::new(
+        Rc::new(RefCell::new(TestClock::new())),
+        Rc::clone(&cache),
+        None,
+    );
+    let mut order = buy.unwrap();
+    let initial = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let ExecutionEvent::Account(initial) = initial else {
+        panic!("Expected account state");
+    };
+    assert_eq!(
+        initial.balances,
+        vec![AccountBalance::new(
+            Money::from("100 pUSD"),
+            Money::from("4 pUSD"),
+            Money::from("96 pUSD"),
+        )]
+    );
+    assert!(initial.is_reported);
+    assert_eq!(initial.account_id, account_id);
+    assert_eq!(initial.account_type, AccountType::Cash);
+    assert_eq!(initial.base_currency, Some(Currency::pUSD()));
+
+    let foreign = cache
+        .borrow()
+        .order_owned(&ClientOrderId::from("FOREIGN-1"))
+        .unwrap();
+    engine.process(&TestOrderEventStubs::accepted(
+        &foreign,
+        AccountId::from("POLYMARKET-OTHER"),
+        VenueOrderId::from("FOREIGN-1"),
+    ));
+
+    let partial = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("PARTIAL")),
+        None,
+        Some(Price::from("0.4000")),
+        Some(Quantity::from("4.00")),
+        None,
+        Some(Money::from("0 pUSD")),
+        None,
+        Some(account_id),
+    );
+    engine.process(&partial);
+    order = cache
+        .borrow()
+        .order_owned(&order.client_order_id())
+        .unwrap();
+    assert!(matches!(
+        rx.try_recv(),
+        Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+    ));
+
+    for (total, expected_locked) in [("1000000", "1 pUSD"), ("98400000", "2.4 pUSD")] {
+        state.balance_response.lock().await["balance"] = Value::String(total.into());
+        client
+            .query_account(QueryAccount::new(
+                order.trader_id(),
+                Some(*POLYMARKET_CLIENT_ID),
+                account_id,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let ExecutionEvent::Account(event) = event else {
+            panic!("Expected account state");
+        };
+        let total = Money::from_decimal(
+            total.parse::<Decimal>().unwrap() / dec!(1000000),
+            Currency::pUSD(),
+        )
+        .unwrap();
+        let locked = Money::from(expected_locked);
+        assert_eq!(
+            event.balances,
+            vec![AccountBalance::new(total, locked, total - locked)]
+        );
+        assert!(event.is_reported);
+    }
+
+    let terminal = if fill_remaining {
+        TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            Some(TradeId::from("FINAL")),
+            None,
+            Some(Price::from("0.4000")),
+            Some(Quantity::from("6.00")),
+            None,
+            Some(Money::from("0 pUSD")),
+            None,
+            Some(account_id),
+        )
+    } else {
+        TestOrderEventStubs::canceled(&order, account_id, order.venue_order_id())
+    };
+    let balance_guard = state.balance_response.lock().await;
+    let requests_before = state.startup_request_paths.lock().await.len();
+    client
+        .query_account(QueryAccount::new(
+            order.trader_id(),
+            Some(*POLYMARKET_CLIENT_ID),
+            account_id,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    wait_until_async(
+        || async { state.startup_request_paths.lock().await.len() == requests_before + 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+    engine.process(&terminal);
+    assert!(matches!(
+        rx.try_recv(),
+        Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+    ));
+    drop(balance_guard);
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let ExecutionEvent::Account(event) = event else {
+        panic!("Expected account state");
+    };
+    assert_eq!(
+        event.balances,
+        vec![AccountBalance::new(
+            Money::from("98.4 pUSD"),
+            Money::from("0 pUSD"),
+            Money::from("98.4 pUSD"),
+        )]
+    );
+    let handle = registry
+        .handle(*POLYMARKET_CLIENT_ID, Ustr::from("polymarket-user-streams"))
+        .unwrap();
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    let event = tokio::time::timeout(Duration::from_secs(10), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let ExecutionEvent::Account(event) = event else {
+        panic!("Expected reconnect account state");
+    };
+    assert_eq!(
+        event.balances,
+        vec![AccountBalance::new(
+            Money::from("98.4 pUSD"),
+            Money::from("0 pUSD"),
+            Money::from("98.4 pUSD"),
+        )]
+    );
+    assert_eq!(state.orders_get_count.load(Ordering::Acquire), 0);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_query_account_does_not_block_within_runtime() {
     let state = TestServerState::default();
-    let addr = start_mock_server(state).await;
+    let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, _cache) = create_test_execution_client(addr);
     client.start().unwrap();
 
@@ -15293,4 +15526,5 @@ async fn test_query_account_does_not_block_within_runtime() {
         matches!(event, ExecutionEvent::Account(_)),
         "Expected Account event, was {event:?}"
     );
+    assert_eq!(state.orders_get_count.load(Ordering::Acquire), 0);
 }

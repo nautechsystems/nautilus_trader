@@ -29,8 +29,9 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{Currency, Quantity},
+    types::{AccountBalance, Currency, Money, Quantity},
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
@@ -362,9 +363,17 @@ impl PolymarketExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let signature_type = self.config.signature_type;
+        let order_reservations = self.order_reservations.clone();
 
         self.spawn_task("query_account", async move {
-            fetch_and_emit_account_state(&http_client, &emitter, clock, signature_type).await
+            fetch_and_emit_account_state(
+                &http_client,
+                &emitter,
+                clock,
+                signature_type,
+                &order_reservations,
+            )
+            .await
         });
     }
 
@@ -1051,6 +1060,7 @@ pub(super) async fn fetch_and_emit_account_state(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
     signature_type: SignatureType,
+    order_reservations: &Mutex<AHashMap<ClientOrderId, Money>>,
 ) -> anyhow::Result<()> {
     let params = GetBalanceAllowanceParams {
         asset_type: Some(crate::http::query::AssetType::Collateral),
@@ -1066,6 +1076,8 @@ pub(super) async fn fetch_and_emit_account_state(
     let pusd = get_pusd_currency();
     let account_balance =
         parse_balance_allowance(balance, pusd).context("failed to parse balance")?;
+    let account_balance =
+        balance_with_order_reservations(account_balance, &order_reservations.lock())?;
 
     let ts_event = clock.get_time_ns();
     log::debug!(
@@ -1074,6 +1086,26 @@ pub(super) async fn fetch_and_emit_account_state(
     );
     emitter.emit_account_state(vec![account_balance], vec![], true, ts_event, None);
     Ok(())
+}
+
+fn balance_with_order_reservations(
+    balance: AccountBalance,
+    reservations: &AHashMap<ClientOrderId, Money>,
+) -> anyhow::Result<AccountBalance> {
+    let locked =
+        reservations
+            .values()
+            .try_fold(Money::zero(balance.currency), |total, amount| {
+                total
+                    .checked_add(*amount)
+                    .context("invalid Polymarket order reservation total")
+            })?;
+    AccountBalance::from_total_and_locked(
+        balance.total.as_decimal(),
+        locked.as_decimal(),
+        balance.currency,
+    )
+    .map_err(Into::into)
 }
 
 pub(super) async fn fetch_collateral_balance_pusd(
@@ -1097,9 +1129,48 @@ pub(super) async fn fetch_collateral_balance_pusd(
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::types::money::MONEY_RAW_MAX;
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case::sufficient("10 pUSD", "7 pUSD", "3 pUSD")]
+    #[case::clamped("5 pUSD", "5 pUSD", "0 pUSD")]
+    #[case::empty_balance("0 pUSD", "0 pUSD", "0 pUSD")]
+    fn test_balance_with_order_reservations(
+        #[case] total: &str,
+        #[case] locked: &str,
+        #[case] free: &str,
+    ) {
+        let total = Money::from(total);
+        let balance = AccountBalance::new(total, Money::zero(total.currency), total);
+        let reservations = AHashMap::from([
+            (ClientOrderId::from("BUY-1"), Money::from("3 pUSD")),
+            (ClientOrderId::from("BUY-2"), Money::from("4 pUSD")),
+        ]);
+        let result = balance_with_order_reservations(balance, &reservations).unwrap();
+        assert_eq!(
+            result,
+            AccountBalance::new(total, Money::from(locked), Money::from(free))
+        );
+    }
+
+    #[rstest]
+    fn test_balance_with_order_reservations_rejects_overflow() {
+        let total = Money::from("100 pUSD");
+        let balance = AccountBalance::new(total, Money::zero(total.currency), total);
+        let amount = Money::from_raw(MONEY_RAW_MAX, total.currency);
+        let reservations = AHashMap::from([
+            (ClientOrderId::from("BUY-1"), amount),
+            (ClientOrderId::from("BUY-2"), amount),
+        ]);
+        let error = balance_with_order_reservations(balance, &reservations).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "invalid Polymarket order reservation total"
+        );
+    }
 
     #[rstest]
     #[case::ioc_dust(TimeInForce::Ioc, "5.202910", "5.202897", OrderStatus::Canceled)]

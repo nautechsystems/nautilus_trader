@@ -119,6 +119,7 @@ Released on TBD (UTC).
 - Fixed OKX WebSocket connection timeout being shorter than the network default (#4956), thanks for reporting @BioxMech
 - Fixed Polymarket precision loss in financial data and execution reports
 - Fixed Polymarket invalid numeric values silently producing zero prices, quantities, or fees
+- Fixed Polymarket free balances ignoring open BUY orders (#4940), thanks @yashwardhan-gautam
 
 ### Internal Improvements
 
