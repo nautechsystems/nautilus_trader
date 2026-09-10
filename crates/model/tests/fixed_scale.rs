@@ -27,12 +27,58 @@ use nautilus_model::{
     enums::CurrencyType,
     types::{
         Currency, Money, Price, Quantity,
+        money::MONEY_RAW_MAX,
         price::{PRICE_ERROR, PRICE_RAW_MAX},
-        quantity::QUANTITY_RAW_MAX,
+        quantity::{QUANTITY_RAW_MAX, QUANTITY_UNDEF},
     },
 };
 use proptest::{prelude::*, test_runner::Config as ProptestConfig};
 use rstest::rstest;
+
+#[rstest]
+#[case(0, 16, 18, 0)]
+#[case(11_000_000_000_000_000, 16, 18, 1_100_000_000_000_000_000)]
+#[case(1_100_000_000_000_000_000, 18, 16, 11_000_000_000_000_000)]
+#[case(1_100_000_000_000_000_001, 18, 18, 1_100_000_000_000_000_001)]
+#[case(
+    100_000_000_000_000_000_000_000_000_001,
+    18,
+    18,
+    100_000_000_000_000_000_000_000_000_001
+)]
+fn test_scale_money_from_quantity_exact(
+    #[case] raw: u128,
+    #[case] source_precision: u8,
+    #[case] target_precision: u8,
+    #[case] expected: i128,
+) {
+    let currency = Currency::new("TOKEN", target_precision, 0, "Token", CurrencyType::Crypto);
+    let quantity = Quantity::from_raw(raw, source_precision);
+    let money = Money::from_quantity(quantity, currency).unwrap();
+
+    assert_eq!((money.raw, money.currency), (expected, currency));
+    assert_eq!(money.currency.precision, target_precision);
+}
+
+#[rstest]
+#[case(1, 18, 16, "quantity for TOKEN loses precision when decreasing raw scale".to_string())]
+#[case(QUANTITY_UNDEF, 0, 18, "quantity was undefined".to_string())]
+#[case((MONEY_RAW_MAX / 100 + 1) as u128, 16, 18, format!(
+    "`raw` value {} exceeded bounds [{}, {MONEY_RAW_MAX}] for Money",
+    (MONEY_RAW_MAX / 100 + 1) * 100, -MONEY_RAW_MAX
+))]
+fn test_scale_money_from_quantity_rejects_invalid_conversion(
+    #[case] raw: u128,
+    #[case] source_precision: u8,
+    #[case] target_precision: u8,
+    #[case] expected: String,
+) {
+    let currency = Currency::new("TOKEN", target_precision, 0, "Token", CurrencyType::Crypto);
+    let quantity = Quantity::from_raw(raw, source_precision);
+    let error = Money::from_quantity(quantity, currency).unwrap_err();
+
+    assert_eq!(error.to_string(), expected);
+}
 
 #[rstest]
 fn test_scale_price_error_preserves_identity(

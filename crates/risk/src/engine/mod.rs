@@ -55,7 +55,7 @@ use nautilus_model::{
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
-    types::{Currency, Money, Price, Quantity, money::MoneyRaw, quantity::QuantityRaw},
+    types::{Currency, Money, Price, Quantity, quantity::QuantityRaw},
 };
 use nautilus_portfolio::Portfolio;
 use rust_decimal::Decimal;
@@ -2036,7 +2036,10 @@ impl RiskEngine {
         base_currency: Currency,
         cum_notional_sell: &mut Option<Money>,
     ) -> bool {
-        let cash_value_raw: MoneyRaw = match quantity.raw.try_into() {
+        let base_free = account
+            .balance_free(Some(base_currency))
+            .unwrap_or_else(|| Money::zero(base_currency));
+        let cash_value = match Money::from_quantity(quantity, base_free.currency) {
             Ok(value) => value,
             Err(e) => {
                 self.deny_order(
@@ -2049,11 +2052,6 @@ impl RiskEngine {
                 return false;
             }
         };
-
-        let cash_value = Money::from_raw(cash_value_raw, base_currency);
-        let base_free = account
-            .balance_free(Some(base_currency))
-            .unwrap_or_else(|| Money::zero(base_currency));
 
         if self.config.debug {
             log::debug!("Cash value: {cash_value:?}");

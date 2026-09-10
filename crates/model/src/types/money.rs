@@ -66,7 +66,7 @@ use std::{
 use nautilus_core::{
     correctness::{
         CorrectnessError, CorrectnessResult, CorrectnessResultExt, FAILED,
-        check_in_range_inclusive_f64,
+        check_in_range_inclusive_f64, check_predicate_false, check_predicate_true,
     },
     string::formatting::Separable,
 };
@@ -80,10 +80,11 @@ use super::fixed::{f64_to_fixed_i128, fixed_i128_to_f64};
 #[cfg(feature = "defi")]
 use crate::types::fixed::MAX_FLOAT_PRECISION;
 use crate::types::{
-    Currency,
+    Currency, Quantity,
     fixed::{
-        FIXED_PRECISION, FIXED_SCALAR, canonical_raw, check_fixed_precision, compare_raw_signed,
-        mantissa_exponent_to_fixed_i128, raw_scale, raw_scales_match, scaled_raw_to_decimal,
+        FIXED_PRECISION, FIXED_SCALAR, canonical_raw, check_fixed_precision, check_fixed_raw_i128,
+        check_fixed_raw_u128, compare_raw_signed, mantissa_exponent_to_fixed_i128, raw_scale,
+        raw_scales_match, scaled_raw_to_decimal,
     },
 };
 
@@ -451,6 +452,34 @@ impl Money {
         )
     }
 
+    /// Converts a quantity denominated in `currency` to money without rounding.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the quantity is invalid, the amount is not exactly representable
+    /// at the currency precision, or scaling exceeds the money bounds.
+    #[allow(
+        clippy::useless_conversion,
+        reason = "the raw width differs when high-precision is disabled"
+    )]
+    pub fn from_quantity(quantity: Quantity, currency: Currency) -> CorrectnessResult<Self> {
+        check_predicate_false(quantity.is_undefined(), "quantity was undefined")?;
+        Quantity::from_raw_checked(quantity.raw, quantity.precision)?;
+        check_fixed_raw_u128(u128::from(quantity.raw), quantity.precision).map_err(|e| {
+            CorrectnessError::PredicateViolation {
+                message: e.to_string(),
+            }
+        })?;
+
+        let raw = i128::try_from(u128::from(quantity.raw)).map_err(|_| {
+            CorrectnessError::PredicateViolation {
+                message: format!("quantity for {currency} exceeds signed raw bounds"),
+            }
+        })?;
+
+        Self::from_rescaled_raw(raw, quantity.precision, currency, "quantity")
+    }
+
     /// Creates a new [`Money`] from a `Decimal` value with specified currency.
     ///
     /// This method provides more reliable parsing by using Decimal arithmetic
@@ -488,6 +517,57 @@ impl Money {
         }
 
         Ok(Self { raw, currency })
+    }
+
+    #[allow(
+        clippy::useless_conversion,
+        reason = "the raw width differs when high-precision is disabled"
+    )]
+    pub(crate) fn from_rescaled_raw(
+        raw: i128,
+        source_precision: u8,
+        currency: Currency,
+        subject: &str,
+    ) -> CorrectnessResult<Self> {
+        check_fixed_precision(source_precision)?;
+        check_fixed_precision(currency.precision)?;
+        let source_precision = source_precision.max(FIXED_PRECISION);
+        let target_precision = currency.precision.max(FIXED_PRECISION);
+
+        let raw = match source_precision.cmp(&target_precision) {
+            Ordering::Less => {
+                let scale = 10_i128.pow(u32::from(target_precision - source_precision));
+                raw.checked_mul(scale)
+                    .ok_or_else(|| CorrectnessError::PredicateViolation {
+                        message: format!(
+                            "{subject} for {currency} overflowed while increasing raw scale"
+                        ),
+                    })?
+            }
+            Ordering::Greater => {
+                let scale = 10_i128.pow(u32::from(source_precision - target_precision));
+                check_predicate_true(
+                    raw % scale == 0,
+                    &format!("{subject} for {currency} loses precision when decreasing raw scale"),
+                )?;
+                raw / scale
+            }
+            Ordering::Equal => raw,
+        };
+
+        check_fixed_raw_i128(raw, currency.precision).map_err(|e| {
+            CorrectnessError::PredicateViolation {
+                message: e.to_string(),
+            }
+        })?;
+
+        let raw: MoneyRaw = raw
+            .try_into()
+            .map_err(|_| CorrectnessError::PredicateViolation {
+                message: format!("{subject} for {currency} exceeds Money raw bounds"),
+            })?;
+
+        Self::from_raw_checked(raw, currency)
     }
 }
 
@@ -764,6 +844,26 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+    use crate::enums::CurrencyType;
+
+    #[rstest]
+    fn test_from_quantity_rejects_noncanonical_raw() {
+        let precision = FIXED_PRECISION - 1;
+        let quantity = Quantity::from_raw(1, precision);
+        let currency = Currency::new("TOKEN", FIXED_PRECISION, 0, "Token", CurrencyType::Crypto);
+        let result = Money::from_quantity(quantity, currency);
+
+        assert_eq!(
+            result,
+            Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "Invalid fixed-point raw value 1 for precision {precision}: \
+                             remainder 1 when divided by scale 10. Raw value should be a multiple of 10. \
+                             This indicates data corruption or incorrect precision/scaling upstream"
+                ),
+            })
+        );
+    }
 
     #[rstest]
     fn test_extreme_money_round_trips_through_raw() {

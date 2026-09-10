@@ -52,9 +52,9 @@ use nautilus_model::{
         stubs::{quote_audusd, quote_ethusdt_binance},
     },
     enums::{
-        AccountType, AggregationSource, AggressorSide, BarAggregation, LiquiditySide, OmsType,
-        OrderSide, OrderStatus, OrderType, PositionSide, PriceType, TimeInForce, TradingState,
-        TrailingOffsetType, TriggerType,
+        AccountType, AggregationSource, AggressorSide, BarAggregation, CurrencyType, LiquiditySide,
+        OmsType, OrderSide, OrderStatus, OrderType, PositionSide, PriceType, TimeInForce,
+        TradingState, TrailingOffsetType, TriggerType,
     },
     events::{
         AccountState, OrderAccepted, OrderDeniedReason, OrderEventAny, OrderEventType, OrderFilled,
@@ -80,7 +80,10 @@ use nautilus_model::{
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder},
     position::Position,
-    types::{AccountBalance, Currency, MONEY_MAX, Money, Price, Quantity, fixed::FIXED_PRECISION},
+    types::{
+        AccountBalance, Currency, MONEY_MAX, Money, Price, Quantity,
+        fixed::{FIXED_PRECISION, check_fixed_precision},
+    },
 };
 use nautilus_portfolio::Portfolio;
 use rstest::{fixture, rstest};
@@ -2611,6 +2614,316 @@ fn add_wallet_account(cache: &mut Cache, eth_total: &str) {
     cache
         .add_account(AccountAny::Wallet(WalletAccount::new(account_state, true)))
         .unwrap();
+}
+
+#[rstest]
+#[case("9", false)]
+#[case("10", false)]
+#[case("11", true)]
+fn test_submit_market_order_sell_balance_scales(
+    #[case] amount: &str,
+    #[case] exceeds_balance: bool,
+    #[values(false, true)] native_quantity: bool,
+    #[values(false, true)] native_balance: bool,
+    #[values(false, true)] wallet: bool,
+    #[values(false, true)] has_price: bool,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    mut simple_cache: Cache,
+) {
+    let precision = sell_balance_precision();
+    let (instrument_id, total) = configure_sell_balance(
+        &mut simple_cache,
+        precision,
+        if native_balance {
+            precision
+        } else {
+            FIXED_PRECISION
+        },
+        wallet,
+        has_price,
+    );
+    let balance_currency = total.currency;
+    let quantity = Quantity::from_decimal_dp(
+        Decimal::from_str(amount).unwrap(),
+        if native_quantity { precision } else { 0 },
+    )
+    .unwrap();
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Sell)
+        .quantity(quantity)
+        .build();
+    let client_id = ClientId::from("BINANCE");
+    simple_cache
+        .add_order(order.clone(), None, Some(client_id), false)
+        .unwrap();
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let command = TradingCommand::SubmitOrder(SubmitOrder::new(
+        order.trader_id(),
+        Some(client_id),
+        order.strategy_id(),
+        instrument_id,
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    ));
+    risk_engine.execute(command.clone());
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+
+    if exceeds_balance || !has_price {
+        let reason = if exceeds_balance {
+            OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
+                free_balance: total,
+                cumulative_notional: Money::from_decimal(
+                    Decimal::from_str(amount).unwrap(),
+                    balance_currency,
+                )
+                .unwrap(),
+            }
+        } else {
+            OrderDeniedReason::MarketPriceUnavailable {
+                order_type: OrderType::Market,
+                instrument_id,
+            }
+        };
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type(), OrderEventType::Denied);
+        assert_eq!(events[0].message(), Some(Ustr::from(&reason.to_string())));
+        assert_eq!(commands, vec![]);
+    } else {
+        assert_eq!(events, vec![]);
+        assert_eq!(commands, vec![command]);
+    }
+}
+
+#[rstest]
+fn test_submit_market_order_sell_balance_conversion_failure(
+    #[values(false, true)] wallet: bool,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    mut simple_cache: Cache,
+) {
+    let precision = sell_balance_precision();
+    let balance_precision = if precision > FIXED_PRECISION {
+        FIXED_PRECISION
+    } else {
+        FIXED_PRECISION - 1
+    };
+    let (instrument_id, _) = configure_sell_balance(
+        &mut simple_cache,
+        precision,
+        balance_precision,
+        wallet,
+        true,
+    );
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    submit_market_order(
+        &mut risk_engine,
+        instrument_id,
+        OrderType::Market,
+        OrderSide::Sell,
+        &Decimal::from_i128_with_scale(1, u32::from(precision)).to_string(),
+        TraderId::from("TRADER-001"),
+        ClientId::from("BINANCE"),
+        StrategyId::from("S-001"),
+    );
+    let detail = if precision > FIXED_PRECISION {
+        "quantity for TOKEN loses precision when decreasing raw scale".to_string()
+    } else {
+        format!(
+            "Invalid fixed-point raw value 1 for precision {balance_precision}: \
+                 remainder 1 when divided by scale 10. Raw value should be a multiple of 10. \
+                 This indicates data corruption or incorrect precision/scaling upstream"
+        )
+    };
+    let reason = OrderDeniedReason::QuantityConversionFailed { detail };
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event_type(), OrderEventType::Denied);
+    assert_eq!(events[0].message(), Some(Ustr::from(&reason.to_string())));
+    assert_eq!(commands, vec![]);
+}
+
+#[rstest]
+fn test_submit_order_list_sell_balance_scales_accumulate(
+    #[values(false, true)] wallet: bool,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    mut simple_cache: Cache,
+) {
+    let precision = sell_balance_precision();
+    let (instrument_id, total) =
+        configure_sell_balance(&mut simple_cache, precision, precision, wallet, true);
+    let orders = [
+        OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-001"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("6"))
+            .build(),
+        OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-002"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from_decimal_dp(dec!(5), precision).unwrap())
+            .build(),
+    ];
+    let client_id = ClientId::from("BINANCE");
+
+    for order in &orders {
+        simple_cache
+            .add_order(order.clone(), None, Some(client_id), false)
+            .unwrap();
+    }
+    let list_id = OrderListId::from("OL-001");
+    let order_list = OrderList::new(
+        list_id,
+        instrument_id,
+        orders[0].strategy_id(),
+        orders.iter().map(Order::client_order_id).collect(),
+        UnixNanos::default(),
+    );
+    let command = SubmitOrderList::new(
+        orders[0].trader_id(),
+        Some(client_id),
+        orders[0].strategy_id(),
+        order_list,
+        orders.iter().map(|o| o.init_event().clone()).collect(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    risk_engine.execute(TradingCommand::SubmitOrderList(command));
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    let balance_reason = OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
+        free_balance: total,
+        cumulative_notional: Money::from_decimal(dec!(11), total.currency).unwrap(),
+    };
+    let list_reason = OrderDeniedReason::OrderListDenied {
+        order_list_id: list_id,
+    };
+    let actual: Vec<_> = events
+        .iter()
+        .map(|event| (event.client_order_id(), event.event_type(), event.message()))
+        .collect();
+
+    assert_eq!(
+        actual,
+        vec![
+            (
+                orders[1].client_order_id(),
+                OrderEventType::Denied,
+                Some(Ustr::from(&balance_reason.to_string()))
+            ),
+            (
+                orders[0].client_order_id(),
+                OrderEventType::Denied,
+                Some(Ustr::from(&list_reason.to_string()))
+            ),
+            (
+                orders[1].client_order_id(),
+                OrderEventType::Denied,
+                Some(Ustr::from(&list_reason.to_string()))
+            ),
+        ]
+    );
+    assert_eq!(commands, vec![]);
+}
+
+fn sell_balance_precision() -> u8 {
+    if check_fixed_precision(18).is_ok() {
+        18
+    } else {
+        FIXED_PRECISION
+    }
+}
+
+fn configure_sell_balance(
+    simple_cache: &mut Cache,
+    precision: u8,
+    balance_precision: u8,
+    wallet: bool,
+    has_price: bool,
+) -> (InstrumentId, Money) {
+    let base = Currency::new("TOKEN", precision, 0, "Token", CurrencyType::Crypto);
+    let instrument = CurrencyPair::builder()
+        .instrument_id(InstrumentId::from("TOKEN/USDC.BINANCE"))
+        .raw_symbol(Symbol::from("TOKEN/USDC"))
+        .base_currency(base)
+        .quote_currency(Currency::USDC())
+        .price_precision(2)
+        .price_increment(Price::from("0.01"))
+        .size_precision(precision)
+        .size_increment(Quantity::from_raw(1, precision))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+    let instrument_id = instrument.id;
+    simple_cache
+        .add_instrument(InstrumentAny::CurrencyPair(instrument))
+        .unwrap();
+
+    if has_price {
+        simple_cache
+            .add_quote(QuoteTick::new(
+                instrument_id,
+                Price::from("2.00"),
+                Price::from("2.01"),
+                Quantity::from("20"),
+                Quantity::from("30"),
+                UnixNanos::from(1),
+                UnixNanos::from(1),
+            ))
+            .unwrap();
+    }
+    let balance_currency =
+        Currency::new("TOKEN", balance_precision, 0, "Token", CurrencyType::Crypto);
+    let total = Money::from_decimal(dec!(10), balance_currency).unwrap();
+    let state = AccountState::new(
+        AccountId::from("BINANCE-001"),
+        if wallet {
+            AccountType::Wallet
+        } else {
+            AccountType::Cash
+        },
+        vec![AccountBalance::new(
+            total,
+            Money::zero(balance_currency),
+            total,
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    );
+    let account = if wallet {
+        AccountAny::Wallet(WalletAccount::new(state, true))
+    } else {
+        AccountAny::Cash(CashAccount::new(state, true, false))
+    };
+    simple_cache.add_account(account).unwrap();
+    (instrument_id, total)
 }
 
 #[rstest]

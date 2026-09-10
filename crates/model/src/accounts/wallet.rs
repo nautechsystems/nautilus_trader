@@ -36,7 +36,6 @@
 //! preventing new orders while avoiding crashes in live trading.
 
 use std::{
-    cmp::Ordering,
     fmt::Display,
     ops::{Deref, DerefMut},
 };
@@ -61,7 +60,7 @@ use crate::{
     position::Position,
     types::{
         AccountBalance, Currency, Money, Price, Quantity,
-        fixed::{FIXED_PRECISION, check_fixed_raw_i128, check_fixed_raw_u128, raw_scale},
+        fixed::{check_fixed_raw_i128, check_fixed_raw_u128, raw_scale},
         money::MoneyRaw,
     },
 };
@@ -348,77 +347,12 @@ impl WalletAccount {
         )?;
         Self::validate_money(locked)?;
 
-        Self::money_from_rescaled_raw(
+        Money::from_rescaled_raw(
             i128::from(locked.raw),
             locked.currency.precision,
             currency,
             "wallet reservation",
         )
-    }
-
-    /// Rescales `raw` from `source_precision` onto `currency`'s raw scale as [`Money`].
-    ///
-    /// `subject` names the rescaled value in any error message.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the rescale overflows, loses precision, or leaves the result outside
-    /// [`Money`] bounds.
-    #[allow(
-        clippy::useless_conversion,
-        reason = "the raw width differs when high-precision is disabled"
-    )]
-    fn money_from_rescaled_raw(
-        raw: i128,
-        source_precision: u8,
-        currency: Currency,
-        subject: &str,
-    ) -> CorrectnessResult<Money> {
-        let source_precision = source_precision.max(FIXED_PRECISION);
-        let target_precision = currency.precision.max(FIXED_PRECISION);
-        let raw = match source_precision.cmp(&target_precision) {
-            Ordering::Less => {
-                let scale = 10_i128.pow(u32::from(target_precision - source_precision));
-                raw.checked_mul(scale)
-                    .ok_or_else(|| CorrectnessError::PredicateViolation {
-                        message: format!(
-                            "{subject} for {currency} overflowed while increasing raw scale"
-                        ),
-                    })?
-            }
-            Ordering::Greater => {
-                let scale = 10_i128.pow(u32::from(source_precision - target_precision));
-                check_predicate_true(
-                    raw % scale == 0,
-                    &format!("{subject} for {currency} loses precision when decreasing raw scale"),
-                )?;
-                raw / scale
-            }
-            Ordering::Equal => raw,
-        };
-        Self::validate_raw(raw, currency.precision)?;
-        let raw: MoneyRaw = raw
-            .try_into()
-            .map_err(|_| CorrectnessError::PredicateViolation {
-                message: format!("{subject} for {currency} exceeds Money raw bounds"),
-            })?;
-
-        Money::from_raw_checked(raw, currency)
-    }
-
-    #[allow(
-        clippy::useless_conversion,
-        reason = "the raw width differs when high-precision is disabled"
-    )]
-    fn money_from_quantity(quantity: Quantity, currency: Currency) -> CorrectnessResult<Money> {
-        Self::validate_quantity(quantity)?;
-        let raw = i128::try_from(u128::from(quantity.raw)).map_err(|_| {
-            CorrectnessError::PredicateViolation {
-                message: format!("quantity for {currency} exceeds signed raw bounds"),
-            }
-        })?;
-
-        Self::money_from_rescaled_raw(raw, quantity.precision, currency, "quantity")
     }
 
     #[allow(
@@ -646,8 +580,7 @@ impl Account for WalletAccount {
         Self::validate_observed_balance(current_balance)?;
 
         if side == OrderSide::Sell {
-            return Self::money_from_quantity(quantity, current_balance.currency)
-                .map_err(Into::into);
+            return Money::from_quantity(quantity, current_balance.currency).map_err(Into::into);
         }
 
         Self::validate_quantity(quantity)?;
