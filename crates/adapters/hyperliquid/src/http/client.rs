@@ -63,8 +63,8 @@ use crate::{
     account::resolve_execution_account_address,
     common::{
         consts::{
-            HYPERLIQUID_REST_WEIGHT_PER_MINUTE, HYPERLIQUID_VENUE, NAUTILUS_BUILDER_ADDRESS,
-            exchange_url, info_url,
+            ASSET_INDEX_INFO_KEY, HYPERLIQUID_REST_WEIGHT_PER_MINUTE, HYPERLIQUID_VENUE,
+            NAUTILUS_BUILDER_ADDRESS, exchange_url, info_url,
         },
         credential::{Secrets, VaultAddress, credential_env_vars},
         enums::{
@@ -1305,9 +1305,29 @@ impl HyperliquidHttpClient {
     ///
     /// This is required for parsing orders, fills, and positions into reports.
     /// Any existing instrument with the same symbol will be replaced.
+    ///
+    /// The venue asset index is taken from the instrument's `info` map so an
+    /// instrument arriving on the message bus becomes submittable without
+    /// refetching venue metadata. An instrument without the key keeps its
+    /// existing asset index, if any, because guessing one would route orders to
+    /// the wrong asset.
     pub fn cache_instrument(&self, instrument: &InstrumentAny) {
         let full_symbol = instrument.symbol().inner();
         let coin = instrument.raw_symbol().inner();
+
+        match instrument
+            .info()
+            .and_then(|info| info.get_u64(ASSET_INDEX_INFO_KEY))
+            .and_then(|value| u32::try_from(value).ok())
+        {
+            Some(asset_index) => self.asset_indices.rcu(|m| {
+                m.insert(full_symbol, asset_index);
+            }),
+            None => log::warn!(
+                "Instrument '{full_symbol}' carries no '{ASSET_INDEX_INFO_KEY}' info value; \
+                 leaving the cached asset index unchanged"
+            ),
+        }
 
         self.instruments.rcu(|m| {
             m.insert(full_symbol, instrument.clone());
@@ -3749,7 +3769,7 @@ mod tests {
         response::{IntoResponse, Json, Response},
         routing::post,
     };
-    use nautilus_core::time::get_atomic_clock_realtime;
+    use nautilus_core::{Params, time::get_atomic_clock_realtime};
     use nautilus_model::{
         currencies::CURRENCY_MAP,
         enums::{CurrencyType, OrderSide, OrderStatus, OrderType, TimeInForce},
@@ -3767,7 +3787,7 @@ mod tests {
     };
     use crate::{
         common::{
-            consts::{HYPERLIQUID_VENUE, NAUTILUS_BUILDER_ADDRESS},
+            consts::{ASSET_INDEX_INFO_KEY, HYPERLIQUID_VENUE, NAUTILUS_BUILDER_ADDRESS},
             enums::{HyperliquidEnvironment, HyperliquidProductType},
         },
         http::{
@@ -4506,5 +4526,59 @@ mod tests {
             )
             .expect("get_or_create_instrument must resolve sanitized base for HIP-3");
         assert_eq!(resolved.id(), hip3.id());
+    }
+
+    fn perp_with_asset_index(symbol: &str, asset_index: Option<u32>) -> InstrumentAny {
+        let base_currency = Currency::new("NEW", 8, 0, "NEW", CurrencyType::Crypto);
+        let usd = Currency::new("USD", 8, 0, "USD", CurrencyType::Crypto);
+        let usdc = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
+        let ts = get_atomic_clock_realtime().get_time_ns();
+        let info = asset_index.map(|asset_index| {
+            let mut info = Params::new();
+            info.insert(ASSET_INDEX_INFO_KEY.to_string(), asset_index.into());
+            info
+        });
+
+        InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(InstrumentId::new(Symbol::new(symbol), *HYPERLIQUID_VENUE))
+                .raw_symbol(Symbol::new("NEW"))
+                .base_currency(base_currency)
+                .quote_currency(usd)
+                .settlement_currency(usdc)
+                .is_inverse(false)
+                .price_precision(6)
+                .size_precision(3)
+                .price_increment(Price::from("0.000001"))
+                .size_increment(Quantity::from("0.001"))
+                .maybe_info(info)
+                .ts_event(ts)
+                .ts_init(ts)
+                .build()
+                .unwrap(),
+        )
+    }
+
+    #[rstest]
+    fn test_cache_instrument_registers_asset_index_from_info() {
+        let client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None).unwrap();
+
+        client.cache_instrument(&perp_with_asset_index("NEW-USD-PERP", Some(42)));
+
+        assert_eq!(client.get_asset_index("NEW-USD-PERP"), Some(42));
+    }
+
+    #[rstest]
+    fn test_cache_instrument_without_asset_index_info_retains_existing_index() {
+        // Guessing an index would route orders to the wrong asset, so an
+        // instrument missing the info key must leave the map untouched.
+        let client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None).unwrap();
+
+        client.cache_instrument(&perp_with_asset_index("NEW-USD-PERP", Some(42)));
+        client.cache_instrument(&perp_with_asset_index("NEW-USD-PERP", None));
+        client.cache_instrument(&perp_with_asset_index("OTHER-USD-PERP", None));
+
+        assert_eq!(client.get_asset_index("NEW-USD-PERP"), Some(42));
+        assert_eq!(client.get_asset_index("OTHER-USD-PERP"), None);
     }
 }
