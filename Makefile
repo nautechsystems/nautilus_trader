@@ -1128,10 +1128,12 @@ cargo-test-coverage-crate-html-%:  #-- Run coverage for specific crate with HTML
 #   make cargo-miri-core MIRI_CORE_FILTER=...
 #   make cargo-miri-core MIRI_CORE_ARC_SWAP_FILTER=...
 #   make cargo-miri-plugin MIRI_PLUGIN_FILTER=...
+#   make cargo-miri-plugin MIRI_PLUGIN_PANIC_FILTER=...
 #   make cargo-miri-plugin MIRI_PLUGIN_MANIFEST_FILTER=...
 MIRI_TOOLCHAIN ?= $(shell bash scripts/tool-version.sh miri)
 MIRI_FLAGS ?= -Zmiri-disable-isolation -Zmiri-strict-provenance
 MIRI_CORE_ARC_SWAP_FLAGS ?= -Zmiri-disable-isolation -Zmiri-permissive-provenance
+MIRI_PLUGIN_PANIC_FLAGS ?= $(MIRI_FLAGS) -Zmiri-ignore-leaks
 MIRI_PLUGIN_MANIFEST_FLAGS ?= $(MIRI_FLAGS) -Zmiri-ignore-leaks
 MIRI_PROPTEST_CASES ?= 4
 
@@ -1153,7 +1155,11 @@ MIRI_MODEL_FILTER ?= -E 'test(/^(types::|identifiers::|orderbook::)/) and not te
 # Keep the plug-in Miri lane focused on the ABI boundary and panic guards.
 # Manifest fixtures model static cdylib storage with `Box::leak`, so that slice
 # runs with leak detection disabled while the boundary tests stay strict.
-MIRI_PLUGIN_FILTER ?= -E 'test(/^(boundary|panic)::/)'
+# Panicking payload destructors deliberately leak their replacement payloads,
+# keep those tests separate so ordinary panic paths still check for leaks.
+MIRI_PLUGIN_PANIC_TESTS := test(/^panic::tests::(drop_payload_swallows_panicking_drop|guard_survives_panic_any_with_panicking_drop|guard_contains_successive_panicking_payload_destructors|guards_contain_panicking_logger_payloads)$$/)
+MIRI_PLUGIN_FILTER ?= -E 'test(/^(boundary|panic)::/) and not ($(MIRI_PLUGIN_PANIC_TESTS))'
+MIRI_PLUGIN_PANIC_FILTER ?= -E '$(MIRI_PLUGIN_PANIC_TESTS)'
 MIRI_PLUGIN_MANIFEST_FILTER ?= -E 'test(/^manifest::/)'
 
 .PHONY: check-miri-toolchain
@@ -1208,6 +1214,14 @@ cargo-miri-plugin:  #-- Run nautilus-plugin boundary and manifest tests under Mi
 		--no-default-features \
 		--lib \
 		$(MIRI_PLUGIN_FILTER)
+	$(info $(M) Running nautilus-plugin panicking payload tests under Miri (filter: $(MIRI_PLUGIN_PANIC_FILTER))...)
+	# Nextest isolates each test; run the logger child directly because Miri cannot spawn it
+	NAUTILUS_TEST_PANIC_LOGGER_CHILD=1 MIRIFLAGS="$(MIRI_PLUGIN_PANIC_FLAGS)" \
+		cargo +$(MIRI_TOOLCHAIN) miri nextest run \
+		-p nautilus-plugin \
+		--no-default-features \
+		--lib \
+		$(MIRI_PLUGIN_PANIC_FILTER)
 	$(info $(M) Running nautilus-plugin manifest tests under Miri (filter: $(MIRI_PLUGIN_MANIFEST_FILTER))...)
 	MIRIFLAGS="$(MIRI_PLUGIN_MANIFEST_FLAGS)" \
 		cargo +$(MIRI_TOOLCHAIN) miri nextest run \
