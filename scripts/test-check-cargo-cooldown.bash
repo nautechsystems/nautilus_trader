@@ -23,7 +23,7 @@ fixture_repo="${test_root}/repo"
 fake_bin="${test_root}/bin"
 fuzz_path="crates/adapters/lighter/fuzz/pornin"
 mkdir -p "${fixture_repo}/scripts" "${fixture_repo}/${fuzz_path}" "$fake_bin"
-cp "${REPO_ROOT}/scripts/check-cargo-cooldown.sh" "${fixture_repo}/scripts/"
+cp "${COOLDOWN_SCRIPT_SOURCE:-${REPO_ROOT}/scripts/check-cargo-cooldown.sh}" "${fixture_repo}/scripts/"
 
 printf '%s\n' \
   '[workspace]' \
@@ -51,8 +51,8 @@ git -C "$fixture_repo" add -A
 git -C "$fixture_repo" commit --quiet -m baseline
 
 output=$(cd "$fixture_repo" &&
-  PATH="${fake_bin}:${PATH}" bash scripts/check-cargo-cooldown.sh --base HEAD)
-if [[ "$output" != "No new registry crate versions vs HEAD." ]]; then
+  PATH="${fake_bin}:${PATH}" bash scripts/check-cargo-cooldown.sh --all)
+if [[ "$output" != "No resolved registry crate versions" ]]; then
   printf 'Unexpected Cargo cooldown result: %s\n' "$output" >&2
   exit 1
 fi
@@ -65,6 +65,11 @@ cat > "$build_makefile" << 'BUILD_MAKEFILE'
 check-cargo-cooldown:
 	@printf '%s\n' cooldown >> "$(BUILD_LOG)"
 	@exit $(COOLDOWN_STATUS)
+.PHONY: print-build-targets
+print-build-targets:
+	@printf '%s\n' $(CARGO_BUILD_JOB_TARGETS) docker-build docker-build-force
+check-nextest-installed check-llvm-cov-installed check-hack-installed check-hawk-installed check-miri-installed clean clean-build-artifacts clean-caches clean-builds:
+	@:
 BUILD_MAKEFILE
 
 cat > "${fake_bin}/uv" << 'FAKE_UV'
@@ -80,6 +85,17 @@ printf '%s\n' "$*" >> "${BUILD_LOG:?}"
 FAKE_CARGO
 chmod +x "${fake_bin}/uv" "${fake_bin}/cargo"
 
+cat > "${fake_bin}/capnp" << 'FAKE_CAPNP'
+#!/bin/sh
+# Stop regeneration before it can remove source files if its gate regresses
+exit 1
+FAKE_CAPNP
+cat > "${fake_bin}/docker" << 'FAKE_DOCKER'
+#!/bin/sh
+printf '%s\n' "$*" >> "${BUILD_LOG:?}"
+FAKE_DOCKER
+chmod +x "${fake_bin}/capnp" "${fake_bin}/docker"
+
 run_build() {
   PATH="${fake_bin}:${PATH}" BUILD_LOG="$build_log" \
     make -C "$REPO_ROOT" --no-print-directory -j2 \
@@ -89,7 +105,9 @@ run_build() {
     "$@" > "${test_root}/make.log" 2>&1
 }
 
-for target in py-stubs build build-debug build-wheel cargo-build install install-debug; do
+build_targets=$(make -C "$REPO_ROOT" --no-print-directory -f Makefile -f "$build_makefile" print-build-targets 2> "${test_root}/make.log")
+for target in $build_targets; do
+  target=${target/\%/nautilus-core}
   : > "$build_log"
   if run_build COOLDOWN_STATUS=37 "$target"; then
     echo "Build target accepted a failed cooldown check: $target" >&2
@@ -103,10 +121,71 @@ for target in py-stubs build build-debug build-wheel cargo-build install install
 done
 
 : > "$build_log"
-run_build COOLDOWN_STATUS=0 build-debug
-if ! grep -Fq 'maturin develop --profile nextest' "$build_log"; then
+run_build COOLDOWN_STATUS=0 build-wheel
+if ! grep -Fxq cooldown "$build_log" ||
+  ! grep -Fq 'maturin build --release --locked' "$build_log"; then
   echo "Successful cooldown check did not allow the build" >&2
   exit 1
 fi
+
+rm -f "$build_target/.py-stubs.stamp"
+: > "$build_log"
+run_build COOLDOWN_STATUS=0 py-stubs
+if [[ "$(sed -n '1p' "$build_log")" != cooldown ]] ||
+  ! grep -Fq generate_stubs.py "$build_log" || [[ ! -f "$build_target/.py-stubs.stamp" ]]; then
+  echo "Successful cooldown check did not precede stub generation" >&2
+  exit 1
+fi
+
+for cargo_target in "" "${test_root}/persistent-target"; do
+  expected_target=${cargo_target:-$build_target}
+  command=$(make -C "$REPO_ROOT" --no-print-directory --dry-run \
+    TARGET_DIR="$build_target" CARGO_TARGET_DIR="$cargo_target" check-cargo-cooldown)
+  expected="bash scripts/check-cargo-cooldown.sh --all --cache \"${expected_target}/.cargo-cooldown.json\""
+  if [[ "$command" != "$expected" ]]; then
+    printf 'Unexpected cooldown invocation: %s\n' "$command" >&2
+    exit 1
+  fi
+done
+
+for source in \
+  Makefile \
+  scripts/clippy-changed.sh \
+  scripts/doc-changed.sh \
+  scripts/ci/test-postgres-bootstrap.bash \
+  .pre-commit-hooks/cargo_clippy_network_turmoil_non_linux.sh \
+  .github/workflows/build.yml \
+  .github/workflows/test.yml \
+  .github/workflows/cli-binaries.yml \
+  .github/workflows/nightly-tests.yml \
+  .docker/nautilus_trader.dockerfile \
+  scripts/regen-capnp.sh; do
+  if ! awk '
+    BEGIN {
+      build = "(build|check|test|run|clippy|doc|bench|nextest[[:space:]]+run)"
+      wrapper = "(miri[[:space:]]+)?" build
+      wrapper = wrapper "|llvm-cov[[:space:]]+nextest|codspeed[[:space:]]+build"
+      wrapper = wrapper "|hack[[:space:]].*[[:space:]](check|doc)"
+      compilation = "cargo([[:space:]]+\\+[^[:space:]]+)?[[:space:]]+(" wrapper ")"
+      compilation = "(" compilation "|maturin[[:space:]]+(build|develop))[[:space:]]"
+    }
+    FILENAME ~ /\/Makefile$/ && $0 !~ /^\t/ { next }
+    /^[[:space:]]*#/ { next }
+    {
+      continued = sub(/\\$/, "")
+      command = command $0 " "
+      if (continued) next
+      if (command ~ compilation &&
+          command !~ /--locked([[:space:]]|$)/) {
+        print FILENAME ": unlocked compilation: " command
+        failed = 1
+      }
+      command = ""
+    }
+    END { exit failed }
+  ' "$REPO_ROOT/$source"; then
+    exit 1
+  fi
+done
 
 echo "Cargo cooldown consumer check passed"

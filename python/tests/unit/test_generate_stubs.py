@@ -125,13 +125,14 @@ def test_python_libdir_env_does_not_mutate_os_environ(monkeypatch: pytest.Monkey
     [
         (
             None,
-            ["cargo", "run", "--bin", "python-stub-gen", "--features", "arrow,python"],
+            ["cargo", "run", "--locked", "--bin", "python-stub-gen", "--features", "arrow,python"],
         ),
         (
             "nextest",
             [
                 "cargo",
                 "run",
+                "--locked",
                 "--bin",
                 "python-stub-gen",
                 "--profile",

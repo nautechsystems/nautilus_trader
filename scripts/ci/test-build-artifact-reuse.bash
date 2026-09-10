@@ -161,7 +161,7 @@ nightly_doctest_job=$(awk '
 : > "$CARGO_LOG"
 PATH="$MOCK_BIN:$PATH" \
   CARGO_LOG="$CARGO_LOG" \
-  "$MAKE_BIN" -C "$REPO_ROOT" --no-print-directory \
+  "$MAKE_BIN" -C "$REPO_ROOT" --no-print-directory -o check-cargo-cooldown \
   CARGO_CI_PROFILE=nextest \
   NEXTEST_PROFILE=ci \
   cargo-test-sim > /dev/null
@@ -171,10 +171,10 @@ if grep -Eq '^build ' "$CARGO_LOG"; then
   fail "DST smoke tests used a redundant Cargo build"
 fi
 grep -Fq \
-  'nextest run --config target."cfg(all())".rustflags=["--cfg","madsim"] -p nautilus-common -p nautilus-core -p nautilus-event-store -p nautilus-network -p nautilus-execution -p nautilus-live --lib --tests --features simulation' \
+  'nextest run --locked --config target."cfg(all())".rustflags=["--cfg","madsim"] -p nautilus-common -p nautilus-core -p nautilus-event-store -p nautilus-network -p nautilus-execution -p nautilus-live --lib --tests --features simulation' \
   "$CARGO_LOG" || fail "Standard-precision DST tests did not compile the full package scope together"
 grep -Fq \
-  'nextest run --config target."cfg(all())".rustflags=["--cfg","madsim"] -p nautilus-common -p nautilus-execution --lib --tests --features simulation,high-precision' \
+  'nextest run --locked --config target."cfg(all())".rustflags=["--cfg","madsim"] -p nautilus-common -p nautilus-execution --lib --tests --features simulation,high-precision' \
   "$CARGO_LOG" || fail "High-precision DST tests did not share one feature-coherent build"
 
 printf '%s\n' \
@@ -213,24 +213,24 @@ BASE_FEATURES=$(bash "$REPO_ROOT/scripts/cargo-features.bash")
 
 run_changed_script clippy-changed.sh ""
 grep -Fq \
-  "clippy --workspace --lib --bins --tests --features $BASE_FEATURES --profile nextest -- -D warnings" \
+  "clippy --locked --workspace --lib --bins --tests --features $BASE_FEATURES --profile nextest -- -D warnings" \
   "$CARGO_LOG" || fail "Clippy features do not match the shared feature set"
 
 run_changed_script doc-changed.sh ""
 grep -Fq \
-  "doc --workspace --no-deps --quiet --features $BASE_FEATURES --profile nextest" \
+  "doc --locked --workspace --no-deps --quiet --features $BASE_FEATURES --profile nextest" \
   "$CARGO_LOG" || fail "Cargo doc clean-checkout fallback did not cover the workspace"
 
 # The shared feature definition changes every crate's feature graph, so a change
 # to it alone must force a full workspace run rather than be filtered out.
 run_changed_script clippy-changed.sh "scripts/cargo-features.bash"
 grep -Fq \
-  "clippy --workspace --lib --bins --tests --features $BASE_FEATURES --profile nextest -- -D warnings" \
+  "clippy --locked --workspace --lib --bins --tests --features $BASE_FEATURES --profile nextest -- -D warnings" \
   "$CARGO_LOG" || fail "Shared feature change did not force a full workspace Clippy run"
 
 run_changed_script doc-changed.sh "scripts/cargo-features.bash"
 grep -Fq \
-  "doc --workspace --no-deps --quiet --features $BASE_FEATURES --profile nextest" \
+  "doc --locked --workspace --no-deps --quiet --features $BASE_FEATURES --profile nextest" \
   "$CARGO_LOG" || fail "Shared feature change did not force a full workspace doc run"
 
 # The harness mock git discards pathspecs and pins CHANGED_BASE_SHA empty, so it
@@ -342,43 +342,43 @@ for config in \
 done
 
 run_changed_script clippy-changed.sh "python/pyproject.toml"
-grep -Fq "clippy --workspace" "$CARGO_LOG" ||
+grep -Fq "clippy --locked --workspace" "$CARGO_LOG" ||
   fail "Python manifest did not trigger workspace Clippy"
 
 run_changed_script doc-changed.sh "python/pyproject.toml"
-grep -Fq "doc --workspace" "$CARGO_LOG" ||
+grep -Fq "doc --locked --workspace" "$CARGO_LOG" ||
   fail "Python manifest did not trigger workspace Cargo doc"
 
 mixed_rust_inputs=$(printf '%s\n' "python/pyproject.toml" "crates/model/src/lib.rs")
 
 run_changed_script clippy-changed.sh "$mixed_rust_inputs"
 grep -Fq \
-  "clippy -p nautilus-model --lib --bins --tests --profile nextest -- -D warnings" \
+  "clippy --locked -p nautilus-model --lib --bins --tests --profile nextest -- -D warnings" \
   "$CARGO_LOG" || fail "Python manifest escalated crate-scoped Clippy"
 
 run_changed_script doc-changed.sh "$mixed_rust_inputs"
 grep -Fq \
-  "doc -p nautilus-model --no-deps --quiet --profile nextest" \
+  "doc --locked -p nautilus-model --no-deps --quiet --profile nextest" \
   "$CARGO_LOG" || fail "Python manifest escalated crate-scoped Cargo doc"
 
 run_changed_script clippy-changed.sh "crates/model/src/lib.rs"
 grep -Fq \
-  "clippy -p nautilus-model --lib --bins --tests --profile nextest -- -D warnings" \
+  "clippy --locked -p nautilus-model --lib --bins --tests --profile nextest -- -D warnings" \
   "$CARGO_LOG" || fail "Crate Rust change did not select its Clippy package"
 
 run_changed_script doc-changed.sh "crates/model/src/lib.rs"
 grep -Fq \
-  "doc -p nautilus-model --no-deps --quiet --profile nextest" \
+  "doc --locked -p nautilus-model --no-deps --quiet --profile nextest" \
   "$CARGO_LOG" || fail "Crate Rust change did not select its Cargo doc package"
 
 run_changed_script clippy-changed.sh "Cargo.lock"
-grep -Fq "clippy --workspace" "$CARGO_LOG" || fail "Cargo.lock did not trigger workspace Clippy"
+grep -Fq "clippy --locked --workspace" "$CARGO_LOG" || fail "Cargo.lock did not trigger workspace Clippy"
 
 run_changed_script doc-changed.sh "Cargo.lock"
-grep -Fq "doc --workspace" "$CARGO_LOG" || fail "Cargo.lock did not trigger workspace Cargo doc"
+grep -Fq "doc --locked --workspace" "$CARGO_LOG" || fail "Cargo.lock did not trigger workspace Cargo doc"
 
 run_changed_script clippy-changed.sh "clippy.toml"
-grep -Fq "clippy --workspace" "$CARGO_LOG" || fail "Clippy config did not trigger workspace Clippy"
+grep -Fq "clippy --locked --workspace" "$CARGO_LOG" || fail "Clippy config did not trigger workspace Clippy"
 
 run_changed_script doc-changed.sh "clippy.toml"
 [[ ! -s "$CARGO_LOG" ]] || fail "Clippy config triggered Cargo doc"
@@ -416,7 +416,7 @@ PATH="$MOCK_BIN:$PATH" \
   GIT_LOG="$GIT_LOG" \
   MAKE_LOG="$MAKE_LOG" \
   POSTGRES_INPUT_CHANGED=false \
-  "$MAKE_BIN" -C "$REPO_ROOT" --no-print-directory \
+  "$MAKE_BIN" -C "$REPO_ROOT" --no-print-directory -o check-cargo-cooldown \
   MAKE="$MOCK_BIN/make" cargo-test-postgres-changed > /dev/null
 [[ ! -s "$MAKE_LOG" ]] || fail "PostgreSQL bootstrap tests ran without related changes"
 grep -Fq \
@@ -427,7 +427,7 @@ PATH="$MOCK_BIN:$PATH" \
   GIT_LOG="$GIT_LOG" \
   MAKE_LOG="$MAKE_LOG" \
   POSTGRES_INPUT_CHANGED=true \
-  "$MAKE_BIN" -C "$REPO_ROOT" --no-print-directory \
+  "$MAKE_BIN" -C "$REPO_ROOT" --no-print-directory -o check-cargo-cooldown \
   MAKE="$MOCK_BIN/make" cargo-test-postgres-changed > /dev/null
 grep -Fxq -- "--no-print-directory cargo-test-postgres-ci" "$MAKE_LOG" ||
   fail "Related changes did not trigger PostgreSQL bootstrap tests"

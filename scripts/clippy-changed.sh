@@ -31,7 +31,7 @@ select_rust_inputs() {
 
 run_full() {
   echo "Running full workspace clippy"
-  exec cargo clippy --workspace --lib --bins --tests \
+  exec cargo clippy --locked --workspace --lib --bins --tests \
     --features "$(
       IFS=,
       echo "${DESIRED_FEATURES[*]}"
@@ -120,7 +120,7 @@ feat_seen=""
 for pkg in "${seen_list[@]}"; do
   pkg_args+=("-p" "$pkg")
 
-  pkg_features=$(cargo metadata --format-version 1 --no-deps 2> /dev/null |
+  pkg_features=$(cargo metadata --locked --format-version 1 --no-deps 2> /dev/null |
     python3 -c "
 import json, sys
 data = json.load(sys.stdin)
@@ -175,5 +175,5 @@ fi
 echo "Running clippy on: ${seen_list[*]}"
 # `${feat_args[@]+...}` guards the expansion: bash 3.2 (macOS default) treats an
 # empty array as unbound under `set -u`, which fires when no features are needed.
-cargo clippy "${pkg_args[@]}" --lib --bins --tests ${feat_args[@]+"${feat_args[@]}"} \
+cargo clippy --locked "${pkg_args[@]}" --lib --bins --tests ${feat_args[@]+"${feat_args[@]}"} \
   --profile "$PROFILE" -- -D warnings

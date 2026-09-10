@@ -405,7 +405,7 @@ jobs:
         run: |
           MATURIN_VERSION="$(bash ../scripts/maturin-version.bash)"
           uv run --no-project --no-build --with "maturin==${MATURIN_VERSION}" -- \
-            maturin build --profile "$MATURIN_PROFILE" --out ../dist
+            maturin build --locked --profile "$MATURIN_PROFILE" --out ../dist
 
       - name: Run Python tests
         working-directory: ${{ env.PACKAGE_DIR }}
@@ -617,7 +617,7 @@ jobs:
         run: |
           MATURIN_VERSION="$(bash ../scripts/maturin-version.bash)"
           uv run --no-project --no-build --with "maturin==${MATURIN_VERSION}" -- \
-            maturin build --release --out ../dist
+            maturin build --locked --release --out ../dist
 
       - name: Run Python tests
         working-directory: ${{ env.PACKAGE_DIR }}
@@ -688,7 +688,7 @@ jobs:
         run: |
           MATURIN_VERSION="$(bash ../scripts/maturin-version.bash)"
           uv run --no-project --no-build --with "maturin==${MATURIN_VERSION}" -- \
-            maturin build --release --out ../dist
+            maturin build --locked --release --out ../dist
 
       - name: Run Python tests
         working-directory: ${{ env.PACKAGE_DIR }}
@@ -757,7 +757,7 @@ jobs:
         run: |
           MATURIN_VERSION="$(bash ../scripts/maturin-version.bash)"
           uv run --no-project --no-build --with "maturin==${MATURIN_VERSION}" -- \
-            maturin build --release --out ../dist
+            maturin build --locked --release --out ../dist
 
       - name: Run Python tests
         working-directory: ${{ env.PACKAGE_DIR }}

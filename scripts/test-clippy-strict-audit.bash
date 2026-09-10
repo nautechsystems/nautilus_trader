@@ -88,7 +88,7 @@ PATH="${FAKE_BIN}:${PATH}" CARGO_LOG="$CARGO_LOG" \
   "$MAKE_BIN" -C "$REPO_ROOT" --no-print-directory \
   clippy-pedantic-crate-nautilus-core > /dev/null
 grep -Fq \
-  'clippy --all-targets --all-features -p nautilus-core -- -D warnings -W clippy::pedantic -W clippy::todo -W clippy::unwrap_used -W clippy::expect_used' \
+  'clippy --locked --all-targets --all-features -p nautilus-core -- -D warnings -W clippy::pedantic -W clippy::todo -W clippy::unwrap_used -W clippy::expect_used' \
   "$CARGO_LOG" || fail "Pedantic crate target did not enable its named lint group"
 
 if PATH="${FAKE_BIN}:${PATH}" CARGO_LOG="$CARGO_LOG" FAKE_CARGO_FAIL_TESTS=1 \

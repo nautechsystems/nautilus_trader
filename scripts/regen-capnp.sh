@@ -66,7 +66,7 @@ rm -rf crates/serialization/generated/capnp/*
 # Force a clean rebuild of the serialization crate with capnp feature
 echo -e "${YELLOW}Rebuilding serialization crate to regenerate schemas...${NC}"
 cargo clean -p nautilus-serialization
-cargo build -p nautilus-serialization --features capnp --message-format=json 2>&1 |
+cargo build --locked -p nautilus-serialization --features capnp --message-format=json 2>&1 |
   grep -o '"out_dir":"[^"]*"' |
   cut -d'"' -f4 |
   grep nautilus-serialization > "$OUT_DIR_FILE" || true

@@ -5,9 +5,14 @@
 # enforces the Rust release cooldown. Runs as a pre-commit hook and on demand:
 #
 #     scripts/check-cargo-cooldown.sh
+#     scripts/check-cargo-cooldown.sh --all --cache /path/to/cooldown-cache
 #     scripts/check-cargo-cooldown.sh --days 7
 #     scripts/check-cargo-cooldown.sh --base origin/main
 #     scripts/check-cargo-cooldown.sh --fix
+#
+# --all checks every resolved registry version without a Git comparison base.
+# --cache stores a successful full check for identical locks, policy, audits,
+# and script content. Diff and repair modes do not use this cache.
 #
 # CI uses CHANGED_BASE_SHA when it resolves. New-branch sentinels and unreachable
 # force-push bases fall back to the live origin default branch. An unresolved CI
@@ -45,6 +50,8 @@ DAYS=""
 DAYS_EXPLICIT=false
 BASE=HEAD
 BASE_EXPLICIT=false
+ALL=false
+CACHE=""
 LOCKS=()
 TIMEOUT=15
 CARGO_TOML=Cargo.toml
@@ -55,6 +62,18 @@ SNAPSHOT_DIR=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --all)
+      ALL=true
+      shift
+      ;;
+    --cache)
+      (($# >= 2)) && [[ -n "$2" ]] || {
+        echo "--cache requires a path" >&2
+        exit 2
+      }
+      CACHE=$2
+      shift 2
+      ;;
     --days)
       (($# >= 2)) || {
         echo "--days requires a value" >&2
@@ -121,6 +140,15 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ "$ALL" == true && ("$BASE_EXPLICIT" == true || "$FIX" == true) ]]; then
+  echo "--all cannot be combined with --base or --fix" >&2
+  exit 2
+fi
+if [[ -n "$CACHE" && "$ALL" == false ]]; then
+  echo "--cache requires --all" >&2
+  exit 2
+fi
+
 for tool in git curl jq awk date; do
   command -v "$tool" > /dev/null || {
     echo "Required tool not on PATH: $tool" >&2
@@ -162,7 +190,7 @@ resolve_origin_default_base() {
   printf '%s\n' "$resolved"
 }
 
-if [[ "$BASE_EXPLICIT" == false && (-n "${CHANGED_BASE_SHA:-}" || "${CI:-}" == "true") ]]; then
+if [[ "$ALL" == false && "$BASE_EXPLICIT" == false && (-n "${CHANGED_BASE_SHA:-}" || "${CI:-}" == "true") ]]; then
   resolved_base=""
   current_head=$(git rev-parse HEAD)
   if [[ -n "${CHANGED_BASE_SHA:-}" &&
@@ -183,7 +211,7 @@ if [[ "$BASE_EXPLICIT" == false && (-n "${CHANGED_BASE_SHA:-}" || "${CI:-}" == "
   BASE=$resolved_base
 fi
 
-if ! git rev-parse --verify --quiet "$BASE^{commit}" > /dev/null; then
+if [[ "$ALL" == false ]] && ! git rev-parse --verify --quiet "$BASE^{commit}" > /dev/null; then
   echo "Comparison base does not resolve to a commit: $BASE" >&2
   exit 2
 fi
@@ -390,11 +418,58 @@ if ! cutoff_iso=$(epoch_to_iso "$cutoff_secs"); then
   exit 2
 fi
 
+cache_fingerprint=""
+if [[ -n "$CACHE" ]]; then
+  if command -v sha256sum > /dev/null; then
+    hash_command=(sha256sum)
+  elif command -v shasum > /dev/null; then
+    hash_command=(shasum -a 256)
+  else
+    echo "Full-check caching requires sha256sum or shasum" >&2
+    exit 2
+  fi
+  cache_inputs=("$SCRIPT_PATH" "$CARGO_TOML" "${LOCKS[@]}")
+  if [[ -f "$AUDITS" ]]; then
+    cache_inputs+=("$AUDITS")
+  fi
+  cache_fingerprint=$(
+    {
+      printf '%s\n' "$DAYS"
+      "${hash_command[@]}" "${cache_inputs[@]}"
+    } |
+      "${hash_command[@]}" | awk '{print $1}'
+  )
+  if [[ -f "$CACHE" ]] && jq -e --arg fingerprint "$cache_fingerprint" --argjson now "$now_secs" '
+    .fingerprint == $fingerprint and
+    (.checked_at | type == "number") and .checked_at <= $now
+  ' "$CACHE" > /dev/null 2>&1; then
+    echo "Cargo cooldown full-check cache matches locks, policy, and audits"
+    exit 0
+  fi
+fi
+
+save_cache() (
+  local temporary
+  [[ -n "$CACHE" ]] || return 0
+  mkdir -p "$(dirname "$CACHE")" || exit 2
+  temporary=$(mktemp "${CACHE}.XXXXXX") || exit 2
+  trap 'rm -f "$temporary"' EXIT
+  if ! jq -n --arg fingerprint "$cache_fingerprint" --argjson now "$now_secs" \
+    '{fingerprint: $fingerprint, checked_at: $now}' > "$temporary"; then
+    exit 2
+  fi
+  mv "$temporary" "$CACHE" || exit 2
+)
+
 candidates=""
 candidate_entries=""
 unsupported_registry=""
 for lock in "${LOCKS[@]}"; do
-  lock_diff=$(git --no-pager diff --no-color --no-ext-diff --no-textconv --text --unified=3 "$BASE" -- "$lock")
+  if [[ "$ALL" == true ]]; then
+    lock_diff=$(sed 's/^/+/' "$lock")
+  else
+    lock_diff=$(git --no-pager diff --no-color --no-ext-diff --no-textconv --text --unified=3 "$BASE" -- "$lock")
+  fi
   if [[ "$FIX" == true && -n "$SNAPSHOT_DIR" ]]; then
     previous_lock="${SNAPSHOT_DIR}/${lock}"
     if [[ ! -f "$previous_lock" ]]; then
@@ -512,7 +587,12 @@ if [[ -n "$unsupported_registry" ]]; then
 fi
 
 if [[ -z "$candidates" ]]; then
-  echo "No new registry crate versions vs $BASE."
+  if [[ "$ALL" == true ]]; then
+    echo "No resolved registry crate versions"
+    save_cache
+  else
+    echo "No new registry crate versions vs $BASE."
+  fi
   if [[ "$FIX" == true ]]; then
     validate_lock_manifests
     echo "No cooldown rollback required"
@@ -522,7 +602,11 @@ if [[ -z "$candidates" ]]; then
 fi
 
 count=$(printf '%s\n' "$candidates" | wc -l | tr -d '[:space:]')
-echo "Checking ${count} bumped crate version(s) against ${DAYS}-day cooldown"
+if [[ "$ALL" == true ]]; then
+  printf 'Checking %s resolved crate version(s) against %s-day cooldown\n' "$count" "$DAYS"
+else
+  echo "Checking ${count} bumped crate version(s) against ${DAYS}-day cooldown"
+fi
 echo "Cutoff: ${cutoff_iso}"
 echo
 
@@ -636,6 +720,7 @@ if [[ "$FIX" == false ]]; then
   else
     echo "OK: all ${count} bumped crate(s) are at least ${DAYS} days old."
   fi
+  save_cache
   exit 0
 fi
 

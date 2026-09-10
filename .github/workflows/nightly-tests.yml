@@ -253,13 +253,15 @@ jobs:
       - name: Run turmoil network tests (tungstenite)
         env:
           RUST_BACKTRACE: 1
-        run: cargo nextest run -p nautilus-network --features turmoil --cargo-profile nextest --status-level fail
+        run: >-
+          cargo nextest run --locked -p nautilus-network --features turmoil
+          --cargo-profile nextest --status-level fail
 
       - name: Run turmoil network tests (sockudo)
         env:
           RUST_BACKTRACE: 1
         run: |
-          cargo nextest run -p nautilus-network \
+          cargo nextest run --locked -p nautilus-network \
             --features "turmoil,transport-sockudo" \
             --test integration \
             -E 'test(/^turmoil_sockudo::/)' \

@@ -31,7 +31,7 @@ select_rust_inputs() {
 
 run_full() {
   echo "Running full workspace doc check"
-  exec cargo doc --workspace --no-deps --quiet \
+  exec cargo doc --locked --workspace --no-deps --quiet \
     --features "$(
       IFS=,
       echo "${DESIRED_FEATURES[*]}"
@@ -120,7 +120,7 @@ feat_seen=""
 for pkg in "${seen_list[@]}"; do
   pkg_args+=("-p" "$pkg")
 
-  pkg_features=$(cargo metadata --format-version 1 --no-deps 2> /dev/null |
+  pkg_features=$(cargo metadata --locked --format-version 1 --no-deps 2> /dev/null |
     python3 -c "
 import json, sys
 data = json.load(sys.stdin)
@@ -167,5 +167,5 @@ fi
 echo "Running doc check on: ${seen_list[*]}"
 # `${feat_args[@]+...}` guards the expansion: bash 3.2 (macOS default) treats an
 # empty array as unbound under `set -u`, which fires when no features are needed.
-cargo doc "${pkg_args[@]}" --no-deps --quiet ${feat_args[@]+"${feat_args[@]}"} \
+cargo doc --locked "${pkg_args[@]}" --no-deps --quiet ${feat_args[@]+"${feat_args[@]}"} \
   --profile "$PROFILE"

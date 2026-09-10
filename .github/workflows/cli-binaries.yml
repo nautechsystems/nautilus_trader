@@ -44,7 +44,7 @@ jobs:
 
       - name: Build CLI (all features)
         run: |
-          cargo build --release -p nautilus-cli --bin nautilus --all-features
+          cargo build --locked --release -p nautilus-cli --bin nautilus --all-features
 
       - name: Strip binary
         run: |
@@ -93,7 +93,7 @@ jobs:
 
       - name: Build CLI (all features)
         run: |
-          cargo build --release -p nautilus-cli --bin nautilus --all-features
+          cargo build --locked --release -p nautilus-cli --bin nautilus --all-features
 
       - name: Strip binary
         run: |
@@ -141,7 +141,7 @@ jobs:
 
       - name: Build CLI (all features)
         run: |
-          cargo build --release -p nautilus-cli --bin nautilus --all-features
+          cargo build --locked --release -p nautilus-cli --bin nautilus --all-features
 
       - name: Strip binary
         run: |
@@ -195,7 +195,7 @@ jobs:
 
       - name: Build CLI (all features)
         run: |
-          cargo build --release -p nautilus-cli --bin nautilus --all-features
+          cargo build --locked --release -p nautilus-cli --bin nautilus --all-features
 
       - name: Package artifact
         shell: pwsh

@@ -431,7 +431,7 @@ def stub_generator_command(cargo_features: list[str]) -> list[str]:
     """
     Return the cargo command for running the ``python-stub-gen`` binary.
     """
-    cmd = ["cargo", "run", "--bin", "python-stub-gen"]
+    cmd = ["cargo", "run", "--locked", "--bin", "python-stub-gen"]
 
     profile = os.environ.get("NAUTILUS_STUB_PROFILE")
     if profile:

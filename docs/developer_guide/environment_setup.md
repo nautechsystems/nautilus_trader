@@ -309,6 +309,37 @@ exact project version within that range, update Nautilus Engineering's `[uv].ver
 shared catalog, then update the `rev` in `.pre-commit-config.yaml` and each digest-pinned uv Docker
 image. Run `make update-uv` to install the project version locally.
 
+### Rust dependency cooldown before compilation
+
+Repository builds must check every resolved registry dependency before Cargo can execute dependency
+build scripts or procedural macros. `make check-cargo-cooldown` checks all tracked `Cargo.lock`
+files against `[workspace.metadata.cooldown]` in `Cargo.toml`, including versions already committed
+or pulled from another branch. It does not need a Git comparison base or full checkout history.
+
+The Rust build, stub, check, Clippy, test, coverage, documentation, benchmark, and local CLI install
+targets require this check. Stub generation counts as compilation because it runs the Rust
+`python-stub-gen` binary through Cargo. Each compilation target waits for the gate, including under
+parallel Make. Compilation uses the checked lockfile without resolving replacements. Pre-flight
+also checks early, and CI common setup checks before repository compilation begins.
+
+A version inside the cooldown window requires both an exact entry in
+`[workspace.metadata.cooldown.allow]` and a matching cargo-vet audit. Unavailable release metadata
+and unsupported registries fail the check. The diff-based pre-commit and dependency-update checks
+remain separate: a clean Git diff does not establish that resolved dependencies are old enough.
+
+Successful full checks are cached as `.cargo-cooldown.json` in `CARGO_TARGET_DIR`, or the Make
+`TARGET_DIR` when no Cargo target directory is set. CI uses its configured Cargo target directory
+so persistent runners retain the cache between jobs. Changes to any checked lockfile,
+the policy, audits, or the check script invalidate the cache. Failed checks are not cached. Treat
+this file as local verification state; do not restore it from an untrusted source.
+
+This gate reduces exposure to newly published malicious registry releases. It does not establish
+that older releases are safe, sandbox build scripts, or vet Git and local path dependencies.
+Development-tool bootstrap commands such as `make install-tools` install external packages with
+separate dependency resolutions and are outside this repository-lockfile gate. Direct Cargo and
+Maturin invocations also bypass Make: run the full check first and pass `--locked` when building
+repository code. Keep manifests and lockfiles unchanged between the check and compilation.
+
 ## Builds
 
 The Python package and the standalone Nautilus CLI are separate build artifacts. `make build-debug`

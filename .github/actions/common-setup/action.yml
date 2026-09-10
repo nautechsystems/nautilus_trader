@@ -307,6 +307,10 @@ runs:
         restore-keys: |
           ${{ steps.cache-scope.outputs.value }}-prek-
 
+    - name: Check Rust dependency cooldown before compilation
+      shell: bash
+      run: bash scripts/check-cargo-cooldown.sh --all --cache "${CARGO_TARGET_DIR:-target}/.cargo-cooldown.json"
+
     # > --------------------------------------------------
     # > Cache footprint
     - name: Report cache footprint

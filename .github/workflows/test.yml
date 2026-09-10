@@ -174,7 +174,7 @@ jobs:
         run: |
           MATURIN_VERSION="$(bash ../scripts/maturin-version.bash)"
           uv run --no-project --no-build --with "maturin==${MATURIN_VERSION}" -- \
-            maturin build --profile "$MATURIN_PROFILE" --out ../dist
+            maturin build --locked --profile "$MATURIN_PROFILE" --out ../dist
 
       - name: Run Python tests
         working-directory: python
