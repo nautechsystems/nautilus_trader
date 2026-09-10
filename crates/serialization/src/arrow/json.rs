@@ -13,7 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, fmt::Display, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+    sync::Arc,
+};
 
 use arrow::{
     array::{
@@ -185,6 +189,12 @@ pub fn encode_batch<'a, T: Serialize + 'a>(
     data: impl IntoIterator<Item = &'a T>,
     fields: &[JsonFieldSpec],
 ) -> Result<RecordBatch, ArrowError> {
+    if let Some(name) = duplicate_field_name(fields) {
+        return Err(invalid_argument(format!(
+            "Duplicate field specification `{name}`"
+        )));
+    }
+
     let rows = serialize_rows(data)?;
     let arrays: Result<Vec<ArrayRef>, ArrowError> = fields
         .iter()
@@ -217,6 +227,12 @@ where
     D::IntoIter: ExactSizeIterator,
     I: Display,
 {
+    if let Some(name) = duplicate_field_name(fields) {
+        return Err(invalid_argument(format!(
+            "Duplicate field specification `{name}`"
+        )));
+    }
+
     let data = data.into_iter();
     let data_len = data.len();
     let identifier_array = identifier_array_from_display(identifiers);
@@ -258,10 +274,21 @@ pub fn decode_batch<T: DeserializeOwned>(
     fields: &[JsonFieldSpec],
     fallback_type_name: Option<&'static str>,
 ) -> Result<Vec<T>, EncodingError> {
+    if let Some(name) = duplicate_field_name(fields) {
+        return Err(EncodingError::ParseError(
+            name,
+            "duplicate field specification".to_string(),
+        ));
+    }
+
+    let schema = record_batch.schema();
     let columns: Result<Vec<_>, EncodingError> = fields
         .iter()
         .enumerate()
-        .map(|(index, field)| decode_column_ref(record_batch.columns(), *field, index))
+        .map(|(expected_index, field)| {
+            let index = column_index(&schema, field.name, expected_index)?;
+            decode_column_ref(record_batch.columns(), *field, index)
+        })
         .collect();
     let columns = columns?;
 
@@ -291,6 +318,36 @@ pub fn decode_batch<T: DeserializeOwned>(
     }
 
     Ok(decoded)
+}
+
+fn duplicate_field_name(fields: &[JsonFieldSpec]) -> Option<&'static str> {
+    let mut names = HashSet::with_capacity(fields.len());
+    fields
+        .iter()
+        .find_map(|field| (!names.insert(field.name)).then_some(field.name))
+}
+
+fn column_index(
+    schema: &Schema,
+    name: &'static str,
+    expected_index: usize,
+) -> Result<usize, EncodingError> {
+    let mut matches = schema
+        .fields()
+        .iter()
+        .enumerate()
+        .filter(|(_, field)| field.name() == name);
+    let Some((index, _)) = matches.next() else {
+        return Err(EncodingError::MissingColumn(name, expected_index));
+    };
+
+    if matches.next().is_some() {
+        return Err(EncodingError::ParseError(
+            name,
+            "duplicate column name".to_string(),
+        ));
+    }
+    Ok(index)
 }
 
 fn serialize_rows<'a, T: Serialize + 'a>(
@@ -664,4 +721,105 @@ fn values_is_null(values: &StringColumnRef<'_>, row: usize) -> bool {
 
 fn invalid_argument(message: String) -> ArrowError {
     ArrowError::InvalidArgumentError(message)
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use serde::Deserialize;
+
+    use super::*;
+
+    const FIELDS: [JsonFieldSpec; 2] = [
+        JsonFieldSpec::u64("left", false),
+        JsonFieldSpec::u64("right", false),
+    ];
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct Record {
+        left: u64,
+        right: u64,
+    }
+
+    #[rstest]
+    fn decode_batch_matches_columns_by_name() {
+        let rows = [Record {
+            left: 11,
+            right: 29,
+        }];
+        let metadata = HashMap::new();
+        let batch = encode_batch("Record", &metadata, &rows, &FIELDS).unwrap();
+        let reordered = batch.project(&[1, 0]).unwrap();
+
+        let decoded = decode_batch::<Record>(&metadata, &reordered, &FIELDS, None).unwrap();
+
+        assert_eq!(decoded, rows);
+    }
+
+    #[rstest]
+    fn encode_batch_rejects_duplicate_field_specs() {
+        let rows = [Record {
+            left: 11,
+            right: 29,
+        }];
+        let duplicate = [FIELDS[0], FIELDS[0]];
+
+        let error = encode_batch("Record", &HashMap::new(), &rows, &duplicate).unwrap_err();
+
+        assert!(matches!(error, ArrowError::InvalidArgumentError(message)
+            if message == "Duplicate field specification `left`"));
+    }
+
+    #[rstest]
+    fn encode_batch_with_identifier_rejects_duplicate_field_specs() {
+        let rows = [Record {
+            left: 11,
+            right: 29,
+        }];
+        let duplicate = [FIELDS[0], FIELDS[0]];
+
+        let error = encode_batch_with_identifier(
+            "Record",
+            &HashMap::new(),
+            &rows,
+            &duplicate,
+            ["record-1"],
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, ArrowError::InvalidArgumentError(message)
+            if message == "Duplicate field specification `left`"));
+    }
+
+    #[rstest]
+    fn decode_batch_rejects_duplicate_field_specs() {
+        let rows = [Record {
+            left: 11,
+            right: 29,
+        }];
+        let metadata = HashMap::new();
+        let batch = encode_batch("Record", &metadata, &rows, &FIELDS).unwrap();
+        let duplicate = [FIELDS[0], FIELDS[0]];
+
+        let error = decode_batch::<Record>(&metadata, &batch, &duplicate, None).unwrap_err();
+
+        assert!(matches!(error, EncodingError::ParseError("left", message)
+            if message == "duplicate field specification"));
+    }
+
+    #[rstest]
+    fn decode_batch_rejects_duplicate_column_names() {
+        let rows = [Record {
+            left: 11,
+            right: 29,
+        }];
+        let metadata = HashMap::new();
+        let batch = encode_batch("Record", &metadata, &rows, &FIELDS).unwrap();
+        let duplicate = batch.project(&[0, 0, 1]).unwrap();
+
+        let error = decode_batch::<Record>(&metadata, &duplicate, &FIELDS, None).unwrap_err();
+
+        assert!(matches!(error, EncodingError::ParseError("left", message)
+            if message == "duplicate column name"));
+    }
 }

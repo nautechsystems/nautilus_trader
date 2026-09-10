@@ -17,8 +17,11 @@ use std::{
     collections::{BinaryHeap, VecDeque},
 };
 
+use datafusion::physical_plan::SendableRecordBatchStream;
+use futures::{Stream, StreamExt};
 use nautilus_core::UnixNanos;
 use nautilus_model::data::HasTsInit;
+use nautilus_serialization::arrow::DecodeTypedFromRecordBatch;
 
 pub(super) type TypedPages<T> = Box<dyn Iterator<Item = anyhow::Result<Vec<T>>> + Send>;
 
@@ -97,6 +100,81 @@ impl<T: HasTsInit> Iterator for MergedPages<T> {
                 self.finished = true;
                 Some(Err(e))
             }
+        }
+    }
+}
+
+pub(super) fn decode_typed_pages<T>(
+    stream: SendableRecordBatchStream,
+) -> impl Stream<Item = anyhow::Result<Vec<T>>>
+where
+    T: DecodeTypedFromRecordBatch,
+{
+    let metadata = stream.schema().metadata().clone();
+    futures::stream::try_unfold((stream, metadata), |(mut stream, metadata)| async move {
+        let Some(batch) = stream.next().await else {
+            return Ok(None);
+        };
+        let rows = T::decode_typed_batch(&metadata, batch?)?;
+        Ok(Some((rows, (stream, metadata))))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+        task::Poll,
+    };
+
+    use datafusion::{error::DataFusionError, physical_plan::stream::RecordBatchStreamAdapter};
+    use nautilus_model::data::{QuoteTick, stubs::quote_audusd};
+    use nautilus_serialization::arrow::{EncodeToRecordBatch, EncodingError};
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::stream_error(false)]
+    #[case::decode_error(true)]
+    fn typed_pages_stop_polling_after_error(#[case] decode_error: bool) {
+        let quote = quote_audusd();
+        let batch = QuoteTick::encode_batch(&quote.metadata(), &[quote]).unwrap();
+        let schema = batch.schema();
+        let failure = if decode_error {
+            Ok(batch.project(&[0]).unwrap())
+        } else {
+            Err(DataFusionError::Execution(
+                "injected stream failure".to_string(),
+            ))
+        };
+        let mut batches = vec![Ok(batch.clone()), failure, Ok(batch)].into_iter();
+        let polls = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&polls);
+        let inner = futures::stream::poll_fn(move |_| {
+            counted.fetch_add(1, Ordering::SeqCst);
+            Poll::Ready(batches.next())
+        });
+        let stream = Box::pin(RecordBatchStreamAdapter::new(schema, inner));
+        let decoded = decode_typed_pages::<QuoteTick>(stream);
+        let mut items: Vec<_> = futures::executor::block_on_stream(Box::pin(decoded)).collect();
+
+        assert_eq!(items.len(), 2);
+        assert_eq!(polls.load(Ordering::SeqCst), 2);
+        assert_eq!(items.remove(0).unwrap(), vec![quote]);
+        let error = items.remove(0).unwrap_err();
+
+        if decode_error {
+            assert!(matches!(
+                error.downcast_ref::<EncodingError>(),
+                Some(EncodingError::MissingColumn("ask_price", 1))
+            ));
+        } else {
+            assert!(matches!(error.downcast_ref::<DataFusionError>(),
+                Some(DataFusionError::Execution(message)) if message == "injected stream failure"));
         }
     }
 }
