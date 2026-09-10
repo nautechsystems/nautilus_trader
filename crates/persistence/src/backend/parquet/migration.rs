@@ -99,6 +99,10 @@ impl ParquetCatalogSource for ParquetDataCatalog {
     fn original_uri(&self) -> &str {
         &self.original_uri
     }
+
+    fn to_object_path_parsed(&self, path: &str) -> anyhow::Result<ObjectPath> {
+        Self::to_object_path_parsed(self, path)
+    }
 }
 
 impl ParquetDataCatalog {
@@ -130,8 +134,20 @@ impl ParquetDataCatalog {
             if file.size == 0 {
                 let source_path = source.to_object_path_parsed(&file.path)?;
                 ensure_planned_file_unchanged(source, file, &source_path)?;
-                let target_path =
-                    self.to_object_path(&format!("{}/{}", self.base_path, file.relative_path))?;
+                let target_prefix = match file.target_type_name.as_str() {
+                    "instruments" => file.source_type_name.clone(),
+                    "custom" => file
+                        .source_type_name
+                        .strip_prefix("custom_")
+                        .map_or_else(|| "custom".to_string(), |name| format!("custom/{name}")),
+                    _ => file.target_type_name.clone(),
+                };
+                let relative_path = file.relative_path.replacen(
+                    &format!("data/{}/", file.source_type_name),
+                    &format!("data/{target_prefix}/"),
+                    1,
+                );
+                let target_path = self.to_object_path_parsed(&relative_path)?;
                 self.execute_async(|| async {
                     self.object_store
                         .put_opts(

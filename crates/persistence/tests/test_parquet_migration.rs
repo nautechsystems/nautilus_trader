@@ -37,6 +37,7 @@ use nautilus_persistence::{
     test_data::RustTestCustomData,
 };
 use nautilus_serialization::{arrow::DecodeTypedFromRecordBatch, ensure_custom_data_registered};
+use object_store::local::LocalFileSystem;
 use parquet::arrow::{ArrowWriter, arrow_reader::ParquetRecordBatchReaderBuilder};
 use rstest::rstest;
 use serde_json::Value;
@@ -209,24 +210,37 @@ fn migration_rejects_nonempty_destination() {
 }
 
 #[rstest]
-fn migration_preserves_empty_coverage_files() {
+#[case::canonical("quotes", "quotes")]
+#[case::legacy_quote("quote_tick", "quotes")]
+#[case::legacy_depth("order_book_depth10", "order_book_depths")]
+#[case::instrument("currency_pair", "currency_pair")]
+#[case::legacy_custom("custom_Feed", "custom/Feed")]
+fn migration_preserves_empty_coverage_files(#[case] source_type: &str, #[case] target_type: &str) {
     let temporary = TempDir::new().unwrap();
     let source = temporary.path().join("source");
     let target = temporary.path().join("target");
-    let relative = Path::new(
-        "data/quotes/AUDUSD.SIM/2023-11-14T22-13-20-000000123Z_2023-11-14T22-13-20-000000126Z.parquet",
+    let relative = format!(
+        "data/{source_type}/AUDUSD.SIM/2023-11-14T22-13-20-000000123Z_2023-11-14T22-13-20-000000126Z.parquet"
     );
-    let marker = source.join(relative);
+    let expected_relative = format!(
+        "data/{target_type}/AUDUSD.SIM/2023-11-14T22-13-20-000000123Z_2023-11-14T22-13-20-000000126Z.parquet"
+    );
+    let marker = source.join(&relative);
     fs::create_dir_all(marker.parent().unwrap()).unwrap();
     fs::write(&marker, []).unwrap();
     let report = migrate_parquet_catalog(config(&source, &target, false)).unwrap();
     assert_eq!(report.migrated_files, 1);
     assert_eq!(report.migrated_rows, 0);
     assert_eq!(fs::read(&marker).unwrap(), Vec::<u8>::new());
-    assert_eq!(fs::read(target.join(relative)).unwrap(), Vec::<u8>::new());
+    assert_eq!(
+        fs::read(target.join(expected_relative)).unwrap(),
+        Vec::<u8>::new()
+    );
     let catalog = ParquetDataCatalog::new(&target, None, None, None, None);
     assert_eq!(
-        catalog.get_intervals("quotes", Some("AUDUSD.SIM")).unwrap(),
+        catalog
+            .get_intervals(target_type, Some("AUDUSD.SIM"))
+            .unwrap(),
         vec![(1_700_000_000_000_000_123, 1_700_000_000_000_000_126)]
     );
 }
@@ -314,4 +328,40 @@ fn catalog_files(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     visit(root, root, &mut files);
     files.sort_by(|a, b| a.0.cmp(&b.0));
     files
+}
+
+#[rstest]
+#[case::bucket_root("")]
+#[case::catalog_prefix("catalog")]
+fn remote_migration_preserves_encoded_object_paths(#[case] prefix: &str) {
+    let storage = TempDir::new().unwrap();
+    let destination = TempDir::new().unwrap();
+    let fixture = catalog_files(&fixture_path())
+        .into_iter()
+        .find(|(path, _)| path.to_string_lossy().contains("data/quotes/"))
+        .unwrap();
+    let filename = fixture.0.file_name().unwrap();
+    let relative = Path::new(prefix)
+        .join("data/quotes/AUD%2FUSD.SIM")
+        .join(filename);
+    let source_file = storage.path().join(&relative);
+    fs::create_dir_all(source_file.parent().unwrap()).unwrap();
+    fs::write(&source_file, &fixture.1).unwrap();
+    let mut source = ParquetDataCatalog::new(storage.path(), None, None, None, None);
+    source.base_path = prefix.to_string();
+    source.original_uri = format!("s3://test-bucket/{prefix}");
+    source.object_store = Arc::new(LocalFileSystem::new_with_prefix(storage.path()).unwrap());
+    let mut target = ParquetDataCatalog::new(destination.path(), None, None, None, None);
+
+    let report = target.migrate_from_legacy_parquet_catalog(&source).unwrap();
+    let actual = target
+        .query_typed_data::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+    let expected: Value =
+        serde_json::from_slice(&fs::read(fixture_path().join("expected.json")).unwrap()).unwrap();
+    let expected: Vec<QuoteTick> = serde_json::from_value(expected["quotes"].clone()).unwrap();
+    assert_eq!(report.migrated_files, 1);
+    assert_eq!(report.migrated_rows, 2);
+    assert_eq!(actual, expected);
+    assert_eq!(fs::read(source_file).unwrap(), fixture.1);
 }

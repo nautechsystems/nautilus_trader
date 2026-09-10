@@ -21,12 +21,12 @@ use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, CustomData, Data, DataBatch, DataType,
         FundingRateUpdate, HasTsInit, IndexPriceUpdate, MarkPriceUpdate, NautilusDataType,
-        NautilusRecordType, OptionGreekValues, OptionGreeks, OrderBookDelta, OrderBookDepth,
-        QuoteTick, TradeTick, is_monotonically_increasing_by_init,
+        NautilusRecordType, OptionGreekValues, OptionGreeks, OrderBookDelta, OrderBookDeltas,
+        OrderBookDepth, QuoteTick, TradeTick, is_monotonically_increasing_by_init,
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, BarAggregation, BookAction, CurrencyType,
-        GreeksConvention, OrderSide, PriceType,
+        GreeksConvention, OrderSide, PriceType, RecordFlag,
     },
     events::AccountState,
     identifiers::{AccountId, InstrumentId, Symbol, TradeId},
@@ -5756,4 +5756,94 @@ fn test_query_directory_based_registration_with_cloud_uri() {
     // Should get all 4 quotes from both files in the directory
     assert_eq!(data.len(), 4, "Should read all files in directory");
     assert!(is_monotonically_increasing_by_init(&data));
+}
+
+#[rstest]
+#[case::enum_writer(true)]
+#[case::batch_writer(false)]
+fn test_delta_batches_share_catalog_write_dispatch(#[case] enum_writer: bool) {
+    let (_temp, mut catalog) = create_temp_catalog();
+    let ids = [
+        InstrumentId::from("ETH/USDT.BINANCE"),
+        InstrumentId::from("BTC/USDT.BINANCE"),
+    ];
+    let mut expected = Vec::new();
+    let mut batches = Vec::new();
+    for (instrument_index, instrument_id) in ids.into_iter().enumerate() {
+        let mut rows = Vec::new();
+
+        for batch_index in 0..2 {
+            let deltas = (0..2)
+                .map(|row_index| {
+                    let index = (instrument_index * 4 + batch_index * 2 + row_index) as u64;
+                    let mut delta = create_order_book_delta(1000 + index);
+                    delta.instrument_id = instrument_id;
+                    delta.order.order_id = 101 + index;
+                    delta.sequence = 201 + index;
+                    delta.flags = RecordFlag::F_MBP as u8;
+                    if row_index == 1 {
+                        delta.flags |= RecordFlag::F_LAST as u8;
+                    }
+                    delta
+                })
+                .collect::<Vec<_>>();
+            rows.extend_from_slice(&deltas);
+            batches.push(OrderBookDeltas::new(instrument_id, deltas));
+        }
+        expected.push(rows);
+    }
+
+    if enum_writer {
+        let data = batches
+            .into_iter()
+            .map(|batch| Data::BookDeltas(Box::new(batch)))
+            .collect::<Vec<_>>();
+        catalog.write_data_enum(&data, None, None, None).unwrap();
+    } else {
+        catalog
+            .write_data_batch(&DataBatch::BookDeltas(batches.into()), None, None, None)
+            .unwrap();
+    }
+
+    for (instrument_id, expected) in ids.into_iter().zip(expected) {
+        let actual = catalog
+            .query_typed_data::<OrderBookDelta>(
+                Some(vec![instrument_id.to_string()]),
+                None,
+                None,
+                None,
+                None,
+                true,
+            )
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(actual).unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
+    }
+}
+
+#[rstest]
+#[case::bucket_root("")]
+#[case::catalog_prefix("catalog")]
+fn test_filtered_remote_instrument_query_retains_object_store(#[case] prefix: &str) {
+    let (temporary, mut catalog) = create_temp_catalog();
+    catalog.base_path = prefix.to_string();
+    catalog.original_uri = format!("s3://test-bucket/{prefix}");
+    catalog.object_store = Arc::new(LocalFileSystem::new_with_prefix(temporary.path()).unwrap());
+    let expected = InstrumentAny::CurrencyPair(audusd_sim());
+    let other = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    catalog
+        .write_instruments(vec![other, expected.clone()])
+        .unwrap();
+
+    for _ in 0..2 {
+        let actual = catalog
+            .query_instruments_filtered_with_where(None, None, None, Some("quote_currency = 'USD'"))
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(actual).unwrap(),
+            serde_json::to_value(vec![expected.clone()]).unwrap()
+        );
+    }
 }

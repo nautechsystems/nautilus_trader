@@ -19,8 +19,8 @@ Use it when a venue publishes a self-contained depth snapshot rather than increm
 
 ## Behavior
 
-- Rust and PyO3 Python constructors require exactly 10 bid levels, 10 ask levels,
-  10 bid counts, and 10 ask counts.
+- Rust and PyO3 Python constructors accept variable-length sides. Each side requires one count
+  per order; bid and ask sides can have different lengths.
 - Empty sides use empty sequences. The inline capacity is ten; larger snapshots allocate as needed.
 - This type is not interchangeable with incremental `OrderBookDelta` streams.
 
