@@ -712,6 +712,38 @@ order ID. The same venue event yields the same trade ID across replays.
 For historical Data API trades, the loader uses
 `{transactionHash[-24:]}-{asset[-4:]}-{seq:06d}` to distinguish fills in one transaction.
 
+## Instrument metadata
+
+`BinaryOption.event_id` contains the Gamma parent event ID. The provider's
+[event-based discovery](#instrument-provider-options) and `PolymarketDataLoader.from_event_slug` use the enclosing
+event; direct market loading uses the unique ID in the market's `events` array. Missing or ambiguous
+relationships leave `event_id` unset. Both outcome instruments share the same event ID.
+
+Live instruments retain the complete received Gamma market JSON string in `info["gamma_market"]`, including
+unknown fields and nested events, tags, and series when returned by Gamma. Event-based discovery also
+retains the enclosing response in `info["gamma_event"]`, including its full `markets` array. This event
+snapshot is repeated for each outcome instrument, so events with many markets increase metadata size.
+The existing normalized metadata keys remain available, including `token_id`, `condition_id`, `market_id`,
+and `event_id` when known.
+
+These strings contain the received JSON objects before enrichment. Tick-size updates preserve
+them; use the instrument's typed price increment for the current tick size. The adapter does not fetch
+additional related resources solely to populate metadata. Storing the original JSON strings preserves
+unknown fields and numeric precision across serialization formats. Decode them when needed:
+
+```python
+import json
+from decimal import Decimal
+
+market = json.loads(instrument.info["gamma_market"], parse_float=Decimal)
+```
+
+The historical `PolymarketDataLoader` retains these JSON strings under `resolution_metadata["gamma_market"]`
+and, for event loading, `resolution_metadata["gamma_event"]` instead of `instrument.info`, because fetched
+responses can contain terminal outcomes that were not known during the historical period. Decode these
+strings with `json.loads` as above. They precede CLOB enrichment, so the raw token IDs and outcome labels
+can differ from the constructed instrument.
+
 ## Numeric precision
 
 Financial wire values are decoded directly as decimals. Values outside the supported decimal or
@@ -1698,6 +1730,8 @@ is retained as follows:
 | Market end                 | `end_date`             | -                                    |
 | Resolution source          | `resolution_source`    | `resolutionSource`                   |
 | Crypto resolution config   | `crypto_market_config` | -                                    |
+| Raw Gamma market JSON      | -                      | `gamma_market`                       |
+| Raw Gamma event JSON       | -                      | `gamma_event` (event loading)        |
 | Closed state               | -                      | `closed`                             |
 | Closure time               | -                      | `closedTime`                         |
 | UMA resolution status      | -                      | `umaResolutionStatus`                |

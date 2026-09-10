@@ -4033,11 +4033,13 @@ async fn test_fetch_gamma_events_rejects_repeated_cursor() {
 async fn test_load_single_instrument_direct_fetch() {
     let state = TestServerState::default();
 
-    let market = gamma_market_with_slug(
+    let mut market = gamma_market_with_slug(
         "direct-load-market",
         "0xcondition_direct",
         ["95000000000000000001", "95000000000000000002"],
     );
+    market["events"] = json!([{"id": "event-123"}]);
+    let expected = market.clone();
     // Use generic gamma response - condition_ids query hits /markets
     *state.gamma_response.lock().await = Some(json!([market]));
 
@@ -4049,7 +4051,24 @@ async fn test_load_single_instrument_direct_fetch() {
     let instrument_id = InstrumentId::from("0xcondition_direct-95000000000000000001.POLYMARKET");
     provider.load(&instrument_id, None).await.unwrap();
 
-    assert!(provider.store().contains(&instrument_id));
+    let InstrumentAny::BinaryOption(instrument) = provider.store().find(&instrument_id).unwrap()
+    else {
+        unreachable!()
+    };
+
+    assert_eq!(instrument.event_id.map(|id| id.as_str()), Some("event-123"));
+    assert_eq!(
+        serde_json::from_str::<Value>(
+            instrument
+                .info
+                .as_ref()
+                .unwrap()
+                .get_str("gamma_market")
+                .unwrap()
+        )
+        .unwrap(),
+        expected
+    );
     // Direct fetch succeeded, so load_all was NOT called - store not initialized
     assert!(!provider.store().is_initialized());
 }

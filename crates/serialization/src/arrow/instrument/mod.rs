@@ -355,7 +355,7 @@ mod tests {
     use std::sync::Arc;
 
     use arrow::array::{ArrayRef, StringArray, UInt8Array};
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{Params, UnixNanos};
     use nautilus_model::{
         enums::{AssetClass, CurrencyType, OptionKind},
         identifiers::{InstrumentId, Symbol},
@@ -718,6 +718,9 @@ mod tests {
 
     #[rstest]
     fn test_encode_decode_round_trip_binary_option_all_fields() {
+        let mut info = Params::new();
+        let raw = "0.1234567890123456789012345678";
+        info.insert("gamma_market".to_string(), serde_json::json!(raw));
         let option = BinaryOption::builder()
             .instrument_id(InstrumentId::from("ELECTION.POLYMARKET"))
             .raw_symbol(Symbol::from("ELECTION"))
@@ -729,6 +732,8 @@ mod tests {
             .size_precision(0)
             .price_increment(Price::from("0.01"))
             .size_increment(Quantity::from("1"))
+            .event_id(Ustr::from("event-123"))
+            .info(info)
             .outcome(Ustr::from("YES"))
             .description(Ustr::from("Election outcome"))
             .max_quantity(Quantity::from("10000"))
@@ -755,6 +760,26 @@ mod tests {
             serde_json::to_value(&decoded).unwrap(),
             serde_json::to_value(&option).unwrap(),
         );
+    }
+
+    #[rstest]
+    #[case::missing(false)]
+    #[case::null(true)]
+    fn test_binary_option_event_id_legacy_default(#[case] null: bool) {
+        let mut option = nautilus_model::instruments::stubs::binary_option();
+        option.event_id = Some(Ustr::from("event-123"));
+        let metadata = option.metadata();
+        let batch = BinaryOption::encode_batch(&metadata, &[option]).unwrap();
+
+        let batch = if null {
+            batch_with_null_string_column(&batch, "event_id")
+        } else {
+            batch_without_column(&batch, "event_id")
+        };
+
+        let decoded = binary_option::decode_binary_option_batch(&metadata, &batch).unwrap();
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].event_id, None);
     }
 
     // The `betting` stub populates every bound, margin, and fee, so this covers the whole struct

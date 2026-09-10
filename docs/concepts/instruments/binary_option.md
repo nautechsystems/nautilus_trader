@@ -20,6 +20,7 @@ Examples include prediction market outcomes and binary event contracts.
 | `size_precision`  | `u8`               | `int`              | Required         | Decimal places allowed for order sizes.   |
 | `price_increment` | `Price`            | `Price`            | Required         | Smallest valid price step.                |
 | `size_increment`  | `Quantity`         | `Quantity`         | Required         | Smallest valid size step.                 |
+| `event_id`        | `Option<Ustr>`     | `str \| None`      | `None`           | Venue-scoped parent event identifier.     |
 | `outcome`         | `Option<Ustr>`     | `str \| None`      | `None`           | Outcome label when the venue provides it. |
 | `description`     | `Option<Ustr>`     | `str \| None`      | `None`           | Human-readable market description.        |
 | `max_quantity`    | `Option<Quantity>` | `Quantity \| None` | `None`           | Maximum order quantity.                   |
@@ -46,6 +47,9 @@ Examples include prediction market outcomes and binary event contracts.
 - Many venues quote binary outcomes between zero and one, but the venue defines the
   allowed price range and tick size.
 - `outcome` and `description` provide human-readable context for the contract.
+- `event_id` identifies the event containing the instrument's market, scoped to its venue.
+  Instruments sharing an event ID belong to the same event; this does not imply shared collateral,
+  mutually exclusive outcomes, or identical settlement rules.
 
 ## Example
 

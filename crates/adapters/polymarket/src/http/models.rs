@@ -15,6 +15,8 @@
 
 //! HTTP REST model types for the Polymarket CLOB API.
 
+use std::sync::Arc;
+
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::string::secret::SecretString;
@@ -36,6 +38,35 @@ use crate::common::{
         serialize_optional_decimal_as_json_number,
     },
 };
+
+macro_rules! impl_gamma_response_serde {
+    ($record:ty) => {
+        impl<'de> Deserialize<'de> for $record {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+
+                // The remote derive parses typed fields; this impl also retains their source
+                let mut value =
+                    Self::deserialize(&mut serde_json::Deserializer::from_str(raw.get()))
+                        .map_err(serde::de::Error::custom)?;
+                value.raw = raw.get().to_owned();
+                Ok(value)
+            }
+        }
+
+        impl Serialize for $record {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                Self::serialize(self, serializer)
+            }
+        }
+    };
+}
 
 /// A signed limit order for submission to the CLOB V2 exchange.
 ///
@@ -152,8 +183,11 @@ pub struct PolymarketTradeReport {
 ///
 /// References: <https://docs.polymarket.com/developers/gamma-markets-api/get-markets>
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(remote = "Self", rename_all = "camelCase")]
 pub struct GammaMarket {
+    /// Original Gamma response as a JSON string, before normalization or enrichment.
+    #[serde(skip)]
+    pub raw: String,
     /// Internal Gamma market ID.
     pub id: String,
     /// On-chain condition ID for the CTF contracts.
@@ -338,9 +372,15 @@ pub struct GammaMarket {
     /// <https://github.com/Polymarket/rs-clob-client/blob/main/src/gamma/types/response.rs>.
     #[serde(default, deserialize_with = "deserialize_optional_polymarket_game_id")]
     pub game_id: Option<String>,
+    /// Enclosing event supplied by event-based discovery, with its markets moved out.
+    /// The original event JSON, including those markets, remains in `raw`.
+    #[serde(skip)]
+    pub parent_event: Option<Arc<GammaEvent>>,
     /// Events linked to this gamma market.
     pub events: Option<Vec<GammaEvent>>,
 }
+
+impl_gamma_response_serde!(GammaMarket);
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -403,8 +443,11 @@ where
 /// event contains multiple outcome markets). Each event's `markets` array
 /// contains full [`GammaMarket`] objects.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(remote = "Self", rename_all = "camelCase")]
 pub struct GammaEvent {
+    /// Original Gamma response as a JSON string, before normalization or enrichment.
+    #[serde(skip)]
+    pub raw: String,
     pub id: String,
     pub slug: Option<String>,
     pub title: Option<String>,
@@ -461,6 +504,8 @@ pub struct GammaEvent {
     #[serde(default, deserialize_with = "deserialize_optional_polymarket_game_id")]
     pub game_id: Option<String>,
 }
+
+impl_gamma_response_serde!(GammaEvent);
 
 /// A tag from the Gamma API `GET /tags`.
 #[derive(Clone, Debug, Deserialize, Serialize)]

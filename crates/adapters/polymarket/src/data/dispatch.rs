@@ -4643,8 +4643,8 @@ mod tests {
     #[tokio::test]
     async fn auto_load_data_subscription_caches_before_ws_subscribe(#[case] deltas: bool) {
         let state = TestServerState::default();
-        *state.gamma_response.lock().await =
-            Some(serde_json::json!([gamma_market_recheck_fixture_value()]));
+        let market = gamma_market_recheck_fixture_value();
+        *state.gamma_response.lock().await = Some(serde_json::json!([market.clone()]));
         let addr = start_mock_server(state.clone()).await;
         let (mut client, mut data_rx) = create_test_client(addr);
         client.config.auto_load_debounce_ms = 0;
@@ -4723,6 +4723,27 @@ mod tests {
 
         assert_eq!(emitted_instrument.raw_symbol().as_str(), TEST_TOKEN_ID_YES);
         assert_eq!(cached_instrument.raw_symbol().as_str(), TEST_TOKEN_ID_YES);
+
+        for instrument in [&emitted_instrument, &cached_instrument] {
+            let InstrumentAny::BinaryOption(binary) = instrument else {
+                unreachable!()
+            };
+
+            assert_eq!(binary.event_id.map(|id| id.as_str()), Some("260654"));
+            assert_eq!(
+                serde_json::from_str::<Value>(
+                    binary
+                        .info
+                        .as_ref()
+                        .unwrap()
+                        .get_str("gamma_market")
+                        .unwrap()
+                )
+                .unwrap(),
+                market
+            );
+        }
+
         assert_eq!(client.active_delta_subs.contains(&instrument_id), deltas);
         assert_eq!(client.active_quote_subs.contains(&instrument_id), !deltas);
         assert!(!client.order_books.contains_key(&instrument_id));

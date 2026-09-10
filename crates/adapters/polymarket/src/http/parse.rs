@@ -50,6 +50,13 @@ pub struct PolymarketInstrumentDef {
     pub condition_id: Ustr,
     /// Gamma market ID.
     pub market_id: String,
+    /// Gamma parent event ID, when unambiguous.
+    pub event_id: Option<Ustr>,
+    /// Original Gamma market response.
+    #[serde(default)]
+    pub gamma_market: String,
+    /// Original enclosing event response from event-based discovery.
+    pub gamma_event: Option<String>,
     /// Question ID (resolution hash).
     pub question_id: Option<String>,
     /// Outcome label.
@@ -99,6 +106,8 @@ pub struct PolymarketInstrumentDef {
 /// Each market produces two definitions: one for the Yes outcome
 /// and one for the No outcome.
 pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<PolymarketInstrumentDef>> {
+    let event_id = market_event_id(market);
+
     let game_id = market.game_id.clone().or_else(|| {
         market
             .events
@@ -156,6 +165,9 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
             token_id: Ustr::from(token_id.as_str()),
             condition_id: Ustr::from(market.condition_id.as_str()),
             market_id: market.id.clone(),
+            event_id,
+            gamma_market: market.raw.clone(),
+            gamma_event: market.parent_event.as_ref().map(|event| event.raw.clone()),
             question_id: market.question_id.clone(),
             outcome,
             question: market.question.clone(),
@@ -180,6 +192,21 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
     }
 
     Ok(defs)
+}
+
+fn market_event_id(market: &GammaMarket) -> Option<Ustr> {
+    if let Some(event) = &market.parent_event {
+        return (!event.id.is_empty()).then(|| Ustr::from(event.id.as_str()));
+    }
+
+    let events = market.events.as_ref()?;
+    let first = events.first()?;
+    if first.id.is_empty() || events.iter().any(|event| event.id != first.id) {
+        log::warn!("Ambiguous Gamma parent event for market {}", market.id);
+        return None;
+    }
+
+    Some(Ustr::from(first.id.as_str()))
 }
 
 /// Converts a Polymarket instrument definition into a Nautilus `InstrumentAny`.
@@ -231,6 +258,7 @@ pub fn create_instrument_from_def(
         .size_precision(6)
         .price_increment(price_increment)
         .size_increment(size_increment)
+        .maybe_event_id(def.event_id)
         .outcome(def.outcome.inner())
         .description(Ustr::from(def.question.as_str()))
         .maybe_min_quantity(min_quantity)
@@ -291,6 +319,7 @@ pub fn rebuild_instrument_with_tick_size(
         .size_precision(bo.size_precision)
         .price_increment(price_increment)
         .size_increment(bo.size_increment)
+        .maybe_event_id(bo.event_id)
         .maybe_outcome(bo.outcome)
         .maybe_description(bo.description)
         .maybe_max_quantity(bo.max_quantity)
@@ -331,6 +360,15 @@ pub(crate) fn tick_relative_price_bounds(tick_size: Decimal) -> anyhow::Result<(
 
 fn build_info_json(def: &PolymarketInstrumentDef) -> serde_json::Value {
     let mut map = serde_json::Map::new();
+    map.insert("gamma_market".to_string(), def.gamma_market.clone().into());
+    if let Some(event) = &def.gamma_event {
+        map.insert("gamma_event".to_string(), event.clone().into());
+    }
+
+    if let Some(event_id) = def.event_id {
+        map.insert("event_id".to_string(), event_id.to_string().into());
+    }
+
     map.insert(
         "token_id".to_string(),
         serde_json::Value::String(def.token_id.to_string()),
@@ -485,6 +523,71 @@ mod tests {
             UUID4::new(),
             UnixNanos::default(),
         ))
+    }
+
+    #[rstest]
+    fn test_gamma_metadata_survives_parsing_and_tick_updates() {
+        let raw = include_str!("../../test_data/gamma_market_metadata.json");
+        let expected = raw.trim();
+        let mut market: GammaMarket = serde_json::from_str(raw).unwrap();
+        market.order_min_size = Some(dec!(10));
+        let defs = parse_gamma_market(&market).unwrap();
+        assert_eq!(defs.len(), 2);
+
+        for (def, outcome) in defs.iter().zip(["Yes", "No"]) {
+            let instrument = create_instrument_from_def(def, UnixNanos::default()).unwrap();
+            let rebuilt =
+                rebuild_instrument_with_tick_size(&instrument, "0.001", 1.into(), 2.into())
+                    .unwrap();
+
+            for instrument in [instrument, rebuilt] {
+                let InstrumentAny::BinaryOption(binary) = instrument else {
+                    unreachable!()
+                };
+
+                let info = binary.info.unwrap();
+                assert_eq!(binary.event_id, Some(Ustr::from("event-456")));
+                assert_eq!(binary.outcome, Some(Ustr::from(outcome)));
+                assert_eq!(info.get_str("event_id"), Some("event-456"));
+                assert_eq!(info.get_str("min_order_size"), Some("10"));
+                assert_eq!(info.get_str("gamma_market"), Some(expected));
+            }
+        }
+    }
+
+    #[rstest]
+    fn test_enclosing_event_takes_precedence_over_linked_events() {
+        let mut market = load_gamma_market("gamma_market_metadata.json");
+        let parent = market.events.as_ref().unwrap()[0].clone();
+        market.events.as_mut().unwrap()[0].id = "related-event".to_string();
+        market.parent_event = Some(std::sync::Arc::new(parent));
+        assert_eq!(
+            market_event_id(&market).map(|id| id.as_str()),
+            Some("event-456")
+        );
+    }
+
+    #[rstest]
+    #[case::missing(None, None)]
+    #[case::empty(Some(vec![]), None)]
+    #[case::unique(Some(vec!["event-1"]), Some("event-1"))]
+    #[case::duplicate(Some(vec!["event-1", "event-1"]), Some("event-1"))]
+    #[case::ambiguous(Some(vec!["event-1", "event-2"]), None)]
+    #[case::blank(Some(vec![""]), None)]
+    fn test_market_event_id(#[case] ids: Option<Vec<&str>>, #[case] expected: Option<&str>) {
+        let mut market = load_gamma_market("gamma_market_metadata.json");
+        let template = market.events.as_ref().unwrap()[0].clone();
+        market.events = ids.map(|ids| {
+            ids.into_iter()
+                .map(|id| {
+                    let mut event = template.clone();
+                    event.id = id.to_string();
+                    event
+                })
+                .collect()
+        });
+
+        assert_eq!(market_event_id(&market).map(|id| id.as_str()), expected);
     }
 
     #[rstest]

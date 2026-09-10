@@ -75,6 +75,9 @@ pub struct BinaryOption {
     pub maker_fee: Decimal,
     /// The fee rate for liquidity takers as a percentage of order value.
     pub taker_fee: Decimal,
+    /// The venue-assigned identifier of the event containing the instrument's market.
+    #[serde(default)]
+    pub event_id: Option<Ustr>,
     /// The binary outcome of the market.
     pub outcome: Option<Ustr>,
     /// The market description.
@@ -115,6 +118,7 @@ impl BinaryOption {
         size_precision: u8,
         price_increment: Price,
         size_increment: Quantity,
+        event_id: Option<Ustr>,
         outcome: Option<Ustr>,
         description: Option<Ustr>,
         max_quantity: Option<Quantity>,
@@ -163,6 +167,7 @@ impl BinaryOption {
             margin_maint: margin_maint.unwrap_or_default(),
             maker_fee: maker_fee.unwrap_or_default(),
             taker_fee: taker_fee.unwrap_or_default(),
+            event_id,
             outcome,
             description,
             max_quantity,
@@ -198,6 +203,7 @@ impl BinaryOption {
         size_precision: u8,
         price_increment: Price,
         size_increment: Quantity,
+        event_id: Option<Ustr>,
         outcome: Option<Ustr>,
         description: Option<Ustr>,
         max_quantity: Option<Quantity>,
@@ -226,6 +232,7 @@ impl BinaryOption {
             size_precision,
             price_increment,
             size_increment,
+            event_id,
             outcome,
             description,
             max_quantity,
@@ -460,10 +467,22 @@ mod tests {
             None,
             None,
             None,
+            None,
             0.into(),
             0.into(),
         );
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_event_id_serialization_and_legacy_default(mut binary_option: BinaryOption) {
+        binary_option.event_id = Some("event-123".into());
+        let mut value = serde_json::to_value(&binary_option).unwrap();
+        let restored: BinaryOption = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(restored.event_id, binary_option.event_id);
+        value.as_object_mut().unwrap().remove("event_id");
+        let restored: BinaryOption = serde_json::from_value(value).unwrap();
+        assert_eq!(restored.event_id, None);
     }
 
     #[rstest]
@@ -486,6 +505,7 @@ mod tests {
             2,
             Price::from("0.001"),
             Quantity::from("0.01"),
+            Some("event-123".into()),
             Some("Yes".into()),
             Some("Will it happen?".into()),
             Some(Quantity::from("10000.00")),
@@ -516,6 +536,7 @@ mod tests {
             .size_precision(2)
             .price_increment(Price::from("0.001"))
             .size_increment(Quantity::from("0.01"))
+            .event_id("event-123".into())
             .outcome("Yes".into())
             .description("Will it happen?".into())
             .max_quantity(Quantity::from("10000.00"))

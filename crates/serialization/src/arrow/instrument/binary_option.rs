@@ -71,6 +71,7 @@ impl ArrowSchemaProvider for BinaryOption {
             Field::new("info", DataType::Binary, true), // nullable
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
+            Field::new("event_id", DataType::Utf8, true),
         ];
 
         let mut final_metadata = HashMap::new();
@@ -100,6 +101,7 @@ impl EncodeToRecordBatch for BinaryOption {
         let mut activation_ns_builder = UInt64Array::builder(data.len());
         let mut expiration_ns_builder = UInt64Array::builder(data.len());
         let mut outcome_builder = StringBuilder::new();
+        let mut event_id_builder = StringBuilder::new();
         let mut description_builder = StringBuilder::new();
         let mut max_quantity_builder = StringBuilder::new();
         let mut min_quantity_builder = StringBuilder::new();
@@ -187,6 +189,8 @@ impl EncodeToRecordBatch for BinaryOption {
                 tick_scheme_builder.append_null();
             }
 
+            event_id_builder.append_option(bo.event_id.as_ref().map(Ustr::as_str));
+
             // Encode info dict as JSON bytes (matching Python's msgspec.json.encode)
             if let Some(ref info) = bo.info {
                 match serde_json::to_vec(info) {
@@ -239,6 +243,7 @@ impl EncodeToRecordBatch for BinaryOption {
                 Arc::new(info_builder.finish()),
                 Arc::new(ts_event_builder.finish()),
                 Arc::new(ts_init_builder.finish()),
+                Arc::new(event_id_builder.finish()),
             ],
         )
     }
@@ -271,6 +276,7 @@ pub fn decode_binary_option_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
     record_batch: &RecordBatch,
 ) -> Result<Vec<BinaryOption>, EncodingError> {
+    let event_id_values = extract_optional_string_column_by_name(record_batch, "event_id")?;
     let cols = record_batch.columns();
     let num_rows = record_batch.num_rows();
 
@@ -496,6 +502,7 @@ pub fn decode_binary_option_batch(
             .maker_fee(maker_fee)
             .taker_fee(taker_fee)
             .maybe_tick_scheme(tick_scheme)
+            .maybe_event_id(optional_ustr_value(event_id_values, i))
             .maybe_info(info)
             .ts_event(ts_event)
             .ts_init(ts_init)

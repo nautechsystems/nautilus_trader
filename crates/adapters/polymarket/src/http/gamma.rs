@@ -408,15 +408,19 @@ fn is_transient_clob_token_ids(raw: &str) -> bool {
     }
 }
 
-fn flatten_event_markets(events: Vec<GammaEvent>) -> Vec<GammaMarket> {
+pub(crate) fn flatten_event_markets(events: Vec<GammaEvent>) -> Vec<GammaMarket> {
     events
         .into_iter()
-        .flat_map(|event| {
-            let event_game_id = event.game_id;
-            event.markets.into_iter().map(move |mut market| {
+        .flat_map(|mut event| {
+            let markets = std::mem::take(&mut event.markets);
+            let event = Arc::new(event);
+
+            markets.into_iter().map(move |mut market| {
                 if market.game_id.is_none() {
-                    market.game_id.clone_from(&event_game_id);
+                    market.game_id.clone_from(&event.game_id);
                 }
+
+                market.parent_event = Some(event.clone());
                 market
             })
         })
@@ -959,6 +963,74 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+
+    #[rstest]
+    fn test_live_instrument_funnel_retains_gamma_metadata() {
+        let raw = include_str!("../../test_data/gamma_market_metadata.json");
+        let market: GammaMarket = serde_json::from_str(raw).unwrap();
+        let expected = raw.trim();
+        let (instruments, transient) = parse_markets_with_transient(&[market], 1.into());
+        assert_eq!(instruments.len(), 2);
+        assert_eq!(transient, Vec::<String>::new());
+
+        for instrument in instruments {
+            let InstrumentAny::BinaryOption(binary) = instrument else {
+                unreachable!()
+            };
+
+            assert_eq!(binary.event_id.map(|id| id.as_str()), Some("event-456"));
+            let info = binary.info.unwrap();
+            assert_eq!(info.get_str("gamma_market"), Some(expected));
+            assert_eq!(info.get_bool("closed"), Some(false));
+        }
+    }
+
+    #[rstest]
+    fn test_event_discovery_retains_parent_metadata() {
+        let raw = include_str!("../../test_data/gamma_event.json");
+        let events: Vec<GammaEvent> = serde_json::from_str(raw).unwrap();
+        let expected: Vec<Value> = serde_json::from_str(raw).unwrap();
+        let markets = flatten_event_markets(events);
+        assert_eq!(markets.len(), 2);
+
+        for market in &markets {
+            let parent = market.parent_event.as_ref().unwrap();
+            let expected_event = expected
+                .iter()
+                .find(|event| event["id"] == parent.id)
+                .unwrap();
+            let expected_market = expected_event["markets"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|raw| raw["id"] == market.id)
+                .unwrap();
+            assert_eq!(
+                serde_json::from_str::<Value>(&parent.raw).unwrap(),
+                *expected_event
+            );
+            assert_eq!(
+                serde_json::from_str::<Value>(&market.raw).unwrap(),
+                *expected_market
+            );
+            let defs = parse_gamma_market(market).unwrap();
+            for def in defs {
+                assert_eq!(def.event_id.unwrap().as_str(), parent.id);
+                assert_eq!(def.gamma_event.as_ref(), Some(&parent.raw));
+                assert_eq!(def.gamma_market, market.raw);
+                let instrument = create_instrument_from_def(&def, 1.into()).unwrap();
+
+                let InstrumentAny::BinaryOption(binary) = instrument else {
+                    unreachable!()
+                };
+
+                let info = binary.info.unwrap();
+                assert_eq!(binary.event_id.unwrap().as_str(), parent.id);
+                assert_eq!(info.get_str("gamma_event"), Some(parent.raw.as_str()));
+                assert_eq!(info.get_str("gamma_market"), Some(market.raw.as_str()));
+            }
+        }
+    }
 
     #[rstest]
     #[case("liquidity")]
