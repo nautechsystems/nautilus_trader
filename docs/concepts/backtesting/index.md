@@ -33,6 +33,11 @@ end to end:
 | 7    | [Fill models](fill-models.md)                           | Configure slippage and probabilistic fills.     |
 | 8    | [Accounts and margin](accounts-and-margin.md)           | Configure funding, balances, and margin models. |
 
+## Simulation modules
+
+[Simulation modules](simulation-modules.md) describes module configuration, lifecycle, failure
+handling, and built-in FX rollover and CFD swap behavior.
+
 ## Related guides
 
 - [Strategies](../strategies.md): Develop strategies to backtest.

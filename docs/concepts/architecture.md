@@ -1,17 +1,13 @@
 # Architecture
 
-This guide explains the architectural principles and structure of NautilusTrader:
-
-- Design philosophy and quality attributes.
-- Core components and how they interact.
-- Environment contexts (backtest, sandbox, live).
-- Framework organization and code structure.
+This page describes NautilusTrader's components, runtime boundaries, and data flows.
+The [design principles and policies](../developer_guide/design_principles.md) guide this structure.
 
 :::note
 For this guide, the *Nautilus system boundary* means the runtime of one Nautilus node instance.
 :::
 
-## Design philosophy
+## Architectural style
 
 NautilusTrader uses these architectural techniques and design patterns:
 
@@ -22,152 +18,8 @@ NautilusTrader uses these architectural techniques and design patterns:
 - [Ports and adapters](https://en.wikipedia.org/wiki/Hexagonal_architecture_(software))
 - [Crash-only design](#crash-only-design)
 
-These techniques help achieve certain architectural quality attributes.
-
-### Quality attributes
-
-Architectural decisions often trade one priority against another.
-The following quality attributes guide design and architectural decisions,
-roughly in order of weighting.
-
-- Reliability
-- Performance
-- Modularity
-- Testability
-- Maintainability
-- Deployability
-
-### Assurance-driven engineering
-
-NautilusTrader incrementally applies high-assurance practices to critical paths. Executable
-invariants verify that behavior matches the business requirements:
-
-- Identify high-impact components, including core domain types and risk and execution flows, and
-  state their invariants in plain language.
-- Codify those invariants as executable checks (unit tests, property tests,
-  fuzzers, and static assertions) that run in CI.
-- Use Rust's ownership and type systems, explicit `Result` surfaces, and abort-on-panic release
-  behavior. Add formal tools where their assurance benefit justifies their cost.
-- Require integrations to preserve existing critical-path invariants, and add executable coverage
-  for invariants they introduce or alter.
-
-This approach gives high-stakes flows additional scrutiny without applying the same assurance cost
-to every path.
-
-Further reading: [High Assurance Rust](https://highassurance.rs/).
-
-### Crash-only design
-
-NautilusTrader draws on [crash-only design](https://en.wikipedia.org/wiki/Crash-only_software) when
-handling unrecoverable faults. Repository release builds abort on panic, allowing an external
-supervisor to restart the process instead of letting it continue with potentially invalid state.
-
-Principles:
-
-- **Startup recovery**: Configured cache and event-store recovery run through normal startup rather
-  than through a separate crash-only entry point. Ordinary startup and focused recovery tests
-  exercise the same initialization flow.
-- **External state**: Configured backing stores preserve selected state across process restarts,
-  reducing recovery work and the risk of losing state. Durability depends on the backing store and
-  its settings.
-- **Supervisor-managed restart**: An external process supervisor owns restart policy after an
-  unrecoverable failure. Aborting skips graceful cleanup inside the failed process; actual downtime
-  depends on the supervisor, configured state, and backing store.
-- **Prompt recovery**: The design aims to minimize downtime by using normal startup recovery after
-  a supervisor restarts the process. Recovery time depends on the state to restore and its backing
-  store.
-- **Execution recovery**: Venue commands are not generally safe to retry blindly; execution
-  reconciliation handles that boundary.
-- **Fail fast**: Data corruption or invariant violations terminate the operation or process instead
-  of allowing invalid state to propagate.
-
-:::note
-Normal operation still uses graceful shutdown flows such as `stop` and `dispose`. They tear down
-clients and, when configured, save state and flush writers. Crash-only behavior applies to
-unrecoverable faults, where continuing normal cleanup may be unsafe.
-:::
-
-This design complements the [fail-fast policy](#data-integrity-and-fail-fast-policy): a panic caused
-by an unrecoverable invariant violation immediately terminates a process built with the repository
-release profile.
-
-**References:**
-
-- [Crash-Only Software](https://www.usenix.org/conference/hotos-ix/crash-only-software): Candea and
-  Fox, HotOS 2003.
-- [Microreboot: A technique for cheap recovery](https://www.usenix.org/events/osdi04/tech/candea.html):
-  Candea et al., OSDI 2004.
-- [The properties of crash-only software](https://brooker.co.za/blog/2012/01/22/crash-only.html):
-  Marc Brooker.
-- [Crash-only software: More than meets the eye](https://lwn.net/Articles/191059/): LWN.net.
-- [Recovery-Oriented Computing (ROC) Project](http://roc.cs.berkeley.edu/): UC Berkeley and
-  Stanford.
-
-### Data integrity and fail-fast policy
-
-NautilusTrader prioritizes data integrity over availability for trading operations. Arithmetic and
-data-handling boundaries return errors or panic rather than silently accepting invalid values that
-could affect trading decisions.
-
-#### Fail-fast principles
-
-The system fails fast, either by returning an error or panicking according to the API contract, for:
-
-- Arithmetic overflow or underflow in operations on timestamps, prices, or quantities that exceed
-  valid ranges.
-- Invalid data during deserialization, including NaN, infinity, or out-of-range values in market
-  data or configuration.
-- Type conversion failures such as negative values where only positive values are valid
-  (timestamps, quantities).
-- Malformed input parsing for prices, timestamps, or precision values.
-
-In a trading system, one incorrect price, timestamp, or quantity can propagate into:
-
-- Incorrect position sizing or risk calculations.
-- Orders placed at incorrect prices.
-- Backtests producing misleading results.
-- Silent financial losses.
-
-Failing at the invalid operation provides:
-
-- **No silent corruption**: Checked inputs fail before the invalid value propagates.
-- **Immediate feedback**: The caller receives an error, or the process terminates, at the point of
-  the violated contract.
-- **Diagnostic context**: Errors and panic messages identify the rejected operation or value.
-- **Deterministic behavior**: With deterministic ordering and configuration, the same invalid input
-  produces the same failure; nondeterministic inputs can still vary the outcome.
-
-#### When fail-fast applies
-
-Panics are used for:
-
-- Programmer errors (logic bugs, incorrect API usage).
-- Data that violates fundamental invariants (negative timestamps, NaN prices).
-- Arithmetic that would silently produce incorrect results.
-
-APIs return `Result` or `Option` when callers, including downstream crates, can handle a failure or
-absence, including:
-
-- Expected runtime failures (network errors, file I/O).
-- Business logic validation (order constraints, risk limits).
-- User input validation.
-
-#### Example scenarios
-
-```rust
-let total_ns = timestamp1 + timestamp2; // Panics on overflow.
-
-let price = Price::new_checked(f64::NAN, precision); // Returns Err.
-
-let total_ns = timestamp1.checked_add(timestamp2.as_u64()); // Returns None on overflow.
-```
-
-This policy is implemented throughout the core types (`UnixNanos`, `Price`, `Quantity`, etc.)
-and helps NautilusTrader maintain strong data correctness for production trading.
-
-The repository release profile sets `panic = "abort"`, so a panic terminates the process for a
-supervisor or orchestration system to handle. Downstream Rust binaries control their own release
-profile.
+The [design principles and policies](../developer_guide/design_principles.md) state the priorities and contracts
+these techniques support.
 
 ## System architecture
 
@@ -585,6 +437,11 @@ behavior. Obtain, use, and drop an `ActorRef` within one synchronous scope. Neve
 it across an `.await` point. Same-actor re-entrant lookup is a constraint of the current dispatch
 model, not a safe aliasing guarantee.
 
+For queued dispatch, releasing an actor guard alone does not establish a safe delivery boundary:
+enclosing mutable runtime borrows must also end. Subscriber admission order alone does not preserve
+publication order during nested fan-out. Pending deliveries need registration and lifecycle identity
+to enforce the [dispatch requirements](../developer_guide/design_principles.md#queued-callback-dispatch-requirements).
+
 ### Messaging
 
 The `MessageBus` passes data, commands, and events between components without requiring direct
@@ -599,9 +456,10 @@ Within a node, the core consumes and dispatches messages on a single thread. Thi
 - Risk engine checks and execution coordination.
 - Cache reads and writes.
 
-This single-threaded core provides deterministic event ordering and helps maintain backtest-live
-parity, though live inputs and latency can still cause behavioral differences. Components consume
-messages synchronously in a pattern *similar* to the
+Serial processing coordinates state changes within the node. Synchronous reentry still has the
+constraints described above; the [queued dispatch requirements](../developer_guide/design_principles.md#queued-callback-dispatch-requirements)
+define publication ordering across nested callbacks. Live inputs and latency can cause behavioral
+differences from backtests. Components consume messages synchronously in a pattern *similar* to the
 [actor model](https://en.wikipedia.org/wiki/Actor_model).
 
 :::note
@@ -620,6 +478,52 @@ runtime's worker count is configurable:
 Async producers send data and execution events through channels. The node runner receives them and
 uses the thread-local `MessageBus` to dispatch them to engine endpoints on the core thread. Each
 thread has its own bus instance; channels bridge work from other threads or tasks.
+
+## Crash-only design
+
+NautilusTrader draws on [crash-only design](https://en.wikipedia.org/wiki/Crash-only_software) when
+handling unrecoverable faults. Repository release builds abort on panic, allowing an external
+supervisor to restart the process instead of letting it continue with potentially invalid state.
+
+Recovery behavior:
+
+- **Startup recovery**: Configured cache and event-store recovery run through normal startup rather
+  than through a separate crash-only entry point. Ordinary startup and focused recovery tests
+  exercise the same initialization flow.
+- **External state**: Configured backing stores preserve selected state across process restarts,
+  reducing recovery work and the risk of losing state. Durability depends on the backing store and
+  its settings.
+- **Supervisor-managed restart**: An external process supervisor owns restart policy after an
+  unrecoverable failure. Aborting skips graceful cleanup inside the failed process; actual downtime
+  depends on the supervisor, configured state, and backing store.
+- **Prompt recovery**: The design aims to minimize downtime by using normal startup recovery after
+  a supervisor restarts the process. Recovery time depends on the state to restore and its backing
+  store.
+- **Execution recovery**: Venue commands are not generally safe to retry blindly; execution
+  reconciliation handles that boundary.
+
+:::note
+Normal operation still uses graceful shutdown flows such as `stop` and `dispose`. They tear down
+clients and, when configured, save state and flush writers. Crash-only behavior applies to
+unrecoverable faults, where continuing normal cleanup may be unsafe.
+:::
+
+This design complements the
+[data-integrity policy](../developer_guide/design_principles.md#data-integrity-and-failure): a panic
+caused by an unrecoverable invariant violation immediately terminates a process built with the
+repository release profile.
+
+**References:**
+
+- [Crash-Only Software](https://www.usenix.org/conference/hotos-ix/crash-only-software): Candea and
+  Fox, HotOS 2003.
+- [Microreboot: A technique for cheap recovery](https://www.usenix.org/events/osdi04/tech/candea.html):
+  Candea et al., OSDI 2004.
+- [The properties of crash-only software](https://brooker.co.za/blog/2012/01/22/crash-only.html):
+  Marc Brooker.
+- [Crash-only software: More than meets the eye](https://lwn.net/Articles/191059/): LWN.net.
+- [Recovery-Oriented Computing (ROC) Project](http://roc.cs.berkeley.edu/): UC Berkeley and
+  Stanford.
 
 ## Framework organization
 
@@ -831,6 +735,9 @@ opt in from your own binary (see the [Rust guide](rust.md#memory-allocator)).
 
 ## Related guides
 
+- [Design principles](../developer_guide/design_principles.md): Principles, policies, and trade-offs.
+- [Identifier storage](../developer_guide/rust.md#identifier-storage): Identifier lifetimes and memory costs.
+- [Behavioral models](behavioral_models.md): Model representation and dispatch.
 - [Overview](overview.md): High-level introduction to NautilusTrader.
 - [Python](python.md): Python ownership, runtime, and public API boundaries.
 - [Rust](rust.md): Native Rust APIs and runtime use.

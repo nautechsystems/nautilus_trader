@@ -8,7 +8,7 @@ Main features and intended use cases for the platform.
 
 ## Architecture
 
-The principles, structures, and designs that underpin the platform.
+[Architecture](architecture.md) describes the components, runtime boundaries, and data flows.
 
 ## Actors
 
@@ -27,13 +27,13 @@ Instrument definitions for tradable assets and contracts.
 
 User-defined instruments whose prices are computed by evaluating a numeric expression over component instrument prices.
 
-## Continuous futures
+## Continuous Futures
 
 Splicing consecutive futures contracts into one adjusted bar series via an explicit roll
 table, including the four adjustment modes, request and subscription flow, and the mid-bar
 roll boundary policy.
 
-## Value types
+## Value Types
 
 The immutable numeric types (`Price`, `Quantity`, `Money`) used throughout the platform,
 including their arithmetic behavior, precision handling, and type-specific constraints.
@@ -48,7 +48,7 @@ The event types that drive the system: order events, position events, account
 events, and time events. Covers handler dispatch, the causal chain from order
 fills to position events, and tracing orders to positions.
 
-## Event sourcing
+## Event Sourcing
 
 The durable event-store log for state-affecting messages, including capture boundaries,
 correlation headers, replay modes, recovery anchors, and verifier behavior.
@@ -64,12 +64,12 @@ Option Greeks (delta, gamma, vega, theta) from two paths: venue-provided real-ti
 Greeks via the Rust/PyO3 `OptionGreeks` type, and the local `GreeksCalculator` for
 Black-Scholes computation with shock scenarios, beta weighting, and portfolio aggregation.
 
-## Custom data
+## Custom Data
 
 How the custom data system works across Python and Rust: registration, persistence,
 Arrow encoding, and runtime routing through actors and strategies.
 
-## Order book
+## Order Book
 
 The high-performance order book, own order tracking, filtered views for net liquidity, and binary market support.
 
@@ -93,7 +93,7 @@ for netting OMS configurations.
 The `Cache` is the central in-memory store for all trading-related data.
 Covers capabilities and best practices.
 
-## Message bus
+## Message Bus
 
 The `MessageBus` enables decoupled messaging between components, supporting point-to-point,
 publish/subscribe, and request/response patterns.
@@ -122,6 +122,11 @@ High-performance logging for both backtesting and live trading, implemented in R
 Backtest APIs, data and venue setup, execution sequencing, fill simulation,
 accounts, funding, and margin configuration.
 
+## Behavioral Models
+
+[Behavioral Models](behavioral_models.md) explains how Rust and Python model implementations enter
+the runtime.
+
 ## Visualization
 
 Interactive tearsheets for analyzing backtest results, including charts, themes,
@@ -132,7 +137,7 @@ customization options, and custom visualizations via the extensible chart regist
 How config structs work across Python and Rust: default resolution, the `T` vs `Option<T>`
 convention, builder patterns, and common fields shared across adapters and engines.
 
-## Live trading
+## Live Trading
 
 Running the same strategy and execution-algorithm code in live markets while accounting for venue,
 transport, timing, persistence, external-activity, and reconciliation behavior.
@@ -156,10 +161,10 @@ using the `crates/` implementation directly.
 Python application composition and user components running on the Rust core through PyO3,
 including ownership, async execution, and public API boundaries.
 
-## Deterministic simulation testing (DST)
+## DST
 
-The determinism contract for seed-replayable execution, the source-level seams that implement
-it, the pre-commit hook that enforces it, and the known scope boundaries.
+Deterministic simulation testing (DST): the contract for seed-replayable execution, the source-level
+seams that implement it, the pre-commit hook that enforces it, and the known scope boundaries.
 
 :::note
 If there are discrepancies between these guides and the API reference, the API reference is correct.

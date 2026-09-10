@@ -1,13 +1,13 @@
 # Rust
 
+This page defines NautilusTrader conventions for Rust source, Cargo manifests, PyO3 bindings, and tests.
+
 NautilusTrader uses Rust for its mission-critical core because the language combines a strong type
 system, an ownership model, and predictable performance. Safe Rust prevents data races and many
 memory errors at compile time. `unsafe` code must make explicit the invariants that the compiler
 cannot check.
 
-Use this reference when changing hand-written Rust source, Cargo manifests, PyO3 bindings, or Rust
-tests. `rustfmt` and the workspace lints own general Rust style; this page documents the
-NautilusTrader-specific rules that supplement them.
+`rustfmt` and the workspace lints own general Rust style; the rules below supplement them.
 
 ## Sources of truth
 
@@ -304,6 +304,38 @@ already enforces. Remove a panic when the failure is recoverable; retain a justi
 panic, with a scoped lint reason when needed. The audit uses forced warnings, so its totals include
 deliberate sites with local lint allowances and diagnostics from macro expansions.
 
+### Failure contract examples
+
+APIs with a documented panic contract use panics for:
+
+- Programmer errors (logic bugs, incorrect API usage).
+- Data that violates fundamental invariants (negative timestamps, NaN prices).
+- Arithmetic that would silently produce incorrect results.
+
+APIs return `Result` or `Option` when callers, including downstream crates, can handle a failure or
+absence, including:
+
+- Expected runtime failures (network errors, file I/O).
+- Business logic validation (order constraints, risk limits).
+- User input validation.
+
+The API determines how an invalid operation fails:
+
+```rust
+let total_ns = timestamp1 + timestamp2; // Panics on overflow.
+
+let price = Price::new_checked(f64::NAN, precision); // Returns Err.
+
+let total_ns = timestamp1.checked_add(timestamp2.as_u64()); // Returns None on overflow.
+```
+
+This policy is implemented throughout the core types (`UnixNanos`, `Price`, `Quantity`, etc.)
+and helps NautilusTrader maintain strong data correctness for production trading.
+
+The repository release profile sets `panic = "abort"`, so a panic terminates the process for a
+supervisor or orchestration system to handle. Downstream Rust binaries control their own release
+profile.
+
 ## Logging
 
 - Fully qualify log macros, for example `log::debug!` and `log::info!`.
@@ -441,6 +473,71 @@ Preserve discrete financial values as decimals from ingestion:
 
 Do not route wire values through `f64` constructors. In tests, compare `.as_decimal()` with
 `dec!(value)`.
+
+## Identifier storage
+
+### How string interning works
+
+String interning stores one shared copy of each distinct string in a central cache. Repeated values
+refer to the same cached bytes instead of allocating another copy. Small handles make the values
+cheap to copy and compare, while a cached hash avoids reading the full string again during hashing.
+
+NautilusTrader uses `Ustr` for its interned identifier components. Each `Ustr` is a pointer-sized
+`Copy` handle with a precomputed hash and stable direct string access. Composite types such as
+`InstrumentId` preserve the same cheap copy semantics by storing these handles.
+
+### Reclamation boundary
+
+The string cache retains every unique value for the process lifetime. This retention keeps copied
+handles and returned string slices valid without reference counting, access guards, or explicit
+lifetime parameters on identifier types. Process teardown is the normal reclamation boundary.
+
+These guarantees rule out safe reclamation of individual entries. Rust can copy a `Copy` value
+without executing code, so an atomic reference count cannot observe every copy. Designs that add
+reclamation change the identifier contract:
+
+- Reference counting requires `Clone` and `Drop`, which removes `Copy` from identifiers and types
+  that contain them.
+- Borrowed or epoch-protected storage requires lifetimes or access guards at string access points.
+- Generational handles permit reclamation but make lookup fallible and invalidate stale handles.
+- A global cache reset is safe only at a proven quiescent point after all handles, references, and
+  foreign pointers have been destroyed and no task or thread can retain one.
+
+### Storage boundaries
+
+Interning is best suited to identifiers drawn from a bounded process-scoped universe and values that
+repeat enough to benefit from deduplication. Identifiers whose distinct values can grow with every
+order, trade, or message increase the cache for the process lifetime.
+
+Fixed-capacity inline storage retains `Copy` when the external protocol supplies a suitable maximum.
+`TradeId`, for example, uses a 36-character `StackStr`. Owned or reference-counted storage provides
+dynamic capacity when reclamation matters more than `Copy`.
+
+The domain model also contains compatibility exceptions. `ClientOrderId`, `VenueOrderId`,
+`PositionId`, and `OrderListId` remain `Ustr`-backed and therefore retain every distinct value.
+Identifier storage participates in the supported by-value C ABI, so a broader redesign depends on
+conversion-based bindings replacing raw layout sharing.
+
+The storage boundary includes an up-front estimate of every unique value and all intermediate
+strings interned during parsing. The cache is shared by every `Ustr` use in the process, so its
+memory cost is the aggregate set rather than a separate budget for each identifier type.
+
+### Polymarket scale example
+
+A Polymarket instrument symbol combines a 66-byte condition ID with a 77- or 78-byte token ID, for
+a 144- or 145-byte interned symbol. With the 64-bit `ustr` 1.1.0 layout, 600,000 unique
+`InstrumentId` values require roughly 150 MiB for the retained identifier values, cache lookup
+table, and reserved string storage.
+
+The Polymarket parsing path also interns each raw token ID and each condition ID. For 600,000
+instruments from about 300,000 markets, these entries raise the estimate to roughly 300 MiB before
+instrument objects, descriptions, maps, and other metadata. The estimate assumes unique instrument
+and token IDs and includes capacity reserved by the cache's geometric allocator, so it is not an
+exact resident-set measurement.
+
+NautilusTrader accepts this bounded cost to preserve `Copy`, stable direct access, and global
+deduplication across the instrument universe. Unbounded streams of unique external IDs remain
+outside this storage model.
 
 ## Collections
 
