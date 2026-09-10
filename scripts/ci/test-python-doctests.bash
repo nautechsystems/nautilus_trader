@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export PYTHONWARNDEFAULTENCODING=1
+export PYTHONWARNINGS="${PYTHONWARNINGS:+$PYTHONWARNINGS,}error::EncodingWarning,ignore::EncodingWarning:plotly.validator_cache"
+
 # shellcheck source=scripts/native-path.bash
+# shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/../native-path.bash"
 
 project_dir="${1:?Expected project directory}"

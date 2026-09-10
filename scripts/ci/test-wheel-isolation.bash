@@ -52,6 +52,10 @@ case "$1" in
     fi
     ;;
   run)
+    if [[ "$*" == *'python -m pytest'* ]]; then
+      [[ "${PYTHONWARNDEFAULTENCODING:-}" == 1 ]] || exit 92
+      [[ "${PYTHONWARNINGS:-}" == *error::EncodingWarning,ignore::EncodingWarning:plotly.validator_cache ]] || exit 93
+    fi
     case "$*" in
       *'print(sys.executable)'*)
         echo "$environment_native/bin/python"

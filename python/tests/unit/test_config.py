@@ -74,7 +74,7 @@ def test_config_stub_matches_runtime_exports() -> None:
     Test config stub matches runtime exports.
     """
     stub_path = Path(config.__file__).with_suffix(".pyi")
-    tree = ast.parse(stub_path.read_text())
+    tree = ast.parse(stub_path.read_text(encoding="utf-8"))
     stub_imports = {
         alias.name for node in tree.body if isinstance(node, ast.ImportFrom) for alias in node.names
     }

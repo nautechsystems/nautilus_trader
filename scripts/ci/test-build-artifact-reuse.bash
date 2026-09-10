@@ -32,6 +32,14 @@ printf '%s\n' \
   '  exit 0' \
   'fi' \
   '' \
+  'if [[ "$*" == *"run --no-sync pytest"* ]]; then' \
+  '  [[ "${PYTHONWARNDEFAULTENCODING:-}" == 1 ]] || exit 90' \
+  '  [[ "${PYTHONWARNINGS:-}" == *error::EncodingWarning,ignore::EncodingWarning:plotly.validator_cache ]] || exit 91' \
+  'else' \
+  '  [[ -z "${PYTHONWARNDEFAULTENCODING:-}" ]] || exit 92' \
+  '  [[ -z "${PYTHONWARNINGS:-}" ]] || exit 93' \
+  'fi' \
+  '' \
   'printf "%s|stub-profile=%s\n" "$*" "${NAUTILUS_STUB_PROFILE:-}" >> "${UV_LOG:?}"' > "$MOCK_BIN/uv"
 
 printf '%s\n' \
@@ -48,10 +56,12 @@ fail() {
   exit 1
 }
 
-run_make() {
+run_make() (
   local inputs="$1"
   local input_list_command="printf '%s\\n' $inputs"
   shift
+
+  unset PYTHONWARNDEFAULTENCODING PYTHONWARNINGS
 
   PATH="$MOCK_BIN:$PATH" \
     UV_LOG="$UV_LOG" \
@@ -62,7 +72,7 @@ run_make() {
     PY_STUB_INPUT_LIST_COMMAND="$input_list_command" \
     PYTHON_EXTENSION_PATH="$SOURCE_DIR/_libnautilus.so" \
     "$@" > /dev/null
-}
+)
 
 stub_generation_count() {
   grep -Fc "run --no-sync python generate_stubs.py" "$UV_LOG" || true

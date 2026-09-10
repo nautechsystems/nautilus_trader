@@ -83,6 +83,7 @@ def test_reported_pyarrow_reproductions_in_fresh_process(
         capture_output=True,
         check=False,
         text=True,
+        encoding="utf-8",
     )
 
     assert result.returncode == 0, (result.stdout, result.stderr)

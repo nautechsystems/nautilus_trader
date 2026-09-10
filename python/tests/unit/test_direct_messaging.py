@@ -370,6 +370,7 @@ def test_topic_operations_on_foreign_thread_raise_without_aborting() -> None:
         [sys.executable, "-c", code],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
         timeout=30,
     )

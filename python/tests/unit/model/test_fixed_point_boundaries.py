@@ -47,6 +47,7 @@ def test_fixed_point_boundaries_do_not_abort_subprocess() -> None:
         [sys.executable, "-c", code],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
 

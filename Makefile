@@ -1338,20 +1338,22 @@ init-db:  #-- Initialize PostgreSQL database schema
 
 #== Python Testing
 
+PYTHON_TEST_ENV = PYTHONWARNDEFAULTENCODING=1 PYTHONWARNINGS="$(if $(PYTHONWARNINGS),$(PYTHONWARNINGS)$(comma))error::EncodingWarning,ignore::EncodingWarning:plotly.validator_cache"
+
 .PHONY: pytest-collect-fast
 pytest-collect-fast:  #-- Collect Python tests against the existing extension
 	@if [ -z "$(PYTHON_EXTENSION_PATH)" ]; then \
 		printf "$(YELLOW)Skipping Python test collection: run \`make build-debug\` first$(RESET)\n"; \
 	else \
 		printf "$(M) Collecting Python tests without rebuilding...\n"; \
-		cd python && VIRTUAL_ENV= uv run --no-sync pytest tests/ --collect-only -q; \
+		cd python && $(PYTHON_TEST_ENV) VIRTUAL_ENV= uv run --no-sync pytest tests/ --collect-only -q; \
 	fi
 
 .PHONY: pytest
 pytest: build-debug  #-- Run Python tests
 	$(info $(M) Running Python tests...)
-	$Q cd python && VIRTUAL_ENV= uv run --no-sync pytest -qq -rfE tests/ --ignore=tests/unit/test_live_node.py
-	$Q cd python && VIRTUAL_ENV= uv run --no-sync pytest -qq -rfE tests/unit/test_live_node.py
+	$Q cd python && $(PYTHON_TEST_ENV) VIRTUAL_ENV= uv run --no-sync pytest -qq -rfE tests/ --ignore=tests/unit/test_live_node.py
+	$Q cd python && $(PYTHON_TEST_ENV) VIRTUAL_ENV= uv run --no-sync pytest -qq -rfE tests/unit/test_live_node.py
 
 .PHONY: pytest-isolated
 pytest-isolated:  #-- Check the existing Python build outside the source checkout
@@ -1365,7 +1367,7 @@ pytest-doctest: build-debug  #-- Run supported Python doctests
 .PHONY: pytest-memray
 pytest-memray: build-debug  #-- Run Python memory leak tests with Memray
 	$(info $(M) Running Python memory leak tests...)
-	$Q cd python && VIRTUAL_ENV= uv run --no-sync pytest -qq -rfE memray_tests/
+	$Q cd python && $(PYTHON_TEST_ENV) VIRTUAL_ENV= uv run --no-sync pytest -qq -rfE memray_tests/
 
 .PHONY: ty
 ty: build-debug  #-- Type-check Python examples

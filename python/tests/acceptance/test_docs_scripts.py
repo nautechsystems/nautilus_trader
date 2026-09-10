@@ -64,6 +64,7 @@ def test_documentation_guide_runs(guide: str, tmp_path: Path) -> None:
         env={**os.environ, "NAUTILUS_DATA_DIR": str(empty_data_dir)},
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=600,
         check=False,
     )

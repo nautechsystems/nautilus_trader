@@ -981,6 +981,7 @@ def test_data_actor_unregistered_publish_signal_does_not_abort_subprocess() -> N
         [sys.executable, "-c", code],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
 

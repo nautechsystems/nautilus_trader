@@ -102,7 +102,7 @@ def _import(adapter: str) -> object:
 
 def _stub_all(adapter: str) -> list[str]:
     stub_path = ADAPTERS_ROOT / adapter / "__init__.pyi"
-    tree = ast.parse(stub_path.read_text())
+    tree = ast.parse(stub_path.read_text(encoding="utf-8"))
     for node in tree.body:
         if isinstance(node, ast.Assign) and any(
             isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets

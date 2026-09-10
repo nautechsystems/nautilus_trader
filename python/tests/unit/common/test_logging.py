@@ -119,6 +119,7 @@ def test_init_tracing_before_logging_succeeds_in_fresh_process() -> None:
         capture_output=True,
         check=False,
         text=True,
+        encoding="utf-8",
     )
 
     assert result.returncode == 0, result.stderr

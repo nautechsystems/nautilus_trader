@@ -470,4 +470,10 @@ testpaths = ["tests"]
 addopts = "-ra --new-first --failed-first"
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "session"
-filterwarnings = ["ignore::UserWarning", "ignore::DeprecationWarning"]
+filterwarnings = [
+  "ignore::UserWarning",
+  "ignore::DeprecationWarning",
+  "error::EncodingWarning",
+  # Plotly reads its bundled validator JSON without an explicit encoding
+  'ignore::EncodingWarning:^plotly\.validator_cache$',
+]

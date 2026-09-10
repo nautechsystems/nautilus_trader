@@ -90,6 +90,7 @@ def test_portfolio_public_module_sets_runtime_module_names() -> None:
         capture_output=True,
         check=False,
         text=True,
+        encoding="utf-8",
     )
 
     assert result.returncode == 0, result.stderr
