@@ -38,7 +38,7 @@ use super::models::{
 };
 use crate::{
     common::{
-        consts::HYPERLIQUID_VENUE,
+        consts::{ASSET_INDEX_INFO_KEY, HYPERLIQUID_VENUE},
         converters::hyperliquid_time_in_force_to_nautilus,
         enums::{
             HyperliquidFillDirection, HyperliquidOrderStatus as HyperliquidOrderStatusEnum,
@@ -759,6 +759,18 @@ fn is_outcome_side_token(symbol: &str) -> bool {
 // https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/error-responses
 const HYPERLIQUID_MIN_ORDER_NOTIONAL: Decimal = Decimal::TEN;
 
+/// Returns `info` with the venue asset index added under [`ASSET_INDEX_INFO_KEY`].
+///
+/// Hyperliquid signs orders with the numeric asset index rather than the symbol,
+/// and `InstrumentAny` is the only instrument shape published on the message bus.
+/// Carrying the index here lets the execution client register a market discovered
+/// after its own bootstrap without refetching venue metadata.
+fn info_with_asset_index(info: Option<Params>, asset_index: u32) -> Params {
+    let mut info = info.unwrap_or_default();
+    info.insert(ASSET_INDEX_INFO_KEY.to_string(), json!(asset_index));
+    info
+}
+
 /// Converts a single Hyperliquid instrument definition into a Nautilus `InstrumentAny`.
 ///
 /// Returns `None` if the conversion fails (e.g., unsupported market type).
@@ -789,6 +801,7 @@ pub fn create_instrument_from_def(
             let quote_currency = get_currency(&def.quote);
             let min_notional = Some(min_order_notional(quote_currency)?);
             let info = serde_json::from_str::<Params>(&def.raw_data).ok();
+            let info = info_with_asset_index(info, def.asset_index);
 
             Some(InstrumentAny::CurrencyPair(
                 CurrencyPair::builder()
@@ -801,7 +814,7 @@ pub fn create_instrument_from_def(
                     .price_increment(price_increment)
                     .size_increment(size_increment)
                     .maybe_min_notional(min_notional)
-                    .maybe_info(info)
+                    .info(info)
                     // Identical to ts_init for now
                     .ts_event(ts_init)
                     .ts_init(ts_init)
@@ -836,6 +849,7 @@ pub fn create_instrument_from_def(
                     .price_increment(price_increment)
                     .size_increment(size_increment)
                     .maybe_min_notional(min_notional)
+                    .info(info_with_asset_index(None, def.asset_index))
                     // Identical to ts_init for now
                     .ts_event(ts_init)
                     .ts_init(ts_init)
@@ -861,7 +875,7 @@ pub fn create_instrument_from_def(
                     .size_increment(size_increment)
                     .maybe_outcome(outcome.side_name)
                     .maybe_description(outcome.description)
-                    .maybe_info(outcome.info.clone())
+                    .info(info_with_asset_index(outcome.info.clone(), def.asset_index))
                     .ts_event(ts_init)
                     .ts_init(ts_init)
                     .build()
@@ -1478,6 +1492,50 @@ mod tests {
     }
 
     #[rstest]
+    fn test_create_instrument_from_def_carries_asset_index_on_info() {
+        // The execution client resolves a market listed after its own bootstrap
+        // from the instrument published on the message bus, so every market type
+        // must carry its signing asset index on `info`.
+        let perp_meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
+        let outcome_meta = OutcomeMeta {
+            outcomes: vec![OutcomeMarket {
+                outcome: 2,
+                name: "Recurring BTC".to_string(),
+                description: "Daily settlement".to_string(),
+                side_specs: vec![
+                    OutcomeSideSpec {
+                        name: "Yes".to_string(),
+                    },
+                    OutcomeSideSpec {
+                        name: "No".to_string(),
+                    },
+                ],
+            }],
+            questions: vec![],
+        };
+
+        let mut defs = parse_perp_instruments(&perp_meta, 0).unwrap();
+        defs.extend(parse_perp_instruments(&perp_meta, 110_000).unwrap());
+        defs.extend(parse_outcome_instruments(&outcome_meta).unwrap());
+
+        assert!(defs.iter().any(|def| def.is_hip3));
+
+        for def in &defs {
+            let instrument = create_instrument_from_def(def, UnixNanos::default()).unwrap();
+            let info = instrument
+                .info()
+                .unwrap_or_else(|| panic!("info missing for {}", def.symbol));
+
+            assert_eq!(
+                info.get_u64(ASSET_INDEX_INFO_KEY),
+                Some(u64::from(def.asset_index)),
+                "asset index mismatch for {}",
+                def.symbol,
+            );
+        }
+    }
+
+    #[rstest]
     fn test_parse_perp_instruments_with_non_usdc_collateral() {
         let all_metas: Vec<PerpMeta> =
             load_test_data("http_all_perp_metas_non_usdc_collateral.json");
@@ -1700,11 +1758,15 @@ mod tests {
                 let info = pair.info.unwrap();
                 assert_eq!(min_notional.currency, Currency::USDC());
                 assert_eq!(min_notional.as_decimal(), dec!(10));
-                assert_eq!(info.len(), 4);
+                assert_eq!(info.len(), 5);
                 assert_eq!(info.get_str("name"), Some("PURR/USDC"));
                 assert_eq!(info.get("tokens"), Some(&json!([1, 0])));
                 assert_eq!(info.get_u64("index"), Some(0));
                 assert_eq!(info.get_bool("isCanonical"), Some(true));
+                assert_eq!(
+                    info.get_u64(ASSET_INDEX_INFO_KEY),
+                    Some(u64::from(purr_usdc.asset_index)),
+                );
             }
             other => panic!("Expected CurrencyPair, was {other:?}"),
         }
@@ -1714,11 +1776,15 @@ mod tests {
         match instrument {
             InstrumentAny::CurrencyPair(pair) => {
                 let info = pair.info.unwrap();
-                assert_eq!(info.len(), 4);
+                assert_eq!(info.len(), 5);
                 assert_eq!(info.get_str("name"), Some("ALIAS"));
                 assert_eq!(info.get("tokens"), Some(&json!([1, 0])));
                 assert_eq!(info.get_u64("index"), Some(1));
                 assert_eq!(info.get_bool("isCanonical"), Some(false));
+                assert_eq!(
+                    info.get_u64(ASSET_INDEX_INFO_KEY),
+                    Some(u64::from(alias.asset_index)),
+                );
             }
             other => panic!("Expected CurrencyPair, was {other:?}"),
         }

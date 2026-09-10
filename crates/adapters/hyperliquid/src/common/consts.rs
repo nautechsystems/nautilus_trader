@@ -62,6 +62,12 @@ pub const HYPERLIQUID_BUILDER_APPROVAL_DOCS_URL: &str =
 /// Hyperliquid signing chain ID (0x66eee = 421614 decimal).
 pub const HYPERLIQUID_CHAIN_ID: u64 = 421614;
 
+/// Key carrying the venue asset index on an instrument's `info` map.
+///
+/// Order signing needs the numeric asset index, and `InstrumentAny` is the only
+/// shape published on the message bus, so the index travels with the instrument.
+pub const ASSET_INDEX_INFO_KEY: &str = "asset_index";
+
 // Error message substrings for detecting specific rejection reasons
 pub const HYPERLIQUID_POST_ONLY_WOULD_MATCH: &str =
     "Post only order would have immediately matched";
