@@ -178,7 +178,7 @@ pub static HYPERLIQUID_REST_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
     Quota::per_minute(NonZeroU32::new(HYPERLIQUID_REST_WEIGHT_PER_MINUTE).unwrap())
 });
 
-const HYPERLIQUID_RECENT_HISTORY_LIMIT: usize = 2_000;
+pub(crate) const HYPERLIQUID_RECENT_HISTORY_LIMIT: usize = 2_000;
 const RATE_LIMIT_BACKOFF_BASE: Duration = Duration::from_millis(125);
 const RATE_LIMIT_BACKOFF_CAP: Duration = Duration::from_secs(5);
 const RATE_LIMIT_INFO_RETRIES_MAX: u32 = 3;
@@ -2236,15 +2236,26 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the API request fails or parsing fails.
+    /// Returns an error if the API request fails, parsing fails, or a venue row cannot be resolved
+    /// to an instrument or converted into a report (the snapshot is then incomplete and must not be
+    /// treated as authoritative).
     pub async fn request_order_status_reports(
         &self,
         user: &str,
         instrument_id: Option<InstrumentId>,
     ) -> Result<Vec<OrderStatusReport>> {
         let dexes = self.reconciliation_dexes(instrument_id);
-        self.request_order_status_reports_for_dexes(user, instrument_id, &dexes)
-            .await
+        let sweep = self
+            .request_order_status_reports_for_dexes(user, instrument_id, &dexes)
+            .await?;
+
+        if !sweep.complete {
+            return Err(Error::bad_request(
+                "Open-order snapshot incomplete: at least one venue row could not be decoded, resolved to an instrument, or converted into a report",
+            ));
+        }
+
+        Ok(sweep.reports)
     }
 
     pub(crate) async fn request_order_status_reports_for_dexes(
@@ -2252,11 +2263,12 @@ impl HyperliquidHttpClient {
         user: &str,
         instrument_id: Option<InstrumentId>,
         dexes: &[Option<Ustr>],
-    ) -> Result<Vec<OrderStatusReport>> {
+    ) -> Result<ReportSweep<OrderStatusReport>> {
         let account_id = self
             .account_id
             .ok_or_else(|| Error::bad_request("Account ID not set"))?;
         let mut reports = Vec::new();
+        let mut complete = true;
         let ts_init = self.clock.get_time_ns();
 
         for dex in dexes {
@@ -2271,13 +2283,18 @@ impl HyperliquidHttpClient {
                     Ok(order) => order,
                     Err(e) => {
                         log::warn!("Failed to parse order: {e}");
+                        complete = false;
                         continue;
                     }
                 };
 
                 let instrument = match self.get_or_create_instrument(&order.coin, None) {
                     Some(instrument) => instrument,
-                    None => continue,
+                    // get_or_create_instrument warns with the coin
+                    None => {
+                        complete = false;
+                        continue;
+                    }
                 };
 
                 if instrument_id.is_some_and(|filter_id| instrument.id() != filter_id) {
@@ -2292,12 +2309,15 @@ impl HyperliquidHttpClient {
                     ts_init,
                 ) {
                     Ok(report) => reports.push(report),
-                    Err(e) => log::error!("Failed to parse order status report: {e}"),
+                    Err(e) => {
+                        log::error!("Failed to parse order status report: {e}");
+                        complete = false;
+                    }
                 }
             }
         }
 
-        Ok(reports)
+        Ok(ReportSweep { reports, complete })
     }
 
     /// Request historical order status reports for a user.
@@ -2305,30 +2325,49 @@ impl HyperliquidHttpClient {
     /// The venue bounds this endpoint to its 2,000 most recent historical
     /// orders. Mass-status reconciliation narrows these reports to venue order
     /// IDs represented by the retained fill window.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API request fails or a venue row cannot be resolved to an
+    /// instrument or converted into a report (the snapshot is then incomplete and must not be
+    /// treated as authoritative).
     pub async fn request_historical_order_status_reports(
         &self,
         user: &str,
         instrument_id: Option<InstrumentId>,
     ) -> Result<Vec<OrderStatusReport>> {
         let entries = self.info_historical_orders(user).await?;
-        self.historical_order_status_reports_from_response(entries, instrument_id)
+        let sweep = self.historical_order_status_reports_from_response(entries, instrument_id)?;
+
+        if !sweep.complete {
+            return Err(Error::bad_request(
+                "Historical-order snapshot incomplete: at least one venue row could not be decoded, resolved to an instrument, or converted into a report",
+            ));
+        }
+
+        Ok(sweep.reports)
     }
 
     pub(crate) fn historical_order_status_reports_from_response(
         &self,
         entries: Vec<HyperliquidOrderStatusEntry>,
         instrument_id: Option<InstrumentId>,
-    ) -> Result<Vec<OrderStatusReport>> {
+    ) -> Result<ReportSweep<OrderStatusReport>> {
         let account_id = self
             .account_id
             .ok_or_else(|| Error::bad_request("Account ID not set"))?;
         let mut reports = Vec::new();
+        let mut complete = true;
         let ts_init = self.clock.get_time_ns();
 
         for entry in entries {
             let instrument = match self.get_or_create_instrument(&entry.order.coin, None) {
+                // get_or_create_instrument warns with the coin
                 Some(instrument) => instrument,
-                None => continue,
+                None => {
+                    complete = false;
+                    continue;
+                }
             };
 
             if instrument_id.is_some_and(|filter_id| instrument.id() != filter_id) {
@@ -2386,11 +2425,17 @@ impl HyperliquidHttpClient {
                     report.ts_last = UnixNanos::from(entry.status_timestamp * 1_000_000);
                     reports.push(report);
                 }
-                Err(e) => log::error!("Failed to parse historical order status report: {e}"),
+                Err(e) => {
+                    log::error!("Failed to parse historical order status report: {e}");
+                    complete = false;
+                }
             }
         }
 
-        Ok(deduplicate_historical_order_reports(reports))
+        Ok(ReportSweep {
+            reports: deduplicate_historical_order_reports(reports),
+            complete,
+        })
     }
 
     /// Request a single order status report by venue order ID.
@@ -2401,7 +2446,9 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the API request fails or parsing fails.
+    /// Returns an error if the API request fails, parsing fails, or the matched venue row cannot be
+    /// resolved to an instrument or converted into a report. A genuinely absent order returns
+    /// `Ok(None)`.
     pub async fn request_order_status_report(
         &self,
         user: &str,
@@ -2436,7 +2483,12 @@ impl HyperliquidHttpClient {
         if let Some(order) = orders.into_iter().find(|o| o.oid == oid) {
             let instrument = match self.get_or_create_instrument(&order.coin, None) {
                 Some(inst) => inst,
-                None => return Ok(None),
+                None => {
+                    return Err(Error::bad_request(format!(
+                        "Failed to resolve instrument for open order oid {oid} with coin {}",
+                        order.coin,
+                    )));
+                }
             };
 
             let status = if order.trigger_activated == Some(true) {
@@ -2445,19 +2497,19 @@ impl HyperliquidHttpClient {
                 HyperliquidOrderStatusEnum::Open
             };
 
-            return match parse_order_status_report_from_basic(
+            return parse_order_status_report_from_basic(
                 &order,
                 &status,
                 &instrument,
                 account_id,
                 ts_init,
-            ) {
-                Ok(report) => Ok(Some(report)),
-                Err(e) => {
-                    log::error!("Failed to parse order status report for oid {oid}: {e}");
-                    Ok(None)
-                }
-            };
+            )
+            .map(Some)
+            .map_err(|e| {
+                Error::bad_request(format!(
+                    "Failed to parse order status report for oid {oid}: {e}"
+                ))
+            });
         }
 
         // Order not in open set: query by oid (returns limited HyperliquidOrderInfo)
@@ -2469,7 +2521,12 @@ impl HyperliquidHttpClient {
 
         let instrument = match self.get_or_create_instrument(&entry.order.coin, None) {
             Some(inst) => inst,
-            None => return Ok(None),
+            None => {
+                return Err(Error::bad_request(format!(
+                    "Failed to resolve instrument for order oid {oid} with coin {}",
+                    entry.order.coin,
+                )));
+            }
         };
 
         // The info_order_status endpoint returns limited HyperliquidOrderInfo
@@ -2494,26 +2551,26 @@ impl HyperliquidHttpClient {
             trailing_stop: None,
         };
 
-        match parse_order_status_report_from_basic(
+        let mut report = parse_order_status_report_from_basic(
             &basic,
             &entry.status,
             &instrument,
             account_id,
             ts_init,
-        ) {
-            Ok(mut report) => {
-                // Use status_timestamp for ts_last when available (more accurate
-                // than the order creation timestamp for filled/canceled orders)
-                if entry.status_timestamp > 0 {
-                    report.ts_last = UnixNanos::from(entry.status_timestamp * 1_000_000);
-                }
-                Ok(Some(report))
-            }
-            Err(e) => {
-                log::error!("Failed to parse order status report for oid {oid}: {e}");
-                Ok(None)
-            }
+        )
+        .map_err(|e| {
+            Error::bad_request(format!(
+                "Failed to parse order status report for oid {oid}: {e}"
+            ))
+        })?;
+
+        // Use status_timestamp for ts_last when available (more accurate
+        // than the order creation timestamp for filled/canceled orders)
+        if entry.status_timestamp > 0 {
+            report.ts_last = UnixNanos::from(entry.status_timestamp * 1_000_000);
         }
+
+        Ok(Some(report))
     }
 
     /// Request a single order status report by client order ID.
@@ -2523,7 +2580,9 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the API request fails or parsing fails.
+    /// Returns an error if the API request fails, the response cannot be decoded, or the matched
+    /// venue row cannot be resolved to an instrument or converted into a report. A genuinely
+    /// absent order returns `Ok(None)`.
     pub async fn request_order_status_report_by_client_order_id(
         &self,
         user: &str,
@@ -2542,13 +2601,10 @@ impl HyperliquidHttpClient {
         let cloid_hex = cloid.to_hex();
 
         let response = self.info_frontend_open_orders(user).await?;
-        let orders: Vec<WsBasicOrderData> = match serde_json::from_value(response) {
-            Ok(v) => v,
-            Err(e) => {
-                log::warn!("Failed to parse frontend open orders response: {e}");
-                return Ok(None);
-            }
-        };
+
+        let orders: Vec<WsBasicOrderData> = serde_json::from_value(response).map_err(|e| {
+            Error::bad_request(format!("Failed to parse open orders response: {e}"))
+        })?;
 
         let order = match orders.into_iter().find(|o| {
             o.cloid
@@ -2561,7 +2617,12 @@ impl HyperliquidHttpClient {
 
         let instrument = match self.get_or_create_instrument(&order.coin, None) {
             Some(inst) => inst,
-            None => return Ok(None),
+            None => {
+                return Err(Error::bad_request(format!(
+                    "Failed to resolve instrument for open order with cloid {cloid_hex} and coin {}",
+                    order.coin,
+                )));
+            }
         };
 
         let status = if order.trigger_activated == Some(true) {
@@ -2570,22 +2631,16 @@ impl HyperliquidHttpClient {
             HyperliquidOrderStatusEnum::Open
         };
 
-        match parse_order_status_report_from_basic(
-            &order,
-            &status,
-            &instrument,
-            account_id,
-            ts_init,
-        ) {
-            Ok(mut report) => {
-                report.client_order_id = Some(*client_order_id);
-                Ok(Some(report))
-            }
-            Err(e) => {
-                log::error!("Failed to parse order status report for cloid {cloid_hex}: {e}");
-                Ok(None)
-            }
-        }
+        let mut report =
+            parse_order_status_report_from_basic(&order, &status, &instrument, account_id, ts_init)
+                .map_err(|e| {
+                    Error::bad_request(format!(
+                        "Failed to parse order status report for cloid {cloid_hex}: {e}"
+                    ))
+                })?;
+
+        report.client_order_id = Some(*client_order_id);
+        Ok(Some(report))
     }
 
     /// Request fill reports for a user.
@@ -2598,7 +2653,9 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the API request fails or parsing fails.
+    /// Returns an error if the API request fails, parsing fails, or a venue row cannot be resolved
+    /// to an instrument or converted into a report (the snapshot is then incomplete and must not be
+    /// treated as authoritative).
     ///
     /// Returns an error if `account_id` is not set on the client.
     pub async fn request_fill_reports(
@@ -2607,26 +2664,39 @@ impl HyperliquidHttpClient {
         instrument_id: Option<InstrumentId>,
     ) -> Result<Vec<FillReport>> {
         let fills_response = self.info_user_fills(user).await?;
-        self.fill_reports_from_response(fills_response, instrument_id)
+        let sweep = self.fill_reports_from_response(fills_response, instrument_id)?;
+
+        if !sweep.complete {
+            return Err(Error::bad_request(
+                "Fill snapshot incomplete: at least one venue row could not be decoded, resolved to an instrument, or converted into a report",
+            ));
+        }
+
+        Ok(sweep.reports)
     }
 
     pub(crate) fn fill_reports_from_response(
         &self,
         fills_response: HyperliquidFills,
         instrument_id: Option<InstrumentId>,
-    ) -> Result<Vec<FillReport>> {
+    ) -> Result<ReportSweep<FillReport>> {
         let account_id = self
             .account_id
             .ok_or_else(|| Error::bad_request("Account ID not set"))?;
 
         let mut reports = Vec::new();
+        let mut complete = true;
         let ts_init = self.clock.get_time_ns();
 
         for fill in fills_response {
             // Get instrument from cache or create synthetic for vault tokens
             let instrument = match self.get_or_create_instrument(&fill.coin, None) {
                 Some(inst) => inst,
-                None => continue, // Skip if instrument not found
+                // get_or_create_instrument warns with the coin
+                None => {
+                    complete = false;
+                    continue;
+                }
             };
 
             // Filter by instrument_id if specified
@@ -2639,11 +2709,14 @@ impl HyperliquidHttpClient {
             // Parse to FillReport
             match parse_fill_report(&fill, &instrument, account_id, ts_init) {
                 Ok(report) => reports.push(report),
-                Err(e) => log::error!("Failed to parse fill report: {e}"),
+                Err(e) => {
+                    log::error!("Failed to parse fill report: {e}");
+                    complete = false;
+                }
             }
         }
 
-        Ok(reports)
+        Ok(ReportSweep { reports, complete })
     }
 
     /// Request position status reports for a user.
@@ -2660,13 +2733,13 @@ impl HyperliquidHttpClient {
     /// is routed like a spot filter (perp leg skipped).
     ///
     /// For vault tokens (starting with "vntls:") that are not in the cache,
-    /// synthetic instruments will be created automatically. Spot balances whose
-    /// base token has no cached instrument are skipped with a debug log.
+    /// synthetic instruments will be created automatically.
     ///
     /// # Errors
     ///
-    /// Returns an error if any clearinghouse request fails (when that product or dex is in scope)
-    /// or parsing fails.
+    /// Returns an error if any clearinghouse request fails (when that product or dex is in scope),
+    /// parsing fails, or a venue row cannot be resolved to an instrument or converted into a
+    /// report (the snapshot is then incomplete and must not be treated as authoritative).
     ///
     /// Returns an error if `account_id` has not been set on the client.
     pub async fn request_position_status_reports(
@@ -2675,8 +2748,17 @@ impl HyperliquidHttpClient {
         instrument_id: Option<InstrumentId>,
     ) -> Result<Vec<PositionStatusReport>> {
         let dexes = self.reconciliation_dexes(instrument_id);
-        self.request_position_status_reports_for_dexes(user, instrument_id, &dexes)
-            .await
+        let sweep = self
+            .request_position_status_reports_for_dexes(user, instrument_id, &dexes)
+            .await?;
+
+        if !sweep.complete {
+            return Err(Error::bad_request(
+                "Position snapshot incomplete: at least one venue row could not be decoded, resolved to an instrument, or converted into a report",
+            ));
+        }
+
+        Ok(sweep.reports)
     }
 
     pub(crate) async fn request_position_status_reports_for_dexes(
@@ -2684,7 +2766,7 @@ impl HyperliquidHttpClient {
         user: &str,
         instrument_id: Option<InstrumentId>,
         dexes: &[Option<Ustr>],
-    ) -> Result<Vec<PositionStatusReport>> {
+    ) -> Result<ReportSweep<PositionStatusReport>> {
         let account_id = self
             .account_id
             .ok_or_else(|| Error::bad_request("Account ID not set"))?;
@@ -2699,14 +2781,13 @@ impl HyperliquidHttpClient {
         let fetch_spot = filter_product != Some(HyperliquidProductType::Perp);
 
         let mut reports = Vec::new();
+        let mut complete = true;
         let ts_init = self.clock.get_time_ns();
 
         if !fetch_perp {
-            let spot_reports = self
-                .request_spot_position_status_reports(user, instrument_id)
-                .await?;
-            reports.extend(spot_reports);
-            return Ok(reports);
+            return self
+                .request_spot_position_status_reports_sweep(user, instrument_id)
+                .await;
         }
 
         for dex in dexes {
@@ -2730,7 +2811,11 @@ impl HyperliquidHttpClient {
 
                 let instrument = match self.get_or_create_instrument(&Ustr::from(coin), None) {
                     Some(instrument) => instrument,
-                    None => continue,
+                    // get_or_create_instrument warns with the coin
+                    None => {
+                        complete = false;
+                        continue;
+                    }
                 };
 
                 if instrument_id.is_some_and(|filter_id| instrument.id() != filter_id) {
@@ -2744,7 +2829,10 @@ impl HyperliquidHttpClient {
                     ts_init,
                 ) {
                     Ok(report) => reports.push(report),
-                    Err(e) => log::error!("Failed to parse position status report: {e}"),
+                    Err(e) => {
+                        log::error!("Failed to parse position status report: {e}");
+                        complete = false;
+                    }
                 }
             }
         }
@@ -2752,13 +2840,14 @@ impl HyperliquidHttpClient {
         // Spot positions are part of the report truth; propagate fetch errors
         // rather than silently omitting spot holdings from reconciliation.
         if fetch_spot {
-            let spot_reports = self
-                .request_spot_position_status_reports(user, instrument_id)
+            let spot_sweep = self
+                .request_spot_position_status_reports_sweep(user, instrument_id)
                 .await?;
-            reports.extend(spot_reports);
+            reports.extend(spot_sweep.reports);
+            complete &= spot_sweep.complete;
         }
 
-        Ok(reports)
+        Ok(ReportSweep { reports, complete })
     }
 
     /// Request account state (balances and margins) for a user.
@@ -2849,18 +2938,37 @@ impl HyperliquidHttpClient {
     /// this same endpoint with `coin` set to the `+<encoding>` token form;
     /// those balances are resolved against the matching Outcome instrument so
     /// outcome holdings surface as positions through the standard reconcile
-    /// path. Balances whose base token has no matching instrument in the
-    /// cache are skipped with a debug log (callers should ensure
-    /// [`request_instruments`](Self::request_instruments) has run first).
+    /// path.
     ///
     /// # Errors
     ///
-    /// Returns an error if `account_id` has not been set or the API request fails.
+    /// Returns an error if `account_id` has not been set, the API request fails,
+    /// or a non-zero balance cannot be resolved to an instrument or converted
+    /// into a report (the snapshot is then incomplete and must not be treated
+    /// as authoritative).
     pub async fn request_spot_position_status_reports(
         &self,
         user: &str,
         instrument_id: Option<InstrumentId>,
     ) -> Result<Vec<PositionStatusReport>> {
+        let sweep = self
+            .request_spot_position_status_reports_sweep(user, instrument_id)
+            .await?;
+
+        if !sweep.complete {
+            return Err(Error::bad_request(
+                "Spot position snapshot incomplete: at least one venue row could not be decoded, resolved to an instrument, or converted into a report",
+            ));
+        }
+
+        Ok(sweep.reports)
+    }
+
+    pub(crate) async fn request_spot_position_status_reports_sweep(
+        &self,
+        user: &str,
+        instrument_id: Option<InstrumentId>,
+    ) -> Result<ReportSweep<PositionStatusReport>> {
         let account_id = self
             .account_id
             .ok_or_else(|| Error::bad_request("Account ID not set"))?;
@@ -2873,6 +2981,7 @@ impl HyperliquidHttpClient {
 
         let ts_init = self.clock.get_time_ns();
         let mut reports = Vec::with_capacity(state.balances.len());
+        let mut complete = true;
 
         for balance in &state.balances {
             if balance.total.is_zero() {
@@ -2895,7 +3004,11 @@ impl HyperliquidHttpClient {
             let instrument = match self.get_or_create_instrument(&balance.coin, Some(product_type))
             {
                 Some(inst) => inst,
-                None => continue,
+                // get_or_create_instrument warns with the coin
+                None => {
+                    complete = false;
+                    continue;
+                }
             };
 
             if let Some(filter_id) = instrument_id
@@ -2906,14 +3019,17 @@ impl HyperliquidHttpClient {
 
             match parse_spot_position_status_report(balance, &instrument, account_id, ts_init) {
                 Ok(report) => reports.push(report),
-                Err(e) => log::error!(
-                    "Failed to parse spot position status report for {}: {e}",
-                    balance.coin,
-                ),
+                Err(e) => {
+                    log::error!(
+                        "Failed to parse spot position status report for {}: {e}",
+                        balance.coin,
+                    );
+                    complete = false;
+                }
             }
         }
 
-        Ok(reports)
+        Ok(ReportSweep { reports, complete })
     }
 
     /// Request historical bars for an instrument.
@@ -3642,6 +3758,17 @@ impl HyperliquidHttpClient {
 
         Ok(reconciliation_dexes_from_builders(builder_dexes))
     }
+}
+
+// A reconciliation snapshot with its completeness flag: `complete` is false when
+// at least one venue row could not be decoded, resolved to an instrument, or
+// converted into a report. Callers whose contract cannot carry the flag fail
+// closed; mass-status reconciliation preserves the valid rows and reports the
+// incompleteness via `ExecutionMassStatus::set_report_window`.
+#[derive(Debug)]
+pub(crate) struct ReportSweep<T> {
+    pub reports: Vec<T>,
+    pub complete: bool,
 }
 
 fn reconciliation_dexes_from_builders(

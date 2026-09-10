@@ -76,7 +76,7 @@ use crate::{
     },
     config::HyperliquidExecutionClientConfig,
     http::{
-        client::HyperliquidHttpClient,
+        client::{HYPERLIQUID_RECENT_HISTORY_LIMIT, HyperliquidHttpClient},
         models::{
             ClearinghouseState, Cloid, HyperliquidExchangeAction,
             HyperliquidExchangeCancelByCloidRequest, HyperliquidExchangeCancelOrderRequest,
@@ -1896,6 +1896,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
         // Search open orders by cloid first when supplied. Hyperliquid modify
         // produces a new venue oid while preserving cloid, so a cached oid can
         // point at the canceled leg rather than the live replacement.
+        let mut cloid_lookup_error = None;
+
         if let Some(client_order_id) = &cmd.client_order_id {
             match self
                 .http_client
@@ -1918,6 +1920,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                         "Failed to generate order status report for {client_order_id}: {e}; \
                          falling back to oid lookup"
                     );
+                    cloid_lookup_error = Some(anyhow::anyhow!(e));
                 }
             }
         }
@@ -1938,6 +1941,14 @@ impl ExecutionClient for HyperliquidExecutionClient {
                     match cached_oid {
                         Some(oid) => oid,
                         None => {
+                            // A failed cloid probe is not a "not found": with no
+                            // oid fallback available the lookup must fail closed.
+                            if let Some(e) = cloid_lookup_error {
+                                return Err(e.context(
+                                    "cloid lookup failed and no venue_order_id fallback available",
+                                ));
+                            }
+
                             log::debug!("No order status report found for {client_order_id}");
                             return Ok(None);
                         }
@@ -2050,6 +2061,11 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let ts_init = self.clock.get_time_ns();
         let account_address = self.get_account_address()?;
 
+        let lookback_start = lookback_mins
+            .map(DurationNanos::try_from_mins)
+            .transpose()?
+            .map(|lookback| ts_init.saturating_sub(lookback));
+
         let fills_response = self
             .http_client
             .info_user_fills(&account_address)
@@ -2066,27 +2082,45 @@ impl ExecutionClient for HyperliquidExecutionClient {
             .await
             .context("failed to determine reconciliation dexes")?;
 
-        let mut order_reports = self
+        // The venue bounds both history endpoints to their most recent entries;
+        // a saturated response may be truncated, so coverage is not provable
+        let history_capped = historical_orders.len() >= HYPERLIQUID_RECENT_HISTORY_LIMIT
+            || fills_response.len() >= HYPERLIQUID_RECENT_HISTORY_LIMIT;
+
+        if history_capped {
+            log::warn!(
+                "Mass-status history response at venue cap ({HYPERLIQUID_RECENT_HISTORY_LIMIT}): \
+                 marking reports incomplete"
+            );
+        }
+
+        let order_sweep = self
             .http_client
             .request_order_status_reports_for_dexes(&account_address, None, &dexes)
             .await
             .context("failed to generate order status reports")?;
-        let mut fill_reports = self
+        let fill_sweep = self
             .http_client
             .fill_reports_from_response(fills_response, None)
             .context("failed to generate fill reports")?;
-        let position_reports = self
+        let position_sweep = self
             .http_client
             .request_position_status_reports_for_dexes(&account_address, None, &dexes)
             .await
             .context("failed to generate position status reports")?;
 
+        let mut order_reports = order_sweep.reports;
+        let mut fill_reports = fill_sweep.reports;
+        let position_reports = position_sweep.reports;
+        let mut reports_complete = order_sweep.complete
+            && fill_sweep.complete
+            && position_sweep.complete
+            && !history_capped;
+
         // Apply lookback filter to fills only (positions are current state,
         // and open orders must always be included for correct reconciliation)
-        if let Some(mins) = lookback_mins {
-            let cutoff = ts_init.saturating_sub(DurationNanos::try_from_mins(mins)?);
-
-            fill_reports.retain(|r| r.ts_event >= cutoff);
+        if let Some(start) = lookback_start {
+            fill_reports.retain(|r| r.ts_event >= start);
         }
 
         if !fill_reports.is_empty() {
@@ -2098,10 +2132,12 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 .iter()
                 .map(|report| report.venue_order_id)
                 .collect();
-            let mut historical_reports = self
+            let historical_sweep = self
                 .http_client
                 .historical_order_status_reports_from_response(historical_orders, None)
                 .context("failed to generate historical order status reports")?;
+            reports_complete &= historical_sweep.complete;
+            let mut historical_reports = historical_sweep.reports;
             historical_reports.retain(|report| {
                 filled_order_ids.contains(&report.venue_order_id)
                     && !open_order_ids.contains(&report.venue_order_id)
@@ -2116,6 +2152,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             ts_init,
             None,
         );
+        mass_status.set_report_window(lookback_start, reports_complete);
         mass_status.add_order_reports(order_reports);
         mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);

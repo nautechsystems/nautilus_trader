@@ -65,6 +65,9 @@ struct TestServerState {
     order_status_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     clearinghouse_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     clearinghouse_dex_responses: Arc<tokio::sync::Mutex<HashMap<String, Value>>>,
+    spot_clearinghouse_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    user_fills_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    historical_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     spot_fails: Arc<std::sync::atomic::AtomicBool>,
 }
 
@@ -79,6 +82,9 @@ impl Default for TestServerState {
             order_status_response: Arc::new(tokio::sync::Mutex::new(None)),
             clearinghouse_response: Arc::new(tokio::sync::Mutex::new(None)),
             clearinghouse_dex_responses: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            spot_clearinghouse_response: Arc::new(tokio::sync::Mutex::new(None)),
+            user_fills_response: Arc::new(tokio::sync::Mutex::new(None)),
+            historical_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
             spot_fails: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
@@ -92,6 +98,20 @@ fn load_json(filename: &str) -> Value {
     let content = std::fs::read_to_string(data_path().join(filename))
         .unwrap_or_else(|_| panic!("failed to read {filename}"));
     serde_json::from_str(&content).expect("invalid json")
+}
+
+/// Builds a `spotClearinghouseState` response carrying only the named balances
+/// from the shared fixture, so each test resolves exactly the tokens it caches.
+fn spot_balances_response(coins: &[&str]) -> Value {
+    let fixture = load_json("http_spot_clearinghouse_state.json");
+    let balances = fixture["balances"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|balance| coins.contains(&balance["coin"].as_str().unwrap()))
+        .cloned()
+        .collect::<Vec<_>>();
+    json!({ "balances": balances })
 }
 
 async fn wait_for_server(addr: SocketAddr, path: &str) {
@@ -182,7 +202,14 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
             let book = load_json("http_l2_book_btc.json");
             Json(book).into_response()
         }
-        "userFills" => Json(json!([])).into_response(),
+        "userFills" => {
+            let custom = state.user_fills_response.lock().await.clone();
+            Json(custom.unwrap_or(json!([]))).into_response()
+        }
+        "historicalOrders" => {
+            let custom = state.historical_orders_response.lock().await.clone();
+            Json(custom.unwrap_or(json!([]))).into_response()
+        }
         "orderStatus" => {
             let custom = state.order_status_response.lock().await;
             Json(custom.clone().unwrap_or(json!({"statuses": []}))).into_response()
@@ -241,7 +268,9 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
                 )
                     .into_response();
             }
-            let spot = load_json("http_spot_clearinghouse_state.json");
+
+            let custom = state.spot_clearinghouse_response.lock().await.clone();
+            let spot = custom.unwrap_or_else(|| load_json("http_spot_clearinghouse_state.json"));
             Json(spot).into_response()
         }
         "candleSnapshot" => Json(json!([
@@ -672,23 +701,30 @@ async fn test_request_position_status_reports_skips_spot_fetch_for_perp_filter()
 
 #[rstest]
 #[tokio::test]
-async fn test_request_spot_position_status_reports_skips_when_instrument_missing() {
+async fn test_request_spot_position_status_reports_fails_when_instrument_missing() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
 
     let client = create_domain_client(&addr);
-    // No spot instruments are cached, so reports are skipped (non-fatal)
-    let reports = client
+    // No spot instruments are cached: the non-zero PURR/HYPE/+10 balances in the
+    // fixture cannot be resolved, so the snapshot must fail closed rather than
+    // silently omit real holdings
+    let err = client
         .request_spot_position_status_reports("0x1234567890123456789012345678901234567890", None)
         .await
-        .unwrap();
+        .expect_err("unresolved spot balances must fail closed");
 
-    assert!(reports.is_empty());
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Spot position snapshot incomplete")),
+    );
 }
 
 #[rstest]
 #[tokio::test]
 async fn test_request_spot_position_status_reports_emits_for_cached_instrument() {
+    // USDC rides along in the fixture because it is the universal spot quote
+    // with no `USDC-*-SPOT` instrument: it must be skipped without affecting
+    // completeness, leaving exactly the cached PURR balance as a report.
     use nautilus_model::{
         enums::CurrencyType,
         identifiers::{InstrumentId, Symbol},
@@ -697,6 +733,8 @@ async fn test_request_spot_position_status_reports_emits_for_cached_instrument()
     };
 
     let state = TestServerState::default();
+    *state.spot_clearinghouse_response.lock().await =
+        Some(spot_balances_response(&["USDC", "PURR"]));
     let addr = start_mock_server(state).await;
 
     let client = create_domain_client(&addr);
@@ -743,58 +781,6 @@ async fn test_request_spot_position_status_reports_emits_for_cached_instrument()
 
 #[rstest]
 #[tokio::test]
-async fn test_request_spot_position_status_reports_skips_usdc() {
-    // USDC is the universal spot quote and has no `USDC-*-SPOT` instrument,
-    // so the loop must skip it to avoid a misleading cache-miss WARN. Cache a
-    // PURR/USDC instrument so the test observes the skip (USDC continues past
-    // the early return) while PURR still resolves normally.
-    use nautilus_model::{
-        enums::CurrencyType,
-        identifiers::{InstrumentId, Symbol},
-        instruments::{CurrencyPair, InstrumentAny},
-        types::{Currency, Price, Quantity},
-    };
-
-    let state = TestServerState::default();
-    let addr = start_mock_server(state).await;
-
-    let client = create_domain_client(&addr);
-    let ts = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
-
-    let purr = Currency::new("PURR", 8, 0, "PURR", CurrencyType::Crypto);
-    let usdc = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
-    let instrument = CurrencyPair::builder()
-        .instrument_id(InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID"))
-        .raw_symbol(Symbol::new("PURR/USDC"))
-        .base_currency(purr)
-        .quote_currency(usdc)
-        .price_precision(5)
-        .size_precision(0)
-        .price_increment(Price::from("0.00001"))
-        .size_increment(Quantity::from("1"))
-        .ts_event(ts)
-        .ts_init(ts)
-        .build()
-        .unwrap();
-    client.cache_instrument(&InstrumentAny::CurrencyPair(instrument));
-
-    let reports = client
-        .request_spot_position_status_reports("0x1234567890123456789012345678901234567890", None)
-        .await
-        .unwrap();
-
-    assert_eq!(reports.len(), 1, "only PURR should emit a position report");
-    assert!(
-        reports[0]
-            .instrument_id
-            .symbol
-            .as_str()
-            .starts_with("PURR-")
-    );
-}
-
-#[rstest]
-#[tokio::test]
 async fn test_request_spot_position_status_reports_filters_by_instrument_id() {
     use nautilus_model::{
         enums::CurrencyType,
@@ -804,6 +790,8 @@ async fn test_request_spot_position_status_reports_filters_by_instrument_id() {
     };
 
     let state = TestServerState::default();
+    *state.spot_clearinghouse_response.lock().await =
+        Some(spot_balances_response(&["PURR", "HYPE"]));
     let addr = start_mock_server(state).await;
 
     let client = create_domain_client(&addr);
@@ -892,6 +880,7 @@ async fn test_request_position_status_reports_skips_perp_fetch_for_spot_filter()
     };
 
     let state = TestServerState::default();
+    *state.spot_clearinghouse_response.lock().await = Some(spot_balances_response(&["PURR"]));
     let addr = start_mock_server(state.clone()).await;
 
     let client = create_domain_client(&addr);
@@ -952,6 +941,7 @@ async fn test_request_spot_position_status_reports_resolves_outcome_side_token()
     };
 
     let state = TestServerState::default();
+    *state.spot_clearinghouse_response.lock().await = Some(spot_balances_response(&["+10"]));
     let addr = start_mock_server(state).await;
 
     let client = create_domain_client(&addr);
@@ -1005,6 +995,7 @@ async fn test_request_position_status_reports_skips_perp_fetch_for_outcome_filte
     };
 
     let state = TestServerState::default();
+    *state.spot_clearinghouse_response.lock().await = Some(spot_balances_response(&["+10"]));
     let addr = start_mock_server(state.clone()).await;
 
     let client = create_domain_client(&addr);
@@ -1670,6 +1661,8 @@ async fn test_request_order_status_reports_fails_when_later_dex_fetch_fails() {
 async fn test_request_position_status_reports_aggregates_all_cached_dexs() {
     let state = TestServerState::default();
     configure_position_responses(&state).await;
+    // Authoritative empty spot leg: keeps the focus on perp dex aggregation
+    *state.spot_clearinghouse_response.lock().await = Some(json!({"balances": []}));
     let addr = start_mock_server(state.clone()).await;
 
     let client = create_domain_client(&addr);
@@ -2017,4 +2010,472 @@ async fn test_request_order_status_report_by_client_order_id_no_match() {
         .unwrap();
 
     assert!(report.is_none(), "should not match different cloid");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_reports_fails_closed_on_malformed_row() {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([
+        open_order("BTC", 1001, "95000.0", "0.10000"),
+        { "coin": "BTC", "oid": 1002u64 }, // Missing side/limitPx/sz/timestamp/origSz
+    ]));
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_order_status_reports("0xuser", None)
+        .await
+        .expect_err("malformed open-order row must fail the snapshot");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Open-order snapshot incomplete")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_reports_fails_closed_on_unknown_instrument() {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([
+        open_order("BTC", 1001, "95000.0", "0.10000"),
+        open_order("NOCOIN", 1002, "100.0", "1.00000"),
+    ]));
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_order_status_reports("0xuser", None)
+        .await
+        .expect_err("unresolvable open-order coin must fail the snapshot");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Open-order snapshot incomplete")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_reports_empty_snapshot_is_authoritative() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let reports = client
+        .request_order_status_reports("0xuser", None)
+        .await
+        .expect("empty open-order snapshot must stay authoritative");
+
+    assert!(reports.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_fill_reports_fails_closed_on_unknown_instrument() {
+    let state = TestServerState::default();
+    *state.user_fills_response.lock().await = Some(json!([
+        {
+            "coin": "BTC", "px": "50000.0", "sz": "0.001", "side": "B",
+            "time": 1_700_000_000_000u64, "startPosition": "0",
+            "dir": "Open Long", "closedPnl": "0", "hash": "0xaaaa",
+            "oid": 1001u64, "crossed": true, "fee": "0.01", "tid": 1u64,
+            "feeToken": "USDC",
+        },
+        {
+            "coin": "NOCOIN", "px": "100.0", "sz": "1.0", "side": "B",
+            "time": 1_700_000_000_001u64, "startPosition": "0",
+            "dir": "Open Long", "closedPnl": "0", "hash": "0xbbbb",
+            "oid": 1002u64, "crossed": true, "fee": "0.01", "tid": 2u64,
+            "feeToken": "USDC",
+        },
+    ]));
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_fill_reports("0xuser", None)
+        .await
+        .expect_err("unresolvable fill coin must fail the snapshot");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Fill snapshot incomplete")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_fill_reports_fails_closed_on_unconvertible_row() {
+    // A non-zero fee denominated in an unregistered token cannot be converted
+    // into a FillReport commission
+    let state = TestServerState::default();
+    *state.user_fills_response.lock().await = Some(json!([
+        {
+            "coin": "BTC", "px": "50000.0", "sz": "0.001", "side": "B",
+            "time": 1_700_000_000_000u64, "startPosition": "0",
+            "dir": "Open Long", "closedPnl": "0", "hash": "0xaaaa",
+            "oid": 1001u64, "crossed": true, "fee": "0.01", "tid": 1u64,
+            "feeToken": "NOTACOIN",
+        },
+    ]));
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_fill_reports("0xuser", None)
+        .await
+        .expect_err("unconvertible fill row must fail the snapshot");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Fill snapshot incomplete")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_fill_reports_empty_snapshot_is_authoritative() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let reports = client
+        .request_fill_reports("0xuser", None)
+        .await
+        .expect("empty fill snapshot must stay authoritative");
+
+    assert!(reports.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_position_status_reports_fails_closed_on_malformed_row() {
+    let state = TestServerState::default();
+    *state.clearinghouse_response.lock().await = Some(json!({
+        "assetPositions": [
+            {
+                "type": "oneWay",
+                "position": { "coin": "BTC" }, // Missing szi and remaining fields
+            },
+        ],
+    }));
+    *state.spot_clearinghouse_response.lock().await = Some(json!({"balances": []}));
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_position_status_reports("0xuser", None)
+        .await
+        .expect_err("malformed position row must fail the snapshot");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Position snapshot incomplete")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_position_status_reports_fails_closed_on_unknown_instrument() {
+    let state = TestServerState::default();
+    *state.clearinghouse_response.lock().await =
+        Some(clearinghouse_position("NOCOIN", "0.10000", "100.0"));
+    *state.spot_clearinghouse_response.lock().await = Some(json!({"balances": []}));
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_position_status_reports("0xuser", None)
+        .await
+        .expect_err("unresolvable position coin must fail the snapshot");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Position snapshot incomplete")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_position_status_reports_empty_snapshot_is_authoritative() {
+    let state = TestServerState::default();
+    *state.clearinghouse_response.lock().await = Some(json!({"assetPositions": []}));
+    *state.spot_clearinghouse_response.lock().await = Some(json!({"balances": []}));
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let reports = client
+        .request_position_status_reports("0xuser", None)
+        .await
+        .expect("empty position snapshot must stay authoritative");
+
+    assert!(reports.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_historical_order_status_reports_fails_closed_on_unknown_instrument() {
+    let state = TestServerState::default();
+    *state.historical_orders_response.lock().await = Some(json!([
+        {
+            "order": {
+                "coin": "NOCOIN", "side": "B", "limitPx": "100.0", "sz": "0",
+                "oid": 1001u64, "timestamp": 1_700_000_000_000u64, "origSz": "0.10000",
+                "reduceOnly": false, "orderType": "Limit", "tif": "Gtc", "cloid": null,
+            },
+            "status": "filled",
+            "statusTimestamp": 1_700_000_000_001u64,
+        },
+    ]));
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_historical_order_status_reports("0xuser", None)
+        .await
+        .expect_err("unresolvable historical-order coin must fail the snapshot");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Historical-order snapshot incomplete")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_by_client_order_id_fails_closed_on_unknown_instrument() {
+    let coid = ClientOrderId::new("O-20240101-000002");
+    let cloid_hex = Cloid::from_client_order_id(coid).to_hex();
+
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "NOCOIN",
+        "side": "B",
+        "limitPx": "100.0",
+        "sz": "1.0",
+        "oid": 77778,
+        "timestamp": 1700000000000u64,
+        "origSz": "1.0",
+        "cloid": cloid_hex
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_order_status_report_by_client_order_id("0xuser", &coid)
+        .await
+        .expect_err("matched row with unresolvable instrument must error, not report not-found");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Failed to resolve instrument")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_by_client_order_id_fails_closed_on_malformed_response() {
+    let state = TestServerState::default();
+    // Rows missing required fields cannot ground a "not found" conclusion
+    *state.frontend_open_orders_response.lock().await = Some(json!([{ "coin": "BTC" }]));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let coid = ClientOrderId::new("O-20240101-000003");
+    let err = client
+        .request_order_status_report_by_client_order_id("0xuser", &coid)
+        .await
+        .expect_err("undecodable open-orders response must error, not report not-found");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Failed to parse open orders response")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_fails_closed_on_unknown_instrument_open_order() {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await =
+        Some(json!([open_order("NOCOIN", 12345, "100.0", "1.00000"),]));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_order_status_report("0xuser", 12345)
+        .await
+        .expect_err(
+            "matched open row with unresolvable instrument must error, not report not-found",
+        );
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Failed to resolve instrument")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_fails_closed_on_unknown_instrument_closed_order() {
+    let state = TestServerState::default();
+    // frontendOpenOrders empty, orderStatus resolves the oid with an unknown coin
+    *state.order_status_response.lock().await = Some(json!({
+        "status": "order",
+        "order": {
+            "order": {
+                "coin": "NOCOIN",
+                "side": "B",
+                "limitPx": "95000.0",
+                "sz": "0.0",
+                "oid": 55555,
+                "timestamp": 1700000000000u64,
+                "origSz": "0.1"
+            },
+            "status": "filled",
+            "statusTimestamp": 1700001000000u64
+        }
+    }));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_order_status_report("0xuser", 55555)
+        .await
+        .expect_err("closed order with unresolvable instrument must error, not report not-found");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Failed to resolve instrument")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_fails_closed_on_unconvertible_open_order() {
+    // sz exceeds origSz: the derived filled quantity is negative and cannot convert
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "BTC",
+        "side": "B",
+        "limitPx": "95000.0",
+        "sz": "2.0",
+        "oid": 12345,
+        "timestamp": 1700000000000u64,
+        "origSz": "1.0"
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_order_status_report("0xuser", 12345)
+        .await
+        .expect_err("matched row that cannot convert must error, not report not-found");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Failed to parse order status report for oid 12345")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_by_client_order_id_fails_closed_on_unconvertible_row() {
+    let coid = ClientOrderId::new("O-20240101-000004");
+    let cloid_hex = Cloid::from_client_order_id(coid).to_hex();
+
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "BTC",
+        "side": "B",
+        "limitPx": "95000.0",
+        "sz": "2.0",
+        "oid": 77779,
+        "timestamp": 1700000000000u64,
+        "origSz": "1.0",
+        "cloid": cloid_hex
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_order_status_report_by_client_order_id("0xuser", &coid)
+        .await
+        .expect_err("matched row that cannot convert must error, not report not-found");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Failed to parse order status report for cloid")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_fails_closed_on_unconvertible_closed_order() {
+    // sz exceeds origSz: the derived filled quantity is negative and cannot convert
+    let state = TestServerState::default();
+    *state.order_status_response.lock().await = Some(json!({
+        "status": "order",
+        "order": {
+            "order": {
+                "coin": "BTC",
+                "side": "B",
+                "limitPx": "95000.0",
+                "sz": "0.2",
+                "oid": 55555,
+                "timestamp": 1700000000000u64,
+                "origSz": "0.1"
+            },
+            "status": "filled",
+            "statusTimestamp": 1700001000000u64
+        }
+    }));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_order_status_report("0xuser", 55555)
+        .await
+        .expect_err("closed order that cannot convert must error, not report not-found");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Failed to parse order status report for oid 55555")),
+        "unexpected error: {err}",
+    );
 }

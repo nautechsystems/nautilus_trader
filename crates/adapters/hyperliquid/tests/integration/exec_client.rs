@@ -7148,6 +7148,11 @@ async fn test_generate_mass_status_queries_each_active_builder_dex_once(
     let positions = mass.position_reports();
 
     assert!(
+        mass.reports_complete(),
+        "below-cap responses with decodable rows prove coverage",
+    );
+
+    assert!(
         mass.order_reports()
             .contains_key(&VenueOrderId::from("9001"))
     );
@@ -7230,9 +7235,22 @@ async fn test_generate_mass_status_falls_back_for_saturated_history(
     let requests = state.info_requests.lock().await.clone();
 
     assert!(
+        !mass.reports_complete(),
+        "a venue-capped history response cannot prove coverage",
+    );
+    assert!(
         mass.order_reports()
             .contains_key(&VenueOrderId::from("9999"))
     );
+
+    if !saturate_historical_orders {
+        assert_eq!(
+            mass.fill_reports().len(),
+            2_000,
+            "valid rows are preserved when the snapshot is marked incomplete",
+        );
+    }
+
     assert!(
         mass.position_reports()
             .contains_key(&InstrumentId::from("old:LIVE-USD-PERP.HYPERLIQUID"))
@@ -7425,6 +7443,257 @@ async fn test_generate_mass_status_reconstructs_filled_order_for_retained_fill()
     assert_eq!(stop_report.order_type, OrderType::StopMarket);
     assert_eq!(stop_report.trigger_price, Some(Price::from("49950.0")));
     assert_eq!(stop_report.price, None);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::unbounded(None)]
+#[case::bounded(Some(60u64))]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_mass_status_clean_empty_snapshot_is_authoritative(
+    #[case] lookback_mins: Option<u64>,
+) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let before = nautilus_core::time::get_atomic_clock_realtime()
+        .get_time_ns()
+        .as_u64();
+    let mass = client
+        .generate_mass_status(lookback_mins)
+        .await
+        .unwrap()
+        .expect("mass status payload");
+    let after = nautilus_core::time::get_atomic_clock_realtime()
+        .get_time_ns()
+        .as_u64();
+
+    assert!(mass.order_reports().is_empty());
+    assert!(mass.fill_reports().is_empty());
+    assert!(mass.position_reports().is_empty());
+    assert!(
+        mass.reports_complete(),
+        "a fully decoded empty snapshot is authoritative",
+    );
+
+    match lookback_mins {
+        None => assert!(
+            mass.lookback_start().is_none(),
+            "no lookback requested, no report window",
+        ),
+        Some(mins) => {
+            let lookback_ns = mins * 60 * 1_000_000_000;
+            let lookback_start = mass
+                .lookback_start()
+                .expect("report window must follow the requested lookback")
+                .as_u64();
+            assert!(lookback_start >= before - lookback_ns);
+            assert!(lookback_start <= after - lookback_ns);
+        }
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_mass_status_marks_unusable_fill_row_incomplete() {
+    // Isolates the fill-sweep completeness wire: below-cap fills, everything
+    // else clean, one fill row unresolvable
+    let state = TestServerState::default();
+    *state.user_fills_response.lock().await = Some(json!([
+        user_fill("BTC", 220_001),
+        user_fill("NOCOIN", 220_002),
+    ]));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let mass = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status payload");
+
+    assert!(
+        mass.fill_reports()
+            .contains_key(&VenueOrderId::from("220001")),
+        "the decodable fill is preserved",
+    );
+    assert!(
+        !mass.reports_complete(),
+        "an unresolvable fill row must mark the snapshot incomplete",
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_mass_status_ignores_historical_rows_without_retained_fills() {
+    // Historical rows feed the snapshot only through retained fills; with none,
+    // an unusable historical row is not snapshot coverage and must not flag it
+    let state = TestServerState::default();
+    *state.historical_orders_response.lock().await =
+        Some(json!([historical_order("NOCOIN", 230_002),]));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let mass = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status payload");
+
+    assert!(mass.order_reports().is_empty());
+    assert!(mass.fill_reports().is_empty());
+    assert!(mass.position_reports().is_empty());
+    assert!(
+        mass.reports_complete(),
+        "unconsumed historical rows are not snapshot coverage",
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_mass_status_preserves_valid_rows_when_rows_unusable() {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([
+        frontend_order("BTC", 200_001),
+        frontend_order("NOCOIN", 200_002),
+    ]));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let mass = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status payload");
+
+    assert!(
+        mass.order_reports()
+            .contains_key(&VenueOrderId::from("200001")),
+        "the decodable row is preserved",
+    );
+    assert!(
+        !mass.reports_complete(),
+        "an unresolvable row must mark the snapshot incomplete",
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_mass_status_marks_unusable_historical_row_incomplete() {
+    let state = TestServerState::default();
+    *state.user_fills_response.lock().await = Some(json!([user_fill("BTC", 210_001)]));
+    *state.historical_orders_response.lock().await = Some(json!([
+        historical_order("BTC", 210_001),
+        historical_order("NOCOIN", 210_002),
+    ]));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let mass = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status payload");
+
+    assert!(
+        mass.fill_reports()
+            .contains_key(&VenueOrderId::from("210001")),
+        "the decodable fill and its historical order are preserved",
+    );
+    assert!(
+        !mass.reports_complete(),
+        "an unresolvable historical row must mark the snapshot incomplete",
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_mass_status_marks_unusable_spot_balance_incomplete() {
+    let state = TestServerState::default();
+    *state.spot_clearinghouse_response.lock().await = Some(json!({
+        "balances": [
+            { "coin": "NOCOIN", "token": 999, "total": "10", "hold": "0", "entryNtl": "0" },
+        ],
+    }));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let mass = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status payload");
+
+    assert!(mass.order_reports().is_empty());
+    assert!(mass.fill_reports().is_empty());
+    assert!(mass.position_reports().is_empty());
+    assert!(
+        !mass.reports_complete(),
+        "an empty snapshot with an unresolvable spot balance is incomplete, not authoritatively clean",
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_order_status_report_fails_closed_when_cloid_row_unusable() {
+    // The cloid probe matches a venue row whose instrument cannot be resolved;
+    // with no venue_order_id or cached oid to fall back on, the lookup must
+    // fail closed rather than convert the failure into "not found"
+    let coid = ClientOrderId::new("O-20240101-000010");
+    let cloid_hex = Cloid::from_client_order_id(coid).to_hex();
+
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "NOCOIN",
+        "side": "B",
+        "limitPx": "100.0",
+        "sz": "1.0",
+        "oid": 333333,
+        "timestamp": 1700000000000u64,
+        "origSz": "1.0",
+        "cloid": cloid_hex,
+    }]));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let cmd = make_status_report_cmd(Some(coid), None);
+    let err = client
+        .generate_order_status_report(&cmd)
+        .await
+        .expect_err("a matched but unusable venue row must fail closed");
+
+    assert!(
+        format!("{err:#}").contains("Failed to resolve instrument"),
+        "unexpected error: {err:#}",
+    );
 
     client.disconnect().await.unwrap();
 }

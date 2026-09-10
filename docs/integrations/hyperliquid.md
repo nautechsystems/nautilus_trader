@@ -353,6 +353,14 @@ without wallet activity do not generate startup requests. If either history resp
 dex list so bounded history cannot hide older open orders or positions. Position reconciliation also
 includes spot holdings.
 
+The returned mass status records its own coverage under the [mass-status history contract](../concepts/execution/reconciliation.md#mass-status-history-contract):
+when a lookback is configured, `lookback_start` carries its lower bound (with no configured lookback
+the snapshot is unbounded), and `reports_complete` is `false` when a history response reached its
+record limit (and may be truncated) or when a venue row needed for the snapshot could not be decoded,
+resolved to an instrument, or converted into a report. Valid rows remain in the report set. A
+snapshot whose venue responses decoded cleanly within the record limits is authoritative, including
+an empty one.
+
 #### Command and direct requests
 
 Outside startup mass status, unfiltered `LiveNode` open-order and position report commands and direct
@@ -360,8 +368,11 @@ Outside startup mass status, unfiltered `LiveNode` open-order and position repor
 cached perpetual instruments. For perpetual filters, a request filtered to a HIP-3 instrument derives
 the builder dex from the symbol's dex prefix and queries only that dex. A standard perpetual filter
 queries only the default dex. Spot and outcome position filters keep their existing spot-only
-routing. If any required request fails, reconciliation returns an error rather than a partial
-snapshot.
+routing. If any required request fails, or a venue row cannot be decoded, resolved to an instrument,
+or converted into a report, the request returns an error rather than a partial snapshot; fill and
+historical-order report requests fail the same way. A targeted order-status lookup on the HTTP client
+that matches a venue row it cannot use returns an error instead of reporting the order as missing,
+and the `GenerateOrderStatusReport` command does the same once no venue order ID fallback remains.
 
 ### Differences from standard perpetuals
 
