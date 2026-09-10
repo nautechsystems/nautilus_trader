@@ -1166,7 +1166,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_orderbook_depth10_skips_zero_sizes_caps_and_zero_fills() {
+    fn test_parse_orderbook_depth10_skips_zero_sizes_and_caps_levels() {
         let bids = Value::Array(
             (0..12)
                 .map(|i| {
@@ -1186,22 +1186,33 @@ mod tests {
             parse_orderbook_depth10(&msg, PRICE_PRECISION, SIZE_PRECISION, UnixNanos::from(123))
                 .unwrap();
 
+        let expected_bids = [
+            "3500", "3498", "3497", "3496", "3495", "3494", "3493", "3492", "3491", "3490",
+        ];
+        let expected_asks = [("3501", "2"), ("3503", "3")];
+
         assert_eq!(depth.instrument_id, InstrumentId::from("ETH-PERP.DERIVE"));
-        assert_eq!(depth.bids[0].price, price("3500"));
-        assert_eq!(depth.bids[1].price, price("3498"));
-        assert_eq!(depth.bids[9].price, price("3490"));
-        assert_eq!(depth.bid_counts[0], 1);
-        assert_eq!(depth.bid_counts[9], 1);
-        assert_eq!(depth.asks[0].price, price("3501"));
-        assert_eq!(depth.asks[1].price, price("3503"));
-        assert_eq!(depth.asks[2].price, Price::zero(PRICE_PRECISION));
-        assert_eq!(depth.asks[2].size, Quantity::zero(SIZE_PRECISION));
-        assert_eq!(depth.ask_counts[0], 1);
-        assert_eq!(depth.ask_counts[1], 1);
-        assert_eq!(depth.ask_counts[2], 0);
+        assert_eq!(depth.bids.len(), expected_bids.len());
+        assert_eq!(depth.asks.len(), expected_asks.len());
+        assert_eq!(depth.bid_counts.as_slice(), &[1; 10]);
+        assert_eq!(depth.ask_counts.as_slice(), &[1; 2]);
+        for (order, expected_price) in depth.bids.iter().zip(expected_bids) {
+            assert_eq!(order.side, Some(OrderSide::Buy));
+            assert_eq!(order.price, price(expected_price));
+            assert_eq!(order.size, quantity("1"));
+            assert_eq!(order.order_id, 0);
+        }
+
+        for (order, (expected_price, size)) in depth.asks.iter().zip(expected_asks) {
+            assert_eq!(order.side, Some(OrderSide::Sell));
+            assert_eq!(order.price, price(expected_price));
+            assert_eq!(order.size, quantity(size));
+            assert_eq!(order.order_id, 0);
+        }
         assert_eq!(depth.sequence, 1_700_000_000_000);
         assert_eq!(depth.flags, RecordFlag::F_SNAPSHOT as u8);
         assert_eq!(depth.ts_event, UnixNanos::from(1_700_000_000_000_000_000));
+        assert_eq!(depth.ts_init, UnixNanos::from(123));
     }
 
     #[rstest]

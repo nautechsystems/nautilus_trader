@@ -1016,18 +1016,18 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
             depths[0].instrument_id,
             InstrumentId::from("BTCUSDT.BINANCE")
         );
-        assert_eq!(depths[0].bids.len(), 10);
+        assert_eq!(depths[0].bids.len(), 5);
         assert_eq!(depths[0].bids[0].price, Price::from("11657.07"));
         assert_eq!(depths[0].bids[0].size, Quantity::from("10.896"));
         assert_eq!(depths[0].bids[0].side, OrderSide::Buy.into());
         assert_eq!(depths[0].bids[0].order_id, 0);
-        assert_eq!(depths[0].asks.len(), 10);
+        assert_eq!(depths[0].asks.len(), 5);
         assert_eq!(depths[0].asks[0].price, Price::from("11657.08"));
         assert_eq!(depths[0].asks[0].size, Quantity::from("1.714"));
         assert_eq!(depths[0].asks[0].side, OrderSide::Sell.into());
         assert_eq!(depths[0].asks[0].order_id, 0);
-        assert_eq!(depths[0].bid_counts[0], 1);
-        assert_eq!(depths[0].ask_counts[0], 1);
+        assert_eq!(depths[0].bid_counts.as_slice(), &[1; 5]);
+        assert_eq!(depths[0].ask_counts.as_slice(), &[1; 5]);
         // F_SNAPSHOT (32) | F_LAST (128) = 160
         assert_eq!(
             depths[0].flags,
@@ -1480,10 +1480,10 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
 
         let first = &depths[0];
         assert_eq!(first.instrument_id.to_string(), "BTCUSDT.BINANCE");
-        assert_eq!(first.bids.len(), 10);
-        assert_eq!(first.asks.len(), 10);
+        assert_eq!(first.bids.len(), 5);
+        assert_eq!(first.asks.len(), 5);
 
-        // Check all bid levels (first 5 from data, rest empty)
+        // Check all bid levels (5 from data)
         assert_eq!(first.bids[0].price, Price::from("11657.07"));
         assert_eq!(first.bids[0].size, Quantity::from("10.896"));
         assert_eq!(first.bids[0].side, OrderSide::Buy.into());
@@ -1504,14 +1504,7 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         assert_eq!(first.bids[4].size, Quantity::from("0.111"));
         assert_eq!(first.bids[4].side, OrderSide::Buy.into());
 
-        // Empty levels
-        for i in 5..10 {
-            assert_eq!(first.bids[i].price.raw(), 0);
-            assert_eq!(first.bids[i].size.raw(), 0);
-            assert_eq!(first.bids[i].side, None);
-        }
-
-        // Check all ask levels (first 5 from data, rest empty)
+        // Check all ask levels (5 from data)
         assert_eq!(first.asks[0].price, Price::from("11657.08"));
         assert_eq!(first.asks[0].size, Quantity::from("1.714"));
         assert_eq!(first.asks[0].side, OrderSide::Sell.into());
@@ -1532,12 +1525,6 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         assert_eq!(first.asks[4].size, Quantity::from("0.918"));
         assert_eq!(first.asks[4].side, OrderSide::Sell.into());
 
-        // Empty levels
-        for i in 5..10 {
-            assert_eq!(first.asks[i].price.raw(), 0);
-            assert_eq!(first.asks[i].size.raw(), 0);
-            assert_eq!(first.asks[i].side, None);
-        }
 
         // Logical checks: bid prices should decrease
         for i in 1..5 {
@@ -1565,15 +1552,10 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
             "Best ask should be greater than best bid"
         );
 
-        // Check counts
-        for i in 0..5 {
-            assert_eq!(first.bid_counts[i], 1);
-            assert_eq!(first.ask_counts[i], 1);
-        }
-
-        for i in 5..10 {
-            assert_eq!(first.bid_counts[i], 0);
-            assert_eq!(first.ask_counts[i], 0);
+        assert_eq!(first.bid_counts.as_slice(), &[1; 5]);
+        assert_eq!(first.ask_counts.as_slice(), &[1; 5]);
+        for order in first.bids.iter().chain(&first.asks) {
+            assert_eq!(order.order_id, 0);
         }
 
         // Check metadata - F_SNAPSHOT (32) | F_LAST (128) = 160
