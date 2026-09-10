@@ -1361,16 +1361,25 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::spot::sbe::spot::SBE_SCHEMA_VERSION;
-
-    /// Schema v1 block length for new order full response (template 302).
-    const NEW_ORDER_FULL_BLOCK_LENGTH: usize = 153;
-
-    /// Schema v1 block length for cancel order response (template 305).
-    const CANCEL_ORDER_BLOCK_LENGTH: usize = 137;
-
-    /// Schema v1 block length for order response / query (template 304).
-    const ORDER_BLOCK_LENGTH: usize = 153;
+    use crate::spot::sbe::spot::{
+        SBE_SCHEMA_VERSION, WriteBuf,
+        cancel_order_response_codec::CancelOrderResponseEncoder,
+        expiry_reason::ExpiryReason,
+        floor::Floor,
+        match_type::MatchType,
+        new_order_full_response_codec::{
+            NewOrderFullResponseEncoder,
+            encoder::{FillsEncoder, PreventedMatchesEncoder},
+        },
+        order_capacity::OrderCapacity,
+        order_response_codec::OrderResponseEncoder,
+        order_side::OrderSide,
+        order_status::OrderStatus,
+        order_type::OrderType,
+        orders_response_codec::{OrdersResponseEncoder, encoder::OrdersEncoder},
+        self_trade_prevention_mode::SelfTradePreventionMode,
+        time_in_force::TimeInForce,
+    };
 
     fn create_header(block_length: u16, template_id: u16, schema_id: u16, version: u16) -> [u8; 8] {
         let mut buf = [0u8; 8];
@@ -1676,179 +1685,175 @@ mod tests {
         buf.extend_from_slice(s.as_bytes());
     }
 
-    /// Builds an `orderResponse` SBE buffer with the supplied `block_length`.
-    /// Pads the fixed block with zeros up to `block_length - 1`, then writes
-    /// `trailing_byte` as the final byte of the fixed block. For pre-v4
-    /// layouts (`block_length <= 153`) the trailer is zero-padding only and
-    /// `trailing_byte` is ignored.
-    fn build_order_response_buffer(block_length: u16, trailing_byte: u8) -> Vec<u8> {
-        let header = create_header(
-            block_length,
-            ORDER_TEMPLATE_ID,
-            SBE_SCHEMA_ID,
-            SBE_SCHEMA_VERSION,
-        );
+    fn resize_fixed_block(buf: &mut Vec<u8>, block_length: usize) {
+        let current = usize::from(u16::from_le_bytes([buf[0], buf[1]]));
+        let block_end = HEADER_LENGTH + current;
+        let new_end = HEADER_LENGTH + block_length;
 
-        let mut buf = Vec::new();
-        buf.extend_from_slice(&header);
-
-        buf.push((-8i8) as u8); // price_exponent
-        buf.push((-8i8) as u8); // qty_exponent
-        buf.extend_from_slice(&12345i64.to_le_bytes()); // order_id
-        buf.extend_from_slice(&i64::MIN.to_le_bytes()); // order_list_id (None)
-        buf.extend_from_slice(&100_000_000_000i64.to_le_bytes()); // price_mantissa
-        buf.extend_from_slice(&10_000_000i64.to_le_bytes()); // orig_qty
-        buf.extend_from_slice(&5_000_000i64.to_le_bytes()); // executed_qty
-        buf.extend_from_slice(&500_000_000i64.to_le_bytes()); // cumulative_quote_qty
-        buf.push(1); // status (NEW)
-        buf.push(1); // time_in_force (GTC)
-        buf.push(1); // order_type (LIMIT)
-        buf.push(1); // side (BUY)
-        buf.extend_from_slice(&i64::MIN.to_le_bytes()); // stop_price (None)
-        buf.extend_from_slice(&i64::MIN.to_le_bytes()); // iceberg_qty (None)
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // time
-        buf.extend_from_slice(&1734300001000i64.to_le_bytes()); // update_time
-        buf.push(1); // is_working (true)
-        buf.extend_from_slice(&1734300000500i64.to_le_bytes()); // working_time
-        buf.extend_from_slice(&0i64.to_le_bytes()); // orig_quote_order_qty
-        buf.push(0); // self_trade_prevention_mode
-
-        let block_end = HEADER_LENGTH + block_length as usize;
-        // Pad up to the last byte of the fixed block, then write the trailing byte.
-        while buf.len() < block_end.saturating_sub(1) {
-            buf.push(0);
+        if new_end < block_end {
+            buf.drain(new_end..block_end);
+        } else {
+            buf.splice(block_end..block_end, vec![0u8; new_end - block_end]);
         }
 
-        if buf.len() < block_end {
-            buf.push(trailing_byte);
-        }
+        buf[0..2].copy_from_slice(&(block_length as u16).to_le_bytes());
+    }
 
-        write_var_string(&mut buf, "BTCUSDT");
-        write_var_string(&mut buf, "my-order-123");
-        buf
+    fn build_order_response_buffer(expiry_reason: ExpiryReason) -> Vec<u8> {
+        let mut bytes = vec![0u8; 256];
+        let enc = OrderResponseEncoder::default().wrap(WriteBuf::new(&mut bytes), HEADER_LENGTH);
+        let mut header = enc.header(0);
+        let mut enc = header.parent().unwrap();
+        enc.price_exponent(-2);
+        enc.qty_exponent(-4);
+        enc.order_id(12345);
+        enc.order_list_id(99);
+        enc.price(12_345);
+        enc.orig_qty(25_000);
+        enc.executed_qty(10_000);
+        enc.cummulative_quote_qty(123_450_000);
+        enc.status(OrderStatus::PartiallyFilled);
+        enc.time_in_force(TimeInForce::Gtc);
+        enc.order_type(OrderType::StopLossLimit);
+        enc.side(OrderSide::Sell);
+        enc.stop_price(12_000);
+        enc.trailing_delta(100);
+        enc.trailing_time(1_700_000_000_000_100);
+        enc.iceberg_qty(5_000);
+        enc.time(1_700_000_000_000_000);
+        enc.update_time(1_700_000_000_000_200);
+        enc.is_working(BoolEnum::True);
+        enc.working_time(1_700_000_000_000_300);
+        enc.orig_quote_order_qty(7_000);
+        enc.strategy_id(42);
+        enc.strategy_type(7);
+        enc.order_capacity(OrderCapacity::Principal);
+        enc.working_floor(Floor::Sor);
+        enc.self_trade_prevention_mode(SelfTradePreventionMode::ExpireMaker);
+        enc.prevented_match_id(77);
+        enc.prevented_quantity(3);
+        enc.used_sor(BoolEnum::True);
+        enc.expiry_reason(expiry_reason);
+        enc.symbol("BTCUSDT");
+        enc.client_order_id("my-order-123");
+        let len = HEADER_LENGTH + enc.encoded_length();
+        bytes.truncate(len);
+        bytes
+    }
+
+    fn expected_order_response(expiry_reason: Option<u8>) -> BinanceOrderResponse {
+        BinanceOrderResponse {
+            price_exponent: -2,
+            qty_exponent: -4,
+            order_id: 12345,
+            order_list_id: Some(99),
+            price_mantissa: 12_345,
+            orig_qty_mantissa: 25_000,
+            executed_qty_mantissa: 10_000,
+            cummulative_quote_qty_mantissa: 123_450_000,
+            status: OrderStatus::PartiallyFilled,
+            time_in_force: TimeInForce::Gtc,
+            order_type: OrderType::StopLossLimit,
+            side: OrderSide::Sell,
+            stop_price_mantissa: Some(12_000),
+            iceberg_qty_mantissa: Some(5_000),
+            time: 1_700_000_000_000_000,
+            update_time: 1_700_000_000_000_200,
+            is_working: true,
+            working_time: Some(1_700_000_000_000_300),
+            orig_quote_order_qty_mantissa: 7_000,
+            self_trade_prevention_mode: SelfTradePreventionMode::ExpireMaker,
+            client_order_id: "my-order-123".to_string(),
+            symbol: "BTCUSDT".to_string(),
+            expiry_reason,
+        }
     }
 
     #[rstest]
-    #[case::pre_v4_no_expiry_reason(153, 0x00, None)]
-    #[case::v4_null_sentinel(163, 0xFF, None)]
-    #[case::v4_captures_value(163, 0x05, Some(0x05))]
-    fn test_decode_order_expiry_reason(
-        #[case] block_length: u16,
-        #[case] trailing_byte: u8,
+    #[case::pre_v4_no_expiry_reason(162, ExpiryReason::NullVal, None)]
+    #[case::v4_null_sentinel(163, ExpiryReason::NullVal, None)]
+    #[case::v4_captures_value(163, ExpiryReason::UnfilledIocQuantityExpired, Some(0x05))]
+    #[case::future_block_length(167, ExpiryReason::UnfilledIocQuantityExpired, Some(0x05))]
+    fn test_decode_order_matches_codec(
+        #[case] block_length: usize,
+        #[case] expiry_reason: ExpiryReason,
         #[case] expected: Option<u8>,
     ) {
-        let buf = build_order_response_buffer(block_length, trailing_byte);
+        let mut buf = build_order_response_buffer(expiry_reason);
+        resize_fixed_block(&mut buf, block_length);
+
         let order = decode_order(&buf).unwrap();
-        assert_eq!(order.expiry_reason, expected);
-        // Symbol and client_order_id parse correctly only when the cursor
-        // advances exactly to the end of the fixed block.
-        assert_eq!(order.symbol, "BTCUSDT");
-        assert_eq!(order.client_order_id, "my-order-123");
+
+        assert_eq!(order, expected_order_response(expected));
     }
 
     #[rstest]
-    fn test_decode_order_valid() {
-        let header = create_header(
-            ORDER_BLOCK_LENGTH as u16,
-            ORDER_TEMPLATE_ID,
-            SBE_SCHEMA_ID,
-            SBE_SCHEMA_VERSION,
+    fn test_decode_order_rejects_short_block() {
+        let mut buf = build_order_response_buffer(ExpiryReason::NullVal);
+        resize_fixed_block(&mut buf, 161);
+
+        let error = decode_order(&buf).unwrap_err();
+
+        assert_eq!(
+            error,
+            SbeDecodeError::InvalidBlockLength {
+                expected: 162,
+                actual: 161,
+            }
         );
+    }
 
-        let mut buf = Vec::new();
-        buf.extend_from_slice(&header);
+    fn build_orders_response_buffer(orders: &[(i64, &str)]) -> Vec<u8> {
+        let mut bytes = vec![0u8; 512];
+        let enc = OrdersResponseEncoder::default().wrap(WriteBuf::new(&mut bytes), HEADER_LENGTH);
+        let mut header = enc.header(0);
+        let enc = header.parent().unwrap();
+        let mut group = enc.orders_encoder(orders.len() as u32, OrdersEncoder::default());
 
-        // Fixed block (153 bytes)
-        buf.push((-8i8) as u8); // price_exponent
-        buf.push((-8i8) as u8); // qty_exponent
-        buf.extend_from_slice(&12345i64.to_le_bytes()); // order_id
-        buf.extend_from_slice(&i64::MIN.to_le_bytes()); // order_list_id (None)
-        buf.extend_from_slice(&100_000_000_000i64.to_le_bytes()); // price_mantissa
-        buf.extend_from_slice(&10_000_000i64.to_le_bytes()); // orig_qty_mantissa
-        buf.extend_from_slice(&5_000_000i64.to_le_bytes()); // executed_qty_mantissa
-        buf.extend_from_slice(&500_000_000i64.to_le_bytes()); // cummulative_quote_qty_mantissa
-        buf.push(1); // status (NEW)
-        buf.push(1); // time_in_force (GTC)
-        buf.push(1); // order_type (LIMIT)
-        buf.push(1); // side (BUY)
-        buf.extend_from_slice(&i64::MIN.to_le_bytes()); // stop_price (None)
-        buf.extend_from_slice(&i64::MIN.to_le_bytes()); // iceberg_qty (None)
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // time
-        buf.extend_from_slice(&1734300001000i64.to_le_bytes()); // update_time
-        buf.push(1); // is_working (true)
-        buf.extend_from_slice(&1734300000500i64.to_le_bytes()); // working_time
-        buf.extend_from_slice(&0i64.to_le_bytes()); // orig_quote_order_qty_mantissa
-        buf.push(0); // self_trade_prevention_mode
-
-        // Pad to 153 bytes
-        while buf.len() < 8 + ORDER_BLOCK_LENGTH {
-            buf.push(0);
+        for (order_id, client_order_id) in orders {
+            group.advance().unwrap();
+            group.order_id(*order_id);
+            group.iceberg_qty(5_000);
+            group.time(order_id * 10);
+            group.update_time(order_id * 10 + 1);
+            group.is_working(BoolEnum::True);
+            group.working_time(order_id * 10 + 2);
+            group.self_trade_prevention_mode(SelfTradePreventionMode::ExpireTaker);
+            group.expiry_reason(ExpiryReason::NullVal);
+            group.symbol("BTCUSDT");
+            group.client_order_id(client_order_id);
         }
 
-        write_var_string(&mut buf, "BTCUSDT");
-        write_var_string(&mut buf, "my-order-123");
-
-        let order = decode_order(&buf).unwrap();
-
-        assert_eq!(order.order_id, 12345);
-        assert!(order.order_list_id.is_none());
-        assert_eq!(order.price_exponent, -8);
-        assert_eq!(order.price_mantissa, 100_000_000_000);
-        assert!(order.stop_price_mantissa.is_none());
-        assert!(order.iceberg_qty_mantissa.is_none());
-        assert!(order.is_working);
-        assert_eq!(order.working_time, Some(1734300000500));
-        assert_eq!(order.symbol, "BTCUSDT");
-        assert_eq!(order.client_order_id, "my-order-123");
+        let enc = group.parent().unwrap();
+        let len = HEADER_LENGTH + enc.encoded_length();
+        bytes.truncate(len);
+        bytes
     }
 
     #[rstest]
-    fn test_decode_order_future_block_length() {
-        // Verify the dynamic skip handles a future block_length larger than v1.
-        const FUTURE_BLOCK_LENGTH: u16 = ORDER_BLOCK_LENGTH as u16 + 4;
-        let header = create_header(
-            FUTURE_BLOCK_LENGTH,
-            ORDER_TEMPLATE_ID,
-            SBE_SCHEMA_ID,
-            SBE_SCHEMA_VERSION,
-        );
+    fn test_decode_orders_matches_codec() {
+        let expected = [(111, "order-1"), (222, "order-2")];
+        let buf = build_orders_response_buffer(&expected);
 
-        let mut buf = Vec::new();
-        buf.extend_from_slice(&header);
+        let orders = decode_orders(&buf).unwrap();
 
-        buf.push((-8i8) as u8); // price_exponent
-        buf.push((-8i8) as u8); // qty_exponent
-        buf.extend_from_slice(&12345i64.to_le_bytes()); // order_id
-        buf.extend_from_slice(&i64::MIN.to_le_bytes()); // order_list_id (None)
-        buf.extend_from_slice(&100_000_000_000i64.to_le_bytes()); // price_mantissa
-        buf.extend_from_slice(&10_000_000i64.to_le_bytes()); // orig_qty
-        buf.extend_from_slice(&5_000_000i64.to_le_bytes()); // executed_qty
-        buf.extend_from_slice(&500_000_000i64.to_le_bytes()); // cumulative_quote_qty
-        buf.push(1); // status (NEW)
-        buf.push(1); // time_in_force (GTC)
-        buf.push(1); // order_type (LIMIT)
-        buf.push(1); // side (BUY)
-        buf.extend_from_slice(&i64::MIN.to_le_bytes()); // stop_price (None)
-        buf.extend_from_slice(&i64::MIN.to_le_bytes()); // iceberg_qty (None)
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // time
-        buf.extend_from_slice(&1734300001000i64.to_le_bytes()); // update_time
-        buf.push(1); // is_working (true)
-        buf.extend_from_slice(&1734300000500i64.to_le_bytes()); // working_time
-        buf.extend_from_slice(&0i64.to_le_bytes()); // orig_quote_order_qty
-        buf.push(0); // self_trade_prevention_mode
+        assert_eq!(orders.len(), 2);
 
-        while buf.len() < 8 + FUTURE_BLOCK_LENGTH as usize {
-            buf.push(0); // Pad for hypothetical future fields
+        for (order, (order_id, client_order_id)) in orders.iter().zip(expected) {
+            assert_eq!(order.order_id, order_id);
+            assert_eq!(order.iceberg_qty_mantissa, Some(5_000));
+            assert_eq!(order.time, order_id * 10);
+            assert_eq!(order.update_time, order_id * 10 + 1);
+            assert!(order.is_working);
+            assert_eq!(order.working_time, Some(order_id * 10 + 2));
+            assert_eq!(
+                order.self_trade_prevention_mode,
+                SelfTradePreventionMode::ExpireTaker
+            );
+            assert_eq!(order.expiry_reason, None);
+            assert_eq!(order.symbol, "BTCUSDT");
+            assert_eq!(order.client_order_id, client_order_id);
         }
-
-        write_var_string(&mut buf, "ETHUSDT");
-        write_var_string(&mut buf, "order-future");
-
-        let order = decode_order(&buf).unwrap();
-
-        assert_eq!(order.order_id, 12345);
-        assert_eq!(order.symbol, "ETHUSDT");
-        assert_eq!(order.client_order_id, "order-future");
     }
 
     #[rstest]
@@ -2058,90 +2063,22 @@ mod tests {
     }
 
     #[rstest]
-    fn test_decode_cancel_order_valid() {
-        let header = create_header(
-            CANCEL_ORDER_BLOCK_LENGTH as u16,
-            CANCEL_ORDER_TEMPLATE_ID,
-            SBE_SCHEMA_ID,
-            SBE_SCHEMA_VERSION,
-        );
-
-        let mut buf = Vec::new();
-        buf.extend_from_slice(&header);
-
-        buf.push((-8i8) as u8); // price_exponent
-        buf.push((-8i8) as u8); // qty_exponent
-        buf.extend_from_slice(&99999i64.to_le_bytes()); // order_id
-        buf.extend_from_slice(&i64::MIN.to_le_bytes()); // order_list_id (None)
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // transact_time
-        buf.extend_from_slice(&100_000_000_000i64.to_le_bytes()); // price_mantissa
-        buf.extend_from_slice(&10_000_000i64.to_le_bytes()); // orig_qty
-        buf.extend_from_slice(&10_000_000i64.to_le_bytes()); // executed_qty
-        buf.extend_from_slice(&1_000_000_000i64.to_le_bytes()); // cummulative_quote_qty
-        buf.push(4); // status (CANCELED)
-        buf.push(1); // time_in_force
-        buf.push(1); // order_type
-        buf.push(1); // side
-        buf.push(0); // self_trade_prevention_mode
-
-        // Pad to block length
-        while buf.len() < 8 + CANCEL_ORDER_BLOCK_LENGTH {
-            buf.push(0);
-        }
-
-        write_var_string(&mut buf, "BTCUSDT");
-        write_var_string(&mut buf, "orig-client-id");
-        write_var_string(&mut buf, "new-client-id");
+    #[case::current(137)]
+    #[case::future_block_length(141)]
+    fn test_decode_cancel_order_matches_codec(#[case] block_length: usize) {
+        let mut buf = create_cancel_order_response_buffer(99999, "BTCUSDT", "orig-id", "new-id");
+        resize_fixed_block(&mut buf, block_length);
 
         let cancel = decode_cancel_order(&buf).unwrap();
 
         assert_eq!(cancel.order_id, 99999);
         assert!(cancel.order_list_id.is_none());
-        assert_eq!(cancel.symbol, "BTCUSDT");
-        assert_eq!(cancel.orig_client_order_id, "orig-client-id");
-        assert_eq!(cancel.client_order_id, "new-client-id");
-    }
-
-    #[rstest]
-    fn test_decode_cancel_order_future_block_length() {
-        // Verify the dynamic skip handles a future block_length larger than v1.
-        const FUTURE_BLOCK_LENGTH: u16 = CANCEL_ORDER_BLOCK_LENGTH as u16 + 4;
-        let header = create_header(
-            FUTURE_BLOCK_LENGTH,
-            CANCEL_ORDER_TEMPLATE_ID,
-            SBE_SCHEMA_ID,
-            SBE_SCHEMA_VERSION,
+        assert_eq!(cancel.transact_time, 1_700_000_000_000_000);
+        assert_eq!(cancel.status, OrderStatus::Canceled);
+        assert_eq!(
+            cancel.self_trade_prevention_mode,
+            SelfTradePreventionMode::ExpireTaker
         );
-
-        let mut buf = Vec::new();
-        buf.extend_from_slice(&header);
-
-        buf.push((-8i8) as u8); // price_exponent
-        buf.push((-8i8) as u8); // qty_exponent
-        buf.extend_from_slice(&99999i64.to_le_bytes()); // order_id
-        buf.extend_from_slice(&i64::MIN.to_le_bytes()); // order_list_id (None)
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // transact_time
-        buf.extend_from_slice(&100_000_000_000i64.to_le_bytes()); // price_mantissa
-        buf.extend_from_slice(&10_000_000i64.to_le_bytes()); // orig_qty
-        buf.extend_from_slice(&10_000_000i64.to_le_bytes()); // executed_qty
-        buf.extend_from_slice(&1_000_000_000i64.to_le_bytes()); // cumulative_quote_qty
-        buf.push(4); // status (CANCELED)
-        buf.push(1); // time_in_force
-        buf.push(1); // order_type
-        buf.push(1); // side
-        buf.push(0); // self_trade_prevention_mode
-
-        while buf.len() < 8 + FUTURE_BLOCK_LENGTH as usize {
-            buf.push(0); // Pad for hypothetical future fields
-        }
-
-        write_var_string(&mut buf, "BTCUSDT");
-        write_var_string(&mut buf, "orig-id");
-        write_var_string(&mut buf, "new-id");
-
-        let cancel = decode_cancel_order(&buf).unwrap();
-
-        assert_eq!(cancel.order_id, 99999);
         assert_eq!(cancel.symbol, "BTCUSDT");
         assert_eq!(cancel.orig_client_order_id, "orig-id");
         assert_eq!(cancel.client_order_id, "new-id");
@@ -2591,53 +2528,66 @@ mod tests {
         assert_eq!(klines.klines[0].num_trades, 100);
     }
 
+    fn build_new_order_full_buffer(expiry_reason: ExpiryReason) -> Vec<u8> {
+        let mut bytes = vec![0u8; 512];
+        let enc =
+            NewOrderFullResponseEncoder::default().wrap(WriteBuf::new(&mut bytes), HEADER_LENGTH);
+        let mut header = enc.header(0);
+        let mut enc = header.parent().unwrap();
+        enc.price_exponent(-2);
+        enc.qty_exponent(-4);
+        enc.order_id(12345);
+        enc.order_list_id(99);
+        enc.transact_time(1_700_000_000_000_000);
+        enc.price(12_345);
+        enc.orig_qty(25_000);
+        enc.executed_qty(10_000);
+        enc.cummulative_quote_qty(123_450_000);
+        enc.status(OrderStatus::PartiallyFilled);
+        enc.time_in_force(TimeInForce::Gtc);
+        enc.order_type(OrderType::Limit);
+        enc.side(OrderSide::Buy);
+        enc.stop_price(12_000);
+        enc.working_time(1_700_000_000_000_500);
+        enc.iceberg_qty(5_000);
+        enc.order_capacity(OrderCapacity::Principal);
+        enc.working_floor(Floor::Sor);
+        enc.self_trade_prevention_mode(SelfTradePreventionMode::ExpireMaker);
+        enc.trade_group_id(1);
+        enc.used_sor(BoolEnum::True);
+        enc.expiry_reason(expiry_reason);
+        let mut fills = enc.fills_encoder(1, FillsEncoder::default());
+        fills.advance().unwrap();
+        fills.commission_exponent(-8);
+        fills.match_type(MatchType::AutoMatch);
+        fills.price(12_345);
+        fills.qty(10_000);
+        fills.commission(10_000);
+        fills.trade_id(555);
+        fills.alloc_id(i64::MIN);
+        fills.commission_asset("USDT");
+        let enc = fills.parent().unwrap();
+        let mut prevented = enc.prevented_matches_encoder(0, PreventedMatchesEncoder::default());
+        let mut enc = prevented.parent().unwrap();
+        enc.symbol("ETHUSDT");
+        enc.client_order_id("client-456");
+        let len = HEADER_LENGTH + enc.encoded_length();
+        bytes.truncate(len);
+        bytes
+    }
+
     #[rstest]
-    fn test_decode_new_order_full_valid() {
-        let header = create_header(
-            NEW_ORDER_FULL_BLOCK_LENGTH as u16,
-            NEW_ORDER_FULL_TEMPLATE_ID,
-            SBE_SCHEMA_ID,
-            SBE_SCHEMA_VERSION,
-        );
-
-        let mut buf = Vec::new();
-        buf.extend_from_slice(&header);
-
-        buf.push((-2i8) as u8); // price_exponent
-        buf.push((-4i8) as u8); // qty_exponent
-        buf.extend_from_slice(&12345i64.to_le_bytes()); // order_id
-        buf.extend_from_slice(&99i64.to_le_bytes()); // order_list_id
-        buf.extend_from_slice(&1_700_000_000_000_000i64.to_le_bytes()); // transact_time
-        buf.extend_from_slice(&12_345i64.to_le_bytes()); // price_mantissa
-        buf.extend_from_slice(&25_000i64.to_le_bytes()); // orig_qty
-        buf.extend_from_slice(&10_000i64.to_le_bytes()); // executed_qty
-        buf.extend_from_slice(&123_450_000i64.to_le_bytes()); // cumulative_quote_qty
-        buf.push(2); // status (PARTIALLY_FILLED)
-        buf.push(1); // time_in_force (GTC)
-        buf.push(1); // order_type (LIMIT)
-        buf.push(1); // side (BUY)
-        buf.extend_from_slice(&12_000i64.to_le_bytes()); // stop_price
-        buf.extend_from_slice(&[0u8; 16]); // trailing_delta + trailing_time
-        buf.extend_from_slice(&1_700_000_000_000_500i64.to_le_bytes()); // working_time
-        buf.extend_from_slice(&[0u8; 23]); // iceberg to used_sor
-        buf.push(0); // self_trade_prevention_mode
-        buf.extend_from_slice(&[0u8; 16]); // trade_group_id + prevented_quantity
-        buf.push((-8i8) as u8); // commission_exponent
-        buf.extend_from_slice(&[0u8; 18]); // rest of block
-
-        buf.extend_from_slice(&create_group_header(FILLS_BLOCK_LENGTH, 1));
-        buf.push((-8i8) as u8); // commission_exponent
-        buf.push(0); // match_type
-        buf.extend_from_slice(&12_345i64.to_le_bytes()); // fill price
-        buf.extend_from_slice(&10_000i64.to_le_bytes()); // fill qty
-        buf.extend_from_slice(&10_000i64.to_le_bytes()); // commission
-        buf.extend_from_slice(&555i64.to_le_bytes()); // trade_id
-        buf.extend_from_slice(&0i64.to_le_bytes()); // alloc_id
-        write_var_string(&mut buf, "USDT");
-
-        buf.extend_from_slice(&create_group_header(0, 0)); // prevented matches
-        write_var_string(&mut buf, "ETHUSDT");
-        write_var_string(&mut buf, "client-123");
+    #[case::pre_v4_no_expiry_reason(153, ExpiryReason::NullVal, None)]
+    #[case::v4_null_sentinel(154, ExpiryReason::NullVal, None)]
+    #[case::v4_captures_value(154, ExpiryReason::UnfilledIocQuantityExpired, Some(0x05))]
+    #[case::future_block_length(158, ExpiryReason::UnfilledIocQuantityExpired, Some(0x05))]
+    fn test_decode_new_order_full_matches_codec(
+        #[case] block_length: usize,
+        #[case] expiry_reason: ExpiryReason,
+        #[case] expected: Option<u8>,
+    ) {
+        let mut buf = build_new_order_full_buffer(expiry_reason);
+        resize_fixed_block(&mut buf, block_length);
 
         let response = decode_new_order_full(&buf).unwrap();
 
@@ -2647,10 +2597,16 @@ mod tests {
         assert_eq!(response.price_mantissa, 12_345);
         assert_eq!(response.orig_qty_mantissa, 25_000);
         assert_eq!(response.executed_qty_mantissa, 10_000);
+        assert_eq!(response.status, OrderStatus::PartiallyFilled);
         assert_eq!(response.stop_price_mantissa, Some(12_000));
         assert_eq!(response.working_time, Some(1_700_000_000_000_500));
+        assert_eq!(
+            response.self_trade_prevention_mode,
+            SelfTradePreventionMode::ExpireMaker
+        );
+        assert_eq!(response.expiry_reason, expected);
         assert_eq!(response.symbol, "ETHUSDT");
-        assert_eq!(response.client_order_id, "client-123");
+        assert_eq!(response.client_order_id, "client-456");
         assert_eq!(response.fills.len(), 1);
         assert_eq!(response.fills[0].price_mantissa, 12_345);
         assert_eq!(response.fills[0].qty_mantissa, 10_000);
@@ -2658,64 +2614,11 @@ mod tests {
         assert_eq!(response.fills[0].commission_asset, "USDT");
     }
 
-    /// Builds a schema-3:4 `newOrderFullResponse` SBE buffer with the supplied
-    /// trailing `expiryReason` byte. Used by the v3 block-length tests.
-    fn build_new_order_full_v3_buffer(expiry_reason_byte: u8) -> Vec<u8> {
-        const V3_BLOCK_LENGTH: u16 = 154;
-        let header = create_header(
-            V3_BLOCK_LENGTH,
-            NEW_ORDER_FULL_TEMPLATE_ID,
-            SBE_SCHEMA_ID,
-            SBE_SCHEMA_VERSION,
-        );
-
-        let mut buf = Vec::new();
-        buf.extend_from_slice(&header);
-
-        buf.push((-2i8) as u8); // price_exponent
-        buf.push((-4i8) as u8); // qty_exponent
-        buf.extend_from_slice(&12345i64.to_le_bytes()); // order_id
-        buf.extend_from_slice(&99i64.to_le_bytes()); // order_list_id
-        buf.extend_from_slice(&1_700_000_000_000_000i64.to_le_bytes()); // transact_time
-        buf.extend_from_slice(&12_345i64.to_le_bytes()); // price_mantissa
-        buf.extend_from_slice(&25_000i64.to_le_bytes()); // orig_qty
-        buf.extend_from_slice(&10_000i64.to_le_bytes()); // executed_qty
-        buf.extend_from_slice(&123_450_000i64.to_le_bytes()); // cumulative_quote_qty
-        buf.push(2); // status (PARTIALLY_FILLED)
-        buf.push(1); // time_in_force (GTC)
-        buf.push(1); // order_type (LIMIT)
-        buf.push(1); // side (BUY)
-        buf.extend_from_slice(&12_000i64.to_le_bytes()); // stop_price
-        buf.extend_from_slice(&[0u8; 16]); // trailing_delta + trailing_time
-        buf.extend_from_slice(&1_700_000_000_000_500i64.to_le_bytes()); // working_time
-        buf.extend_from_slice(&[0u8; 23]); // iceberg to used_sor
-        buf.push(0); // self_trade_prevention_mode
-        buf.extend_from_slice(&[0u8; 16]); // trade_group_id + prevented_quantity
-        buf.push((-8i8) as u8); // commission_exponent
-        buf.extend_from_slice(&[0u8; 18]); // peg fields
-        buf.push(expiry_reason_byte); // expiryReason
-
-        buf.extend_from_slice(&create_group_header(FILLS_BLOCK_LENGTH, 1));
-        buf.push((-8i8) as u8); // commission_exponent
-        buf.push(0); // match_type
-        buf.extend_from_slice(&12_345i64.to_le_bytes()); // fill price
-        buf.extend_from_slice(&10_000i64.to_le_bytes()); // fill qty
-        buf.extend_from_slice(&10_000i64.to_le_bytes()); // commission
-        buf.extend_from_slice(&555i64.to_le_bytes()); // trade_id
-        buf.extend_from_slice(&0i64.to_le_bytes()); // alloc_id
-        write_var_string(&mut buf, "USDT");
-
-        buf.extend_from_slice(&create_group_header(0, 0)); // prevented matches
-        write_var_string(&mut buf, "ETHUSDT");
-        write_var_string(&mut buf, "client-456");
-        buf
-    }
-
     #[rstest]
     #[case::current(2)]
     #[case::extended(5)]
     fn test_decode_cancel_replace_nested_order(#[case] block_length: u16) {
-        let nested = build_new_order_full_v3_buffer(0xFF);
+        let nested = build_new_order_full_buffer(ExpiryReason::NullVal);
         let mut buf = create_header(
             block_length,
             CANCEL_REPLACE_TEMPLATE_ID,
@@ -2746,37 +2649,6 @@ mod tests {
                 field: "cancel-replace result"
             })
         ));
-    }
-
-    #[rstest]
-    fn test_decode_new_order_full_v3_block_length() {
-        // Schema v3 adds expiryReason (1 byte) at the end of the fixed block,
-        // increasing block_length from 153 to 154. A 0xFF byte marks null.
-        let buf = build_new_order_full_v3_buffer(0xFF);
-
-        let response = decode_new_order_full(&buf).unwrap();
-
-        assert_eq!(response.order_id, 12345);
-        assert_eq!(response.symbol, "ETHUSDT");
-        assert_eq!(response.client_order_id, "client-456");
-        assert_eq!(response.fills.len(), 1);
-        assert_eq!(response.fills[0].price_mantissa, 12_345);
-        assert!(response.expiry_reason.is_none());
-    }
-
-    #[rstest]
-    fn test_decode_new_order_full_v3_captures_expiry_reason_value() {
-        // 0x05 = UnfilledIocQuantityExpired per the SBE ExpiryReason enum;
-        // decode_new_order_full must surface it on the response.
-        let buf = build_new_order_full_v3_buffer(0x05);
-
-        let response = decode_new_order_full(&buf).unwrap();
-
-        assert_eq!(response.expiry_reason, Some(0x05));
-        // Symbol parses correctly only if the cursor lands at the right
-        // offset after the expiry_reason read.
-        assert_eq!(response.symbol, "ETHUSDT");
-        assert_eq!(response.client_order_id, "client-456");
     }
 
     #[rstest]
@@ -2913,7 +2785,7 @@ mod tests {
     #[rstest]
     fn test_decode_cancel_open_orders_rejects_short_order_block() {
         let mut order = create_cancel_order_response_buffer(111, "BTCUSDT", "orig-1", "new-1");
-        order[0..2].copy_from_slice(&62u16.to_le_bytes());
+        order[0..2].copy_from_slice(&108u16.to_le_bytes());
         let buf = create_cancel_open_orders_buffer(&[order]);
 
         let error = decode_cancel_open_orders(&buf).unwrap_err();
@@ -2921,8 +2793,8 @@ mod tests {
         assert_eq!(
             error,
             SbeDecodeError::InvalidBlockLength {
-                expected: 63,
-                actual: 62,
+                expected: 109,
+                actual: 108,
             }
         );
     }
@@ -2969,39 +2841,32 @@ mod tests {
         orig_client_order_id: &str,
         client_order_id: &str,
     ) -> Vec<u8> {
-        let header = create_header(
-            CANCEL_ORDER_BLOCK_LENGTH as u16,
-            CANCEL_ORDER_TEMPLATE_ID,
-            SBE_SCHEMA_ID,
-            SBE_SCHEMA_VERSION,
-        );
-
-        let mut buf = Vec::new();
-        buf.extend_from_slice(&header);
-        buf.push((-8i8) as u8); // price_exponent
-        buf.push((-8i8) as u8); // qty_exponent
-        buf.extend_from_slice(&order_id.to_le_bytes());
-        buf.extend_from_slice(&i64::MIN.to_le_bytes()); // order_list_id
-        buf.extend_from_slice(&1_700_000_000_000_000i64.to_le_bytes()); // transact_time
-        buf.extend_from_slice(&100_000_000_000i64.to_le_bytes()); // price
-        buf.extend_from_slice(&10_000_000i64.to_le_bytes()); // orig_qty
-        buf.extend_from_slice(&10_000_000i64.to_le_bytes()); // executed_qty
-        buf.extend_from_slice(&1_000_000_000i64.to_le_bytes()); // cumulative_quote_qty
-        buf.push(3); // status (CANCELED)
-        buf.push(0); // time_in_force
-        buf.push(1); // order_type
-        buf.push(1); // side
-        buf.push(0); // self_trade_prevention_mode
-
-        while buf.len() < 8 + CANCEL_ORDER_BLOCK_LENGTH {
-            buf.push(0);
-        }
-
-        write_var_string(&mut buf, symbol);
-        write_var_string(&mut buf, orig_client_order_id);
-        write_var_string(&mut buf, client_order_id);
-
-        buf
+        let mut bytes = vec![0u8; 256];
+        let enc =
+            CancelOrderResponseEncoder::default().wrap(WriteBuf::new(&mut bytes), HEADER_LENGTH);
+        let mut header = enc.header(0);
+        let mut enc = header.parent().unwrap();
+        enc.price_exponent(-8);
+        enc.qty_exponent(-8);
+        enc.order_id(order_id);
+        enc.order_list_id(i64::MIN);
+        enc.transact_time(1_700_000_000_000_000);
+        enc.price(100_000_000_000);
+        enc.orig_qty(10_000_000);
+        enc.executed_qty(10_000_000);
+        enc.cummulative_quote_qty(1_000_000_000);
+        enc.status(OrderStatus::Canceled);
+        enc.time_in_force(TimeInForce::Gtc);
+        enc.order_type(OrderType::Limit);
+        enc.side(OrderSide::Buy);
+        enc.stop_price(3);
+        enc.self_trade_prevention_mode(SelfTradePreventionMode::ExpireTaker);
+        enc.symbol(symbol);
+        enc.orig_client_order_id(orig_client_order_id);
+        enc.client_order_id(client_order_id);
+        let len = HEADER_LENGTH + enc.encoded_length();
+        bytes.truncate(len);
+        bytes
     }
 
     fn create_cancel_order_list_response_buffer() -> Vec<u8> {

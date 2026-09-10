@@ -948,6 +948,11 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::spot::sbe::spot::{
+        cancel_order_response_codec::CancelOrderResponseDecoder,
+        new_order_full_response_codec::NewOrderFullResponseDecoder,
+        self_trade_prevention_mode::SelfTradePreventionMode,
+    };
 
     #[rstest]
     fn test_cancel_replace_response_decodes_both_orders() {
@@ -1013,6 +1018,55 @@ mod tests {
         assert_eq!(cancel_response, expected_cancel);
         assert_eq!(new_order_response, expected_new);
         assert!(handler.pending_requests.is_empty());
+    }
+
+    #[rstest]
+    fn test_mainnet_order_responses_match_generated_decoders() {
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let handler = BinanceSpotWsTradingHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            Arc::new(SigningCredential::new(
+                "api-key".to_string(),
+                "secret".to_string(),
+            )),
+        );
+        let placed = include_bytes!(
+            "../../../../test_data/spot/user_data_sbe/mainnet/web_socket_response_1.sbe"
+        );
+        let canceled = include_bytes!(
+            "../../../../test_data/spot/user_data_sbe/mainnet/web_socket_response_2.sbe"
+        );
+        let (_, _, replacement) = handler.parse_envelope(placed).unwrap();
+        let (_, _, cancellation) = handler.parse_envelope(canceled).unwrap();
+        let placed_header = message_header_codec::MessageHeaderDecoder::default()
+            .wrap(ReadBuf::new(&replacement), 0);
+        let placed_decoder = NewOrderFullResponseDecoder::default().header(placed_header, 0);
+        let canceled_header = message_header_codec::MessageHeaderDecoder::default()
+            .wrap(ReadBuf::new(&cancellation), 0);
+        let canceled_decoder = CancelOrderResponseDecoder::default().header(canceled_header, 0);
+
+        let new_order = parse::decode_new_order_full(&replacement).unwrap();
+        let cancel = parse::decode_cancel_order(&cancellation).unwrap();
+
+        assert_eq!(
+            new_order.self_trade_prevention_mode,
+            placed_decoder.self_trade_prevention_mode()
+        );
+        assert_eq!(new_order.working_time, placed_decoder.working_time());
+        assert_eq!(new_order.stop_price_mantissa, placed_decoder.stop_price());
+        assert_eq!(
+            cancel.self_trade_prevention_mode,
+            canceled_decoder.self_trade_prevention_mode()
+        );
+        assert_eq!(
+            cancel.self_trade_prevention_mode,
+            SelfTradePreventionMode::ExpireMaker
+        );
     }
 
     #[rstest]
