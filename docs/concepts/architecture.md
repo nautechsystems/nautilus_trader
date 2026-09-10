@@ -197,21 +197,29 @@ sequenceDiagram
    from the instrument ID, such as `data.quotes.BINANCE.BTCUSDT-PERP`. The
    `MessageBus` finds all handlers subscribed to that topic.
 1. **Strategy handler runs.** Each subscribed strategy's `on_quote(quote)` runs on the
-   single-threaded core. After a successful cache insertion,
-   `self.cache.quote(instrument_id)` returns the same quote.
+   single-threaded core. `self.cache.quote(instrument_id)` returns the same quote only if insertion
+   succeeded and no later quote has replaced it before the read.
 
 :::note
 For quotes, trades, and bars, the engine attempts cache insertion before publication. A synchronous
 persistence or enqueue error prevents the in-memory insertion, but the engine logs the error and
 still publishes the value. Built-in database backings perform the actual write asynchronously, so a
-later database error does not roll back the cache insertion. Order book deltas and depth snapshots
-are published directly, while `BookUpdater` subscriptions maintain book state separately.
+later database error does not roll back the cache insertion. A published quote can therefore be
+absent from the cache after a synchronous insertion failure. A callback can also observe newer cache
+state than the event it handles, including during synchronous reentry. Delivery order does not
+provide an event-time snapshot, and the
+[queued dispatch requirements](../developer_guide/callback_dispatch.md#maintenance-and-observable-state)
+do not add one.
+Order book deltas and depth snapshots are published directly, while `BookUpdater` subscriptions
+maintain book state separately.
 :::
 
 #### Execution flow: life of an order
 
-A submitted order flows through validation and routing, then returns to the strategy as execution
-events:
+This simplified trace shows direct order submission with successful venue acceptance followed by
+a fill. It omits execution algorithms, emulation, and ambiguous transport outcomes; see
+[Execution](execution/index.md) and [command outcomes](execution/policies.md#command-outcomes) for
+those paths. Adapters translate venue messages into the execution events shown below:
 
 ```mermaid
 sequenceDiagram
@@ -440,7 +448,7 @@ model, not a safe aliasing guarantee.
 For queued dispatch, releasing an actor guard alone does not establish a safe delivery boundary:
 enclosing mutable runtime borrows must also end. Subscriber admission order alone does not preserve
 publication order during nested fan-out. Pending deliveries need registration and lifecycle identity
-to enforce the [dispatch requirements](../developer_guide/design_principles.md#queued-callback-dispatch-requirements).
+to enforce the [dispatch requirements](../developer_guide/callback_dispatch.md).
 
 ### Messaging
 
@@ -457,7 +465,7 @@ Within a node, the core consumes and dispatches messages on a single thread. Thi
 - Cache reads and writes.
 
 Serial processing coordinates state changes within the node. Synchronous reentry still has the
-constraints described above; the [queued dispatch requirements](../developer_guide/design_principles.md#queued-callback-dispatch-requirements)
+constraints described above; the [queued dispatch requirements](../developer_guide/callback_dispatch.md)
 define publication ordering across nested callbacks. Live inputs and latency can cause behavioral
 differences from backtests. Components consume messages synchronously in a pattern *similar* to the
 [actor model](https://en.wikipedia.org/wiki/Actor_model).
@@ -649,17 +657,6 @@ flowchart BT
     adapters --> network
     pyo3 --> adapters
 ```
-
-**Crate categories:**
-
-| Category         | Crates                                                                        | Purpose                                                 |
-| ---------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------- |
-| Core and domain  | `core`, `model`, `common`, `serialization`                                    | Primitives, domain types, shared runtime, and encoding. |
-| Trading          | `analysis`, `indicators`, `data`, `execution`, `portfolio`, `risk`, `trading` | Analysis, strategies, engines, and portfolio state.     |
-| Infrastructure   | `network`, `cryptography`, `infrastructure`, `persistence`, `event_store`     | Transport, signing, databases, catalogs, and events.    |
-| Runtime          | `system`, `live`, `backtest`                                                  | Kernel and environment-specific nodes.                  |
-| Integrations     | `adapters/*`                                                                  | Venue, broker, data, blockchain, and sandbox clients.   |
-| Interfaces/tools | `pyo3`, `plugin`, `cli`, `testkit`                                            | Python bindings, plugins, CLI, and test support.        |
 
 **Feature flags:**
 

@@ -2,6 +2,8 @@
 
 This page defines the principles, policies, and trade-offs that guide NautilusTrader design.
 [Architecture](../concepts/architecture.md) describes the components and runtime structure.
+These policies guide implementation and review; they do not establish that every existing path
+already conforms. Specific guides describe current behavior and limits.
 
 ## Design priorities
 
@@ -13,6 +15,10 @@ Design decisions weigh these quality attributes in roughly this order:
 - Testability
 - Maintainability
 - Deployability
+
+Performance improvements must preserve critical invariants and their required verification.
+Testability and maintainability sustain reliability; deployability affects safe rollout,
+configuration, and recovery. The priority order does not make these qualities optional.
 
 ## Data integrity and failure
 
@@ -53,6 +59,17 @@ surfaces. Unrecoverable invariant violations stop the operation or process befor
 propagates. The [Rust error contracts](rust.md#failure-contract-examples) define panic and fallible
 API behavior.
 
+### Failure containment
+
+Stop the smallest scope whose integrity can no longer be established, provided the remaining system
+can continue safely. Rejected input or a failed operation need not stop unrelated components when
+isolation is established. Untrustworthy shared state may require stopping the node. Containment
+must follow the API's failure contract and proven isolation boundaries; it must not assume a
+component can recover from an arbitrary panic.
+
+Stopping a process does not cancel working venue orders or remove exposure. Recovery must establish
+venue state before deciding which further actions are safe.
+
 ## Executable invariants
 
 NautilusTrader incrementally applies high-assurance practices to critical paths. Executable
@@ -81,22 +98,51 @@ rules that follow from this invariant.
 
 The invariant protects several properties the system depends on:
 
-- **Determinism**: Every consumer sees the same input. Behavior is easier to reason about, replay,
-  and test.
-- **Temporal integrity**: A message preserves what was true when the system emitted it. Events and
-  commands remain factual records instead of containers of drifting state.
+- **Stable inputs**: Every consumer sees the same message payload. Replaying a sequence preserves
+  the original logical inputs for backtesting, incident reconstruction, and regression testing.
+- **Temporal integrity**: A message preserves what its producer reported, observed, requested, or
+  inferred at creation time. Preserve the available provenance; immutability does not establish
+  that the producer's information is true. Corrections require an explicit new record.
 - **Safer concurrency**: Readers do not need coordination to protect message payloads from later
   rewrites. This removes a common source of races around shared state.
-- **Easier debugging**: Logs, traces, replay tools, and dead-letter inspection remain useful
-  because the message still reflects the original payload.
-- **Reliable replay and simulation**: Replaying a sequence yields the same logical inputs as the
-  original run. This supports backtesting, incident reconstruction, and regression testing.
+- **Debugging and auditability**: Logs, traces, replay tools, and dead-letter inspection retain the
+  original payload, allowing investigation of what the system received or created, when, and
+  what it did with that information.
 - **Clear ownership boundaries**: Components treat incoming messages as input. If a component needs
   a different representation, it derives new local state or a new message explicitly.
-- **Better auditability**: The system can answer what it knew, when it knew it, and what it did
-  from that information.
 - **More robust distribution**: Serialized messages already cross process and service boundaries as
   copies. The same ownership rule keeps the in-memory model aligned with that reality.
+
+## Evidence and authority
+
+Distinguish external reports, local observations, inferences, and policy decisions. Preserve their
+source and uncertainty when deriving state. A valid numeric value or state transition does not by
+itself establish a venue fact. Missing evidence must not become a confirmed outcome merely because
+a timeout or retry limit expires.
+
+The [execution policies](../concepts/execution/policies.md) apply this rule to command outcomes,
+reconciliation, and the limits of retained history.
+
+## Controlled nondeterminism
+
+Make time, randomness, input ordering, and external effects explicit at the boundaries that consume
+them. Reproducible tests must control the sources that affect their assertions and retain the inputs,
+seeds, and configuration needed to investigate a failure. State the binary, platform, and input
+conditions of any determinism guarantee.
+
+The [DST contract](../concepts/dst.md) defines the supported scope of seed-controlled execution.
+Live venue behavior and independent external inputs remain outside that guarantee.
+
+## Bounded resource use
+
+Design queues, retries, retained history, and callback chains with explicit resource budgets and
+exhaustion behavior. Account for payload size as well as item count where memory use varies, and
+bound work as well as storage so a replenishing queue cannot monopolize execution.
+
+Choose backpressure, rejection, or safe termination according to the affected contract. Overload
+must not silently lose required state transitions or leave partially applied operations presented
+as complete. These are design requirements; existing paths can still be unbounded, as documented
+in [live dispatch and overload behavior](../concepts/live.md#dispatch-priority-and-overload-behavior).
 
 ## Recovery after failure
 
@@ -132,42 +178,10 @@ The [common core](../concepts/architecture.md#common-core) supplies the engines 
 
 ## Queued callback dispatch requirements
 
-The following requirements define ordered actor and strategy callback delivery. They are design
-constraints for queued dispatch, not guarantees of the existing synchronous dispatch paths.
+Canonical actor and strategy delivery must preserve publication order, exclusive component access,
+and lifecycle eligibility, with bounded progress. Reentrancy must not change the ordering rule.
+Ordered delivery does not imply an event-time cache snapshot.
 
-### Ordering and reentrancy
-
-Within one runtime thread, canonical actor and strategy callbacks must preserve publication order
-across components and topics. The rule applies equally to idle and active components. A nested
-publication must not overtake an earlier publication's pending deliveries, including all recipients
-of the earlier publication. Independent nodes have no shared global ordering guarantee.
-
-Callbacks require exclusive access to their component and a delivery boundary at which enclosing
-mutable runtime borrows have ended. Native and Python components must follow the same ordering
-contract. Raw Python topic messaging retains its separate synchronous delivery and object-identity
-contract.
-
-### Maintenance and observable state
-
-Component maintenance runs with each queued event, before that event's author callbacks. This
-includes indicator updates, timer cleanup, and contingent-order handling. Maintenance retains its
-applicable lifecycle rules when author callbacks are suppressed. Events emitted by maintenance
-enter the same ordered dispatch mechanism.
-
-Engine cache mutations and direct facade effects remain synchronous. Callbacks observe current
-cache state; ordered delivery does not provide an event-time cache snapshot. The immutable event
-payload records the event, while the cache may already reflect later changes. Keeping indicator
-updates with event delivery preserves their ordering relative to the corresponding callbacks.
-
-Author callbacks require eligibility at both event arrival and delivery. Stop, reset, or retirement
-must not carry old callbacks into a new registration or lifecycle generation.
-
-### Bounded progress
-
-Pending callbacks participate in the runtime's drain condition. Live execution uses bounded drain
-batches and yields between them. Backtests finish pending work before advancing simulated time.
-Runaway callback chains produce an explicit fault.
-
-Queue overflow records a fatal error and halts execution at a safe boundary. It must neither
-silently discard callbacks nor interrupt an operation midway through its synchronous effects.
-Already completed effects are not rolled back by callback dispatch.
+These are requirements for queued dispatch, not guarantees of existing synchronous paths.
+The [callback dispatch contract](callback_dispatch.md) specifies maintenance timing, ownership
+boundaries, lifecycle invalidation, and draining behavior.

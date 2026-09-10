@@ -14,6 +14,7 @@ This approach combines Python's simplicity and ecosystem with Rust's performance
 
 - [Environment Setup](environment_setup.md)
 - [Design Principles](design_principles.md)
+- [Callback Dispatch Contract](callback_dispatch.md)
 - [Coding Standards](coding_standards.md)
 - [Shell](shell.md)
 - [Rust](rust.md)
