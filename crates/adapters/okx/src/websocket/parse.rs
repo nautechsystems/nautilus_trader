@@ -3274,40 +3274,49 @@ mod tests {
         let depth10 =
             parse_book10_msg(&msgs[0], instrument_id, 2, 0, UnixNanos::default()).unwrap();
 
+        let expected_bids = [
+            ("8476.97", "256"),
+            ("8475.55", "101"),
+            ("8475.54", "100"),
+            ("8475.30", "1"),
+            ("8447.32", "6"),
+            ("8447.02", "246"),
+            ("8446.83", "24"),
+            ("8446.00", "95"),
+        ];
+        let expected_asks = [
+            ("8476.98", "415"),
+            ("8477.00", "7"),
+            ("8477.34", "85"),
+            ("8477.56", "1"),
+            ("8505.84", "8"),
+            ("8506.37", "85"),
+            ("8506.49", "2"),
+            ("8506.96", "100"),
+        ];
+
         assert_eq!(depth10.instrument_id, instrument_id);
         assert_eq!(depth10.sequence, 123_456);
         assert_eq!(depth10.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
+        assert_eq!(depth10.ts_init, UnixNanos::default());
         assert_eq!(depth10.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(depth10.bids.len(), expected_bids.len());
+        assert_eq!(depth10.asks.len(), expected_asks.len());
+        assert_eq!(depth10.bid_counts.as_slice(), &[12, 1, 1, 1, 1, 1, 1, 3]);
+        assert_eq!(depth10.ask_counts.as_slice(), &[13, 2, 1, 1, 1, 1, 1, 2]);
+        for (order, (price, size)) in depth10.bids.iter().zip(expected_bids) {
+            assert_eq!(order.side, Some(OrderSide::Buy));
+            assert_eq!(order.price, Price::from(price));
+            assert_eq!(order.size, Quantity::from(size));
+            assert_eq!(order.order_id, 0);
+        }
 
-        // Check bid levels (available in test data: 8 levels)
-        assert_eq!(depth10.bids[0].price, Price::from("8476.97"));
-        assert_eq!(depth10.bids[0].size, Quantity::from("256"));
-        assert_eq!(depth10.bids[0].side, OrderSide::Buy.into());
-        assert_eq!(depth10.bid_counts[0], 12);
-
-        assert_eq!(depth10.bids[1].price, Price::from("8475.55"));
-        assert_eq!(depth10.bids[1].size, Quantity::from("101"));
-        assert_eq!(depth10.bid_counts[1], 1);
-
-        // Check that levels beyond available data are padded with empty orders
-        assert_eq!(depth10.bids[8].price, Price::from("0"));
-        assert_eq!(depth10.bids[8].size, Quantity::from("0"));
-        assert_eq!(depth10.bid_counts[8], 0);
-
-        // Check ask levels (available in test data: 8 levels)
-        assert_eq!(depth10.asks[0].price, Price::from("8476.98"));
-        assert_eq!(depth10.asks[0].size, Quantity::from("415"));
-        assert_eq!(depth10.asks[0].side, OrderSide::Sell.into());
-        assert_eq!(depth10.ask_counts[0], 13);
-
-        assert_eq!(depth10.asks[1].price, Price::from("8477.00"));
-        assert_eq!(depth10.asks[1].size, Quantity::from("7"));
-        assert_eq!(depth10.ask_counts[1], 2);
-
-        // Check that levels beyond available data are padded with empty orders
-        assert_eq!(depth10.asks[8].price, Price::from("0"));
-        assert_eq!(depth10.asks[8].size, Quantity::from("0"));
-        assert_eq!(depth10.ask_counts[8], 0);
+        for (order, (price, size)) in depth10.asks.iter().zip(expected_asks) {
+            assert_eq!(order.side, Some(OrderSide::Sell));
+            assert_eq!(order.price, Price::from(price));
+            assert_eq!(order.size, Quantity::from(size));
+            assert_eq!(order.order_id, 0);
+        }
     }
 
     #[rstest]
@@ -4332,7 +4341,6 @@ mod tests {
 
     #[rstest]
     fn test_parse_book10_msg_partial_levels() {
-        // Test with fewer than 10 levels - should pad with empty orders
         let book_msg = OKXBookMsg {
             asks: vec![
                 OrderBookEntry {
@@ -4364,20 +4372,29 @@ mod tests {
         let depth10 =
             parse_book10_msg(&book_msg, instrument_id, 2, 0, UnixNanos::default()).unwrap();
 
-        // Check that first levels have data
+        assert_eq!(depth10.instrument_id, instrument_id);
+        assert_eq!(depth10.bids.len(), 1);
+        assert_eq!(depth10.asks.len(), 2);
         assert_eq!(depth10.bids[0].price, Price::from("8476.97"));
         assert_eq!(depth10.bids[0].size, Quantity::from("256"));
-        assert_eq!(depth10.bid_counts[0], 12);
-
-        // Check that remaining levels are padded with default (empty) orders
-        assert_eq!(depth10.bids[1].price, Price::from("0"));
-        assert_eq!(depth10.bids[1].size, Quantity::from("0"));
-        assert_eq!(depth10.bid_counts[1], 0);
-
-        // Check asks
-        assert_eq!(depth10.asks[0].price, Price::from("8476.98"));
-        assert_eq!(depth10.asks[1].price, Price::from("8477.00"));
-        assert_eq!(depth10.asks[2].price, Price::from("0")); // padded with empty
+        assert_eq!(depth10.bids[0].side, Some(OrderSide::Buy));
+        assert_eq!(depth10.bids[0].order_id, 0);
+        assert_eq!(depth10.bid_counts.as_slice(), &[12]);
+        assert_eq!(depth10.ask_counts.as_slice(), &[13, 2]);
+        for (order, (price, size)) in depth10
+            .asks
+            .iter()
+            .zip([("8476.98", "415"), ("8477.00", "7")])
+        {
+            assert_eq!(order.price, Price::from(price));
+            assert_eq!(order.size, Quantity::from(size));
+            assert_eq!(order.side, Some(OrderSide::Sell));
+            assert_eq!(order.order_id, 0);
+        }
+        assert_eq!(depth10.sequence, 123456);
+        assert_eq!(depth10.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(depth10.ts_event, UnixNanos::from(1597026383085000000));
+        assert_eq!(depth10.ts_init, UnixNanos::default());
     }
 
     #[rstest]
