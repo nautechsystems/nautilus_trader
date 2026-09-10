@@ -84,8 +84,13 @@ When `reduce_primary=True`, the spawned quantity must not exceed the primary ord
 (remaining unfilled quantity).
 :::
 
-If a spawned order is denied or rejected before acceptance, the deducted quantity is automatically
-restored to the primary order. Once accepted by the venue, the reduction is considered committed.
+If a spawned order is denied, rejected, canceled, expired, or refused before submission, its
+unfilled proportion is restored in the primary order's quantity units while the primary remains
+local. This also applies when a venue converts a quote-quantity spawn to base quantity. Once primary
+submission is handed off, its quantity is committed and is not changed by a later spawn outcome. A
+late fill on a canceled spawn re-deducts the corresponding restored quantity while the primary
+remains locally mutable; if that quantity was already reused by a later spawn, the excess is netted
+from that spawn's own restoration instead.
 
 An execution algorithm can keep spawning orders, submit the remaining primary order, or do both.
 The built-in TWAP algorithm submits the remaining primary order on the final interval.
