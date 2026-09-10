@@ -430,7 +430,9 @@ format:  #-- Format Rust (with nightly) and Python code
 
 .PHONY: pre-commit
 pre-commit:  #-- Run all pre-commit hooks on all files
-	prek run --all-files
+	@$(timer_start) \
+		prek run --all-files \
+	$(call timer_end,Pre-commit)
 
 # The check-code target uses CARGO_FEATURES which is controlled by the HYPERSYNC flag.
 # By default, hypersync is excluded to speed up checks. Override with: make check-code HYPERSYNC=true
@@ -864,6 +866,7 @@ test-scripts:  #-- Run repository script tests
 	$Q bash .pre-commit-hooks/test_check_jiff_features.sh
 	$Q bash .pre-commit-hooks/test_check_logging_conventions.sh
 	$Q bash .pre-commit-hooks/test_check_pyo3_conventions.sh
+	$Q bash .pre-commit-hooks/test_check_typos.sh
 	$Q bash .pre-commit-hooks/test_check_unicode_typography.sh
 	$Q bash .pre-commit-hooks/test_check_ustr_conventions.sh
 	$Q bash scripts/ci/test-build-artifact-reuse.bash

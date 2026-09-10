@@ -20,15 +20,6 @@ repos:
         always_run: true
   # nautilus-engineering: sync end
 
-  - repo: local
-    hooks:
-      - id: test-scripts
-        name: script tests
-        entry: make test-scripts-quiet
-        language: system
-        pass_filenames: false
-        always_run: true
-
   ##############################################################################
   #  General checks
   ##############################################################################
@@ -110,16 +101,9 @@ repos:
     hooks:
       - id: typos
         description: Enforces American English spelling and checks for common typos
-        args: ["--force-exclude", "--threads", "2"]
-        types: [text]
-      - id: typos
-        alias: typos-policy
-        name: typos (spelling policy changes)
-        description: Check repository spelling when spelling policy or hook scope changes
-        entry: bash -o pipefail -c 'git ls-files | typos --file-list - "$@"' --
-        args: ["--force-exclude", "--threads", "2"]
-        pass_filenames: false
-        files: ^(\.pre-commit-config\.yaml|(.*/)?\.typos\.toml|docs/developer_guide/coding_standards\.md)$
+        entry: bash .pre-commit-hooks/check_typos.sh
+        args: []
+        require_serial: true
         types: [text]
 
   - repo: https://github.com/codespell-project/codespell
