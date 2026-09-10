@@ -65,11 +65,6 @@ cat > "$build_makefile" << 'BUILD_MAKEFILE'
 check-cargo-cooldown:
 	@printf '%s\n' cooldown >> "$(BUILD_LOG)"
 	@exit $(COOLDOWN_STATUS)
-.PHONY: print-build-targets
-print-build-targets:
-	@printf '%s\n' $(CARGO_BUILD_JOB_TARGETS) docker-build docker-build-force
-check-nextest-installed check-llvm-cov-installed check-hack-installed check-hawk-installed check-miri-installed clean clean-build-artifacts clean-caches clean-builds:
-	@:
 BUILD_MAKEFILE
 
 cat > "${fake_bin}/uv" << 'FAKE_UV'
@@ -85,17 +80,6 @@ printf '%s\n' "$*" >> "${BUILD_LOG:?}"
 FAKE_CARGO
 chmod +x "${fake_bin}/uv" "${fake_bin}/cargo"
 
-cat > "${fake_bin}/capnp" << 'FAKE_CAPNP'
-#!/bin/sh
-# Stop regeneration before it can remove source files if its gate regresses
-exit 1
-FAKE_CAPNP
-cat > "${fake_bin}/docker" << 'FAKE_DOCKER'
-#!/bin/sh
-printf '%s\n' "$*" >> "${BUILD_LOG:?}"
-FAKE_DOCKER
-chmod +x "${fake_bin}/capnp" "${fake_bin}/docker"
-
 run_build() {
   PATH="${fake_bin}:${PATH}" BUILD_LOG="$build_log" \
     make -C "$REPO_ROOT" --no-print-directory -j2 \
@@ -105,35 +89,35 @@ run_build() {
     "$@" > "${test_root}/make.log" 2>&1
 }
 
-build_targets=$(make -C "$REPO_ROOT" --no-print-directory -f Makefile -f "$build_makefile" print-build-targets 2> "${test_root}/make.log")
-for target in $build_targets; do
-  target=${target/\%/nautilus-core}
-  : > "$build_log"
-  if run_build COOLDOWN_STATUS=37 "$target"; then
-    echo "Build target accepted a failed cooldown check: $target" >&2
-    exit 1
-  fi
-  if [[ "$(cat "$build_log")" != cooldown || -e "$build_target/.py-stubs.stamp" ]]; then
-    cat "${test_root}/make.log" >&2
-    echo "Build target ran before the cooldown check passed: $target" >&2
+if awk '
+  /^[^#[:space:]][^:]*:/ && !/^check-cargo-cooldown:/ &&
+    /:.*check-cargo-cooldown/ { found = 1 }
+  END { exit !found }
+' "$REPO_ROOT/Makefile"; then
+  echo "Routine Make targets still require the full cooldown check" >&2
+  exit 1
+fi
+
+for source in .github/actions/common-setup/action.yml .github/workflows/docker.yml; do
+  if grep -Fq check-cargo-cooldown "$REPO_ROOT/$source"; then
+    echo "Build setup still invokes the cooldown check: $source" >&2
     exit 1
   fi
 done
 
 : > "$build_log"
-run_build COOLDOWN_STATUS=0 build-wheel
-if ! grep -Fxq cooldown "$build_log" ||
+run_build COOLDOWN_STATUS=37 build-wheel
+if grep -Fxq cooldown "$build_log" ||
   ! grep -Fq 'maturin build --release --locked' "$build_log"; then
-  echo "Successful cooldown check did not allow the build" >&2
+  echo "Wheel build did not run independently of the cooldown check" >&2
   exit 1
 fi
 
-rm -f "$build_target/.py-stubs.stamp"
 : > "$build_log"
-run_build COOLDOWN_STATUS=0 py-stubs
-if [[ "$(sed -n '1p' "$build_log")" != cooldown ]] ||
+run_build COOLDOWN_STATUS=37 py-stubs
+if grep -Fxq cooldown "$build_log" ||
   ! grep -Fq generate_stubs.py "$build_log" || [[ ! -f "$build_target/.py-stubs.stamp" ]]; then
-  echo "Successful cooldown check did not precede stub generation" >&2
+  echo "Stub generation did not run independently of the cooldown check" >&2
   exit 1
 fi
 

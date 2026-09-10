@@ -624,15 +624,19 @@ allowed_lines=()
 while IFS=' ' read -r name version; do
   [[ -z "$name" ]] && continue
   url="https://crates.io/api/v1/crates/${name}/${version}"
-  if ! json=$(curl -fsSL \
+  printf 'Looking up %s %s: %s\n' "$name" "$version" "$url" >&2
+  if json=$(curl -fsSL \
     --retry 3 \
     --retry-all-errors \
     --retry-max-time 60 \
     --max-time "$TIMEOUT" \
     -A "nautilus-engineering-cargo-cooldown/1.0" \
-    "$url" 2> /dev/null); then
+    "$url"); then
+    :
+  else
+    status=$?
     printf '%-32s %-14s LOOKUP FAILED\n' "$name" "$version"
-    lookup_lines+=("${name} ${version}: registry request failed")
+    lookup_lines+=("${name} ${version}: registry request failed (curl exit ${status}, ${url})")
     continue
   fi
   published=$(printf '%s' "$json" | jq -r '.version.created_at // empty')

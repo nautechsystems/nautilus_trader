@@ -118,9 +118,6 @@ jobs:
             type=raw,value=nightly,enable=${{ steps.branch-name.outputs.current_branch == 'nightly' }}
             type=raw,value=latest,enable=${{ steps.branch-name.outputs.current_branch == 'master' }}
 
-      - name: Check Rust dependency cooldown before compilation
-        run: bash scripts/check-cargo-cooldown.sh --all --cache target/.cargo-cooldown.json
-
       - name: Build and push by digest
         id: build
         # https://github.com/docker/build-push-action
