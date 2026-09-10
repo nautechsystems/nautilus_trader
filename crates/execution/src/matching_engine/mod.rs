@@ -129,6 +129,7 @@ pub struct OrderMatchingEngine {
     queue_pending: IndexMap<ClientOrderId, PriceRaw>,
     queue_ahead_orders: IndexMap<ClientOrderId, IndexMap<OrderId, QuantityRaw>>,
     queue_ahead_total: IndexMap<ClientOrderId, (PriceRaw, QuantityRaw)>,
+    queue_snapshot_in_progress: bool,
     queue_ids_by_price: IndexMap<PriceRaw, IndexSet<ClientOrderId>>,
     queue_excess: IndexMap<ClientOrderId, QuantityRaw>,
     queue_id_scratch: Vec<ClientOrderId>,
@@ -224,6 +225,7 @@ impl OrderMatchingEngine {
             queue_pending: IndexMap::new(),
             queue_ahead_orders: IndexMap::new(),
             queue_ahead_total: IndexMap::new(),
+            queue_snapshot_in_progress: false,
             queue_ids_by_price: IndexMap::new(),
             queue_excess: IndexMap::new(),
             queue_id_scratch: Vec::new(),
@@ -291,6 +293,7 @@ impl OrderMatchingEngine {
         self.queue_pending.clear();
         self.queue_ahead_orders.clear();
         self.queue_ahead_total.clear();
+        self.queue_snapshot_in_progress = false;
         self.queue_ids_by_price.clear();
         self.queue_excess.clear();
         self.queue_id_scratch.clear();
@@ -761,14 +764,91 @@ impl OrderMatchingEngine {
         Some(available_raw)
     }
 
-    fn clear_all_queue_positions(&mut self) {
-        for (_, (_, ahead_raw)) in &mut self.queue_ahead_total {
-            *ahead_raw = 0;
+    /// Rebases queue positions after a full book replacement.
+    ///
+    /// A snapshot does not imply that all displayed liquidity ahead of a
+    /// simulated order disappeared. Preserve the old estimate, capped by the
+    /// newly visible quantity at that price. For L3 books, retain only the
+    /// previously tracked orders that are still present in the replacement.
+    fn rebase_queue_positions(&mut self) {
+        if !self.config.queue_position {
+            return;
         }
 
-        for orders_ahead in self.queue_ahead_orders.values_mut() {
-            orders_ahead.clear();
+        let tracked: Vec<_> = self
+            .queue_ahead_total
+            .iter()
+            .map(|(&client_order_id, &(price_raw, ahead_raw))| {
+                (client_order_id, price_raw, ahead_raw)
+            })
+            .collect();
+        let mut stale = Self::take_cleared(&mut self.queue_stale_scratch);
+        let size_precision = self.instrument.size_precision();
+        let price_precision = self.instrument.price_precision();
+
+        for (client_order_id, price_raw, ahead_raw) in tracked {
+            let order_side = self
+                .cache
+                .borrow()
+                .order(&client_order_id)
+                .and_then(|order| {
+                    if order.is_closed() {
+                        None
+                    } else {
+                        Some(order.order_side())
+                    }
+                });
+
+            let Some(order_side) = order_side else {
+                stale.push(client_order_id);
+                continue;
+            };
+
+            let price = Price::from_raw(price_raw, price_precision);
+            let visible_raw = self
+                .book
+                .get_quantity_at_level(price, OrderCore::opposite_side(order_side), size_precision)
+                .raw;
+            let rebased_raw = ahead_raw.min(visible_raw);
+
+            if self.book_type == BookType::L3_MBO {
+                let previous_orders = self
+                    .queue_ahead_orders
+                    .get(&client_order_id)
+                    .cloned()
+                    .unwrap_or_default();
+                let mut orders_ahead = IndexMap::new();
+                let mut total_raw = 0;
+
+                for book_order in self
+                    .book
+                    .get_orders_at_level(price, OrderCore::opposite_side(order_side))
+                {
+                    if !previous_orders.contains_key(&book_order.order_id) {
+                        continue;
+                    }
+
+                    let previous_size_raw = previous_orders[&book_order.order_id];
+                    let size_raw = previous_size_raw.min(book_order.size.raw);
+                    orders_ahead.insert(book_order.order_id, size_raw);
+                    total_raw += size_raw;
+                }
+
+                self.queue_ahead_orders
+                    .insert(client_order_id, orders_ahead);
+                self.queue_ahead_total
+                    .insert(client_order_id, (price_raw, total_raw));
+            } else {
+                self.queue_ahead_total
+                    .insert(client_order_id, (price_raw, rebased_raw));
+            }
         }
+
+        for client_order_id in stale.drain(..) {
+            self.remove_queue_position(client_order_id);
+        }
+
+        self.queue_stale_scratch = stale;
     }
 
     fn adjust_queue_for_delta(&mut self, delta: &OrderBookDelta) {
@@ -1456,17 +1536,30 @@ impl OrderMatchingEngine {
 
         self.book.apply_delta(delta)?;
 
-        let delta_snapshot_or_clear = (delta.flags & 32) != 0 || delta.action == BookAction::Clear;
+        let is_snapshot = RecordFlag::F_SNAPSHOT.matches(delta.flags);
+        let is_last = RecordFlag::F_LAST.matches(delta.flags);
+        let is_clear = delta.action == BookAction::Clear;
+        let snapshot_complete = is_last && (is_snapshot || self.queue_snapshot_in_progress);
 
         if self.config.queue_position {
-            if delta_snapshot_or_clear {
-                self.clear_all_queue_positions();
-            } else {
+            if is_snapshot && !is_last {
+                // Snapshot deltas can arrive as a clear followed by multiple
+                // adds. Rebase only after the final delta so partial snapshots
+                // do not discard the old queue estimate.
+                self.queue_snapshot_in_progress = true;
+            }
+
+            if snapshot_complete {
+                self.queue_snapshot_in_progress = false;
+                self.rebase_queue_positions();
+            } else if is_clear && !is_snapshot {
+                self.rebase_queue_positions();
+            } else if !self.queue_snapshot_in_progress {
                 self.adjust_queue_for_delta(delta);
             }
         }
 
-        if self.config.queue_position && delta_snapshot_or_clear {
+        if self.config.queue_position && (snapshot_complete || (is_clear && !is_snapshot)) {
             self.seed_tob_baseline();
         }
 
@@ -1504,8 +1597,8 @@ impl OrderMatchingEngine {
 
         if self.config.queue_position {
             for delta in &deltas.deltas {
-                if (delta.flags & 32) != 0 || delta.action == BookAction::Clear {
-                    self.clear_all_queue_positions();
+                if RecordFlag::F_SNAPSHOT.matches(delta.flags) || delta.action == BookAction::Clear
+                {
                     has_snapshot_or_clear = true;
                     break;
                 }
@@ -1514,6 +1607,8 @@ impl OrderMatchingEngine {
         }
 
         if self.config.queue_position && has_snapshot_or_clear {
+            self.queue_snapshot_in_progress = false;
+            self.rebase_queue_positions();
             self.seed_tob_baseline();
         }
 
@@ -1573,7 +1668,7 @@ impl OrderMatchingEngine {
 
         // Depth10 always replaces the full book via apply_depth regardless of flags
         if self.config.queue_position {
-            self.clear_all_queue_positions();
+            self.rebase_queue_positions();
             let bid_price_raw = top_bid.map_or(0, |order| order.price.raw);
             let bid_size_raw = top_bid.map_or(0, |order| order.size.raw);
             let ask_price_raw = top_ask.map_or(0, |order| order.price.raw);
@@ -6849,7 +6944,7 @@ mod tests {
     use nautilus_core::{UUID4, UnixNanos, correctness::CorrectnessError};
     use nautilus_model::{
         data::{
-            DEPTH10_LEN, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
+            DEPTH10_LEN, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
             option_chain::OptionGreeks,
             order::{BookOrder, OrderId},
         },
@@ -10044,7 +10139,10 @@ mod tests {
         assert_valid_bar_tick_sizes(volume, increment);
     }
 
-    fn get_l3_queue_engine(instrument: InstrumentAny) -> (OrderMatchingEngine, Rc<RefCell<Cache>>) {
+    fn get_queue_engine(
+        instrument: InstrumentAny,
+        book_type: BookType,
+    ) -> (OrderMatchingEngine, Rc<RefCell<Cache>>) {
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let config = OrderMatchingEngineConfig {
@@ -10058,7 +10156,7 @@ mod tests {
             1,
             FillModelHandle::default(),
             FeeModelAny::default().into(),
-            BookType::L3_MBO,
+            book_type,
             OmsType::Netting,
             AccountType::Margin,
             clock,
@@ -10074,6 +10172,10 @@ mod tests {
         }));
 
         (engine, cache)
+    }
+
+    fn get_l3_queue_engine(instrument: InstrumentAny) -> (OrderMatchingEngine, Rc<RefCell<Cache>>) {
+        get_queue_engine(instrument, BookType::L3_MBO)
     }
 
     fn assert_l3_queue_synced(engine: &OrderMatchingEngine) {
@@ -10233,6 +10335,320 @@ mod tests {
                 .map(|orders| orders.keys().copied().collect::<Vec<_>>()),
             Some(vec![2]),
         );
+    }
+
+    #[rstest]
+    fn test_snapshot_rebases_l2_queue_position_after_size_decrease() {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instrument_id = instrument.id();
+        let (mut engine, cache) = get_queue_engine(instrument, BookType::L2_MBP);
+
+        let initial = OrderBookDelta::new(
+            instrument_id,
+            BookAction::Add,
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from("100.00"),
+                Quantity::from("10.000"),
+                0,
+            ),
+            0,
+            1,
+            UnixNanos::from(1_u64),
+            UnixNanos::from(1_u64),
+        );
+        engine.process_order_book_delta(&initial).unwrap();
+
+        let client_order_id = ClientOrderId::from("O-SNAPSHOT-DECREASE");
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Sell)
+            .price(Price::from("100.00"))
+            .quantity(Quantity::from("1.000"))
+            .client_order_id(client_order_id)
+            .submit(true)
+            .build();
+        engine.process_order(&mut order, AccountId::from("SIM-001"));
+        assert_eq!(
+            engine.queue_ahead_total.get(&client_order_id),
+            Some(&(Price::from("100.00").raw, Quantity::from("10.000").raw)),
+        );
+
+        let clear = OrderBookDelta::clear(
+            instrument_id,
+            2,
+            UnixNanos::from(2_u64),
+            UnixNanos::from(2_u64),
+        );
+        engine.process_order_book_delta(&clear).unwrap();
+        assert_eq!(
+            engine.queue_ahead_total.get(&client_order_id),
+            Some(&(Price::from("100.00").raw, Quantity::from("10.000").raw)),
+            "partial snapshot must not discard the old queue estimate",
+        );
+
+        let snapshot = OrderBookDelta::new(
+            instrument_id,
+            BookAction::Add,
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from("100.00"),
+                Quantity::from("8.000"),
+                0,
+            ),
+            RecordFlag::F_LAST as u8,
+            2,
+            UnixNanos::from(2_u64),
+            UnixNanos::from(2_u64),
+        );
+        engine.process_order_book_delta(&snapshot).unwrap();
+
+        assert_eq!(
+            engine.queue_ahead_total.get(&client_order_id),
+            Some(&(Price::from("100.00").raw, Quantity::from("8.000").raw)),
+        );
+        assert!(cache.borrow().order(&client_order_id).is_some());
+    }
+
+    #[rstest]
+    fn test_snapshot_rebase_does_not_increase_l2_queue_position() {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instrument_id = instrument.id();
+        let (mut engine, _cache) = get_queue_engine(instrument, BookType::L2_MBP);
+
+        let initial = OrderBookDelta::new(
+            instrument_id,
+            BookAction::Add,
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from("100.00"),
+                Quantity::from("10.000"),
+                0,
+            ),
+            0,
+            1,
+            UnixNanos::from(1_u64),
+            UnixNanos::from(1_u64),
+        );
+        engine.process_order_book_delta(&initial).unwrap();
+
+        let client_order_id = ClientOrderId::from("O-SNAPSHOT-INCREASE");
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Sell)
+            .price(Price::from("100.00"))
+            .quantity(Quantity::from("1.000"))
+            .client_order_id(client_order_id)
+            .submit(true)
+            .build();
+        engine.process_order(&mut order, AccountId::from("SIM-001"));
+
+        let snapshot = OrderBookDelta::new(
+            instrument_id,
+            BookAction::Add,
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from("100.00"),
+                Quantity::from("15.000"),
+                0,
+            ),
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8,
+            2,
+            UnixNanos::from(2_u64),
+            UnixNanos::from(2_u64),
+        );
+        engine.process_order_book_delta(&snapshot).unwrap();
+
+        assert_eq!(
+            engine.queue_ahead_total.get(&client_order_id),
+            Some(&(Price::from("100.00").raw, Quantity::from("10.000").raw)),
+        );
+    }
+
+    #[rstest]
+    fn test_depth10_rebases_l2_queue_position() {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instrument_id = instrument.id();
+        let (mut engine, _cache) = get_queue_engine(instrument, BookType::L2_MBP);
+
+        let mut asks = [BookOrder::default(); DEPTH10_LEN];
+        asks[0] = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("100.00"),
+            Quantity::from("10.000"),
+            0,
+        );
+        let initial = OrderBookDepth10::new(
+            instrument_id,
+            [BookOrder::default(); DEPTH10_LEN],
+            asks,
+            [0; DEPTH10_LEN],
+            [0; DEPTH10_LEN],
+            0,
+            1,
+            UnixNanos::from(1_u64),
+            UnixNanos::from(1_u64),
+        );
+        engine.process_order_book_depth10(&initial).unwrap();
+
+        let client_order_id = ClientOrderId::from("O-DEPTH10-REBASE");
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Sell)
+            .price(Price::from("100.00"))
+            .quantity(Quantity::from("1.000"))
+            .client_order_id(client_order_id)
+            .submit(true)
+            .build();
+        engine.process_order(&mut order, AccountId::from("SIM-001"));
+
+        asks[0] = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("100.00"),
+            Quantity::from("8.000"),
+            0,
+        );
+        let replacement = OrderBookDepth10::new(
+            instrument_id,
+            [BookOrder::default(); DEPTH10_LEN],
+            asks,
+            [0; DEPTH10_LEN],
+            [0; DEPTH10_LEN],
+            0,
+            2,
+            UnixNanos::from(2_u64),
+            UnixNanos::from(2_u64),
+        );
+        engine.process_order_book_depth10(&replacement).unwrap();
+
+        assert_eq!(
+            engine.queue_ahead_total.get(&client_order_id),
+            Some(&(Price::from("100.00").raw, Quantity::from("8.000").raw)),
+        );
+    }
+
+    #[rstest]
+    fn test_snapshot_rebases_each_l3_order_independently() {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instrument_id = instrument.id();
+        let (mut engine, _cache) = get_l3_queue_engine(instrument);
+
+        for (order_id, sequence) in [(1, 1), (2, 2)] {
+            let delta = OrderBookDelta::new(
+                instrument_id,
+                BookAction::Add,
+                BookOrder::new(
+                    OrderSide::Sell,
+                    Price::from("100.00"),
+                    Quantity::from("5.000"),
+                    order_id,
+                ),
+                0,
+                sequence,
+                UnixNanos::from(sequence),
+                UnixNanos::from(sequence),
+            );
+            engine.process_order_book_delta(&delta).unwrap();
+        }
+
+        let client_order_id = ClientOrderId::from("O-SNAPSHOT-L3");
+        let order = rest_l3_queue_order(&mut engine, Price::from("100.00"), 3, client_order_id);
+        assert_eq!(
+            engine.queue_ahead_orders[&client_order_id]
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![1, 2, 3],
+        );
+        assert_eq!(
+            engine.queue_ahead_total.get(&client_order_id),
+            Some(&(Price::from("100.00").raw, Quantity::from("20.000").raw)),
+        );
+
+        let snapshot = OrderBookDeltas::new(
+            instrument_id,
+            vec![
+                OrderBookDelta::clear(
+                    instrument_id,
+                    4,
+                    UnixNanos::from(4_u64),
+                    UnixNanos::from(4_u64),
+                ),
+                OrderBookDelta::new(
+                    instrument_id,
+                    BookAction::Add,
+                    BookOrder::new(
+                        OrderSide::Sell,
+                        Price::from("100.00"),
+                        Quantity::from("10.000"),
+                        1,
+                    ),
+                    RecordFlag::F_SNAPSHOT as u8,
+                    4,
+                    UnixNanos::from(4_u64),
+                    UnixNanos::from(4_u64),
+                ),
+                OrderBookDelta::new(
+                    instrument_id,
+                    BookAction::Add,
+                    BookOrder::new(
+                        OrderSide::Sell,
+                        Price::from("100.00"),
+                        Quantity::from("5.000"),
+                        2,
+                    ),
+                    RecordFlag::F_LAST as u8,
+                    4,
+                    UnixNanos::from(4_u64),
+                    UnixNanos::from(4_u64),
+                ),
+            ],
+        );
+        engine.process_order_book_deltas(&snapshot).unwrap();
+
+        assert_eq!(
+            engine.queue_ahead_orders[&client_order_id]
+                .iter()
+                .map(|(&order_id, &size)| (order_id, size))
+                .collect::<Vec<_>>(),
+            vec![
+                (1, Quantity::from("5.000").raw),
+                (2, Quantity::from("5.000").raw)
+            ],
+        );
+        assert_eq!(
+            engine.queue_ahead_total.get(&client_order_id),
+            Some(&(Price::from("100.00").raw, Quantity::from("10.000").raw)),
+        );
+
+        let delete_a = OrderBookDelta::new(
+            instrument_id,
+            BookAction::Delete,
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from("100.00"),
+                Quantity::from("10.000"),
+                1,
+            ),
+            0,
+            5,
+            UnixNanos::from(5_u64),
+            UnixNanos::from(5_u64),
+        );
+        engine.process_order_book_delta(&delete_a).unwrap();
+
+        assert_eq!(
+            engine.queue_ahead_orders[&client_order_id]
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![2],
+        );
+        assert_eq!(
+            engine.queue_ahead_total.get(&client_order_id),
+            Some(&(Price::from("100.00").raw, Quantity::from("5.000").raw)),
+        );
+        assert_eq!(order.client_order_id(), client_order_id);
     }
 
     #[rstest]
