@@ -1687,6 +1687,7 @@ impl BinanceRawSpotHttpClient {
         price: Option<&str>,
         cancel_order_id: Option<i64>,
         cancel_client_order_id: Option<&str>,
+        cancel_new_client_order_id: Option<&str>,
         new_client_order_id: Option<&str>,
     ) -> BinanceSpotHttpResult<BinanceNewOrderResponse> {
         let params = CancelReplaceOrderParams {
@@ -1700,6 +1701,7 @@ impl BinanceRawSpotHttpClient {
             price: price.map(|s| s.to_string()),
             cancel_order_id,
             cancel_orig_client_order_id: cancel_client_order_id.map(|s| s.to_string()),
+            cancel_new_client_order_id: cancel_new_client_order_id.map(|s| s.to_string()),
             new_client_order_id: new_client_order_id.map(|s| s.to_string()),
             stop_price: None,
             trailing_delta: None,
@@ -3532,6 +3534,7 @@ impl BinanceSpotHttpClient {
         time_in_force: TimeInForce,
         price: Option<Price>,
         use_gtd: bool,
+        cancel_new_client_order_id: &str,
     ) -> anyhow::Result<OrderStatusReport> {
         let symbol = instrument_id.symbol.inner();
         let instrument = self
@@ -3565,6 +3568,7 @@ impl BinanceSpotHttpClient {
                 price_str.as_deref(),
                 Some(cancel_order_id),
                 None,
+                Some(cancel_new_client_order_id),
                 Some(&client_id_str),
             )
             .await

@@ -354,6 +354,12 @@ pub struct CancelReplaceOrderParams {
         rename = "cancelOrigClientOrderId"
     )]
     pub cancel_orig_client_order_id: Option<String>,
+    /// Client order ID for the cancel half of the request.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "cancelNewClientOrderId"
+    )]
+    pub cancel_new_client_order_id: Option<String>,
     /// New client order ID.
     #[serde(skip_serializing_if = "Option::is_none", rename = "newClientOrderId")]
     pub new_client_order_id: Option<String>,
