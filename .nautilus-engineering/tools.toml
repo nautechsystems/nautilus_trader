@@ -16,7 +16,7 @@ pre-commit-repository = "https://github.com/pre-commit/pre-commit-hooks"
 pre-commit-revision = "v{version}"
 
 [ruff]
-version = "0.16.5"
+version = "0.16.6"
 ci = true
 releases = "pypi:ruff"
 pre-commit-repository = "https://github.com/astral-sh/ruff-pre-commit"
@@ -81,7 +81,7 @@ version = "0.13.13"
 releases = "crates:cargo-edit"
 
 [cargo-llvm-cov]
-version = "0.9.0"
+version = "0.9.1"
 releases = "crates:cargo-llvm-cov"
 
 [cargo-nextest]

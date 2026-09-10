@@ -332,7 +332,7 @@ build-debug: py-stubs  #-- Build and install the package in debug mode
 	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=$(TARGET_DIR) uv run --no-sync maturin develop --profile $(CARGO_CI_PROFILE)
 
 .PHONY: build-wheel
-build-wheel: sync  #-- Build a wheel distribution in release mode
+build-wheel: check-cargo-cooldown sync  #-- Build a wheel distribution in release mode
 	$(info $(M) Building the Python wheel in release mode...)
 	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=$(TARGET_DIR) uv run --no-sync maturin build --release --out ../dist
 
@@ -349,7 +349,7 @@ $(PY_STUB_INPUT_LIST): py-stub-input-list-force
 		rm "$$py_stub_input_tmp"; \
 	fi
 
-$(PY_STUB_STAMP): $(PY_STUB_INPUTS) $(PY_STUB_INPUT_LIST) | sync
+$(PY_STUB_STAMP): $(PY_STUB_INPUTS) $(PY_STUB_INPUT_LIST) | check-cargo-cooldown sync
 	$(info $(M) Generating Python type stubs...)
 	$Q mkdir -p "$(dir $(PY_STUB_STAMP))"
 	$Q cd python && VIRTUAL_ENV= NAUTILUS_STUB_PROFILE=$(CARGO_CI_PROFILE) \
@@ -494,6 +494,7 @@ pre-flight-steps:
 		$(MAKE) --no-print-directory sync \
 		&& $(MAKE) --no-print-directory format \
 		&& $(MAKE) --no-print-directory test-scripts-quiet \
+		&& $(MAKE) --no-print-directory check-cargo-cooldown \
 		&& $(MAKE) --no-print-directory check-code EXTRA_FEATURES="capnp,hypersync" \
 		&& $(MAKE) --no-print-directory check-code-sim \
 		&& $(MAKE) --no-print-directory cargo-test-sim \
@@ -693,8 +694,12 @@ docs-check-links:  #-- Check for broken links in documentation (periodic audit)
 #== Rust Development
 
 .PHONY: cargo-build
-cargo-build:  #-- Build Rust crates in release mode
+cargo-build: check-cargo-cooldown  #-- Build Rust crates in release mode
 	cargo build --release --all-features
+
+.PHONY: check-cargo-cooldown
+check-cargo-cooldown:  #-- Check new Cargo lockfile versions against the release cooldown
+	$Q bash scripts/check-cargo-cooldown.sh
 
 .PHONY: cargo-update
 cargo-update:  #-- Update Rust dependencies (versions from Cargo.toml)

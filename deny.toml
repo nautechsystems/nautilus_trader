@@ -132,7 +132,7 @@ deny = []
 
 # Skip certain crates during duplicate detection.
 # These are transitive duplicates from upstream crates outside our control.
-# Last reviewed: 2026-08-22
+# Last reviewed: 2026-09-10
 skip = [
   # Crypto ecosystem - version-locked together, pulled by various blockchain crates
   { crate = "block-buffer" },
@@ -212,7 +212,7 @@ skip = [
   # Cap'n Proto - hypersync-client uses 0.23.x, nautilus-serialization uses 0.27.x
   { crate = "capnp" },
 
-  # TOML parser - cbindgen requires 0.9.x, pyo3-stub-gen requires 1.0.x
+  # TOML parser - cbindgen requires 0.9.x; the workspace and pyo3-stub-gen use 1.x
   { crate = "toml" },
   { crate = "toml_datetime" },
   { crate = "winnow" },
