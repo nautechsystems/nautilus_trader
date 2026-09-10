@@ -421,6 +421,7 @@ impl TestTimer {
         } else {
             0
         };
+
         self.take(advances as usize).map(|(event, _)| event)
     }
 
@@ -799,6 +800,7 @@ mod tests {
         Python::attach(|py| {
             let seen = PyList::empty(py);
             let seen_obj = seen.clone().unbind().into_any();
+
             let callback = new_sync_py_callback(
                 py,
                 move |args: &Bound<'_, PyTuple>,
@@ -880,6 +882,7 @@ mod tests {
         let callback_expected_topic = expected_topic.clone();
         let callback_tap = Rc::clone(&tap);
         let callback_seen_ref = Rc::clone(&callback_seen);
+
         let callback: Rc<dyn Fn(TimeEvent)> = Rc::new(move |callback_event| {
             assert_eq!(
                 callback_tap.time_events(),
@@ -960,11 +963,13 @@ mod tests {
         );
 
         let mut current_time = start_time_ns;
+
         let mut expected_next = if fire_immediately {
             start_time_ns
         } else {
             start_time_ns + interval_ns
         };
+
         let mut expected_expired = false;
 
         for operation in operations {
@@ -1043,10 +1048,12 @@ mod tests {
 
             let event_time = *next_time;
             events.push(event_time);
+
             let Some(following_time) = event_time.checked_add(interval_ns) else {
                 *is_expired = true;
                 break;
             };
+
             *next_time = following_time;
 
             if Some(event_time) == stop_time_ns {

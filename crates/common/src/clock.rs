@@ -963,6 +963,7 @@ impl TestClock {
             };
 
             events.push(event);
+
             if let Some(next_event) = next_event {
                 self.timer_queue.push(next_event);
             }
@@ -985,6 +986,7 @@ impl TestClock {
                 .cmp(&b.ts_event)
                 .then_with(|| a.name.cmp(&b.name))
         });
+
         events
     }
 
@@ -1220,6 +1222,7 @@ impl Clock for TestClock {
         if let Some(mut timer) = timer {
             timer.cancel();
         }
+
         self.compact_timer_queue_if_needed();
     }
 
@@ -2258,6 +2261,7 @@ mod tests {
         } else {
             expected_ns.as_u64() - next_time.as_u64()
         };
+
         assert!(
             diff < 1000,
             "Timer should be set within 1 microsecond of expected time"
@@ -2419,10 +2423,12 @@ mod tests {
                 .set_time_alert_ns(&format!("timer_{i}"), fire_time, None, None)
                 .unwrap();
         }
+
         assert_eq!(test_clock.timer_count(), 5);
 
         let events = test_clock.advance_time(fire_time, true);
         assert_eq!(events.len(), 5);
+
         for event in &events {
             assert_eq!(*event.ts_event, *fire_time);
         }
@@ -3032,9 +3038,11 @@ mod tests {
 
                 let event_time_ns = timer.next;
                 events.push((event_time_ns, *name, event_time_ns));
+
                 let Some(following_time_ns) = event_time_ns.checked_add(timer.interval) else {
                     return false;
                 };
+
                 timer.next = following_time_ns;
                 if timer.stop == Some(event_time_ns) {
                     return false;
