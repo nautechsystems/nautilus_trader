@@ -29,7 +29,7 @@ use super::{
     PathBuf, RecordBatch, Serialize, UnixNanos, WRITE_SKIP_DISJOINT_CHECK, are_intervals_disjoint,
     instrument_any_type, instrument_path_prefix, parquet_data_path_prefix,
     prepare_custom_data_batch, record_batch_without_identifier_column, record_path_prefix,
-    timestamps_to_filename, to_snake_case, write_batches_to_object_store, write_builtin_batch,
+    timestamps_to_filename, to_snake_case, write_batches_to_object_store, write_catalog_batch,
 };
 use crate::{
     backend::parquet::io::write_batches_to_object_store_create,
@@ -81,15 +81,8 @@ impl ParquetDataCatalog {
         skip_disjoint_check: Option<bool>,
     ) -> anyhow::Result<()> {
         for batch in DataBatch::from_data_vec_grouped(data)? {
-            match &batch {
-                DataBatch::Custom(data) => {
-                    self.write_custom_data_batch(data.as_ref(), start, end, skip_disjoint_check)?;
-                }
-                batch => write_builtin_batch(self, batch, start, end, skip_disjoint_check)
-                    .expect("built-in data batch dispatch is exhaustive")?,
-            }
+            write_catalog_batch(self, &batch, start, end, skip_disjoint_check)?;
         }
-
         Ok(())
     }
 

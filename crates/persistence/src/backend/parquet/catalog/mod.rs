@@ -170,32 +170,23 @@ macro_rules! define_builtin_data_dispatch {
             }
         }
 
-        fn write_builtin_batch(
+        fn write_catalog_batch(
             catalog: &ParquetDataCatalog,
             batch: &DataBatch,
             start: Option<UnixNanos>,
             end: Option<UnixNanos>,
             skip_disjoint_check: Option<bool>,
-        ) -> Option<anyhow::Result<()>> {
+        ) -> anyhow::Result<()> {
+            #[allow(unreachable_patterns, reason = "reject unsupported variants introduced by feature unification")]
             match batch {
-                DataBatch::Instrument(data) => Some(
-                    catalog
-                        .write_instruments(data.as_ref().to_vec())
-                        .map(|_| ()),
-                ),
-                $(
-                    DataBatch::$batch(data) => Some(
-                        catalog
-                            .write_grouped_to_parquet(
-                                data.as_ref(),
-                                start,
-                                end,
-                                skip_disjoint_check,
-                            )
-                            .map(|_| ()),
-                    ),
-                )+
-                _ => None,
+                DataBatch::BookDeltas(data) => {
+                    let deltas = data.iter().flat_map(|batch| batch.deltas.iter().copied()).collect::<Vec<_>>();
+                    catalog.write_grouped_to_parquet(&deltas, start, end, skip_disjoint_check)
+                }
+                DataBatch::Custom(data) => catalog.write_custom_data_batch(data.as_ref(), start, end, skip_disjoint_check).map(|_| ()),
+                DataBatch::Instrument(data) => catalog.write_instruments(data.as_ref().to_vec()).map(|_| ()),
+                $(DataBatch::$batch(data) => catalog.write_grouped_to_parquet(data.as_ref(), start, end, skip_disjoint_check),)+
+                _ => anyhow::bail!("Unsupported catalog data batch: {}", batch.data_type_name()),
             }
         }
     };
@@ -851,22 +842,7 @@ impl CatalogWriter for ParquetDataCatalog {
             .as_ref()
             .and_then(|params| params.get_bool(WRITE_SKIP_DISJOINT_CHECK));
 
-        match batch {
-            DataBatch::BookDeltas(data) => {
-                let deltas = data
-                    .iter()
-                    .flat_map(|batch| batch.deltas.iter().copied())
-                    .collect::<Vec<_>>();
-                self.write_to_parquet(&deltas, start, end, skip_disjoint_check)
-                    .map(|_| ())
-            }
-            DataBatch::Custom(data) => self
-                .write_custom_data_batch(data.as_ref(), start, end, skip_disjoint_check)
-                .map(|_| ()),
-
-            batch => write_builtin_batch(self, batch, start, end, skip_disjoint_check)
-                .expect("built-in data batch dispatch is exhaustive"),
-        }
+        write_catalog_batch(self, batch, start, end, skip_disjoint_check)
     }
 
     fn write_records(

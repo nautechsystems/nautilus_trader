@@ -167,8 +167,8 @@ impl ParquetDataCatalog {
             return self.decode_instrument_files(instrument_files, start, end);
         };
 
-        self.register_remote_object_store()?;
         self.session.clear_registered_tables();
+        self.register_remote_object_store()?;
 
         let mut all_instruments = Vec::new();
         let instrument_files =
