@@ -1989,7 +1989,13 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                             anyhow::bail!("Spot replacement response has no price");
                         };
 
-                        if !dispatch_state.record_order_update(command.client_order_id, report.venue_order_id, report.quantity, price, report.trigger_price) {
+                        if !dispatch_state.record_order_update(
+                            command.client_order_id,
+                            report.venue_order_id,
+                            report.quantity,
+                            price,
+                            report.trigger_price,
+                        ) {
                             return Ok(());
                         }
                         let ts_now = clock.get_time_ns();
@@ -2013,58 +2019,15 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                         event_emitter.send_order_event(OrderEventAny::Updated(updated_event));
                     }
                     Err(e) => {
-                        let failure = e.downcast_ref::<BinanceSpotHttpError>().map_or_else(
-                            || CommandFailure::Ambiguous(e.to_string()),
-                            classify_spot_http_failure,
+                        handle_http_modify_failure(
+                            &e,
+                            &command,
+                            &cancel_id,
+                            &event_emitter,
+                            &dispatch_state,
+                            account_id,
+                            clock.get_time_ns(),
                         );
-
-                        match failure {
-                            CommandFailure::Ambiguous(reason) => {
-                                log::warn!(
-                                    "Ambiguous modify failure for {}, awaiting reconciliation: {reason}",
-                                    command.client_order_id
-                                );
-                            }
-                            CommandFailure::NotSent(reason)
-                            | CommandFailure::VenueRejected(reason) => {
-                                if let Some(canceled) = dispatch_state.reject_replace(command.client_order_id) {
-                                    dispatch_state.cleanup_terminal(command.client_order_id);
-                                    event_emitter.send_order_event(OrderEventAny::Canceled(canceled));
-                                    return Err(e);
-                                }
-                                let ts_now = clock.get_time_ns();
-                                let rejected_event = OrderModifyRejected::new(
-                                    trader_id,
-                                    command.strategy_id,
-                                    command.instrument_id,
-                                    command.client_order_id,
-                                    format!("modify-order-error: {}", sanitize_reason(&reason))
-                                        .into(),
-                                    UUID4::new(),
-                                    ts_now,
-                                    ts_now,
-                                    false,
-                                    command.venue_order_id,
-                                    Some(account_id),
-                                );
-                                event_emitter
-                                    .send_order_event(OrderEventAny::ModifyRejected(rejected_event));
-
-                                if let Some((venue_order_id, ts_event)) =
-                                    dispatch_state.on_cancel_replace_rejected(&cancel_id)
-                                {
-                                    emit_canceled_after_rejected_replace(
-                                        &event_emitter,
-                                        &dispatch_state,
-                                        account_id,
-                                        command.client_order_id,
-                                        venue_order_id,
-                                        ts_event,
-                                        ts_now,
-                                    );
-                                }
-                            }
-                        }
                         return Err(e);
                     }
                 }
@@ -2625,14 +2588,12 @@ fn dispatch_ws_trading_message(
                 }
             }
 
-            if let (Some(pending), Some((venue_order_id, ts_event))) = (pending, confirmed_cancel) {
+            if let Some(report) = confirmed_cancel {
                 emit_canceled_after_rejected_replace(
                     emitter,
                     dispatch_state,
                     account_id,
-                    pending.client_order_id,
-                    venue_order_id,
-                    ts_event,
+                    report,
                     clock.get_time_ns(),
                 );
             }
@@ -3278,22 +3239,25 @@ fn cancel_replace_cancel_id() -> String {
     format!("CR-{}", UUID4::new().as_str().replace('-', ""))
 }
 
-/// Emits `OrderCanceled` for the original order of a cancel-replace whose cancel
-/// half the venue confirmed before rejecting the replacement.
+/// Emits the confirmed cancellation of a cancel-replace whose replacement the
+/// venue rejected: `OrderCanceled` for a tracked order, or the withheld status
+/// report for an order without a dispatch identity (recovered after restart or
+/// claimed through reconciliation) so reconciliation applies it.
 fn emit_canceled_after_rejected_replace(
     emitter: &ExecutionEventEmitter,
     state: &WsDispatchState,
     account_id: AccountId,
-    client_order_id: ClientOrderId,
-    venue_order_id: VenueOrderId,
-    ts_event: UnixNanos,
+    report: OrderStatusReport,
     ts_init: UnixNanos,
 ) {
-    let Some(identity) = state
-        .order_identities
-        .get(&client_order_id)
-        .map(|r| r.clone())
-    else {
+    let identity = report
+        .client_order_id
+        .and_then(|cid| state.order_identities.get(&cid).map(|r| r.clone()));
+    if let Some(client_order_id) = report.client_order_id {
+        state.cleanup_terminal(client_order_id);
+    }
+    let (Some(client_order_id), Some(identity)) = (report.client_order_id, identity) else {
+        emitter.send_order_status_report(report);
         return;
     };
 
@@ -3303,15 +3267,67 @@ fn emit_canceled_after_rejected_replace(
         identity.instrument_id,
         client_order_id,
         UUID4::new(),
-        ts_event,
+        report.ts_last,
         ts_init,
         false,
-        Some(venue_order_id),
+        Some(report.venue_order_id),
         Some(account_id),
         None,
     );
-    state.cleanup_terminal(client_order_id);
     emitter.send_order_event(OrderEventAny::Canceled(canceled));
+}
+
+/// Handles a failed HTTP cancel-replace: emits `OrderModifyRejected` for a
+/// definitive rejection and replays the withheld cancel report if it already
+/// arrived.
+fn handle_http_modify_failure(
+    error: &anyhow::Error,
+    command: &ModifyOrder,
+    cancel_id: &str,
+    emitter: &ExecutionEventEmitter,
+    state: &WsDispatchState,
+    account_id: AccountId,
+    ts_now: UnixNanos,
+) {
+    let failure = error.downcast_ref::<BinanceSpotHttpError>().map_or_else(
+        || CommandFailure::Ambiguous(error.to_string()),
+        classify_spot_http_failure,
+    );
+
+    match failure {
+        CommandFailure::Ambiguous(reason) => {
+            log::warn!(
+                "Ambiguous modify failure for {}, awaiting reconciliation: {reason}",
+                command.client_order_id
+            );
+        }
+        CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+            if let Some(canceled) = state.reject_replace(command.client_order_id) {
+                state.cleanup_terminal(command.client_order_id);
+                emitter.send_order_event(OrderEventAny::Canceled(canceled));
+                return;
+            }
+
+            let rejected_event = OrderModifyRejected::new(
+                emitter.trader_id(),
+                command.strategy_id,
+                command.instrument_id,
+                command.client_order_id,
+                format!("modify-order-error: {}", sanitize_reason(&reason)).into(),
+                UUID4::new(),
+                ts_now,
+                ts_now,
+                false,
+                command.venue_order_id,
+                Some(account_id),
+            );
+            emitter.send_order_event(OrderEventAny::ModifyRejected(rejected_event));
+
+            if let Some(report) = state.on_cancel_replace_rejected(cancel_id) {
+                emit_canceled_after_rejected_replace(emitter, state, account_id, report, ts_now);
+            }
+        }
+    }
 }
 
 fn build_cancel_replace_params(
@@ -3387,23 +3403,32 @@ fn dispatch_execution_report(
     let (price_precision, size_precision) =
         (instrument.price_precision(), instrument.size_precision());
 
-    if report.execution_type == BinanceSpotExecutionType::Canceled {
-        let venue_order_id = VenueOrderId::new(report.order_id.to_string());
-        let ts_event =
-            parse_millis_or_init(report.event_time, "Spot execution event time", ts_init);
-
-        if dispatch_state.on_cancel_replace_canceled(
-            &report.client_order_id,
-            venue_order_id,
-            ts_event,
+    if report.execution_type == BinanceSpotExecutionType::Canceled
+        && dispatch_state.has_cancel_replace(&report.client_order_id)
+    {
+        match parse_spot_exec_report_to_order_status(
+            report,
+            instrument_id,
+            price_precision,
+            size_precision,
+            account_id,
+            treat_expired_as_canceled,
+            ts_init,
         ) {
-            // Cancel half of a cancel-replace: the replacement `NEW` drives `OrderUpdated`
-            log::debug!(
-                "Withholding cancel-replace cancel report: client_order_id={}, venue_order_id={}",
-                report.order_client_order_id(),
-                report.order_id
-            );
-            return;
+            Ok(status) => {
+                if dispatch_state.on_cancel_replace_canceled(&report.client_order_id, status) {
+                    // Cancel half of a cancel-replace: the replacement `NEW` drives `OrderUpdated`
+                    log::debug!(
+                        "Withholding cancel-replace cancel report: client_order_id={}, venue_order_id={}",
+                        report.order_client_order_id(),
+                        report.order_id
+                    );
+                    return;
+                }
+            }
+            Err(e) => log::warn!(
+                "Cannot withhold cancel-replace cancel report, dispatching normally: {e}"
+            ),
         }
     }
 
@@ -3929,7 +3954,7 @@ fn is_spot_post_only_rejection(error: &BinanceSpotHttpError) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::messages::ExecutionEvent;
+    use nautilus_common::messages::{ExecutionEvent, execution::ExecutionReport};
     use nautilus_core::time::get_atomic_clock_realtime;
     use nautilus_model::{
         enums::{AccountType, LiquiditySide, OrderSide, TimeInForce},
@@ -5137,6 +5162,101 @@ mod tests {
         assert!(dispatch_state.order_identities.is_empty());
         assert!(dispatch_state.pending_requests.is_empty());
         assert!(dispatch_state.cancel_replace_request_ids.is_empty());
+    }
+
+    #[rstest]
+    #[case::partial_failure(-2021, 409, true)]
+    #[case::ambiguous(BINANCE_STATUS_UNKNOWN_CODE, 500, false)]
+    fn test_http_modify_failure_replays_withheld_cancel_without_identity(
+        #[case] code: i64,
+        #[case] status: u16,
+        #[case] definitive: bool,
+    ) {
+        let clock = get_atomic_clock_realtime();
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let http_client = create_test_http_client(clock);
+        let dispatch_state = WsDispatchState::default();
+        let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
+        let account_id = AccountId::from("BINANCE-001");
+        let client_order_id = ClientOrderId::from("O-20200101-000000-000-000-0");
+        let instrument_id = InstrumentId::from("ETHUSDT.BINANCE");
+
+        let cancel_id = cancel_replace_cancel_id();
+        dispatch_state.insert_cancel_replace(cancel_id.clone());
+        let canceled = cancel_replace_cancel_report(&cancel_id);
+
+        dispatch_execution_report(
+            &canceled,
+            &emitter,
+            &http_client,
+            account_id,
+            false,
+            &dispatch_state,
+            &seen_trade_ids,
+            clock.get_time_ns(),
+        );
+        assert!(rx.try_recv().is_err(), "cancel report must be withheld");
+
+        let command = ModifyOrder::new(
+            TraderId::from("TESTER-001"),
+            None,
+            StrategyId::from("TEST-STRATEGY"),
+            instrument_id,
+            client_order_id,
+            Some(VenueOrderId::from("12345678")),
+            Some(Quantity::from("2")),
+            Some(Price::from("2400.00")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        let error = anyhow::anyhow!(BinanceSpotHttpError::BinanceError {
+            code,
+            message: "Order cancel-replace partially failed.".to_string(),
+            status,
+            retry_after: None,
+        });
+
+        handle_http_modify_failure(
+            &error,
+            &command,
+            &cancel_id,
+            &emitter,
+            &dispatch_state,
+            account_id,
+            clock.get_time_ns(),
+        );
+
+        if !definitive {
+            assert!(
+                rx.try_recv().is_err(),
+                "ambiguous outcome must remain pending"
+            );
+            return;
+        }
+
+        match rx.try_recv().expect("OrderModifyRejected expected") {
+            ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
+                assert_eq!(event.client_order_id, client_order_id);
+            }
+            other => panic!("Expected OrderModifyRejected, was {other:?}"),
+        }
+
+        match rx.try_recv().expect("cancel status report expected") {
+            ExecutionEvent::Report(ExecutionReport::Order(report)) => {
+                assert_eq!(report.client_order_id, Some(client_order_id));
+                assert_eq!(report.venue_order_id, VenueOrderId::from("12345678"));
+                assert_eq!(report.order_status, OrderStatus::Canceled);
+                assert_eq!(
+                    report.ts_last,
+                    UnixNanos::from(1_709_654_402_000_000_000u64)
+                );
+            }
+            other => panic!("Expected order status report, was {other:?}"),
+        }
+        assert!(rx.try_recv().is_err());
     }
 
     #[rstest]

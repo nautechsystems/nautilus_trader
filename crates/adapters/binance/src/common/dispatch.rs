@@ -29,6 +29,7 @@ use nautilus_model::{
     enums::{OrderSide, OrderType},
     events::{OrderAccepted, OrderCanceled, OrderEventAny},
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, VenueOrderId},
+    reports::OrderStatusReport,
     types::{Price, Quantity},
 };
 use parking_lot::Mutex;
@@ -61,10 +62,10 @@ pub struct PendingRequest {
 enum CancelReplaceOutcome {
     Pending,
     /// The cancel report arrived; withheld while the replacement is pending or succeeded.
-    Canceled {
-        venue_order_id: VenueOrderId,
-        ts_event: UnixNanos,
-    },
+    ///
+    /// Parsed at that point so it can be replayed even for an order without a
+    /// dispatch identity, such as one recovered after restart.
+    Canceled(Box<OrderStatusReport>),
     /// The venue rejected the request before any cancel report arrived.
     Rejected,
 }
@@ -151,18 +152,20 @@ impl WsDispatchState {
             .insert(cancel_id, CancelReplaceOutcome::Pending);
     }
 
+    /// Returns `true` when `cancel_id` belongs to a cancel-replace this client issued.
+    pub fn has_cancel_replace(&self, cancel_id: &str) -> bool {
+        self.cancel_replace_outcomes
+            .lock()
+            .contains_key(&cancel_id.to_string())
+    }
+
     /// Records the cancel half's `CANCELED` report for a cancel-replace request.
     ///
     /// Returns `true` when the report must be withheld because the replacement is
     /// pending or succeeded, and `false` when it should dispatch as a standalone
     /// cancel because the venue already rejected the replacement or the ID is not
     /// one this client issued.
-    pub fn on_cancel_replace_canceled(
-        &self,
-        cancel_id: &str,
-        venue_order_id: VenueOrderId,
-        ts_event: UnixNanos,
-    ) -> bool {
+    pub fn on_cancel_replace_canceled(&self, cancel_id: &str, report: OrderStatusReport) -> bool {
         let mut outcomes = self.cancel_replace_outcomes.lock();
         let Some(outcome) = outcomes.get_mut(&cancel_id.to_string()) else {
             return false;
@@ -170,22 +173,19 @@ impl WsDispatchState {
 
         match outcome {
             CancelReplaceOutcome::Pending => {
-                *outcome = CancelReplaceOutcome::Canceled {
-                    venue_order_id,
-                    ts_event,
-                };
+                *outcome = CancelReplaceOutcome::Canceled(Box::new(report));
                 true
             }
-            CancelReplaceOutcome::Canceled { .. } => true,
+            CancelReplaceOutcome::Canceled(_) => true,
             CancelReplaceOutcome::Rejected => false,
         }
     }
 
     /// Records a rejected cancel-replace request.
     ///
-    /// Returns the confirmed cancellation when its report already arrived, so the
-    /// caller can emit `OrderCanceled` for the original order.
-    pub fn on_cancel_replace_rejected(&self, cancel_id: &str) -> Option<(VenueOrderId, UnixNanos)> {
+    /// Returns the withheld cancel report when it already arrived, so the caller
+    /// can emit the confirmed cancellation for the original order.
+    pub fn on_cancel_replace_rejected(&self, cancel_id: &str) -> Option<OrderStatusReport> {
         let mut outcomes = self.cancel_replace_outcomes.lock();
         let outcome = outcomes.get_mut(&cancel_id.to_string())?;
 
@@ -194,10 +194,7 @@ impl WsDispatchState {
                 *outcome = CancelReplaceOutcome::Rejected;
                 None
             }
-            CancelReplaceOutcome::Canceled {
-                venue_order_id,
-                ts_event,
-            } => Some((*venue_order_id, *ts_event)),
+            CancelReplaceOutcome::Canceled(report) => Some((**report).clone()),
             CancelReplaceOutcome::Rejected => None,
         }
     }
