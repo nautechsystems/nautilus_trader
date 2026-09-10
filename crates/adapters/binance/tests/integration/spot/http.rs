@@ -35,7 +35,9 @@ use nautilus_binance::{
             models::BinanceCancelOpenOrdersResponse,
             query::{AccountInfoParams, DepthParams},
         },
-        sbe::spot::{SBE_SCHEMA_ID, SBE_SCHEMA_VERSION},
+        sbe::spot::{
+            SBE_SCHEMA_ID, SBE_SCHEMA_VERSION, self_trade_prevention_mode::SelfTradePreventionMode,
+        },
     },
 };
 use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
@@ -74,7 +76,7 @@ const KLINES_BLOCK_LENGTH: u16 = 120;
 const ACCOUNT_BLOCK_LENGTH: u16 = 64;
 const BALANCE_BLOCK_LENGTH: u16 = 17;
 const ACCOUNT_TRADE_BLOCK_LENGTH: u16 = 70;
-const NEW_ORDER_FULL_BLOCK_LENGTH: u16 = 153;
+const NEW_ORDER_FULL_BLOCK_LENGTH: u16 = 154;
 const CANCEL_ORDER_BLOCK_LENGTH: u16 = 137;
 
 // Filter template IDs (from Binance SBE schema)
@@ -488,7 +490,7 @@ fn build_new_order_response(
     let mut buf = Vec::new();
     buf.extend_from_slice(&header);
 
-    // Fixed block (153 bytes)
+    // Fixed block (154 bytes)
     buf.push((-8i8) as u8); // price_exponent
     buf.push((-8i8) as u8); // qty_exponent
     buf.extend_from_slice(&order_id.to_le_bytes()); // order_id
@@ -505,11 +507,10 @@ fn build_new_order_response(
     buf.extend_from_slice(&i64::MIN.to_le_bytes()); // stop_price (None)
     buf.extend_from_slice(&[0u8; 16]); // trailing_delta + trailing_time
     buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // working_time
-    buf.extend_from_slice(&[0u8; 23]); // iceberg to used_sor
-    buf.push(0); // self_trade_prevention_mode
-    buf.extend_from_slice(&[0u8; 16]); // trade_group_id + prevented_quantity
-    buf.push((-8i8) as u8); // commission_exponent
-    buf.extend_from_slice(&[0u8; 18]); // padding to end of fixed block
+    buf.extend_from_slice(&[0u8; 22]); // iceberg_qty to working_floor
+    buf.push(3); // self_trade_prevention_mode (EXPIRE_MAKER)
+    buf.extend_from_slice(&[0u8; 36]); // trade_group_id to pegged_price
+    buf.push(0xff); // expiry_reason (null)
 
     // Fills group (empty) - block length is 42
     buf.extend_from_slice(&create_group_header(42, 0));
@@ -551,11 +552,10 @@ fn build_cancel_order_response(
     buf.push(0); // time_in_force (GTC)
     buf.push(1); // order_type (LIMIT)
     buf.push(1); // side (BUY)
-    buf.push(0); // self_trade_prevention_mode
-
-    // Pad to end of fixed block (137 - 63 = 74 bytes remaining)
-    let current_len = buf.len() - 8; // Subtract header
-    buf.extend_from_slice(&vec![0u8; CANCEL_ORDER_BLOCK_LENGTH as usize - current_len]);
+    buf.extend_from_slice(&i64::MIN.to_le_bytes()); // stop_price (None)
+    buf.extend_from_slice(&[0u8; 38]); // trailing_delta to working_floor
+    buf.push(3); // self_trade_prevention_mode (EXPIRE_MAKER)
+    buf.extend_from_slice(&[0u8; 28]); // prevented_quantity to pegged_price
 
     // Variable strings
     write_var_string(&mut buf, symbol);
@@ -1818,6 +1818,10 @@ async fn test_new_order_with_credentials_succeeds() {
     assert_eq!(order.order_id, 99999);
     assert_eq!(order.symbol, "BTCUSDT");
     assert_eq!(order.client_order_id, "my-order-123");
+    assert_eq!(
+        order.self_trade_prevention_mode,
+        SelfTradePreventionMode::ExpireMaker
+    );
 }
 
 #[rstest]
@@ -1866,6 +1870,10 @@ async fn test_cancel_order_with_credentials_succeeds() {
 
     assert_eq!(order.order_id, 12345);
     assert_eq!(order.symbol, "BTCUSDT");
+    assert_eq!(
+        order.self_trade_prevention_mode,
+        SelfTradePreventionMode::ExpireMaker
+    );
 }
 
 #[rstest]
