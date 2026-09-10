@@ -69,7 +69,7 @@ const ORDERS_TEMPLATE_ID: u16 = 308;
 const ACCOUNT_TRADES_TEMPLATE_ID: u16 = 401;
 const SYMBOL_BLOCK_LENGTH: u16 = 19;
 const ORDERS_GROUP_BLOCK_LENGTH: u16 = 162;
-const ORDER_BLOCK_LENGTH: u16 = 153;
+const ORDER_BLOCK_LENGTH: u16 = 162;
 const KLINES_BLOCK_LENGTH: u16 = 120;
 const ACCOUNT_BLOCK_LENGTH: u16 = 64;
 const BALANCE_BLOCK_LENGTH: u16 = 17;
@@ -269,20 +269,18 @@ fn build_single_order_response(
     buf.push(1); // order_type (LIMIT)
     buf.push(1); // side (BUY)
     buf.extend_from_slice(&i64::MIN.to_le_bytes()); // stop_price (None)
+    buf.extend_from_slice(&[0u8; 16]); // trailing_delta + trailing_time
     buf.extend_from_slice(&i64::MIN.to_le_bytes()); // iceberg_qty (None)
     buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // time
     buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // update_time
     buf.push(1); // is_working
     buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // working_time
     buf.extend_from_slice(&0i64.to_le_bytes()); // orig_quote_order_qty
-    buf.push(0); // self_trade_prevention_mode
 
-    // Pad to ORDER_BLOCK_LENGTH (153 bytes) - we've written 104 bytes of fixed data
-    let fixed_written = 104;
-    buf.extend(std::iter::repeat_n(
-        0u8,
-        ORDER_BLOCK_LENGTH as usize - fixed_written,
-    ));
+    // Pad to block length
+    while buf.len() - 8 < ORDER_BLOCK_LENGTH as usize {
+        buf.push(0);
+    }
 
     write_var_string(&mut buf, symbol);
     write_var_string(&mut buf, client_order_id);

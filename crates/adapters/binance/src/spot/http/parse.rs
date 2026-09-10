@@ -359,14 +359,18 @@ pub fn decode_klines(buf: &[u8]) -> Result<BinanceKlines, SbeDecodeError> {
 
 /// Bytes consumed from the fixed block before the end-of-block skip in each decoder.
 /// These represent explicit reads and advances up to the last field we extract.
-const NEW_ORDER_FULL_FIELDS_END: usize = 135;
-const CANCEL_ORDER_FIELDS_END: usize = 63;
+const NEW_ORDER_FULL_FIELDS_END: usize = 117;
+const CANCEL_ORDER_FIELDS_END: usize = 109;
 const CANCEL_ORDER_LIST_FIELDS_END: usize = 21;
 const CANCEL_ORDER_LIST_ORDER_FIELDS_END: usize = 8;
 const CANCEL_ORDER_LIST_REPORT_FIELDS_END: usize = 107;
 const CANCEL_ORDER_LIST_REPORT_V0_BLOCK_LENGTH: u16 = 124;
 const CANCEL_ORDER_LIST_REPORT_V1_BLOCK_LENGTH: u16 = 135;
-const ORDER_FIELDS_END: usize = 104;
+const ORDER_FIELDS_END: usize = 134;
+
+/// Minimum fixed-block length of an order in `orderResponse` and the
+/// `ordersResponse` group (schema 3:3 baseline).
+const ORDER_MIN_BLOCK_LENGTH: u16 = 162;
 
 /// Sentinel value for a null `expiryReason` in schema 3:4.
 const EXPIRY_REASON_NULL: u8 = 0xff;
@@ -376,7 +380,6 @@ const EXPIRY_REASON_NULL: u8 = 0xff;
 /// `orderResponse` / `ordersResponse` at 162.
 const NEW_ORDER_FULL_EXPIRY_REASON_OFFSET: usize = 153;
 const ORDER_EXPIRY_REASON_OFFSET: usize = 162;
-const ORDERS_GROUP_EXPIRY_REASON_OFFSET: usize = 162;
 
 /// Reads the schema-3:4 `expiryReason` byte from the fixed block when present.
 ///
@@ -451,11 +454,8 @@ pub fn decode_new_order_full(buf: &[u8]) -> Result<BinanceNewOrderResponse, SbeD
     cursor.advance(16)?; // Skip trailing_delta (8) + trailing_time (8)
     let working_time = cursor.read_optional_i64_le()?;
 
-    cursor.advance(23)?; // Skip iceberg to used_sor
+    cursor.advance(22)?; // Skip iceberg_qty to working_floor
     let self_trade_prevention_mode = cursor.read_u8()?.into();
-
-    cursor.advance(16)?; // Skip trade_group_id + prevented_quantity
-    let _commission_exponent = cursor.read_i8()?;
 
     let expiry_reason = read_trailing_expiry_reason(
         &mut cursor,
@@ -586,6 +586,8 @@ pub fn decode_cancel_order(buf: &[u8]) -> Result<BinanceCancelOrderResponse, Sbe
     let time_in_force = cursor.read_u8()?.into();
     let order_type = cursor.read_u8()?.into();
     let side = cursor.read_u8()?.into();
+
+    cursor.advance(46)?; // Skip stop_price to working_floor
     let self_trade_prevention_mode = cursor.read_u8()?.into();
 
     cursor.advance(header.block_length as usize - CANCEL_ORDER_FIELDS_END)?;
@@ -749,7 +751,48 @@ pub fn decode_order(buf: &[u8]) -> Result<BinanceOrderResponse, SbeDecodeError> 
         return Err(SbeDecodeError::UnknownTemplateId(header.template_id));
     }
 
-    cursor.require(header.block_length as usize)?;
+    decode_order_block(&mut cursor, header.block_length)
+}
+
+/// Decode multiple orders response.
+///
+/// # Errors
+///
+/// Returns error if buffer is too short, schema mismatch, or decode error.
+#[allow(dead_code)]
+pub fn decode_orders(buf: &[u8]) -> Result<Vec<BinanceOrderResponse>, SbeDecodeError> {
+    let mut cursor = SbeCursor::new(buf);
+    let header = MessageHeader::decode_cursor(&mut cursor)?;
+    header.validate()?;
+
+    if header.template_id != ORDERS_TEMPLATE_ID {
+        return Err(SbeDecodeError::UnknownTemplateId(header.template_id));
+    }
+
+    let (block_length, count) = cursor.read_group_header()?;
+    let mut orders = Vec::with_capacity(count as usize);
+
+    for _ in 0..count {
+        orders.push(decode_order_block(&mut cursor, block_length)?);
+    }
+
+    Ok(orders)
+}
+
+/// Decodes one order fixed block plus its trailing var-strings, shared by the
+/// `orderResponse` message and each `ordersResponse` group item.
+fn decode_order_block(
+    cursor: &mut SbeCursor<'_>,
+    block_length: u16,
+) -> Result<BinanceOrderResponse, SbeDecodeError> {
+    if block_length < ORDER_MIN_BLOCK_LENGTH {
+        return Err(SbeDecodeError::InvalidBlockLength {
+            expected: ORDER_MIN_BLOCK_LENGTH,
+            actual: block_length,
+        });
+    }
+
+    cursor.require(block_length as usize)?;
 
     let price_exponent = cursor.read_i8()?;
     let qty_exponent = cursor.read_i8()?;
@@ -764,17 +807,21 @@ pub fn decode_order(buf: &[u8]) -> Result<BinanceOrderResponse, SbeDecodeError> 
     let order_type = cursor.read_u8()?.into();
     let side = cursor.read_u8()?.into();
     let stop_price_mantissa = cursor.read_optional_i64_le()?;
+
+    cursor.advance(16)?; // Skip trailing_delta + trailing_time
     let iceberg_qty_mantissa = cursor.read_optional_i64_le()?;
     let time = cursor.read_i64_le()?;
     let update_time = cursor.read_i64_le()?;
     let is_working = BoolEnum::from(cursor.read_u8()?) == BoolEnum::True;
     let working_time = cursor.read_optional_i64_le()?;
     let orig_quote_order_qty_mantissa = cursor.read_i64_le()?;
+
+    cursor.advance(14)?; // Skip strategy_id to working_floor
     let self_trade_prevention_mode = cursor.read_u8()?.into();
 
     let expiry_reason = read_trailing_expiry_reason(
-        &mut cursor,
-        header.block_length as usize,
+        cursor,
+        block_length as usize,
         ORDER_FIELDS_END,
         ORDER_EXPIRY_REASON_OFFSET,
     )?;
@@ -807,112 +854,6 @@ pub fn decode_order(buf: &[u8]) -> Result<BinanceOrderResponse, SbeDecodeError> 
         symbol,
         expiry_reason,
     })
-}
-
-/// Minimum block length for orders group item (schema 3:3 baseline).
-const ORDERS_GROUP_MIN_BLOCK_LENGTH: u16 = 162;
-
-/// Bytes consumed up to and including self_trade_prevention_mode; the remaining
-/// bytes of the fixed block are skipped via the group's runtime block length so
-/// new trailing fields (e.g. v4 expiryReason) round-trip without changes here.
-const ORDERS_GROUP_FIELDS_END: usize = 134;
-
-/// Decode multiple orders response.
-///
-/// # Errors
-///
-/// Returns error if buffer is too short, schema mismatch, or decode error.
-#[allow(dead_code)]
-pub fn decode_orders(buf: &[u8]) -> Result<Vec<BinanceOrderResponse>, SbeDecodeError> {
-    let mut cursor = SbeCursor::new(buf);
-    let header = MessageHeader::decode_cursor(&mut cursor)?;
-    header.validate()?;
-
-    if header.template_id != ORDERS_TEMPLATE_ID {
-        return Err(SbeDecodeError::UnknownTemplateId(header.template_id));
-    }
-
-    let (block_length, count) = cursor.read_group_header()?;
-
-    if count == 0 {
-        return Ok(Vec::new());
-    }
-
-    if block_length < ORDERS_GROUP_MIN_BLOCK_LENGTH {
-        return Err(SbeDecodeError::InvalidBlockLength {
-            expected: ORDERS_GROUP_MIN_BLOCK_LENGTH,
-            actual: block_length,
-        });
-    }
-
-    let mut orders = Vec::with_capacity(count as usize);
-
-    for _ in 0..count {
-        cursor.require(block_length as usize)?;
-
-        let price_exponent = cursor.read_i8()?;
-        let qty_exponent = cursor.read_i8()?;
-        let order_id = cursor.read_i64_le()?;
-        let order_list_id = cursor.read_optional_i64_le()?;
-        let price_mantissa = cursor.read_i64_le()?;
-        let orig_qty_mantissa = cursor.read_i64_le()?;
-        let executed_qty_mantissa = cursor.read_i64_le()?;
-        let cummulative_quote_qty_mantissa = cursor.read_i64_le()?;
-        let status = cursor.read_u8()?.into();
-        let time_in_force = cursor.read_u8()?.into();
-        let order_type = cursor.read_u8()?.into();
-        let side = cursor.read_u8()?.into();
-        let stop_price_mantissa = cursor.read_optional_i64_le()?;
-
-        cursor.advance(16)?; // Skip trailing_delta + trailing_time
-        let iceberg_qty_mantissa = cursor.read_optional_i64_le()?;
-        let time = cursor.read_i64_le()?;
-        let update_time = cursor.read_i64_le()?;
-        let is_working = BoolEnum::from(cursor.read_u8()?) == BoolEnum::True;
-        let working_time = cursor.read_optional_i64_le()?;
-        let orig_quote_order_qty_mantissa = cursor.read_i64_le()?;
-
-        cursor.advance(14)?; // Skip strategy_id to working_floor
-        let self_trade_prevention_mode = cursor.read_u8()?.into();
-
-        let expiry_reason = read_trailing_expiry_reason(
-            &mut cursor,
-            block_length as usize,
-            ORDERS_GROUP_FIELDS_END,
-            ORDERS_GROUP_EXPIRY_REASON_OFFSET,
-        )?;
-
-        let symbol = cursor.read_var_string8()?;
-        let client_order_id = cursor.read_var_string8()?;
-
-        orders.push(BinanceOrderResponse {
-            price_exponent,
-            qty_exponent,
-            order_id,
-            order_list_id,
-            price_mantissa,
-            orig_qty_mantissa,
-            executed_qty_mantissa,
-            cummulative_quote_qty_mantissa,
-            status,
-            time_in_force,
-            order_type,
-            side,
-            stop_price_mantissa,
-            iceberg_qty_mantissa,
-            time,
-            update_time,
-            is_working,
-            working_time,
-            orig_quote_order_qty_mantissa,
-            self_trade_prevention_mode,
-            client_order_id,
-            symbol,
-            expiry_reason,
-        });
-    }
-
-    Ok(orders)
 }
 
 /// Decode cancel open orders response.
@@ -1919,7 +1860,7 @@ mod tests {
         buf.extend_from_slice(&header);
 
         // Group header: block_length=162, count=2
-        buf.extend_from_slice(&create_group_header(ORDERS_GROUP_MIN_BLOCK_LENGTH, 2));
+        buf.extend_from_slice(&create_group_header(ORDER_MIN_BLOCK_LENGTH, 2));
 
         // Order 1
         let order1_start = buf.len();
@@ -1945,7 +1886,7 @@ mod tests {
         buf.extend_from_slice(&0i64.to_le_bytes()); // orig_quote_order_qty
 
         // Pad to 162 bytes from order start
-        while buf.len() - order1_start < ORDERS_GROUP_MIN_BLOCK_LENGTH as usize {
+        while buf.len() - order1_start < ORDER_MIN_BLOCK_LENGTH as usize {
             buf.push(0);
         }
         write_var_string(&mut buf, "BTCUSDT");
@@ -1974,7 +1915,7 @@ mod tests {
         buf.extend_from_slice(&1734300001000i64.to_le_bytes()); // working_time
         buf.extend_from_slice(&0i64.to_le_bytes()); // orig_quote_order_qty
 
-        while buf.len() - order2_start < ORDERS_GROUP_MIN_BLOCK_LENGTH as usize {
+        while buf.len() - order2_start < ORDER_MIN_BLOCK_LENGTH as usize {
             buf.push(0);
         }
         write_var_string(&mut buf, "ETHUSDT");
@@ -2007,7 +1948,7 @@ mod tests {
         buf.extend_from_slice(&create_group_header(V4_BLOCK_LENGTH, 1));
 
         let order_start = buf.len();
-        buf.extend_from_slice(&[0u8; ORDERS_GROUP_MIN_BLOCK_LENGTH as usize]);
+        buf.extend_from_slice(&[0u8; ORDER_MIN_BLOCK_LENGTH as usize]);
         buf.push(0xFF); // Sentinel for the new expiryReason byte (null/absent)
         assert_eq!(buf.len() - order_start, V4_BLOCK_LENGTH as usize);
 
@@ -2027,7 +1968,7 @@ mod tests {
         // Schema 3:3 block_length is 162 (no expiryReason byte). The decoder
         // must surface `expiry_reason = None` regardless of the trailing
         // padding bytes inside the fixed block.
-        const PRE_V4_BLOCK_LENGTH: u16 = ORDERS_GROUP_MIN_BLOCK_LENGTH;
+        const PRE_V4_BLOCK_LENGTH: u16 = ORDER_MIN_BLOCK_LENGTH;
         let header = create_header(0, ORDERS_TEMPLATE_ID, SBE_SCHEMA_ID, SBE_SCHEMA_VERSION);
 
         let mut buf = Vec::new();
@@ -2057,7 +1998,7 @@ mod tests {
         buf.extend_from_slice(&header);
         buf.extend_from_slice(&create_group_header(V4_BLOCK_LENGTH, 1));
 
-        buf.extend_from_slice(&[0u8; ORDERS_GROUP_MIN_BLOCK_LENGTH as usize]);
+        buf.extend_from_slice(&[0u8; ORDER_MIN_BLOCK_LENGTH as usize]);
         buf.push(0x05);
 
         write_var_string(&mut buf, "BTCUSDT");
@@ -2073,7 +2014,7 @@ mod tests {
 
         let mut buf = Vec::new();
         buf.extend_from_slice(&header);
-        buf.extend_from_slice(&create_group_header(ORDERS_GROUP_MIN_BLOCK_LENGTH, 0));
+        buf.extend_from_slice(&create_group_header(ORDER_MIN_BLOCK_LENGTH, 0));
 
         let orders = decode_orders(&buf).unwrap();
         assert!(orders.is_empty());
@@ -2085,10 +2026,10 @@ mod tests {
 
         let mut buf = Vec::new();
         buf.extend_from_slice(&header);
-        buf.extend_from_slice(&create_group_header(ORDERS_GROUP_MIN_BLOCK_LENGTH, 1));
+        buf.extend_from_slice(&create_group_header(ORDER_MIN_BLOCK_LENGTH, 1));
 
         // Pad fixed block to 162 bytes
-        buf.extend_from_slice(&[0u8; ORDERS_GROUP_MIN_BLOCK_LENGTH as usize]);
+        buf.extend_from_slice(&[0u8; ORDER_MIN_BLOCK_LENGTH as usize]);
 
         // Symbol length says 7 bytes but we only provide 3
         buf.push(7); // Length prefix claims "BTCUSDT" (7 chars)
@@ -2104,9 +2045,9 @@ mod tests {
 
         let mut buf = Vec::new();
         buf.extend_from_slice(&header);
-        buf.extend_from_slice(&create_group_header(ORDERS_GROUP_MIN_BLOCK_LENGTH, 1));
+        buf.extend_from_slice(&create_group_header(ORDER_MIN_BLOCK_LENGTH, 1));
 
-        buf.extend_from_slice(&[0u8; ORDERS_GROUP_MIN_BLOCK_LENGTH as usize]);
+        buf.extend_from_slice(&[0u8; ORDER_MIN_BLOCK_LENGTH as usize]);
 
         // Invalid UTF-8 sequence
         buf.push(4);
