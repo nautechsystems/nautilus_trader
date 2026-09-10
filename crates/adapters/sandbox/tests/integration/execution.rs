@@ -56,8 +56,8 @@ use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     data::{Bar, BarType, Data, InstrumentClose, InstrumentStatus, QuoteTick, TradeTick},
     enums::{
-        AccountType, AggressorSide, BookType, InstrumentCloseType, MarketStatusAction, OmsType,
-        OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+        AccountType, AggressorSide, BookType, ContingencyType, InstrumentCloseType,
+        MarketStatusAction, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
     },
     events::{
         AccountState, OrderDenied, OrderEventAny, OrderFilled, OrderPendingCancel,
@@ -247,6 +247,26 @@ fn resting_limit(
         .price(Price::from(price))
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id.into())
+        .ts_init(ts)
+        .build()
+}
+
+/// Builds a resting buy limit linked OCO to `sibling`, as a strategy's contingent pair would be.
+fn oco_limit(
+    instrument: &InstrumentAny,
+    client_order_id: ClientOrderId,
+    sibling: ClientOrderId,
+    price: &str,
+    ts: UnixNanos,
+) -> OrderAny {
+    OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from(price))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .contingency_type(ContingencyType::Oco)
+        .linked_order_ids(vec![sibling])
         .ts_init(ts)
         .build()
 }
@@ -1146,15 +1166,26 @@ fn submit_through_engine(
 
 /// Caches `order` and submits it through `ExecEngine.execute`, returning it.
 fn send_through_engine(harness: &EngineHarness, trader_id: TraderId, order: OrderAny) -> OrderAny {
+    cache_order(harness, &order);
+    submit_cached_through_engine(harness, trader_id, &order);
+    order
+}
+
+/// Caches `order` under the client, as the strategy does when it creates it ahead of any submit.
+fn cache_order(harness: &EngineHarness, order: &OrderAny) {
     harness
         .cache
         .borrow_mut()
         .add_order(order.clone(), None, Some(harness.client_id), false)
         .unwrap();
+}
+
+/// Submits an already-cached `order` through `ExecEngine.execute`.
+fn submit_cached_through_engine(harness: &EngineHarness, trader_id: TraderId, order: &OrderAny) {
     msgbus::send_trading_command(
         MessagingSwitchboard::exec_engine_execute(),
         TradingCommand::SubmitOrder(SubmitOrder::from_order(
-            &order,
+            order,
             trader_id,
             Some(harness.client_id),
             None,
@@ -1162,7 +1193,47 @@ fn send_through_engine(harness: &EngineHarness, trader_id: TraderId, order: Orde
             order.ts_init(),
         )),
     );
-    order
+}
+
+/// Submits a buy limit order list for `instrument` through `ExecEngine.execute`, caching each leg
+/// as the strategy would, and returns the legs in list order.
+fn submit_list_through_engine(
+    harness: &EngineHarness,
+    trader_id: TraderId,
+    instrument: &InstrumentAny,
+    legs: &[(&str, &str)],
+) -> Vec<OrderAny> {
+    let ts_init = harness.test_clock.borrow().timestamp_ns();
+    let orders: Vec<OrderAny> = legs
+        .iter()
+        .map(|(client_order_id, price)| {
+            let order = OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(instrument.id())
+                .side(OrderSide::Buy)
+                .price(Price::from(*price))
+                .quantity(Quantity::from("1.000"))
+                .client_order_id((*client_order_id).into())
+                .ts_init(ts_init)
+                .build();
+            harness
+                .cache
+                .borrow_mut()
+                .add_order(order.clone(), None, Some(harness.client_id), false)
+                .unwrap();
+            order
+        })
+        .collect();
+
+    msgbus::send_trading_command(
+        MessagingSwitchboard::exec_engine_execute(),
+        TradingCommand::SubmitOrderList(create_submit_order_list(
+            trader_id,
+            harness.client_id,
+            instrument.id(),
+            &orders,
+        )),
+    );
+    orders
 }
 
 /// Submits a resting buy limit through `ExecEngine.execute`, releases it at the insert leg, and
@@ -5930,4 +6001,496 @@ fn test_batch_reduce_only_modifies_share_pending_position_quantity(
     drop(position);
     drop(cache);
     engine.stop();
+}
+
+/// A cancel-all released ahead of a submit still in transit (delete leg shorter than the insert
+/// leg) cancels only the orders the venue has received; the in-transit order rests once it
+/// arrives. The resting order accepted first gives the instrument its matching engine.
+#[rstest]
+fn test_inbound_latency_cancel_all_leaves_in_transit_submit_unaffected(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 3_000_000_000;
+    const DELETE_LATENCY_NS: u64 = 1_000_000_000;
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(
+            INSERT_LATENCY_NS,
+            0,
+            DELETE_LATENCY_NS,
+        )),
+    );
+
+    let resting = accept_through_engine(
+        &mut harness,
+        trader_id,
+        &instrument,
+        "O-RESTING",
+        "100.00",
+        INSERT_LATENCY_NS,
+    );
+
+    let in_transit =
+        submit_through_engine(&harness, trader_id, &instrument, "O-IN-TRANSIT", "99.00");
+    let t0 = in_transit.ts_init();
+    send_command_through_engine(
+        &harness,
+        trader_id,
+        DeferredCommand::CancelAll,
+        std::slice::from_ref(&resting),
+        t0,
+    );
+    let at_arrival: Vec<&str> = harness.settle().iter().map(order_event_kind).collect();
+    assert_eq!(
+        at_arrival,
+        vec!["submitted"],
+        "expected only the in-transit order's OrderSubmitted at arrival: {at_arrival:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &in_transit),
+        OrderStatus::Submitted
+    );
+
+    let cancel_due = UnixNanos::from(*t0 + DELETE_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, cancel_due), 1);
+    let at_cancel: Vec<(&str, ClientOrderId)> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        at_cancel,
+        vec![("canceled", resting.client_order_id())],
+        "the cancel-all must cancel only the order the venue has received: {at_cancel:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &resting),
+        OrderStatus::Canceled
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &in_transit),
+        OrderStatus::Submitted,
+        "an order whose submit is still in transit must not be canceled",
+    );
+
+    let submit_due = UnixNanos::from(*t0 + INSERT_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, submit_due), 1);
+    let at_submit: Vec<(&str, ClientOrderId)> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        at_submit,
+        vec![("accepted", in_transit.client_order_id())],
+        "the in-transit order must be accepted once its submit arrives: {at_submit:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &in_transit),
+        OrderStatus::Accepted
+    );
+}
+
+/// The same release ahead of a `SubmitOrderList` in transit leaves every leg of the list alone.
+#[rstest]
+fn test_inbound_latency_cancel_all_leaves_in_transit_submit_list_unaffected(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 3_000_000_000;
+    const DELETE_LATENCY_NS: u64 = 1_000_000_000;
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(
+            INSERT_LATENCY_NS,
+            0,
+            DELETE_LATENCY_NS,
+        )),
+    );
+
+    let resting = accept_through_engine(
+        &mut harness,
+        trader_id,
+        &instrument,
+        "O-RESTING",
+        "100.00",
+        INSERT_LATENCY_NS,
+    );
+
+    let legs = submit_list_through_engine(
+        &harness,
+        trader_id,
+        &instrument,
+        &[("O-LIST-LEG-1", "98.00"), ("O-LIST-LEG-2", "97.00")],
+    );
+    let t0 = legs[0].ts_init();
+    send_command_through_engine(
+        &harness,
+        trader_id,
+        DeferredCommand::CancelAll,
+        std::slice::from_ref(&resting),
+        t0,
+    );
+    let at_arrival: Vec<(&str, ClientOrderId)> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        at_arrival,
+        vec![
+            ("submitted", legs[0].client_order_id()),
+            ("submitted", legs[1].client_order_id()),
+        ],
+        "expected one OrderSubmitted per in-transit leg at arrival: {at_arrival:?}",
+    );
+
+    let cancel_due = UnixNanos::from(*t0 + DELETE_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, cancel_due), 1);
+    let at_cancel: Vec<(&str, ClientOrderId)> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        at_cancel,
+        vec![("canceled", resting.client_order_id())],
+        "the cancel-all must cancel only the order the venue has received: {at_cancel:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &resting),
+        OrderStatus::Canceled
+    );
+
+    for leg in &legs {
+        assert_eq!(
+            cached_status(&harness.cache, leg),
+            OrderStatus::Submitted,
+            "a leg whose list is still in transit must not be canceled: {}",
+            leg.client_order_id(),
+        );
+    }
+
+    let submit_due = UnixNanos::from(*t0 + INSERT_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, submit_due), 1);
+    let at_submit: Vec<(&str, ClientOrderId)> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        at_submit,
+        vec![
+            ("accepted", legs[0].client_order_id()),
+            ("accepted", legs[1].client_order_id()),
+        ],
+        "every leg must be accepted once the list arrives: {at_submit:?}",
+    );
+
+    for leg in &legs {
+        assert_eq!(
+            cached_status(&harness.cache, leg),
+            OrderStatus::Accepted,
+            "leg {} must rest once its list arrives",
+            leg.client_order_id(),
+        );
+    }
+}
+
+/// A cancel-all and a submit due at the same time apply in arrival order: the drain pops each
+/// command before applying it, so a cancel-all that arrived first spares the still-queued submit.
+#[rstest]
+#[case::cancel_all_first(true, OrderStatus::Accepted)]
+#[case::submit_first(false, OrderStatus::Canceled)]
+fn test_inbound_latency_cancel_all_at_equal_due_time_follows_arrival_order(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] cancel_all_first: bool,
+    #[case] expected_status: OrderStatus,
+) {
+    const LEG_LATENCY_NS: u64 = 1_000_000_000; // The insert and delete legs are equal
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(LEG_LATENCY_NS, 0, LEG_LATENCY_NS)),
+    );
+
+    let resting = accept_through_engine(
+        &mut harness,
+        trader_id,
+        &instrument,
+        "O-RESTING",
+        "100.00",
+        LEG_LATENCY_NS,
+    );
+
+    let t0 = harness.test_clock.borrow().timestamp_ns();
+    let cancel_all = |harness: &EngineHarness| {
+        send_command_through_engine(
+            harness,
+            trader_id,
+            DeferredCommand::CancelAll,
+            std::slice::from_ref(&resting),
+            t0,
+        );
+    };
+    let order = if cancel_all_first {
+        cancel_all(&harness);
+        submit_through_engine(&harness, trader_id, &instrument, "O-SUBMIT", "99.00")
+    } else {
+        let order = submit_through_engine(&harness, trader_id, &instrument, "O-SUBMIT", "99.00");
+        cancel_all(&harness);
+        order
+    };
+    let at_arrival: Vec<&str> = harness.settle().iter().map(order_event_kind).collect();
+    assert_eq!(
+        at_arrival,
+        vec!["submitted"],
+        "expected only the submitted order's OrderSubmitted at arrival: {at_arrival:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &order),
+        OrderStatus::Submitted
+    );
+
+    // One alert releases both; the drain applies them in `(due_ns, seq)` order
+    let due = UnixNanos::from(*t0 + LEG_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, due), 1);
+    let at_due: Vec<(&str, ClientOrderId)> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    let expected_at_due = if cancel_all_first {
+        vec![
+            ("canceled", resting.client_order_id()),
+            ("accepted", order.client_order_id()),
+        ]
+    } else {
+        // The cancel-all cancels in sorted client order ID order
+        vec![
+            ("accepted", order.client_order_id()),
+            ("canceled", resting.client_order_id()),
+            ("canceled", order.client_order_id()),
+        ]
+    };
+    assert_eq!(
+        at_due, expected_at_due,
+        "a cancel-all popped ahead of a submit must leave that submit alone: {at_due:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &resting),
+        OrderStatus::Canceled,
+        "the order the venue already held must be canceled either way",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &order),
+        expected_status,
+        "the submitted order's fate must follow which command reached the venue first",
+    );
+}
+
+/// A zero-leg cancel-all is applied inline on arrival, ahead of a submit still queued behind its
+/// insert leg, and follows the same rule: the queued order is left alone and rests once it arrives.
+#[rstest]
+fn test_inbound_latency_inline_cancel_all_leaves_queued_submit_unaffected(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 3_000_000_000; // The delete leg is zero
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(INSERT_LATENCY_NS, 0, 0)),
+    );
+
+    let resting = accept_through_engine(
+        &mut harness,
+        trader_id,
+        &instrument,
+        "O-RESTING",
+        "100.00",
+        INSERT_LATENCY_NS,
+    );
+
+    // The queue head is not due, so the zero-leg cancel-all is applied inline on arrival
+    let queued = submit_through_engine(&harness, trader_id, &instrument, "O-QUEUED", "99.00");
+    let t0 = queued.ts_init();
+    let at_arrival: Vec<&str> = harness.settle().iter().map(order_event_kind).collect();
+    assert_eq!(
+        at_arrival,
+        vec!["submitted"],
+        "expected only the queued order's OrderSubmitted at arrival: {at_arrival:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &queued),
+        OrderStatus::Submitted
+    );
+
+    send_command_through_engine(
+        &harness,
+        trader_id,
+        DeferredCommand::CancelAll,
+        std::slice::from_ref(&resting),
+        t0,
+    );
+    let inline: Vec<(&str, ClientOrderId)> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        inline,
+        vec![("canceled", resting.client_order_id())],
+        "an inline cancel-all must cancel only the order the venue has received: {inline:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &resting),
+        OrderStatus::Canceled
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &queued),
+        OrderStatus::Submitted,
+        "an order whose submit is still queued must not be canceled",
+    );
+
+    let submit_due = UnixNanos::from(*t0 + INSERT_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, submit_due), 1);
+    let at_submit: Vec<(&str, ClientOrderId)> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        at_submit,
+        vec![("accepted", queued.client_order_id())],
+        "the queued order must be accepted once its submit arrives: {at_submit:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &queued),
+        OrderStatus::Accepted
+    );
+}
+
+/// Canceling an order cascades into its contingent orders, so the cancel-all exclusion has to hold
+/// there too: an OCO sibling whose submit is still in transit keeps its `SUBMITTED` status and
+/// rests once that submit arrives, rather than closing on a cancellation the venue never made.
+#[rstest]
+fn test_inbound_latency_cancel_all_leaves_in_transit_contingent_unaffected(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 3_000_000_000;
+    const DELETE_LATENCY_NS: u64 = 1_000_000_000;
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(
+            INSERT_LATENCY_NS,
+            0,
+            DELETE_LATENCY_NS,
+        )),
+    );
+
+    let received_id = ClientOrderId::from("O-RECEIVED");
+    let in_transit_id = ClientOrderId::from("O-IN-TRANSIT");
+
+    // The pair is created and cached together: the venue rejects an order whose linked order it
+    // cannot resolve, so both exist before either is submitted
+    let ts_created = harness.test_clock.borrow().timestamp_ns();
+    let received = oco_limit(
+        &instrument,
+        received_id,
+        in_transit_id,
+        "100.00",
+        ts_created,
+    );
+    let in_transit = oco_limit(&instrument, in_transit_id, received_id, "99.00", ts_created);
+    cache_order(&harness, &received);
+    cache_order(&harness, &in_transit);
+
+    // Submitted first and released at its insert leg, so the venue holds it
+    submit_cached_through_engine(&harness, trader_id, &received);
+    let _ = harness.settle();
+    let received_due = UnixNanos::from(*ts_created + INSERT_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, received_due), 1);
+    let _ = harness.settle();
+    assert_eq!(
+        cached_status(&harness.cache, &received),
+        OrderStatus::Accepted
+    );
+
+    // Submitted on a separate command, so the cancel-all overtakes its insert leg
+    let t0 = harness.test_clock.borrow().timestamp_ns();
+    submit_cached_through_engine(&harness, trader_id, &in_transit);
+    send_command_through_engine(
+        &harness,
+        trader_id,
+        DeferredCommand::CancelAll,
+        std::slice::from_ref(&received),
+        t0,
+    );
+    let at_arrival: Vec<&str> = harness.settle().iter().map(order_event_kind).collect();
+    assert_eq!(
+        at_arrival,
+        vec!["submitted"],
+        "expected only the in-transit order's OrderSubmitted at arrival: {at_arrival:?}",
+    );
+
+    let cancel_due = UnixNanos::from(*t0 + DELETE_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, cancel_due), 1);
+    let at_cancel: Vec<(&str, ClientOrderId)> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        at_cancel,
+        vec![("canceled", received_id)],
+        "the contingent cascade must not reach the in-transit sibling: {at_cancel:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &received),
+        OrderStatus::Canceled
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &in_transit),
+        OrderStatus::Submitted,
+        "an order whose submit is still in transit must not be canceled",
+    );
+
+    // The submit is delivered rather than swallowed: the venue sees it and answers for itself,
+    // rejecting an order whose OCO sibling closed while it was in flight
+    let submit_due = UnixNanos::from(*t0 + INSERT_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, submit_due), 1);
+    let at_submit = harness.settle();
+    let kinds: Vec<(&str, ClientOrderId)> = at_submit
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        kinds,
+        vec![("rejected", in_transit_id)],
+        "the venue must answer the in-transit submit once it arrives: {kinds:?}",
+    );
+    let OrderEventAny::Rejected(rejected) = &at_submit[0] else {
+        panic!("Expected OrderRejected, was {:?}", at_submit[0]);
+    };
+    assert_eq!(
+        rejected.reason.as_str(),
+        format!("Contingent order {received_id} already closed"),
+        "the rejection must be the venue's own contingency rule",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &in_transit),
+        OrderStatus::Rejected
+    );
 }

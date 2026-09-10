@@ -1479,11 +1479,25 @@ impl SandboxInner {
 
     fn apply_cancel_all_orders(&mut self, cmd: &CancelAllOrders) {
         let instrument_id = cmd.instrument_id;
+        let in_transit = self.in_transit_submit_ids();
         if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
-            engine.process_cancel_all(cmd, self.account_id);
+            engine.process_cancel_all_excluding(cmd, self.account_id, &in_transit);
         } else {
             log::debug!("No open orders to cancel for {instrument_id}: no matching engine");
         }
+    }
+
+    /// Returns the client order IDs of every queued submit and submit-list leg, which the venue
+    /// has not received yet.
+    fn in_transit_submit_ids(&self) -> Vec<ClientOrderId> {
+        self.inbound_queue
+            .iter()
+            .flat_map(|delayed| match &delayed.command {
+                TradingCommand::SubmitOrder(cmd) => vec![cmd.client_order_id],
+                TradingCommand::SubmitOrderList(cmd) => cmd.order_list.client_order_ids.clone(),
+                _ => Vec::new(),
+            })
+            .collect()
     }
 
     fn apply_batch_cancel_orders(&mut self, cmd: &BatchCancelOrders) {

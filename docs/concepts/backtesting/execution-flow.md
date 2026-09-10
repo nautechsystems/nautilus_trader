@@ -120,7 +120,9 @@ fill from market data precedes the response to any command released after it. A 
 applied before any market data processed after its due time, since the client drains its queue
 ahead of each tick it receives, and the client's clock alert releases a queue no data is flowing
 to. A command whose latency leg is zero is applied on arrival, unless a command is already due
-and not yet released, in which case it joins the queue behind it.
+and not yet released, in which case it joins the queue behind it. A cancel-all reaching the venue
+cancels only orders the venue has received: an order whose submit is still in transit is left
+alone and rests once that submit arrives.
 
 Stopping the client discards anything still in flight. A discarded submit, modify, or targeted
 cancel is rejected (`OrderRejected`, `OrderModifyRejected`, `OrderCancelRejected`) so its order
