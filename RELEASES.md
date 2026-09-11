@@ -88,6 +88,7 @@ Released on TBD (UTC).
 - Fixed WMA and HMA accepting periods above 8192 (#4887), thanks @pucedoteth
 - Fixed `SortinoRatio` for single-day return samples (#4934), thanks @raunak2007
 - Fixed `ZScore` rounding for constant windows and handling of non-finite dispersion
+- Fixed `BollingerBands` quote and trade outputs to use actual price units
 - Fixed engine panic on startup when the PostgreSQL cache held an `OrderCanceled`, `OrderDenied`, `OrderEmulated`, `OrderExpired`, `OrderPendingCancel`, `OrderPendingUpdate`, `OrderRejected`, `OrderReleased`, `OrderTriggered`, or `OrderUpdated` event (#4917)
 - Fixed PostgreSQL general cache writes failing on existing keys (#4935), thanks @raunak2007
 - Fixed PostgreSQL cache load failing on a persisted `OrderFillVoided` event

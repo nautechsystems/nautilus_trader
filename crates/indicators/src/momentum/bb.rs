@@ -75,15 +75,15 @@ impl Indicator for BollingerBands {
     }
 
     fn handle_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
-        let bid = quote.bid_price.raw as f64;
-        let ask = quote.ask_price.raw as f64;
+        let bid = (&quote.bid_price).into();
+        let ask = (&quote.ask_price).into();
         let mid = f64::midpoint(bid, ask);
         self.update_raw(ask, bid, mid);
         Ok(())
     }
 
     fn handle_trade(&mut self, trade: &TradeTick) {
-        let price = trade.price.raw as f64;
+        let price = (&trade.price).into();
         self.update_raw(price, price, price);
     }
 
@@ -186,10 +186,18 @@ where
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::{
+        enums::AggressorSide,
+        identifiers::{InstrumentId, TradeId},
+        types::{Price, Quantity},
+    };
     use rstest::rstest;
 
     use super::*;
-    use crate::{stubs::bb_10, testing::assert_approx_equal};
+    use crate::{
+        stubs::{bb_10, stub_quote},
+        testing::assert_approx_equal,
+    };
 
     #[rstest]
     fn test_name_returns_expected_string(bb_10: BollingerBands) {
@@ -289,5 +297,68 @@ mod tests {
         assert!((bb.middle - expected_mid).abs() < 1e-12);
         assert!((bb.upper - (expected_mid + expected_std)).abs() < 1e-12);
         assert!((bb.lower - (expected_mid - expected_std)).abs() < 1e-12);
+    }
+
+    #[rstest]
+    fn test_handle_trade_outputs_actual_price_units() {
+        let prices = ["10.00", "11.00", "12.00"];
+        let mut from_trades = BollingerBands::new(3, 1.0, None);
+        let mut from_raw = BollingerBands::new(3, 1.0, None);
+
+        for price in prices {
+            from_trades.handle_trade(&trade_tick(price));
+            let value: f64 = Price::from(price).into();
+            from_raw.update_raw(value, value, value);
+        }
+
+        let expected_mid = 11.0;
+        let expected_std = (2.0_f64 / 3.0).sqrt();
+
+        assert!(from_trades.initialized());
+        assert_approx_equal(from_trades.middle, expected_mid);
+        assert_approx_equal(from_trades.upper, expected_mid + expected_std);
+        assert_approx_equal(from_trades.lower, expected_mid - expected_std);
+        assert_approx_equal(from_trades.middle, from_raw.middle);
+        assert_approx_equal(from_trades.upper, from_raw.upper);
+        assert_approx_equal(from_trades.lower, from_raw.lower);
+    }
+
+    #[rstest]
+    fn test_handle_quote_outputs_actual_price_units() {
+        let quotes = [("10.00", "10.50"), ("11.00", "11.50"), ("12.00", "12.50")];
+        let mut from_quotes = BollingerBands::new(3, 1.0, None);
+        let mut from_raw = BollingerBands::new(3, 1.0, None);
+
+        for (bid, ask) in quotes {
+            let quote = stub_quote(bid, ask);
+            from_quotes.handle_quote(&quote).unwrap();
+            let bid_f64: f64 = (&quote.bid_price).into();
+            let ask_f64: f64 = (&quote.ask_price).into();
+            let mid = f64::midpoint(bid_f64, ask_f64);
+            from_raw.update_raw(ask_f64, bid_f64, mid);
+        }
+
+        let expected_mid = 11.25;
+        let expected_std = (2.0_f64 / 3.0).sqrt();
+
+        assert!(from_quotes.initialized());
+        assert_approx_equal(from_quotes.middle, expected_mid);
+        assert_approx_equal(from_quotes.upper, expected_mid + expected_std);
+        assert_approx_equal(from_quotes.lower, expected_mid - expected_std);
+        assert_approx_equal(from_quotes.middle, from_raw.middle);
+        assert_approx_equal(from_quotes.upper, from_raw.upper);
+        assert_approx_equal(from_quotes.lower, from_raw.lower);
+    }
+
+    fn trade_tick(price: &str) -> TradeTick {
+        TradeTick::new(
+            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+            Price::from(price),
+            Quantity::from("1.00000000"),
+            AggressorSide::Buy,
+            TradeId::from("1"),
+            1.into(),
+            0.into(),
+        )
     }
 }
