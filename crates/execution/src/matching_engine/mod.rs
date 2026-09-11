@@ -2499,7 +2499,7 @@ impl OrderMatchingEngine {
 
     /// Processes instrument expiration at the given timestamp.
     pub fn process_instrument_expiration(&mut self, timestamp_ns: UnixNanos) {
-        self.check_instrument_expiration(timestamp_ns);
+        self.check_instrument_expiration(timestamp_ns, false);
     }
 
     /// Returns whether instrument expiration has already been processed.
@@ -2561,7 +2561,7 @@ impl OrderMatchingEngine {
         );
     }
 
-    fn check_instrument_expiration(&mut self, timestamp_ns: UnixNanos) {
+    fn check_instrument_expiration(&mut self, timestamp_ns: UnixNanos, defer_settlement: bool) {
         if self.expiration_processed || self.option_settlement_failed {
             return;
         }
@@ -2593,6 +2593,15 @@ impl OrderMatchingEngine {
             if !self.option_expiration_orders_canceled {
                 self.option_expiration_orders_canceled = true;
                 self.enter_pending_resolution();
+            }
+
+            // The expiry timer settles after all same-timestamp market data,
+            // while order cancellation and market closure still happen inline.
+            if defer_settlement
+                && self.instrument_close.is_none()
+                && self.instrument.expiration_ns() == Some(timestamp_ns)
+            {
+                return;
             }
 
             match self.process_option_expiry(timestamp_ns) {
@@ -2866,7 +2875,7 @@ impl OrderMatchingEngine {
         // Ensure expiration semantics are enforced even when no fresh market-data
         // tick arrives for this instrument after expiry (e.g. after rotation).
         let ts_now = self.clock.borrow().timestamp_ns();
-        self.check_instrument_expiration(ts_now);
+        self.check_instrument_expiration(ts_now, self.config.defer_option_settlement);
 
         // Validate inside a cache borrow scope, collecting any rejection
         // reason rather than emitting events while the borrow is held.
@@ -4072,7 +4081,7 @@ impl OrderMatchingEngine {
 
         // Process instrument expiration last so orders at the expiration tick
         // get a chance to fill before positions are closed.
-        self.check_instrument_expiration(timestamp_ns);
+        self.check_instrument_expiration(timestamp_ns, self.config.defer_option_settlement);
         self.purge_closed_cached_filled_qty();
         self.purge_applied_order_updates();
         self.purge_applied_fills();

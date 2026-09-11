@@ -39,6 +39,7 @@ sequenceDiagram
     BL->>Exch: process_quote_tick / process_bar
     Exch->>ME: update book + iterate()
     note right of ME: Matches existing orders<br/>against new market state
+    note right of ME: Option expiry cancels open orders<br/>Settlement waits for the expiry timer
     end
 
     rect rgb(245, 255, 245)
@@ -57,7 +58,6 @@ sequenceDiagram
     note right of ME: Matches newly added orders<br/>against current market state
     note right of ME: Fills may trigger strategy callbacks<br/>that enqueue further commands,<br/>repeats until no eligible commands
     BL->>Exch: run simulation modules
-    BL->>Exch: check instrument expirations
     end
 ```
 
@@ -67,6 +67,20 @@ Timer events use the same settle mechanism but batch by timestamp: all callbacks
 execute first, then venues are settled for T before advancing to T+1. For timer behavior used by
 internally aggregated bars, see
 [internal bar aggregation timing](bar-execution.md#internal-bar-aggregation-timing).
+
+### Deferred option settlement
+
+At an option's expiration timestamp, automatic expiry checks close its market, cancel open orders,
+and reject new orders. Position settlement waits until all market data at that timestamp has been
+processed, so settlement sees the latest underlying price available for that timestamp. An explicit
+`InstrumentClose` with `InstrumentCloseType::ContractExpired` attempts settlement immediately.
+Streaming batches must keep all data for a timestamp together; `BacktestNode` does this automatically.
+
+`SimulatedVenueConfig.defer_option_settlement` defaults to `true`. The backtest engine schedules
+settlement after all market data at the expiry timestamp, without waiting for the next timestamp.
+When driving `SimulatedExchange` directly, schedule expiry processing after that timestamp's data,
+or explicitly set `defer_option_settlement` to `false` for immediate settlement. Immediate settlement
+can use an older underlying price if an update with the same timestamp has yet to be processed.
 
 ### Command settling
 

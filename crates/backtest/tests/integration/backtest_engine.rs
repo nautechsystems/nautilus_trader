@@ -48,7 +48,8 @@ use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{
         Bar, BarSpecification, BarType, BookOrder, CustomData, Data, DataBatch, DataType,
-        FundingRateUpdate, InstrumentClose, MarkPriceUpdate, OrderBookDelta, QuoteTick, TradeTick,
+        FundingRateUpdate, HasTsInit, IndexPriceUpdate, InstrumentClose, MarkPriceUpdate,
+        OrderBookDelta, QuoteTick, TradeTick,
         stubs::{StubCustomData, stub_custom_data},
     },
     enums::{
@@ -63,7 +64,7 @@ use nautilus_model::{
         StrategyId, Symbol, TradeId, Venue,
     },
     instruments::{
-        CryptoPerpetual, Equity, Instrument, InstrumentAny, OptionContract,
+        CryptoPerpetual, Equity, IndexInstrument, Instrument, InstrumentAny, OptionContract,
         stubs::{crypto_perpetual_ethusdt, default_fx_ccy},
     },
     orders::{Order, OrderAny},
@@ -510,6 +511,7 @@ struct OpenOptionOnQuote {
     core: StrategyCore,
     instrument_id: InstrumentId,
     trade_size: Quantity,
+    order_side: OrderSide,
     opened: bool,
 }
 
@@ -524,6 +526,7 @@ impl OpenOptionOnQuote {
             core: StrategyCore::new(config),
             instrument_id,
             trade_size,
+            order_side: OrderSide::Buy,
             opened: false,
         }
     }
@@ -555,9 +558,10 @@ impl DataActor for OpenOptionOnQuote {
         self.opened = true;
         let instrument_id = self.instrument_id;
         let trade_size = self.trade_size;
+        let order_side = self.order_side;
         let order = self.order().market(
             instrument_id,
-            OrderSide::Buy,
+            order_side,
             trade_size,
             None,
             None,
@@ -2163,7 +2167,9 @@ fn create_inverse_funding_engine() -> (BacktestEngine, InstrumentId) {
 }
 
 #[rstest]
-fn test_instrument_close_precedes_expiration_timer_at_same_timestamp() {
+fn test_instrument_close_precedes_expiration_timer_at_same_timestamp(
+    #[values(false, true)] quote_at_expiration: bool,
+) {
     let venue = Venue::from("OPRA");
     let expiration_ns = UnixNanos::from(2_000_000_000u64);
     let underlying = option_underlying_equity(venue);
@@ -2187,7 +2193,7 @@ fn test_instrument_close_precedes_expiration_timer_at_same_timestamp() {
         .add_strategy(OpenOptionOnQuote::new(option_id, Quantity::from(1)))
         .unwrap();
 
-    let data = vec![
+    let mut data = vec![
         quote_with_size(
             option_id,
             "5.00",
@@ -2209,6 +2215,14 @@ fn test_instrument_close_precedes_expiration_timer_at_same_timestamp() {
             expiration_ns,
         )),
     ];
+
+    if quote_at_expiration {
+        data.insert(
+            2,
+            quote_with_size(option_id, "5.00", "5.10", "1", expiration_ns.as_u64()),
+        );
+    }
+
     engine.add_data(data, None, true, true).unwrap();
     engine
         .run(
@@ -2222,6 +2236,168 @@ fn test_instrument_close_precedes_expiration_timer_at_same_timestamp() {
     assert_eq!(
         expiration_fill_price(&engine, venue, option_id),
         close_price
+    );
+}
+
+#[rstest]
+fn test_option_expiry_uses_same_timestamp_index_price(
+    #[values(false, true)] index_first: bool,
+    #[values(0, 1)] index_lead_ns: u64,
+    #[values(false, true)] streaming: bool,
+) {
+    let venue = Venue::from("OPRA");
+    let expiration_ns = UnixNanos::from(2_000_000_000u64);
+    let entry_ns = expiration_ns.as_u64() - 2_000;
+    let underlying_id = InstrumentId::from("SPXW.OPRA");
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    engine
+        .add_venue(
+            SimulatedVenueConfig::builder()
+                .venue(venue)
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USD")])
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    let underlying = IndexInstrument::builder()
+        .instrument_id(underlying_id)
+        .raw_symbol(Symbol::from("SPXW"))
+        .currency(Currency::USD())
+        .price_precision(2)
+        .size_precision(0)
+        .price_increment(Price::from("0.01"))
+        .size_increment(Quantity::from(1))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+    engine.add_instrument(&underlying.into()).unwrap();
+
+    let legs = [
+        (
+            "SPXW-C6135.OPRA",
+            "6135.00",
+            "9.95",
+            "10.05",
+            OrderSide::Sell,
+            "001",
+        ),
+        (
+            "SPXW-C6145.OPRA",
+            "6145.00",
+            "0.45",
+            "0.55",
+            OrderSide::Buy,
+            "002",
+        ),
+    ];
+
+    let mut quotes = Vec::new();
+
+    for (id, strike, bid, ask, side, tag) in legs {
+        let InstrumentAny::OptionContract(mut option) = option_contract(venue, expiration_ns)
+        else {
+            unreachable!();
+        };
+
+        option.id = InstrumentId::from(id);
+        option.raw_symbol = option.id.symbol;
+        option.underlying = Ustr::from("SPXW");
+        option.asset_class = AssetClass::Index;
+        option.strike_price = Price::from(strike);
+        engine.add_instrument(&option.clone().into()).unwrap();
+
+        let mut strategy = OpenOptionOnQuote::new(option.id, Quantity::from(1));
+        strategy.core.change_order_id_tag(tag).unwrap();
+        strategy.order_side = side;
+        engine.add_strategy(strategy).unwrap();
+        quotes.push(quote_with_size(option.id, bid, ask, "10", entry_ns));
+    }
+
+    let itm_id = InstrumentId::from(legs[0].0);
+    let otm_id = InstrumentId::from(legs[1].0);
+    quotes.push(quote_with_size(
+        itm_id,
+        "9.95",
+        "10.05",
+        "10",
+        expiration_ns.as_u64(),
+    ));
+
+    let indices = [
+        (entry_ns + 1_000, "6145.11"),
+        (expiration_ns.as_u64() - index_lead_ns, "6142.62"),
+    ]
+    .map(|(ts, price)| {
+        Data::IndexPrice(IndexPriceUpdate::new(
+            underlying_id,
+            Price::from(price),
+            ts.into(),
+            ts.into(),
+        ))
+    })
+    .to_vec();
+
+    let mut expiry_data = Vec::new();
+    let chunk_end = UnixNanos::from(expiration_ns.as_u64() - 2);
+
+    for data in if index_first {
+        [indices, quotes]
+    } else {
+        [quotes, indices]
+    } {
+        let data = if streaming {
+            let (before, after): (Vec<_>, Vec<_>) =
+                data.into_iter().partition(|d| d.ts_init() <= chunk_end);
+            expiry_data.push(after);
+            before
+        } else {
+            data
+        };
+
+        engine.add_data(data, None, true, true).unwrap();
+    }
+
+    let start_ns = if streaming {
+        engine
+            .run(Some(entry_ns.into()), Some(chunk_end), None, true)
+            .unwrap();
+        engine.clear_data();
+        for data in expiry_data {
+            engine.add_data(data, None, true, true).unwrap();
+        }
+
+        chunk_end
+    } else {
+        entry_ns.into()
+    };
+
+    engine
+        .run(Some(start_ns), Some(expiration_ns), None, streaming)
+        .unwrap();
+    if streaming {
+        engine.end().unwrap();
+    }
+
+    assert_eq!(
+        expiration_fill_price(&engine, venue, itm_id),
+        Price::from("7.62")
+    );
+    assert_eq!(
+        expiration_fill_price(&engine, venue, otm_id),
+        Price::from("0.00")
+    );
+    assert_eq!(
+        engine
+            .kernel()
+            .cache
+            .borrow()
+            .positions_open(None, None, None, None, None)
+            .len(),
+        0
     );
 }
 

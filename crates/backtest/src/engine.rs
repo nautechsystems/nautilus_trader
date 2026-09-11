@@ -144,8 +144,10 @@ impl BacktestEngine {
         let mut cache_config = config.cache.unwrap_or_default();
         cache_config.drop_instruments_on_reset = false;
         config.cache = Some(cache_config);
+
         let kernel = NautilusKernel::new("BacktestEngine".to_string(), config.clone())?;
         let instance_id = kernel.instance_id;
+
         #[cfg(feature = "python")]
         if let Some(controller) = config.controller.as_ref() {
             Trader::add_controller_from_importable_config(&kernel.trader, controller)?;

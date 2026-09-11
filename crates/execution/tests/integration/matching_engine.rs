@@ -13267,7 +13267,15 @@ fn assert_full_width_independent_settlement_ids(
 }
 
 #[rstest]
-fn test_option_cash_settlement_at_intrinsic_value(account_id: AccountId) {
+#[case::inline(false, false)]
+#[case::timer(true, true)]
+#[case::later_tick(true, false)]
+fn test_option_cash_settlement_at_intrinsic_value(
+    account_id: AccountId,
+    #[case] defer_option_settlement: bool,
+    #[case] expiry_timer: bool,
+    #[values(false, true)] submit_at_expiration: bool,
+) {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
@@ -13319,10 +13327,62 @@ fn test_option_cash_settlement_at_intrinsic_value(account_id: AccountId) {
         AccountType::Cash,
         clock,
         cache.clone(),
-        OrderMatchingEngineConfig::default(),
+        OrderMatchingEngineConfig {
+            defer_option_settlement,
+            ..Default::default()
+        },
     );
 
-    engine.iterate(expiration_ns, AggressorSide::NoAggressor);
+    let expired_order_id = ClientOrderId::from("OPT-EXPIRED-1");
+
+    if submit_at_expiration {
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(option.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(1))
+            .client_order_id(expired_order_id)
+            .submit(true)
+            .build();
+        engine.process_order(&mut order, account_id);
+    } else {
+        engine.iterate(expiration_ns, AggressorSide::NoAggressor);
+    }
+
+    assert_eq!(engine.is_expiration_processed(), !defer_option_settlement);
+
+    if defer_option_settlement {
+        let events = get_order_event_handler_messages(&order_event_handler);
+        assert_eq!(events.len(), if submit_at_expiration { 2 } else { 1 });
+
+        let OrderEventAny::Canceled(canceled) = &events[0] else {
+            panic!("Expected the opening order cancellation, received {events:?}");
+        };
+
+        assert_eq!(canceled.client_order_id, ClientOrderId::from("OPT-OPEN-1"));
+
+        if submit_at_expiration {
+            let OrderEventAny::Rejected(rejected) = &events[1] else {
+                panic!("Expected the expired order rejection, received {events:?}");
+            };
+
+            assert_eq!(rejected.client_order_id, expired_order_id);
+            assert_eq!(
+                rejected.reason,
+                Ustr::from(
+                    "Contract SPX211217C00150000.OPRA has expired and is pending resolution"
+                )
+            );
+        }
+
+        if expiry_timer {
+            engine.process_instrument_expiration(expiration_ns);
+        } else {
+            engine.iterate(
+                UnixNanos::from(expiration_ns.as_u64() + 1),
+                AggressorSide::NoAggressor,
+            );
+        }
+    }
 
     let events = get_order_event_handler_messages(&order_event_handler);
     let client_order_id = settlement_client_order_id(&cache, &format!("EXPIRATION_{venue}_CASH"));
@@ -13345,6 +13405,114 @@ fn test_option_cash_settlement_at_intrinsic_value(account_id: AccountId) {
     assert_eq!(settlement_fill.last_qty, position.quantity);
     assert_eq!(settlement_fill.last_px, Price::from("11.00"));
     assert_eq!(settlement_fill.position_id, Some(position.id));
+    assert!(engine.is_expiration_processed());
+}
+
+#[rstest]
+fn test_deferred_option_expiry_cancels_orders_and_rejects_submissions(account_id: AccountId) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let handler = order_event_handler_with_cache(cache.clone());
+    let expiration_ns = UnixNanos::from(2_000_000_000u64);
+    let option = InstrumentAny::OptionContract(option_contract(
+        "SPX",
+        "OPRA",
+        expiration_ns,
+        OptionKind::Call,
+    ));
+    let instrument_id = option.id();
+    cache.borrow_mut().add_instrument(option.clone()).unwrap();
+
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    clock.borrow_mut().set_time(UnixNanos::from(1));
+
+    let mut engine = get_order_matching_engine(
+        option,
+        Some(clock.clone()),
+        Some(cache.clone()),
+        Some(AccountType::Margin),
+        Some(OrderMatchingEngineConfig {
+            defer_option_settlement: true,
+            ..Default::default()
+        }),
+    );
+
+    engine.process_quote_tick(&QuoteTick::new(
+        instrument_id,
+        Price::from("4.90"),
+        Price::from("5.00"),
+        Quantity::from(10),
+        Quantity::from(10),
+        1.into(),
+        1.into(),
+    ));
+    let resting_id = ClientOrderId::from("RESTING-001");
+    let mut resting = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(1))
+        .price(Price::from("1.00"))
+        .client_order_id(resting_id)
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(resting.clone(), None, None, false)
+        .unwrap();
+    engine.process_order(&mut resting, account_id);
+    clear_order_event_handler_messages(&handler);
+
+    clock.borrow_mut().set_time(expiration_ns);
+    engine.iterate(expiration_ns, AggressorSide::NoAggressor);
+    assert!(!engine.is_expiration_processed());
+    engine.process_quote_tick(&QuoteTick::new(
+        instrument_id,
+        Price::from("0.40"),
+        Price::from("0.50"),
+        Quantity::from(10),
+        Quantity::from(10),
+        expiration_ns,
+        expiration_ns,
+    ));
+    let rejected_id = ClientOrderId::from("EXPIRED-001");
+    let mut submitted = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(1))
+        .client_order_id(rejected_id)
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(submitted.clone(), None, None, false)
+        .unwrap();
+    engine.process_order(&mut submitted, account_id);
+    engine.process_instrument_expiration(expiration_ns);
+
+    let events = get_order_event_handler_messages(&handler);
+
+    let [
+        OrderEventAny::Canceled(canceled),
+        OrderEventAny::Rejected(rejected),
+    ] = events.as_slice()
+    else {
+        panic!("Expected cancellation and rejection, received {events:?}");
+    };
+
+    assert_eq!(canceled.client_order_id, resting_id);
+    assert_eq!(rejected.client_order_id, rejected_id);
+    assert_eq!(
+        rejected.reason,
+        Ustr::from("Contract SPX211217C00150000.OPRA has expired and is pending resolution")
+    );
+    assert_eq!(
+        cache.borrow().order(&resting_id).unwrap().status(),
+        OrderStatus::Canceled
+    );
+    assert_eq!(
+        cache.borrow().order(&rejected_id).unwrap().status(),
+        OrderStatus::Rejected
+    );
+    assert!(engine.is_expiration_processed());
 }
 
 #[rstest]

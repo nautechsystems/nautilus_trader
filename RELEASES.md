@@ -102,6 +102,7 @@ Released on TBD (UTC).
 - Fixed position commissions and realized PnL after fill-void replay
 - Fixed OTO exit sizing for commission-adjusted positions, child size increments, and minimum quantities
 - Fixed deferred order updates and fills using stale state in backtest and sandbox matching
+- Fixed backtest option expiry before same-timestamp index updates (#4966), thanks for reporting @davidsblom
 - Fixed canceled OCO orders filling and OTO orders activating before their parent fills
 - Fixed market-to-limit remainder prices and maker classification
 - Fixed L2/L3 `LastPrice` stop triggers and maintenance when trade execution is disabled
