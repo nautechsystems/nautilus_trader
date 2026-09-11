@@ -232,6 +232,12 @@ pub(crate) fn parse_derive_trade_to_fill_report_with_precision(
     let trade_id = TradeId::new(trade.trade_id.as_str());
     let order_side = derive_order_side_to_nautilus(trade.direction);
     let last_qty = quantity_from_decimal(trade.trade_amount, size_precision, "trade_amount")?;
+    anyhow::ensure!(
+        !last_qty.is_zero(),
+        "invalid Derive trade_amount: zero fill quantity after conversion (trade_id={trade_id}, instrument_id={instrument_id}, trade_amount={}, size_precision={})",
+        trade.trade_amount,
+        last_qty.precision,
+    );
     let last_px = price_from_decimal(trade.trade_price, price_precision, "trade_price")?;
     let commission = commission_from_decimal(trade.trade_fee, fee_currency)?;
     let liquidity_side = match trade.liquidity_role {
@@ -787,6 +793,40 @@ mod tests {
         assert_eq!(report.last_px, Price::from("3505"));
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
         assert_eq!(report.commission.as_decimal(), dec!(0.5));
+    }
+
+    #[rstest]
+    #[case::literal_zero(dec!(0), Some(2), true)]
+    #[case::unconfigured_zero(dec!(0), None, true)]
+    #[case::rounded_zero(dec!(0.004), Some(2), true)]
+    #[case::half_even_zero(dec!(0.005), Some(2), true)]
+    #[case::positive(dec!(0.006), Some(2), false)]
+    fn test_parse_trade_report_zero_quantity(
+        #[case] amount: Decimal,
+        #[case] precision: Option<u8>,
+        #[case] rejected: bool,
+    ) {
+        let mut trade = sample_trade();
+        trade.trade_amount = amount;
+
+        let result = parse_derive_trade_to_fill_report_with_precision(
+            &trade,
+            AccountId::new("DERIVE-001"),
+            Currency::USDC(),
+            None,
+            precision,
+            UnixNanos::from(2),
+        );
+
+        if rejected {
+            let message = result.unwrap_err().to_string();
+            assert!(message.contains(&format!("trade_id={}", trade.trade_id)));
+            assert!(message.contains(&format!("instrument_id={}.DERIVE", trade.instrument_name)));
+            assert!(message.contains(&format!("trade_amount={amount}")));
+            assert!(message.contains(&format!("size_precision={}", precision.unwrap_or(0))));
+        } else {
+            assert_eq!(result.unwrap().unwrap().last_qty, Quantity::from("0.01"));
+        }
     }
 
     #[rstest]

@@ -1414,6 +1414,11 @@ impl ExecutionEngine {
             report,
         );
 
+        if report.last_qty.is_zero() {
+            log::warn!("Skipping zero-quantity fill report: {report}");
+            return;
+        }
+
         let cache = self.cache.borrow();
 
         let order = report
@@ -2772,6 +2777,13 @@ impl ExecutionEngine {
         event: &OrderEventAny,
         apply_position: bool,
     ) {
+        if let OrderEventAny::Filled(fill) = event
+            && fill.last_qty.is_zero()
+        {
+            log::warn!("Skipping zero-quantity fill event: {fill}");
+            return;
+        }
+
         self.event_count += 1;
 
         if self.config.debug {

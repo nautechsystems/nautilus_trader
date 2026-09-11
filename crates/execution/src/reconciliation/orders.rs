@@ -766,11 +766,10 @@ pub fn reconcile_fill_report(
     ts_now: UnixNanos,
     allow_overfills: bool,
 ) -> Option<OrderEventAny> {
-    debug_assert!(
-        !report.last_qty.is_zero(),
-        "fill report last_qty must be non-zero for {}",
-        order.client_order_id(),
-    );
+    if report.last_qty.is_zero() {
+        log::warn!("Skipping zero-quantity fill report: {report}");
+        return None;
+    }
 
     if order.trade_ids().iter().any(|id| **id == report.trade_id) {
         log::debug!(

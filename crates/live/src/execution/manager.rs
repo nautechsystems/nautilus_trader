@@ -705,6 +705,7 @@ impl ExecutionManager {
             .fill_reports()
             .values()
             .flatten()
+            .filter(|fill| !fill.last_qty.is_zero())
             .map(|fill| (fill.account_id, fill.instrument_id, fill.trade_id))
             .collect();
         let (adjusted_order_reports, adjusted_fill_reports) =
@@ -1195,7 +1196,7 @@ impl ExecutionManager {
                 .fill_reports()
                 .values()
                 .flatten()
-                .filter(|f| f.venue_position_id.is_none())
+                .filter(|f| !f.last_qty.is_zero() && f.venue_position_id.is_none())
                 .map(|f| f.instrument_id)
                 .chain(
                     mass_status
@@ -5288,6 +5289,19 @@ impl ExecutionManager {
             mass_status.order_reports();
         let mut final_fills: IndexMap<VenueOrderId, Vec<FillReport>> = mass_status.fill_reports();
 
+        final_fills.retain(|_, fills| {
+            fills.retain(|fill| {
+                if fill.last_qty.is_zero() {
+                    log::warn!("Skipping zero-quantity fill report: {fill}");
+                    return false;
+                }
+
+                true
+            });
+
+            !fills.is_empty()
+        });
+
         if mass_status.lookback_start().is_some() {
             return (final_orders, final_fills);
         }
@@ -5454,6 +5468,10 @@ impl ExecutionManager {
     }
 
     fn is_fill_applied(&self, fill: &OrderFilled, fill_key: FillKey) -> bool {
+        if fill.last_qty.is_zero() {
+            return false;
+        }
+
         self.get_order(fill.client_order_id)
             .or_else(|| self.get_order_by_venue_order_id(fill.venue_order_id))
             .is_some_and(|order| {
@@ -5470,6 +5488,11 @@ impl ExecutionManager {
         instrument: &InstrumentAny,
         pending_fill_keys: &IndexSet<FillKey>,
     ) -> Option<(OrderEventAny, FillKey)> {
+        if fill.last_qty.is_zero() {
+            log::warn!("Skipping zero-quantity fill report: {fill}");
+            return None;
+        }
+
         let fill_key = (fill.account_id, fill.instrument_id, fill.trade_id);
         if self.processed_fills.contains_key(&fill_key) || pending_fill_keys.contains(&fill_key) {
             return None;

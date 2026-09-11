@@ -97,6 +97,7 @@ Released on TBD (UTC).
 - Fixed cancellation reasons being dropped from `OrderCanceled` events (#4903), thanks @folknor
 - Fixed partial fills after hedging position flips being rejected (#4908), thanks @folknor
 - Fixed reconciliation races between terminal order reports and streamed fills
+- Fixed zero-sized fills panicking or affecting execution reconciliation (#4957), thanks for reporting @Karrenbelt
 - Fixed position commissions and realized PnL after fill-void replay
 - Fixed OTO exit sizing for commission-adjusted positions, child size increments, and minimum quantities
 - Fixed deferred order updates and fills using stale state in backtest and sandbox matching
@@ -135,6 +136,7 @@ Released on TBD (UTC).
 - Fixed Bybit funding settlements being treated as fills (#4937), thanks for reporting @luk911
 - Fixed Bybit incorrect book quotes and zero sizes from deleted levels, thanks for reporting @xsidorov
 - Fixed Bybit quote and book cleanup after unsubscribe or subscription failure, thanks for reporting @xsidorov
+- Fixed Derive accepting trade amounts that convert to zero-sized fills
 - Fixed Derive order queries without venue order IDs (#4958), thanks for reporting @Aviksaikat
 - Fixed Hyperliquid shared REST quotas and WebSocket rate and capacity limits
 - Fixed Hyperliquid WebSocket post deadlines across queueing, transport writes, and replies

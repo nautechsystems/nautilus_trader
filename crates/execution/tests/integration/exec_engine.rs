@@ -18179,7 +18179,12 @@ fn test_reconcile_order_with_fills_emits_terminal_event_for_external(
 }
 
 #[rstest]
-fn test_reconcile_order_with_fills_applies_multiple_fills(mut execution_engine: ExecutionEngine) {
+#[case::valid(false)]
+#[case::zero_then_valid(true)]
+fn test_reconcile_order_with_fills_applies_multiple_fills(
+    mut execution_engine: ExecutionEngine,
+    #[case] zero_first: bool,
+) {
     let instrument = audusd_sim();
     execution_engine
         .cache()
@@ -18218,7 +18223,18 @@ fn test_reconcile_order_with_fills_applies_multiple_fills(mut execution_engine: 
         Price::from("1.00000"),
     );
 
-    execution_engine.reconcile_order_with_fills(&order_report, &[fill_a, fill_b]);
+    let mut fills = Vec::new();
+
+    if zero_first {
+        let mut zero = fill_a.clone();
+        zero.last_qty = Quantity::zero(0);
+        zero.commission = Money::from("123.45 USD");
+        fills.push(zero);
+    }
+
+    fills.extend([fill_a, fill_b]);
+
+    execution_engine.reconcile_order_with_fills(&order_report, &fills);
 
     let cache = execution_engine.cache().borrow();
     let order = cache
@@ -18231,6 +18247,10 @@ fn test_reconcile_order_with_fills_applies_multiple_fills(mut execution_engine: 
     assert_eq!(order.trade_ids().len(), 2);
     assert!(order.trade_ids().iter().any(|id| **id == trade_id_a));
     assert!(order.trade_ids().iter().any(|id| **id == trade_id_b));
+    assert_eq!(
+        order.commissions().get(&Currency::USD()),
+        Some(&Money::from("0.20 USD"))
+    );
 }
 
 #[rstest]
@@ -19180,4 +19200,96 @@ fn test_prior_cycle_fill_void_applied_with_carried_replay() {
     assert_eq!(position.replay_events.len(), 3);
     // The rebuild spans both cycles, so the archived cycle it absorbed is dropped
     assert_eq!(cache.position_snapshot_count(&position_id), 0);
+}
+
+#[rstest]
+#[case::report(false)]
+#[case::event(true)]
+fn test_zero_quantity_fill_preserves_order_and_trade_id(
+    mut execution_engine: ExecutionEngine,
+    #[case] direct_event: bool,
+) {
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let client_order_id = order.client_order_id();
+    let trade_id = TradeId::from("T-ZERO-RETRY");
+    let before = execution_engine
+        .cache()
+        .borrow()
+        .order(&client_order_id)
+        .unwrap()
+        .clone();
+    let mut report = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        VenueOrderId::from("V-001"),
+        trade_id,
+        Quantity::zero(0),
+        Price::from("1.00000"),
+    );
+    report.commission = Money::from("123.45 USD");
+
+    if direct_event {
+        let mut fill = build_order_filled(
+            order.trader_id(),
+            order.strategy_id(),
+            instrument.id(),
+            client_order_id,
+            report.venue_order_id,
+            report.account_id,
+            trade_id,
+            order.order_side(),
+            order.order_type(),
+            report.last_qty,
+            report.last_px,
+            instrument.quote_currency(),
+            report.liquidity_side,
+            None,
+            None,
+        );
+        fill.commission = Some(report.commission);
+        execution_engine.process(&OrderEventAny::Filled(fill));
+    } else {
+        execution_engine.reconcile_fill_report(&report);
+    }
+
+    {
+        let cache = execution_engine.cache().borrow();
+        assert_eq!(*cache.order(&client_order_id).unwrap(), before);
+        assert_eq!(cache.positions_total_count(None, None, None, None, None), 0);
+    }
+
+    report.last_qty = Quantity::from(50_000);
+    report.commission = Money::from("0.10 USD");
+    execution_engine.reconcile_fill_report(&report);
+
+    let cache = execution_engine.cache().borrow();
+    let updated = cache.order(&client_order_id).unwrap();
+    assert_eq!(updated.filled_qty(), Quantity::from(50_000));
+    assert_eq!(updated.trade_ids(), vec![&trade_id]);
+    assert_eq!(cache.positions_total_count(None, None, None, None, None), 1);
+}
+
+#[rstest]
+fn test_zero_quantity_fill_does_not_create_external_order(mut execution_engine: ExecutionEngine) {
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+    let client_order_id = ClientOrderId::from("O-ZERO-EXTERNAL");
+    let report = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        VenueOrderId::from("V-ZERO-EXTERNAL"),
+        TradeId::from("T-ZERO-EXTERNAL"),
+        Quantity::zero(0),
+        Price::from("1.00000"),
+    );
+
+    execution_engine.reconcile_fill_report(&report);
+
+    let cache = execution_engine.cache().borrow();
+    assert!(!cache.order_exists(&client_order_id));
+    assert_eq!(cache.positions_total_count(None, None, None, None, None), 0);
 }

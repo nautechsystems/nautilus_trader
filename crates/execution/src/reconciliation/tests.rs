@@ -7142,3 +7142,79 @@ fn test_incremental_inferred_fill_price_and_liquidity_matches_emitted_fill() {
     assert_eq!(filled.last_px, last_px);
     assert_eq!(filled.liquidity_side, liquidity_side);
 }
+
+#[rstest]
+fn test_reconcile_fill_report_rejects_zero_quantity(instrument: InstrumentAny) {
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("100"))
+        .build();
+    let report = create_test_fill_report(
+        instrument.id(),
+        VenueOrderId::from("V-ZERO"),
+        TradeId::from("T-ZERO"),
+        Quantity::zero(0),
+        Price::from("1.00000"),
+    );
+
+    let event = reconcile_fill_report(
+        &order,
+        &report,
+        &instrument,
+        UnixNanos::from(2_000_000),
+        false,
+    );
+
+    assert_eq!(event, None);
+}
+
+#[rstest]
+#[case::without_position(false)]
+#[case::with_position(true)]
+fn test_process_mass_status_rejects_zero_quantity(
+    instrument: InstrumentAny,
+    #[case] with_position: bool,
+) {
+    let account_id = AccountId::from("TEST-001");
+    let venue_order_id = VenueOrderId::from("V-ZERO");
+    let mut valid = create_test_fill_report(
+        instrument.id(),
+        venue_order_id,
+        TradeId::from("T-ZERO"),
+        Quantity::from("50"),
+        Price::from("1.00000"),
+    );
+    valid.account_id = account_id;
+    let mut zero = valid.clone();
+    zero.last_qty = Quantity::zero(0);
+    zero.commission = Money::from("123.45 USD");
+
+    let mut mass_status = ExecutionMassStatus::new(
+        ClientId::from("TEST"),
+        account_id,
+        instrument.id().venue,
+        UnixNanos::default(),
+        None,
+    );
+    mass_status.add_fill_reports(vec![zero, valid.clone()]);
+    if with_position {
+        mass_status.add_position_reports(vec![PositionStatusReport::new(
+            account_id,
+            instrument.id(),
+            PositionSide::Long,
+            Quantity::from("50"),
+            UnixNanos::from(2_000_000),
+            UnixNanos::from(2_000_000),
+            None,
+            None,
+            Some(dec!(1)),
+        )]);
+    }
+
+    let result = process_mass_status_for_reconciliation(&mass_status, &instrument, None).unwrap();
+
+    assert!(result.orders.is_empty());
+    assert_eq!(result.fills.len(), 1);
+    assert_eq!(result.fills[&venue_order_id], vec![valid]);
+}

@@ -12109,6 +12109,7 @@ async fn test_terminal_reconciliation_and_stream_fill_apply_once(
 #[case::bulk_instrument("bulk", "instrument")]
 #[case::bulk_side("bulk", "side")]
 #[case::targeted_empty("targeted", "empty")]
+#[case::targeted_zero("targeted", "zero")]
 #[case::targeted_partial("targeted", "partial")]
 #[case::targeted_failed("targeted", "failed")]
 #[case::targeted_foreign("targeted", "foreign")]
@@ -12157,6 +12158,12 @@ async fn test_terminal_reconciliation_defers_unexplained_fill_gap(
         "1.0",
     );
     let initial_fills = match response {
+        "zero" => {
+            let mut zero = first.clone();
+            zero.last_qty = Quantity::zero(1);
+            zero.commission = Money::from("123.45 USDT");
+            vec![zero]
+        }
         "partial" => vec![first.clone()],
         "foreign" | "account" | "instrument" | "side" => {
             let mut foreign = first.clone();
@@ -12188,6 +12195,10 @@ async fn test_terminal_reconciliation_defers_unexplained_fill_gap(
             .await;
     } else {
         let events = ctx.manager.check_open_orders(&[&client]).await;
+
+        if response == "zero" {
+            assert!(events.is_empty());
+        }
 
         for event in events {
             ctx.exec_engine.borrow_mut().process(&event);
@@ -12233,6 +12244,12 @@ async fn test_terminal_reconciliation_defers_unexplained_fill_gap(
         deferred.filled_qty(),
         Quantity::from(if partial { "1.0" } else { "0.0" })
     );
+
+    if response == "zero" {
+        assert!(deferred.trade_ids().is_empty());
+        assert!(deferred.commissions().is_empty());
+    }
+
     assert_eq!(recovered.status(), OrderStatus::Canceled);
     assert_eq!(recovered.filled_qty(), Quantity::from("2.0"));
     assert_eq!(
@@ -16178,5 +16195,190 @@ async fn test_reconcile_mass_status_does_not_capture_synthetic_reports() {
         fills[0].trade_id,
         TradeId::from("T-SYN-RAW"),
         "captured trade_id must match the original raw input, not a synthetic `S-` id",
+    );
+}
+
+#[rstest]
+#[case::unbounded(false)]
+#[case::bounded(true)]
+#[tokio::test]
+async fn test_mass_status_zero_quantity_fill_does_not_consume_trade_id(#[case] bounded: bool) {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let trade_id = TradeId::from("T-ZERO-RETRY");
+    ctx.add_instrument(test_instrument());
+    let order = create_limit_order("O-001", instrument_id, OrderSide::Buy, "2.0", "3000.00");
+    ctx.add_order(order.clone());
+
+    let valid = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        venue_order_id,
+        trade_id,
+        OrderSide::Buy,
+        Quantity::from("1.0"),
+        Price::from("3000.00"),
+        Money::from("0.50 USDT"),
+        LiquiditySide::Maker,
+        Some(client_order_id),
+        None,
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    );
+    let mut zero = valid.clone();
+    zero.last_qty = Quantity::zero(1);
+    zero.commission = Money::from("123.45 USDT");
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        None,
+    );
+
+    if bounded {
+        mass_status.set_report_window(Some(UnixNanos::from(1)), true);
+    }
+
+    mass_status.add_fill_reports(vec![zero]);
+
+    let rejected = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status.clone(), ctx.exec_engine.clone())
+        .await;
+
+    assert!(rejected.events.is_empty());
+    assert_eq!(ctx.get_order(&client_order_id), Some(order));
+    assert_eq!(
+        ctx.cache
+            .borrow()
+            .positions_total_count(None, None, None, None, None),
+        0
+    );
+
+    mass_status.add_fill_reports(vec![valid]);
+    let accepted = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(accepted.events.len(), 1);
+
+    let OrderEventAny::Filled(fill) = &accepted.events[0] else {
+        panic!("Expected fill");
+    };
+
+    assert_eq!(fill.last_qty, Quantity::from("1.0"));
+    assert_eq!(fill.commission, Some(Money::from("0.50 USDT")));
+    assert_eq!(fill.trade_id, trade_id);
+}
+
+#[tokio::test]
+async fn test_zero_quantity_fill_does_not_refresh_recency() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let trade_id = TradeId::from("T-ZERO-RECENCY");
+    let mut order = create_accepted_order(
+        "O-ZERO-RECENCY",
+        instrument.id(),
+        OrderSide::Buy,
+        "2.0",
+        "3000.00",
+        VenueOrderId::from("V-ZERO-RECENCY"),
+    );
+    let event = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(trade_id),
+        None,
+        Some(Price::from("3000.00")),
+        Some(Quantity::from("1.0")),
+        Some(LiquiditySide::Maker),
+        None,
+        None,
+        Some(test_account_id()),
+    );
+    order.apply(event.clone()).unwrap();
+    ctx.add_order(order);
+
+    let OrderEventAny::Filled(fill) = event else {
+        panic!("Expected fill");
+    };
+
+    let mut zero = fill.clone();
+    zero.last_qty = Quantity::zero(1);
+
+    ctx.manager.commit_recent_fill_if_applied(&zero);
+
+    assert!(
+        !ctx.manager
+            .is_fill_recently_processed(test_account_id(), instrument.id(), trade_id)
+    );
+
+    ctx.manager.commit_recent_fill_if_applied(&fill);
+
+    assert!(
+        ctx.manager
+            .is_fill_recently_processed(test_account_id(), instrument.id(), trade_id)
+    );
+}
+
+#[tokio::test]
+async fn test_zero_quantity_fill_does_not_suppress_hedge_position_report() {
+    let mut ctx = TestContext::with_config(ExecutionManagerConfig {
+        generate_missing_orders: true,
+        ..Default::default()
+    });
+
+    let instrument_id = test_instrument_id();
+    let position_id = PositionId::from("P-ZERO-HEDGE");
+    ctx.add_instrument(test_instrument());
+    let zero = create_fill_report(
+        ClientOrderId::from("O-ZERO-HEDGE"),
+        VenueOrderId::from("V-ZERO-HEDGE"),
+        instrument_id,
+        TradeId::from("T-ZERO-HEDGE"),
+        "0.0",
+    );
+    let mut mass_status = create_mass_status(vec![], vec![zero]);
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from("5.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        Some(position_id),
+        Some(dec!(3000.00)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    let fills: Vec<_> = result
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[0].last_qty, Quantity::from("5.0"));
+    assert_eq!(fills[0].position_id, Some(position_id));
+    assert_ne!(fills[0].trade_id, TradeId::from("T-ZERO-HEDGE"));
+    let cache = ctx.cache.borrow();
+    assert!(!cache.order_exists(&ClientOrderId::from("O-ZERO-HEDGE")));
+    assert_eq!(
+        cache.position(&position_id).unwrap().quantity,
+        Quantity::from("5.0")
     );
 }
