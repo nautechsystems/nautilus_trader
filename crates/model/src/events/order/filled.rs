@@ -165,7 +165,7 @@ impl OrderFilled {
         opening_position_id: Option<PositionId>,
         opening_event_id: UUID4,
     ) -> anyhow::Result<(Self, Self)> {
-        anyhow::ensure!(!closing_qty.is_zero(), "closing quantity was zero");
+        anyhow::ensure!(closing_qty.non_zero(), "closing quantity was zero");
         anyhow::ensure!(
             closing_qty < self.last_qty,
             "closing quantity {closing_qty} must be smaller than fill quantity {}",

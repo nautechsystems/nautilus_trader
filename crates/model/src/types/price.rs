@@ -400,6 +400,13 @@ impl Price {
         self.raw == PRICE_UNDEF
     }
 
+    /// Returns `true` if the value of this instance is the error sentinel.
+    #[must_use]
+    #[inline]
+    pub fn is_error(&self) -> bool {
+        self.raw == PRICE_ERROR
+    }
+
     /// Returns the stored fixed-point integer without rescaling.
     ///
     /// Use this for serialization and explicit fixed-point conversions. Prefer domain
@@ -1384,6 +1391,17 @@ mod tests {
 
         let price = Price::new(0.000_001, 6);
         assert_eq!(price.as_decimal(), dec!(0.000001));
+    }
+
+    #[rstest]
+    #[case(PRICE_ERROR, true)]
+    #[case(PRICE_UNDEF, false)]
+    #[case(-1, false)]
+    #[case(0, false)]
+    #[case(1, false)]
+    fn test_is_error(#[case] raw: PriceRaw, #[case] expected: bool) {
+        let price = Price::from_raw(raw, 0);
+        assert_eq!(price.is_error(), expected);
     }
 
     #[rstest]

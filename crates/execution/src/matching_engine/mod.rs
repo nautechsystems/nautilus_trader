@@ -2122,8 +2122,8 @@ impl OrderMatchingEngine {
         has_current_bid: &mut bool,
         has_current_ask: &mut bool,
     ) -> bool {
-        let has_bid_size = !quote.bid_size.is_zero();
-        let has_ask_size = !quote.ask_size.is_zero();
+        let has_bid_size = quote.bid_size.non_zero();
+        let has_ask_size = quote.ask_size.non_zero();
         let mut book_changed = false;
         let mut bid_cleared = false;
         let mut ask_cleared = false;
@@ -4265,7 +4265,7 @@ impl OrderMatchingEngine {
 
                         let fill_qty = min(leaves_qty, available_qty);
 
-                        if !fill_qty.is_zero() {
+                        if fill_qty.non_zero() {
                             log::debug!(
                                 "Trade execution fill: {} @ {} (trade_price={}, available: {}, book had {} fills)",
                                 fill_qty,
@@ -5421,7 +5421,7 @@ impl OrderMatchingEngine {
                                 && child_filled_qty >= post_fill_leaves_qty
                             {
                                 self.cancel_order(&child_order, Some(false));
-                            } else if !post_fill_leaves_qty.is_zero()
+                            } else if post_fill_leaves_qty.non_zero()
                                 && post_fill_leaves_qty != child_order.leaves_qty()
                             {
                                 let price = child_order.price();
@@ -8045,7 +8045,7 @@ mod tests {
                 engine.accept_order(&mut order);
             }
 
-            if !Quantity::from(filled).is_zero() {
+            if Quantity::from(filled).non_zero() {
                 let (_, mut fill) =
                     pending_position_fill(&instrument, position_id, id, OrderSide::Sell, filled);
                 fill.venue_order_id = order.venue_order_id().unwrap();

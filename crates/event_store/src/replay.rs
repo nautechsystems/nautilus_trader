@@ -1761,7 +1761,7 @@ fn allocate_fill_void_fragments(
         remaining_qty = remaining_qty - removed;
     }
 
-    if !remaining_qty.is_zero() {
+    if remaining_qty.non_zero() {
         return Err(apply_error(
             entry,
             format!(

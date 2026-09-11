@@ -40,9 +40,7 @@ pub mod report;
 pub mod trade;
 
 use arrow::datatypes::{DataType, Field, TimeUnit};
-use nautilus_model::types::{
-    Money, Price, Quantity, fixed::MAX_FLOAT_PRECISION, price::PRICE_ERROR,
-};
+use nautilus_model::types::{Money, Price, Quantity, fixed::MAX_FLOAT_PRECISION};
 use rust_decimal::prelude::ToPrimitive;
 
 /// Upper bound on precision the display encoders accept. Values above this are
@@ -108,8 +106,7 @@ pub(super) fn unix_nanos_to_i64(value: u64) -> i64 {
 /// falls back to [`rust_decimal::Decimal`] in that range. The
 /// decimal path returns [`f64::NAN`] if the value is outside `f64` range.
 pub(super) fn price_to_f64(price: &Price) -> f64 {
-    if price.is_undefined() || price.raw() == PRICE_ERROR || price.precision > DISPLAY_MAX_PRECISION
-    {
+    if price.is_undefined() || price.is_error() || price.precision > DISPLAY_MAX_PRECISION {
         return f64::NAN;
     }
 

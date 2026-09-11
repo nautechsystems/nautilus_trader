@@ -19,12 +19,24 @@ use nautilus_model::{
     data::BarSpecification,
     enums::{AggressorSide, BarAggregation, BookAction, OptionKind, OrderSide, PriceType},
     identifiers::{InstrumentId, Symbol, TradeId},
-    types::{PRICE_MAX, PRICE_MIN, Price},
+    types::{PRICE_MAX, PRICE_MIN, Price, fixed::check_fixed_precision},
 };
 use serde::{Deserialize, Deserializer, de};
 use ustr::Ustr;
 
 use super::enums::{TardisExchange, TardisInstrumentType, TardisOptionType};
+
+pub(crate) fn validate_non_zero_amount(value: f64, precision: u8) -> anyhow::Result<()> {
+    anyhow::ensure!(value != 0.0, "value was zero");
+    check_fixed_precision(precision)?;
+    let rounded_value =
+        (value * 10.0_f64.powi(i32::from(precision))).round() / 10.0_f64.powi(i32::from(precision));
+    anyhow::ensure!(
+        rounded_value != 0.0,
+        "value {value} was zero after rounding to precision {precision}"
+    );
+    Ok(())
+}
 
 // FNV-1a 64-bit constants (see http://www.isthe.com/chongo/tech/comp/fnv/).
 const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
@@ -414,6 +426,23 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case(0.0, 0, false)]
+    #[case(0.0004, 3, false)]
+    #[case(0.0005, 3, true)]
+    #[case(123.456, 3, true)]
+    #[case(1.0, 255, false)]
+    fn test_validate_non_zero_amount(
+        #[case] amount: f64,
+        #[case] precision: u8,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(
+            validate_non_zero_amount(amount, precision).is_ok(),
+            expected
+        );
+    }
 
     #[rstest]
     #[case(TardisExchange::Binance, "ETHUSDT", "ETHUSDT.BINANCE")]

@@ -60,7 +60,7 @@ use alloy_primitives::U256;
 use nautilus_core::{
     correctness::{
         CorrectnessError, CorrectnessResult, CorrectnessResultExt, FAILED,
-        check_in_range_inclusive_f64, check_predicate_true,
+        check_in_range_inclusive_f64,
     },
     string::formatting::Separable,
 };
@@ -184,32 +184,6 @@ impl Quantity {
         Ok(Self { raw, precision })
     }
 
-    /// Creates a new [`Quantity`] instance with a guaranteed non zero value.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - `value` is zero.
-    /// - `value` becomes zero after rounding to `precision`.
-    /// - `value` is invalid outside the representable range [0, `QUANTITY_MAX`].
-    /// - `precision` is invalid outside the representable range [0, `FIXED_PRECISION`].
-    ///
-    /// # Notes
-    ///
-    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
-    pub fn non_zero_checked(value: f64, precision: u8) -> CorrectnessResult<Self> {
-        check_predicate_true(value != 0.0, "value was zero")?;
-        check_fixed_precision(precision)?;
-        let rounded_value = (value * 10.0_f64.powi(i32::from(precision))).round()
-            / 10.0_f64.powi(i32::from(precision));
-        check_predicate_true(
-            rounded_value != 0.0,
-            &format!("value {value} was zero after rounding to precision {precision}"),
-        )?;
-
-        Self::new_checked(value, precision)
-    }
-
     /// Creates a new [`Quantity`] instance.
     ///
     /// # Panics
@@ -218,16 +192,6 @@ impl Quantity {
     #[must_use]
     pub fn new(value: f64, precision: u8) -> Self {
         Self::new_checked(value, precision).expect_display(FAILED)
-    }
-
-    /// Creates a new [`Quantity`] instance with a guaranteed non zero value.
-    ///
-    /// # Panics
-    ///
-    /// Panics if a correctness check fails. See [`Quantity::non_zero_checked`] for more details.
-    #[must_use]
-    pub fn non_zero(value: f64, precision: u8) -> Self {
-        Self::non_zero_checked(value, precision).expect_display(FAILED)
     }
 
     /// Creates a new [`Quantity`] instance from the given `raw` fixed-point value and `precision`.
@@ -427,6 +391,13 @@ impl Quantity {
     #[inline]
     pub fn is_zero(&self) -> bool {
         self.raw == 0
+    }
+
+    /// Returns `true` if the stored value of this instance is nonzero.
+    #[must_use]
+    #[inline]
+    pub fn non_zero(&self) -> bool {
+        self.raw != 0
     }
 
     /// Returns `true` if the value of this instance is position (> 0).
@@ -1133,36 +1104,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_new_non_zero_ok() {
-        let qty = Quantity::non_zero_checked(123.456, 3).unwrap();
-        assert_eq!(qty.raw, Quantity::new(123.456, 3).raw);
-        assert!(qty.is_positive());
-    }
-
-    #[rstest]
-    fn test_new_non_zero_zero_input() {
-        assert!(Quantity::non_zero_checked(0.0, 0).is_err());
-    }
-
-    #[rstest]
-    fn test_new_non_zero_rounds_to_zero() {
-        // 0.0004 rounded to 3 dp ⇒ 0.000
-        assert!(Quantity::non_zero_checked(0.0004, 3).is_err());
-    }
-
-    #[rstest]
-    fn test_new_non_zero_negative() {
-        assert!(Quantity::non_zero_checked(-1.0, 0).is_err());
-    }
-
-    #[rstest]
-    fn test_new_non_zero_exceeds_max() {
-        assert!(Quantity::non_zero_checked(QUANTITY_MAX * 10.0, 0).is_err());
-    }
-
-    #[rstest]
-    fn test_new_non_zero_invalid_precision() {
-        assert!(Quantity::non_zero_checked(1.0, FIXED_PRECISION + 1).is_err());
+    #[case(0, false)]
+    #[case(1, true)]
+    #[case(QUANTITY_UNDEF, true)]
+    fn test_non_zero(#[case] raw: QuantityRaw, #[case] expected: bool) {
+        let qty = Quantity::from_raw(raw, 0);
+        assert_eq!(qty.non_zero(), expected);
     }
 
     #[rstest]
@@ -1175,7 +1122,7 @@ mod tests {
         assert_eq!(qty, Quantity::from("0.00812000"));
         assert_eq!(qty.as_decimal(), dec!(0.00812000));
         assert_eq!(qty.to_string(), "0.00812000");
-        assert!(!qty.is_zero());
+        assert!(qty.non_zero());
         assert!(qty.is_positive());
         assert!(approx_eq!(f64, qty.as_f64(), 0.00812, epsilon = 0.000_001));
     }

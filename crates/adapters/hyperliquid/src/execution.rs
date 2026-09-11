@@ -274,7 +274,7 @@ impl HyperliquidExecutionClient {
             state.restore_active(&active_children);
             drop(state);
 
-            if has_staged_children && !parent.filled_qty().is_zero() {
+            if has_staged_children && parent.filled_qty().non_zero() {
                 ready_parent_ids.push(parent_id);
             }
         }

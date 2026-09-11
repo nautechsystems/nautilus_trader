@@ -85,7 +85,7 @@ use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol, Venue},
     types::{
-        Currency, ERROR_PRICE, Money, PRICE_ERROR, Price, Quantity,
+        Currency, ERROR_PRICE, Money, Price, Quantity,
         fixed::{FIXED_PRECISION, raw_scales_match},
         money::check_positive_money,
         price::{PriceRaw, check_positive_price},
@@ -366,7 +366,7 @@ pub trait Instrument: 'static + Send {
             });
         }
 
-        if price.raw() == PRICE_ERROR {
+        if price.is_error() {
             return Err(CorrectnessError::InvalidValue {
                 param: "price".to_string(),
                 value: "PRICE_ERROR".to_string(),
@@ -523,7 +523,7 @@ pub trait Instrument: 'static + Send {
             });
         }
 
-        if !increment.is_zero() && !quantity.raw().is_multiple_of(increment.raw()) {
+        if increment.non_zero() && !quantity.raw().is_multiple_of(increment.raw()) {
             return Err(CorrectnessError::PredicateViolation {
                 message: format!(
                     "`quantity` is not aligned to size increment {increment}, was {quantity}"

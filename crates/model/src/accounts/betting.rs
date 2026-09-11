@@ -234,7 +234,7 @@ impl Account for BettingAccount {
         let mut fill_qty = fill.last_qty;
 
         if let Some(position) = position.as_ref()
-            && !position.quantity.is_zero()
+            && position.quantity.non_zero()
             && position.entry != fill.order_side
         {
             fill_qty = fill.last_qty.min(position.quantity);

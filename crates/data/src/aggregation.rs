@@ -719,7 +719,7 @@ impl BarAggregator for VolumeBarAggregator {
         let mut size_update = size;
         let step = self.step;
 
-        while !size_update.is_zero() {
+        while size_update.non_zero() {
             debug_assert!(
                 self.core.builder.volume < step,
                 "builder volume must stay below the step threshold between emissions"
@@ -748,7 +748,7 @@ impl BarAggregator for VolumeBarAggregator {
         let mut volume_update = volume;
         let step = self.step;
 
-        while !volume_update.is_zero() {
+        while volume_update.non_zero() {
             debug_assert!(
                 self.core.builder.volume < step,
                 "builder volume must stay below the step threshold between emissions"
@@ -830,7 +830,7 @@ impl BarAggregator for VolumeImbalanceBarAggregator {
         };
 
         let mut remaining = trade.size;
-        while !remaining.is_zero() {
+        while remaining.non_zero() {
             let mut needed = self.step - self.imbalance;
             needed.precision = trade.size.precision;
             let qty_chunk = remaining.min(needed);
@@ -929,7 +929,7 @@ impl BarAggregator for VolumeRunsBarAggregator {
         }
 
         let mut remaining = trade.size;
-        while !remaining.is_zero() {
+        while remaining.non_zero() {
             let mut needed = self.step - self.run_volume;
             needed.precision = trade.size.precision;
             let chunk = remaining.min(needed);
@@ -949,7 +949,7 @@ impl BarAggregator for VolumeRunsBarAggregator {
         // Leftover volume past the last emitted bar starts a new run on the same
         // side; without this the next same-side trade reads as a side change and
         // resets the builder, silently dropping the pending volume.
-        if !self.run_volume.is_zero() {
+        if self.run_volume.non_zero() {
             self.current_run_side = Some(side);
         }
     }
