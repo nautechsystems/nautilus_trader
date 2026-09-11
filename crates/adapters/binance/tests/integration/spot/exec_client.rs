@@ -102,7 +102,7 @@ const SYMBOL_BLOCK_LENGTH: u16 = 19;
 const ACCOUNT_BLOCK_LENGTH: u16 = 64;
 const BALANCE_BLOCK_LENGTH: u16 = 17;
 const ACCOUNT_TRADE_BLOCK_LENGTH: u16 = 70;
-const NEW_ORDER_FULL_BLOCK_LENGTH: u16 = 153;
+const NEW_ORDER_FULL_BLOCK_LENGTH: u16 = 154;
 const CANCEL_ORDER_BLOCK_LENGTH: u16 = 137;
 const ORDERS_GROUP_BLOCK_LENGTH: u16 = 162;
 const PRICE_FILTER_TEMPLATE_ID: u16 = 1;
@@ -293,11 +293,10 @@ fn build_new_order_response(
     buf.extend_from_slice(&i64::MIN.to_le_bytes()); // stop_price (None)
     buf.extend_from_slice(&[0u8; 16]); // trailing_delta + trailing_time
     buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // working_time
-    buf.extend_from_slice(&[0u8; 23]); // iceberg to used_sor
-    buf.push(0); // self_trade_prevention_mode
-    buf.extend_from_slice(&[0u8; 16]); // trade_group_id + prevented_quantity
-    buf.push((-8i8) as u8); // commission_exponent
-    buf.extend_from_slice(&[0u8; 18]); // padding
+    buf.extend_from_slice(&[0u8; 22]); // iceberg_qty to working_floor
+    buf.push(3); // self_trade_prevention_mode (EXPIRE_MAKER)
+    buf.extend_from_slice(&[0u8; 36]); // trade_group_id to pegged_price
+    buf.push(0xff); // expiry_reason (null)
 
     // Empty fills group
     buf.extend_from_slice(&create_group_header(42, 0));
@@ -337,10 +336,10 @@ fn build_cancel_order_response(
     buf.push(0); // time_in_force (GTC)
     buf.push(1); // order_type (LIMIT)
     buf.push(1); // side (BUY)
-    buf.push(0); // self_trade_prevention_mode
-
-    let current_len = buf.len() - 8;
-    buf.extend_from_slice(&vec![0u8; CANCEL_ORDER_BLOCK_LENGTH as usize - current_len]);
+    buf.extend_from_slice(&i64::MIN.to_le_bytes()); // stop_price (None)
+    buf.extend_from_slice(&[0u8; 38]); // trailing_delta to working_floor
+    buf.push(3); // self_trade_prevention_mode (EXPIRE_MAKER)
+    buf.extend_from_slice(&[0u8; 28]); // prevented_quantity to pegged_price
 
     write_var_string(&mut buf, symbol);
     write_var_string(&mut buf, orig_client_order_id);
