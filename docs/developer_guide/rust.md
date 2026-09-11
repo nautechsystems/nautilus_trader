@@ -149,7 +149,8 @@ Place the optional `publish`, `build`, and `include` fields after `homepage.work
   to `"pyo3/extension-module"`.
 - Propagate `high-precision` to dependent Nautilus crates that store or construct fixed-point
   domain values.
-- Document public features in the crate-level documentation.
+- Document each public non-default feature once, in alphabetical order, under `## Feature flags` in the
+  crate README and `# Feature Flags` in the crate-level library docs.
 
 ### Targets
 
@@ -178,22 +179,36 @@ Leave one blank line:
 - Above each `///` or `//!` doc comment.
 - Above standalone `if`, `match`, `for`, `while`, and `loop` expressions.
 - Above task spawn calls, including `spawn_local` and `spawn_blocking`.
-- Before multiline `let` statements, unless they start a block.
-- After completed multiline braced statements, before the next statement in the same block.
+- Before a `let` that contains a multiline braced expression, unless it starts a block.
+- Before a multiline struct literal or a direct qualified `Type::new(...)` call, unless it starts a block.
+- After a statement that contains a multiline braced expression, before the next statement in the same block.
 
 The control-flow and spawn rules do not apply when the expression starts a block, continues the
-previous operation, or has an attached comment or attribute.
+previous operation, or has an attached comment or attribute. Wrapped calls and method chains alone
+do not need a separator. Construction spacing also applies to assignments, explicit returns, and
+calls followed by `?` or `.await`. Construction must span multiple lines after rustfmt layout;
+one-line initializers stay together.
 
-Keep comments and attributes attached to their statement when inserting a separator. Apply the
-multiline statement rules around changed code; leave unrelated code alone. Add only blank lines
-that `rustfmt` preserves.
+Keep comments and attributes attached to their statement when inserting a separator. Skip macro
+bodies and `rustfmt::skip` regions. Apply the multiline statement rules around changed code; leave
+unrelated code alone. Add only blank lines that `rustfmt` preserves.
 
-The formatting hook checks existing control-flow and module-ordering rules at changed boundaries.
-It compares staged and unstaged changes against `HEAD`, or against the merge base with
-`CHANGED_BASE_SHA` when set. An unavailable CI base falls back to checking all tracked Rust files.
-It reads complete changed files for context and includes lines used by exemption checks when
-selecting diagnostics. It does not modify files. The multiline statement spacing rules and
-`spawn_local`/`spawn_blocking` spacing remain review conventions.
+The formatting hook:
+
+- Checks existing control-flow, spawn, and module-ordering rules at changed boundaries.
+- Compares staged and unstaged changes against `HEAD`, or against the merge base with `CHANGED_BASE_SHA` when set.
+- Falls back to checking all tracked Rust files when a CI base is unavailable.
+- Reads complete changed files for context and includes lines used by exemption checks when selecting diagnostics.
+- Does not modify files.
+
+These remain review conventions:
+
+- Multiline statement spacing.
+- Construction spacing.
+- `spawn_local` and `spawn_blocking` spacing.
+
+Keep changed code readable for a human reader, and add further blank lines when those separators
+still leave a dense block hard to follow.
 
 Use inline format arguments for existing variables:
 
@@ -322,11 +337,11 @@ absence, including:
 The API determines how an invalid operation fails:
 
 ```rust
-let total_ns = timestamp1 + timestamp2; // Panics on overflow.
+let later = timestamp + duration_ns; // Panics on overflow.
 
 let price = Price::new_checked(f64::NAN, precision); // Returns Err.
 
-let total_ns = timestamp1.checked_add(timestamp2.as_u64()); // Returns None on overflow.
+let later = timestamp.checked_add(duration_ns); // Returns None on overflow.
 ```
 
 This policy is implemented throughout the core types (`UnixNanos`, `Price`, `Quantity`, etc.)
@@ -662,7 +677,7 @@ Keep each submodule registration as `let n = "<name>"` followed by one
 
 ### PyO3 enums
 
-Python-exposed integer enums use `frozen`, `eq`, `eq_int`, `from_py_object`, and
+Nautilus domain integer enums use `frozen`, `eq`, `eq_int`, `from_py_object`, and
 `rename_all = "SCREAMING_SNAKE_CASE"`.
 
 Do not add PyO3's `hash` attribute to an `eq_int` enum. Its generated hash differs from Python's hash
@@ -765,7 +780,7 @@ fn test_symbol_is_composite(#[case] input: &str, #[case] expected: bool) {
 ### Test specs
 
 Events with many constructor arguments use a fluent `bon` spec next to the event under
-`events/<event>/spec/`. Gate the module with `#[cfg(any(test, feature = "test-support"))]` so downstream
+`events/order/spec/`. Gate the module with `#[cfg(any(test, feature = "test-support"))]` so downstream
 tests can opt in without adding the spec to production builds.
 
 - Derive `bon::Builder` with `finish_fn = into_spec`.
