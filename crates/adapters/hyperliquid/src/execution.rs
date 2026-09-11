@@ -51,7 +51,7 @@ use nautilus_model::{
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     orders::{Order, any::OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Quantity},
@@ -712,6 +712,12 @@ impl ExecutionClient for HyperliquidExecutionClient {
     /// map. WebSocket submissions sign through `&self.http_client`, so that one
     /// write serves both submission paths.
     fn on_instrument(&mut self, instrument: InstrumentAny) {
+        // this is the only step that makes a market listed after our bootstrap
+        // submittable, so it is traceable rather than silent
+        log::debug!(
+            "Applying instrument update: instrument_id={}",
+            instrument.id()
+        );
         self.http_client.cache_instrument(&instrument);
         self.ws_client.cache_instrument(instrument);
     }

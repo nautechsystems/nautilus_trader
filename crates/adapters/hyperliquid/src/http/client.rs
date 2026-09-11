@@ -1323,6 +1323,12 @@ impl HyperliquidHttpClient {
             Some(asset_index) => self.asset_indices.rcu(|m| {
                 m.insert(full_symbol, asset_index);
             }),
+            // without an index we cannot address the asset on the wire, so a market we
+            // have never indexed is untradable rather than merely stale
+            None if self.asset_indices.get_cloned(&full_symbol).is_none() => log::warn!(
+                "Instrument '{full_symbol}' carries no '{ASSET_INDEX_INFO_KEY}' info value \
+                 and has no cached asset index; orders for it will be rejected"
+            ),
             None => log::warn!(
                 "Instrument '{full_symbol}' carries no '{ASSET_INDEX_INFO_KEY}' info value; \
                  leaving the cached asset index unchanged"

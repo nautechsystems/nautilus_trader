@@ -419,7 +419,7 @@ impl HyperliquidDataClient {
         let client_id = self.client_id;
 
         self.session_tasks.spawn(async move {
-            log::debug!("Hyperliquid instrument refresh started, interval={interval:?}");
+            log::info!("Hyperliquid instrument refresh started, interval={interval:?}");
 
             loop {
                 tokio::select! {
@@ -447,6 +447,14 @@ impl HyperliquidDataClient {
                 };
 
                 match result {
+                    // a quiet pass every interval would be noise, but a market becoming
+                    // tradable mid-session is the event an operator needs to see
+                    Ok(summary) if !summary.added.is_empty() => log::info!(
+                        "Hyperliquid instruments refreshed: client_id={client_id}, fetched={}, changed={}, added={:?}",
+                        summary.fetched,
+                        summary.changed,
+                        summary.added,
+                    ),
                     Ok(summary) => log::debug!(
                         "Hyperliquid instruments refreshed: client_id={client_id}, fetched={}, changed={}",
                         summary.fetched,
@@ -1646,6 +1654,8 @@ async fn cache_instruments(
 struct InstrumentRefresh {
     /// Instruments returned by the venue.
     fetched: usize,
+    /// Symbols of the definitions that were new to the cache.
+    added: Vec<Ustr>,
     /// New or materially changed definitions published downstream.
     changed: usize,
 }
@@ -1669,6 +1679,7 @@ async fn reconcile_instruments(
         .context("failed to fetch instruments during refresh")?;
 
     let changed = changed_definitions(&fetched, instruments_by_id);
+    let added = added_symbols(&changed, instruments_by_id);
 
     cache_instruments(
         &changed,
@@ -1687,6 +1698,7 @@ async fn reconcile_instruments(
 
     Ok(InstrumentRefresh {
         fetched: fetched.len(),
+        added,
         changed: changed.len(),
     })
 }
@@ -1704,6 +1716,23 @@ fn changed_definitions(
                 .is_none_or(|cached| !instrument_definitions_match(&cached, instrument))
         })
         .cloned()
+        .collect()
+}
+
+/// Returns the symbols of the changed definitions the cache has never held.
+///
+/// A market listed after startup is the case the refresh exists for, so a pass
+/// reports which symbols became tradable rather than only how many definitions
+/// moved. Callers pass the changed set, so a definition that merely moved its
+/// tick size is not reported as new.
+fn added_symbols(
+    changed: &[InstrumentAny],
+    instruments_by_id: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+) -> Vec<Ustr> {
+    changed
+        .iter()
+        .filter(|instrument| instruments_by_id.get_cloned(&instrument.id()).is_none())
+        .map(|instrument| instrument.symbol().inner())
         .collect()
 }
 
@@ -3263,6 +3292,30 @@ mod tests {
 
         assert_eq!(changed.len(), 1);
         assert_eq!(changed[0].id().symbol.as_str(), "NEW-USD-PERP");
+    }
+
+    #[rstest]
+    fn test_added_symbols_names_only_the_market_the_cache_never_held() {
+        let cached_instruments =
+            cached(&[perp_instrument("BTC-USD-PERP", "0.1", UnixNanos::from(1))]);
+        // BTC moved its tick size, so it is changed but not new
+        let changed = vec![
+            perp_instrument("BTC-USD-PERP", "0.5", UnixNanos::from(1)),
+            perp_instrument("NEW-USD-PERP", "0.1", UnixNanos::from(1)),
+        ];
+
+        let added = added_symbols(&changed, &cached_instruments);
+
+        assert_eq!(added, vec![Ustr::from("NEW-USD-PERP")]);
+    }
+
+    #[rstest]
+    fn test_added_symbols_is_empty_when_every_change_is_a_known_market() {
+        let cached_instruments =
+            cached(&[perp_instrument("BTC-USD-PERP", "0.1", UnixNanos::from(1))]);
+        let changed = vec![perp_instrument("BTC-USD-PERP", "0.5", UnixNanos::from(1))];
+
+        assert!(added_symbols(&changed, &cached_instruments).is_empty());
     }
 
     #[rstest]
