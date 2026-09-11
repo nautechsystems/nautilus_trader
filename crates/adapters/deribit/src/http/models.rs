@@ -695,7 +695,7 @@ pub struct DeribitBookSummaryRaw {
     /// Quote currency
     #[serde(default)]
     pub quote_currency: Option<String>,
-    /// Instrument creation time (milliseconds since UNIX epoch)
+    /// Book summary snapshot time (milliseconds since UNIX epoch)
     #[serde(default)]
     pub creation_timestamp: i64,
 }

@@ -2049,7 +2049,8 @@ async fn test_data_client_request_book_summaries_round_trip() {
     assert_eq!(first.last_price, Some(dec!(0.0415)));
     assert_eq!(first.underlying_price, Some(dec!(95000.5)));
     assert_ne!(first.ts_event, UnixNanos::default());
-    assert_eq!(first.ts_event, first.ts_init);
+    assert_eq!(first.ts_event, UnixNanos::from_millis(1_710_000_000_000));
+    assert!(first.ts_init > first.ts_event);
 
     client.disconnect().await.unwrap();
 }

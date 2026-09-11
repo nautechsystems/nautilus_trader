@@ -18,7 +18,10 @@
 use std::{io::Read, path::Path};
 
 use ahash::AHashMap;
-use nautilus_core::UnixNanos;
+use nautilus_core::{
+    UnixNanos,
+    time::{AtomicTime, get_atomic_clock_realtime},
+};
 use nautilus_model::{
     data::{delta::OrderBookDelta, order::BookOrder},
     enums::{BookAction, OrderSide, RecordFlag},
@@ -43,9 +46,11 @@ struct OrderState {
 /// for a single instrument.
 ///
 /// Maintains internal order state to compute remaining sizes after partial
-/// executions and cancellations.
+/// executions and cancellations. Each delta carries the ITCH message time as
+/// `ts_event` and the conversion wall-clock time as `ts_init`.
 #[derive(Debug)]
 pub struct ItchParser {
+    clock: &'static AtomicTime,
     instrument_id: InstrumentId,
     target_locate: Option<u16>,
     target_stock: String,
@@ -66,6 +71,7 @@ impl ItchParser {
     #[must_use]
     pub fn new(instrument_id: InstrumentId, stock: &str, base_ns: u64) -> Self {
         Self {
+            clock: get_atomic_clock_realtime(),
             instrument_id,
             target_locate: None,
             target_stock: stock.to_string(),
@@ -118,8 +124,9 @@ impl ItchParser {
                 itchy::Body::SystemEvent {
                     event: itchy::EventCode::EndOfMessages,
                 } => {
-                    let ts = UnixNanos::from(self.base_ns + msg.timestamp);
-                    self.handle_end_of_messages(ts, &mut deltas);
+                    let ts_event = UnixNanos::from(self.base_ns + msg.timestamp);
+                    let ts_init = self.clock.get_time_ns();
+                    self.handle_end_of_messages(ts_event, ts_init, &mut deltas);
                     continue;
                 }
                 _ => {}
@@ -134,20 +141,21 @@ impl ItchParser {
                 continue;
             }
 
-            let ts = UnixNanos::from(self.base_ns + msg.timestamp);
+            let ts_event = UnixNanos::from(self.base_ns + msg.timestamp);
+            let ts_init = self.clock.get_time_ns();
 
             match msg.body {
                 itchy::Body::AddOrder(ref add) => {
-                    self.handle_add_order(add, ts, &mut deltas);
+                    self.handle_add_order(add, ts_event, ts_init, &mut deltas);
                 }
                 itchy::Body::DeleteOrder { reference } => {
-                    self.handle_delete_order(reference, ts, &mut deltas);
+                    self.handle_delete_order(reference, ts_event, ts_init, &mut deltas);
                 }
                 itchy::Body::OrderCancelled {
                     reference,
                     cancelled,
                 } => {
-                    self.handle_cancel(reference, cancelled, ts, &mut deltas);
+                    self.handle_cancel(reference, cancelled, ts_event, ts_init, &mut deltas);
                 }
                 itchy::Body::OrderExecuted {
                     reference,
@@ -159,10 +167,10 @@ impl ItchParser {
                     executed,
                     ..
                 } => {
-                    self.handle_execution(reference, executed, ts, &mut deltas);
+                    self.handle_execution(reference, executed, ts_event, ts_init, &mut deltas);
                 }
                 itchy::Body::ReplaceOrder(ref replace) => {
-                    self.handle_replace(replace, ts, &mut deltas);
+                    self.handle_replace(replace, ts_event, ts_init, &mut deltas);
                 }
                 _ => {}
             }
@@ -179,7 +187,8 @@ impl ItchParser {
     fn handle_add_order(
         &mut self,
         add: &itchy::AddOrder,
-        ts: UnixNanos,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
         deltas: &mut Vec<OrderBookDelta>,
     ) {
         let side = convert_side(add.side);
@@ -207,15 +216,16 @@ impl ItchParser {
             order,
             RecordFlag::F_LAST as u8,
             self.sequence,
-            ts,
-            ts,
+            ts_event,
+            ts_init,
         ));
     }
 
     fn handle_delete_order(
         &mut self,
         reference: u64,
-        ts: UnixNanos,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
         deltas: &mut Vec<OrderBookDelta>,
     ) {
         if let Some(state) = self.orders.remove(&reference) {
@@ -232,8 +242,8 @@ impl ItchParser {
                 order,
                 RecordFlag::F_LAST as u8,
                 self.sequence,
-                ts,
-                ts,
+                ts_event,
+                ts_init,
             ));
         }
     }
@@ -242,7 +252,8 @@ impl ItchParser {
         &mut self,
         reference: u64,
         cancelled: u32,
-        ts: UnixNanos,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
         deltas: &mut Vec<OrderBookDelta>,
     ) {
         if let Some(state) = self.orders.get_mut(&reference) {
@@ -264,8 +275,8 @@ impl ItchParser {
                     order,
                     RecordFlag::F_LAST as u8,
                     self.sequence,
-                    ts,
-                    ts,
+                    ts_event,
+                    ts_init,
                 ));
             } else {
                 // Partial cancel
@@ -282,8 +293,8 @@ impl ItchParser {
                     order,
                     RecordFlag::F_LAST as u8,
                     self.sequence,
-                    ts,
-                    ts,
+                    ts_event,
+                    ts_init,
                 ));
             }
         }
@@ -293,7 +304,8 @@ impl ItchParser {
         &mut self,
         reference: u64,
         executed: u32,
-        ts: UnixNanos,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
         deltas: &mut Vec<OrderBookDelta>,
     ) {
         if let Some(state) = self.orders.get_mut(&reference) {
@@ -315,8 +327,8 @@ impl ItchParser {
                     order,
                     RecordFlag::F_LAST as u8,
                     self.sequence,
-                    ts,
-                    ts,
+                    ts_event,
+                    ts_init,
                 ));
             } else {
                 // Partial execution
@@ -333,8 +345,8 @@ impl ItchParser {
                     order,
                     RecordFlag::F_LAST as u8,
                     self.sequence,
-                    ts,
-                    ts,
+                    ts_event,
+                    ts_init,
                 ));
             }
         }
@@ -343,7 +355,8 @@ impl ItchParser {
     fn handle_replace(
         &mut self,
         replace: &itchy::ReplaceOrder,
-        ts: UnixNanos,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
         deltas: &mut Vec<OrderBookDelta>,
     ) {
         // Delete old order
@@ -361,8 +374,8 @@ impl ItchParser {
                 old_order,
                 0, // Not the last in this event group
                 self.sequence,
-                ts,
-                ts,
+                ts_event,
+                ts_init,
             ));
 
             // Add new order (inherits side from old order)
@@ -389,19 +402,24 @@ impl ItchParser {
                 new_order,
                 RecordFlag::F_LAST as u8,
                 self.sequence,
-                ts,
-                ts,
+                ts_event,
+                ts_init,
             ));
         }
     }
 
-    fn handle_end_of_messages(&mut self, ts: UnixNanos, deltas: &mut Vec<OrderBookDelta>) {
+    fn handle_end_of_messages(
+        &mut self,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+        deltas: &mut Vec<OrderBookDelta>,
+    ) {
         self.sequence += 1;
         deltas.push(OrderBookDelta::clear(
             self.instrument_id,
             self.sequence,
-            ts,
-            ts,
+            ts_event,
+            ts_init,
         ));
     }
 }
@@ -741,7 +759,8 @@ mod tests {
         let deltas = parser.parse_reader(&buf[..]).unwrap();
 
         assert_eq!(deltas[0].ts_event, UnixNanos::from(base_ns + itch_ts));
-        assert_eq!(deltas[0].ts_init, deltas[0].ts_event);
+        // ts_init is the conversion wall-clock stamp, later than the 2019 event time
+        assert!(deltas[0].ts_init > deltas[0].ts_event);
     }
 
     #[rstest]

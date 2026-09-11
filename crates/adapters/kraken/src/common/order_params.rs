@@ -155,8 +155,9 @@ pub fn build_add_order_params(
 ///
 /// `UnixNanos` is a `u64` whose maximum value (`~1.8e19` ns) corresponds to
 /// year 2554, within Jiff's representable range.
-pub(crate) fn format_expire_time(ts: UnixNanos) -> String {
-    ts.to_datetime_utc()
+pub(crate) fn format_expire_time(expire_time: UnixNanos) -> String {
+    expire_time
+        .to_datetime_utc()
         .display_with_offset(Offset::UTC)
         .to_string()
 }

@@ -1259,7 +1259,7 @@ fn test_get_xrate_from_bars_selects_latest_bar_per_side(audusd_sim: CurrencyPair
     let ts_older = UnixNanos::from(1000);
     let ts_newer = UnixNanos::from(2000);
 
-    let make_bar = |bar_type: BarType, close: &str, ts: UnixNanos| {
+    let make_bar = |bar_type: BarType, close: &str, ts_init: UnixNanos| {
         Bar::new(
             bar_type,
             Price::from(close),
@@ -1267,8 +1267,8 @@ fn test_get_xrate_from_bars_selects_latest_bar_per_side(audusd_sim: CurrencyPair
             Price::from(close),
             Price::from(close),
             Quantity::from(100_000),
-            ts,
-            ts,
+            ts_init,
+            ts_init,
         )
     };
 

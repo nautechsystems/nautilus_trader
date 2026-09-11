@@ -353,8 +353,8 @@ fn quantity_raw_at_precision(quantity: Quantity) -> u128 {
     raw / 10_u128.pow(u32::from(scale_down))
 }
 
-fn write_unix_nanos(hasher: &mut blake3::Hasher, ts: UnixNanos) {
-    hasher.update(&ts.as_u64().to_be_bytes());
+fn write_unix_nanos(hasher: &mut blake3::Hasher, value: UnixNanos) {
+    hasher.update(&value.as_u64().to_be_bytes());
 }
 
 fn write_str(hasher: &mut blake3::Hasher, value: &str) {

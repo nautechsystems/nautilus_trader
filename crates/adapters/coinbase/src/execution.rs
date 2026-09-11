@@ -333,10 +333,6 @@ impl CoinbaseExecutionClient {
     }
 }
 
-fn unix_nanos_to_utc(ts: UnixNanos) -> jiff::Timestamp {
-    ts.to_datetime_utc()
-}
-
 #[async_trait(?Send)]
 impl ExecutionClient for CoinbaseExecutionClient {
     fn is_connected(&self) -> bool {
@@ -724,8 +720,8 @@ impl ExecutionClient for CoinbaseExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        let start = cmd.start.map(unix_nanos_to_utc);
-        let end = cmd.end.map(unix_nanos_to_utc);
+        let start = cmd.start.map(|ts| ts.to_datetime_utc());
+        let end = cmd.end.map(|ts| ts.to_datetime_utc());
 
         let mut reports = self
             .http_client
@@ -756,8 +752,8 @@ impl ExecutionClient for CoinbaseExecutionClient {
         &self,
         cmd: GenerateFillReports,
     ) -> anyhow::Result<Vec<FillReport>> {
-        let start = cmd.start.map(unix_nanos_to_utc);
-        let end = cmd.end.map(unix_nanos_to_utc);
+        let start = cmd.start.map(|ts| ts.to_datetime_utc());
+        let end = cmd.end.map(|ts| ts.to_datetime_utc());
 
         let mut reports = self
             .http_client

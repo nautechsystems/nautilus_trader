@@ -17049,7 +17049,7 @@ fn build_synthetic_subscribe(
     instrument_id: InstrumentId,
     client_id: ClientId,
     venue: Venue,
-    ts: UnixNanos,
+    ts_init: UnixNanos,
 ) -> DataCommand {
     let id = UUID4::new();
 
@@ -17060,7 +17060,7 @@ fn build_synthetic_subscribe(
                 Some(client_id),
                 Some(venue),
                 id,
-                ts,
+                ts_init,
                 None,
                 None,
             )))
@@ -17071,7 +17071,7 @@ fn build_synthetic_subscribe(
                 Some(client_id),
                 Some(venue),
                 id,
-                ts,
+                ts_init,
                 None,
                 None,
             ),
@@ -17082,7 +17082,7 @@ fn build_synthetic_subscribe(
                 Some(client_id),
                 Some(venue),
                 id,
-                ts,
+                ts_init,
                 None,
                 None,
             ),
@@ -17093,7 +17093,7 @@ fn build_synthetic_subscribe(
                 Some(client_id),
                 Some(venue),
                 id,
-                ts,
+                ts_init,
                 None,
                 None,
             )))
@@ -17107,7 +17107,7 @@ fn build_synthetic_unsubscribe(
     instrument_id: InstrumentId,
     client_id: ClientId,
     venue: Venue,
-    ts: UnixNanos,
+    ts_init: UnixNanos,
 ) -> DataCommand {
     let id = UUID4::new();
 
@@ -17118,7 +17118,7 @@ fn build_synthetic_unsubscribe(
                 Some(client_id),
                 Some(venue),
                 id,
-                ts,
+                ts_init,
                 None,
                 None,
             )))
@@ -17129,7 +17129,7 @@ fn build_synthetic_unsubscribe(
                 Some(client_id),
                 Some(venue),
                 id,
-                ts,
+                ts_init,
                 None,
                 None,
             ),
@@ -17140,7 +17140,7 @@ fn build_synthetic_unsubscribe(
                 Some(client_id),
                 Some(venue),
                 id,
-                ts,
+                ts_init,
                 None,
                 None,
             ),
@@ -17151,7 +17151,7 @@ fn build_synthetic_unsubscribe(
                 Some(client_id),
                 Some(venue),
                 id,
-                ts,
+                ts_init,
                 None,
                 None,
             ),

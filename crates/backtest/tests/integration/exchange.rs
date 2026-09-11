@@ -1316,7 +1316,7 @@ fn matching_option_quote(
     instrument: &InstrumentAny,
     bid: &str,
     ask: &str,
-    ts: UnixNanos,
+    ts_init: UnixNanos,
 ) -> QuoteTick {
     QuoteTick::new(
         instrument.id(),
@@ -1324,8 +1324,8 @@ fn matching_option_quote(
         Price::from(ask),
         matching_option_quantity(instrument),
         matching_option_quantity(instrument),
-        ts,
-        ts,
+        ts_init,
+        ts_init,
     )
 }
 

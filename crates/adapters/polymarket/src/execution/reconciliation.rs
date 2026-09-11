@@ -1408,7 +1408,7 @@ pub(crate) fn apply_fill_time_filters(
 fn build_position_report_from_reportable_position(
     position: &DataApiPosition,
     account_id: AccountId,
-    ts: UnixNanos,
+    ts_init: UnixNanos,
 ) -> Option<PositionStatusReport> {
     let instrument_id = instrument_id_from_market_token(&position.condition_id, &position.asset);
     let quantity = match Quantity::from_decimal_dp(position.size, USDC_DECIMALS as u8) {
@@ -1428,8 +1428,8 @@ fn build_position_report_from_reportable_position(
         instrument_id,
         PositionSide::Long,
         quantity,
-        ts,
-        ts,
+        ts_init,
+        ts_init,
         None,
         None,
         position.avg_price,
@@ -1439,7 +1439,7 @@ fn build_position_report_from_reportable_position(
 pub(crate) fn build_reconciliation_position_reports(
     positions: &[DataApiPosition],
     account_id: AccountId,
-    ts: UnixNanos,
+    ts_init: UnixNanos,
     instruments: &AtomicMap<Ustr, InstrumentAny>,
     instrument_filter: Option<InstrumentId>,
     load_ids: Option<&[InstrumentId]>,
@@ -1451,7 +1451,7 @@ pub(crate) fn build_reconciliation_position_reports(
         if let Some(report) = build_reconciliation_position_report(
             position,
             account_id,
-            ts,
+            ts_init,
             instruments,
             instrument_filter,
             collection_load_ids,
@@ -1466,7 +1466,7 @@ pub(crate) fn build_reconciliation_position_reports(
 fn build_reconciliation_position_report(
     position: &DataApiPosition,
     account_id: AccountId,
-    ts: UnixNanos,
+    ts_init: UnixNanos,
     instruments: &AtomicMap<Ustr, InstrumentAny>,
     instrument_filter: Option<InstrumentId>,
     collection_load_ids: Option<&[InstrumentId]>,
@@ -1498,7 +1498,7 @@ fn build_reconciliation_position_report(
     }
 
     Ok(build_position_report_from_reportable_position(
-        position, account_id, ts,
+        position, account_id, ts_init,
     ))
 }
 
@@ -1624,8 +1624,8 @@ pub(crate) fn trades_params_for_window(
     }
 }
 
-fn unix_secs(ts: UnixNanos) -> u64 {
-    ts.as_u64() / NANOSECONDS_IN_SECOND
+fn unix_secs(timestamp: UnixNanos) -> u64 {
+    timestamp.as_u64() / NANOSECONDS_IN_SECOND
 }
 
 fn instrument_id_from_market_token(market: &str, token_id: &str) -> InstrumentId {

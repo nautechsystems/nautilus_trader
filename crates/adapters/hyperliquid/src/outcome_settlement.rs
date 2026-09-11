@@ -95,7 +95,7 @@ pub fn build_settlement_fills(
     spot_state: &SpotClearinghouseState,
     tracker: &mut OutcomeSettlementTracker,
     account_id: AccountId,
-    ts: UnixNanos,
+    ts_init: UnixNanos,
 ) -> Vec<FillReport> {
     if settlements.is_empty() {
         return Vec::new();
@@ -141,7 +141,7 @@ pub fn build_settlement_fills(
             settlement,
             balance.total,
             usdh,
-            ts,
+            ts_init,
         ) {
             fills.push(fill);
             tracker.mark(settlement.outcome_index, settlement.outcome_side);
@@ -157,7 +157,7 @@ fn build_close_fill(
     settlement: &OutcomeSettlement,
     quantity: Decimal,
     currency: Currency,
-    ts: UnixNanos,
+    ts_init: UnixNanos,
 ) -> Option<FillReport> {
     let qty = Quantity::from_decimal_dp(quantity, OUTCOME_SIZE_DECIMALS as u8).ok()?;
     let price = Price::from_decimal_dp(
@@ -188,8 +188,8 @@ fn build_close_fill(
         LiquiditySide::NoLiquiditySide,
         None,
         None,
-        ts,
-        ts,
+        ts_init,
+        ts_init,
         Some(UUID4::new()),
     ))
 }
