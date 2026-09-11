@@ -6494,3 +6494,69 @@ fn test_inbound_latency_cancel_all_leaves_in_transit_contingent_unaffected(
         OrderStatus::Rejected
     );
 }
+
+/// A modify or cancel still in flight at `stop()` whose order closed meanwhile raises no
+/// rejection: the fill already resolved the pending status the rejection would release, and the
+/// FSM has no transition from `FILLED`.
+#[rstest]
+#[case::cancel(DeferredCommand::Cancel)]
+#[case::modify(DeferredCommand::Modify)]
+fn test_stop_raises_no_rejection_for_an_order_closed_in_flight(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] kind: DeferredCommand,
+) {
+    const INSERT_LATENCY_NS: u64 = 1_000_000_000;
+    const COMMAND_LATENCY_NS: u64 = 5_000_000_000;
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(kind.latency_model(INSERT_LATENCY_NS, COMMAND_LATENCY_NS)),
+    );
+
+    let order = accept_through_engine(
+        &mut harness,
+        trader_id,
+        &instrument,
+        "O-CLOSED-IN-FLIGHT",
+        "100.00",
+        INSERT_LATENCY_NS,
+    );
+
+    let ts = harness.test_clock.borrow().timestamp_ns();
+    kind.mark_pending(&harness.cache, &order, trader_id, ts);
+    send_command_through_engine(&harness, trader_id, kind, std::slice::from_ref(&order), ts);
+    let _ = harness.settle();
+
+    // The market moves through the resting order while the command is still in flight
+    let quote = create_quote_tick(instrument.id(), 99.00, 99.50);
+    msgbus::publish_quote(
+        format!("data.quotes.{}.{}", instrument.id().venue, instrument.id()).into(),
+        &quote,
+    );
+    let at_fill: Vec<&str> = harness.settle().iter().map(order_event_kind).collect();
+    assert_eq!(
+        at_fill,
+        vec!["filled"],
+        "expected the resting order to fill through the quote: {at_fill:?}",
+    );
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Filled);
+
+    harness.engine.borrow_mut().stop();
+
+    let at_stop: Vec<(&str, ClientOrderId)> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert!(
+        at_stop.is_empty(),
+        "a command discarded at stop must raise no rejection for a closed order: {at_stop:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &order),
+        OrderStatus::Filled,
+        "the order must keep the status its fill established",
+    );
+}

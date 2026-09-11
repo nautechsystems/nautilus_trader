@@ -1228,19 +1228,19 @@ impl SandboxInner {
                 }
             }
             TradingCommand::ModifyOrder(cmd) => {
-                if pending_rejected.insert(cmd.client_order_id) {
+                if self.needs_rejection(cmd.client_order_id, pending_rejected) {
                     self.reject_modify(cmd, reason, ts_now);
                 }
             }
             TradingCommand::ModifyOrders(cmd) => {
                 for modify in &cmd.modifies {
-                    if pending_rejected.insert(modify.client_order_id) {
+                    if self.needs_rejection(modify.client_order_id, pending_rejected) {
                         self.reject_modify(modify, reason, ts_now);
                     }
                 }
             }
             TradingCommand::CancelOrder(cmd) => {
-                if pending_rejected.insert(cmd.client_order_id) {
+                if self.needs_rejection(cmd.client_order_id, pending_rejected) {
                     self.reject_cancel(
                         cmd.trader_id,
                         cmd.strategy_id,
@@ -1254,7 +1254,7 @@ impl SandboxInner {
             }
             TradingCommand::CancelOrders(cmd) => {
                 for cancel in &cmd.cancels {
-                    if pending_rejected.insert(cancel.client_order_id) {
+                    if self.needs_rejection(cancel.client_order_id, pending_rejected) {
                         self.reject_cancel(
                             cancel.trader_id,
                             cancel.strategy_id,
@@ -1272,6 +1272,26 @@ impl SandboxInner {
             TradingCommand::CancelAllOrders(_) => {}
             TradingCommand::QueryOrder(_) | TradingCommand::QueryAccount(_) => {}
         }
+    }
+
+    /// Returns whether a modify or cancel that will not reach the venue still has a rejection to
+    /// raise for `client_order_id`, recording it in `pending_rejected`.
+    ///
+    /// An order closed while the command was in flight has none: the event that closed it already
+    /// resolved the `PENDING_UPDATE` or `PENDING_CANCEL` a rejection would release, and the FSM
+    /// has no transition from a closed status to a rejection.
+    fn needs_rejection(
+        &self,
+        client_order_id: ClientOrderId,
+        pending_rejected: &mut AHashSet<ClientOrderId>,
+    ) -> bool {
+        let is_closed = self
+            .cache
+            .borrow()
+            .order(&client_order_id)
+            .is_some_and(|order| order.is_closed());
+
+        !is_closed && pending_rejected.insert(client_order_id)
     }
 
     fn reject_modify(&self, cmd: &ModifyOrder, reason: Ustr, ts_now: UnixNanos) {
