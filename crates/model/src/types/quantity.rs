@@ -382,6 +382,7 @@ impl Quantity {
     /// let raw = value.raw;
     /// ```
     #[must_use]
+    #[inline]
     pub const fn raw(&self) -> QuantityRaw {
         self.raw
     }

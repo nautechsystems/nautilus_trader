@@ -420,6 +420,7 @@ impl Price {
     /// let raw = value.raw;
     /// ```
     #[must_use]
+    #[inline]
     pub const fn raw(&self) -> PriceRaw {
         self.raw
     }

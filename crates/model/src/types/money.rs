@@ -335,6 +335,7 @@ impl Money {
     /// let raw = value.raw;
     /// ```
     #[must_use]
+    #[inline]
     pub const fn raw(&self) -> MoneyRaw {
         self.raw
     }
