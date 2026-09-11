@@ -31,6 +31,8 @@ pub mod data_actor;
 pub mod indicators;
 pub mod registry;
 
+mod access;
+
 #[cfg(test)]
 pub(crate) mod tests;
 
