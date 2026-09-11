@@ -30,10 +30,13 @@ use nautilus_core::UnixNanos;
 use nautilus_data::aggregation::{
     BarAggregator, MapVegaProvider, RenkoBarAggregator, SpreadQuoteAggregator, TickBarAggregator,
     ValueImbalanceBarAggregator, ValueRunsBarAggregator, VolumeBarAggregator,
+    VolumeImbalanceBarAggregator, VolumeRunsBarAggregator,
 };
 use nautilus_model::{
     data::{BarSpecification, BarType, QuoteTick, trade::TradeTick},
-    enums::{AggregationSource, AggressorSide, BarAggregation, PriceType},
+    enums::{
+        AggregationSource, AggressorSide, BarAggregation, ContinuousFutureAdjustmentType, PriceType,
+    },
     identifiers::{InstrumentId, TradeId},
     types::{Price, Quantity},
 };
@@ -157,30 +160,41 @@ fn bench_bar_update(c: &mut Criterion) {
     let mut group = c.benchmark_group("bar_aggregation");
     group.throughput(Throughput::Elements(N_UPDATES));
 
-    group.bench_function("tick_update", |b| {
-        b.iter_batched_ref(
-            || {
-                TickBarAggregator::new(
-                    bar_type(BarAggregation::Tick, 100),
-                    PRICE_PRECISION,
-                    SIZE_PRECISION,
-                    |bar| {
-                        black_box(bar);
-                    },
-                )
-            },
-            |aggregator| {
-                for ts_init in &timestamps {
-                    aggregator.update(
-                        black_box(tick_price),
-                        black_box(tick_size),
-                        black_box(*ts_init),
+    for (name, adjusted) in [("tick_update", false), ("tick_spread", true)] {
+        group.bench_function(name, |b| {
+            b.iter_batched_ref(
+                || {
+                    let mut aggregator = TickBarAggregator::new(
+                        bar_type(BarAggregation::Tick, 100),
+                        PRICE_PRECISION,
+                        SIZE_PRECISION,
+                        |bar| {
+                            black_box(bar);
+                        },
                     );
-                }
-            },
-            BatchSize::SmallInput,
-        );
-    });
+
+                    if adjusted {
+                        aggregator.set_adjustment(
+                            rust_decimal::Decimal::new(123, 6),
+                            ContinuousFutureAdjustmentType::BackwardSpread,
+                        );
+                    }
+
+                    aggregator
+                },
+                |aggregator| {
+                    for ts_init in &timestamps {
+                        aggregator.update(
+                            black_box(tick_price),
+                            black_box(tick_size),
+                            black_box(*ts_init),
+                        );
+                    }
+                },
+                BatchSize::SmallInput,
+            );
+        });
+    }
 
     group.bench_function("volume_split", |b| {
         b.iter_batched_ref(
@@ -201,6 +215,70 @@ fn bench_bar_update(c: &mut Criterion) {
                         black_box(volume_size),
                         black_box(*ts_init),
                     );
+                }
+            },
+            BatchSize::SmallInput,
+        );
+    });
+
+    group.bench_function("volume_imbalance", |b| {
+        b.iter_batched_ref(
+            || {
+                VolumeImbalanceBarAggregator::new(
+                    bar_type(BarAggregation::VolumeImbalance, 100),
+                    PRICE_PRECISION,
+                    SIZE_PRECISION,
+                    |bar| {
+                        black_box(bar);
+                    },
+                )
+            },
+            |aggregator| {
+                for (index, ts_init) in timestamps.iter().enumerate() {
+                    aggregator.handle_trade(black_box(TradeTick {
+                        price: volume_price,
+                        size: volume_size,
+                        aggressor_side: if index % 3 == 0 {
+                            AggressorSide::Sell
+                        } else {
+                            AggressorSide::Buy
+                        },
+                        ts_event: *ts_init,
+                        ts_init: *ts_init,
+                        ..TradeTick::default()
+                    }));
+                }
+            },
+            BatchSize::SmallInput,
+        );
+    });
+
+    group.bench_function("volume_runs", |b| {
+        b.iter_batched_ref(
+            || {
+                VolumeRunsBarAggregator::new(
+                    bar_type(BarAggregation::VolumeRuns, 100),
+                    PRICE_PRECISION,
+                    SIZE_PRECISION,
+                    |bar| {
+                        black_box(bar);
+                    },
+                )
+            },
+            |aggregator| {
+                for (index, ts_init) in timestamps.iter().enumerate() {
+                    aggregator.handle_trade(black_box(TradeTick {
+                        price: volume_price,
+                        size: volume_size,
+                        aggressor_side: if index % 3 == 0 {
+                            AggressorSide::Sell
+                        } else {
+                            AggressorSide::Buy
+                        },
+                        ts_event: *ts_init,
+                        ts_init: *ts_init,
+                        ..TradeTick::default()
+                    }));
                 }
             },
             BatchSize::SmallInput,

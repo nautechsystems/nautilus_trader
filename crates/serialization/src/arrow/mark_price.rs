@@ -55,7 +55,7 @@ impl EncodeToRecordBatch for MarkPriceUpdate {
 
         for update in data {
             value_builder
-                .append_value(update.value.raw.to_le_bytes())
+                .append_value(update.value.raw().to_le_bytes())
                 .unwrap();
             ts_event_builder.append_value(update.ts_event.as_u64());
             ts_init_builder.append_value(update.ts_init.as_u64());
@@ -213,11 +213,11 @@ mod tests {
         assert_eq!(value_values.len(), 2);
         assert_eq!(
             get_raw_price(value_values.value(0)),
-            Price::from(dec!(50200.00).to_string()).raw
+            Price::from(dec!(50200.00).to_string()).raw()
         );
         assert_eq!(
             get_raw_price(value_values.value(1)),
-            Price::from(dec!(50300.00).to_string()).raw
+            Price::from(dec!(50300.00).to_string()).raw()
         );
         assert_eq!(ts_event_values.len(), 2);
         assert_eq!(ts_event_values.value(0), 1);

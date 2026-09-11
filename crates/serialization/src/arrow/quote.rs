@@ -81,16 +81,16 @@ impl EncodeToRecordBatch for QuoteTick {
 
         for quote in data {
             bid_price_builder
-                .append_value(quote.bid_price.raw.to_le_bytes())
+                .append_value(quote.bid_price.raw().to_le_bytes())
                 .unwrap();
             ask_price_builder
-                .append_value(quote.ask_price.raw.to_le_bytes())
+                .append_value(quote.ask_price.raw().to_le_bytes())
                 .unwrap();
             bid_size_builder
-                .append_value(quote.bid_size.raw.to_le_bytes())
+                .append_value(quote.bid_size.raw().to_le_bytes())
                 .unwrap();
             ask_size_builder
-                .append_value(quote.ask_size.raw.to_le_bytes())
+                .append_value(quote.ask_size.raw().to_le_bytes())
                 .unwrap();
             ts_event_builder.append_value(quote.ts_event.as_u64());
             ts_init_builder.append_value(quote.ts_init.as_u64());

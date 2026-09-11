@@ -188,7 +188,7 @@ pub fn map_bar_spec_to_candle_width(spec: &BarSpecification) -> anyhow::Result<A
 /// - The quantity represents a fractional number of contracts.
 /// - The quantity is zero.
 pub fn quantity_to_contracts(quantity: Quantity) -> anyhow::Result<u64> {
-    let raw = quantity.raw;
+    let raw = quantity.raw();
     let scale = 10_u64.pow(FIXED_PRECISION as u32) as QuantityRaw;
 
     // AX requires whole contract quantities

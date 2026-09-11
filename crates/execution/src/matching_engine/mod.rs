@@ -137,9 +137,7 @@ pub struct OrderMatchingEngine {
     queue_stale_scratch: Vec<ClientOrderId>,
     queue_entry_scratch: Vec<(ClientOrderId, QuantityRaw, QuantityRaw)>,
     prev_bid_price_raw: PriceRaw,
-    prev_bid_size_raw: QuantityRaw,
     prev_ask_price_raw: PriceRaw,
-    prev_ask_size_raw: QuantityRaw,
     tob_initialized: bool,
     last_quote_bid: Option<Price>,
     last_quote_ask: Option<Price>,
@@ -233,9 +231,7 @@ impl OrderMatchingEngine {
             queue_stale_scratch: Vec::new(),
             queue_entry_scratch: Vec::new(),
             prev_bid_price_raw: 0,
-            prev_bid_size_raw: 0,
             prev_ask_price_raw: 0,
-            prev_ask_size_raw: 0,
             tob_initialized: false,
             last_quote_bid: None,
             last_quote_ask: None,
@@ -301,9 +297,7 @@ impl OrderMatchingEngine {
         self.queue_stale_scratch.clear();
         self.queue_entry_scratch.clear();
         self.prev_bid_price_raw = 0;
-        self.prev_bid_size_raw = 0;
         self.prev_ask_price_raw = 0;
-        self.prev_ask_size_raw = 0;
         self.tob_initialized = false;
         self.last_quote_bid = None;
         self.last_quote_ask = None;
@@ -340,7 +334,7 @@ impl OrderMatchingEngine {
         };
 
         let mut adjusted_len = 0;
-        let mut remaining_qty = leaves_qty.raw;
+        let mut remaining_qty = leaves_qty.raw();
 
         for fill_idx in 0..fills.len() {
             if remaining_qty == 0 {
@@ -355,18 +349,18 @@ impl OrderMatchingEngine {
                 .and_then(|bp| bp.get(fill_idx).copied())
                 .unwrap_or(price);
 
-            let book_price_raw = book_price.raw;
+            let book_price_raw = book_price.raw();
             let level_size = self
                 .book
                 .get_quantity_at_level(book_price, order_side, qty.precision);
 
             let (original_size, consumed) = consumption
                 .entry(book_price_raw)
-                .or_insert((level_size.raw, 0));
+                .or_insert((level_size.raw(), 0));
 
             // Reset consumption when book size changes (fresh data)
-            if *original_size != level_size.raw {
-                *original_size = level_size.raw;
+            if *original_size != level_size.raw() {
+                *original_size = level_size.raw();
                 *consumed = 0;
             }
 
@@ -375,7 +369,7 @@ impl OrderMatchingEngine {
                 continue;
             }
 
-            let adjusted_qty_raw = min(min(qty.raw, available), remaining_qty);
+            let adjusted_qty_raw = min(min(qty.raw(), available), remaining_qty);
             if adjusted_qty_raw == 0 {
                 continue;
             }
@@ -422,7 +416,7 @@ impl OrderMatchingEngine {
             AggressorSide::Buy => {
                 for level in book
                     .asks(None)
-                    .take_while(|level| level.price.value.raw <= trade_price_raw)
+                    .take_while(|level| level.price.value.raw() <= trade_price_raw)
                 {
                     Self::consume_trade_level(consumption, &mut remaining, level);
                     if remaining == 0 {
@@ -433,7 +427,7 @@ impl OrderMatchingEngine {
             AggressorSide::Sell => {
                 for level in book
                     .bids(None)
-                    .take_while(|level| level.price.value.raw >= trade_price_raw)
+                    .take_while(|level| level.price.value.raw() >= trade_price_raw)
                 {
                     Self::consume_trade_level(consumption, &mut remaining, level);
                     if remaining == 0 {
@@ -452,7 +446,7 @@ impl OrderMatchingEngine {
     ) {
         let level_size = level.size_raw();
         let entry = consumption
-            .entry(level.price.value.raw)
+            .entry(level.price.value.raw())
             .or_insert((level_size, 0));
 
         // Reconcile stale level size to prevent reset in apply_liquidity_consumption
@@ -499,7 +493,7 @@ impl OrderMatchingEngine {
 
         self.remove_queue_position(client_order_id);
         self.queue_ids_by_price
-            .entry(price.raw)
+            .entry(price.raw())
             .or_default()
             .insert(client_order_id);
 
@@ -507,20 +501,20 @@ impl OrderMatchingEngine {
         // these orders separately so fills are blocked until the BBO reaches
         // this price. Only truly behind-BBO prices are pending (BUY below
         // best bid / SELL above best ask); inside-spread and no-book keep 0.
-        if self.book_type == BookType::L1_MBP && qty_ahead.raw == 0 {
+        if self.book_type == BookType::L1_MBP && qty_ahead.is_zero() {
             let behind_bbo = match order.order_side() {
                 OrderSide::Buy => self.book.best_bid_price().is_some_and(|bid| price < bid),
                 OrderSide::Sell => self.book.best_ask_price().is_some_and(|ask| price > ask),
             };
 
             if behind_bbo {
-                self.queue_pending.insert(client_order_id, price.raw);
+                self.queue_pending.insert(client_order_id, price.raw());
                 return;
             }
         }
 
         self.queue_ahead_total
-            .insert(client_order_id, (price.raw, qty_ahead.raw));
+            .insert(client_order_id, (price.raw(), qty_ahead.raw()));
 
         // L3 books identify orders, so track which specific orders are ahead
         if self.book_type == BookType::L3_MBO {
@@ -528,7 +522,7 @@ impl OrderMatchingEngine {
                 .book
                 .get_orders_at_level(price, OrderCore::opposite_side(order.order_side()))
                 .iter()
-                .map(|book_order| (book_order.order_id, book_order.size.raw))
+                .map(|book_order| (book_order.order_id, book_order.size.raw()))
                 .collect();
             self.queue_ahead_orders
                 .insert(client_order_id, orders_ahead);
@@ -611,7 +605,8 @@ impl OrderMatchingEngine {
                 } else {
                     &order
                 };
-                Some((order.order_side(), order.leaves_qty().raw))
+
+                Some((order.order_side(), order.leaves_qty().raw()))
             });
             drop(cache);
 
@@ -719,7 +714,7 @@ impl OrderMatchingEngine {
 
     fn determine_trade_fill_qty(&self, order: &OrderAny) -> Option<QuantityRaw> {
         if !self.config.queue_position {
-            return Some(order.leaves_qty().raw);
+            return Some(order.leaves_qty().raw());
         }
 
         let client_order_id = order.client_order_id();
@@ -731,13 +726,13 @@ impl OrderMatchingEngine {
 
         if let Some(&(tracked_price_raw, ahead_raw)) = self.queue_ahead_total.get(&client_order_id)
             && let Some(order_price) = order.price()
-            && order_price.raw == tracked_price_raw
+            && order_price.raw() == tracked_price_raw
             && ahead_raw > 0
         {
             return None;
         }
 
-        let leaves_raw = order.leaves_qty().raw;
+        let leaves_raw = order.leaves_qty().raw();
         if leaves_raw == 0 {
             return None;
         }
@@ -746,7 +741,7 @@ impl OrderMatchingEngine {
 
         // Cap by remaining trade volume and queue excess (only during trade processing)
         if let Some(trade_size) = self.last_trade_size {
-            let remaining = trade_size.raw.saturating_sub(self.trade_consumption);
+            let remaining = trade_size.raw().saturating_sub(self.trade_consumption);
             available_raw = available_raw.min(remaining);
 
             if let Some(&excess_raw) = self.queue_excess.get(&client_order_id) {
@@ -808,7 +803,7 @@ impl OrderMatchingEngine {
             let visible_raw = self
                 .book
                 .get_quantity_at_level(price, OrderCore::opposite_side(order_side), size_precision)
-                .raw;
+                .raw();
             let rebased_raw = ahead_raw.min(visible_raw);
 
             if self.book_type == BookType::L3_MBO {
@@ -829,7 +824,7 @@ impl OrderMatchingEngine {
                     }
 
                     let previous_size_raw = previous_orders[&book_order.order_id];
-                    let size_raw = previous_size_raw.min(book_order.size.raw);
+                    let size_raw = previous_size_raw.min(book_order.size.raw());
                     orders_ahead.insert(book_order.order_id, size_raw);
                     total_raw += size_raw;
                 }
@@ -856,15 +851,15 @@ impl OrderMatchingEngine {
             if self.is_order_granular_delta(delta.flags) {
                 self.advance_l3_queue_on_delete(delta.order.order_id);
             } else {
-                self.clear_queue_on_delete(delta.order.price.raw, delta.order.side);
+                self.clear_queue_on_delete(delta.order.price.raw(), delta.order.side);
             }
         } else if delta.action == BookAction::Update {
             if self.is_order_granular_delta(delta.flags) {
                 self.adjust_l3_queue_on_update(&delta.order);
             } else {
                 self.cap_queue_ahead(
-                    delta.order.price.raw,
-                    delta.order.size.raw,
+                    delta.order.price.raw(),
+                    delta.order.size.raw(),
                     delta.order.side,
                 );
             }
@@ -933,16 +928,16 @@ impl OrderMatchingEngine {
                 continue;
             };
 
-            if book_order.price.raw != *tracked_price_raw {
+            if book_order.price.raw() != *tracked_price_raw {
                 *ahead_raw = ahead_raw.saturating_sub(tracked_size_raw);
                 orders_ahead.shift_remove(&book_order.order_id);
-            } else if book_order.size.raw < tracked_size_raw {
+            } else if book_order.size.raw() < tracked_size_raw {
                 // Size decrease retains time priority
-                *ahead_raw = ahead_raw.saturating_sub(tracked_size_raw - book_order.size.raw);
-                orders_ahead.insert(book_order.order_id, book_order.size.raw);
-            } else if book_order.size.raw > tracked_size_raw {
-                *ahead_raw = ahead_raw.saturating_add(book_order.size.raw - tracked_size_raw);
-                orders_ahead.insert(book_order.order_id, book_order.size.raw);
+                *ahead_raw = ahead_raw.saturating_sub(tracked_size_raw - book_order.size.raw());
+                orders_ahead.insert(book_order.order_id, book_order.size.raw());
+            } else if book_order.size.raw() > tracked_size_raw {
+                *ahead_raw = ahead_raw.saturating_add(book_order.size.raw() - tracked_size_raw);
+                orders_ahead.insert(book_order.order_id, book_order.size.raw());
             }
         }
     }
@@ -1000,10 +995,8 @@ impl OrderMatchingEngine {
     fn seed_tob_baseline(&mut self) {
         let bid = self.book.best_bid_price();
         let ask = self.book.best_ask_price();
-        self.prev_bid_price_raw = bid.map_or(0, |p| p.raw);
-        self.prev_bid_size_raw = self.book.best_bid_size().map_or(0, |q| q.raw);
-        self.prev_ask_price_raw = ask.map_or(0, |p| p.raw);
-        self.prev_ask_size_raw = self.book.best_ask_size().map_or(0, |q| q.raw);
+        self.prev_bid_price_raw = bid.map_or(0, |p| p.raw());
+        self.prev_ask_price_raw = ask.map_or(0, |p| p.raw());
         self.tob_initialized = bid.is_some() || ask.is_some();
     }
 
@@ -1340,9 +1333,7 @@ impl OrderMatchingEngine {
             self.queue_ids_by_price.clear();
             self.queue_excess.clear();
             self.prev_bid_price_raw = 0;
-            self.prev_bid_size_raw = 0;
             self.prev_ask_price_raw = 0;
-            self.prev_ask_size_raw = 0;
             self.tob_initialized = false;
             self.last_quote_bid = None;
             self.last_quote_ask = None;
@@ -1478,18 +1469,18 @@ impl OrderMatchingEngine {
     fn price_matches_precision(price: Price, precision: u8) -> bool {
         let precision_diff = FIXED_PRECISION.saturating_sub(precision);
         let scale = PriceRaw::pow(10, u32::from(precision_diff));
-        price.raw % scale == 0
+        price.raw() % scale == 0
     }
 
     fn price_matches_tick(price: Price, increment: Price) -> bool {
-        let increment_raw = increment.raw.abs();
-        increment_raw == 0 || price.raw % increment_raw == 0
+        let increment_raw = increment.raw().abs();
+        increment_raw == 0 || price.raw() % increment_raw == 0
     }
 
     fn quantity_matches_precision(quantity: Quantity, precision: u8) -> bool {
         let precision_diff = FIXED_PRECISION.saturating_sub(precision);
         let scale = QuantityRaw::pow(10, u32::from(precision_diff));
-        quantity.raw.is_multiple_of(scale)
+        quantity.raw().is_multiple_of(scale)
     }
 
     fn normalize_price_for_current_instrument(&self, price: Price) -> Option<Price> {
@@ -1498,7 +1489,7 @@ impl OrderMatchingEngine {
         }
 
         Some(Price::from_raw(
-            price.raw,
+            price.raw(),
             self.instrument.price_precision(),
         ))
     }
@@ -1509,7 +1500,7 @@ impl OrderMatchingEngine {
             return None;
         }
 
-        Some(Quantity::from_raw(quantity.raw, precision))
+        Some(Quantity::from_raw(quantity.raw(), precision))
     }
 
     /// Process the venues market for the given order book delta.
@@ -1669,10 +1660,10 @@ impl OrderMatchingEngine {
         // Depth10 always replaces the full book via apply_depth regardless of flags
         if self.config.queue_position {
             self.rebase_queue_positions();
-            let bid_price_raw = top_bid.map_or(0, |order| order.price.raw);
-            let bid_size_raw = top_bid.map_or(0, |order| order.size.raw);
-            let ask_price_raw = top_ask.map_or(0, |order| order.price.raw);
-            let ask_size_raw = top_ask.map_or(0, |order| order.size.raw);
+            let bid_price_raw = top_bid.map_or(0, |order| order.price.raw());
+            let bid_size_raw = top_bid.map_or(0, |order| order.size.raw());
+            let ask_price_raw = top_ask.map_or(0, |order| order.price.raw());
+            let ask_size_raw = top_ask.map_or(0, |order| order.size.raw());
 
             self.decrement_l1_queue_on_quote(
                 bid_price_raw,
@@ -1682,9 +1673,7 @@ impl OrderMatchingEngine {
             );
 
             self.prev_bid_price_raw = bid_price_raw;
-            self.prev_bid_size_raw = bid_size_raw;
             self.prev_ask_price_raw = ask_price_raw;
-            self.prev_ask_size_raw = ask_size_raw;
             self.tob_initialized = true;
         }
 
@@ -1752,15 +1741,13 @@ impl OrderMatchingEngine {
 
             if self.config.queue_position {
                 self.decrement_l1_queue_on_quote(
-                    quote.bid_price.raw,
-                    quote.bid_size.raw,
-                    quote.ask_price.raw,
-                    quote.ask_size.raw,
+                    quote.bid_price.raw(),
+                    quote.bid_size.raw(),
+                    quote.ask_price.raw(),
+                    quote.ask_size.raw(),
                 );
-                self.prev_bid_price_raw = quote.bid_price.raw;
-                self.prev_bid_size_raw = quote.bid_size.raw;
-                self.prev_ask_price_raw = quote.ask_price.raw;
-                self.prev_ask_size_raw = quote.ask_size.raw;
+                self.prev_bid_price_raw = quote.bid_price.raw();
+                self.prev_ask_price_raw = quote.ask_price.raw();
                 self.tob_initialized = true;
             }
             self.last_quote_bid = Some(quote.bid_price);
@@ -1924,8 +1911,7 @@ impl OrderMatchingEngine {
 
         // Determine high/low processing order.
         // Default: O > H > L > C. With adaptive ordering, swap if low is closer to open.
-        let high_first = !self.config.bar_adaptive_high_low_ordering
-            || (bar.high.raw - bar.open.raw).abs() < (bar.low.raw - bar.open.raw).abs();
+        let high_first = self.bar_high_first(bar);
 
         if high_first {
             self.process_bar_high(bar, sizes.high);
@@ -2068,9 +2054,7 @@ impl OrderMatchingEngine {
 
         // Determine high/low processing order from the bid bar (v1 parity).
         // Default: O > H > L > C. With adaptive ordering, swap if low is closer to open
-        let high_first = !self.config.bar_adaptive_high_low_ordering
-            || (bid_bar.high.raw - bid_bar.open.raw).abs()
-                < (bid_bar.low.raw - bid_bar.open.raw).abs();
+        let high_first = self.bar_high_first(&bid_bar);
 
         let high_leg = (
             bid_bar.high,
@@ -2212,6 +2196,10 @@ impl OrderMatchingEngine {
         true
     }
 
+    fn bar_high_first(&self, bar: &Bar) -> bool {
+        !self.config.bar_adaptive_high_low_ordering || bar.high - bar.open < bar.open - bar.low
+    }
+
     fn update_bar_quote_bid(&mut self, quote: &QuoteTick) {
         let bid = BookOrder::new(
             OrderSide::Buy,
@@ -2269,7 +2257,7 @@ impl OrderMatchingEngine {
 
         self.precision_mismatch_streak = 0;
 
-        let price_raw = trade.price.raw;
+        let price_raw = trade.price.raw();
 
         if self.book_type == BookType::L1_MBP {
             // Stale update: skip book mutation and trade execution
@@ -2316,7 +2304,7 @@ impl OrderMatchingEngine {
             AggressorSide::Buy => {
                 // Buyer lifted the ask: ask was at trade.price, post-trade
                 // ask is at least this level (only widen)
-                if self.core.ask.is_none() || price_raw > self.core.ask.map_or(0, |p| p.raw) {
+                if self.core.ask.is_none_or(|ask| trade.price > ask) {
                     self.core.set_ask_raw(trade.price);
                 }
 
@@ -2328,9 +2316,7 @@ impl OrderMatchingEngine {
             AggressorSide::Sell => {
                 // Seller hit the bid: bid was at trade.price, post-trade
                 // bid is at most this level (only narrow)
-                if self.core.bid.is_none()
-                    || price_raw < self.core.bid.map_or(PriceRaw::MAX, |p| p.raw)
-                {
+                if self.core.bid.is_none_or(|bid| trade.price < bid) {
                     self.core.set_bid_raw(trade.price);
                 }
 
@@ -2340,13 +2326,11 @@ impl OrderMatchingEngine {
                 }
             }
             AggressorSide::NoAggressor => {
-                if self.core.bid.is_none()
-                    || price_raw <= self.core.bid.map_or(PriceRaw::MAX, |p| p.raw)
-                {
+                if self.core.bid.is_none_or(|bid| trade.price <= bid) {
                     self.core.set_bid_raw(trade.price);
                 }
 
-                if self.core.ask.is_none() || price_raw >= self.core.ask.map_or(0, |p| p.raw) {
+                if self.core.ask.is_none_or(|ask| trade.price >= ask) {
                     self.core.set_ask_raw(trade.price);
                 }
             }
@@ -2357,12 +2341,12 @@ impl OrderMatchingEngine {
 
         match aggressor_side {
             AggressorSide::Sell => {
-                if original_ask.is_some_and(|ask| price_raw < ask.raw) {
+                if original_ask.is_some_and(|ask| trade.price < ask) {
                     self.core.set_ask_raw(trade.price);
                 }
             }
             AggressorSide::Buy => {
-                if original_bid.is_some_and(|bid| price_raw > bid.raw) {
+                if original_bid.is_some_and(|bid| trade.price > bid) {
                     self.core.set_bid_raw(trade.price);
                 }
             }
@@ -2377,11 +2361,16 @@ impl OrderMatchingEngine {
         self.trade_consumption = 0;
 
         if self.config.liquidity_consumption && self.book_type != BookType::L1_MBP {
-            self.seed_trade_consumption(price_raw, trade.size.raw, trade.ts_event, aggressor_side);
+            self.seed_trade_consumption(
+                price_raw,
+                trade.size.raw(),
+                trade.ts_event,
+                aggressor_side,
+            );
         }
 
         self.resolve_pending_on_trade(price_raw);
-        self.decrement_queue_on_trade(price_raw, trade.size.raw, aggressor_side);
+        self.decrement_queue_on_trade(price_raw, trade.size.raw(), aggressor_side);
 
         self.iterate(trade.ts_init, aggressor_side);
 
@@ -2411,14 +2400,14 @@ impl OrderMatchingEngine {
             match aggressor_side {
                 AggressorSide::Sell => {
                     if let Some(ask) = original_ask
-                        && price_raw < ask.raw
+                        && trade.price < ask
                     {
                         self.core.ask = Some(ask);
                     }
                 }
                 AggressorSide::Buy => {
                     if let Some(bid) = original_bid
-                        && price_raw > bid.raw
+                        && trade.price > bid
                     {
                         self.core.bid = Some(bid);
                     }
@@ -4268,7 +4257,7 @@ impl OrderMatchingEngine {
                         // don't re-check here to avoid calling is_limit_filled() twice (p² probability).
                         let leaves_qty = order.leaves_qty();
                         let available_qty = if self.config.liquidity_consumption {
-                            let remaining = trade_size.raw.saturating_sub(self.trade_consumption);
+                            let remaining = trade_size.raw().saturating_sub(self.trade_consumption);
                             Quantity::from_raw(remaining, trade_size.precision)
                         } else {
                             trade_size
@@ -4287,7 +4276,7 @@ impl OrderMatchingEngine {
                             );
 
                             if self.config.liquidity_consumption {
-                                self.trade_consumption += fill_qty.raw;
+                                self.trade_consumption += fill_qty.raw();
                             }
 
                             // Fill at the limit price (conservative) rather than the trade price.
@@ -4416,21 +4405,22 @@ impl OrderMatchingEngine {
             fills[0] = (trigger_price, fills[0].1);
 
             // Skip liquidity consumption for trigger price fills (gap price may not exist in book).
-            let mut remaining_qty = order.leaves_qty().raw;
+            let mut remaining_qty = order.leaves_qty();
             let mut capped_fills = Vec::with_capacity(fills.len());
 
             for (price, qty) in fills {
-                if remaining_qty == 0 {
+                if remaining_qty.is_zero() {
                     break;
                 }
 
-                let capped_qty_raw = min(qty.raw, remaining_qty);
-                if capped_qty_raw == 0 {
+                let mut capped_qty = qty.min(remaining_qty);
+                capped_qty.precision = qty.precision;
+                if capped_qty.is_zero() {
                     continue;
                 }
 
-                remaining_qty -= capped_qty_raw;
-                capped_fills.push((price, Quantity::from_raw(capped_qty_raw, qty.precision)));
+                remaining_qty = remaining_qty - capped_qty;
+                capped_fills.push((price, capped_qty));
             }
 
             return capped_fills;
@@ -4615,16 +4605,15 @@ impl OrderMatchingEngine {
         order: &OrderAny,
         protection_price: Price,
     ) -> Vec<(Price, Quantity)> {
-        let protection_raw = protection_price.raw;
         fills
             .into_iter()
             .filter(|(fill_price, _)| {
                 match order.order_side() {
                     // BUY: only fill at prices <= protection_price
-                    OrderSide::Buy => fill_price.raw <= protection_raw,
+                    OrderSide::Buy => *fill_price <= protection_price,
 
                     // SELL: only fill at prices >= protection_price
-                    OrderSide::Sell => fill_price.raw >= protection_raw,
+                    OrderSide::Sell => *fill_price >= protection_price,
                 }
             })
             .collect()
@@ -4758,14 +4747,15 @@ impl OrderMatchingEngine {
                             if remaining == 0 {
                                 return None;
                             }
-                            let capped = qty.raw.min(remaining);
+
+                            let capped = qty.raw().min(remaining);
                             remaining -= capped;
                             Some((price, Quantity::from_raw(capped, size_prec)))
                         })
                         .collect();
 
                     // Consume excess and reconcile trade budget after capping
-                    let consumed: QuantityRaw = fills.iter().map(|(_, qty)| qty.raw).sum();
+                    let consumed: QuantityRaw = fills.iter().map(|(_, qty)| qty.raw()).sum();
 
                     if let Some(excess) = self.queue_excess.get_mut(&order.client_order_id()) {
                         *excess = excess.saturating_sub(consumed);
@@ -4934,8 +4924,8 @@ impl OrderMatchingEngine {
             .unwrap_or_else(|| order.filled_qty());
         let initial_total_filled = total_filled;
         let mut last_fill_px: Option<Price> = None;
-        let mut reduce_only_remaining_raw = None;
-        let mut reduce_only_filled_raw = None;
+        let mut reduce_only_remaining = None;
+        let mut reduce_only_filled = None;
 
         if self.config.use_reduce_only
             && order.is_reduce_only()
@@ -4947,8 +4937,8 @@ impl OrderMatchingEngine {
                 return Ok(());
             }
 
-            reduce_only_remaining_raw = Some(remaining.raw);
-            reduce_only_filled_raw = Some(total_filled.raw);
+            reduce_only_remaining = Some(remaining);
+            reduce_only_filled = Some(total_filled);
         }
 
         for &(fill_px, fill_qty) in fills {
@@ -4978,14 +4968,15 @@ impl OrderMatchingEngine {
 
             let mut effective_fill_qty = fill_qty;
 
-            if let Some(remaining_raw) = reduce_only_remaining_raw {
-                if remaining_raw == 0 {
+            if let Some(remaining) = reduce_only_remaining {
+                if remaining.is_zero() {
                     return Ok(());
                 }
 
-                if effective_fill_qty.raw > remaining_raw {
-                    effective_fill_qty =
-                        Quantity::from_raw(remaining_raw, effective_fill_qty.precision);
+                if effective_fill_qty > remaining {
+                    let precision = effective_fill_qty.precision;
+                    effective_fill_qty = remaining;
+                    effective_fill_qty.precision = precision;
                 }
             }
 
@@ -5004,16 +4995,15 @@ impl OrderMatchingEngine {
                 effective_fill_qty,
                 order.quantity().saturating_sub(total_filled),
             );
-            let reduce_only_exhausts_position = reduce_only_remaining_raw
-                .is_some_and(|remaining_raw| capped_fill_qty.raw >= remaining_raw);
+            let reduce_only_exhausts_position =
+                reduce_only_remaining.is_some_and(|remaining| capped_fill_qty >= remaining);
 
             if reduce_only_exhausts_position {
-                let reduce_only_target_raw = reduce_only_filled_raw
-                    .unwrap_or(initial_total_filled.raw)
-                    .checked_add(capped_fill_qty.raw)
+                let mut reduce_only_target = reduce_only_filled
+                    .unwrap_or(initial_total_filled)
+                    .checked_add(capped_fill_qty)
                     .expect("Overflow occurred when adding reduce-only target quantity");
-                let reduce_only_target =
-                    Quantity::from_raw(reduce_only_target_raw, order.quantity().precision);
+                reduce_only_target.precision = order.quantity().precision;
 
                 if order.quantity() != reduce_only_target {
                     self.generate_order_updated(order, reduce_only_target, None, None, None);
@@ -5022,13 +5012,13 @@ impl OrderMatchingEngine {
 
             total_filled = total_filled.add(capped_fill_qty);
 
-            if let Some(remaining_raw) = reduce_only_remaining_raw.as_mut() {
-                *remaining_raw = remaining_raw.saturating_sub(capped_fill_qty.raw);
+            if let Some(remaining) = reduce_only_remaining.as_mut() {
+                *remaining = *remaining - capped_fill_qty.min(*remaining);
             }
 
-            if let Some(filled_raw) = reduce_only_filled_raw.as_mut() {
-                *filled_raw = filled_raw
-                    .checked_add(capped_fill_qty.raw)
+            if let Some(filled) = reduce_only_filled.as_mut() {
+                *filled = filled
+                    .checked_add(capped_fill_qty)
                     .expect("Overflow occurred when adding reduce-only filled quantity");
             }
 
@@ -5087,8 +5077,8 @@ impl OrderMatchingEngine {
 
             if let Some(protection_price) = protection_price {
                 let exceeds_boundary = match side {
-                    OrderSide::Buy => slip_fill_px.raw > protection_price.raw,
-                    OrderSide::Sell => slip_fill_px.raw < protection_price.raw,
+                    OrderSide::Buy => slip_fill_px > protection_price,
+                    OrderSide::Sell => slip_fill_px < protection_price,
                 };
 
                 if exceeds_boundary {
@@ -5098,22 +5088,23 @@ impl OrderMatchingEngine {
 
             let mut leaves_qty = order.quantity().saturating_sub(total_filled);
 
-            if let Some(remaining_raw) = reduce_only_remaining_raw {
-                if remaining_raw == 0 {
+            if let Some(remaining) = reduce_only_remaining {
+                if remaining.is_zero() {
                     return Ok(());
                 }
 
-                if leaves_qty.raw > remaining_raw {
-                    leaves_qty = Quantity::from_raw(remaining_raw, leaves_qty.precision);
+                if leaves_qty > remaining {
+                    let precision = leaves_qty.precision;
+                    leaves_qty = remaining;
+                    leaves_qty.precision = precision;
                 }
 
-                if leaves_qty.raw >= remaining_raw {
-                    let reduce_only_target_raw = reduce_only_filled_raw
-                        .unwrap_or(initial_total_filled.raw)
-                        .checked_add(leaves_qty.raw)
+                if leaves_qty >= remaining {
+                    let mut reduce_only_target = reduce_only_filled
+                        .unwrap_or(initial_total_filled)
+                        .checked_add(leaves_qty)
                         .expect("Overflow occurred when adding reduce-only target quantity");
-                    let reduce_only_target =
-                        Quantity::from_raw(reduce_only_target_raw, order.quantity().precision);
+                    reduce_only_target.precision = order.quantity().precision;
 
                     if order.quantity() != reduce_only_target {
                         self.generate_order_updated(order, reduce_only_target, None, None, None);
@@ -6882,8 +6873,8 @@ impl BarTickSizes {
     fn from_volume(volume: Quantity, size_increment: Quantity) -> Self {
         let precision_diff = FIXED_PRECISION.saturating_sub(volume.precision);
         let scale = QuantityRaw::pow(10, u32::from(precision_diff));
-        let units = volume.raw / scale;
-        let increment_units = (size_increment.raw / scale).max(1);
+        let units = volume.raw() / scale;
+        let increment_units = (size_increment.raw() / scale).max(1);
         let rounded_units = (units / increment_units) * increment_units;
         let increments = rounded_units / increment_units;
         let zero = Quantity::zero(volume.precision);
@@ -6951,9 +6942,12 @@ mod tests {
         messages::execution::{CancelAllOrders, ModifyOrder},
     };
     use nautilus_core::{UUID4, UnixNanos, correctness::CorrectnessError};
+    #[cfg(feature = "high-precision")]
+    use nautilus_model::orderbook::BookLevel;
     use nautilus_model::{
         data::{
-            DEPTH10_LEN, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+            Bar, BarType, DEPTH10_LEN, OrderBookDelta, OrderBookDeltas, OrderBookDepth10,
+            QuoteTick, TradeTick,
             option_chain::OptionGreeks,
             order::{BookOrder, OrderId},
         },
@@ -6990,8 +6984,8 @@ mod tests {
 
     fn assert_valid_bar_tick_sizes(volume: Quantity, size_increment: Quantity) {
         let sizes = BarTickSizes::from_volume(volume, size_increment);
-        let total_raw = sizes.open.raw + sizes.high.raw + sizes.low.raw + sizes.close.raw;
-        assert!(total_raw <= volume.raw);
+        let total_raw = sizes.open.raw() + sizes.high.raw() + sizes.low.raw() + sizes.close.raw();
+        assert!(total_raw <= volume.raw());
 
         for quantity in [sizes.open, sizes.high, sizes.low, sizes.close] {
             assert_eq!(quantity.precision, volume.precision);
@@ -7001,18 +6995,74 @@ mod tests {
                 volume.precision,
             );
             assert!(
-                size_increment.raw == 0 || quantity.raw.is_multiple_of(size_increment.raw),
+                size_increment.is_zero() || quantity.raw().is_multiple_of(size_increment.raw()),
                 "bar tick quantity {quantity} not aligned to increment {size_increment}",
             );
         }
 
-        if size_increment.raw > 0 {
+        if size_increment.is_positive() {
             assert!(
-                volume.raw - total_raw < size_increment.raw,
+                volume.raw() - total_raw < size_increment.raw(),
                 "bar tick split left {} raw units from volume {volume} and increment {size_increment}",
-                volume.raw - total_raw,
+                volume.raw() - total_raw,
             );
         }
+    }
+
+    #[rstest]
+    #[case("100.009", "100.011", "100.000", true)]
+    #[case("100.009", "100.020", "100.008", false)]
+    #[case("100.010", "100.020", "100.000", false)]
+    fn test_bar_high_first_preserves_stored_distances(
+        #[case] open: &str,
+        #[case] high: &str,
+        #[case] low: &str,
+        #[case] expected: bool,
+    ) {
+        let (mut engine, _, _) = collision_engine();
+        engine.config.bar_adaptive_high_low_ordering = true;
+        let mut prices = [Price::from(open), Price::from(high), Price::from(low)];
+        for price in &mut prices {
+            price.precision = 2;
+        }
+
+        let bar = Bar::new(
+            BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"),
+            prices[0],
+            prices[1],
+            prices[2],
+            prices[0],
+            Quantity::from("1.000"),
+            1.into(),
+            1.into(),
+        );
+        assert_eq!(engine.bar_high_first(&bar), expected);
+    }
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    fn test_consume_trade_level_preserves_native_raw_units() {
+        let precision = if Quantity::from_raw_checked(0, 18).is_ok() {
+            18
+        } else {
+            FIXED_PRECISION
+        };
+
+        let size = Quantity::from_raw(2_000_000_000_000_000_000, precision);
+        let level = BookLevel::from_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1.00"),
+            size,
+            1,
+        ));
+        let mut consumption = indexmap::IndexMap::default();
+        let mut remaining = size.raw();
+        OrderMatchingEngine::consume_trade_level(&mut consumption, &mut remaining, &level);
+        assert_eq!(remaining, 0);
+        assert_eq!(
+            consumption[&level.price.value.raw()],
+            (size.raw(), size.raw())
+        );
     }
 
     #[rstest]
@@ -10078,8 +10128,8 @@ mod tests {
         assert_eq!(sizes.close, Quantity::from("0.02"));
         assert_valid_bar_tick_sizes(volume, increment);
         assert_eq!(
-            sizes.open.raw + sizes.high.raw + sizes.low.raw + sizes.close.raw,
-            volume.raw
+            sizes.open.raw() + sizes.high.raw() + sizes.low.raw() + sizes.close.raw(),
+            volume.raw()
         );
     }
 
@@ -10104,8 +10154,8 @@ mod tests {
         assert_eq!(sizes.close, Quantity::from(close_size));
         assert_valid_bar_tick_sizes(volume, increment);
         assert_eq!(
-            sizes.open.raw + sizes.high.raw + sizes.low.raw + sizes.close.raw,
-            volume.raw
+            sizes.open.raw() + sizes.high.raw() + sizes.low.raw() + sizes.close.raw(),
+            volume.raw()
         );
     }
 
@@ -10141,10 +10191,10 @@ mod tests {
         let volume = Quantity::from_raw(units, FIXED_PRECISION);
         let increment = Quantity::from_raw(1, FIXED_PRECISION);
         let sizes = BarTickSizes::from_volume(volume, increment);
-        assert_eq!(sizes.open.raw, 4);
-        assert_eq!(sizes.high.raw, 4);
-        assert_eq!(sizes.low.raw, 4);
-        assert_eq!(sizes.close.raw, 5);
+        assert_eq!(sizes.open.raw(), 4);
+        assert_eq!(sizes.high.raw(), 4);
+        assert_eq!(sizes.low.raw(), 4);
+        assert_eq!(sizes.close.raw(), 5);
         assert_valid_bar_tick_sizes(volume, increment);
     }
 
@@ -10249,7 +10299,7 @@ mod tests {
         assert!(
             engine
                 .queue_ids_by_price
-                .get(&price.raw)
+                .get(&price.raw())
                 .is_some_and(|ids| ids.contains(&client_order_id)),
         );
 
@@ -10276,7 +10326,7 @@ mod tests {
         assert!(
             engine
                 .queue_ids_by_price
-                .get(&price.raw)
+                .get(&price.raw())
                 .is_some_and(|ids| ids.contains(&client_order_id)),
         );
 
@@ -10286,7 +10336,7 @@ mod tests {
         assert!(!engine.queue_ahead_total.contains_key(&client_order_id));
         assert!(!engine.queue_ahead_orders.contains_key(&client_order_id));
         assert!(!engine.queue_excess.contains_key(&client_order_id));
-        assert!(!engine.queue_ids_by_price.contains_key(&price.raw));
+        assert!(!engine.queue_ids_by_price.contains_key(&price.raw()));
     }
 
     #[rstest]
@@ -10325,17 +10375,17 @@ mod tests {
         );
         engine.process_modify(&command, AccountId::from("SIM-001"));
 
-        assert!(!engine.queue_ids_by_price.contains_key(&old_price.raw));
+        assert!(!engine.queue_ids_by_price.contains_key(&old_price.raw()));
         assert_eq!(
             engine
                 .queue_ids_by_price
-                .get(&new_price.raw)
+                .get(&new_price.raw())
                 .map(|ids| ids.iter().copied().collect::<Vec<_>>()),
             Some(vec![client_order_id]),
         );
         assert_eq!(
             engine.queue_ahead_total.get(&client_order_id),
-            Some(&(new_price.raw, Quantity::from("10.000").raw)),
+            Some(&(new_price.raw(), Quantity::from("10.000").raw())),
         );
         assert_eq!(
             engine
@@ -10380,7 +10430,7 @@ mod tests {
         engine.process_order(&mut order, AccountId::from("SIM-001"));
         assert_eq!(
             engine.queue_ahead_total.get(&client_order_id),
-            Some(&(Price::from("100.00").raw, Quantity::from("10.000").raw)),
+            Some(&(Price::from("100.00").raw(), Quantity::from("10.000").raw())),
         );
 
         let clear = OrderBookDelta::clear(
@@ -10392,7 +10442,7 @@ mod tests {
         engine.process_order_book_delta(&clear).unwrap();
         assert_eq!(
             engine.queue_ahead_total.get(&client_order_id),
-            Some(&(Price::from("100.00").raw, Quantity::from("10.000").raw)),
+            Some(&(Price::from("100.00").raw(), Quantity::from("10.000").raw())),
             "partial snapshot must not discard the old queue estimate",
         );
 
@@ -10414,7 +10464,7 @@ mod tests {
 
         assert_eq!(
             engine.queue_ahead_total.get(&client_order_id),
-            Some(&(Price::from("100.00").raw, Quantity::from("8.000").raw)),
+            Some(&(Price::from("100.00").raw(), Quantity::from("8.000").raw())),
         );
         assert!(cache.borrow().order(&client_order_id).is_some());
     }
@@ -10470,7 +10520,7 @@ mod tests {
 
         assert_eq!(
             engine.queue_ahead_total.get(&client_order_id),
-            Some(&(Price::from("100.00").raw, Quantity::from("10.000").raw)),
+            Some(&(Price::from("100.00").raw(), Quantity::from("10.000").raw())),
         );
     }
 
@@ -10532,7 +10582,7 @@ mod tests {
 
         assert_eq!(
             engine.queue_ahead_total.get(&client_order_id),
-            Some(&(Price::from("100.00").raw, Quantity::from("8.000").raw)),
+            Some(&(Price::from("100.00").raw(), Quantity::from("8.000").raw())),
         );
     }
 
@@ -10571,7 +10621,7 @@ mod tests {
         );
         assert_eq!(
             engine.queue_ahead_total.get(&client_order_id),
-            Some(&(Price::from("100.00").raw, Quantity::from("20.000").raw)),
+            Some(&(Price::from("100.00").raw(), Quantity::from("20.000").raw())),
         );
 
         let snapshot = OrderBookDeltas::new(
@@ -10621,13 +10671,13 @@ mod tests {
                 .map(|(&order_id, &size)| (order_id, size))
                 .collect::<Vec<_>>(),
             vec![
-                (1, Quantity::from("5.000").raw),
-                (2, Quantity::from("5.000").raw)
+                (1, Quantity::from("5.000").raw()),
+                (2, Quantity::from("5.000").raw())
             ],
         );
         assert_eq!(
             engine.queue_ahead_total.get(&client_order_id),
-            Some(&(Price::from("100.00").raw, Quantity::from("10.000").raw)),
+            Some(&(Price::from("100.00").raw(), Quantity::from("10.000").raw())),
         );
 
         let delete_a = OrderBookDelta::new(
@@ -10655,7 +10705,7 @@ mod tests {
         );
         assert_eq!(
             engine.queue_ahead_total.get(&client_order_id),
-            Some(&(Price::from("100.00").raw, Quantity::from("5.000").raw)),
+            Some(&(Price::from("100.00").raw(), Quantity::from("5.000").raw())),
         );
         assert_eq!(order.client_order_id(), client_order_id);
     }
@@ -10672,13 +10722,13 @@ mod tests {
         rest_l3_queue_order(&mut engine, target_price, 1, target_id);
         rest_l3_queue_order(&mut engine, other_price, 2, other_id);
 
-        let indexed_ids = engine.take_queue_ids_at_price(target_price.raw);
+        let indexed_ids = engine.take_queue_ids_at_price(target_price.raw());
 
         assert_eq!(indexed_ids, vec![target_id]);
         assert!(
             engine
                 .queue_ids_by_price
-                .get(&other_price.raw)
+                .get(&other_price.raw())
                 .is_some_and(|ids| ids.contains(&other_id)),
         );
     }
@@ -10924,7 +10974,7 @@ mod tests {
                 .book
                 .get_orders_at_level(Price::from(Self::MAIN_PRICE), OrderSide::Buy)
                 .iter()
-                .map(|order| (order.order_id, order.size.raw))
+                .map(|order| (order.order_id, order.size.raw()))
                 .collect();
 
             for (client_order_id, orders_ahead) in &self.engine.queue_ahead_orders {

@@ -250,17 +250,18 @@ fn parse_book_level(
         .with_context(|| format!("Failed to construct Quantity with precision {size_precision}"))?;
 
     let action = if is_snapshot {
-        if size.raw == 0 {
+        if size.is_zero() {
             return Ok(None);
         }
         BookAction::Add
-    } else if size.raw == 0 {
+    } else if size.is_zero() {
         BookAction::Delete
     } else {
         BookAction::Update
     };
 
-    let order_id = price.raw as u64;
+    let order_id = price.raw() as u64;
+
     let order = BookOrder::new(side, price, size, order_id);
     let mut flags = RecordFlag::F_MBP as u8;
     if is_snapshot {
@@ -864,7 +865,7 @@ mod tests {
         assert_eq!(delete.sequence, 11);
         assert_eq!(delete.order.side, OrderSide::Buy.into());
         assert_eq!(delete.order.price, Price::from("100.0"));
-        assert_eq!(delete.order.size.raw, 0);
+        assert_eq!(delete.order.size.raw(), 0);
         assert!(RecordFlag::F_MBP.matches(delete.flags));
         assert!(RecordFlag::F_LAST.matches(delete.flags));
         assert!(!RecordFlag::F_SNAPSHOT.matches(delete.flags));

@@ -24,6 +24,7 @@
 //! Adding or subtracting two `Quantity` values requires matching effective fixed-point scales.
 //! These operations panic on a scale mismatch.
 //! Comparisons and hashes account for scale differences without rounding.
+//! Without the `defi` feature, constructors restrict values to a single storage scale.
 //!
 //! | Operation               | Result     | Notes                               |
 //! |-------------------------|------------|-------------------------------------|
@@ -66,9 +67,11 @@ use nautilus_core::{
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 
+#[cfg(feature = "defi")]
+use super::fixed::compare_raw;
 use super::fixed::{
     FIXED_PRECISION, FIXED_SCALAR, FIXED_SCALAR_RAW, MAX_FLOAT_PRECISION, canonical_raw,
-    check_fixed_precision, checked_mul_div_fixed, checked_mul_div_raw, compare_raw,
+    check_fixed_precision, checked_mul_div_fixed, checked_mul_div_raw,
     mantissa_exponent_to_fixed_i128, mantissa_exponent_to_raw_checked, raw_scale, raw_scales_match,
     scaled_raw_to_decimal,
 };
@@ -141,8 +144,7 @@ pub const QUANTITY_MIN: f64 = 0.0;
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct Quantity {
-    /// Represents the raw fixed-point value, with `precision` defining the number of decimal places.
-    pub raw: QuantityRaw,
+    pub(crate) raw: QuantityRaw,
     /// The number of decimal places, with a maximum of [`FIXED_PRECISION`].
     pub precision: u8,
 }
@@ -247,6 +249,7 @@ impl Quantity {
                 "`precision` must be 0 when `raw` is QUANTITY_UNDEF"
             );
         }
+
         check_fixed_precision(precision).expect_display(FAILED);
 
         // TODO: Enforce spurious bits validation in v2
@@ -302,10 +305,12 @@ impl Quantity {
         if !raw_scales_match(self.precision, rhs.precision) {
             return None;
         }
+
         let raw = self.raw.checked_add(rhs.raw)?;
         if raw > QUANTITY_RAW_MAX {
             return None;
         }
+
         Some(Self {
             raw,
             precision: self.precision.max(rhs.precision),
@@ -326,11 +331,33 @@ impl Quantity {
         if !raw_scales_match(self.precision, rhs.precision) {
             return None;
         }
+
         let raw = self.raw.checked_sub(rhs.raw)?;
+
         Some(Self {
             raw,
             precision: self.precision.max(rhs.precision),
         })
+    }
+
+    /// Adds two quantities, clamping the result to [`QUANTITY_RAW_MAX`].
+    ///
+    /// Precision follows `Add`: the result uses the maximum operand precision.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the operands have mismatched effective fixed-point scales.
+    #[must_use]
+    pub fn saturating_add(self, rhs: Self) -> Self {
+        assert!(
+            raw_scales_match(self.precision, rhs.precision),
+            "Cannot add `Quantity` values with mismatched decimal scales"
+        );
+
+        Self {
+            raw: self.raw.saturating_add(rhs.raw).min(QUANTITY_RAW_MAX),
+            precision: self.precision.max(rhs.precision),
+        }
     }
 
     /// Computes a saturating subtraction between two quantities, logging when clamped.
@@ -378,14 +405,33 @@ impl Quantity {
         self.raw == QUANTITY_UNDEF
     }
 
+    /// Returns the stored fixed-point integer without rescaling.
+    ///
+    /// Use this for serialization and explicit fixed-point conversions. Prefer domain
+    /// operations for calculations; the storage scale can differ from display precision.
+    ///
+    /// Direct field access is restricted to this crate:
+    ///
+    /// ```compile_fail
+    /// use nautilus_model::types::Quantity;
+    /// let value = Quantity::from("1");
+    /// let raw = value.raw;
+    /// ```
+    #[must_use]
+    pub const fn raw(&self) -> QuantityRaw {
+        self.raw
+    }
+
     /// Returns `true` if the value of this instance is zero.
     #[must_use]
+    #[inline]
     pub fn is_zero(&self) -> bool {
         self.raw == 0
     }
 
     /// Returns `true` if the value of this instance is position (> 0).
     #[must_use]
+    #[inline]
     pub fn is_positive(&self) -> bool {
         self.raw != QUANTITY_UNDEF && self.raw > 0
     }
@@ -663,20 +709,31 @@ impl Hash for Quantity {
 }
 
 impl PartialEq for Quantity {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.cmp(other) == Ordering::Equal
     }
 }
 
 impl PartialOrd for Quantity {
+    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for Quantity {
+    #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
-        compare_raw(self.raw, self.precision, other.raw, other.precision)
+        #[cfg(feature = "defi")]
+        {
+            compare_raw(self.raw, self.precision, other.raw, other.precision)
+        }
+
+        #[cfg(not(feature = "defi"))]
+        {
+            self.raw.cmp(&other.raw)
+        }
     }
 }
 
@@ -690,7 +747,9 @@ impl Deref for Quantity {
 
 impl Add for Quantity {
     type Output = Self;
+    #[inline]
     fn add(self, rhs: Self) -> Self::Output {
+        #[cfg(feature = "defi")]
         assert!(
             raw_scales_match(self.precision, rhs.precision),
             "Cannot add `Quantity` values with mismatched decimal scales"
@@ -720,7 +779,9 @@ impl<'a> Sum<&'a Self> for Quantity {
 
 impl Sub for Quantity {
     type Output = Self;
+    #[inline]
     fn sub(self, rhs: Self) -> Self::Output {
+        #[cfg(feature = "defi")]
         assert!(
             raw_scales_match(self.precision, rhs.precision),
             "Cannot subtract `Quantity` values with mismatched decimal scales"

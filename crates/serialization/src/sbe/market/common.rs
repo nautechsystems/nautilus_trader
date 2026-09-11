@@ -117,7 +117,7 @@ pub(super) fn validate_header(
 
 #[inline]
 pub(super) fn encode_price(writer: &mut SbeWriter<'_>, price: &Price) {
-    let raw_i128: i128 = raw_to_wire(price.raw);
+    let raw_i128: i128 = raw_to_wire(price.raw());
 
     writer.write_i128_le(raw_i128);
     writer.write_u8(price.precision);
@@ -137,7 +137,7 @@ pub(super) fn decode_price(cursor: &mut SbeCursor<'_>) -> Result<Price, SbeDecod
 
 #[inline]
 pub(super) fn encode_quantity(writer: &mut SbeWriter<'_>, quantity: &Quantity) {
-    let raw_u128: u128 = raw_to_wire(quantity.raw);
+    let raw_u128: u128 = raw_to_wire(quantity.raw());
 
     writer.write_u128_le(raw_u128);
     writer.write_u8(quantity.precision);

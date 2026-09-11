@@ -163,7 +163,7 @@ fn derive_quote_from_book(book: &OrderBook) -> Option<QuoteTick> {
     let bid_size = book.best_bid_size()?;
     let ask_size = book.best_ask_size()?;
 
-    if bid_size.raw == 0 || ask_size.raw == 0 {
+    if bid_size.is_zero() || ask_size.is_zero() {
         return None;
     }
 

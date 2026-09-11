@@ -22,7 +22,7 @@ use nautilus_model::{
 
 /// Calculates the protection price for stop limit and stop market orders using best bid or ask price.
 ///
-/// Uses integer arithmetic on raw price values to avoid floating-point precision issues.
+/// Uses checked fixed-point arithmetic to preserve all stored price units.
 ///
 /// # Returns
 /// A calculated protection price.
@@ -31,6 +31,7 @@ use nautilus_model::{
 /// Returns an error if:
 /// - the order type is invalid.
 /// - best bid/ask is not provided when required for the order side.
+/// - the calculated price is outside the representable range.
 pub fn protection_price_calculate(
     price_increment: Price,
     order: &OrderAny,
@@ -43,21 +44,24 @@ pub fn protection_price_calculate(
         anyhow::bail!("Invalid `OrderType` {order_type} for protection price calculation");
     }
 
-    let offset_raw = PriceRaw::from(protection_points) * price_increment.raw;
+    let offset = price_increment
+        .raw()
+        .checked_mul(PriceRaw::from(protection_points))
+        .ok_or_else(|| anyhow::anyhow!("Protection offset exceeds raw price bounds"))?;
 
-    let order_side = order.order_side();
-    let protection_raw = match order_side {
-        OrderSide::Buy => {
-            let opposite = ask.ok_or_else(|| anyhow::anyhow!("Ask required"))?;
-            opposite.raw + offset_raw
-        }
-        OrderSide::Sell => {
-            let opposite = bid.ok_or_else(|| anyhow::anyhow!("Bid required"))?;
-            opposite.raw - offset_raw
-        }
-    };
+    let raw = match order.order_side() {
+        OrderSide::Buy => ask
+            .ok_or_else(|| anyhow::anyhow!("Ask required"))?
+            .raw()
+            .checked_add(offset),
+        OrderSide::Sell => bid
+            .ok_or_else(|| anyhow::anyhow!("Bid required"))?
+            .raw()
+            .checked_sub(offset),
+    }
+    .ok_or_else(|| anyhow::anyhow!("Protection price exceeds raw price bounds"))?;
 
-    Ok(Price::from_raw(protection_raw, price_increment.precision))
+    Ok(Price::from_raw_checked(raw, price_increment.precision)?)
 }
 
 #[cfg(test)]
@@ -85,6 +89,24 @@ mod tests {
         }
 
         builder.build()
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, "123.456821")]
+    #[case(OrderSide::Sell, "123.456761")]
+    fn test_protection_preserves_sub_increment_units(
+        #[case] side: OrderSide,
+        #[case] expected: &str,
+        #[values(5, 6)] quote_precision: u8,
+    ) {
+        let order = build_stop_order(OrderType::Market, side);
+        let mut quote = Price::from("123.456791");
+        quote.precision = quote_precision;
+        let price =
+            protection_price_calculate(Price::from("0.00001"), &order, 3, Some(quote), Some(quote))
+                .unwrap();
+        assert_eq!(price, Price::from(expected));
+        assert_eq!(price.precision, 5);
     }
 
     #[rstest]
@@ -224,7 +246,7 @@ mod tests {
         let price =
             protection_price_calculate(Price::from("0.00001"), &order, 3, bid, ask).unwrap();
 
-        assert_eq!(price.raw, Price::from(expected).raw);
+        assert_eq!(price, Price::from(expected));
         assert_eq!(price.precision, 5);
     }
 }

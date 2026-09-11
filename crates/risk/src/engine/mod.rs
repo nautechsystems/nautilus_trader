@@ -1268,7 +1268,7 @@ impl RiskEngine {
                     Some(PositionSide::Long),
                 )
                 .iter()
-                .map(|pos| pos.quantity.raw)
+                .map(|pos| pos.quantity.raw())
                 .sum();
             let pending_sells: QuantityRaw = cache
                 .orders_open(
@@ -1279,7 +1279,7 @@ impl RiskEngine {
                     Some(OrderSide::Sell),
                 )
                 .iter()
-                .map(|ord| ord.leaves_qty().raw)
+                .map(|ord| ord.leaves_qty().raw())
                 .sum();
             (long_qty, pending_sells)
         };
@@ -1305,7 +1305,7 @@ impl RiskEngine {
                     Some(PositionSide::Short),
                 )
                 .iter()
-                .map(|pos| pos.quantity.raw)
+                .map(|pos| pos.quantity.raw())
                 .sum();
             let pending_buys: QuantityRaw = cache
                 .orders_open(
@@ -1316,7 +1316,7 @@ impl RiskEngine {
                     Some(OrderSide::Buy),
                 )
                 .iter()
-                .map(|ord| ord.leaves_qty().raw)
+                .map(|ord| ord.leaves_qty().raw())
                 .sum();
 
             if self.config.debug && short_qty > 0 {
@@ -1348,7 +1348,7 @@ impl RiskEngine {
                         let is_reducing = !is_wallet
                             && (order.is_reduce_only()
                                 || (order.is_sell()
-                                    && (cum_sell_qty_raw + order.quantity().raw)
+                                    && (cum_sell_qty_raw + order.quantity().raw())
                                         <= available_long_qty_raw));
 
                         if !order.is_quote_quantity()
@@ -1676,14 +1676,14 @@ impl RiskEngine {
                 let is_reducing = order.is_reduce_only()
                     || full_position_exit
                     || (order.is_sell()
-                        && (cum_sell_qty_raw + effective_quantity.raw) <= available_long_qty_raw)
+                        && (cum_sell_qty_raw + effective_quantity.raw()) <= available_long_qty_raw)
                     || (order.is_buy()
-                        && (cum_buy_qty_raw + effective_quantity.raw) <= available_short_qty_raw);
+                        && (cum_buy_qty_raw + effective_quantity.raw()) <= available_short_qty_raw);
 
                 if order.is_sell() {
-                    cum_sell_qty_raw += effective_quantity.raw;
+                    cum_sell_qty_raw += effective_quantity.raw();
                 } else if order.is_buy() {
-                    cum_buy_qty_raw += effective_quantity.raw;
+                    cum_buy_qty_raw += effective_quantity.raw();
                 }
 
                 if is_reducing {
@@ -1787,9 +1787,7 @@ impl RiskEngine {
                                 last_px,
                                 None,
                             ) {
-                                Ok(locked) => {
-                                    Money::from_raw(-locked.raw, instrument.quote_currency())
-                                }
+                                Ok(locked) => -locked,
                                 Err(e) => {
                                     self.deny_order(
                                         order,
@@ -1806,8 +1804,8 @@ impl RiskEngine {
                     }
                 } else {
                     match order.order_side() {
-                        OrderSide::Buy => Money::from_raw(-notional.raw, notional.currency),
-                        OrderSide::Sell => Money::from_raw(notional.raw, notional.currency),
+                        OrderSide::Buy => -notional,
+                        OrderSide::Sell => notional,
                     }
                 };
 
@@ -1818,14 +1816,14 @@ impl RiskEngine {
                 // Check if order reduces an existing position
                 let is_position_reducing = if order.is_buy() {
                     let reducing = full_position_exit
-                        || (cum_buy_qty_raw + effective_quantity.raw) <= available_short_qty_raw;
-                    cum_buy_qty_raw += effective_quantity.raw;
+                        || (cum_buy_qty_raw + effective_quantity.raw()) <= available_short_qty_raw;
+                    cum_buy_qty_raw += effective_quantity.raw();
                     reducing
                 } else if order.is_sell() {
                     let reducing = order.is_reduce_only()
                         || full_position_exit
-                        || (cum_sell_qty_raw + effective_quantity.raw) <= available_long_qty_raw;
-                    cum_sell_qty_raw += effective_quantity.raw;
+                        || (cum_sell_qty_raw + effective_quantity.raw()) <= available_long_qty_raw;
+                    cum_sell_qty_raw += effective_quantity.raw();
                     reducing
                 } else {
                     false
@@ -1859,16 +1857,12 @@ impl RiskEngine {
                 }
 
                 if order.is_buy() {
-                    match cum_notional_buy.as_mut() {
-                        Some(cum_notional_buy_val) => {
-                            cum_notional_buy_val.raw += -order_balance_impact.raw;
-                        }
-                        None => {
-                            cum_notional_buy = Some(Money::from_raw(
-                                -order_balance_impact.raw,
-                                order_balance_impact.currency,
-                            ));
-                        }
+                    if !self.accumulate_notional(
+                        order,
+                        &mut cum_notional_buy,
+                        -order_balance_impact,
+                    ) {
+                        return false;
                     }
 
                     if self.config.debug {
@@ -1891,16 +1885,12 @@ impl RiskEngine {
                     }
                 } else if order.is_sell() {
                     if is_betting {
-                        match cum_notional_sell.as_mut() {
-                            Some(cum_notional_sell_val) => {
-                                cum_notional_sell_val.raw += -order_balance_impact.raw;
-                            }
-                            None => {
-                                cum_notional_sell = Some(Money::from_raw(
-                                    -order_balance_impact.raw,
-                                    order_balance_impact.currency,
-                                ));
-                            }
+                        if !self.accumulate_notional(
+                            order,
+                            &mut cum_notional_sell,
+                            -order_balance_impact,
+                        ) {
+                            return false;
                         }
 
                         if self.config.debug {
@@ -1933,16 +1923,12 @@ impl RiskEngine {
                     };
 
                     if has_base_currency {
-                        match cum_notional_sell.as_mut() {
-                            Some(cum_notional_sell_val) => {
-                                cum_notional_sell_val.raw += order_balance_impact.raw;
-                            }
-                            None => {
-                                cum_notional_sell = Some(Money::from_raw(
-                                    order_balance_impact.raw,
-                                    order_balance_impact.currency,
-                                ));
-                            }
+                        if !self.accumulate_notional(
+                            order,
+                            &mut cum_notional_sell,
+                            order_balance_impact,
+                        ) {
+                            return false;
                         }
 
                         if self.config.debug {
@@ -2060,9 +2046,8 @@ impl RiskEngine {
             log::debug!("Free: {base_free:?}");
         }
 
-        match cum_notional_sell {
-            Some(value) => value.raw += cash_value.raw,
-            None => *cum_notional_sell = Some(cash_value),
+        if !self.accumulate_notional(order, cum_notional_sell, cash_value) {
+            return false;
         }
 
         if self.config.debug {
@@ -2071,7 +2056,7 @@ impl RiskEngine {
 
         if !allow_borrowing
             && let Some(cum_notional_sell) = *cum_notional_sell
-            && cum_notional_sell.raw > base_free.raw
+            && cum_notional_sell > base_free
         {
             self.deny_order(
                 order,
@@ -2084,6 +2069,34 @@ impl RiskEngine {
             return false;
         }
 
+        true
+    }
+
+    fn accumulate_notional(
+        &self,
+        order: &OrderAny,
+        total: &mut Option<Money>,
+        value: Money,
+    ) -> bool {
+        let next = match *total {
+            Some(current) if current.currency == value.currency => current.checked_add(value),
+            Some(_) => None,
+            None => Some(value),
+        };
+
+        let Some(next) = next else {
+            self.deny_order(
+                order,
+                &OrderDeniedReason::NotionalCalculationFailed {
+                    detail: "cumulative notional exceeds Money bounds or has incompatible currency or scale".to_string(),
+                }
+                .to_string(),
+            );
+
+            return false;
+        };
+
+        *total = Some(next);
         true
     }
 
@@ -2114,7 +2127,7 @@ impl RiskEngine {
             });
         }
 
-        if !instrument.allows_negative_price() && price_val.raw <= 0 {
+        if !instrument.allows_negative_price() && (price_val.is_zero() || price_val.is_negative()) {
             return Some(OrderDeniedReason::PriceNotPositive {
                 field,
                 price: price_val,

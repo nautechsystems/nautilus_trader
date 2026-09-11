@@ -589,7 +589,7 @@ fn test_decode_mbo_msg_price_undef_with_precision() {
 
     assert!(delta.order.price.is_undefined());
     assert_eq!(delta.order.price.precision, 0);
-    assert_eq!(delta.order.price.raw, PRICE_UNDEF);
+    assert_eq!(delta.order.price.raw(), PRICE_UNDEF);
 }
 
 fn mbo_msg_with_action(action: c_char, flags: dbn::FlagSet) -> dbn::MboMsg {
@@ -1644,10 +1644,10 @@ fn test_decode_cmbp1_msg() {
     let quote = maybe_quote.expect("Expected valid quote");
 
     assert_eq!(quote.instrument_id, instrument_id);
-    assert!(quote.bid_price.raw > 0);
-    assert!(quote.ask_price.raw > 0);
-    assert!(quote.bid_size.raw > 0);
-    assert!(quote.ask_size.raw > 0);
+    assert!(quote.bid_price.is_positive());
+    assert!(quote.ask_price.is_positive());
+    assert!(quote.bid_size.is_positive());
+    assert!(quote.ask_size.is_positive());
     assert_eq!(quote.ts_event, msg.ts_recv);
     assert_eq!(quote.ts_init, 0);
 
@@ -1674,10 +1674,10 @@ fn test_decode_cbbo_1s_msg() {
     let quote = maybe_quote.expect("Expected valid quote");
 
     assert_eq!(quote.instrument_id, instrument_id);
-    assert!(quote.bid_price.raw > 0);
-    assert!(quote.ask_price.raw > 0);
-    assert!(quote.bid_size.raw > 0);
-    assert!(quote.ask_size.raw > 0);
+    assert!(quote.bid_price.is_positive());
+    assert!(quote.ask_price.is_positive());
+    assert!(quote.bid_size.is_positive());
+    assert!(quote.ask_size.is_positive());
     assert_eq!(quote.ts_event, msg.ts_recv);
     assert_eq!(quote.ts_init, 0);
 }
@@ -1730,13 +1730,13 @@ fn test_decode_mbp10_msg_with_undefined_levels() {
     let depth = decode_mbp10_msg(&msg, instrument_id, 2, None).unwrap();
 
     assert_eq!(depth.bids[5].side, None);
-    assert_eq!(depth.bids[5].price.raw, 0);
+    assert_eq!(depth.bids[5].price.raw(), 0);
     assert_eq!(depth.bids[5].price.precision, 0);
-    assert_eq!(depth.bids[5].size.raw, 0);
+    assert_eq!(depth.bids[5].size.raw(), 0);
     assert_eq!(depth.asks[7].side, None);
-    assert_eq!(depth.asks[7].price.raw, 0);
+    assert_eq!(depth.asks[7].price.raw(), 0);
     assert_eq!(depth.asks[7].price.precision, 0);
-    assert_eq!(depth.asks[7].size.raw, 0);
+    assert_eq!(depth.asks[7].size.raw(), 0);
 
     // Defined neighbors keep their normal side and instrument precision
     assert_eq!(depth.bids[0].side, Some(OrderSide::Buy));
@@ -1766,10 +1766,10 @@ fn test_decode_tcbbo_msg() {
     let quote = maybe_quote.expect("Expected valid quote");
 
     assert_eq!(quote.instrument_id, instrument_id);
-    assert!(quote.bid_price.raw > 0);
-    assert!(quote.ask_price.raw > 0);
-    assert!(quote.bid_size.raw > 0);
-    assert!(quote.ask_size.raw > 0);
+    assert!(quote.bid_price.is_positive());
+    assert!(quote.ask_price.is_positive());
+    assert!(quote.bid_size.is_positive());
+    assert!(quote.ask_size.is_positive());
     assert_eq!(quote.ts_event, tcbbo_msg.ts_recv);
     assert_eq!(quote.ts_init, 0);
 

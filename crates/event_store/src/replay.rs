@@ -1468,7 +1468,7 @@ fn apply_orderless_flip_fill(
 
     if position.is_closed()
         || !position.is_opposite_side(fill.order_side)
-        || fill.last_qty.raw <= position.quantity.raw
+        || fill.last_qty <= position.quantity
     {
         return Ok(false);
     }
@@ -1789,11 +1789,15 @@ fn allocate_fill_void_fragments(
                     ),
                 ));
             }
-            let removed_raw = remaining_commission.raw.abs().min(commission.raw.abs());
-            let removed = Money::from_raw(
-                removed_raw * remaining_commission.raw.signum(),
-                remaining_commission.currency,
-            );
+
+            let magnitude = remaining_commission.abs().min(commission.abs());
+
+            let removed = if remaining_commission.is_negative() {
+                -magnitude
+            } else {
+                magnitude
+            };
+
             allocations
                 .entry(fragment.position_id)
                 .and_modify(|allocation| {

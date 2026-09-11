@@ -63,8 +63,6 @@ use nautilus_execution::{
 };
 #[cfg(feature = "node")]
 use nautilus_model::position::PositionReplayEvent;
-#[cfg(feature = "node")]
-use nautilus_model::types::{money::MoneyRaw, quantity::QuantityRaw};
 use nautilus_model::{
     enums::{LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{OrderCanceled, OrderEventAny, OrderFilled, OrderInitialized},
@@ -2980,8 +2978,8 @@ impl ExecutionManager {
             None,
         );
         let mut matched = false;
-        let mut quantity_raw: QuantityRaw = 0;
-        let mut commission_raw: MoneyRaw = 0;
+        let mut quantity = Quantity::zero(report.last_qty.precision);
+        let mut commission = Money::zero(report.commission.currency);
 
         for position in positions {
             if report
@@ -3018,20 +3016,21 @@ impl ExecutionManager {
                 if fill_commission.currency != report.commission.currency {
                     return false;
                 }
-                let Some(next_quantity_raw) = quantity_raw.checked_add(fill.last_qty.raw) else {
+
+                let Some(next_quantity) = quantity.checked_add(fill.last_qty) else {
                     return false;
                 };
-                let Some(next_commission_raw) = commission_raw.checked_add(fill_commission.raw)
-                else {
+
+                let Some(next_commission) = commission.checked_add(fill_commission) else {
                     return false;
                 };
                 matched = true;
-                quantity_raw = next_quantity_raw;
-                commission_raw = next_commission_raw;
+                quantity = next_quantity;
+                commission = next_commission;
             }
         }
 
-        matched && quantity_raw == report.last_qty.raw && commission_raw == report.commission.raw
+        matched && quantity == report.last_qty && commission == report.commission
     }
 
     fn resolve_position_report_client_coverage(

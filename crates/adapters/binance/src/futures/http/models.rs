@@ -1997,7 +1997,7 @@ mod tests {
 
         assert_eq!(state.balances.len(), 1);
         let balance = &state.balances[0];
-        assert_eq!(balance.total.raw, balance.locked.raw + balance.free.raw);
+        assert_eq!(balance.total, balance.locked + balance.free);
     }
 
     #[rstest]

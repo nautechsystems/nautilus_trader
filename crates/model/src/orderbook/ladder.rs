@@ -352,7 +352,7 @@ impl BookLadder {
                 level.update(order);
 
                 // If level.update removed the order due to zero size, remove from cache too
-                if order.size.raw == 0 {
+                if order.size.is_zero() {
                     self.cache.remove(&order.order_id);
                     debug_assert_eq!(
                         level.len(),
@@ -1203,7 +1203,7 @@ mod tests {
             side: OrderSide::Buy.into(),
             price: Price::from("100.00"),
             size: Quantity::from(50),
-            order_id: Price::from("100.00").raw as u64,
+            order_id: Price::from("100.00").raw() as u64,
         };
         ladder.add(order1, 0);
 
@@ -1211,7 +1211,7 @@ mod tests {
             side: OrderSide::Buy.into(),
             price: Price::from("99.00"),
             size: Quantity::from(60),
-            order_id: Price::from("99.00").raw as u64,
+            order_id: Price::from("99.00").raw() as u64,
         };
         ladder.add(order2, 0);
 

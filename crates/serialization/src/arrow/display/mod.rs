@@ -108,7 +108,8 @@ pub(super) fn unix_nanos_to_i64(value: u64) -> i64 {
 /// falls back to [`rust_decimal::Decimal`] in that range. The
 /// decimal path returns [`f64::NAN`] if the value is outside `f64` range.
 pub(super) fn price_to_f64(price: &Price) -> f64 {
-    if price.is_undefined() || price.raw == PRICE_ERROR || price.precision > DISPLAY_MAX_PRECISION {
+    if price.is_undefined() || price.raw() == PRICE_ERROR || price.precision > DISPLAY_MAX_PRECISION
+    {
         return f64::NAN;
     }
 
@@ -193,13 +194,10 @@ mod tests {
     #[rstest]
     fn test_price_to_f64_wei_precision_boundary_is_finite() {
         // Precision 18 is the upper bound for legitimate wei-precision inputs
-        // and must not be caught by the pathological-precision guard. Struct
-        // literal bypasses `from_raw`'s `FIXED_PRECISION` assertion so the
-        // test runs across all feature combinations.
-        let price = Price {
-            raw: 1_000_000_000_000_000_000,
-            precision: 18,
-        };
+        // and must not be caught by the pathological-precision guard. Set precision
+        // after construction so the test runs across all feature combinations.
+        let mut price = Price::from_raw(1_000_000_000_000_000_000, 0);
+        price.precision = 18;
         let value = price_to_f64(&price);
 
         assert!(value.is_finite(), "precision 18 should not return NaN");
@@ -223,10 +221,8 @@ mod tests {
         // Mirrors the `ERROR_PRICE` guard for `price_to_f64`: any precision
         // beyond `DISPLAY_MAX_PRECISION` (18) must emit NaN rather than
         // panic or render a bogus value.
-        let quantity = Quantity {
-            raw: 0,
-            precision: 200,
-        };
+        let mut quantity = Quantity::zero(0);
+        quantity.precision = 200;
         assert!(quantity_to_f64(&quantity).is_nan());
     }
 

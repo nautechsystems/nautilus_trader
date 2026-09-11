@@ -50,9 +50,9 @@ impl AccountBalance {
 
     fn __hash__(&self) -> isize {
         let mut h = DefaultHasher::new();
-        self.total.raw.hash(&mut h);
-        self.locked.raw.hash(&mut h);
-        self.free.raw.hash(&mut h);
+        self.total.raw().hash(&mut h);
+        self.locked.raw().hash(&mut h);
+        self.free.raw().hash(&mut h);
         self.currency.code.hash(&mut h);
         h.finish() as isize
     }
@@ -188,8 +188,8 @@ impl MarginBalance {
 
     fn __hash__(&self) -> isize {
         let mut h = DefaultHasher::new();
-        self.initial.raw.hash(&mut h);
-        self.maintenance.raw.hash(&mut h);
+        self.initial.raw().hash(&mut h);
+        self.maintenance.raw().hash(&mut h);
         self.currency.code.hash(&mut h);
         self.instrument_id.hash(&mut h);
         h.finish() as isize

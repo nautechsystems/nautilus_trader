@@ -74,10 +74,10 @@ impl EncodeToRecordBatch for OrderBookDelta {
             action_builder.append_value(delta.action as u8);
             side_builder.append_value(delta.order.side.map_or(0, |side| side as u8));
             price_builder
-                .append_value(delta.order.price.raw.to_le_bytes())
+                .append_value(delta.order.price.raw().to_le_bytes())
                 .unwrap();
             size_builder
-                .append_value(delta.order.size.raw.to_le_bytes())
+                .append_value(delta.order.size.raw().to_le_bytes())
                 .unwrap();
             order_id_builder.append_value(delta.order.order_id);
             flags_builder.append_value(delta.flags);
@@ -465,9 +465,9 @@ mod tests {
 
         let decoded_data = OrderBookDelta::decode_batch(&metadata, record_batch).unwrap();
         assert_eq!(decoded_data.len(), 2);
-        assert_eq!(decoded_data[0].order.price.raw, PRICE_UNDEF);
+        assert_eq!(decoded_data[0].order.price.raw(), PRICE_UNDEF);
         assert_eq!(decoded_data[0].order.price.precision, 0);
-        assert_eq!(decoded_data[0].order.size.raw, QUANTITY_UNDEF);
+        assert_eq!(decoded_data[0].order.size.raw(), QUANTITY_UNDEF);
         assert_eq!(decoded_data[0].order.size.precision, 0);
         assert_eq!(decoded_data[1].order.price.precision, 2);
         assert_eq!(decoded_data[1].order.size.precision, 0);

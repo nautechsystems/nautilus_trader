@@ -88,6 +88,11 @@ path = "benches/black_scholes_criterion.rs"
 harness = false
 
 [[bench]]
+name = "book_analysis_criterion"
+path = "benches/book_analysis_criterion.rs"
+harness = false
+
+[[bench]]
 name = "book_iai"
 path = "benches/book_iai.rs"
 harness = false

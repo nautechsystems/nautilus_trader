@@ -389,7 +389,7 @@ impl OptionChainAggregator {
     fn find_closest_strike(all_strikes: &[Price], atm: Price) -> Option<Price> {
         all_strikes
             .iter()
-            .min_by_key(|strike| strike.raw.abs_diff(atm.raw))
+            .min_by_key(|strike| strike.raw().abs_diff(atm.raw()))
             .copied()
     }
 
@@ -755,6 +755,17 @@ mod tests {
         );
 
         (agg, call_id, put_id)
+    }
+
+    #[rstest]
+    fn test_find_closest_strike_preserves_subprecision_atm() {
+        let mut atm = Price::from("100.75");
+        atm.precision = 0;
+        let strikes = [Price::from("100"), Price::from("101")];
+        assert_eq!(
+            OptionChainAggregator::find_closest_strike(&strikes, atm),
+            Some(strikes[1])
+        );
     }
 
     #[rstest]

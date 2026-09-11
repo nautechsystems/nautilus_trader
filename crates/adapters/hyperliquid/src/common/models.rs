@@ -877,9 +877,9 @@ mod tests {
         assert_eq!(clear_delta.instrument_id, instrument_id);
         assert_eq!(clear_delta.action, BookAction::Clear);
         assert_eq!(clear_delta.order.side, None);
-        assert_eq!(clear_delta.order.price.raw, 0);
+        assert_eq!(clear_delta.order.price.raw(), 0);
         assert_eq!(clear_delta.order.price.precision, 0);
-        assert_eq!(clear_delta.order.size.raw, 0);
+        assert_eq!(clear_delta.order.size.raw(), 0);
         assert_eq!(clear_delta.order.size.precision, 0);
         assert_eq!(clear_delta.order.order_id, 0);
         assert_eq!(clear_delta.flags, RecordFlag::F_SNAPSHOT as u8);
@@ -934,9 +934,9 @@ mod tests {
         assert_eq!(clear_delta.instrument_id, instrument_id);
         assert_eq!(clear_delta.action, BookAction::Clear);
         assert_eq!(clear_delta.order.side, None);
-        assert_eq!(clear_delta.order.price.raw, 0);
+        assert_eq!(clear_delta.order.price.raw(), 0);
         assert_eq!(clear_delta.order.price.precision, 0);
-        assert_eq!(clear_delta.order.size.raw, 0);
+        assert_eq!(clear_delta.order.size.raw(), 0);
         assert_eq!(clear_delta.order.size.precision, 0);
         assert_eq!(clear_delta.order.order_id, 0);
         assert_eq!(clear_delta.flags, RecordFlag::F_SNAPSHOT as u8);

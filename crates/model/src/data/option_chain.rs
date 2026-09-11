@@ -105,8 +105,8 @@ impl StrikeRange {
                             all_strikes.len() - 1
                         } else {
                             // Pick the closer of the two neighbors
-                            let diff_below = all_strikes[idx - 1].raw.abs_diff(atm.raw);
-                            let diff_above = all_strikes[idx].raw.abs_diff(atm.raw);
+                            let diff_below = all_strikes[idx - 1].raw().abs_diff(atm.raw());
+                            let diff_above = all_strikes[idx].raw().abs_diff(atm.raw());
                             if diff_below <= diff_above {
                                 idx - 1
                             } else {
@@ -628,6 +628,20 @@ mod tests {
     }
 
     // -- StrikeRange::resolve tests --
+
+    #[rstest]
+    fn test_strike_range_preserves_subprecision_atm() {
+        let mut atm = Price::from("100.75");
+        atm.precision = 0;
+        let strikes = [Price::from("100"), Price::from("101")];
+
+        let range = StrikeRange::AtmRelative {
+            strikes_above: 0,
+            strikes_below: 0,
+        };
+
+        assert_eq!(range.resolve(Some(atm), &strikes), vec![strikes[1]]);
+    }
 
     #[rstest]
     fn test_strike_range_resolve_fixed() {

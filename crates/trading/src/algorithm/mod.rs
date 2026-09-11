@@ -656,7 +656,8 @@ pub trait ExecutionAlgorithm: DataActor {
         );
 
         let primary_qty = primary.quantity();
-        let new_qty = Quantity::from_raw(primary_qty.raw - spawn_qty.raw, primary_qty.precision);
+        let mut new_qty = primary_qty - spawn_qty;
+        new_qty.precision = primary_qty.precision;
 
         let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
         let ts_now = core.clock_mut().timestamp_ns();
@@ -730,15 +731,13 @@ pub trait ExecutionAlgorithm: DataActor {
         };
 
         // Cap restore amount by leaves_qty to handle partial fills before rejection
-        let restore_raw = std::cmp::min(reduction_qty.raw, order.leaves_qty().raw);
-        if restore_raw == 0 {
+        let restore_qty = reduction_qty.min(order.leaves_qty());
+        if restore_qty.is_zero() {
             return;
         }
 
-        let restored_qty = Quantity::from_raw(
-            primary.quantity().raw + restore_raw,
-            primary.quantity().precision,
-        );
+        let mut restored_qty = primary.quantity() + restore_qty;
+        restored_qty.precision = primary.quantity().precision;
 
         let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
         let ts_now = core.clock_mut().timestamp_ns();

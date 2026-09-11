@@ -165,8 +165,7 @@ pub const MONEY_MIN: f64 = -9_223_372_036.0;
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct Money {
-    /// Represents the raw fixed-point amount, with `currency.precision` defining the number of decimal places.
-    pub raw: MoneyRaw,
+    pub(crate) raw: MoneyRaw,
     /// The currency denomination associated with the monetary amount.
     pub currency: Currency,
 }
@@ -323,6 +322,23 @@ impl Money {
         }
     }
 
+    /// Returns the stored fixed-point integer without rescaling.
+    ///
+    /// Use this for serialization and explicit fixed-point conversions. Prefer domain
+    /// operations for calculations; the storage scale can differ from display precision.
+    ///
+    /// Direct field access is restricted to this crate:
+    ///
+    /// ```compile_fail
+    /// use nautilus_model::types::Money;
+    /// let value = Money::from("1 USD");
+    /// let raw = value.raw;
+    /// ```
+    #[must_use]
+    pub const fn raw(&self) -> MoneyRaw {
+        self.raw
+    }
+
     /// Returns `true` if the value of this instance is zero.
     #[must_use]
     pub fn is_zero(&self) -> bool {
@@ -333,6 +349,18 @@ impl Money {
     #[must_use]
     pub fn is_positive(&self) -> bool {
         self.raw > 0
+    }
+
+    /// Returns `true` if the value of this instance is negative (< 0).
+    #[must_use]
+    pub fn is_negative(&self) -> bool {
+        self.raw < 0
+    }
+
+    /// Returns the absolute amount in the same currency.
+    #[must_use]
+    pub fn abs(self) -> Self {
+        if self.is_negative() { -self } else { self }
     }
 
     /// Performs a checked addition, returning `None` on raw integer overflow, when
@@ -355,10 +383,12 @@ impl Money {
         if !raw_scales_match(self.currency.precision, rhs.currency.precision) {
             return None;
         }
+
         let raw = self.raw.checked_add(rhs.raw)?;
         if raw < MONEY_RAW_MIN || raw > MONEY_RAW_MAX {
             return None;
         }
+
         Some(Self {
             raw,
             currency: self.currency,
@@ -385,10 +415,12 @@ impl Money {
         if !raw_scales_match(self.currency.precision, rhs.currency.precision) {
             return None;
         }
+
         let raw = self.raw.checked_sub(rhs.raw)?;
         if raw < MONEY_RAW_MIN || raw > MONEY_RAW_MAX {
             return None;
         }
+
         Some(Self {
             raw,
             currency: self.currency,

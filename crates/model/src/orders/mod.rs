@@ -89,10 +89,7 @@ use crate::{
     },
     orderbook::OwnBookOrder,
     reports::OrderStatusReport,
-    types::{
-        Currency, Money, Price, Quantity,
-        quantity::{QUANTITY_RAW_MAX, QuantityRaw},
-    },
+    types::{Currency, Money, Price, Quantity},
 };
 
 /// Order types that have stop/trigger prices.
@@ -193,16 +190,6 @@ pub(crate) fn check_time_in_force(
         "`expire_time` is required for `GTD` order",
     )?;
     Ok(())
-}
-
-#[inline]
-fn checked_quantity_raw_sum(lhs: QuantityRaw, rhs: QuantityRaw) -> Option<QuantityRaw> {
-    lhs.checked_add(rhs).filter(|raw| *raw <= QUANTITY_RAW_MAX)
-}
-
-#[inline]
-fn quantity_from_domain_raw(raw: QuantityRaw, precision: u8) -> Quantity {
-    Quantity::from_raw(raw.min(QUANTITY_RAW_MAX), precision)
 }
 
 impl OrderStatus {
@@ -873,7 +860,7 @@ impl OrderCore {
         };
 
         if let OrderEventAny::Filled(fill) = &event
-            && checked_quantity_raw_sum(self.filled_qty.raw, fill.last_qty.raw).is_none()
+            && self.filled_qty.checked_add(fill.last_qty).is_none()
         {
             return Err(CorrectnessError::PredicateViolation {
                 message: format!(
@@ -1101,11 +1088,12 @@ impl OrderCore {
             }
             (Some(commission), Some(voided))
                 if commission.currency == voided.currency
-                    && commission.raw.signum() == voided.raw.signum()
-                    && voided.raw.abs() <= commission.raw.abs()
+                    && commission.is_positive() == voided.is_positive()
+                    && commission.is_negative() == voided.is_negative()
+                    && voided.abs() <= commission.abs()
                     && previous
                         .and_then(|prior| prior.commission_voided)
-                        .is_none_or(|prior| voided.raw.abs() >= prior.raw.abs()) =>
+                        .is_none_or(|prior| voided.abs() >= prior.abs()) =>
             {
                 Ok(())
             }
@@ -1172,9 +1160,10 @@ impl OrderCore {
     fn recompute_fill_state(&mut self, additional: Option<&OrderFillVoided>) -> Quantity {
         let corrections = self.fill_corrections(additional);
 
-        let mut filled_raw = Quantity::zero(self.quantity.precision).raw;
-        let mut voided_raw = Quantity::zero(self.quantity.precision).raw;
-        let mut non_reopened_voided_raw = Quantity::zero(self.quantity.precision).raw;
+        let mut filled = Quantity::zero(self.quantity.precision);
+        let mut voided = Quantity::zero(self.quantity.precision);
+        let mut non_reopened_voided = Quantity::zero(self.quantity.precision);
+
         let mut commissions = IndexMap::<Currency, Money>::new();
         let mut trade_ids = Vec::new();
         let mut last_trade_id = None;
@@ -1192,13 +1181,13 @@ impl OrderCore {
             }
             let removed = Self::removed_fill_qty(fill, correction);
             let effective = fill.last_qty - removed;
-            voided_raw = voided_raw.saturating_add(removed.raw);
+            voided = voided.saturating_add(removed);
             if correction.is_some_and(|event| !event.is_reopened) {
-                non_reopened_voided_raw = non_reopened_voided_raw.saturating_add(removed.raw);
+                non_reopened_voided = non_reopened_voided.saturating_add(removed);
             }
 
             if !effective.is_zero() {
-                filled_raw = filled_raw.saturating_add(effective.raw);
+                filled = filled.saturating_add(effective);
                 trade_ids.push(fill.trade_id);
                 last_trade_id = Some(fill.trade_id);
                 position_id = fill.position_id;
@@ -1222,12 +1211,15 @@ impl OrderCore {
 
         for (trade_id, correction) in corrections {
             if !matched_corrections.contains(&trade_id) {
-                voided_raw = voided_raw.saturating_add(correction.voided_qty.raw);
+                voided = voided.saturating_add(correction.voided_qty);
             }
         }
 
-        self.filled_qty = quantity_from_domain_raw(filled_raw, self.quantity.precision);
-        self.voided_qty = quantity_from_domain_raw(voided_raw, self.quantity.precision);
+        filled.precision = self.quantity.precision;
+        voided.precision = self.quantity.precision;
+        non_reopened_voided.precision = self.quantity.precision;
+        self.filled_qty = filled;
+        self.voided_qty = voided;
         self.overfill_qty = self.filled_qty.saturating_sub(self.quantity);
         self.avg_px = self.avg_px_from_fills(additional, None);
         self.commissions = commissions;
@@ -1236,7 +1228,7 @@ impl OrderCore {
         self.position_id = position_id;
         self.liquidity_side = liquidity_side;
 
-        quantity_from_domain_raw(non_reopened_voided_raw, self.quantity.precision)
+        non_reopened_voided
     }
 
     fn updated(&mut self, event: &OrderUpdated) {
@@ -1265,17 +1257,17 @@ impl OrderCore {
     }
 
     fn filled(&mut self, event: &OrderFilled, source_status: OrderStatus) {
-        let raw = checked_quantity_raw_sum(self.filled_qty.raw, event.last_qty.raw)
-            .expect("fill raw bounds pre-checked");
-        let new_filled_qty = Quantity::from_raw(raw, self.filled_qty.precision);
+        let mut new_filled_qty = self
+            .filled_qty
+            .checked_add(event.last_qty)
+            .expect("fill quantity bounds pre-checked");
+        new_filled_qty.precision = self.filled_qty.precision;
 
         // Calculate overfill if any
         if new_filled_qty > self.quantity {
-            let overfill_raw = new_filled_qty.raw - self.quantity.raw;
-            self.overfill_qty = quantity_from_domain_raw(
-                self.overfill_qty.raw.saturating_add(overfill_raw),
-                self.filled_qty.precision,
-            );
+            let overfill = new_filled_qty - self.quantity;
+            self.overfill_qty = self.overfill_qty.saturating_add(overfill);
+            self.overfill_qty.precision = self.filled_qty.precision;
         }
 
         let new_leaves_qty = self.leaves_qty.saturating_sub(event.last_qty);
@@ -1351,10 +1343,9 @@ impl OrderCore {
         );
         debug_assert!(
             self.filled_qty
-                .raw
-                .saturating_add(self.voided_qty.raw)
-                .saturating_add(self.leaves_qty.raw)
-                >= self.quantity.raw,
+                .saturating_add(self.voided_qty)
+                .saturating_add(self.leaves_qty)
+                >= self.quantity,
             "Invariant: filled_qty + voided_qty + leaves_qty >= quantity (filled={}, voided={}, leaves={}, quantity={})",
             self.filled_qty,
             self.voided_qty,
@@ -3283,7 +3274,7 @@ mod tests {
     #[rstest]
     fn test_fill_raw_overflow_rejected_without_mutation() {
         let unit = Quantity::from(1);
-        let almost_max = Quantity::from_raw(QUANTITY_RAW_MAX - unit.raw, 0);
+        let almost_max = Quantity::from_raw(QUANTITY_RAW_MAX - unit.raw(), 0);
         let max = Quantity::from_raw(QUANTITY_RAW_MAX, 0);
         let init = OrderInitializedSpec::builder().quantity(max).build();
         let accepted = OrderAcceptedSpec::builder().build();
@@ -3342,8 +3333,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_quantity_from_domain_raw_clamps_undef_sentinel() {
-        let qty = quantity_from_domain_raw(QuantityRaw::MAX, 0);
+    fn test_quantity_saturating_add_clamps_undef_sentinel() {
+        let qty = Quantity::from_raw(QuantityRaw::MAX, 0).saturating_add(Quantity::zero(0));
 
         assert_eq!(qty, Quantity::from_raw(QUANTITY_RAW_MAX, 0));
         assert!(!qty.is_undefined());

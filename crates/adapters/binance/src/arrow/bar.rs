@@ -104,17 +104,19 @@ impl EncodeToRecordBatch for BinanceBar {
 
         for bar in data {
             open_builder
-                .append_value(bar.open.raw.to_le_bytes())
+                .append_value(bar.open.raw().to_le_bytes())
                 .unwrap();
             high_builder
-                .append_value(bar.high.raw.to_le_bytes())
+                .append_value(bar.high.raw().to_le_bytes())
                 .unwrap();
-            low_builder.append_value(bar.low.raw.to_le_bytes()).unwrap();
+            low_builder
+                .append_value(bar.low.raw().to_le_bytes())
+                .unwrap();
             close_builder
-                .append_value(bar.close.raw.to_le_bytes())
+                .append_value(bar.close.raw().to_le_bytes())
                 .unwrap();
             volume_builder
-                .append_value(bar.volume.raw.to_le_bytes())
+                .append_value(bar.volume.raw().to_le_bytes())
                 .unwrap();
             quote_volume_builder.append_value(bar.quote_volume.to_string());
             count_builder.append_value(bar.count);

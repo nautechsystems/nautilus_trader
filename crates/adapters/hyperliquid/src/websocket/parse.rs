@@ -339,10 +339,7 @@ pub fn parse_ws_order_status_report(
     // orig_sz is the original order quantity, sz is the remaining quantity
     let orig_qty = parse_quantity(order.order.orig_sz, instrument, "order.orig_sz")?;
     let remaining_qty = parse_quantity(order.order.sz, instrument, "order.sz")?;
-    let filled_qty = Quantity::from_raw(
-        orig_qty.raw.saturating_sub(remaining_qty.raw),
-        instrument.size_precision(),
-    );
+    let filled_qty = orig_qty - orig_qty.min(remaining_qty);
 
     let price = parse_price(order.order.limit_px, instrument, "order.limitPx")?;
 

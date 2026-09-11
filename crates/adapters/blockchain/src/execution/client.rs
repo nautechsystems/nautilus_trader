@@ -5203,7 +5203,7 @@ fn quantity_to_raw_amount(quantity: Quantity, decimals: u8) -> anyhow::Result<U2
         anyhow::bail!("Order quantity must be positive");
     }
 
-    let raw = U256::from(quantity.raw);
+    let raw = U256::from(quantity.raw());
     let raw_precision = quantity.precision.max(FIXED_PRECISION);
     if decimals >= raw_precision {
         let scale = U256::from(10u64)
@@ -14131,19 +14131,19 @@ mod tests {
         assert_eq!(balances[0].currency.code, "ETH");
         assert_eq!(balances[0].currency.name, "Ethereum");
         assert_eq!(balances[0].currency.precision, 18);
-        assert_eq!(balances[0].total.raw, 1_000_000_000_000_000_000);
+        assert_eq!(balances[0].total.raw(), 1_000_000_000_000_000_000);
         assert_eq!(balances[0].free, balances[0].total);
         assert_eq!(balances[0].locked, Money::zero(balances[0].currency));
         assert_eq!(balances[1].currency.code, "WETH");
         assert_eq!(balances[1].currency.name, "Wrapped Ether");
         assert_eq!(balances[1].currency.precision, 18);
-        assert_eq!(balances[1].total.raw, 1_234_567_890_123_456_789);
+        assert_eq!(balances[1].total.raw(), 1_234_567_890_123_456_789);
         assert_eq!(balances[1].free, balances[1].total);
         assert_eq!(balances[1].locked, Money::zero(balances[1].currency));
         assert_eq!(balances[2].currency.code, "USDC");
         assert_eq!(balances[2].currency.name, "USD Coin");
         assert_eq!(balances[2].currency.precision, 6);
-        assert_eq!(balances[2].total.raw, 9_876_543_210_000_000_000);
+        assert_eq!(balances[2].total.raw(), 9_876_543_210_000_000_000);
         assert_eq!(balances[2].free, balances[2].total);
         assert_eq!(balances[2].locked, Money::zero(balances[2].currency));
 
@@ -14152,9 +14152,9 @@ mod tests {
 
         assert_eq!(balances.len(), 3);
         assert_eq!(client.wallet_balance.lock().token_balances.len(), 2);
-        assert_eq!(balances[0].total.raw, 0);
-        assert_eq!(balances[1].total.raw, 2_000_000_000_000_000_000);
-        assert_eq!(balances[2].total.raw, 12_345_670_000_000_000);
+        assert_eq!(balances[0].total.raw(), 0);
+        assert_eq!(balances[1].total.raw(), 2_000_000_000_000_000_000);
+        assert_eq!(balances[2].total.raw(), 12_345_670_000_000_000);
     }
 
     #[allow(unsafe_code)] // env-var mutation in tests; unique var names avoid cross-test races

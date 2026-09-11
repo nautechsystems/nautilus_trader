@@ -37,11 +37,7 @@ use crate::{
         BookIntegrityError, InvalidBookOperation,
         ladder::{BookLadder, BookPrice},
     },
-    types::{
-        Price, Quantity,
-        fixed::check_fixed_precision,
-        price::{PRICE_ERROR, PRICE_UNDEF},
-    },
+    types::{Price, Quantity, fixed::check_fixed_precision, price::PRICE_ERROR},
 };
 
 /// Provides a high-performance, versatile order book.
@@ -1273,7 +1269,7 @@ impl OrderBook {
 
         // Prices can be zero or negative for certain instruments (options, spreads)
         debug_assert!(
-            trade.price.raw != PRICE_UNDEF && trade.price.raw != PRICE_ERROR,
+            !trade.price.is_undefined() && trade.price.raw() != PRICE_ERROR,
             "Trade has invalid/uninitialized price: {}",
             trade.price
         );

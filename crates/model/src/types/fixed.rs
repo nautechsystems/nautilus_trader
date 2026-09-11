@@ -24,7 +24,7 @@
 //! **must** be a valid multiple of the scale factor for the given precision. Valid raw values
 //! should ideally come from:
 //!
-//! - Accessing the `.raw` field of an existing value (e.g., `price.raw`)
+//! - Calling the `raw()` accessor of an existing value (e.g., `price.raw()`)
 //! - Using the fixed-point conversion functions in this module
 //! - Values from Nautilus-produced Arrow data
 //!
@@ -231,7 +231,7 @@ pub fn check_fixed_precision(precision: u8) -> CorrectnessResult<()> {
 #[inline]
 #[must_use]
 pub fn raw_scales_match(a: u8, b: u8) -> bool {
-    a.max(FIXED_PRECISION) == b.max(FIXED_PRECISION)
+    a == b || a.max(b) <= FIXED_PRECISION
 }
 
 /// Returns the effective integer scale for a raw fixed-point value.
@@ -259,6 +259,7 @@ pub(crate) fn canonical_raw(raw: impl Into<u128>, precision: u8) -> (u128, u8) {
     (raw, precision)
 }
 
+#[inline]
 #[must_use]
 pub(crate) fn compare_raw_signed(
     lhs: PriceRaw,
@@ -286,6 +287,7 @@ pub(crate) fn compare_raw_signed(
     })
 }
 
+#[inline]
 #[must_use]
 pub(crate) fn compare_raw(
     lhs: impl Into<u128>,

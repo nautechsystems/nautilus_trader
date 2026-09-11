@@ -56,7 +56,7 @@ fn test_scale_money_from_quantity_exact(
     let quantity = Quantity::from_raw(raw, source_precision);
     let money = Money::from_quantity(quantity, currency).unwrap();
 
-    assert_eq!((money.raw, money.currency), (expected, currency));
+    assert_eq!((money.raw(), money.currency), (expected, currency));
     assert_eq!(money.currency.precision, target_precision);
 }
 
@@ -268,8 +268,8 @@ fn test_scale_quantity_sum(#[values(16, 17, 18)] precision: u8) {
     ];
     let owned: Quantity = quantities.into_iter().sum();
     let borrowed: Quantity = quantities.iter().sum();
-    assert_eq!((owned.raw, owned.precision), (5 * scale, precision));
-    assert_eq!((borrowed.raw, borrowed.precision), (5 * scale, precision));
+    assert_eq!((owned.raw(), owned.precision), (5 * scale, precision));
+    assert_eq!((borrowed.raw(), borrowed.precision), (5 * scale, precision));
 }
 
 #[rstest]
@@ -286,7 +286,7 @@ fn test_scale_quantity_mul(
     let product = Quantity::from_raw(lhs * lhs_scale, lhs_precision)
         * Quantity::from_raw(rhs * rhs_scale, rhs_precision);
     assert_eq!(
-        (product.raw, product.precision),
+        (product.raw(), product.precision),
         (
             lhs * rhs * lhs_scale.max(rhs_scale),
             lhs_precision.max(rhs_precision)
@@ -303,18 +303,19 @@ fn test_scale_quantity_mul_preserves_fractional_remainders(
     let rhs_scale = 10_u128.pow(u32::from(rhs_precision));
     let lhs = Quantity::from_raw(2 * lhs_scale - 1, lhs_precision);
     let rhs = Quantity::from_raw(3 * rhs_scale + 1, rhs_precision);
-    let expected = U256::from(lhs.raw) * U256::from(rhs.raw) / U256::from(lhs_scale.min(rhs_scale));
+    let expected =
+        U256::from(lhs.raw()) * U256::from(rhs.raw()) / U256::from(lhs_scale.min(rhs_scale));
     let expected = u128::try_from(expected).unwrap();
     let product = lhs * rhs;
     let reverse = rhs * lhs;
 
     assert_eq!(
-        (product.raw, product.precision),
+        (product.raw(), product.precision),
         (expected, lhs_precision.max(rhs_precision))
     );
     assert_eq!(
-        (reverse.raw, reverse.precision),
-        (product.raw, product.precision)
+        (reverse.raw(), reverse.precision),
+        (product.raw(), product.precision)
     );
 }
 
@@ -324,10 +325,10 @@ fn test_scale_quantity_mul_preserves_remainders_after_overflow(#[values(17, 18)]
     let lhs = Quantity::from_raw(2 * scale - 1, precision);
     let rhs = Quantity::from_raw(QUANTITY_RAW_MAX / 3, precision);
     let product = lhs * rhs;
-    let expected = 2 * rhs.raw - rhs.raw.div_ceil(scale);
+    let expected = 2 * rhs.raw() - rhs.raw().div_ceil(scale);
 
-    assert_eq!(lhs.raw.checked_mul(rhs.raw), None);
-    assert_eq!((product.raw, product.precision), (expected, precision));
+    assert_eq!(lhs.raw().checked_mul(rhs.raw()), None);
+    assert_eq!((product.raw(), product.precision), (expected, precision));
 }
 
 proptest! {

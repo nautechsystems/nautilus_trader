@@ -54,7 +54,7 @@ impl Price {
 
     fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {
         let from_raw = py.get_type::<Self>().getattr("from_raw")?;
-        let args = (self.raw, self.precision).into_py_any(py)?;
+        let args = (self.raw(), self.precision).into_py_any(py)?;
         (from_raw, args).into_py_any(py)
     }
 
@@ -382,13 +382,13 @@ impl Price {
     }
 
     fn __abs__(&self) -> Self {
-        if self.raw < 0 { -*self } else { *self }
+        if self.is_negative() { -*self } else { *self }
     }
 
     fn __int__(&self) -> PriceRaw {
         let scale = PriceRaw::try_from(raw_scale(self.precision))
             .expect("effective raw scale should fit in PriceRaw");
-        self.raw / scale
+        self.raw() / scale
     }
 
     fn __float__(&self) -> f64 {
@@ -409,9 +409,21 @@ impl Price {
         self.to_string()
     }
 
-    #[getter]
-    fn raw(&self) -> PriceRaw {
-        self.raw
+    /// Returns the stored fixed-point integer without rescaling.
+    ///
+    /// Use this for serialization and explicit fixed-point conversions. Prefer domain
+    /// operations for calculations; the storage scale can differ from display precision.
+    ///
+    /// Direct field access is restricted to this crate:
+    ///
+    /// ```compile_fail
+    /// use nautilus_model::types::Price;
+    /// let value = Price::from("1");
+    /// let raw = value.raw;
+    /// ```
+    #[getter(raw)]
+    fn py_raw(&self) -> PriceRaw {
+        self.raw()
     }
 
     #[getter]
@@ -633,7 +645,7 @@ mod tests {
                 "FIXED_PRECISION"
             };
 
-            assert_eq!(price.raw, 1);
+            assert_eq!(price.raw(), 1);
             assert_eq!(price.precision, max_precision);
             assert_eq!(
                 precision_error.to_string(),

@@ -52,7 +52,7 @@ impl Quantity {
 
     fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {
         let from_raw = py.get_type::<Self>().getattr("from_raw")?;
-        let args = (self.raw, self.precision).into_py_any(py)?;
+        let args = (self.raw(), self.precision).into_py_any(py)?;
         (from_raw, args).into_py_any(py)
     }
 
@@ -149,7 +149,7 @@ impl Quantity {
                 .into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
             check_raw_scales(self.precision, other_qty.precision)?;
-            if other_qty.raw > self.raw {
+            if other_qty > *self {
                 return Err(to_pyvalue_err(format!(
                     "Quantity subtraction would result in negative value: {self} - {other_qty}"
                 )));
@@ -178,7 +178,7 @@ impl Quantity {
                 .into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
             check_raw_scales(other_qty.precision, self.precision)?;
-            if self.raw > other_qty.raw {
+            if *self > other_qty {
                 return Err(to_pyvalue_err(format!(
                     "Quantity subtraction would result in negative value: {other_qty} - {self}"
                 )));
@@ -396,7 +396,7 @@ impl Quantity {
     fn __int__(&self) -> QuantityRaw {
         let scale = QuantityRaw::try_from(raw_scale(self.precision))
             .expect("effective raw scale should fit in QuantityRaw");
-        self.raw / scale
+        self.raw() / scale
     }
 
     fn __float__(&self) -> f64 {
@@ -417,9 +417,21 @@ impl Quantity {
         self.to_string()
     }
 
-    #[getter]
-    fn raw(&self) -> QuantityRaw {
-        self.raw
+    /// Returns the stored fixed-point integer without rescaling.
+    ///
+    /// Use this for serialization and explicit fixed-point conversions. Prefer domain
+    /// operations for calculations; the storage scale can differ from display precision.
+    ///
+    /// Direct field access is restricted to this crate:
+    ///
+    /// ```compile_fail
+    /// use nautilus_model::types::Quantity;
+    /// let value = Quantity::from("1");
+    /// let raw = value.raw;
+    /// ```
+    #[getter(raw)]
+    fn py_raw(&self) -> QuantityRaw {
+        self.raw()
     }
 
     #[getter]
@@ -652,7 +664,7 @@ mod tests {
                 "FIXED_PRECISION"
             };
 
-            assert_eq!(quantity.raw, 1);
+            assert_eq!(quantity.raw(), 1);
             assert_eq!(quantity.precision, max_precision);
             assert_eq!(
                 precision_error.to_string(),

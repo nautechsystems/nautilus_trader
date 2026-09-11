@@ -509,7 +509,7 @@ mod tests {
         let expected_raw = PriceRaw::from(10_u8).pow(u32::from(FIXED_PRECISION - price_precision));
 
         assert_eq!(synth.price_precision, price_precision);
-        assert_eq!(synth.price_increment.raw, expected_raw);
+        assert_eq!(synth.price_increment.raw(), expected_raw);
         assert_eq!(synth.price_increment.precision, price_precision);
     }
 

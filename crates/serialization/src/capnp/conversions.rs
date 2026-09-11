@@ -492,7 +492,7 @@ impl<'a> ToCapnp<'a> for Price {
     type Builder = types_capnp::price::Builder<'a>;
 
     fn to_capnp(&self, mut builder: Self::Builder) {
-        let raw_i128: i128 = raw_to_wire(self.raw);
+        let raw_i128: i128 = raw_to_wire(self.raw());
         let lo = raw_i128 as u64;
         let hi = (raw_i128 >> 64) as u64;
 
@@ -530,7 +530,7 @@ impl<'a> ToCapnp<'a> for Quantity {
     type Builder = types_capnp::quantity::Builder<'a>;
 
     fn to_capnp(&self, mut builder: Self::Builder) {
-        let raw_u128: u128 = raw_to_wire(self.raw);
+        let raw_u128: u128 = raw_to_wire(self.raw());
         let lo = raw_u128 as u64;
         let hi = (raw_u128 >> 64) as u64;
 
@@ -1278,7 +1278,7 @@ impl<'a> ToCapnp<'a> for Money {
     fn to_capnp(&self, mut builder: Self::Builder) {
         let mut raw_builder = builder.reborrow().init_raw();
 
-        let raw_i128: i128 = raw_to_wire(self.raw);
+        let raw_i128: i128 = raw_to_wire(self.raw());
         raw_builder.set_lo(raw_i128 as u64);
         raw_builder.set_hi((raw_i128 >> 64) as u64);
 

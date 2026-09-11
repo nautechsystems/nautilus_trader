@@ -771,6 +771,49 @@ fn test_book_get_price_for_exposure_no_market() {
     );
 }
 
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_book_worst_price_preserves_mixed_scale_traversal() {
+    let mut book = OrderBook::new(InstrumentId::from("AAPL.XNAS"), BookType::L2_MBP);
+    let price = Price::from("1.00");
+    book.add(
+        BookOrder::new(OrderSide::Sell, price, Quantity::from_raw(1, 18), 1),
+        0,
+        0,
+        0.into(),
+    );
+    assert_eq!(
+        book.get_worst_px_for_quantity(Quantity::from(2), OrderSide::Buy),
+        Some(price)
+    );
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_book_exposure_accepts_native_scale_quantities() {
+    let mut book = OrderBook::new(InstrumentId::from("AAPL.XNAS"), BookType::L2_MBP);
+    let target = Quantity::from_raw(1_000_000_000_000_000_000, 18);
+    assert_eq!(
+        book.get_avg_px_qty_for_exposure(target, OrderSide::Buy),
+        (0.0, 0.0, 0.0)
+    );
+    book.add(
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1.00"),
+            Quantity::from_raw(2_000_000_000_000_000_000, 18),
+            1,
+        ),
+        0,
+        0,
+        0.into(),
+    );
+    assert_eq!(
+        book.get_avg_px_qty_for_exposure(target, OrderSide::Buy),
+        (1.0, 100.0, 1.0)
+    );
+}
+
 #[rstest]
 fn test_book_get_price_for_exposure(stub_depth10: OrderBookDepth10) {
     let depth = stub_depth10;
@@ -7848,7 +7891,7 @@ fn positive_book_order_strategy() -> impl Strategy<Value = BookOrder> {
     )
         .prop_map(|(side, price, size, order_id)| BookOrder::new(side, price, size, order_id))
         .prop_filter("order must have positive size and valid price", |order| {
-            order.size.is_positive() && order.price.raw > 0
+            order.size.is_positive() && order.price.is_positive()
         })
 }
 
@@ -7923,9 +7966,9 @@ fn sanitize_operations(
         match operation {
             OrderBookOperation::Add(order, flags, seq) => {
                 // Skip invalid prices/sizes
-                if order.price.raw <= 0
-                    || order.price.raw == crate::types::price::PRICE_UNDEF
-                    || order.price.raw == crate::types::price::PRICE_ERROR
+                if !order.price.is_positive()
+                    || order.price.is_undefined()
+                    || order.price.raw() == crate::types::price::PRICE_ERROR
                     || !order.size.is_positive()
                 {
                     continue;
@@ -7953,9 +7996,9 @@ fn sanitize_operations(
             }
             OrderBookOperation::Update(mut order, flags, seq) => {
                 // Skip invalid prices
-                if order.price.raw <= 0
-                    || order.price.raw == crate::types::price::PRICE_UNDEF
-                    || order.price.raw == crate::types::price::PRICE_ERROR
+                if !order.price.is_positive()
+                    || order.price.is_undefined()
+                    || order.price.raw() == crate::types::price::PRICE_ERROR
                 {
                     continue;
                 }
@@ -7970,7 +8013,7 @@ fn sanitize_operations(
                 // Only update if order exists in book
                 if side_set.contains(&order.order_id) {
                     // If size is zero, this is effectively a delete
-                    if order.size.raw == 0 {
+                    if order.size.is_zero() {
                         side_set.remove(&order.order_id);
                     }
                     sanitized.push(OrderBookOperation::Update(order, flags, seq));
@@ -8088,16 +8131,16 @@ fn test_orderbook_with_operations(book_type: BookType, operations: Vec<OrderBook
         // 3. If book has bids/asks, they should have valid prices
         if let Some(best_bid) = book.best_bid_price() {
             assert!(
-                best_bid.raw != crate::types::price::PRICE_UNDEF
-                    && best_bid.raw != crate::types::price::PRICE_ERROR,
+                best_bid.raw() != crate::types::price::PRICE_UNDEF
+                    && best_bid.raw() != crate::types::price::PRICE_ERROR,
                 "Best bid should have valid price"
             );
         }
 
         if let Some(best_ask) = book.best_ask_price() {
             assert!(
-                best_ask.raw != crate::types::price::PRICE_UNDEF
-                    && best_ask.raw != crate::types::price::PRICE_ERROR,
+                best_ask.raw() != crate::types::price::PRICE_UNDEF
+                    && best_ask.raw() != crate::types::price::PRICE_ERROR,
                 "Best ask should have valid price"
             );
         }
@@ -8389,12 +8432,12 @@ fn test_l1_book_with_operations(operations: Vec<L1Operation>) {
         match operation {
             L1Operation::QuoteUpdate(bid_price, bid_size, ask_price, ask_size) => {
                 // Skip invalid quotes
-                if bid_price.raw == crate::types::price::PRICE_UNDEF
-                    || bid_price.raw == crate::types::price::PRICE_ERROR
-                    || ask_price.raw == crate::types::price::PRICE_UNDEF
-                    || ask_price.raw == crate::types::price::PRICE_ERROR
-                    || bid_size.raw == 0
-                    || ask_size.raw == 0
+                if bid_price.raw() == crate::types::price::PRICE_UNDEF
+                    || bid_price.raw() == crate::types::price::PRICE_ERROR
+                    || ask_price.raw() == crate::types::price::PRICE_UNDEF
+                    || ask_price.raw() == crate::types::price::PRICE_ERROR
+                    || bid_size.is_zero()
+                    || ask_size.is_zero()
                 {
                     continue;
                 }
@@ -8415,9 +8458,9 @@ fn test_l1_book_with_operations(operations: Vec<L1Operation>) {
             }
             L1Operation::TradeUpdate(price, size, aggressor_side) => {
                 // Skip invalid trades
-                if price.raw == crate::types::price::PRICE_UNDEF
-                    || price.raw == crate::types::price::PRICE_ERROR
-                    || size.raw == 0
+                if price.raw() == crate::types::price::PRICE_UNDEF
+                    || price.raw() == crate::types::price::PRICE_ERROR
+                    || size.is_zero()
                 {
                     continue;
                 }

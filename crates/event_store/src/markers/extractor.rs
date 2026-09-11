@@ -332,9 +332,9 @@ fn write_quantity_raw(hasher: &mut blake3::Hasher, quantity: Quantity) {
 fn price_raw_at_precision(price: Price) -> i128 {
     let scale_down = FIXED_PRECISION.saturating_sub(price.precision);
     #[cfg(feature = "defi")]
-    let raw = price.raw;
+    let raw = price.raw();
     #[cfg(not(feature = "defi"))]
-    let raw = i128::from(price.raw);
+    let raw = i128::from(price.raw());
 
     raw / 10_i128.pow(u32::from(scale_down))
 }
@@ -346,9 +346,9 @@ fn price_raw_at_precision(price: Price) -> i128 {
 fn quantity_raw_at_precision(quantity: Quantity) -> u128 {
     let scale_down = FIXED_PRECISION.saturating_sub(quantity.precision);
     #[cfg(feature = "defi")]
-    let raw = quantity.raw;
+    let raw = quantity.raw();
     #[cfg(not(feature = "defi"))]
-    let raw = u128::from(quantity.raw);
+    let raw = u128::from(quantity.raw());
 
     raw / 10_u128.pow(u32::from(scale_down))
 }

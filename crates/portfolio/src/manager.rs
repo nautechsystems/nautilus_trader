@@ -1413,12 +1413,12 @@ impl AccountsManager {
 )]
 fn wallet_money_from_quantity(quantity: Quantity, currency: Currency) -> anyhow::Result<Money> {
     anyhow::ensure!(!quantity.is_undefined(), "quantity was undefined");
-    Quantity::from_raw_checked(quantity.raw, quantity.precision)?;
-    check_fixed_raw_u128(u128::from(quantity.raw), quantity.precision)?;
+    Quantity::from_raw_checked(quantity.raw(), quantity.precision)?;
+    check_fixed_raw_u128(u128::from(quantity.raw()), quantity.precision)?;
 
     let source_precision = quantity.precision.max(FIXED_PRECISION);
     let target_precision = currency.precision.max(FIXED_PRECISION);
-    let raw = i128::try_from(u128::from(quantity.raw))
+    let raw = i128::try_from(u128::from(quantity.raw()))
         .map_err(|_| anyhow::anyhow!("quantity for {currency} exceeds signed raw bounds"))?;
     let raw = match source_precision.cmp(&target_precision) {
         Ordering::Less => {
@@ -2586,13 +2586,13 @@ mod tests {
         let base_balance = wallet.balance(Some(base)).unwrap();
         let quote_balance = wallet.balance(Some(quote)).unwrap();
         assert_eq!(base_balance.currency.precision, 18);
-        assert_eq!(base_balance.total.raw, 1_000_000_000_000_000_000);
-        assert_eq!(base_balance.locked.raw, 123_456_789_012_345_600);
-        assert_eq!(base_balance.free.raw, 876_543_210_987_654_400);
+        assert_eq!(base_balance.total.raw(), 1_000_000_000_000_000_000);
+        assert_eq!(base_balance.locked.raw(), 123_456_789_012_345_600);
+        assert_eq!(base_balance.free.raw(), 876_543_210_987_654_400);
         assert_eq!(quote_balance.currency.precision, 18);
-        assert_eq!(quote_balance.total.raw, 2_000_000_000_000_000_000);
-        assert_eq!(quote_balance.locked.raw, 135_802_467_913_580_160);
-        assert_eq!(quote_balance.free.raw, 1_864_197_532_086_419_840);
+        assert_eq!(quote_balance.total.raw(), 2_000_000_000_000_000_000);
+        assert_eq!(quote_balance.locked.raw(), 135_802_467_913_580_160);
+        assert_eq!(quote_balance.free.raw(), 1_864_197_532_086_419_840);
     }
 
     #[rstest]
@@ -2643,13 +2643,13 @@ mod tests {
         let base_balance = wallet.balance(Some(base)).unwrap();
         let quote_balance = wallet.balance(Some(quote)).unwrap();
         assert_eq!(base_balance.currency.precision, 6);
-        assert_eq!(base_balance.total.raw, scale);
-        assert_eq!(base_balance.locked.raw, 123_456 * grid);
-        assert_eq!(base_balance.free.raw, scale - 123_456 * grid);
+        assert_eq!(base_balance.total.raw(), scale);
+        assert_eq!(base_balance.locked.raw(), 123_456 * grid);
+        assert_eq!(base_balance.free.raw(), scale - 123_456 * grid);
         assert_eq!(quote_balance.currency.precision, 6);
-        assert_eq!(quote_balance.total.raw, 2 * scale);
-        assert_eq!(quote_balance.locked.raw, 358_024 * grid);
-        assert_eq!(quote_balance.free.raw, 2 * scale - 358_024 * grid);
+        assert_eq!(quote_balance.total.raw(), 2 * scale);
+        assert_eq!(quote_balance.locked.raw(), 358_024 * grid);
+        assert_eq!(quote_balance.free.raw(), 2 * scale - 358_024 * grid);
     }
 
     #[rstest]
@@ -4483,7 +4483,8 @@ mod tests {
                 .unwrap();
         let locked =
             Money::from_decimal(Decimal::from_str_exact("32.85965").unwrap(), usdt).unwrap();
-        let free = Money::from_raw(total.raw - locked.raw, usdt);
+        let free = total - locked;
+
         let account_state = AccountState::new(
             AccountId::new("SIM-001"),
             AccountType::Margin,
@@ -4526,8 +4527,8 @@ mod tests {
         assert_eq!(balance.locked, locked, "locked margin preserved");
         assert_eq!(balance.total, total + pnl, "total moved by realized PnL");
         assert_eq!(
-            balance.total.raw,
-            balance.locked.raw + balance.free.raw,
+            balance.total,
+            balance.locked + balance.free,
             "invariant total == locked + free must hold"
         );
     }
@@ -4560,8 +4561,8 @@ mod tests {
             "total reduced by commission"
         );
         assert_eq!(
-            balance.total.raw,
-            balance.locked.raw + balance.free.raw,
+            balance.total,
+            balance.locked + balance.free,
             "invariant total == locked + free must hold"
         );
     }

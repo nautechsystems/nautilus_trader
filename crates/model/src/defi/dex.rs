@@ -461,9 +461,12 @@ mod tests {
         assert_eq!(pair.quote_currency.precision, expected_price_precision);
         assert_eq!(pair.price_precision, expected_price_precision);
         assert_eq!(pair.size_precision, expected_size_precision);
-        assert_eq!(pair.price_increment.raw, 10_i128.pow(price_scale_exponent));
+        assert_eq!(
+            pair.price_increment.raw(),
+            10_i128.pow(price_scale_exponent)
+        );
         assert_eq!(pair.price_increment.precision, expected_price_precision);
-        assert_eq!(pair.size_increment.raw, 10_u128.pow(size_scale_exponent));
+        assert_eq!(pair.size_increment.raw(), 10_u128.pow(size_scale_exponent));
         assert_eq!(pair.size_increment.precision, expected_size_precision);
         assert_eq!(pair.maker_fee, Decimal::ZERO);
         assert_eq!(pair.taker_fee, expected_taker_fee.unwrap());

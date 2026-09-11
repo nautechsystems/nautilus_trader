@@ -5971,7 +5971,7 @@ fn derive_quote_from_depth(depth: &OrderBookDepth10) -> Option<QuoteTick> {
     let bid = depth.bids.first()?;
     let ask = depth.asks.first()?;
 
-    if bid.side.is_none() || ask.side.is_none() || bid.size.raw == 0 || ask.size.raw == 0 {
+    if bid.side.is_none() || ask.side.is_none() || bid.size.is_zero() || ask.size.is_zero() {
         return None;
     }
 

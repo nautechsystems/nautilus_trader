@@ -544,7 +544,7 @@ impl OrderManager {
                     actions.extend(self.cancel_order(&contingent_order));
                 }
                 Some(ContingencyType::Ouo) => {
-                    if (leaves_qty.raw == 0 && order.exec_spawn_id().is_some())
+                    if (leaves_qty.is_zero() && order.exec_spawn_id().is_some())
                         || (order.is_closed()
                             && (order.exec_spawn_id().is_none() || !is_spawn_active))
                         || contingent_order.filled_qty() >= leaves_qty
@@ -581,7 +581,7 @@ impl OrderManager {
             None => order.quantity(),
         };
 
-        if quantity.raw == 0 {
+        if quantity.is_zero() {
             return actions;
         }
 
@@ -728,21 +728,23 @@ impl OrderManager {
             return None;
         }
 
-        let capped_raw = if parent_instrument.is_spread() || !child_order.is_reduce_only() {
-            filled_qty.raw
+        let capped = if parent_instrument.is_spread() || !child_order.is_reduce_only() {
+            filled_qty
         } else {
             let Some(position) = cache.position(&position_id) else {
                 log::error!("Cannot size OTO orders: position {position_id} not found in cache");
                 return None;
             };
-            let position_cap_raw = child_filled_qty.raw.saturating_add(position.quantity.raw);
-            filled_qty.raw.min(position_cap_raw)
+
+            let position_cap = child_filled_qty.saturating_add(position.quantity);
+            filled_qty.min(position_cap)
         };
 
-        let target_raw = capped_raw - capped_raw % increment.raw;
+        let target_raw = capped.raw() - capped.raw() % increment.raw();
+
         let target_raw = if child_instrument
             .min_quantity()
-            .is_some_and(|min_quantity| target_raw < min_quantity.raw)
+            .is_some_and(|min_quantity| target_raw < min_quantity.raw())
         {
             0
         } else {
@@ -2274,7 +2276,7 @@ mod tests {
             [OrderManagerAction::ModifyLocalQuantity { order, quantity }]
                 if order.client_order_id() == child_id
                     && *quantity == Quantity::from("0.990000")
-                    && quantity.raw % child_instrument.size_increment().raw == 0
+                    && quantity.raw().is_multiple_of(child_instrument.size_increment().raw())
                     && order.instrument_id() == child_instrument.id()
         ));
         let OrderManagerAction::ModifyLocalQuantity { order, quantity } = &actions[0] else {

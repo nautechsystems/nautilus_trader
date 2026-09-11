@@ -334,7 +334,7 @@ impl MarginAccount {
         let raw = self
             .margins_in(currency)
             .fold(0 as MoneyRaw, |raw, margin| {
-                raw.saturating_add(component.of(margin).raw)
+                raw.saturating_add(component.of(margin).raw())
             });
 
         Money::from_raw(clamp_money_raw(raw), currency)
@@ -449,10 +449,11 @@ impl MarginAccount {
         let total_margin_raw = self
             .margins_in(currency)
             .try_fold(0, |raw: MoneyRaw, margin| {
-                raw.checked_add(margin.initial.raw)?
-                    .checked_add(margin.maintenance.raw)
+                raw.checked_add(margin.initial.raw())?
+                    .checked_add(margin.maintenance.raw())
             });
-        let mut total_margin = total_margin_raw.map_or_else(
+
+        let total_margin = total_margin_raw.map_or_else(
             || {
                 log::error!(
                     "Cannot total {currency} margins: the sum exceeded Money bounds; reserving the full balance"
@@ -465,18 +466,14 @@ impl MarginAccount {
         // Clamp margin to total balance if it would result in negative free balance.
         // This can occur transiently when venue and client state are out of sync.
         // Locked margin must never be negative (even if total balance is negative).
-        let total_free = if total_margin > current_balance.total.raw {
-            total_margin = current_balance.total.raw.max(0);
-            current_balance.total.raw - total_margin
-        } else {
-            current_balance.total.raw - total_margin
-        };
+        let mut total_margin = Money::from_raw(total_margin, currency);
+        if total_margin > current_balance.total {
+            total_margin = current_balance.total.max(Money::zero(currency));
+        }
 
-        let new_balance = AccountBalance::new(
-            current_balance.total,
-            Money::from_raw(total_margin, currency),
-            Money::from_raw(total_free, currency),
-        );
+        let total_free = current_balance.total - total_margin;
+
+        let new_balance = AccountBalance::new(current_balance.total, total_margin, total_free);
         self.balances.insert(currency, new_balance);
     }
 }
@@ -611,7 +608,7 @@ impl Account for MarginAccount {
             let notional =
                 instrument.try_calculate_notional_value(fill.last_qty, fill.last_px, None)?;
             let pnl = if fill.order_side == OrderSide::Buy {
-                Money::from_raw(-notional.raw, notional.currency)
+                -notional
             } else {
                 notional
             };
@@ -626,10 +623,8 @@ impl Account for MarginAccount {
         {
             // Calculate and add PnL using the minimum of fill quantity and position quantity
             // to avoid double-limiting that occurs in position.calculate_pnl()
-            let pnl_quantity = Quantity::from_raw(
-                fill.last_qty.raw.min(pos.quantity.raw),
-                fill.last_qty.precision,
-            );
+            let mut pnl_quantity = fill.last_qty.min(pos.quantity);
+            pnl_quantity.precision = fill.last_qty.precision;
             let pnl =
                 pos.try_calculate_pnl(pos.avg_px_open, fill.last_px.as_f64(), pnl_quantity)?;
             pnls.push(pnl);
@@ -1698,12 +1693,12 @@ mod tests {
         ));
 
         assert_eq!(
-            margin_account.total_initial_margin(usd).raw,
-            baseline_initial.raw + Money::from("300 USD").raw,
+            margin_account.total_initial_margin(usd),
+            baseline_initial + Money::from("300 USD"),
         );
         assert_eq!(
-            margin_account.total_maintenance_margin(usd).raw,
-            baseline_maintenance.raw + Money::from("200 USD").raw,
+            margin_account.total_maintenance_margin(usd),
+            baseline_maintenance + Money::from("200 USD"),
         );
     }
 

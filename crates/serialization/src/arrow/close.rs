@@ -66,7 +66,7 @@ impl EncodeToRecordBatch for InstrumentClose {
 
         for item in data {
             close_price_builder
-                .append_value(item.close_price.raw.to_le_bytes())
+                .append_value(item.close_price.raw().to_le_bytes())
                 .unwrap();
             close_type_builder.append_value(item.close_type as u8);
             ts_event_builder.append_value(item.ts_event.as_u64());

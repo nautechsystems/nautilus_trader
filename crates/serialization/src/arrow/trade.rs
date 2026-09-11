@@ -67,10 +67,10 @@ impl EncodeToRecordBatch for TradeTick {
 
         for tick in data {
             price_builder
-                .append_value(tick.price.raw.to_le_bytes())
+                .append_value(tick.price.raw().to_le_bytes())
                 .unwrap();
             size_builder
-                .append_value(tick.size.raw.to_le_bytes())
+                .append_value(tick.size.raw().to_le_bytes())
                 .unwrap();
             aggressor_side_builder.append_value(tick.aggressor_side as u8);
             trade_id_builder.append_value(tick.trade_id.to_string());

@@ -262,7 +262,7 @@ impl FixedFeeModel {
     ///
     /// Returns an error if `commission` is negative.
     pub fn new(commission: Money, charge_commission_once: Option<bool>) -> anyhow::Result<Self> {
-        if commission.raw < 0 {
+        if commission.is_negative() {
             anyhow::bail!("Commission must be greater than or equal to zero")
         }
         let zero_commission = Money::zero(commission.currency);
@@ -314,7 +314,7 @@ impl PerContractFeeModel {
     ///
     /// Returns an error if `commission` is negative.
     pub fn new(commission: Money) -> anyhow::Result<Self> {
-        if commission.raw < 0 {
+        if commission.is_negative() {
             anyhow::bail!("Commission must be greater than or equal to zero")
         }
         Ok(Self { commission })

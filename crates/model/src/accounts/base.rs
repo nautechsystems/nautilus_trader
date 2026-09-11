@@ -36,7 +36,7 @@ use crate::{
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     position::Position,
-    types::{AccountBalance, Currency, Money, Price, Quantity, money::MoneyRaw},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 
 /// Represents the account state shared by every account type.
@@ -429,7 +429,10 @@ pub(crate) fn update_balance_locked(
     instrument_id: InstrumentId,
     locked: Money,
 ) -> anyhow::Result<()> {
-    anyhow::ensure!(locked.raw >= 0, "locked balance was negative: {locked}");
+    anyhow::ensure!(
+        !locked.is_negative(),
+        "locked balance was negative: {locked}"
+    );
 
     let currency = locked.currency;
     let key = (instrument_id, currency);
@@ -525,14 +528,14 @@ pub(crate) fn balance_from_locks(
     balances_locked: &AHashMap<(InstrumentId, Currency), Money>,
 ) -> CorrectnessResult<AccountBalance> {
     let currency = current_balance.currency;
-    let mut total_locked_raw: MoneyRaw = 0;
+    let mut locked_total = Money::zero(currency);
 
     for locked in balances_locked
         .values()
         .filter(|locked| locked.currency == currency)
     {
         check_predicate_false(
-            locked.raw < 0,
+            locked.is_negative(),
             &format!("locked balance was negative: {locked}"),
         )?;
         check_predicate_true(
@@ -542,36 +545,40 @@ pub(crate) fn balance_from_locks(
                 locked.currency.precision, currency.precision
             ),
         )?;
-        total_locked_raw = total_locked_raw.saturating_add(locked.raw);
+
+        let reservation = if current_balance.total.is_negative() {
+            *locked
+        } else {
+            (*locked).min(current_balance.total - locked_total)
+        };
+
+        locked_total = locked_total.checked_add(reservation).ok_or_else(|| {
+            CorrectnessError::PredicateViolation {
+                message: format!("derived locked balance exceeded Money bounds for {currency}"),
+            }
+        })?;
     }
 
-    let total_raw = current_balance.total.raw;
-    let locked_raw = if total_raw >= 0 {
-        total_locked_raw.min(total_raw)
-    } else {
-        total_locked_raw
-    };
-    let free_raw =
-        total_raw
-            .checked_sub(locked_raw)
-            .ok_or_else(|| CorrectnessError::PredicateViolation {
-                message: format!(
-                    "derived free balance overflowed for total {} and locked raw {locked_raw}",
-                    current_balance.total
-                ),
-            })?;
-    let locked = Money::from_raw_checked(locked_raw, currency)?;
-    let free = Money::from_raw_checked(free_raw, currency)?;
+    let free = current_balance
+        .total
+        .checked_sub(locked_total)
+        .ok_or_else(|| CorrectnessError::PredicateViolation {
+            message: format!(
+                "derived free balance exceeded Money bounds for total {} and locked {locked_total}",
+                current_balance.total
+            ),
+        })?;
 
-    AccountBalance::new_checked(current_balance.total, locked, free)
+    AccountBalance::new_checked(current_balance.total, locked_total, free)
 }
 
 fn non_spendable_balance(current_balance: AccountBalance) -> AccountBalance {
     let zero = Money::zero(current_balance.currency);
-    let (locked, free) = if current_balance.total.raw >= 0 {
-        (current_balance.total, zero)
-    } else {
+
+    let (locked, free) = if current_balance.total.is_negative() {
         (zero, current_balance.total)
+    } else {
+        (current_balance.total, zero)
     };
 
     AccountBalance {

@@ -94,9 +94,9 @@ impl EncodeToRecordBatch for DatabentoStatistics {
         for item in data {
             stat_type_builder.append_value(item.stat_type as u8);
             update_action_builder.append_value(item.update_action as u8);
-            let price_raw = item.price.map_or(PRICE_UNDEF, |p| p.raw);
+            let price_raw = item.price.map_or(PRICE_UNDEF, |p| p.raw());
             price_builder.append_value(price_raw.to_le_bytes()).unwrap();
-            let quantity_raw = item.quantity.map_or(QUANTITY_UNDEF, |q| q.raw);
+            let quantity_raw = item.quantity.map_or(QUANTITY_UNDEF, |q| q.raw());
             quantity_builder
                 .append_value(quantity_raw.to_le_bytes())
                 .unwrap();
@@ -227,7 +227,8 @@ pub fn decode_statistics_batch(
 
             let price_decoded =
                 decode_price_with_sentinel(price_values.value(row), price_precision, "price", row)?;
-            let price = if price_decoded.raw == PRICE_UNDEF {
+
+            let price = if price_decoded.is_undefined() {
                 None
             } else {
                 Some(price_decoded)
@@ -239,7 +240,8 @@ pub fn decode_statistics_batch(
                 "quantity",
                 row,
             )?;
-            let quantity = if quantity_decoded.raw == QUANTITY_UNDEF {
+
+            let quantity = if quantity_decoded.is_undefined() {
                 None
             } else {
                 Some(quantity_decoded)

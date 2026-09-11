@@ -583,7 +583,7 @@ mod tests {
             balance.get("currency_identity").is_some(),
             has_wallet_identity
         );
-        assert_eq!(restored.balances[0].total.raw, total.raw);
+        assert_eq!(restored.balances[0].total.raw(), total.raw());
         assert_currency_identity(restored.balances[0].currency, currency);
     }
 
@@ -693,9 +693,9 @@ mod tests {
 
             assert_eq!(restored.balances.len(), expected.len());
             for (restored, expected) in restored.balances.iter().zip(&expected) {
-                assert_eq!(restored.total.raw, expected.total.raw);
-                assert_eq!(restored.locked.raw, expected.locked.raw);
-                assert_eq!(restored.free.raw, expected.free.raw);
+                assert_eq!(restored.total.raw(), expected.total.raw());
+                assert_eq!(restored.locked.raw(), expected.locked.raw());
+                assert_eq!(restored.free.raw(), expected.free.raw());
                 assert_currency_identity(restored.currency, expected.currency);
                 assert_currency_identity(restored.total.currency, expected.total.currency);
                 assert_currency_identity(restored.locked.currency, expected.locked.currency);

@@ -1983,7 +1983,7 @@ impl LighterExecutionClient {
             instrument.size_precision(),
         );
         let trigger_price_ticks = match new_trigger {
-            Some(trigger) if trigger.raw != 0 => price_to_ticks(&trigger, price_precision)?,
+            Some(trigger) if !trigger.is_zero() => price_to_ticks(&trigger, price_precision)?,
             _ => 0,
         };
 

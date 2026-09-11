@@ -176,8 +176,8 @@ impl QuoteTick {
             PriceType::Ask => self.ask_price,
             PriceType::Mid => {
                 // Calculate mid avoiding overflow
-                let a = self.bid_price.raw;
-                let b = self.ask_price.raw;
+                let a = self.bid_price.raw();
+                let b = self.ask_price.raw();
                 let mid_raw = a.midpoint(b);
                 Price::from_raw(
                     mid_raw,
@@ -200,8 +200,8 @@ impl QuoteTick {
             PriceType::Ask => self.ask_size,
             PriceType::Mid => {
                 // Calculate mid avoiding overflow
-                let a = self.bid_size.raw;
-                let b = self.ask_size.raw;
+                let a = self.bid_size.raw();
+                let b = self.ask_size.raw();
                 let mid_raw = a.midpoint(b);
                 Quantity::from_raw(
                     mid_raw,
@@ -564,7 +564,7 @@ mod tests {
 
         let mid_price = quote.extract_price(PriceType::Mid).unwrap();
 
-        assert_eq!(mid_price.raw, PriceRaw::midpoint(-3, -2));
+        assert_eq!(mid_price.raw(), PriceRaw::midpoint(-3, -2));
         assert_eq!(mid_price.precision, FIXED_PRECISION);
     }
 
@@ -582,7 +582,7 @@ mod tests {
 
         let mid_size = quote.extract_size(PriceType::Mid).unwrap();
 
-        assert_eq!(mid_size.raw, QuantityRaw::midpoint(1, 2));
+        assert_eq!(mid_size.raw(), QuantityRaw::midpoint(1, 2));
         assert_eq!(mid_size.precision, FIXED_PRECISION);
     }
 

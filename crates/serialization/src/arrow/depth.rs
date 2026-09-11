@@ -115,16 +115,16 @@ impl EncodeToRecordBatch for OrderBookDepth10 {
         for depth in data {
             for i in 0..DEPTH10_LEN {
                 bid_price_builders[i]
-                    .append_value(depth.bids[i].price.raw.to_le_bytes())
+                    .append_value(depth.bids[i].price.raw().to_le_bytes())
                     .unwrap();
                 ask_price_builders[i]
-                    .append_value(depth.asks[i].price.raw.to_le_bytes())
+                    .append_value(depth.asks[i].price.raw().to_le_bytes())
                     .unwrap();
                 bid_size_builders[i]
-                    .append_value(depth.bids[i].size.raw.to_le_bytes())
+                    .append_value(depth.bids[i].size.raw().to_le_bytes())
                     .unwrap();
                 ask_size_builders[i]
-                    .append_value(depth.asks[i].size.raw.to_le_bytes())
+                    .append_value(depth.asks[i].size.raw().to_le_bytes())
                     .unwrap();
                 bid_count_builders[i].append_value(depth.bid_counts[i]);
                 ask_count_builders[i].append_value(depth.ask_counts[i]);
@@ -734,15 +734,15 @@ mod tests {
         let expect_null = price_undef || size_undef;
         if expect_null {
             assert_eq!(decoded.bids[5].side, None);
-            assert_eq!(decoded.bids[5].price.raw, 0);
+            assert_eq!(decoded.bids[5].price.raw(), 0);
             assert_eq!(decoded.bids[5].price.precision, 0);
-            assert_eq!(decoded.bids[5].size.raw, 0);
+            assert_eq!(decoded.bids[5].size.raw(), 0);
             assert_eq!(decoded.bids[5].size.precision, 0);
 
             assert_eq!(decoded.asks[7].side, None);
-            assert_eq!(decoded.asks[7].price.raw, 0);
+            assert_eq!(decoded.asks[7].price.raw(), 0);
             assert_eq!(decoded.asks[7].price.precision, 0);
-            assert_eq!(decoded.asks[7].size.raw, 0);
+            assert_eq!(decoded.asks[7].size.raw(), 0);
             assert_eq!(decoded.asks[7].size.precision, 0);
         } else {
             assert_eq!(decoded.bids[5].side, Some(OrderSide::Buy));

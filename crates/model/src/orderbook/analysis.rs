@@ -122,13 +122,13 @@ pub fn get_avg_px_for_quantity(qty: Quantity, levels: &BTreeMap<BookPrice, BookL
     let mut cumulative_value = Decimal::ZERO;
 
     for (book_price, level) in levels {
-        let size_this_level = level.size_raw().min(qty.raw - cumulative_size_raw);
+        let size_this_level = level.size_raw().min(qty.raw() - cumulative_size_raw);
         let size_this_level_decimal = Quantity::raw_as_decimal(size_this_level);
         cumulative_size_raw += size_this_level;
         cumulative_size += size_this_level_decimal;
         cumulative_value += book_price.value.as_decimal() * size_this_level_decimal;
 
-        if cumulative_size_raw >= qty.raw {
+        if cumulative_size_raw >= qty.raw() {
             break;
         }
     }
@@ -157,7 +157,7 @@ pub fn get_worst_px_for_quantity(
     let mut worst_price: Option<Price> = None;
 
     for (book_price, level) in levels {
-        let size_this_level = level.size_raw().min(qty.raw - cumulative_size_raw);
+        let size_this_level = level.size_raw().min(qty.raw() - cumulative_size_raw);
 
         if size_this_level == 0 {
             continue;
@@ -166,7 +166,7 @@ pub fn get_worst_px_for_quantity(
         cumulative_size_raw += size_this_level;
         worst_price = Some(book_price.value);
 
-        if cumulative_size_raw >= qty.raw {
+        if cumulative_size_raw >= qty.raw() {
             break;
         }
     }
@@ -191,7 +191,7 @@ pub fn get_avg_px_qty_for_exposure(
         .first_key_value()
         .map_or(0.0, |(price, _)| price.value.as_f64());
 
-    let target_exposure_raw = target_exposure.raw as f64;
+    let target_exposure_raw = target_exposure.raw() as f64;
 
     for (book_price, level) in levels {
         let price = book_price.value.as_f64();

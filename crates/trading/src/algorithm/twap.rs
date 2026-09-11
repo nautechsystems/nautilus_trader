@@ -1033,7 +1033,7 @@ mod tests {
 
         for quantity in remaining {
             assert_eq!(quantity.precision, instrument.size_precision());
-            assert_eq!(quantity.raw % instrument.size_increment().raw, 0);
+            assert_eq!(quantity.raw() % instrument.size_increment().raw(), 0);
         }
 
         let first = algo

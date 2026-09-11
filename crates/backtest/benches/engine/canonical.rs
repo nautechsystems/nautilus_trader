@@ -376,7 +376,7 @@ fn parse_price(value: &str, precision: u8, row: usize) -> anyhow::Result<Price> 
         price.precision <= precision,
         "canonical price '{value}' at row {row} exceeds instrument precision {precision}",
     );
-    Ok(Price::from_raw(price.raw, precision))
+    Ok(Price::from_raw(price.raw(), precision))
 }
 
 fn parse_volume(value: &str, precision: u8, row: usize) -> anyhow::Result<Quantity> {

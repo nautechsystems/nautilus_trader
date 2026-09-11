@@ -110,7 +110,7 @@ impl BettingAccount {
     /// Returns an error if any balance has a negative total.
     pub fn update_balances(&mut self, balances: &[AccountBalance]) -> anyhow::Result<()> {
         for balance in balances {
-            if balance.total.raw < 0 {
+            if balance.total.is_negative() {
                 anyhow::bail!(
                     "Betting account balance would become negative: {} {} ({})",
                     balance.total.as_decimal(),
@@ -173,7 +173,7 @@ impl Account for BettingAccount {
         self.check_event_account_id(&event)?;
 
         for balance in &event.balances {
-            if balance.total.raw < 0 {
+            if balance.total.is_negative() {
                 anyhow::bail!(
                     "Cannot apply betting account state: balance would be negative {} {} ({})",
                     balance.total.as_decimal(),
@@ -234,13 +234,11 @@ impl Account for BettingAccount {
         let mut fill_qty = fill.last_qty;
 
         if let Some(position) = position.as_ref()
-            && position.quantity.raw != 0
+            && !position.quantity.is_zero()
             && position.entry != fill.order_side
         {
-            fill_qty = Quantity::from_raw(
-                fill.last_qty.raw.min(position.quantity.raw),
-                fill.last_qty.precision,
-            );
+            fill_qty = fill.last_qty.min(position.quantity);
+            fill_qty.precision = fill.last_qty.precision;
         }
 
         let quote_pnl = Money::from_decimal(

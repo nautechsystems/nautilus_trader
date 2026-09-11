@@ -5733,7 +5733,7 @@ fn open_limit_order_with_filled_qty(
         .update_order(&OrderEventAny::Accepted(accepted))
         .expect("accepted transition");
 
-    if filled_qty.raw > 0 {
+    if filled_qty.is_positive() {
         let filled = OrderFilled::new(
             order.trader_id(),
             order.strategy_id(),

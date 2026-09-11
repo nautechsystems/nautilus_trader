@@ -758,15 +758,17 @@ impl Position {
     ///
     /// # Errors
     ///
-    /// Returns an error when the allocation is stale, duplicated, or exceeds known fragments.
+    /// Returns an error when the allocation is stale, duplicated, exceeds known fragments,
+    /// or has a commission currency that differs from those fragments.
     pub fn apply_fill_void(
         &mut self,
         event: OrderFillVoided,
         voided_qty: Quantity,
         commission_voided: Option<Money>,
     ) -> anyhow::Result<Option<Money>> {
-        let fragment_qty = self
-            .fill_fragments(event.client_order_id, event.trade_id)
+        let fragments = self.fill_fragments(event.client_order_id, event.trade_id);
+
+        let fragment_qty = fragments
             .iter()
             .fold(Quantity::zero(self.size_precision), |total, fill| {
                 total + fill.last_qty
@@ -776,6 +778,16 @@ impl Position {
             "position fill void exceeds known fragments for {}",
             event.trade_id,
         );
+
+        if let Some(commission_voided) = commission_voided {
+            for commission in fragments.iter().filter_map(|fill| fill.commission) {
+                anyhow::ensure!(
+                    commission.currency == commission_voided.currency,
+                    "position commission currency differs for fill {}",
+                    event.trade_id,
+                );
+            }
+        }
 
         if let Some(previous) = self.fill_voids.iter().rev().find(|record| {
             record.event.client_order_id == event.client_order_id
@@ -854,9 +866,14 @@ impl Position {
 
                 if let (Some(remaining), Some(commission)) = (remaining_commission, fill.commission)
                 {
-                    let removed_raw = remaining.raw.abs().min(commission.raw.abs());
-                    let removed =
-                        Money::from_raw(removed_raw * remaining.raw.signum(), remaining.currency);
+                    let magnitude = remaining.abs().min(commission.abs());
+
+                    let removed = if remaining.is_negative() {
+                        -magnitude
+                    } else {
+                        magnitude
+                    };
+
                     commission_removed.insert(index, removed);
                     let next = remaining - removed;
                     remaining_commission = (!next.is_zero()).then_some(next);
@@ -2781,6 +2798,36 @@ mod tests {
 
         assert_eq!(error.to_string(), expected_error);
         assert_eq!(serde_json::to_value(&position).unwrap(), state_before);
+    }
+
+    #[rstest]
+    fn test_apply_fill_void_rejects_currency_mismatch_without_mutation(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-VOID-CURRENCY"))
+            .trade_id(TradeId::from("T-VOID-CURRENCY"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(10))
+            .last_px(Price::from("1.00000"))
+            .currency(Currency::USD())
+            .position_id(PositionId::from("P-VOID-CURRENCY"))
+            .commission(Money::from("1.00 USD"))
+            .build();
+        let commission_voided = Some(Money::from("0.50 EUR"));
+        let voided_qty = Quantity::from(5);
+        let fill_voided = matching_fill_void(&fill, voided_qty, commission_voided);
+
+        let mut position = Position::new(&instrument, fill);
+        let before = serde_json::to_value(&position).unwrap();
+        let error = position
+            .apply_fill_void(fill_voided, voided_qty, commission_voided)
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "position commission currency differs for fill T-VOID-CURRENCY"
+        );
+        assert_eq!(serde_json::to_value(&position).unwrap(), before);
     }
 
     #[rstest]

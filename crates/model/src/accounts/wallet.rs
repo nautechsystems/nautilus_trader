@@ -265,7 +265,7 @@ impl WalletAccount {
                     ),
                 )?;
                 check_predicate_false(
-                    balance.total.raw < 0,
+                    balance.total.is_negative(),
                     "Wallet account balance total was negative",
                 )?;
                 Self::validate_observed_balance(*balance)?;
@@ -298,8 +298,8 @@ impl WalletAccount {
         reason = "the raw width differs when high-precision is disabled"
     )]
     fn validate_money(money: Money) -> CorrectnessResult<()> {
-        Money::from_raw_checked(money.raw, money.currency)?;
-        Self::validate_raw(i128::from(money.raw), money.currency.precision)
+        Money::from_raw_checked(money.raw(), money.currency)?;
+        Self::validate_raw(i128::from(money.raw()), money.currency.precision)
     }
 
     fn validate_raw(raw: i128, precision: u8) -> CorrectnessResult<()> {
@@ -314,8 +314,8 @@ impl WalletAccount {
     )]
     fn validate_quantity(quantity: Quantity) -> CorrectnessResult<()> {
         check_predicate_false(quantity.is_undefined(), "quantity was undefined")?;
-        Quantity::from_raw_checked(quantity.raw, quantity.precision)?;
-        check_fixed_raw_u128(u128::from(quantity.raw), quantity.precision).map_err(|e| {
+        Quantity::from_raw_checked(quantity.raw(), quantity.precision)?;
+        check_fixed_raw_u128(u128::from(quantity.raw()), quantity.precision).map_err(|e| {
             CorrectnessError::PredicateViolation {
                 message: e.to_string(),
             }
@@ -328,8 +328,8 @@ impl WalletAccount {
     )]
     fn validate_price(price: Price) -> CorrectnessResult<()> {
         check_predicate_true(price.is_positive(), "price was not positive")?;
-        Price::from_raw_checked(price.raw, price.precision)?;
-        check_fixed_raw_i128(i128::from(price.raw), price.precision).map_err(|e| {
+        Price::from_raw_checked(price.raw(), price.precision)?;
+        check_fixed_raw_i128(i128::from(price.raw()), price.precision).map_err(|e| {
             CorrectnessError::PredicateViolation {
                 message: e.to_string(),
             }
@@ -342,13 +342,13 @@ impl WalletAccount {
     )]
     fn normalize_reservation(locked: Money, currency: Currency) -> CorrectnessResult<Money> {
         check_predicate_false(
-            locked.raw < 0,
+            locked.is_negative(),
             &format!("locked balance was negative: {locked}"),
         )?;
         Self::validate_money(locked)?;
 
         Money::from_rescaled_raw(
-            i128::from(locked.raw),
+            i128::from(locked.raw()),
             locked.currency.precision,
             currency,
             "wallet reservation",
@@ -370,9 +370,10 @@ impl WalletAccount {
         Self::validate_quantity(multiplier)?;
         Self::validate_price(price)?;
 
-        let quantity_raw = U512::from(quantity.raw);
-        let multiplier_raw = U512::from(multiplier.raw);
-        let price_raw = U512::from(u128::try_from(price.raw).map_err(|_| {
+        let quantity_raw = U512::from(quantity.raw());
+        let multiplier_raw = U512::from(multiplier.raw());
+
+        let price_raw = U512::from(u128::try_from(price.raw()).map_err(|_| {
             CorrectnessError::PredicateViolation {
                 message: "price raw value was negative".to_string(),
             }
@@ -456,7 +457,7 @@ impl WalletAccount {
                 ),
             )?;
             check_predicate_false(
-                locked.raw < 0,
+                locked.is_negative(),
                 &format!("locked balance was negative: {locked}"),
             )?;
             Self::validate_money(*locked)?;
@@ -492,7 +493,7 @@ impl WalletAccount {
 
         for starting in base.balances_starting.values() {
             check_predicate_false(
-                starting.raw < 0,
+                starting.is_negative(),
                 "Wallet account starting balance was negative",
             )?;
         }
@@ -1046,10 +1047,10 @@ mod tests {
         let balance = wallet.balance(Some(observed)).unwrap();
         assert_eq!(stored.currency, observed);
         assert_eq!(stored.currency.precision, 18);
-        assert_eq!(stored.raw, 123_456_789_012_345_600);
-        assert_eq!(balance.total.raw, 1_000_000_000_000_000_000);
-        assert_eq!(balance.locked.raw, 123_456_789_012_345_600);
-        assert_eq!(balance.free.raw, 876_543_210_987_654_400);
+        assert_eq!(stored.raw(), 123_456_789_012_345_600);
+        assert_eq!(balance.total.raw(), 1_000_000_000_000_000_000);
+        assert_eq!(balance.locked.raw(), 123_456_789_012_345_600);
+        assert_eq!(balance.free.raw(), 876_543_210_987_654_400);
     }
 
     #[cfg(feature = "defi")]
@@ -1075,10 +1076,10 @@ mod tests {
         let balance = wallet.balance(Some(observed)).unwrap();
         assert_eq!(stored.currency, observed);
         assert_eq!(stored.currency.precision, 6);
-        assert_eq!(stored.raw, reservation_raw);
-        assert_eq!(balance.total.raw, scale);
-        assert_eq!(balance.locked.raw, reservation_raw);
-        assert_eq!(balance.free.raw, scale - reservation_raw);
+        assert_eq!(stored.raw(), reservation_raw);
+        assert_eq!(balance.total.raw(), scale);
+        assert_eq!(balance.locked.raw(), reservation_raw);
+        assert_eq!(balance.free.raw(), scale - reservation_raw);
     }
 
     #[cfg(feature = "defi")]
@@ -1504,7 +1505,7 @@ mod tests {
 
     #[rstest]
     fn test_calculate_balance_locked_buy_ceil_to_currency_grid(audusd_sim: CurrencyPair) {
-        let wallet_account = wallet_with_total(Currency::USD(), Money::from("1 USD").raw);
+        let wallet_account = wallet_with_total(Currency::USD(), Money::from("1 USD").raw());
         let balance_locked = wallet_account
             .calculate_balance_locked(
                 &audusd_sim.into_any(),
@@ -1557,7 +1558,7 @@ mod tests {
 
         assert_eq!(locked.currency, observed);
         assert_eq!(locked.currency.precision, 6);
-        assert_eq!(locked.raw, 4_841_357 * grid);
+        assert_eq!(locked.raw(), 4_841_357 * grid);
     }
 
     #[rstest]

@@ -55,11 +55,11 @@ fn price_to_order_id(price_raw: i128) -> u64 {
 fn price_based_order_id(order: &BookOrder) -> u64 {
     #[cfg(feature = "high-precision")]
     {
-        price_to_order_id(order.price.raw)
+        price_to_order_id(order.price.raw())
     }
     #[cfg(not(feature = "high-precision"))]
     {
-        price_to_order_id(i128::from(order.price.raw))
+        price_to_order_id(i128::from(order.price.raw()))
     }
 }
 

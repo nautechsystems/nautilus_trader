@@ -255,7 +255,7 @@ impl HyperliquidExecutionClient {
                 .partition(|child| child.order.status() == OrderStatus::Initialized);
 
             if (staged_children.is_empty() && active_children.is_empty())
-                || (!parent.is_open() && parent.filled_qty().raw == 0)
+                || (!parent.is_open() && parent.filled_qty().is_zero())
                 || self.staged_brackets.lock().contains_parent(&parent_id)
             {
                 continue;
@@ -274,7 +274,7 @@ impl HyperliquidExecutionClient {
             state.restore_active(&active_children);
             drop(state);
 
-            if has_staged_children && parent.filled_qty().raw > 0 {
+            if has_staged_children && !parent.filled_qty().is_zero() {
                 ready_parent_ids.push(parent_id);
             }
         }

@@ -78,7 +78,7 @@ impl MarkPriceUpdate {
     fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
         (
             self.instrument_id.to_string(),
-            self.value.raw,
+            self.value.raw(),
             self.value.precision,
             self.ts_event.as_u64(),
             self.ts_init.as_u64(),
@@ -254,7 +254,7 @@ impl IndexPriceUpdate {
     fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
         (
             self.instrument_id.to_string(),
-            self.value.raw,
+            self.value.raw(),
             self.value.precision,
             self.ts_event.as_u64(),
             self.ts_init.as_u64(),

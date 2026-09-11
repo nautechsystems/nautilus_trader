@@ -132,7 +132,7 @@ impl CashAccount {
     pub fn update_balances(&mut self, balances: &[AccountBalance]) -> anyhow::Result<()> {
         if !self.allow_borrowing {
             for balance in balances {
-                if balance.total.raw < 0 {
+                if balance.total.is_negative() {
                     anyhow::bail!(
                         "Cash account balance would become negative: {} {} (borrowing not allowed for {})",
                         balance.total.as_decimal(),
@@ -186,7 +186,7 @@ impl Account for CashAccount {
 
         if !self.allow_borrowing {
             for balance in &event.balances {
-                if balance.total.raw < 0 {
+                if balance.total.is_negative() {
                     anyhow::bail!(
                         "Cannot apply account state: balance would be negative {} {} \
                         (borrowing not allowed for {})",

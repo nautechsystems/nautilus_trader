@@ -134,7 +134,7 @@ impl BookLevel {
         self.orders
             .values()
             .try_fold(0, |total: QuantityRaw, order| {
-                total.checked_add(order.size.raw)
+                total.checked_add(order.size.raw())
             })
             .ok_or_else(|| CorrectnessError::PredicateViolation {
                 message: "Overflow occurred when summing `BookLevel` raw size".to_string(),
@@ -169,8 +169,8 @@ impl BookLevel {
             .values()
             .map(|order| {
                 calculate_exposure_raw(
-                    order.price.raw,
-                    order.size.raw,
+                    order.price.raw(),
+                    order.size.raw(),
                     order.price.precision,
                     order.size.precision,
                 )
@@ -206,7 +206,7 @@ impl BookLevel {
     pub fn update(&mut self, order: BookOrder) {
         debug_assert_eq!(order.price, self.price.value);
 
-        if order.size.raw == 0 {
+        if order.size.is_zero() {
             // Updating non-existent order to zero size is a no-op, which is valid
             self.orders.shift_remove(&order.order_id);
         } else {
