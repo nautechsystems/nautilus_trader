@@ -172,6 +172,8 @@ include_capnp_module!(position_capnp, "/events/position_capnp.rs");
 include_capnp_module!(account_capnp, "/events/account_capnp.rs");
 #[cfg(feature = "capnp")]
 include_capnp_module!(market_capnp, "/data/market_capnp.rs");
+#[cfg(feature = "capnp")]
+include_capnp_module!(instruments_capnp, "/data/instruments_capnp.rs");
 
 #[cfg(feature = "python")]
 pub mod python;

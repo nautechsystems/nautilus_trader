@@ -34,16 +34,18 @@
 //! - `crate::position_capnp` - Position events
 //! - `crate::account_capnp` - Account events
 //! - `crate::market_capnp` - Market data types
+//! - `crate::instruments_capnp` - Instrument types
 
 pub mod conversions;
+pub mod instruments;
 
 // Re-export generated modules for convenience.
 // Re-export conversion functions for use by other crates
 pub use conversions::order_side_to_capnp;
 
 pub use crate::{
-    account_capnp, base_capnp, data_capnp, enums_capnp, identifiers_capnp, market_capnp,
-    order_capnp, position_capnp, trading_capnp, types_capnp,
+    account_capnp, base_capnp, data_capnp, enums_capnp, identifiers_capnp, instruments_capnp,
+    market_capnp, order_capnp, position_capnp, trading_capnp, types_capnp,
 };
 
 /// Trait for converting Rust types to Cap'n Proto builders.

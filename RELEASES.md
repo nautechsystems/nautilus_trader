@@ -27,6 +27,7 @@ Released on TBD (UTC).
 - Added Python `OrderBookDelta.is_add`, `is_update`, `is_delete`, `is_clear`, and `OrderBookDeltas.is_snapshot`
 - Added Python `activation_utc` and `expiration_utc` properties to expiring instruments
 - Added Python `symbol` and `venue` properties to regular and synthetic instruments
+- Added Cap'n Proto serialization for all instrument types and `InstrumentAny`
 - Added Binance USD-M Futures RPI order support (#4927), thanks @AlphaTraderK
 - Added Bybit self-match prevention, set with `smp_type` on the execution client config or per order
 - Added Hyperliquid definite rejection events for submit, modify, and cancel command paths

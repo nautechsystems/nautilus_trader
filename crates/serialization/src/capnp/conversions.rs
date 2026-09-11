@@ -67,7 +67,7 @@ const DECIMAL_FLAGS_RESERVED_MASK: u32 = 0x7F00_FFFF;
 const DECIMAL_SCALE_MASK: u32 = 0x00FF_0000;
 const DECIMAL_SCALE_SHIFT: u32 = 16;
 
-trait CapnpWriteExt<'a, T>
+pub(crate) trait CapnpWriteExt<'a, T>
 where
     T: ToCapnp<'a>,
 {
@@ -102,7 +102,7 @@ where
     }
 }
 
-fn read_optional_from_capnp<'a, T, FHas, FGet>(
+pub(crate) fn read_optional_from_capnp<'a, T, FHas, FGet>(
     has: FHas,
     get: FGet,
 ) -> Result<Option<T>, Box<dyn Error>>
