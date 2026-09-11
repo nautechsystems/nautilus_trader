@@ -170,6 +170,8 @@ For L3 MBO books:
 - A size decrease advances the queue by the difference.
 - A size increase keeps the larger order ahead.
 - A price change removes the book order from the tracked queue.
+- A completed book snapshot retains only surviving tracked order IDs ahead, each capped at
+  its previous quantity.
 
 Changing a simulated order's price resets its queue position at the new level. A quantity-only
 change retains the progress already made.
