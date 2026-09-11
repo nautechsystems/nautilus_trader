@@ -131,6 +131,7 @@ Released on TBD (UTC).
 - Fixed Binance Spot cancel report matching and failed cancel-replace recovery (#4930), thanks @abhijeetvichare76
 - Fixed Binance execution rejection classification and bounded HTTP read retries
 - Fixed Binance Spot `MIN_NOTIONAL` and `NOTIONAL` filters being omitted from instrument constraints
+- Fixed Binance `taker_sell_base_volume` returning incorrectly scaled values
 - Fixed Bybit funding settlements being treated as fills (#4937), thanks for reporting @luk911
 - Fixed Bybit incorrect book quotes and zero sizes from deleted levels, thanks for reporting @xsidorov
 - Fixed Bybit quote and book cleanup after unsubscribe or subscription failure, thanks for reporting @xsidorov
