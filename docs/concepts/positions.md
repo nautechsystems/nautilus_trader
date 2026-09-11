@@ -99,6 +99,28 @@ signed_qty = -50  # Closes the LONG cycle and opens a SHORT cycle
 signed_qty = 0  # Position FLAT (closed)
 ```
 
+### Reversal accounting
+
+An opposite-side fill larger than the open quantity closes the existing exposure and opens the
+residual in the other direction. The execution engine splits this fill into a close and a new
+opening, with closed-state retention governed by [Position snapshotting](#position-snapshotting).
+
+When an unsplit reversal fill is applied directly to one `Position`, including during fill-void
+replay, the position starts a new accounting episode for the residual exposure:
+
+- `avg_px_open` becomes the reversal fill price.
+- `avg_px_close` becomes `None`, and `realized_return` becomes zero until a subsequent closing fill.
+- `buy_qty` and `sell_qty` restart with only the opening residual on the new entry side and zero on
+  the other side. Later close averages therefore exclude volume from the previous direction.
+
+Only the closing portion realizes PnL against the previous entry price. The object's `realized_pnl` and commission
+totals remain cumulative across this reversal, with the fill's commission counted once. The reset
+does not clear fill history, opening timestamps, or peak quantity. If the position instead reaches
+`FLAT` and a later fill reopens it, the full cycle resets, including realized PnL and commissions.
+
+These episode resets apply to fill-driven reversals; a quantity adjustment that changes the
+position's side does not perform the same reset.
+
 ## Position adjustments
 
 Position adjustments record quantity or PnL changes that occur outside normal order fills. The
@@ -358,6 +380,9 @@ panics if the calculation fails.
 - `quote_currency`: Quote currency of the instrument.
 - `base_currency`: Base currency if applicable.
 - `settlement_currency`: Currency for PnL settlement.
+
+See [Reversal accounting](#reversal-accounting) for how price averages and returns reset while
+realized PnL remains cumulative when an unsplit fill reverses one position.
 
 ### Instrument specifications
 
