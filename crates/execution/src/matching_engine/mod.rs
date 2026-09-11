@@ -3285,6 +3285,19 @@ impl OrderMatchingEngine {
 
     /// Processes a cancel all orders command for an instrument.
     pub fn process_cancel_all(&mut self, command: &CancelAllOrders, account_id: AccountId) {
+        self.process_cancel_all_excluding(command, account_id, &[]);
+    }
+
+    /// Processes a cancel all orders command for an instrument, leaving `excluded` untouched,
+    /// including when canceling an order cascades into its contingent orders.
+    ///
+    /// A venue modeling inbound latency excludes the orders whose submit it has not received yet.
+    pub fn process_cancel_all_excluding(
+        &mut self,
+        command: &CancelAllOrders,
+        account_id: AccountId,
+        excluded: &[ClientOrderId],
+    ) {
         let instrument_id = command.instrument_id;
         let order_side = command.order_side;
 
@@ -3307,6 +3320,7 @@ impl OrderMatchingEngine {
                     order_side,
                 ))
                 .map(|order| order.client_order_id())
+                .filter(|client_order_id| !excluded.contains(client_order_id))
                 .collect()
         };
         client_order_ids.sort_unstable();
@@ -3328,7 +3342,7 @@ impl OrderMatchingEngine {
                 continue;
             }
 
-            self.cancel_order(&order, None);
+            self.cancel_order_excluding(&order, None, excluded);
         }
     }
 
@@ -6025,13 +6039,24 @@ impl OrderMatchingEngine {
         self.remove_queue_position(order.client_order_id());
 
         if self.config.support_contingent_orders && order.contingency_type().is_some() {
-            self.cancel_contingent_orders(order);
+            self.cancel_contingent_orders(order, &[]);
         }
 
         self.generate_order_expired(order);
     }
 
     fn cancel_order(&mut self, order: &OrderAny, cancel_contingencies: Option<bool>) {
+        self.cancel_order_excluding(order, cancel_contingencies, &[]);
+    }
+
+    /// Cancels `order`, leaving `excluded` untouched should the cancellation cascade into its
+    /// contingent orders.
+    fn cancel_order_excluding(
+        &mut self,
+        order: &OrderAny,
+        cancel_contingencies: Option<bool>,
+        excluded: &[ClientOrderId],
+    ) {
         let cancel_contingencies = cancel_contingencies.unwrap_or(true);
 
         if order.is_active_local()
@@ -6066,7 +6091,7 @@ impl OrderMatchingEngine {
             && order.contingency_type().is_some()
             && cancel_contingencies
         {
-            self.cancel_contingent_orders(order);
+            self.cancel_contingent_orders(order, excluded);
         }
     }
 
@@ -6453,9 +6478,14 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn cancel_contingent_orders(&mut self, order: &OrderAny) {
+    fn cancel_contingent_orders(&mut self, order: &OrderAny, excluded: &[ClientOrderId]) {
         if let Some(linked_order_ids) = order.linked_order_ids() {
             for client_order_id in linked_order_ids {
+                if excluded.contains(client_order_id) {
+                    // The venue has not received this order's submit yet
+                    continue;
+                }
+
                 let contingent_order = match self.order_snapshot(*client_order_id) {
                     Some(order) => order,
                     None => panic!("Cannot find contingent order for {client_order_id}"),
@@ -9776,6 +9806,197 @@ mod tests {
                 .unwrap()
                 .status(),
             OrderStatus::Submitted
+        );
+    }
+
+    #[rstest]
+    fn test_process_cancel_all_excluding_leaves_excluded_orders_untouched() {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instrument_id = instrument.id();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let mut engine = OrderMatchingEngine::new(
+            instrument,
+            1,
+            FillModelHandle::default(),
+            FeeModelAny::default().into(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            clock,
+            Rc::clone(&cache),
+            Default::default(),
+        );
+        let account_id = AccountId::from("ACCOUNT-001");
+        let strategy_id = StrategyId::from("STRATEGY-001");
+        let received = OrderTestBuilder::new(OrderType::Limit)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-RECEIVED"))
+            .side(OrderSide::Buy)
+            .price(Price::from("1400.00"))
+            .quantity(Quantity::from("1.000"))
+            .build();
+        let in_transit = OrderTestBuilder::new(OrderType::Limit)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-IN-TRANSIT"))
+            .side(OrderSide::Buy)
+            .price(Price::from("1300.00"))
+            .quantity(Quantity::from("1.000"))
+            .build();
+        {
+            let mut cache = cache.borrow_mut();
+            cache
+                .add_order(received.clone(), None, None, false)
+                .unwrap();
+            cache
+                .add_order(in_transit.clone(), None, None, false)
+                .unwrap();
+            cache
+                .update_order(&TestOrderEventStubs::submitted(&received, account_id))
+                .unwrap();
+            cache
+                .update_order(&TestOrderEventStubs::submitted(&in_transit, account_id))
+                .unwrap();
+        }
+
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let events_handler = Rc::clone(&events);
+        let event_cache = Rc::clone(&cache);
+        engine.set_event_handler(Rc::new(move |event| {
+            event_cache.borrow_mut().update_order(&event).unwrap();
+            events_handler.borrow_mut().push(event);
+        }));
+        let command = CancelAllOrders::new(
+            TraderId::from("TRADER-001"),
+            None,
+            StrategyId::from("CALLER-001"),
+            instrument_id,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+
+        engine.process_cancel_all_excluding(&command, account_id, &[in_transit.client_order_id()]);
+
+        let events = events.borrow();
+        assert_eq!(
+            events.len(),
+            1,
+            "expected one OrderCanceled, was {events:?}"
+        );
+        let OrderEventAny::Canceled(canceled) = &events[0] else {
+            panic!("Expected OrderCanceled, was {:?}", events[0]);
+        };
+        assert_eq!(canceled.client_order_id, received.client_order_id());
+        assert_eq!(
+            cache
+                .borrow()
+                .order(&in_transit.client_order_id())
+                .unwrap()
+                .status(),
+            OrderStatus::Submitted,
+            "an excluded order must be left untouched",
+        );
+    }
+
+    #[rstest]
+    fn test_process_cancel_all_excluding_spares_an_excluded_contingent_order() {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instrument_id = instrument.id();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let mut engine = OrderMatchingEngine::new(
+            instrument,
+            1,
+            FillModelHandle::default(),
+            FeeModelAny::default().into(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            clock,
+            Rc::clone(&cache),
+            Default::default(),
+        );
+        assert!(engine.config.support_contingent_orders);
+        let account_id = AccountId::from("ACCOUNT-001");
+        let strategy_id = StrategyId::from("STRATEGY-001");
+        let received_id = ClientOrderId::from("O-RECEIVED");
+        let in_transit_id = ClientOrderId::from("O-IN-TRANSIT");
+        let received = OrderTestBuilder::new(OrderType::Limit)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(received_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("1400.00"))
+            .quantity(Quantity::from("1.000"))
+            .contingency_type(ContingencyType::Oco)
+            .linked_order_ids(vec![in_transit_id])
+            .build();
+        let in_transit = OrderTestBuilder::new(OrderType::Limit)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(in_transit_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("1300.00"))
+            .quantity(Quantity::from("1.000"))
+            .contingency_type(ContingencyType::Oco)
+            .linked_order_ids(vec![received_id])
+            .build();
+        {
+            let mut cache = cache.borrow_mut();
+            cache
+                .add_order(received.clone(), None, None, false)
+                .unwrap();
+            cache
+                .add_order(in_transit.clone(), None, None, false)
+                .unwrap();
+            cache
+                .update_order(&TestOrderEventStubs::submitted(&received, account_id))
+                .unwrap();
+            cache
+                .update_order(&TestOrderEventStubs::submitted(&in_transit, account_id))
+                .unwrap();
+        }
+
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let events_handler = Rc::clone(&events);
+        let event_cache = Rc::clone(&cache);
+        engine.set_event_handler(Rc::new(move |event| {
+            event_cache.borrow_mut().update_order(&event).unwrap();
+            events_handler.borrow_mut().push(event);
+        }));
+        let command = CancelAllOrders::new(
+            TraderId::from("TRADER-001"),
+            None,
+            StrategyId::from("CALLER-001"),
+            instrument_id,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+
+        engine.process_cancel_all_excluding(&command, account_id, &[in_transit_id]);
+
+        let events = events.borrow();
+        assert_eq!(
+            events.len(),
+            1,
+            "expected one OrderCanceled, was {events:?}"
+        );
+        let OrderEventAny::Canceled(canceled) = &events[0] else {
+            panic!("Expected OrderCanceled, was {:?}", events[0]);
+        };
+        assert_eq!(canceled.client_order_id, received_id);
+        assert_eq!(
+            cache.borrow().order(&in_transit_id).unwrap().status(),
+            OrderStatus::Submitted,
+            "canceling its OCO sibling must not cancel an excluded order",
         );
     }
 

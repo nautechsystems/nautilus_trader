@@ -107,6 +107,43 @@ command is due, the settlement point determines whether the engine releases it:
 Market data for another instrument does not activate an older command against stale market state.
 Commands with a future arrival timestamp remain in the inflight queue.
 
+### Sandbox inbound latency
+
+`SandboxExecutionClientConfig.latency_model` accepts a `StaticLatencyModel`, mirroring the existing
+`fee_model` field. A submit, modify, or cancel is deferred by the model's insert, update, or delete
+leg before it reaches the matching engine. Venue-generated events (accepts, fills, cancels,
+expirations) are not delayed, so the model covers the inbound leg only. Without a latency model the
+client is unchanged and its events take the runner's execution channel as before.
+
+```python
+from nautilus_trader.adapters.sandbox import SandboxExecutionClientConfig
+from nautilus_trader.execution import StaticLatencyModel
+from nautilus_trader.model import Money
+from nautilus_trader.model import Venue
+
+config = SandboxExecutionClientConfig(
+    venue=Venue("BINANCE"),
+    starting_balances=[Money.from_str("10_000 USDT")],
+    latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
+)
+```
+
+Every event the client emits takes the runner's execution channel exactly as it does without a
+latency model, in emission order: an order's `OrderSubmitted` precedes its venue events, and a
+fill from market data precedes the response to any command released after it. A command is
+applied before any market data processed after its due time, since the client drains its queue
+ahead of each tick it receives, and the client's clock alert releases a queue no data is flowing
+to. A command whose latency leg is zero is applied on arrival, unless a command is already due
+and not yet released, in which case it joins the queue behind it. A cancel-all reaching the venue
+cancels only orders the venue has received: an order whose submit is still in transit is left
+alone and rests once that submit arrives.
+
+Stopping the client discards anything still in flight. A discarded submit, modify, or targeted
+cancel is rejected (`OrderRejected`, `OrderModifyRejected`, `OrderCancelRejected`) so its order
+does not stay `SUBMITTED` or pending forever; the sandbox generates no order status reports, so
+nothing else would resolve it. A discarded `CancelAllOrders` is dropped, since the strategy marks
+no order `PENDING_CANCEL` for it and so there is no pending state to release.
+
 ### Shutdown semantics
 
 `BacktestEngine::end()` is separate from the `shutdown_on_error` configuration in [backtest APIs and
