@@ -17194,6 +17194,10 @@ fn test_l3_queue_batch_snapshot_clears_prior_depth(
     );
 
     process_buyer_trade(&mut engine, instrument_id, "2.000", "AFTER-SNAPSHOT", 3);
+    assert!(
+        get_fill_quantities(&handler).is_empty(),
+        "snapshot must preserve the visible queue ahead"
+    );
     process_l3_ask_delta(
         &mut engine,
         instrument_id,
@@ -17204,17 +17208,15 @@ fn test_l3_queue_batch_snapshot_clears_prior_depth(
     );
     process_buyer_trade(&mut engine, instrument_id, "3.000", "AFTER-DELETE", 5);
 
-    assert_eq!(
-        get_fill_quantities(&handler),
-        vec![Quantity::from("2.000"), Quantity::from("3.000")]
-    );
+    assert_eq!(get_fill_quantities(&handler), vec![Quantity::from("3.000")]);
     let cache = cache.borrow();
     let order = cache
         .order(&ClientOrderId::from("O-19700101-000000-001-001-1"))
         .unwrap();
-    assert_eq!(order.status(), OrderStatus::Filled);
-    assert_eq!(order.filled_qty(), Quantity::from("5.000"));
-    assert!(!engine.order_exists(order.client_order_id()));
+    assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(order.filled_qty(), Quantity::from("3.000"));
+    assert_eq!(order.leaves_qty(), Quantity::from("2.000"));
+    assert!(engine.order_exists(order.client_order_id()));
 }
 
 #[rstest]
