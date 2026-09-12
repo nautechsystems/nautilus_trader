@@ -137,6 +137,12 @@ pub static OKX_WS_ALGO_CANCEL_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
     Quota::per_second(NonZeroU32::new(1).expect("non-zero")).expect("valid constant")
 });
 
+/// Maximum subscription args per subscribe/unsubscribe websocket message.
+const OKX_WS_SUBSCRIPTION_ARGS_MAX_PER_MESSAGE: usize = 256;
+
+const RECONNECT_AUTH_RETRY_INITIAL: Duration = Duration::from_secs(1);
+const RECONNECT_AUTH_RETRY_MAX: Duration = Duration::from_secs(30);
+
 /// Pre-interned rate limit key for subscription operations (subscribe/unsubscribe/login).
 ///
 /// See: <https://www.okx.com/docs-v5/en/#websocket-api-login>
@@ -726,6 +732,12 @@ impl OKXWebSocketClient {
             let subscriptions_inst_type = self.subscriptions_inst_type.clone();
             let subscriptions_inst_family = self.subscriptions_inst_family.clone();
             let subscriptions_inst_id = self.subscriptions_inst_id.clone();
+            let cmd_tx_for_auth = Arc::clone(&self.cmd_tx);
+            let auth_tracker_for_auth = self.auth_tracker.clone();
+            let clock_for_auth = self.clock;
+            let auth_timeout_secs = self.auth_timeout_secs;
+            let reconnect_auth_generation = Arc::new(AtomicU64::new(0));
+            let handler_spawner_for_auth = handler_spawner.clone();
             let mut has_reconnected = false;
 
             async move {
@@ -740,15 +752,17 @@ impl OKXWebSocketClient {
                 );
 
                 let resubscribe_all = || {
-                    for arg in subscription_args(
+                    let args = subscription_args(
                         &subscriptions_inst_type,
                         &subscriptions_inst_family,
                         &subscriptions_inst_id,
                         &subscriptions_bare,
-                    ) {
-                        if let Err(e) =
-                            cmd_tx_for_reconnect.send(HandlerCommand::Subscribe { args: vec![arg] })
-                        {
+                    );
+
+                    for chunk in subscription_arg_batches(&args) {
+                        if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Subscribe {
+                            args: chunk.to_vec(),
+                        }) {
                             log::error!("Failed to send resubscribe command: error={e}");
                         }
                     }
@@ -774,34 +788,33 @@ impl OKXWebSocketClient {
 
                             subscriptions_state.reset_after_reconnect();
 
-                            if let Some(cred) = &credential {
+                            if let Some(credential) = credential.clone() {
                                 log::debug!("Re-authenticating after reconnection");
-                                let timestamp = authentication_timestamp(clock.get_time_ns());
-                                let signature =
-                                    cred.sign(&timestamp, "GET", "/users/self/verify", "");
+                                let generation =
+                                    reconnect_auth_generation.fetch_add(1, Ordering::AcqRel) + 1;
+                                let signal = signal.clone();
+                                let abort = handler_abort.clone();
+                                let generation_flag = Arc::clone(&reconnect_auth_generation);
+                                let cmd_tx = Arc::clone(&cmd_tx_for_auth);
+                                let auth_tracker = auth_tracker_for_auth.clone();
 
-                                let auth_message = super::messages::OKXAuthentication {
-                                    op: "login",
-                                    args: vec![super::messages::OKXAuthenticationArg {
-                                        api_key: SecretString::from(cred.api_key()),
-                                        passphrase: SecretString::from(cred.api_passphrase()),
-                                        timestamp,
-                                        sign: SecretString::from(signature),
-                                    }],
-                                };
-
-                                if let Ok(payload) =
-                                    serde_json::to_string(&auth_message).map(SecretString::from)
-                                {
-                                    if let Err(e) = cmd_tx_for_reconnect
-                                        .send(HandlerCommand::Authenticate { payload })
-                                    {
-                                        log::error!(
-                                            "Failed to send reconnection auth command: error={e}"
-                                        );
-                                    }
-                                } else {
-                                    log::error!("Failed to serialize reconnection auth message");
+                                if let Err(e) = handler_spawner_for_auth.spawn(async move {
+                                    retry_reconnect_authentication(
+                                        credential,
+                                        auth_tracker,
+                                        cmd_tx,
+                                        clock_for_auth,
+                                        auth_timeout_secs,
+                                        signal,
+                                        abort,
+                                        generation_flag,
+                                        generation,
+                                    )
+                                    .await;
+                                }) {
+                                    log::error!(
+                                        "Failed to spawn re-authentication retry task: error={e}"
+                                    );
                                 }
                             }
 
@@ -909,51 +922,30 @@ impl OKXWebSocketClient {
             ))
         })?;
 
-        let rx = self.auth_tracker.begin();
-
-        let timestamp = authentication_timestamp(self.clock.get_time_ns());
-        let signature = credential.sign(&timestamp, "GET", "/users/self/verify", "");
-
-        let auth_message = OKXAuthentication {
-            op: "login",
-            args: vec![OKXAuthenticationArg {
-                api_key: SecretString::from(credential.api_key()),
-                passphrase: SecretString::from(credential.api_passphrase()),
-                timestamp,
-                sign: SecretString::from(signature),
-            }],
-        };
-
-        let payload = serde_json::to_string(&auth_message)
-            .map(SecretString::from)
-            .map_err(|e| {
-                Error::Io(std::io::Error::other(format!(
-                    "Failed to serialize auth message: {e}"
-                )))
-            })?;
-        self.cmd_tx
-            .read()
-            .await
-            .send(HandlerCommand::Authenticate { payload })
-            .map_err(|e| {
-                Error::Io(std::io::Error::other(format!(
-                    "Failed to send authenticate command: {e}"
-                )))
-            })?;
-
-        match self
-            .auth_tracker
-            .wait_for_result::<OKXWsError>(Duration::from_secs(self.auth_timeout_secs), rx)
-            .await
+        match authenticate_session(
+            credential,
+            &self.auth_tracker,
+            &self.cmd_tx,
+            self.clock,
+            self.auth_timeout_secs,
+        )
+        .await
         {
-            Ok(()) => {
-                log::debug!("WebSocket authenticated");
-                Ok(())
+            Ok(()) => Ok(()),
+            Err(e) if auth_attempt_superseded(&e) => {
+                // A reconnect retry may have taken over this attempt. Wait for
+                // that login instead of tearing down a live authenticated socket.
+                if self
+                    .auth_tracker
+                    .wait_for_authenticated(Duration::from_secs(self.auth_timeout_secs))
+                    .await
+                {
+                    Ok(())
+                } else {
+                    Err(e)
+                }
             }
-            Err(e) => {
-                log::error!("WebSocket authentication failed: error={e}");
-                Err(Error::Io(std::io::Error::other(e.to_string())))
-            }
+            Err(e) => Err(e),
         }
     }
 
@@ -1222,8 +1214,6 @@ impl OKXWebSocketClient {
     ///
     /// Returns an error if the unsubscribe request fails to send.
     pub async fn unsubscribe_all(&self) -> Result<(), OKXWsError> {
-        const BATCH_SIZE: usize = 256;
-
         let all_args = subscription_args(
             &self.subscriptions_inst_type,
             &self.subscriptions_inst_family,
@@ -1238,7 +1228,7 @@ impl OKXWebSocketClient {
 
         log::debug!("Batched unsubscribe from {} channels", all_args.len());
 
-        for chunk in all_args.chunks(BATCH_SIZE) {
+        for chunk in subscription_arg_batches(&all_args) {
             self.unsubscribe(chunk.to_vec()).await?;
         }
 
@@ -3480,6 +3470,157 @@ fn subscription_args(
     args
 }
 
+fn subscription_arg_batches(
+    args: &[OKXSubscriptionArg],
+) -> impl Iterator<Item = &[OKXSubscriptionArg]> {
+    args.chunks(OKX_WS_SUBSCRIPTION_ARGS_MAX_PER_MESSAGE)
+}
+
+fn auth_attempt_superseded(error: &Error) -> bool {
+    error.to_string().contains("superseded")
+}
+
+fn reconnect_auth_retry_delay(attempt: u32) -> Duration {
+    let shift = attempt.saturating_sub(1).min(31);
+    let factor = 1u32.checked_shl(shift).unwrap_or(u32::MAX);
+
+    RECONNECT_AUTH_RETRY_INITIAL
+        .saturating_mul(factor)
+        .min(RECONNECT_AUTH_RETRY_MAX)
+}
+
+async fn authenticate_session(
+    credential: &Credential,
+    auth_tracker: &AuthTracker,
+    cmd_tx: &tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>,
+    clock: &'static AtomicTime,
+    auth_timeout_secs: u64,
+) -> Result<(), Error> {
+    let rx = auth_tracker.begin();
+    let timestamp = authentication_timestamp(clock.get_time_ns());
+    let signature = credential.sign(&timestamp, "GET", "/users/self/verify", "");
+
+    let auth_message = OKXAuthentication {
+        op: "login",
+        args: vec![OKXAuthenticationArg {
+            api_key: SecretString::from(credential.api_key()),
+            passphrase: SecretString::from(credential.api_passphrase()),
+            timestamp,
+            sign: SecretString::from(signature),
+        }],
+    };
+
+    let payload = serde_json::to_string(&auth_message)
+        .map(SecretString::from)
+        .map_err(|e| {
+            Error::Io(std::io::Error::other(format!(
+                "Failed to serialize auth message: {e}"
+            )))
+        })?;
+
+    cmd_tx
+        .read()
+        .await
+        .send(HandlerCommand::Authenticate { payload })
+        .map_err(|e| {
+            Error::Io(std::io::Error::other(format!(
+                "Failed to send authenticate command: {e}"
+            )))
+        })?;
+
+    match auth_tracker
+        .wait_for_result::<OKXWsError>(Duration::from_secs(auth_timeout_secs), rx)
+        .await
+    {
+        Ok(()) => {
+            log::debug!("WebSocket authenticated");
+            Ok(())
+        }
+        Err(e) => {
+            let auth_error = Error::Io(std::io::Error::other(e.to_string()));
+            if !auth_attempt_superseded(&auth_error) {
+                log::error!("WebSocket authentication failed: error={e}");
+            }
+
+            Err(auth_error)
+        }
+    }
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "retry loop needs the session pieces without cloning the websocket client"
+)]
+async fn retry_reconnect_authentication(
+    credential: Credential,
+    auth_tracker: AuthTracker,
+    cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
+    clock: &'static AtomicTime,
+    auth_timeout_secs: u64,
+    signal: Arc<AtomicBool>,
+    abort: CancellationToken,
+    generation_flag: Arc<AtomicU64>,
+    generation: u64,
+) {
+    let mut attempt = 0u32;
+
+    loop {
+        if signal.load(Ordering::Acquire) || abort.is_cancelled() {
+            break;
+        }
+
+        if generation_flag.load(Ordering::Acquire) != generation {
+            break;
+        }
+
+        if cmd_tx.read().await.is_closed() {
+            break;
+        }
+
+        if auth_tracker.is_authenticated() {
+            break;
+        }
+
+        attempt = attempt.saturating_add(1);
+
+        match authenticate_session(
+            &credential,
+            &auth_tracker,
+            &cmd_tx,
+            clock,
+            auth_timeout_secs,
+        )
+        .await
+        {
+            Ok(()) => {
+                log::debug!("Re-authenticated after reconnection");
+                break;
+            }
+            Err(e) => {
+                if generation_flag.load(Ordering::Acquire) != generation {
+                    break;
+                }
+
+                if auth_tracker.is_authenticated() {
+                    break;
+                }
+
+                let delay = reconnect_auth_retry_delay(attempt);
+
+                log::warn!(
+                    "Re-authentication after reconnection failed, retrying in {delay:?}: {e}"
+                );
+
+                tokio::select! {
+                    biased;
+                    () = abort.cancelled() => break,
+                    () = time::sleep(delay) => {}
+                }
+            }
+        }
+    }
+}
+
 fn ws_channel_for_book(channel: OKXBookChannel) -> OKXWsChannel {
     match channel {
         OKXBookChannel::Book => OKXWsChannel::Books,
@@ -4064,6 +4205,126 @@ mod tests {
     #[rstest]
     fn test_reconnection_message_constant() {
         assert_eq!(RECONNECTED, "__RECONNECTED__");
+    }
+
+    #[rstest]
+    fn reconnect_auth_retry_delay_grows_and_caps() {
+        assert_eq!(reconnect_auth_retry_delay(1), Duration::from_secs(1));
+        assert_eq!(reconnect_auth_retry_delay(2), Duration::from_secs(2));
+        assert_eq!(reconnect_auth_retry_delay(3), Duration::from_secs(4));
+        assert_eq!(reconnect_auth_retry_delay(6), Duration::from_secs(30));
+        assert_eq!(
+            reconnect_auth_retry_delay(u32::MAX),
+            Duration::from_secs(30)
+        );
+    }
+
+    #[rstest]
+    fn resubscribe_batches_subscription_args_into_venue_message_size() {
+        let args: Vec<_> = (0..300)
+            .map(|i| OKXSubscriptionArg {
+                channel: OKXWsChannel::Tickers,
+                inst_type: None,
+                inst_family: None,
+                inst_id: Some(Ustr::from(&format!("INST-{i}"))),
+            })
+            .collect();
+
+        let batches: Vec<_> = subscription_arg_batches(&args).collect();
+
+        assert_eq!(OKX_WS_SUBSCRIPTION_ARGS_MAX_PER_MESSAGE, 256);
+        assert_eq!(batches.len(), 2);
+        assert_eq!(batches[0].len(), 256);
+        assert_eq!(batches[1].len(), 44);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn authenticate_session_sends_login_and_completes_on_success() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let cmd_tx = tokio::sync::RwLock::new(tx);
+        let auth_tracker = AuthTracker::new();
+        let credential = Credential::new("key".into(), "secret".into(), "pass".into());
+        let clock = get_atomic_clock_realtime();
+        let tracker = auth_tracker.clone();
+
+        let task = tokio::spawn(async move {
+            authenticate_session(&credential, &auth_tracker, &cmd_tx, clock, 5).await
+        });
+
+        match rx.recv().await.expect("authenticate command") {
+            HandlerCommand::Authenticate { .. } => {}
+            other => panic!("Expected HandlerCommand::Authenticate, was {other:?}"),
+        }
+
+        tracker.succeed();
+        task.await
+            .expect("authenticate task")
+            .expect("authentication should succeed");
+    }
+
+    #[rstest]
+    fn auth_attempt_superseded_matches_tracker_message() {
+        let error = Error::Io(std::io::Error::other("Authentication attempt superseded"));
+        assert!(auth_attempt_superseded(&error));
+        let other = Error::Io(std::io::Error::other("Authentication timed out"));
+        assert!(!auth_attempt_superseded(&other));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn retry_reconnect_authentication_stops_when_already_authenticated() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let cmd_tx = Arc::new(tokio::sync::RwLock::new(tx));
+        let auth_tracker = AuthTracker::new();
+        auth_tracker.succeed();
+
+        tokio::time::timeout(
+            Duration::from_millis(200),
+            retry_reconnect_authentication(
+                Credential::new("key".into(), "secret".into(), "pass".into()),
+                auth_tracker,
+                cmd_tx,
+                get_atomic_clock_realtime(),
+                5,
+                Arc::new(AtomicBool::new(false)),
+                CancellationToken::new(),
+                Arc::new(AtomicU64::new(1)),
+                1,
+            ),
+        )
+        .await
+        .expect("authenticated retry must return without sending login");
+        assert!(
+            rx.try_recv().is_err(),
+            "already-authenticated retry must not send a login command"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn retry_reconnect_authentication_stops_when_aborted() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let cmd_tx = Arc::new(tokio::sync::RwLock::new(tx));
+        let abort = CancellationToken::new();
+        abort.cancel();
+
+        tokio::time::timeout(
+            Duration::from_millis(200),
+            retry_reconnect_authentication(
+                Credential::new("key".into(), "secret".into(), "pass".into()),
+                AuthTracker::new(),
+                cmd_tx,
+                get_atomic_clock_realtime(),
+                5,
+                Arc::new(AtomicBool::new(false)),
+                abort,
+                Arc::new(AtomicU64::new(1)),
+                1,
+            ),
+        )
+        .await
+        .expect("aborted retry must return without waiting for authentication");
     }
 
     #[rstest]

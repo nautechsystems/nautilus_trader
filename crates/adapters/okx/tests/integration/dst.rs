@@ -29,15 +29,22 @@ use rstest::rstest;
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use ustr::Ustr;
 
-fn subscribe_frame(channel: OKXWsChannel, inst_id: &str) -> String {
+fn subscribe_frame(channel: &OKXWsChannel, inst_id: &str) -> String {
+    subscribe_frames(channel, &[inst_id])
+}
+
+fn subscribe_frames(channel: &OKXWsChannel, inst_ids: &[&str]) -> String {
     serde_json::to_string(&OKXSubscription {
         op: OKXWsOperation::Subscribe,
-        args: vec![OKXSubscriptionArg {
-            channel,
-            inst_type: None,
-            inst_family: None,
-            inst_id: Some(Ustr::from(inst_id)),
-        }],
+        args: inst_ids
+            .iter()
+            .map(|inst_id| OKXSubscriptionArg {
+                channel: channel.clone(),
+                inst_type: None,
+                inst_family: None,
+                inst_id: Some(Ustr::from(inst_id)),
+            })
+            .collect(),
     })
     .expect("subscribe frame")
 }
@@ -65,7 +72,7 @@ fn public_client(url: &str) -> OKXWebSocketClient {
 async fn public_spot_subscribe_sends_exact_wire_frame(#[case] channel: OKXWsChannel) {
     madsim::time::timeout(Duration::from_secs(5), async {
         let listener = TcpListener::bind("127.0.0.1:18090").await.unwrap();
-        let expected = subscribe_frame(channel.clone(), "BTC-USDT");
+        let expected = subscribe_frame(&channel, "BTC-USDT");
 
         let peer = madsim::task::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
@@ -100,7 +107,7 @@ async fn public_spot_subscribe_sends_exact_wire_frame(#[case] channel: OKXWsChan
 async fn business_spot_bar_subscribe_sends_exact_wire_frame() {
     madsim::time::timeout(Duration::from_secs(5), async {
         let listener = TcpListener::bind("127.0.0.1:18091").await.unwrap();
-        let expected = subscribe_frame(OKXWsChannel::Candle1Minute, "BTC-USDT");
+        let expected = subscribe_frame(&OKXWsChannel::Candle1Minute, "BTC-USDT");
 
         let peer = madsim::task::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
@@ -131,8 +138,9 @@ async fn business_spot_bar_subscribe_sends_exact_wire_frame() {
 async fn reconnect_resubscribes_multi_instrument_quotes_in_topic_order() {
     madsim::time::timeout(Duration::from_secs(10), async {
         let listener = TcpListener::bind("127.0.0.1:18092").await.unwrap();
-        let eth = subscribe_frame(OKXWsChannel::BboTbt, "ETH-USDT");
-        let btc = subscribe_frame(OKXWsChannel::BboTbt, "BTC-USDT");
+        let eth = subscribe_frame(&OKXWsChannel::BboTbt, "ETH-USDT");
+        let btc = subscribe_frame(&OKXWsChannel::BboTbt, "BTC-USDT");
+        let reconnect = subscribe_frames(&OKXWsChannel::BboTbt, &["BTC-USDT", "ETH-USDT"]);
 
         let peer = madsim::task::spawn(async move {
             let mut frames = Vec::new();
@@ -141,8 +149,8 @@ async fn reconnect_resubscribes_multi_instrument_quotes_in_topic_order() {
                 let (stream, _) = listener.accept().await.unwrap();
                 let mut socket = accept_async(stream).await.unwrap();
                 frames.push(socket.next().await.unwrap().unwrap());
-                frames.push(socket.next().await.unwrap().unwrap());
                 if generation == 1 {
+                    frames.push(socket.next().await.unwrap().unwrap());
                     socket.close(None).await.unwrap();
                 }
             }
@@ -168,10 +176,9 @@ async fn reconnect_resubscribes_multi_instrument_quotes_in_topic_order() {
         assert_eq!(
             frames,
             vec![
-                Message::text(eth.clone()),
-                Message::text(btc.clone()),
-                Message::text(btc),
                 Message::text(eth),
+                Message::text(btc),
+                Message::text(reconnect),
             ]
         );
     })

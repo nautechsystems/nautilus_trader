@@ -367,6 +367,14 @@ impl OKXDataClient {
         tasks: &TaskSpawner,
         clock: &AtomicTime,
     ) {
+        // Book recovery must run on the socket that owns the failed channel:
+        // the public websocket for market-data books, the business websocket
+        // for spread books.
+        let recovery_ws = match book_channel_scope {
+            BookChannelScope::Public => recovery_ws,
+            BookChannelScope::Business => business_ws,
+        };
+
         match message {
             OKXWsMessage::BookData { arg, action, data } => {
                 let Some(inst_id) = arg.inst_id else {
@@ -408,6 +416,7 @@ impl OKXDataClient {
                             book_channels,
                             book_sync,
                             recovery_ws,
+                            book_channel_scope,
                             snapshot_timeout,
                             tasks,
                         ) {
@@ -461,6 +470,7 @@ impl OKXDataClient {
                             book_channels,
                             book_sync,
                             recovery_ws,
+                            book_channel_scope,
                             snapshot_timeout,
                             tasks,
                         ) {
@@ -784,8 +794,15 @@ impl OKXDataClient {
                     && channel.is_book()
                     && let Some(instrument) = instruments_by_symbol.get_cloned(&inst_id)
                 {
-                    let instrument_id = instrument.id();
-                    book_sync.remove(instrument_id);
+                    spawn_book_recovery(
+                        instrument.id(),
+                        book_channels,
+                        book_sync,
+                        recovery_ws,
+                        book_channel_scope,
+                        snapshot_timeout,
+                        tasks,
+                    );
                 }
             }
             OKXWsMessage::Error(e) => {
@@ -813,7 +830,14 @@ impl OKXDataClient {
                     );
 
                     if pending_count > 0 {
-                        spawn_snapshot_health_monitor(book_sync.clone(), tasks, snapshot_timeout);
+                        spawn_book_recovery_monitor(
+                            book_sync.clone(),
+                            recovery_ws.cloned(),
+                            Arc::clone(book_channels),
+                            book_channel_scope,
+                            snapshot_timeout,
+                            tasks,
+                        );
                     }
                 }
             }
@@ -1180,12 +1204,18 @@ impl OKXDataClient {
     }
 }
 
+/// Maximum book resubscription attempts claimed from the [`BookSyncTracker`]
+/// budget per recovery episode before the instrument is abandoned.
+const BOOK_RECOVERY_MAX_ATTEMPTS: u32 = 8;
+
+#[expect(clippy::too_many_arguments)]
 fn handle_book_sequence_outcome(
     outcome: BookSequenceOutcome,
     instrument_id: InstrumentId,
     book_channels: &Arc<AtomicMap<InstrumentId, OKXBookChannel>>,
     book_sync: &BookSyncTracker,
     recovery_ws: Option<&OKXWebSocketClient>,
+    scope: BookChannelScope,
     snapshot_timeout: Duration,
     tasks: &TaskSpawner,
 ) -> bool {
@@ -1202,35 +1232,121 @@ fn handle_book_sequence_outcome(
                  prev_seq_id={prev_seq_id:?}, seq_id={seq_id}; requesting a fresh snapshot"
             );
 
-            let Some(channel) = book_channels.get_cloned(&instrument_id) else {
-                log::warn!("Cannot recover book sequence for unsubscribed {instrument_id}");
-                return false;
-            };
-            let Some(ws) = recovery_ws.cloned() else {
-                log::error!("No public websocket available to recover book for {instrument_id}");
-                return false;
-            };
-            let channels = Arc::clone(book_channels);
-            let recovery_cancel = tasks.cancellation_token();
-
-            spawn_task(tasks, async move {
-                if recovery_cancel.is_cancelled()
-                    || channels.get_cloned(&instrument_id) != Some(channel)
-                {
-                    return;
-                }
-
-                if let Err(e) = ws.resubscribe_book_channel(instrument_id, channel).await {
-                    log::error!("Failed to recover book sequence for {instrument_id}: {e}");
-                }
-            });
-
-            if !snapshot_timeout.is_zero() {
-                spawn_snapshot_health_monitor(book_sync.clone(), tasks, snapshot_timeout);
-            }
+            spawn_book_recovery(
+                instrument_id,
+                book_channels,
+                book_sync,
+                recovery_ws,
+                scope,
+                snapshot_timeout,
+                tasks,
+            );
             false
         }
     }
+}
+
+/// Spawns a single budgeted book resubscription attempt for `instrument_id`.
+///
+/// Whether or not the send succeeds, a fresh snapshot deadline is armed so a
+/// lost, rejected, or snapshot-less resubscribe is retried by
+/// [`spawn_book_recovery_monitor`] when the deadline expires.
+fn spawn_book_recovery(
+    instrument_id: InstrumentId,
+    book_channels: &Arc<AtomicMap<InstrumentId, OKXBookChannel>>,
+    book_sync: &BookSyncTracker,
+    recovery_ws: Option<&OKXWebSocketClient>,
+    scope: BookChannelScope,
+    snapshot_timeout: Duration,
+    tasks: &TaskSpawner,
+) {
+    let Some(channel) = book_channels.get_cloned(&instrument_id) else {
+        log::warn!("Cannot recover book for unsubscribed {instrument_id}");
+        return;
+    };
+
+    let Some(ws) = recovery_ws.cloned() else {
+        log::error!("No websocket available to recover book for {instrument_id}");
+        return;
+    };
+
+    let channels = Arc::clone(book_channels);
+    let tracker = book_sync.clone();
+    let recovery_cancel = tasks.cancellation_token();
+    let spawner = tasks.clone();
+
+    spawn_task(tasks, async move {
+        if recovery_cancel.is_cancelled() || channels.get_cloned(&instrument_id) != Some(channel) {
+            return;
+        }
+
+        let Some(attempt) =
+            tracker.next_recovery_attempt(instrument_id, BOOK_RECOVERY_MAX_ATTEMPTS)
+        else {
+            log::error!(
+                "Book recovery for {instrument_id} abandoned after \
+                 {BOOK_RECOVERY_MAX_ATTEMPTS} attempts"
+            );
+            return;
+        };
+
+        if let Err(e) = ws.resubscribe_book_channel(instrument_id, channel).await {
+            log::warn!("Book recovery attempt {attempt} for {instrument_id} failed: {e}");
+        }
+
+        if !snapshot_timeout.is_zero() {
+            tracker.arm_pending_snapshot(instrument_id, snapshot_timeout, Instant::now());
+            spawn_book_recovery_monitor(
+                tracker,
+                Some(ws),
+                channels,
+                scope,
+                snapshot_timeout,
+                &spawner,
+            );
+        }
+    });
+}
+
+/// Spawns a one-shot monitor that retries recovery for every book instrument
+/// whose armed snapshot deadline expires on this socket's channels.
+fn spawn_book_recovery_monitor(
+    book_sync: BookSyncTracker,
+    recovery_ws: Option<OKXWebSocketClient>,
+    book_channels: Arc<AtomicMap<InstrumentId, OKXBookChannel>>,
+    scope: BookChannelScope,
+    snapshot_timeout: Duration,
+    tasks: &TaskSpawner,
+) {
+    let task_cancel = tasks.cancellation_token();
+    let spawner = tasks.clone();
+
+    spawn_task(tasks, async move {
+        tokio::select! {
+            biased;
+            () = task_cancel.cancelled() => {}
+            () = time::sleep(snapshot_timeout) => {
+                let expired = book_sync.expired_pending_snapshots(
+                    &book_channels,
+                    scope,
+                    Instant::now(),
+                );
+                handle_book_sync_signals(expired.clone());
+
+                for signal in expired {
+                    spawn_book_recovery(
+                        signal.instrument_id,
+                        &book_channels,
+                        &book_sync,
+                        recovery_ws.as_ref(),
+                        scope,
+                        snapshot_timeout,
+                        &spawner,
+                    );
+                }
+            }
+        }
+    });
 }
 
 /// Guards instrument definitions: serializes diff-update-publish sequences
@@ -1315,23 +1431,6 @@ fn emit_instrument_status(
     if let Err(e) = sender.send(DataEvent::InstrumentStatus(status)) {
         log::error!("Failed to emit instrument status event: {e}");
     }
-}
-
-fn spawn_snapshot_health_monitor(
-    book_sync: BookSyncTracker,
-    tasks: &TaskSpawner,
-    timeout: Duration,
-) {
-    let task_cancel = tasks.cancellation_token();
-    spawn_task(tasks, async move {
-        tokio::select! {
-            biased;
-            () = task_cancel.cancelled() => {}
-            () = time::sleep(timeout) => {
-                handle_book_sync_signals(book_sync.expired_pending_snapshots(Instant::now()));
-            }
-        }
-    });
 }
 
 fn handle_book_sync_signals(signals: Vec<BookSyncSignal>) {
@@ -2970,7 +3069,7 @@ mod tests {
     }
 
     #[rstest]
-    fn rejected_book_subscription_clears_sync_and_preserves_reconnect_intent() {
+    fn rejected_book_subscription_preserves_channel_and_sync_state() {
         let instrument_id = InstrumentId::from("OMI-USD.OKX");
         let mut pair = currency_pair_btcusdt();
         pair.id = instrument_id;
@@ -2982,7 +3081,10 @@ mod tests {
         let book_channels = Arc::new(AtomicMap::new());
         book_channels.insert(instrument_id, OKXBookChannel::Book);
         let book_sync = BookSyncTracker::default();
-        book_sync.record_subscription(instrument_id, Instant::now());
+        let subscribed_at = Instant::now()
+            .checked_sub(Duration::from_secs(6))
+            .expect("subscription timestamp");
+        book_sync.record_subscription(instrument_id, subscribed_at);
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
         let http = offline_http_client();
         let update_lock = InstrumentUpdateLock::default();
@@ -3024,11 +3126,12 @@ mod tests {
             Some(&OKXBookChannel::Book),
             "rejected subscription must preserve the channel selected for reconnect"
         );
-        assert!(
+        assert_eq!(
             book_sync
-                .stale_books(Duration::ZERO, Instant::now())
-                .is_empty(),
-            "rejected subscription must remove book synchronization state"
+                .stale_books(Duration::from_secs(5), Instant::now())
+                .len(),
+            1,
+            "rejected subscription must keep book synchronization state for recovery"
         );
     }
 

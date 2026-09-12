@@ -403,59 +403,68 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                     }
 
                     if payload.get("op") == Some(&json!("subscribe")) {
-                        if let Some(args) = payload.get("args").and_then(|value| value.as_array())
-                            && let Some(first) = args.first()
-                        {
-                            let (key, _) = TestServerState::subscription_key(first);
-                            let channel = first
-                                .get("channel")
-                                .and_then(|c| c.as_str())
-                                .unwrap_or_default();
+                        if let Some(args) = payload.get("args").and_then(|value| value.as_array()) {
+                            let mut any_success = false;
+                            let mut socket_closed = false;
 
-                            let mut success = true;
+                            for arg in args {
+                                let (key, _) = TestServerState::subscription_key(arg);
+                                let channel = arg
+                                    .get("channel")
+                                    .and_then(|c| c.as_str())
+                                    .unwrap_or_default();
 
-                            if is_private_channel(channel)
-                                && !state.authenticated.load(Ordering::Relaxed)
-                            {
-                                success = false;
+                                let mut success = true;
+
+                                if is_private_channel(channel)
+                                    && !state.authenticated.load(Ordering::Relaxed)
+                                {
+                                    success = false;
+                                }
+
+                                if success && state.pop_fail_subscription(&key).await {
+                                    success = false;
+                                    state.drop_next_connection.store(true, Ordering::Relaxed);
+                                }
+
+                                if success {
+                                    let mut subscriptions = state.subscriptions.lock().await;
+                                    subscriptions.push(arg.clone());
+                                    any_success = true;
+                                }
+
+                                let ack = if success {
+                                    json!({
+                                        "event": "subscribe",
+                                        "arg": arg,
+                                        "connId": "test-conn",
+                                    })
+                                } else {
+                                    json!({
+                                        "event": "error",
+                                        "connId": "test-conn",
+                                        "code": "60018",
+                                        "msg": TestServerState::subscription_error_message(arg),
+                                    })
+                                };
+
+                                if socket
+                                    .send(Message::Text(ack.to_string().into()))
+                                    .await
+                                    .is_err()
+                                {
+                                    socket_closed = true;
+                                    break;
+                                }
+
+                                state.record_subscription_event(arg, success).await;
                             }
 
-                            if success && state.pop_fail_subscription(&key).await {
-                                success = false;
-                                state.drop_next_connection.store(true, Ordering::Relaxed);
-                            }
-
-                            if success {
-                                let mut subscriptions = state.subscriptions.lock().await;
-                                subscriptions.push(first.clone());
-                            }
-
-                            let ack = if success {
-                                json!({
-                                    "event": "subscribe",
-                                    "arg": first,
-                                    "connId": "test-conn",
-                                })
-                            } else {
-                                json!({
-                                    "event": "error",
-                                    "connId": "test-conn",
-                                    "code": "60018",
-                                    "msg": TestServerState::subscription_error_message(first),
-                                })
-                            };
-
-                            if socket
-                                .send(Message::Text(ack.to_string().into()))
-                                .await
-                                .is_err()
-                            {
+                            if socket_closed {
                                 break;
                             }
 
-                            state.record_subscription_event(first, success).await;
-
-                            if success
+                            if any_success
                                 && socket
                                     .send(Message::Text(trades_payload.to_string().into()))
                                     .await
@@ -465,7 +474,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                             }
 
                             // Send pings after successful subscription (handler is ready)
-                            if success
+                            if any_success
                                 && state.send_text_ping.load(Ordering::Relaxed)
                                 && socket
                                     .send(Message::Text(TEXT_PING.to_string().into()))
@@ -475,7 +484,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                 break;
                             }
 
-                            if success
+                            if any_success
                                 && state.send_control_ping.load(Ordering::Relaxed)
                                 && socket
                                     .send(Message::Ping(CONTROL_PING_PAYLOAD.to_vec().into()))

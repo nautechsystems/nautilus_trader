@@ -36,6 +36,7 @@ struct BookSyncState {
     last_sequences: AHashMap<InstrumentId, u64>,
     recovering: AHashSet<InstrumentId>,
     pending_snapshots: AHashMap<InstrumentId, Instant>,
+    recovery_attempts: AHashMap<InstrumentId, u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,6 +75,7 @@ impl BookSyncTracker {
         state.last_sequences.remove(&instrument_id);
         state.recovering.remove(&instrument_id);
         state.pending_snapshots.remove(&instrument_id);
+        state.recovery_attempts.remove(&instrument_id);
     }
 
     pub(crate) fn record_update_if_subscribed(
@@ -138,6 +140,7 @@ impl BookSyncTracker {
             state.last_sequences.insert(instrument_id, seq_id);
             state.recovering.remove(&instrument_id);
             state.pending_snapshots.remove(&instrument_id);
+            state.recovery_attempts.remove(&instrument_id);
             state.last_book_ts.insert(instrument_id, now);
             return BookSequenceOutcome::Accept;
         }
@@ -180,6 +183,7 @@ impl BookSyncTracker {
 
         if is_snapshot {
             state.pending_snapshots.remove(&instrument_id);
+            state.recovery_attempts.remove(&instrument_id);
         }
     }
 
@@ -189,6 +193,7 @@ impl BookSyncTracker {
         state.last_sequences.remove(&instrument_id);
         state.recovering.remove(&instrument_id);
         state.pending_snapshots.remove(&instrument_id);
+        state.recovery_attempts.remove(&instrument_id);
     }
 
     pub(crate) fn clear(&self) {
@@ -197,6 +202,7 @@ impl BookSyncTracker {
         state.last_sequences.clear();
         state.recovering.clear();
         state.pending_snapshots.clear();
+        state.recovery_attempts.clear();
     }
 
     pub(crate) fn reset_sequences(
@@ -216,6 +222,7 @@ impl BookSyncTracker {
         for instrument_id in instrument_ids {
             state.last_sequences.remove(&instrument_id);
             state.recovering.insert(instrument_id);
+            state.recovery_attempts.remove(&instrument_id);
         }
     }
 
@@ -242,10 +249,43 @@ impl BookSyncTracker {
         let mut state = self.state.lock();
         for instrument_id in &instrument_ids {
             state.pending_snapshots.insert(*instrument_id, deadline);
+            state.recovery_attempts.remove(instrument_id);
         }
         instrument_ids.len()
     }
 
+    /// Claims the next recovery attempt for `instrument_id`, disarming any
+    /// armed snapshot deadline once `max_attempts` is exhausted.
+    pub(crate) fn next_recovery_attempt(
+        &self,
+        instrument_id: InstrumentId,
+        max_attempts: u32,
+    ) -> Option<u32> {
+        let mut state = self.state.lock();
+        let attempts = state.recovery_attempts.entry(instrument_id).or_insert(0);
+        *attempts = attempts.saturating_add(1);
+
+        if *attempts > max_attempts {
+            state.pending_snapshots.remove(&instrument_id);
+            None
+        } else {
+            Some(*attempts)
+        }
+    }
+
+    /// Arms a fresh snapshot deadline for `instrument_id`.
+    pub(crate) fn arm_pending_snapshot(
+        &self,
+        instrument_id: InstrumentId,
+        timeout: Duration,
+        now: Instant,
+    ) {
+        arm_pending_snapshot_state(&mut self.state.lock(), instrument_id, timeout, now);
+    }
+
+    /// Reports instruments whose book feed has exceeded `threshold` since the
+    /// last update, re-arming each reported window so a still-dead feed keeps
+    /// being reported at most once per threshold window.
     pub(crate) fn stale_books(&self, threshold: Duration, now: Instant) -> Vec<BookSyncSignal> {
         let mut state = self.state.lock();
         let stale = state
@@ -261,20 +301,28 @@ impl BookSyncTracker {
             .collect::<Vec<_>>();
 
         for signal in &stale {
-            state.last_book_ts.remove(&signal.instrument_id);
-            state.pending_snapshots.remove(&signal.instrument_id);
+            state.last_book_ts.insert(signal.instrument_id, now);
         }
 
         stale
     }
 
-    pub(crate) fn expired_pending_snapshots(&self, now: Instant) -> Vec<BookSyncSignal> {
+    pub(crate) fn expired_pending_snapshots(
+        &self,
+        book_channels: &AtomicMap<InstrumentId, OKXBookChannel>,
+        scope: BookChannelScope,
+        now: Instant,
+    ) -> Vec<BookSyncSignal> {
         let mut state = self.state.lock();
         let expired = state
             .pending_snapshots
             .iter()
             .filter_map(|(instrument_id, deadline)| {
-                (*deadline <= now).then_some(BookSyncSignal {
+                (*deadline <= now
+                    && book_channels
+                        .get_cloned(instrument_id)
+                        .is_some_and(|channel| book_channel_matches_scope(channel, scope)))
+                .then_some(BookSyncSignal {
                     instrument_id: *instrument_id,
                     kind: BookSyncSignalKind::SnapshotMissing,
                 })
@@ -283,7 +331,6 @@ impl BookSyncTracker {
 
         for signal in &expired {
             state.pending_snapshots.remove(&signal.instrument_id);
-            state.last_book_ts.remove(&signal.instrument_id);
         }
 
         expired
@@ -299,9 +346,7 @@ fn begin_recovery(
     now: Instant,
 ) -> BookSequenceOutcome {
     let last_seq_id = state.last_sequences.remove(&instrument_id);
-    if !timeout.is_zero() {
-        state.pending_snapshots.insert(instrument_id, now + timeout);
-    }
+    arm_pending_snapshot_state(state, instrument_id, timeout, now);
 
     if state.recovering.insert(instrument_id) {
         BookSequenceOutcome::Recover {
@@ -311,6 +356,17 @@ fn begin_recovery(
         }
     } else {
         BookSequenceOutcome::Suppress
+    }
+}
+
+fn arm_pending_snapshot_state(
+    state: &mut BookSyncState,
+    instrument_id: InstrumentId,
+    timeout: Duration,
+    now: Instant,
+) {
+    if !timeout.is_zero() {
+        state.pending_snapshots.insert(instrument_id, now + timeout);
     }
 }
 
@@ -371,17 +427,20 @@ mod tests {
     }
 
     #[rstest]
-    fn stale_books_emits_once() {
+    fn stale_books_rearms_window_and_keeps_tracking() {
         let tracker = BookSyncTracker::default();
         let instrument_id = InstrumentId::from("BTC-USDT.OKX");
         let now = Instant::now();
+        let threshold = Duration::from_secs(5);
 
         tracker.record_subscription(
             instrument_id,
             now.checked_sub(Duration::from_secs(6)).unwrap(),
         );
-        let first = tracker.stale_books(Duration::from_secs(5), now);
-        let second = tracker.stale_books(Duration::from_secs(5), now);
+        let first = tracker.stale_books(threshold, now);
+        let same_window = tracker.stale_books(threshold, now);
+        let next_window =
+            tracker.stale_books(threshold, now.checked_add(Duration::from_secs(6)).unwrap());
 
         assert_eq!(first.len(), 1);
         assert_eq!(first[0].instrument_id, instrument_id);
@@ -391,8 +450,15 @@ mod tests {
                 elapsed: Duration::from_secs(6)
             }
         );
-        assert!(second.is_empty());
-        assert!(is_empty(&tracker));
+        assert!(
+            same_window.is_empty(),
+            "window must not re-report after firing"
+        );
+        assert_eq!(next_window.len(), 1, "a still-dead feed must report again");
+        assert!(
+            has_last_book_ts(&tracker, instrument_id),
+            "tracking must persist so staleness stays observable"
+        );
     }
 
     #[rstest]
@@ -427,17 +493,14 @@ mod tests {
     }
 
     #[rstest]
-    fn expired_pending_snapshots_emits_once() {
+    fn expired_pending_snapshots_emits_once_and_keeps_staleness_tracking() {
         let book_channels = AtomicMap::new();
         let tracker = BookSyncTracker::default();
         let instrument_id = InstrumentId::from("BTC-USDT.OKX");
         let now = Instant::now();
 
         book_channels.insert(instrument_id, OKXBookChannel::Book);
-        tracker.record_subscription(
-            instrument_id,
-            now.checked_sub(Duration::from_secs(6)).unwrap(),
-        );
+        tracker.record_subscription(instrument_id, now);
         tracker.seed_pending_snapshots(
             &book_channels,
             BookChannelScope::Public,
@@ -445,14 +508,204 @@ mod tests {
             now.checked_sub(Duration::from_secs(4)).unwrap(),
         );
 
-        let first = tracker.expired_pending_snapshots(now);
-        let second = tracker.expired_pending_snapshots(now);
+        let first =
+            tracker.expired_pending_snapshots(&book_channels, BookChannelScope::Public, now);
+        let second =
+            tracker.expired_pending_snapshots(&book_channels, BookChannelScope::Public, now);
 
         assert_eq!(first.len(), 1);
         assert_eq!(first[0].instrument_id, instrument_id);
         assert_eq!(first[0].kind, BookSyncSignalKind::SnapshotMissing);
         assert!(second.is_empty());
-        assert!(is_empty(&tracker));
+        assert!(
+            has_last_book_ts(&tracker, instrument_id),
+            "snapshot expiry must keep the stale window armed"
+        );
+        assert!(!has_pending_snapshot(&tracker, instrument_id));
+    }
+
+    #[rstest]
+    fn expired_pending_snapshots_do_not_drain_other_scope() {
+        let book_channels = AtomicMap::new();
+        let tracker = BookSyncTracker::default();
+        let public_id = InstrumentId::from("BTC-USDT.OKX");
+        let spread_id = InstrumentId::from("BTC-USDT_BTC-USDT-SWAP.OKX");
+        let now = Instant::now();
+
+        book_channels.insert(public_id, OKXBookChannel::Book);
+        book_channels.insert(spread_id, OKXBookChannel::SprdBooks5);
+        tracker.seed_pending_snapshots(
+            &book_channels,
+            BookChannelScope::Public,
+            Duration::from_secs(3),
+            now.checked_sub(Duration::from_secs(4)).unwrap(),
+        );
+        tracker.seed_pending_snapshots(
+            &book_channels,
+            BookChannelScope::Business,
+            Duration::from_secs(3),
+            now.checked_sub(Duration::from_secs(4)).unwrap(),
+        );
+
+        let public =
+            tracker.expired_pending_snapshots(&book_channels, BookChannelScope::Public, now);
+
+        assert_eq!(public.len(), 1);
+        assert_eq!(public[0].instrument_id, public_id);
+        assert!(has_pending_snapshot(&tracker, spread_id));
+        assert!(!has_pending_snapshot(&tracker, public_id));
+    }
+
+    #[rstest]
+    fn seed_pending_snapshots_resets_recovery_attempts() {
+        let book_channels = AtomicMap::new();
+        let tracker = BookSyncTracker::default();
+        let instrument_id = InstrumentId::from("BTC-USDT_BTC-USDT-SWAP.OKX");
+        let now = Instant::now();
+
+        book_channels.insert(instrument_id, OKXBookChannel::SprdBooks5);
+        tracker.record_subscription(instrument_id, now);
+        assert_eq!(tracker.next_recovery_attempt(instrument_id, 8), Some(1));
+        assert_eq!(tracker.next_recovery_attempt(instrument_id, 8), Some(2));
+
+        tracker.seed_pending_snapshots(
+            &book_channels,
+            BookChannelScope::Business,
+            Duration::from_secs(3),
+            now,
+        );
+
+        assert_eq!(
+            tracker.next_recovery_attempt(instrument_id, 8),
+            Some(1),
+            "seeding reconnect snapshot waits must restart the recovery budget"
+        );
+    }
+
+    #[rstest]
+    fn snapshot_update_resets_recovery_attempts() {
+        let book_channels = AtomicMap::new();
+        let tracker = BookSyncTracker::default();
+        let instrument_id = InstrumentId::from("BTC-USDT_BTC-USDT-SWAP.OKX");
+        let now = Instant::now();
+
+        book_channels.insert(instrument_id, OKXBookChannel::SprdBooks5);
+        tracker.record_subscription(instrument_id, now);
+        assert_eq!(tracker.next_recovery_attempt(instrument_id, 8), Some(1));
+        assert_eq!(tracker.next_recovery_attempt(instrument_id, 8), Some(2));
+
+        tracker.record_update_if_subscribed(&book_channels, instrument_id, true, now);
+
+        assert_eq!(
+            tracker.next_recovery_attempt(instrument_id, 8),
+            Some(1),
+            "a snapshot update must restart the recovery budget"
+        );
+    }
+
+    #[rstest]
+    fn recovery_attempts_are_bounded_and_disarm_pending_snapshots() {
+        let tracker = BookSyncTracker::default();
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        let now = Instant::now();
+        let max_attempts = 3;
+
+        assert_eq!(
+            tracker.next_recovery_attempt(instrument_id, max_attempts),
+            Some(1)
+        );
+        assert_eq!(
+            tracker.next_recovery_attempt(instrument_id, max_attempts),
+            Some(2)
+        );
+        assert_eq!(
+            tracker.next_recovery_attempt(instrument_id, max_attempts),
+            Some(3)
+        );
+
+        tracker.arm_pending_snapshot(instrument_id, Duration::from_secs(3), now);
+
+        assert_eq!(
+            tracker.next_recovery_attempt(instrument_id, max_attempts),
+            None
+        );
+        assert!(
+            !has_pending_snapshot(&tracker, instrument_id),
+            "exhausted budget must disarm the monitor chain"
+        );
+        assert_eq!(
+            tracker.next_recovery_attempt(instrument_id, max_attempts),
+            None,
+            "exhausted budget must stay exhausted"
+        );
+    }
+
+    #[rstest]
+    fn snapshot_acceptance_resets_recovery_attempts() {
+        let book_channels = AtomicMap::new();
+        let tracker = BookSyncTracker::default();
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        let now = Instant::now();
+        let timeout = Duration::from_secs(3);
+
+        book_channels.insert(instrument_id, OKXBookChannel::Book);
+        tracker.record_subscription(instrument_id, now);
+        assert_eq!(tracker.next_recovery_attempt(instrument_id, 8), Some(1));
+        assert_eq!(tracker.next_recovery_attempt(instrument_id, 8), Some(2));
+
+        assert_eq!(
+            tracker.validate_sequence_if_subscribed(
+                &book_channels,
+                instrument_id,
+                true,
+                &[(Some(-1), 2_000)],
+                timeout,
+                now,
+            ),
+            BookSequenceOutcome::Accept
+        );
+
+        assert_eq!(
+            tracker.next_recovery_attempt(instrument_id, 8),
+            Some(1),
+            "a successful snapshot must restart the recovery budget"
+        );
+    }
+
+    #[rstest]
+    fn record_subscription_resets_recovery_attempts() {
+        let tracker = BookSyncTracker::default();
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        let now = Instant::now();
+
+        assert_eq!(tracker.next_recovery_attempt(instrument_id, 8), Some(1));
+        assert_eq!(tracker.next_recovery_attempt(instrument_id, 8), Some(2));
+        tracker.record_subscription(instrument_id, now);
+        assert_eq!(
+            tracker.next_recovery_attempt(instrument_id, 8),
+            Some(1),
+            "a new subscription must restart the recovery budget"
+        );
+    }
+
+    #[rstest]
+    fn reset_sequences_resets_recovery_attempts() {
+        let book_channels = AtomicMap::new();
+        let tracker = BookSyncTracker::default();
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        let now = Instant::now();
+
+        book_channels.insert(instrument_id, OKXBookChannel::Book);
+        tracker.record_subscription(instrument_id, now);
+        assert_eq!(tracker.next_recovery_attempt(instrument_id, 8), Some(1));
+        assert_eq!(tracker.next_recovery_attempt(instrument_id, 8), Some(2));
+
+        tracker.reset_sequences(&book_channels, BookChannelScope::Public);
+        assert_eq!(
+            tracker.next_recovery_attempt(instrument_id, 8),
+            Some(1),
+            "a sequence reset must restart the recovery budget"
+        );
     }
 
     #[rstest]
@@ -725,5 +978,6 @@ mod tests {
             && state.last_sequences.is_empty()
             && state.recovering.is_empty()
             && state.pending_snapshots.is_empty()
+            && state.recovery_attempts.is_empty()
     }
 }

@@ -156,6 +156,9 @@ Released on TBD (UTC).
 - Fixed OKX retries to honor `Retry-After`, preserve request identity, and avoid ambiguous order replay
 - Fixed OKX execution connecting with missing instruments for a configured type or family
 - Fixed OKX WebSocket connection timeout being shorter than the network default (#4956), thanks for reporting @BioxMech
+- Fixed OKX book recovery after reconnect, rejected subscriptions, and missing snapshots
+- Fixed OKX private WebSocket re-authentication after reconnect
+- Fixed OKX reconnect subscriptions exceeding the venue message size
 - Fixed Polymarket resolution subscriptions losing transiently unavailable closed markets
 - Fixed Polymarket precision loss in financial data and execution reports
 - Fixed Polymarket invalid numeric values silently producing zero prices, quantities, or fees
