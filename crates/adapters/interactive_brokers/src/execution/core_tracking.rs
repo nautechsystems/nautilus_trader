@@ -10,45 +10,44 @@
 use super::*;
 
 impl InteractiveBrokersExecutionClient {
-    pub(super) fn cached_spread_instrument_ids_for_preload(
+    pub(super) fn cached_instrument_ids_for_preload(
         cache: &Cache,
         instrument_provider: &InteractiveBrokersInstrumentProvider,
     ) -> Vec<InstrumentId> {
-        let mut spread_ids = ahash::AHashSet::new();
+        let mut instrument_ids = ahash::AHashSet::new();
 
         for client_order_id in cache.iter_client_order_ids(None, None, None, None) {
             if let Some(order) = cache.order(&client_order_id) {
                 let instrument_id = order.instrument_id();
-                if is_spread_instrument_id(&instrument_id)
-                    && instrument_provider.find(&instrument_id).is_none()
-                {
-                    spread_ids.insert(instrument_id);
+                if instrument_provider.find(&instrument_id).is_none() {
+                    instrument_ids.insert(instrument_id);
                 }
             }
         }
 
-        let mut spread_ids: Vec<InstrumentId> = spread_ids.into_iter().collect();
-        spread_ids.sort_by_key(|a| a.to_string());
-        spread_ids
+        let mut instrument_ids: Vec<InstrumentId> = instrument_ids.into_iter().collect();
+        instrument_ids.sort_by_key(|a| a.to_string());
+        instrument_ids
     }
 
-    pub(super) async fn preload_cached_spread_instruments(
-        &self,
-        client: &Client,
-    ) -> anyhow::Result<()> {
-        let spread_ids = {
+    pub(super) async fn preload_cached_instruments(&self, client: &Client) -> anyhow::Result<()> {
+        let instrument_ids = {
             let cache = self.core.cache();
-            Self::cached_spread_instrument_ids_for_preload(&cache, &self.instrument_provider)
+            Self::cached_instrument_ids_for_preload(&cache, &self.instrument_provider)
         };
 
-        if spread_ids.is_empty() {
+        if instrument_ids.is_empty() {
             return Ok(());
         }
 
         tracing::debug!(
-            "Preloading {} cached Interactive Brokers spread instrument(s) before reconciliation",
-            spread_ids.len()
+            "Preloading {} cached Interactive Brokers instrument(s) before reconciliation",
+            instrument_ids.len()
         );
+
+        let (spread_ids, single_leg_ids): (Vec<InstrumentId>, Vec<InstrumentId>) = instrument_ids
+            .into_iter()
+            .partition(is_spread_instrument_id);
 
         for instrument_id in spread_ids {
             match self
@@ -69,6 +68,31 @@ impl InteractiveBrokersExecutionClient {
                     tracing::warn!(
                         "Failed to preload cached spread instrument {}: {}",
                         instrument_id,
+                        e
+                    );
+                }
+            }
+        }
+
+        if !single_leg_ids.is_empty() {
+            match self
+                .instrument_provider
+                .load_ids_with_return_async(client, single_leg_ids.clone(), None)
+                .await
+            {
+                Ok(loaded_ids) => {
+                    for instrument_id in &single_leg_ids {
+                        if loaded_ids.contains(instrument_id) {
+                            tracing::debug!("Preloaded cached instrument {}", instrument_id);
+                        } else {
+                            tracing::warn!("Failed to preload cached instrument {}", instrument_id);
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to preload cached instruments {:?}: {}",
+                        single_leg_ids,
                         e
                     );
                 }
