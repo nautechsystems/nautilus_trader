@@ -45,7 +45,7 @@ use nautilus_common::{
         ExecutionEvent,
         execution::{
             CancelOrder, GenerateFillReports, GenerateOrderStatusReport,
-            GenerateOrderStatusReports, GeneratePositionStatusReports, QueryOrder,
+            GenerateOrderStatusReports, GeneratePositionStatusReports, QueryOrder, TradingCommand,
         },
         system::{QueueStateChanged, ShutdownSystem},
     },
@@ -61,7 +61,10 @@ use nautilus_live::{
 };
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
-    enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
+    enums::{
+        AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce,
+    },
     events::{OrderEventAny, account::state::AccountState},
     identifiers::{
         AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, StrategyId,
@@ -1029,6 +1032,7 @@ pub(crate) mod serial_tests {
         position_report_requested: Arc<AtomicBool>,
         position_report_count: Arc<AtomicUsize>,
         instrument_received: Arc<AtomicBool>,
+        report_response_returned: Arc<AtomicBool>,
     }
 
     struct BlockingReportExecutionClient {
@@ -1039,13 +1043,16 @@ pub(crate) mod serial_tests {
         state: BlockingReportClientState,
         fill_report_release: Option<Arc<tokio::sync::Notify>>,
         fill_report_responses: Arc<Mutex<VecDeque<Vec<FillReport>>>>,
+        fill_reports_at_window_end: bool,
         order_reports: Vec<OrderStatusReport>,
         order_reports_complete: bool,
         block_every_second_order_report: bool,
         position_reports_complete: bool,
+        position_reports: Vec<PositionStatusReport>,
         targeted_order_report: Option<OrderStatusReport>,
         block_every_second_targeted_report: bool,
         report_release: Option<Arc<tokio::sync::Notify>>,
+        targeted_report_release: Option<Arc<tokio::sync::Notify>>,
     }
 
     impl BlockingReportExecutionClient {
@@ -1058,13 +1065,16 @@ pub(crate) mod serial_tests {
                 state: factory.state.clone(),
                 fill_report_release: factory.fill_report_release.clone(),
                 fill_report_responses: factory.fill_report_responses.clone(),
+                fill_reports_at_window_end: factory.fill_reports_at_window_end,
                 order_reports: factory.order_reports.clone(),
                 order_reports_complete: factory.order_reports_complete,
                 block_every_second_order_report: factory.block_every_second_order_report,
                 position_reports_complete: factory.position_reports_complete,
+                position_reports: factory.position_reports.clone(),
                 targeted_order_report: factory.targeted_order_report.clone(),
                 block_every_second_targeted_report: factory.block_every_second_targeted_report,
                 report_release: factory.report_release.clone(),
+                targeted_report_release: factory.targeted_report_release.clone(),
             }
         }
     }
@@ -1090,9 +1100,12 @@ pub(crate) mod serial_tests {
         order_reports_complete: bool,
         block_every_second_order_report: bool,
         position_reports_complete: bool,
+        position_reports: Vec<PositionStatusReport>,
         targeted_order_report: Option<OrderStatusReport>,
         block_every_second_targeted_report: bool,
         report_release: Option<Arc<tokio::sync::Notify>>,
+        targeted_report_release: Option<Arc<tokio::sync::Notify>>,
+        fill_reports_at_window_end: bool,
     }
 
     impl BlockingReportExecutionClientFactory {
@@ -1116,13 +1129,16 @@ pub(crate) mod serial_tests {
                 },
                 fill_report_release: None,
                 fill_report_responses: Arc::new(Mutex::new(VecDeque::new())),
+                fill_reports_at_window_end: false,
                 order_reports: Vec::new(),
                 order_reports_complete: false,
                 block_every_second_order_report: false,
                 position_reports_complete: false,
+                position_reports: Vec::new(),
                 targeted_order_report: None,
                 block_every_second_targeted_report: false,
                 report_release,
+                targeted_report_release: None,
             }
         }
 
@@ -1138,13 +1154,16 @@ pub(crate) mod serial_tests {
                 state,
                 fill_report_release: None,
                 fill_report_responses: Arc::new(Mutex::new(VecDeque::new())),
+                fill_reports_at_window_end: false,
                 order_reports: Vec::new(),
                 order_reports_complete: false,
                 block_every_second_order_report: false,
                 position_reports_complete: false,
+                position_reports: Vec::new(),
                 targeted_order_report: None,
                 block_every_second_targeted_report: false,
                 report_release: None,
+                targeted_report_release: None,
             }
         }
 
@@ -1164,8 +1183,24 @@ pub(crate) mod serial_tests {
             self
         }
 
+        fn with_fill_reports_at_window_end(mut self) -> Self {
+            self.fill_reports_at_window_end = true;
+            self
+        }
+
         fn with_targeted_order_report(mut self, report: OrderStatusReport) -> Self {
             self.targeted_order_report = Some(report);
+            self
+        }
+
+        fn with_targeted_report_release(mut self, release: Arc<tokio::sync::Notify>) -> Self {
+            self.targeted_report_release = Some(release);
+            self
+        }
+
+        fn with_position_reports(mut self, reports: Vec<PositionStatusReport>) -> Self {
+            self.position_reports = reports;
+            self.position_reports_complete = true;
             self
         }
 
@@ -1326,12 +1361,19 @@ pub(crate) mod serial_tests {
                 return std::future::pending::<anyhow::Result<Vec<OrderStatusReport>>>().await;
             }
 
-            if self.order_reports_complete {
-                return Ok(self.order_reports.clone());
-            }
-
             if let Some(release) = &self.report_release {
                 release.notified().await;
+            }
+
+            if self.order_reports_complete {
+                self.state
+                    .report_response_returned
+                    .store(true, Ordering::Relaxed);
+                Ok(self.order_reports.clone())
+            } else if self.report_release.is_some() {
+                self.state
+                    .report_response_returned
+                    .store(true, Ordering::Relaxed);
                 Ok(Vec::new())
             } else {
                 std::future::pending::<anyhow::Result<Vec<OrderStatusReport>>>().await
@@ -1355,12 +1397,19 @@ pub(crate) mod serial_tests {
                 return std::future::pending::<anyhow::Result<Option<OrderStatusReport>>>().await;
             }
 
+            if let Some(release) = &self.targeted_report_release {
+                release.notified().await;
+            }
+
+            self.state
+                .report_response_returned
+                .store(true, Ordering::Relaxed);
             Ok(self.targeted_order_report.clone())
         }
 
         async fn generate_fill_reports(
             &self,
-            _cmd: GenerateFillReports,
+            cmd: GenerateFillReports,
         ) -> anyhow::Result<Vec<FillReport>> {
             let request_count = self.state.fill_report_count.fetch_add(1, Ordering::Relaxed) + 1;
 
@@ -1371,12 +1420,26 @@ pub(crate) mod serial_tests {
             }
 
             let mut responses = self.fill_report_responses.lock();
-            let reports = if responses.len() > 1 {
+            let mut reports = if responses.len() > 1 {
                 responses.pop_front().unwrap()
             } else {
                 responses.front().cloned().unwrap_or_default()
             };
 
+            // Fills stamped before the query window's start are filtered out by
+            // `fill_report_in_query_window` before any reconciliation runs, so a
+            // test asserting fill application must respond inside the window.
+            if self.fill_reports_at_window_end {
+                let window_end = cmd.end.unwrap_or(cmd.ts_init);
+                for report in &mut reports {
+                    report.ts_event = window_end;
+                    report.ts_init = window_end;
+                }
+            }
+
+            self.state
+                .report_response_returned
+                .store(true, Ordering::Relaxed);
             Ok(reports)
         }
 
@@ -1391,12 +1454,19 @@ pub(crate) mod serial_tests {
                 .position_report_count
                 .fetch_add(1, Ordering::Relaxed);
 
-            if self.position_reports_complete {
-                return Ok(Vec::new());
-            }
-
             if let Some(release) = &self.report_release {
                 release.notified().await;
+            }
+
+            if self.position_reports_complete {
+                self.state
+                    .report_response_returned
+                    .store(true, Ordering::Relaxed);
+                Ok(self.position_reports.clone())
+            } else if self.report_release.is_some() {
+                self.state
+                    .report_response_returned
+                    .store(true, Ordering::Relaxed);
                 Ok(Vec::new())
             } else {
                 std::future::pending::<anyhow::Result<Vec<PositionStatusReport>>>().await
@@ -1588,6 +1658,20 @@ pub(crate) mod serial_tests {
             ts_event,
             ts_event,
             None,
+        )
+    }
+
+    fn reconciliation_position_report(quantity: Quantity) -> PositionStatusReport {
+        PositionStatusReport::new(
+            AccountId::from("BLOCKING-REPORT-001"),
+            crypto_perpetual_ethusdt().id(),
+            PositionSide::Long,
+            quantity,
+            UnixNanos::from(1_000_000),
+            UnixNanos::from(1_000_000),
+            None,
+            None,
+            Some(Decimal::from(100)),
         )
     }
 
@@ -3822,6 +3906,580 @@ pub(crate) mod serial_tests {
         assert!(!blocking_order_report_requested.load(Ordering::Relaxed));
         assert!(position_report_requested.load(Ordering::Relaxed));
         assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    fn shutdown_report_test_config(
+        open_check_interval_secs: Option<f64>,
+        position_check_interval_secs: Option<f64>,
+    ) -> LiveNodeConfig {
+        LiveNodeConfig {
+            exec_engine: LiveExecutionEngineConfig {
+                reconciliation: false,
+                inflight_check_interval_ms: 0,
+                inflight_check_threshold_ms: 0,
+                open_check_interval_secs,
+                open_check_lookback_mins: None,
+                open_check_threshold_ms: 0,
+                open_check_missing_retries: 1,
+                open_check_open_only: false,
+                max_single_order_queries_per_cycle: 1,
+                single_order_query_delay_ms: 0,
+                position_check_interval_secs,
+                ..Default::default()
+            },
+            timeout_reconciliation: Duration::from_secs(10),
+            delay_post_stop: Duration::from_secs(5),
+            logging: LoggerConfig {
+                bypass_logging: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    async fn yield_to_report_completion() {
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_open_report_completed_during_shutdown_is_discarded() {
+        let state = BlockingReportClientState::default();
+        let release = Arc::new(tokio::sync::Notify::new());
+        let client_order_id = ClientOrderId::from("O-SHUTDOWN-OPEN");
+        let venue_order_id = VenueOrderId::from("V-SHUTDOWN-OPEN");
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("BLOCKING-REPORT"),
+            AccountId::from("BLOCKING-REPORT-001"),
+            state.clone(),
+        )
+        .with_order_reports(vec![canceled_order_report(client_order_id, venue_order_id)]);
+        let mut factory = factory;
+        factory.report_release = Some(release.clone());
+        let mut node = reconciliation_node(
+            "ShutdownOpenReportNode",
+            shutdown_report_test_config(Some(0.1), None),
+            factory,
+        );
+        add_accepted_test_order(
+            &node,
+            client_order_id,
+            venue_order_id,
+            ClientId::from("BLOCKING-REPORT"),
+        );
+        // Absent from the bulk report: reconciling it would issue a targeted
+        // query, so the empty targeted assertion below pins the follow-up
+        // suppression rather than holding vacuously.
+        let missing_client_order_id = ClientOrderId::from("O-SHUTDOWN-OPEN-MISSING");
+        add_accepted_test_order(
+            &node,
+            missing_client_order_id,
+            VenueOrderId::from("V-SHUTDOWN-OPEN-MISSING"),
+            ClientId::from("BLOCKING-REPORT"),
+        );
+        let strategy_id = node
+            .kernel()
+            .cache()
+            .borrow()
+            .order(&client_order_id)
+            .unwrap()
+            .strategy_id();
+        let event_topic = switchboard::get_event_order_topic(strategy_id);
+        let (event_handler, event_saver) =
+            nautilus_common::msgbus::stubs::get_typed_message_saving_handler::<OrderEventAny>(None);
+        msgbus::subscribe_order_events(event_topic.into(), event_handler.clone(), None);
+        let handle = node.handle();
+        let driver_handle = handle.clone();
+        let requested = state.bulk_order_report_requested.clone();
+        let response_returned = state.report_response_returned.clone();
+
+        let driver = async move {
+            wait_until_async(
+                || async { requested.load(Ordering::Relaxed) },
+                Duration::from_secs(1),
+            )
+            .await;
+            driver_handle.stop();
+            wait_until_async(
+                || async { driver_handle.state() == NodeState::ShuttingDown },
+                Duration::from_secs(1),
+            )
+            .await;
+            release.notify_one();
+            wait_until_async(
+                || async { response_returned.load(Ordering::Relaxed) },
+                Duration::from_secs(1),
+            )
+            .await;
+            yield_to_report_completion().await;
+            tokio::time::advance(Duration::from_secs(5)).await;
+        };
+
+        let (result, ()) = tokio::join!(node.run(), driver);
+        msgbus::unsubscribe_order_events(event_topic.into(), &event_handler);
+
+        assert!(result.is_ok());
+        assert_eq!(
+            node.kernel()
+                .cache()
+                .borrow()
+                .order(&client_order_id)
+                .unwrap()
+                .status(),
+            OrderStatus::Accepted,
+        );
+        assert!(event_saver.get_messages().is_empty());
+        assert!(state.targeted_order_report_ids.lock().is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_targeted_report_completed_during_shutdown_is_discarded() {
+        let state = BlockingReportClientState::default();
+        let release = Arc::new(tokio::sync::Notify::new());
+        let client_order_id = ClientOrderId::from("O-SHUTDOWN-TARGETED");
+        let venue_order_id = VenueOrderId::from("V-SHUTDOWN-TARGETED");
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("BLOCKING-REPORT"),
+            AccountId::from("BLOCKING-REPORT-001"),
+            state.clone(),
+        )
+        .with_order_reports(Vec::new())
+        .with_targeted_order_report(canceled_order_report(client_order_id, venue_order_id))
+        .with_targeted_report_release(release.clone());
+        let mut node = reconciliation_node(
+            "ShutdownTargetedReportNode",
+            shutdown_report_test_config(Some(0.1), None),
+            factory,
+        );
+        add_accepted_test_order(
+            &node,
+            client_order_id,
+            venue_order_id,
+            ClientId::from("BLOCKING-REPORT"),
+        );
+        let handle = node.handle();
+        let driver_handle = handle.clone();
+        let targeted_ids = state.targeted_order_report_ids.clone();
+        let response_returned = state.report_response_returned.clone();
+
+        let driver = async move {
+            wait_until_async(
+                || async { !targeted_ids.lock().is_empty() },
+                Duration::from_secs(1),
+            )
+            .await;
+            driver_handle.stop();
+            wait_until_async(
+                || async { driver_handle.state() == NodeState::ShuttingDown },
+                Duration::from_secs(1),
+            )
+            .await;
+            // The bulk-order response already set the flag; reset so the next
+            // observation is the targeted response released below.
+            response_returned.store(false, Ordering::Relaxed);
+            release.notify_one();
+            wait_until_async(
+                || async { response_returned.load(Ordering::Relaxed) },
+                Duration::from_secs(1),
+            )
+            .await;
+            yield_to_report_completion().await;
+            tokio::time::advance(Duration::from_secs(5)).await;
+        };
+
+        let (result, ()) = tokio::join!(node.run(), driver);
+
+        assert!(result.is_ok());
+        assert_eq!(
+            node.kernel()
+                .cache()
+                .borrow()
+                .order(&client_order_id)
+                .unwrap()
+                .status(),
+            OrderStatus::Accepted,
+        );
+        assert_eq!(
+            state.targeted_order_report_ids.lock().as_slice(),
+            &[client_order_id]
+        );
+
+        // The discard's own planned-ID cleanup is the only path that removes
+        // this task's targeted-query marker: the completion arm took the task,
+        // so the post-loop cancellation sees an empty slot and an empty planned
+        // list. A leaked marker suppresses the inflight query below.
+        node.exec_manager_mut().register_inflight(client_order_id);
+        tokio::time::advance(Duration::from_millis(1)).await;
+        let inflight = node.exec_manager_mut().check_inflight_orders();
+        assert!(
+            inflight.queries.iter().any(|cmd| matches!(
+                cmd,
+                TradingCommand::QueryOrder(query) if query.client_order_id == client_order_id
+            )),
+            "targeted-query marker was not cleaned by the shutdown discard",
+        );
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_position_report_completed_during_shutdown_does_not_start_fill_report() {
+        let state = BlockingReportClientState::default();
+        let release = Arc::new(tokio::sync::Notify::new());
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("BLOCKING-REPORT"),
+            AccountId::from("BLOCKING-REPORT-001"),
+            state.clone(),
+        )
+        .with_position_reports(vec![reconciliation_position_report(Quantity::from("1.0"))]);
+        let mut factory = factory;
+        factory.report_release = Some(release.clone());
+        let mut node = reconciliation_node(
+            "ShutdownPositionReportNode",
+            shutdown_report_test_config(None, Some(0.1)),
+            factory,
+        );
+        let handle = node.handle();
+        let driver_handle = handle.clone();
+        let requested = state.position_report_requested.clone();
+        let response_returned = state.report_response_returned.clone();
+
+        let driver = async move {
+            wait_until_async(
+                || async { requested.load(Ordering::Relaxed) },
+                Duration::from_secs(1),
+            )
+            .await;
+            driver_handle.stop();
+            wait_until_async(
+                || async { driver_handle.state() == NodeState::ShuttingDown },
+                Duration::from_secs(1),
+            )
+            .await;
+            release.notify_one();
+            wait_until_async(
+                || async { response_returned.load(Ordering::Relaxed) },
+                Duration::from_secs(1),
+            )
+            .await;
+            yield_to_report_completion().await;
+            tokio::time::advance(Duration::from_secs(5)).await;
+        };
+
+        let (result, ()) = tokio::join!(node.run(), driver);
+
+        assert!(result.is_ok());
+        assert_eq!(state.fill_report_count.load(Ordering::Relaxed), 0);
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_position_fill_report_completed_during_shutdown_is_discarded() {
+        let state = BlockingReportClientState::default();
+        let fill_release = Arc::new(tokio::sync::Notify::new());
+        let client_order_id = ClientOrderId::from("O-SHUTDOWN-FILL");
+        let venue_order_id = VenueOrderId::from("V-SHUTDOWN-FILL");
+        let fill = reconciliation_fill_report(
+            client_order_id,
+            venue_order_id,
+            TradeId::from("T-SHUTDOWN-FILL"),
+            Price::from("100.0"),
+            Money::from("0.25 USDT"),
+            UnixNanos::from(1_000_000),
+        );
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("BLOCKING-REPORT"),
+            AccountId::from("BLOCKING-REPORT-001"),
+            state.clone(),
+        )
+        .with_position_reports(vec![reconciliation_position_report(Quantity::from("1.0"))])
+        .with_fill_report_responses([vec![fill]], Some(fill_release.clone()))
+        .with_fill_reports_at_window_end();
+        let mut node = reconciliation_node(
+            "ShutdownPositionFillReportNode",
+            shutdown_report_test_config(None, Some(0.1)),
+            factory,
+        );
+        add_accepted_test_order(
+            &node,
+            client_order_id,
+            venue_order_id,
+            ClientId::from("BLOCKING-REPORT"),
+        );
+        let handle = node.handle();
+        let driver_handle = handle.clone();
+        let fill_count = state.fill_report_count.clone();
+        let response_returned = state.report_response_returned.clone();
+
+        let driver = async move {
+            wait_until_async(
+                || async { fill_count.load(Ordering::Relaxed) == 1 },
+                Duration::from_secs(1),
+            )
+            .await;
+            driver_handle.stop();
+            wait_until_async(
+                || async { driver_handle.state() == NodeState::ShuttingDown },
+                Duration::from_secs(1),
+            )
+            .await;
+            // The position response already set the flag; reset so the next
+            // observation is the fill response released below.
+            response_returned.store(false, Ordering::Relaxed);
+            fill_release.notify_one();
+            wait_until_async(
+                || async { response_returned.load(Ordering::Relaxed) },
+                Duration::from_secs(1),
+            )
+            .await;
+            yield_to_report_completion().await;
+            tokio::time::advance(Duration::from_secs(5)).await;
+        };
+
+        let (result, ()) = tokio::join!(node.run(), driver);
+
+        assert!(result.is_ok());
+        let cache = node.kernel().cache();
+        let cache = cache.borrow();
+        let order = cache.order(&client_order_id).unwrap();
+        assert_eq!(order.status(), OrderStatus::Accepted);
+        assert_eq!(order.filled_qty(), Quantity::from("0.0"));
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_position_fill_report_completed_before_shutdown_is_applied() {
+        let state = BlockingReportClientState::default();
+        let fill_release = Arc::new(tokio::sync::Notify::new());
+        let client_order_id = ClientOrderId::from("O-BEFORE-SHUTDOWN-FILL");
+        let venue_order_id = VenueOrderId::from("V-BEFORE-SHUTDOWN-FILL");
+        let fill = reconciliation_fill_report(
+            client_order_id,
+            venue_order_id,
+            TradeId::from("T-BEFORE-SHUTDOWN-FILL"),
+            Price::from("100.0"),
+            Money::from("0.25 USDT"),
+            UnixNanos::from(1_000_000),
+        );
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("BLOCKING-REPORT"),
+            AccountId::from("BLOCKING-REPORT-001"),
+            state.clone(),
+        )
+        .with_position_reports(vec![reconciliation_position_report(Quantity::from("1.0"))])
+        .with_fill_report_responses([vec![fill]], Some(fill_release.clone()))
+        .with_fill_reports_at_window_end();
+        let mut node = reconciliation_node(
+            "BeforeShutdownPositionFillReportNode",
+            shutdown_report_test_config(None, Some(0.1)),
+            factory,
+        );
+        add_accepted_test_order(
+            &node,
+            client_order_id,
+            venue_order_id,
+            ClientId::from("BLOCKING-REPORT"),
+        );
+        let handle = node.handle();
+        let driver_handle = handle.clone();
+        let fill_count = state.fill_report_count.clone();
+        let response_returned = state.report_response_returned.clone();
+
+        let driver = async move {
+            wait_until_async(
+                || async { fill_count.load(Ordering::Relaxed) == 1 },
+                Duration::from_secs(1),
+            )
+            .await;
+            // The position response already set the flag; reset so the next
+            // observation is the fill response released below.
+            response_returned.store(false, Ordering::Relaxed);
+            fill_release.notify_one();
+            wait_until_async(
+                || async { response_returned.load(Ordering::Relaxed) },
+                Duration::from_secs(1),
+            )
+            .await;
+            yield_to_report_completion().await;
+            driver_handle.stop();
+            tokio::time::advance(Duration::from_secs(5)).await;
+        };
+
+        let (result, ()) = tokio::join!(node.run(), driver);
+
+        assert!(result.is_ok());
+        let cache = node.kernel().cache();
+        let cache = cache.borrow();
+        let order = cache.order(&client_order_id).unwrap();
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(order.filled_qty(), Quantity::from("1.0"));
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_open_report_completed_before_shutdown_is_reconciled() {
+        let state = BlockingReportClientState::default();
+        let release = Arc::new(tokio::sync::Notify::new());
+        let client_order_id = ClientOrderId::from("O-BEFORE-SHUTDOWN");
+        let venue_order_id = VenueOrderId::from("V-BEFORE-SHUTDOWN");
+        let missing_client_order_id = ClientOrderId::from("O-BEFORE-SHUTDOWN-MISSING");
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("BLOCKING-REPORT"),
+            AccountId::from("BLOCKING-REPORT-001"),
+            state.clone(),
+        )
+        .with_order_reports(vec![canceled_order_report(client_order_id, venue_order_id)]);
+        let mut factory = factory;
+        factory.report_release = Some(release.clone());
+        let mut node = reconciliation_node(
+            "BeforeShutdownOpenReportNode",
+            shutdown_report_test_config(Some(0.1), None),
+            factory,
+        );
+        add_accepted_test_order(
+            &node,
+            client_order_id,
+            venue_order_id,
+            ClientId::from("BLOCKING-REPORT"),
+        );
+        add_accepted_test_order(
+            &node,
+            missing_client_order_id,
+            VenueOrderId::from("V-BEFORE-SHUTDOWN-MISSING"),
+            ClientId::from("BLOCKING-REPORT"),
+        );
+        let handle = node.handle();
+        let driver_handle = handle.clone();
+        let requested = state.bulk_order_report_requested.clone();
+        let targeted_ids = state.targeted_order_report_ids.clone();
+
+        let driver = async move {
+            wait_until_async(
+                || async { requested.load(Ordering::Relaxed) },
+                Duration::from_secs(1),
+            )
+            .await;
+            release.notify_one();
+            wait_until_async(
+                || async { !targeted_ids.lock().is_empty() },
+                Duration::from_secs(1),
+            )
+            .await;
+            driver_handle.stop();
+            tokio::time::advance(Duration::from_secs(5)).await;
+        };
+
+        let (result, ()) = tokio::join!(node.run(), driver);
+
+        assert!(result.is_ok());
+        assert_eq!(
+            node.kernel()
+                .cache()
+                .borrow()
+                .order(&client_order_id)
+                .unwrap()
+                .status(),
+            OrderStatus::Canceled,
+        );
+        assert_eq!(
+            state.targeted_order_report_ids.lock().as_slice(),
+            &[missing_client_order_id],
+        );
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_report_timeout_during_shutdown_runs_cancellation_cleanup() {
+        let state = BlockingReportClientState::default();
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("BLOCKING-REPORT"),
+            AccountId::from("BLOCKING-REPORT-001"),
+            state.clone(),
+        );
+        let mut config = shutdown_report_test_config(Some(0.1), None);
+        config.timeout_reconciliation = Duration::from_millis(250);
+        let mut node = reconciliation_node("ShutdownReportTimeoutNode", config, factory);
+        let handle = node.handle();
+        let driver_handle = handle.clone();
+        let requested = state.bulk_order_report_requested.clone();
+        let instrument_received = state.instrument_received.clone();
+
+        let driver = async move {
+            wait_until_async(
+                || async { requested.load(Ordering::Relaxed) },
+                Duration::from_secs(1),
+            )
+            .await;
+            let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+            msgbus::publish_instrument(
+                switchboard::get_instrument_topic(instrument.id()),
+                &instrument,
+            );
+            driver_handle.stop();
+            wait_until_async(
+                || async { driver_handle.state() == NodeState::ShuttingDown },
+                Duration::from_secs(1),
+            )
+            .await;
+            tokio::time::advance(Duration::from_millis(250)).await;
+            wait_until_async(
+                || async { instrument_received.load(Ordering::Relaxed) },
+                Duration::from_secs(1),
+            )
+            .await;
+            tokio::time::advance(Duration::from_secs(5)).await;
+        };
+
+        let (result, ()) = tokio::join!(node.run(), driver);
+
+        assert!(result.is_ok());
+        assert!(state.instrument_received.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_report_pending_at_shutdown_deadline_runs_cancellation_cleanup() {
+        let state = BlockingReportClientState::default();
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("BLOCKING-REPORT"),
+            AccountId::from("BLOCKING-REPORT-001"),
+            state.clone(),
+        );
+        let mut node = reconciliation_node(
+            "ShutdownPendingReportNode",
+            shutdown_report_test_config(Some(0.1), None),
+            factory,
+        );
+        let handle = node.handle();
+        let driver_handle = handle.clone();
+        let requested = state.bulk_order_report_requested.clone();
+
+        let driver = async move {
+            wait_until_async(
+                || async { requested.load(Ordering::Relaxed) },
+                Duration::from_secs(1),
+            )
+            .await;
+            let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+            msgbus::publish_instrument(
+                switchboard::get_instrument_topic(instrument.id()),
+                &instrument,
+            );
+            driver_handle.stop();
+            wait_until_async(
+                || async { driver_handle.state() == NodeState::ShuttingDown },
+                Duration::from_secs(1),
+            )
+            .await;
+            tokio::time::advance(Duration::from_secs(5)).await;
+        };
+
+        let (result, ()) = tokio::join!(node.run(), driver);
+
+        assert!(result.is_ok());
+        assert!(state.instrument_received.load(Ordering::Relaxed));
     }
 
     #[rstest]
