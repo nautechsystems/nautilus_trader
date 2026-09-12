@@ -12,10 +12,12 @@ Simulation modules use the enum and handle forms at different configuration boun
 | Declarative `BacktestVenueConfig`              | `SimulationModuleAny`    | Built-ins and language bridges.       |
 | `SimulatedVenueConfig` and `SimulatedExchange` | `SimulationModuleHandle` | Any linked Rust trait implementation. |
 
+:::warning[Shared module state]
 `SimulationModuleHandle` owns an `Rc<dyn SimulationModule>`, so cloning a handle shares the module
 and its state. Cloning a built-in enum value copies its state, while cloning a Python bridge retains
 the same Python object. Venues or runs that require isolated state therefore use distinct module
 instances, including distinct Python objects.
+:::
 
 ## Lifecycle
 

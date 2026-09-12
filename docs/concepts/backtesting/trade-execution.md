@@ -73,7 +73,7 @@ non-aggressor side of the latest quote.
 
 ## Aggressor sides
 
-The aggressor is the participant that crossed the spread:
+The **aggressor** is the participant that crossed the spread:
 
 - `SELL`: A seller hit the bid. The trade can fill a resting BUY order.
 - `BUY`: A buyer lifted the ask. The trade can fill a resting SELL order.
@@ -191,6 +191,9 @@ displayed-size evidence:
 - Queue tracking applies only to `LIMIT` orders.
 - Each simulated order has an independent queue estimate.
 - The initial estimate is limited to book state visible at acceptance.
-- `NO_AGGRESSOR` trades reduce queues on both sides. This can clear a queue and fill an order
-  earlier than reality, so it is optimistic from the strategy's execution perspective.
 - Historical data cannot reveal hidden orders or every venue-specific priority rule.
+
+:::warning[Unknown aggressor side]
+`NO_AGGRESSOR` trades reduce queues on both sides. This can clear a queue and fill an order
+earlier than reality, so it is optimistic from the strategy's execution perspective.
+:::

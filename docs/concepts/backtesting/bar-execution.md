@@ -11,7 +11,7 @@ Resting orders match as those updates move through the bar.
 
 :::warning
 For execution simulation, each bar's initialization timestamp (`ts_init`) must represent the
-**close** of the interval. This prevents the complete bar from becoming visible before it formed.
+**close of the interval**. This prevents the complete bar from becoming visible before it formed.
 :::
 
 The event timestamp (`ts_event`) may represent the open or close, depending on the data source:
@@ -61,7 +61,7 @@ The venue's `bar_adaptive_high_low_ordering` option controls the intrabar path:
   - If the open is closer to the high, it uses `Open -> High -> Low -> Close`.
   - If the open is closer to the low, it uses `Open -> Low -> High -> Close`.
 
-The adaptive path is a deterministic heuristic, not a reconstruction of the actual trade sequence.
+The adaptive path is a **deterministic heuristic**, not a reconstruction of the actual trade sequence.
 Its accuracy depends on the market, interval, and data source. An
 [exploratory EUR/USD analysis](https://gist.github.com/stefansimik/d387e1d9ff784a8973feca0cde51e363)
 motivates the distance heuristic but does not establish a general accuracy rate.
@@ -118,7 +118,7 @@ engine.add_venue(
 )
 ```
 
-:::note
+:::warning[Next-bar-open fills and look-ahead]
 The engine does not provide a native next-bar-open fill mode. A strategy can form a signal from a
 completed prior bar without look-ahead, but the next bar's open is processed before that next bar
 is dispatched. Using the current bar's open from its `on_bar` callback would introduce look-ahead;

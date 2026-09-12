@@ -1,7 +1,7 @@
 # Fill Models
 
 Historical data cannot show how a simulated order would have interacted with other market
-participants. A fill model controls the assumptions NautilusTrader makes about limit-order
+participants. A **fill model** controls the assumptions NautilusTrader makes about limit-order
 eligibility, one-tick slippage, and optional synthetic liquidity.
 
 ## Behavior by book type
@@ -149,5 +149,7 @@ Before determining a fill, the matching engine asks the model for an optional sy
 If the model returns a book, the engine fills against its levels. If it returns `None`, the engine
 uses the recorded book.
 
+:::warning[Synthetic book consumption]
 Per-level `liquidity_consumption` tracking does not apply to a synthetic model book. A custom model
 must represent any desired consumption behavior in the books it returns.
+:::

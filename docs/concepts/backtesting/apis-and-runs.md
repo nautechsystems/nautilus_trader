@@ -1,6 +1,6 @@
 # Backtest APIs and Repeated Runs
 
-NautilusTrader provides a low-level `BacktestEngine` API for direct control and a high-level
+NautilusTrader provides a **low-level** `BacktestEngine` API for direct control and a **high-level**
 `BacktestNode` API for catalog-backed, configurable runs.
 
 ## Choosing an API level
@@ -68,7 +68,7 @@ The engine copies each input sequence. Clearing or modifying the original Python
 
 ### Streaming batches manually
 
-Use streaming mode when the complete dataset does not fit in memory:
+Use **streaming mode** when the complete dataset does not fit in memory:
 
 ```python
 engine.add_strategy(strategy)
@@ -162,13 +162,13 @@ see [shutdown semantics](execution-flow.md#shutdown-semantics).
 `BacktestEngine.reset()` returns trading state and loaded component state to their initial values.
 It keeps data, instruments, venues, actors, strategies, and execution algorithms registered.
 
-The reset clears:
+The reset **clears**:
 
 - Orders, positions, and account balances.
 - Component runtime state.
 - Engine counters and timestamps.
 
-The reset retains:
+The reset **retains**:
 
 - Data added through `add_data()`.
 - Instruments and venue configuration.

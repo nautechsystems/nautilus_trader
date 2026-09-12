@@ -74,7 +74,7 @@ At an option's expiration timestamp, automatic expiry checks close its market, c
 and reject new orders. Position settlement waits until all market data at that timestamp has been
 processed, so settlement sees the latest underlying price available for that timestamp. An explicit
 `InstrumentClose` with `InstrumentCloseType::ContractExpired` attempts settlement immediately.
-Streaming batches must keep all data for a timestamp together; `BacktestNode` does this automatically.
+Streaming batches must keep **all data for a timestamp together**; `BacktestNode` does this automatically.
 
 `SimulatedVenueConfig.defer_option_settlement` defaults to `true`. The backtest engine schedules
 settlement after all market data at the expiry timestamp, without waiting for the next timestamp.
@@ -188,14 +188,14 @@ fills at the same `ts_init` (e.g. several legs of a bar-driven fill).
 
 Deterministic trade IDs have these properties:
 
-- Deterministic across runs: the same replayed data produces the same
+- **Deterministic across runs**: the same replayed data produces the same
   `TradeId` every time, so downstream dedup and golden-output comparisons stay
   stable.
-- Collision-safe across resets: `ts_init` is pinned in backtest data and
+- **Collision-safe across resets**: `ts_init` is pinned in backtest data and
   monotonic in live/sandbox, so a `BacktestEngine.reset()` (or an in-memory
   `IdsGenerator` reset in a sandbox with persisted orders) cannot mint a
   `TradeId` that collides with one already in the cache.
-- Bounded length: the hash keeps the identifier under the 36-character
+- **Bounded length**: the hash keeps the identifier under the 36-character
   `TradeId` cap regardless of venue name length.
 
 The `use_random_ids` venue flag still governs `VenueOrderId` and `PositionId` generation, but
