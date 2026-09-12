@@ -110,6 +110,7 @@ class InteractiveBrokersDataClientConfig:
         request_timeout: int | None = None,
         handle_revised_bars: bool | None = None,
         batch_quotes: bool | None = None,
+        all_last_trades: bool | None = None,
         instrument_provider: InteractiveBrokersInstrumentProviderConfig | None = None,
         dockerized_gateway: DockerizedIBGatewayConfig | None = None,
     ) -> None: ...
@@ -133,6 +134,8 @@ class InteractiveBrokersDataClientConfig:
     def handle_revised_bars(self) -> bool: ...
     @property
     def batch_quotes(self) -> bool: ...
+    @property
+    def all_last_trades(self) -> bool: ...
     @property
     def instrument_provider(self) -> InteractiveBrokersInstrumentProviderConfig: ...
     @instrument_provider.setter

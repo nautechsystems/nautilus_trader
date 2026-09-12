@@ -116,6 +116,14 @@ pub struct InteractiveBrokersDataClientConfig {
     /// Whether to use batch quotes (reqMktData) by default instead of tick-by-tick.
     #[builder(default = true)]
     pub batch_quotes: bool,
+    /// Whether to subscribe tick-by-tick trades as `AllLast` rather than `Last`.
+    ///
+    /// `AllLast` includes trade types which are not part of the price-forming tape, such as
+    /// combos, derivatively-priced and average-price prints. `Last` returns regular trades
+    /// only, which is usually what should be recorded for replay. Defaults to `true` to
+    /// preserve existing behavior.
+    #[builder(default = true)]
+    pub all_last_trades: bool,
     /// Instrument provider configuration.
     #[builder(default)]
     pub instrument_provider: InteractiveBrokersInstrumentProviderConfig,
@@ -402,5 +410,42 @@ mod tests {
         assert!(formatted.contains("password: Some(<redacted>)"));
         assert!(!formatted.contains("test-user"));
         assert!(!formatted.contains("test-password"));
+    }
+
+    #[rstest]
+    fn data_client_config_defaults_to_all_last_trades() {
+        // Defaults must preserve the previous behavior for existing users.
+        let config = InteractiveBrokersDataClientConfig::default();
+        assert!(config.all_last_trades);
+    }
+
+    #[rstest]
+    fn data_client_config_can_select_last_trades() {
+        let config = InteractiveBrokersDataClientConfig::builder()
+            .all_last_trades(false)
+            .build();
+        assert!(!config.all_last_trades);
+    }
+
+    #[rstest]
+    fn data_client_config_all_last_trades_round_trips_through_serde() {
+        let config = InteractiveBrokersDataClientConfig::builder()
+            .all_last_trades(false)
+            .build();
+
+        let json = serde_json::to_string(&config).unwrap();
+        let decoded: InteractiveBrokersDataClientConfig = serde_json::from_str(&json).unwrap();
+
+        assert!(!decoded.all_last_trades);
+    }
+
+    #[rstest]
+    fn data_client_config_omitted_all_last_trades_deserializes_to_default() {
+        // `#[serde(default)]` on the struct means an existing config file without the new
+        // field must still deserialize, and keep the previous behavior.
+        let decoded: InteractiveBrokersDataClientConfig =
+            serde_json::from_str(r#"{"host":"127.0.0.1","port":7497}"#).unwrap();
+
+        assert!(decoded.all_last_trades);
     }
 }
