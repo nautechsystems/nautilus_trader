@@ -473,6 +473,7 @@ pub trait ExecutionAlgorithm: DataActor {
             self.reduce_primary_order(primary, quantity);
             ExecutionAlgorithmNative::exec_algorithm_core_mut(self).track_pending_spawn_reduction(
                 client_order_id,
+                primary.client_order_id(),
                 quantity,
                 primary.is_quote_quantity(),
             );
@@ -546,6 +547,7 @@ pub trait ExecutionAlgorithm: DataActor {
             self.reduce_primary_order(primary, quantity);
             ExecutionAlgorithmNative::exec_algorithm_core_mut(self).track_pending_spawn_reduction(
                 client_order_id,
+                primary.client_order_id(),
                 quantity,
                 primary.is_quote_quantity(),
             );
@@ -624,6 +626,7 @@ pub trait ExecutionAlgorithm: DataActor {
             self.reduce_primary_order(primary, quantity);
             ExecutionAlgorithmNative::exec_algorithm_core_mut(self).track_pending_spawn_reduction(
                 client_order_id,
+                primary.client_order_id(),
                 quantity,
                 primary.is_quote_quantity(),
             );
@@ -714,12 +717,13 @@ pub trait ExecutionAlgorithm: DataActor {
     /// Restores a spawn reduction while the cached primary order remains local.
     ///
     /// The quantity deducted from the cached primary order is restored up to the
-    /// spawned order's unfilled proportion in primary units. Primaries handed
+    /// spawned order's unfilled proportion in primary units. Tracked fill voids
+    /// return only the additional budget released by the correction. Primaries handed
     /// off for submission retain their committed quantity. Uncompensated
     /// late-fill debt on the primary is discharged before quantity is returned.
     ///
     /// `refused_before_submission` selects whether the restoration log records a
-    /// refusal or a terminal outcome.
+    /// refusal or an order update.
     fn restore_primary_order_quantity(&mut self, order: &OrderAny, refused_before_submission: bool)
     where
         Self: ExecutionAlgorithmNative,
@@ -736,10 +740,6 @@ pub trait ExecutionAlgorithm: DataActor {
         let Some(mut reduction) = reduction else {
             return;
         };
-
-        if !reduction.restored_qty.is_zero() {
-            return;
-        }
 
         let primary = {
             let cache = ExecutionAlgorithmNative::exec_algorithm_core_mut(self).cache_ref();
@@ -771,20 +771,22 @@ pub trait ExecutionAlgorithm: DataActor {
             return;
         }
 
-        let Some(restore_qty) = spawn_quantity_in_primary_units(
-            order,
-            reduction,
-            order.leaves_qty(),
-            primary.quantity().precision,
-        ) else {
+        let Some(unfilled_qty) =
+            spawn_unfilled_quantity(order, reduction, primary.quantity().precision)
+        else {
             ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
                 .take_pending_spawn_reduction(order.client_order_id());
             return;
         };
-        let restore_qty = restore_qty.min(reduction.deducted_qty);
+        let restored_qty = reduction
+            .restored_qty
+            .unwrap_or_else(|| Quantity::zero(unfilled_qty.precision));
+        let restore_qty = unfilled_qty.saturating_sub(restored_qty);
+        reduction.restored_qty = Some(unfilled_qty);
+
         if restore_qty.is_zero() {
             ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
-                .take_pending_spawn_reduction(order.client_order_id());
+                .set_spawn_reduction(order.client_order_id(), reduction);
             return;
         }
 
@@ -799,7 +801,6 @@ pub trait ExecutionAlgorithm: DataActor {
         if net_restore_qty.is_zero() {
             // The whole restoration discharged debt: keep the record with the
             // gross released amount so this child's own late fills stay tracked
-            reduction.restored_qty = restore_qty;
             let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
             core.set_spawn_reduction(order.client_order_id(), reduction);
             core.set_spawn_fill_debt(exec_spawn_id, debt_qty - discharge_qty);
@@ -853,7 +854,6 @@ pub trait ExecutionAlgorithm: DataActor {
         // the gross released amount (including the debt-discharged portion) as
         // this child's late-fill accounting budget; only the net reaches the
         // primary.
-        reduction.restored_qty = restore_qty;
         let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
         core.set_spawn_reduction(order.client_order_id(), reduction);
         if !discharge_qty.is_zero() {
@@ -865,7 +865,7 @@ pub trait ExecutionAlgorithm: DataActor {
         let outcome = if refused_before_submission {
             "refused before submission"
         } else {
-            "terminated with unfilled quantity"
+            "updated with unfilled quantity"
         };
         log::info!(
             "Restored primary order {} quantity to {} after spawned order {} was {outcome}",
@@ -876,7 +876,7 @@ pub trait ExecutionAlgorithm: DataActor {
     }
 
     /// Re-deducts a late spawn fill from a previously restored local primary order.
-    fn rededuct_late_spawn_fill(&mut self, order: &OrderAny, last_qty: Quantity)
+    fn rededuct_late_spawn_fill(&mut self, order: &OrderAny)
     where
         Self: ExecutionAlgorithmNative,
     {
@@ -890,9 +890,9 @@ pub trait ExecutionAlgorithm: DataActor {
             return;
         };
 
-        if reduction.restored_qty.is_zero() {
+        let Some(restored_qty) = reduction.restored_qty else {
             return;
-        }
+        };
 
         let primary = {
             let cache = ExecutionAlgorithmNative::exec_algorithm_core_mut(self).cache_ref();
@@ -922,17 +922,14 @@ pub trait ExecutionAlgorithm: DataActor {
             return;
         }
 
-        let Some(uncapped_qty) = spawn_quantity_in_primary_units(
-            order,
-            reduction,
-            last_qty,
-            primary.quantity().precision,
-        ) else {
+        let Some(unfilled_qty) =
+            spawn_unfilled_quantity(order, reduction, primary.quantity().precision)
+        else {
             ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
                 .take_pending_spawn_reduction(spawn_id);
             return;
         };
-        let uncapped_qty = uncapped_qty.min(reduction.restored_qty);
+        let uncapped_qty = restored_qty.saturating_sub(unfilled_qty);
         let primary_qty = primary.quantity();
         // Restored quantity may already have been reused by a later spawn, so
         // cap at the primary's remaining quantity; the shortfall becomes debt
@@ -946,7 +943,7 @@ pub trait ExecutionAlgorithm: DataActor {
                     spawn_id,
                     exec_spawn_id,
                     reduction,
-                    uncapped_qty,
+                    unfilled_qty,
                     shortfall_qty,
                 );
                 log::warn!(
@@ -989,7 +986,7 @@ pub trait ExecutionAlgorithm: DataActor {
             spawn_id,
             exec_spawn_id,
             reduction,
-            uncapped_qty,
+            unfilled_qty,
             shortfall_qty,
         );
 
@@ -1076,7 +1073,7 @@ pub trait ExecutionAlgorithm: DataActor {
             log::info!("{id} {SEND}{CMD} {command}");
         }
 
-        if order.exec_spawn_id() == Some(order.client_order_id()) {
+        if order.is_primary() {
             core.mark_primary_handed_off(order.client_order_id());
         }
 
@@ -1500,6 +1497,11 @@ pub trait ExecutionAlgorithm: DataActor {
             }
         }
 
+        if order.is_primary() && !order.is_active_local() {
+            ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
+                .clear_primary_spawn_state(order.client_order_id());
+        }
+
         match &event {
             OrderEventAny::Initialized(e) => self.on_order_initialized(e.clone()),
             OrderEventAny::Denied(e) => {
@@ -1529,19 +1531,27 @@ pub trait ExecutionAlgorithm: DataActor {
             OrderEventAny::CancelRejected(e) => self.on_order_cancel_rejected(*e),
             OrderEventAny::Updated(e) => self.on_order_updated(*e),
             OrderEventAny::Filled(e) => {
-                self.rededuct_late_spawn_fill(&order, e.last_qty);
+                self.rededuct_late_spawn_fill(&order);
                 if order.leaves_qty().is_zero() {
                     let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
                     if core
                         .spawn_reduction(order.client_order_id())
-                        .is_some_and(|reduction| reduction.restored_qty.is_zero())
+                        .is_some_and(|reduction| reduction.restored_qty.is_none())
                     {
                         core.take_pending_spawn_reduction(order.client_order_id());
                     }
                 }
                 self.on_algo_order_filled(e.clone());
             }
-            OrderEventAny::FillVoided(e) => self.on_order_fill_voided(e),
+            OrderEventAny::FillVoided(e) => {
+                if ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
+                    .spawn_reduction(order.client_order_id())
+                    .is_some_and(|reduction| reduction.restored_qty.is_some())
+                {
+                    self.restore_primary_order_quantity(&order, false);
+                }
+                self.on_order_fill_voided(e);
+            }
         }
 
         self.on_order_event(event);
@@ -1741,14 +1751,18 @@ impl Display for EmulatedOrderSubmissionError {
 
 impl std::error::Error for EmulatedOrderSubmissionError {}
 
-fn spawn_quantity_in_primary_units(
+fn spawn_unfilled_quantity(
     order: &OrderAny,
     reduction: SpawnReduction,
-    child_qty: Quantity,
     primary_precision: u8,
 ) -> Option<Quantity> {
     if reduction.spawn_was_quote_quantity == order.is_quote_quantity() {
-        return Some(child_qty);
+        return Some(
+            order
+                .quantity()
+                .min(reduction.deducted_qty)
+                .saturating_sub(order.filled_qty()),
+        );
     }
 
     if !reduction.spawn_was_quote_quantity {
@@ -1767,6 +1781,9 @@ fn spawn_quantity_in_primary_units(
         );
         return None;
     }
+
+    // Voided fills release budget even when the venue does not reopen their leaves
+    let child_qty = converted_total.saturating_sub(order.filled_qty());
 
     // Fills and leaves never exceed the order total; the clamp makes that a
     // structural bound so the quotient below always fits the raw width.
@@ -1851,18 +1868,11 @@ fn charge_spawn_reduction(
     spawn_id: ClientOrderId,
     primary_id: ClientOrderId,
     mut reduction: SpawnReduction,
-    charged_qty: Quantity,
+    unfilled_qty: Quantity,
     shortfall_qty: Quantity,
 ) {
-    let precision = reduction.restored_qty.precision;
-    reduction.restored_qty = reduction.restored_qty - charged_qty;
-    reduction.restored_qty.precision = precision;
-
-    if reduction.restored_qty.is_zero() {
-        core.take_pending_spawn_reduction(spawn_id);
-    } else {
-        core.set_spawn_reduction(spawn_id, reduction);
-    }
+    reduction.restored_qty = Some(unfilled_qty);
+    core.set_spawn_reduction(spawn_id, reduction);
 
     if !shortfall_qty.is_zero() {
         core.add_spawn_fill_debt(primary_id, shortfall_qty);
@@ -4453,7 +4463,8 @@ mod tests {
             algo.core
                 .spawn_reduction(spawned_order.client_order_id())
                 .unwrap()
-                .restored_qty,
+                .restored_qty
+                .unwrap(),
             Quantity::from("50"),
         );
     }
@@ -4481,7 +4492,8 @@ mod tests {
             algo.core
                 .spawn_reduction(spawned_order.client_order_id())
                 .unwrap()
-                .restored_qty,
+                .restored_qty
+                .unwrap(),
             Quantity::from("30"),
         );
     }
@@ -4509,7 +4521,8 @@ mod tests {
             algo.core
                 .spawn_reduction(spawned_order.client_order_id())
                 .unwrap()
-                .restored_qty,
+                .restored_qty
+                .unwrap(),
             Quantity::from("40"),
         );
     }
@@ -4537,22 +4550,23 @@ mod tests {
             algo.core
                 .spawn_reduction(spawned_order.client_order_id())
                 .unwrap()
-                .restored_qty,
+                .restored_qty
+                .unwrap(),
             Quantity::from("6.66"),
         );
     }
 
     #[rstest]
-    fn test_converted_quote_spawn_repeated_fractional_late_fills_floor_each_event() {
+    fn test_converted_quote_spawn_repeated_fractional_late_fills_conserve_budget() {
         let (mut algo, client_order_id, mut spawned_order) =
             setup_accepted_quote_spawn(Quantity::from("20.00"), Quantity::from("10.00"));
         convert_spawn_to_base(&mut algo, &mut spawned_order, Quantity::from("3.000"));
         cancel_spawned_order(&mut algo, &mut spawned_order);
 
         for (primary_qty, restored_qty) in [
-            (Quantity::from("16.67"), Quantity::from("6.67")),
-            (Quantity::from("13.34"), Quantity::from("3.34")),
-            (Quantity::from("10.01"), Quantity::from("0.01")),
+            (Quantity::from("16.66"), Quantity::from("6.66")),
+            (Quantity::from("13.33"), Quantity::from("3.33")),
+            (Quantity::from("10.00"), Quantity::from("0.00")),
         ] {
             fill_spawned_order(&mut algo, &mut spawned_order, Quantity::from("1.000"));
             assert_eq!(
@@ -4563,10 +4577,303 @@ mod tests {
                 algo.core
                     .spawn_reduction(spawned_order.client_order_id())
                     .unwrap()
-                    .restored_qty,
+                    .restored_qty
+                    .unwrap(),
                 restored_qty,
             );
         }
+    }
+
+    #[rstest]
+    #[case::single_fill(Quantity::from("3.0"), 1)]
+    #[case::split_fills(Quantity::from("0.1"), 30)]
+    fn test_converted_quote_spawn_fill_partition_preserves_total(
+        #[case] fill_qty: Quantity,
+        #[case] fills: usize,
+    ) {
+        let (mut algo, primary_id, mut child) =
+            setup_accepted_quote_spawn(Quantity::from("20"), Quantity::from("10"));
+        convert_spawn_to_base(&mut algo, &mut child, Quantity::from("3.0"));
+        cancel_spawned_order(&mut algo, &mut child);
+
+        for _ in 0..fills {
+            fill_spawned_order(&mut algo, &mut child, fill_qty);
+        }
+
+        assert_eq!(child.filled_qty(), Quantity::from("3.0"));
+        assert_eq!(
+            algo.cache().order(&primary_id).unwrap().quantity(),
+            Quantity::from("10")
+        );
+        assert_eq!(
+            algo.core
+                .spawn_reduction(child.client_order_id())
+                .unwrap()
+                .restored_qty,
+            Some(Quantity::from("0"))
+        );
+        assert!(algo.core.spawn_fill_debt(primary_id).is_none());
+    }
+
+    #[rstest]
+    fn test_increased_spawn_late_fill_debits_original_restoration() {
+        let (mut algo, primary_id, mut child) = setup_pending_spawn();
+        algo.modify_order_in_place(&mut child, Some(Quantity::from("0.8")), None, None)
+            .unwrap();
+        accept_spawned_order(&mut algo, &mut child);
+        cancel_spawned_order(&mut algo, &mut child);
+
+        fill_spawned_order(&mut algo, &mut child, Quantity::from("0.1"));
+
+        assert_eq!(child.quantity(), Quantity::from("0.8"));
+        assert_eq!(child.filled_qty(), Quantity::from("0.1"));
+        assert_eq!(
+            algo.cache().order(&primary_id).unwrap().quantity(),
+            Quantity::from("0.9")
+        );
+        assert_eq!(
+            algo.core
+                .spawn_reduction(child.client_order_id())
+                .unwrap()
+                .restored_qty,
+            Some(Quantity::from("0.4"))
+        );
+        assert!(algo.core.spawn_fill_debt(primary_id).is_none());
+
+        void_last_spawn_fill(&mut algo, &mut child, Quantity::from("0.1"));
+
+        assert_eq!(
+            algo.cache().order(&primary_id).unwrap().quantity(),
+            Quantity::from("1.0")
+        );
+    }
+
+    #[rstest]
+    #[case::partial_fill(Quantity::from("0.1"))]
+    #[case::full_fill(Quantity::from("0.5"))]
+    fn test_voided_late_spawn_fill_restores_primary_quantity(#[case] fill_qty: Quantity) {
+        let (mut algo, primary_id, mut child) = setup_accepted_spawn();
+        cancel_spawned_order(&mut algo, &mut child);
+        fill_spawned_order(&mut algo, &mut child, fill_qty);
+
+        void_last_spawn_fill(&mut algo, &mut child, fill_qty);
+
+        assert_eq!(child.filled_qty(), Quantity::from("0.0"));
+        assert_eq!(
+            algo.cache().order(&primary_id).unwrap().quantity(),
+            Quantity::from("1.0")
+        );
+        assert!(algo.core.spawn_fill_debt(primary_id).is_none());
+        assert_eq!(
+            algo.core
+                .spawn_reduction(child.client_order_id())
+                .unwrap()
+                .restored_qty,
+            Some(Quantity::from("0.5"))
+        );
+    }
+
+    #[rstest]
+    #[case::debt_only(
+        Quantity::from("0.1"),
+        Quantity::from("0.0"),
+        Some(Quantity::from("0.1"))
+    )]
+    #[case::debt_and_quantity(Quantity::from("0.3"), Quantity::from("0.1"), None)]
+    fn test_voided_late_spawn_fill_discharges_debt_before_restoring_quantity(
+        #[case] voided_qty: Quantity,
+        #[case] primary_qty: Quantity,
+        #[case] debt_qty: Option<Quantity>,
+    ) {
+        let (mut algo, primary_id, mut child) = setup_accepted_spawn();
+        cancel_spawned_order(&mut algo, &mut child);
+        let _second = spawn_reduced_child(&mut algo, primary_id, Quantity::from("0.8"));
+        fill_spawned_order(&mut algo, &mut child, Quantity::from("0.4"));
+        assert_eq!(
+            algo.core.spawn_fill_debt(primary_id),
+            Some(Quantity::from("0.2"))
+        );
+
+        void_last_spawn_fill(&mut algo, &mut child, voided_qty);
+
+        assert_eq!(
+            algo.cache().order(&primary_id).unwrap().quantity(),
+            primary_qty
+        );
+        assert_eq!(algo.core.spawn_fill_debt(primary_id), debt_qty);
+        assert_eq!(child.filled_qty(), Quantity::from("0.4") - voided_qty);
+        assert_eq!(
+            algo.core
+                .spawn_reduction(child.client_order_id())
+                .unwrap()
+                .restored_qty,
+            Some(Quantity::from("0.1") + voided_qty)
+        );
+    }
+
+    #[rstest]
+    fn test_spawn_fill_void_before_restoration_preserves_reserved_quantity() {
+        let (mut algo, primary_id, mut child) = setup_accepted_spawn();
+        fill_spawned_order(&mut algo, &mut child, Quantity::from("0.1"));
+
+        void_last_spawn_fill(&mut algo, &mut child, Quantity::from("0.1"));
+
+        assert_eq!(
+            algo.cache().order(&primary_id).unwrap().quantity(),
+            Quantity::from("0.5")
+        );
+        assert_eq!(
+            algo.core
+                .spawn_reduction(child.client_order_id())
+                .unwrap()
+                .restored_qty,
+            None
+        );
+        cancel_spawned_order(&mut algo, &mut child);
+        assert_eq!(
+            algo.cache().order(&primary_id).unwrap().quantity(),
+            Quantity::from("1.0")
+        );
+    }
+
+    #[rstest]
+    fn test_spawn_fill_void_after_primary_handoff_preserves_submitted_quantity() {
+        let (mut algo, primary_id, mut child) = setup_accepted_spawn();
+        cancel_spawned_order(&mut algo, &mut child);
+        fill_spawned_order(&mut algo, &mut child, Quantity::from("0.1"));
+        let primary = algo.cache().order(&primary_id).unwrap();
+        let (handler, _messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            handler,
+        );
+        algo.submit_order(primary, None, None).unwrap();
+
+        void_last_spawn_fill(&mut algo, &mut child, Quantity::from("0.1"));
+
+        assert_eq!(
+            algo.cache().order(&primary_id).unwrap().quantity(),
+            Quantity::from("0.9")
+        );
+        assert_eq!(
+            algo.cache().order(&primary_id).unwrap().status(),
+            OrderStatus::Initialized
+        );
+        assert!(algo.core.primary_was_handed_off(primary_id));
+        assert!(algo.core.spawn_reduction(child.client_order_id()).is_none());
+        assert!(algo.core.spawn_fill_debt(primary_id).is_none());
+    }
+
+    #[rstest]
+    fn test_converted_quote_spawn_fill_void_restores_cumulative_budget_once() {
+        let (mut algo, primary_id, mut child) =
+            setup_accepted_quote_spawn(Quantity::from("20.00"), Quantity::from("10.00"));
+        convert_spawn_to_base(&mut algo, &mut child, Quantity::from("3.000"));
+        cancel_spawned_order(&mut algo, &mut child);
+        fill_spawned_order(&mut algo, &mut child, Quantity::from("1.000"));
+        fill_spawned_order(&mut algo, &mut child, Quantity::from("1.000"));
+
+        void_last_spawn_fill(&mut algo, &mut child, Quantity::from("0.500"));
+        assert_eq!(
+            algo.cache().order(&primary_id).unwrap().quantity(),
+            Quantity::from("15.00")
+        );
+        void_last_spawn_fill(&mut algo, &mut child, Quantity::from("1.000"));
+        let duplicate = child.events().into_iter().last().unwrap().clone();
+        algo.handle_order_event(duplicate);
+
+        assert_eq!(child.filled_qty(), Quantity::from("1.000"));
+        assert_eq!(
+            algo.cache().order(&primary_id).unwrap().quantity(),
+            Quantity::from("16.66")
+        );
+        assert_eq!(
+            algo.core
+                .spawn_reduction(child.client_order_id())
+                .unwrap()
+                .restored_qty,
+            Some(Quantity::from("6.66"))
+        );
+        assert!(algo.core.spawn_fill_debt(primary_id).is_none());
+    }
+
+    fn void_last_spawn_fill(algo: &mut TestAlgorithm, order: &mut OrderAny, quantity: Quantity) {
+        let fill = order
+            .events()
+            .into_iter()
+            .rev()
+            .find_map(|event| match event {
+                OrderEventAny::Filled(fill) => Some(fill.clone()),
+                _ => None,
+            })
+            .unwrap();
+        let voided = OrderFillVoidedSpec::builder()
+            .trader_id(fill.trader_id)
+            .strategy_id(fill.strategy_id)
+            .instrument_id(fill.instrument_id)
+            .client_order_id(fill.client_order_id)
+            .venue_order_id(fill.venue_order_id)
+            .account_id(fill.account_id)
+            .trade_id(fill.trade_id)
+            .voided_qty(quantity)
+            .order_side(fill.order_side)
+            .order_type(fill.order_type)
+            .last_px(fill.last_px)
+            .currency(fill.currency)
+            .liquidity_side(fill.liquidity_side)
+            .build();
+        *order = algo
+            .core
+            .cache_rc()
+            .borrow_mut()
+            .update_order(&OrderEventAny::FillVoided(voided.clone()))
+            .unwrap();
+        algo.handle_order_event(OrderEventAny::FillVoided(voided));
+    }
+
+    #[rstest]
+    fn test_primary_handoff_clears_spawn_accounting_without_child_events() {
+        let (mut algo, primary_id, mut child) = setup_accepted_spawn();
+        cancel_spawned_order(&mut algo, &mut child);
+        let primary = algo.cache().order(&primary_id).unwrap();
+        let (handler, _messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            handler,
+        );
+
+        algo.submit_order(primary, None, None).unwrap();
+
+        assert!(algo.core.spawn_reduction(child.client_order_id()).is_none());
+        assert!(algo.core.spawn_fill_debt(primary_id).is_none());
+        assert!(algo.core.primary_was_handed_off(primary_id));
+
+        let mut primary = algo.cache().order(&primary_id).unwrap();
+        submit_order_in_cache(&mut algo, &mut primary);
+        assert!(!algo.core.primary_was_handed_off(primary_id));
+    }
+
+    #[rstest]
+    fn test_primary_cancellation_clears_spawn_accounting() {
+        let (mut algo, primary_id, mut child) = setup_accepted_spawn();
+        cancel_spawned_order(&mut algo, &mut child);
+        let second = spawn_reduced_child(&mut algo, primary_id, Quantity::from("0.8"));
+        fill_spawned_order(&mut algo, &mut child, Quantity::from("0.4"));
+        let mut primary = algo.cache().order(&primary_id).unwrap();
+
+        cancel_spawned_order(&mut algo, &mut primary);
+
+        assert_eq!(primary.status(), OrderStatus::Canceled);
+        assert!(algo.core.spawn_reduction(child.client_order_id()).is_none());
+        assert!(
+            algo.core
+                .spawn_reduction(second.client_order_id())
+                .is_none()
+        );
+        assert!(algo.core.spawn_fill_debt(primary_id).is_none());
+        assert!(!algo.core.primary_was_handed_off(primary_id));
     }
 
     #[rstest]
@@ -4585,7 +4892,8 @@ mod tests {
             algo.core
                 .spawn_reduction(spawned_order.client_order_id())
                 .unwrap()
-                .restored_qty,
+                .restored_qty
+                .unwrap(),
             Quantity::from("30"),
         );
 
@@ -4599,7 +4907,8 @@ mod tests {
             algo.core
                 .spawn_reduction(spawned_order.client_order_id())
                 .unwrap()
-                .restored_qty,
+                .restored_qty
+                .unwrap(),
             Quantity::from("20"),
         );
     }
@@ -4608,10 +4917,11 @@ mod tests {
     fn test_unmarked_submitted_primary_cancellation_discards_reduction_and_debt() {
         let (mut algo, client_order_id, mut spawned_order) = setup_accepted_spawn();
         let mut primary = algo.cache().order(&client_order_id).unwrap();
-        submit_order_in_cache(&mut algo, &mut primary);
         algo.core
             .add_spawn_fill_debt(client_order_id, Quantity::from("0.1"));
 
+        submit_order_in_cache(&mut algo, &mut primary);
+        assert!(algo.core.spawn_fill_debt(client_order_id).is_none());
         cancel_spawned_order(&mut algo, &mut spawned_order);
 
         assert_eq!(
@@ -4680,10 +4990,12 @@ mod tests {
             algo.cache().order(&client_order_id).unwrap().quantity(),
             Quantity::from("0.5"),
         );
-        assert!(
+        assert_eq!(
             algo.core
-                .take_pending_spawn_reduction(spawned_order.client_order_id())
-                .is_none()
+                .spawn_reduction(spawned_order.client_order_id())
+                .unwrap()
+                .restored_qty,
+            Some(Quantity::from("0.0")),
         );
     }
 
@@ -4723,10 +5035,12 @@ mod tests {
             algo.cache().order(&client_order_id).unwrap().quantity(),
             Quantity::from("0.0"),
         );
-        assert!(
+        assert_eq!(
             algo.core
                 .spawn_reduction(spawned_order.client_order_id())
-                .is_none()
+                .unwrap()
+                .restored_qty,
+            Some(Quantity::from("0.0")),
         );
         assert_eq!(
             algo.core.spawn_fill_debt(client_order_id),
@@ -4790,7 +5104,8 @@ mod tests {
             algo.core
                 .spawn_reduction(child_b.client_order_id())
                 .unwrap()
-                .restored_qty,
+                .restored_qty
+                .unwrap(),
             Quantity::from("0.3"),
         );
 
@@ -4840,7 +5155,8 @@ mod tests {
             algo.core
                 .spawn_reduction(child_b.client_order_id())
                 .unwrap()
-                .restored_qty,
+                .restored_qty
+                .unwrap(),
             Quantity::from("0.8"),
         );
 
@@ -4935,8 +5251,7 @@ mod tests {
         // A canceled event after a denial/rejection is not an applicable state
         // transition and the engine drops such races before publication; the
         // second event is dispatched directly to exercise the handler's own
-        // idempotence (a positive restored quantity blocks a second
-        // restoration).
+        // idempotence (the accounted unfilled quantity is unchanged).
         let (mut algo, client_order_id, spawned_order) = setup_pending_spawn();
 
         if denied {

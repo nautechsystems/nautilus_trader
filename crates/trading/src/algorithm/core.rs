@@ -51,14 +51,15 @@ pub struct StrategyEventHandlers {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SpawnReduction {
+    /// The primary order whose budget was reduced.
+    pub primary_id: ClientOrderId,
     /// The quantity deducted from the primary at spawn time.
     pub deducted_qty: Quantity,
     /// Whether the spawned quantity was quote-denominated at deduction time.
     pub spawn_was_quote_quantity: bool,
-    /// The gross quantity released by restoration - including any portion
-    /// applied against primary late-fill debt rather than returned to the
-    /// primary - serving as the child's remaining late-fill accounting budget.
-    pub restored_qty: Quantity,
+    /// The unfilled budget already released, including debt discharge.
+    /// `None` means restoration has not occurred; zero remains tracked for corrections.
+    pub restored_qty: Option<Quantity>,
 }
 
 /// The core component of an [`ExecutionAlgorithm`](super::ExecutionAlgorithm).
@@ -87,7 +88,7 @@ pub struct ExecutionAlgorithmCore {
     /// Tracks uncompensated late-fill quantity per primary order, discharged
     /// against later spawn restorations.
     spawn_fill_debts: AHashMap<ClientOrderId, Quantity>,
-    /// Tracks primary orders whose submission was handed off to the risk engine.
+    /// Tracks submission handoffs until the cached primary leaves local control.
     handed_off_primaries: AHashSet<ClientOrderId>,
     /// Maps primary order client IDs to the command params supplied at submission.
     submit_params: AHashMap<ClientOrderId, Params>,
@@ -262,18 +263,22 @@ impl ExecutionAlgorithmCore {
     }
 
     /// Tracks a pending spawn reduction for potential restoration.
+    ///
+    /// Associates `spawn_id` with the `primary_id` whose quantity was reduced.
     pub fn track_pending_spawn_reduction(
         &mut self,
         spawn_id: ClientOrderId,
+        primary_id: ClientOrderId,
         quantity: Quantity,
         spawn_was_quote_quantity: bool,
     ) {
         self.spawn_reductions.insert(
             spawn_id,
             SpawnReduction {
+                primary_id,
                 deducted_qty: quantity,
                 spawn_was_quote_quantity,
-                restored_qty: Quantity::zero(quantity.precision),
+                restored_qty: None,
             },
         );
     }
@@ -328,12 +333,21 @@ impl ExecutionAlgorithmCore {
         }
     }
 
-    /// Marks a primary order as handed off for submission.
+    /// Marks a primary order as handed off for submission and clears its spawn accounting.
     pub(crate) fn mark_primary_handed_off(&mut self, primary_id: ClientOrderId) {
+        self.clear_primary_spawn_state(primary_id);
         self.handed_off_primaries.insert(primary_id);
     }
 
-    /// Returns whether a primary order has been handed off for submission.
+    /// Clears accounting once the primary can no longer be changed locally.
+    pub(crate) fn clear_primary_spawn_state(&mut self, primary_id: ClientOrderId) {
+        self.spawn_reductions
+            .retain(|_, reduction| reduction.primary_id != primary_id);
+        self.spawn_fill_debts.remove(&primary_id);
+        self.handed_off_primaries.remove(&primary_id);
+    }
+
+    /// Returns whether a primary submission is awaiting a non-local cached status.
     #[must_use]
     pub(crate) fn primary_was_handed_off(&self, primary_id: ClientOrderId) -> bool {
         self.handed_off_primaries.contains(&primary_id)
@@ -558,6 +572,35 @@ mod tests {
 
         assert_eq!(core.submit_params(&primary1), None);
         assert_eq!(core.submit_params(&primary2), Some(params2));
+    }
+
+    #[rstest]
+    fn test_primary_handoff_clears_only_its_spawn_state() {
+        let mut core = ExecutionAlgorithmCore::new(create_test_config());
+        let primary_a = ClientOrderId::from("A");
+        let primary_b = ClientOrderId::from("B");
+        let primary_c = ClientOrderId::from("C");
+        let child_a = ClientOrderId::from("A-E1");
+        let child_b = ClientOrderId::from("B-E1");
+        core.track_pending_spawn_reduction(child_a, primary_a, Quantity::from("0.3"), false);
+        core.track_pending_spawn_reduction(child_b, primary_b, Quantity::from("0.7"), true);
+        core.add_spawn_fill_debt(primary_a, Quantity::from("0.1"));
+        core.add_spawn_fill_debt(primary_b, Quantity::from("0.2"));
+
+        core.mark_primary_handed_off(primary_c);
+        core.mark_primary_handed_off(primary_a);
+
+        assert!(core.spawn_reduction(child_a).is_none());
+        assert!(core.spawn_fill_debt(primary_a).is_none());
+        assert!(core.primary_was_handed_off(primary_a));
+        assert!(!core.primary_was_handed_off(primary_b));
+        assert!(core.primary_was_handed_off(primary_c));
+        let retained = core.spawn_reduction(child_b).unwrap();
+        assert_eq!(retained.primary_id, primary_b);
+        assert_eq!(retained.deducted_qty, Quantity::from("0.7"));
+        assert!(retained.spawn_was_quote_quantity);
+        assert_eq!(retained.restored_qty, None);
+        assert_eq!(core.spawn_fill_debt(primary_b), Some(Quantity::from("0.2")));
     }
 
     #[rstest]

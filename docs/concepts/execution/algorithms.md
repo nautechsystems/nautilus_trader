@@ -92,6 +92,15 @@ late fill on a canceled spawn re-deducts the corresponding restored quantity whi
 remains locally mutable; if that quantity was already reused by a later spawn, the excess is netted
 from that spawn's own restoration instead.
 
+Converted quote-quantity spawns calculate the remaining unfilled quantity from cumulative fills and
+round it down to the primary's quantity precision. The total deduction does not depend on how many
+fill events report the filled quantity.
+
+If a [fill is voided](../events/order_fill_voided.md) after any spawn's unfilled quantity was
+restored, the correction returns the additional unfilled quantity
+while the primary remains local. It first offsets any late-fill quantity that could not be deducted
+from the primary.
+
 An execution algorithm can keep spawning orders, submit the remaining primary order, or do both.
 The built-in TWAP algorithm submits the remaining primary order on the final interval.
 
