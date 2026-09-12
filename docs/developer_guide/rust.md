@@ -97,6 +97,8 @@ exception.
 - Separate dependency groups with a blank line and alphabetize each group. Manifests normally group
   internal `nautilus-*` crates, required external crates, and optional external crates, but preserve
   a manifest's meaningful local groups.
+- Keep optional crates in their own blank-line group, except when every crate in the group is a
+  `nautilus-*` crate.
 - Keep the standard section order: package, lints, library, features, `cargo-machete` metadata,
   docs.rs metadata, dependencies, development dependencies, build dependencies, benches, binaries,
   examples, and tests.

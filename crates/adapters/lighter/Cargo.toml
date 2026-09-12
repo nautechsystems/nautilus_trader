@@ -88,7 +88,6 @@ rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_repr = { workspace = true }
-serde_urlencoded = { workspace = true, optional = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
@@ -101,6 +100,7 @@ zeroize = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
+serde_urlencoded = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true, default-features = false, features = [

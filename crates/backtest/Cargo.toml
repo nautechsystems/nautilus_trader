@@ -82,12 +82,12 @@ log = { workspace = true }
 parking_lot = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 ustr = { workspace = true }
 
 mimalloc = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
-serde_json = { workspace = true }
 
 [dev-dependencies]
 nautilus-indicators = { workspace = true }

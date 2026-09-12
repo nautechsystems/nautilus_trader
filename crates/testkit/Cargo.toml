@@ -88,6 +88,9 @@ nautilus-serialization = { workspace = true, features = [
 ], optional = true }
 nautilus-trading = { workspace = true, optional = true }
 
+parking_lot = { workspace = true }
+tokio = { workspace = true }
+
 ahash = { workspace = true, optional = true }
 anyhow = { workspace = true, optional = true }
 async-trait = { workspace = true, optional = true }
@@ -98,13 +101,11 @@ indexmap = { workspace = true, optional = true }
 itchy = { workspace = true, optional = true }
 jiff = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
-parking_lot = { workspace = true }
 parquet = { workspace = true, features = ["zstd"], optional = true }
 rand = { workspace = true, optional = true }
 rust_decimal = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
-tokio = { workspace = true }
 ustr = { workspace = true, optional = true }
 
 pyo3 = { workspace = true, optional = true }

@@ -17,12 +17,15 @@
 # 13. Member [package] sections must omit the redundant readme key
 # 14. All [workspace.package] fields must be inherited by at least one workspace member
 # 15. [[bin]] target names must be kebab-case
+# 16. Optional crates must sit in their own group, except all-nautilus-* groups
 #
 # Dependency groups are typically organized as:
 # - Internal nautilus-* dependencies
 # - External dependencies
 # - Optional dependencies
 # Each group is separated by a blank line
+# Optional crates must not share a group with required crates unless every crate
+# in the group is a nautilus-* crate
 
 set -euo pipefail
 
@@ -147,6 +150,133 @@ if [[ -n "$dep_violations" ]]; then
   echo "$dep_violations"
   echo
   VIOLATIONS=$((VIOLATIONS + $(echo "$dep_violations" | wc -l)))
+fi
+
+# Check 16: Optional crates must sit in their own blank-line group
+# Internal nautilus-* crates may mix optional and required in one group
+# shellcheck disable=SC2016
+optional_group_violations=$(rg --files -g "Cargo.toml" --glob "!target/*" 2> /dev/null | sort | xargs awk '
+BEGIN {
+  group_n = 0
+}
+
+function strip_comment(s) {
+  sub(/#.*/, "", s)
+  return s
+}
+
+function count_ch(s, ch,   n, i) {
+  n = 0
+  for (i = 1; i <= length(s); i++) {
+    if (substr(s, i, 1) == ch) n++
+  }
+  return n
+}
+
+function close_entry() {
+  if (entry_name == "") return
+  g_name[group_n] = entry_name
+  g_file[group_n] = entry_file
+  g_line[group_n] = entry_line
+  g_opt[group_n] = (entry_text ~ /optional[[:space:]]*=[[:space:]]*true/)
+  group_n++
+  entry_name = ""
+  entry_file = ""
+  entry_line = 0
+  entry_text = ""
+  brace = 0
+  bracket = 0
+}
+
+function check_group() {
+  close_entry()
+  if (group_n == 0) return
+
+  has_opt = 0
+  has_req = 0
+  all_nau = 1
+  first_opt_name = ""
+  first_opt_file = ""
+  first_opt_line = 0
+  first_req_name = ""
+  for (i = 0; i < group_n; i++) {
+    if (g_opt[i]) {
+      has_opt = 1
+      if (first_opt_name == "") {
+        first_opt_name = g_name[i]
+        first_opt_file = g_file[i]
+        first_opt_line = g_line[i]
+      }
+    } else {
+      has_req = 1
+      if (first_req_name == "") first_req_name = g_name[i]
+    }
+    if (g_name[i] !~ /^nautilus-/) all_nau = 0
+  }
+
+  if (has_opt && has_req && !all_nau) {
+    printf "  %s:%d [%s] optional \047%s\047 must sit in its own group, not with required \047%s\047\n", first_opt_file, first_opt_line, section, first_opt_name, first_req_name
+  }
+  group_n = 0
+}
+
+FNR == 1 {
+  check_group()
+  in_deps = 0
+  section = ""
+}
+
+/^\[+[a-zA-Z0-9._-]+\]+$/ {
+  check_group()
+  gsub(/^\[+|\]+$/, "", $0)
+  if ($0 == "dependencies" || $0 == "dev-dependencies" || $0 == "build-dependencies" || $0 == "workspace.dependencies") {
+    in_deps = 1
+    section = $0
+  } else {
+    in_deps = 0
+    section = ""
+  }
+  next
+}
+
+in_deps && /^[[:space:]]*$/ {
+  check_group()
+  next
+}
+
+in_deps && /^[[:space:]]*#/ { next }
+
+in_deps && entry_name != "" {
+  raw = strip_comment($0)
+  entry_text = entry_text "\n" raw
+  brace += count_ch(raw, "{") - count_ch(raw, "}")
+  bracket += count_ch(raw, "[") - count_ch(raw, "]")
+  if (brace <= 0 && bracket <= 0) close_entry()
+  next
+}
+
+in_deps && /^[a-zA-Z0-9_-]+[[:space:]]*[.=]/ {
+  match($0, /^[a-zA-Z0-9_-]+/)
+  entry_name = substr($0, RSTART, RLENGTH)
+  entry_file = FILENAME
+  entry_line = FNR
+  raw = strip_comment($0)
+  entry_text = raw
+  brace = count_ch(raw, "{") - count_ch(raw, "}")
+  bracket = count_ch(raw, "[") - count_ch(raw, "]")
+  if (brace <= 0 && bracket <= 0) close_entry()
+}
+
+END {
+  check_group()
+}
+' 2>&1) || true
+
+if [[ -n "$optional_group_violations" ]]; then
+  echo -e "${RED}Optional grouping violations:${NC}"
+  echo "$optional_group_violations"
+  echo
+  VIOLATIONS=$((VIOLATIONS + $(echo "$optional_group_violations" | wc -l)))
 fi
 
 # Check 2: Section ordering
@@ -767,6 +897,7 @@ if [[ $VIOLATIONS -gt 0 ]]; then
   echo
   echo -e "${YELLOW}To fix:${NC}"
   echo "  - Sort dependencies alphabetically within each group (groups separated by blank lines)"
+  echo "  - Keep optional crates in their own group; mix with required crates only in all-nautilus-* groups"
   echo "  - Order sections: [package], [lints], [lib], [features],"
   echo "    [package.metadata.cargo-machete], [package.metadata.docs.rs],"
   echo "    [dependencies], [dev-dependencies], [build-dependencies], [[bench]], [[bin]], [[example]]"

@@ -45,7 +45,8 @@ nautilus-core = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
-arrow = { workspace = true, optional = true }
+bon = { workspace = true }
+dashmap.workspace = true
 derive_builder = { workspace = true }
 enum_dispatch = { workspace = true }
 implied-vol = { workspace = true }
@@ -64,8 +65,7 @@ thiserror = { workspace = true }
 ustr = { workspace = true }
 
 alloy-primitives = { workspace = true, optional = true }
-bon = { workspace = true }
-dashmap.workspace = true
+arrow = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 rstest = { workspace = true, optional = true }

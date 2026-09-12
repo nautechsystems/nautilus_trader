@@ -63,7 +63,6 @@ anyhow = { workspace = true }
 bon = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }
-jiff = { workspace = true, optional = true }
 log = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
@@ -71,6 +70,7 @@ serde_json = { workspace = true }
 sysinfo = { workspace = true }
 ustr = { workspace = true }
 
+jiff = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 

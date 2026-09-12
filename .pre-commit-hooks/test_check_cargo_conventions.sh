@@ -34,6 +34,9 @@ printf '%s\n' \
   'edition = "2024"' \
   '' \
   '[workspace.dependencies]' \
+  'nautilus-alpha = "1.0"' \
+  'nautilus-beta = { version = "1.0", optional = true }' \
+  '' \
   'alpha = "1.0"' \
   '' \
   '[workspace.metadata.example]' \
@@ -62,7 +65,12 @@ printf '%s\n' \
   'readme = "README.md"' \
   '' \
   '[dependencies]' \
+  'nautilus-alpha = { workspace = true }' \
+  'nautilus-beta = { workspace = true, optional = true }' \
+  '' \
   'alpha = { workspace = true }' \
+  '' \
+  'omega = { workspace = true, optional = true }' \
   '' \
   '[[bin]]' \
   'name = "valid-tool"' \
@@ -210,5 +218,71 @@ for heading in \
     exit 1
   fi
 done
+
+optional_group_case="$CASE_ROOT/optional-group"
+mkdir -p "$optional_group_case/crates/core/src"
+printf '%s\n' \
+  '[workspace]' \
+  'members = ["crates/core"]' \
+  '' \
+  '[workspace.package]' \
+  'version = "0.1.0"' \
+  'edition = "2024"' \
+  '' \
+  '[workspace.dependencies]' \
+  'log = "0.4"' \
+  'madsim = "0.2"' \
+  'parking_lot = "0.12"' > "$optional_group_case/Cargo.toml"
+printf '%s\n' \
+  '[package]' \
+  'name = "core"' \
+  'version.workspace = true' \
+  'edition.workspace = true' \
+  'rust-version.workspace = true' \
+  'authors.workspace = true' \
+  'license.workspace = true' \
+  'description = "Optional grouping fixture"' \
+  'categories.workspace = true' \
+  'keywords.workspace = true' \
+  'documentation.workspace = true' \
+  'repository.workspace = true' \
+  'homepage.workspace = true' \
+  '' \
+  '[lints]' \
+  'workspace = true' \
+  '' \
+  '[lib]' \
+  '' \
+  '[dependencies]' \
+  'log = { workspace = true }' \
+  'madsim = { workspace = true, optional = true }' \
+  'parking_lot = { workspace = true }' \
+  '' \
+  '[dev-dependencies]' \
+  'anyhow = { workspace = true }' \
+  'bytes = { workspace = true, features = [' \
+  '  "std",' \
+  '], optional = true }' > "$optional_group_case/crates/core/Cargo.toml"
+run_hook "$optional_group_case"
+if [ "$RUN_STATUS" -ne 1 ]; then
+  echo "Expected Cargo convention hook to reject mixed optional grouping"
+  cat "$optional_group_case/output.txt"
+  exit 1
+fi
+if ! rg -Fq "Optional grouping violations:" "$optional_group_case/output.txt"; then
+  echo "Expected optional grouping heading not found"
+  cat "$optional_group_case/output.txt"
+  exit 1
+fi
+if ! rg -Fq "crates/core/Cargo.toml:22 [dependencies] optional 'madsim' must sit in its own group, not with required 'log'" "$optional_group_case/output.txt"; then
+  echo "Expected optional grouping violation for madsim not found"
+  cat "$optional_group_case/output.txt"
+  exit 1
+fi
+if ! rg -Fq "crates/core/Cargo.toml:27 [dev-dependencies] optional 'bytes' must sit in its own group, not with required 'anyhow'" "$optional_group_case/output.txt"; then
+  echo "Expected optional grouping violation for multi-line bytes not found"
+  cat "$optional_group_case/output.txt"
+  exit 1
+fi
 
 echo "Cargo convention hook tests passed"

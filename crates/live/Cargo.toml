@@ -108,7 +108,6 @@ async-trait = { workspace = true }
 bon = { workspace = true }
 futures-util = { workspace = true }
 indexmap = { workspace = true }
-libfuzzer-sys = { workspace = true, optional = true }
 log = { workspace = true }
 parking_lot = { workspace = true }
 rust_decimal = { workspace = true }
@@ -119,6 +118,7 @@ tokio = { workspace = true }
 tokio-util = { workspace = true, features = ["rt"] }
 ustr = { workspace = true }
 
+libfuzzer-sys = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
