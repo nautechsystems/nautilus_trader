@@ -19,7 +19,9 @@ bid and ask prices and sizes at a specific event time.
 
 - Bid and ask prices must use the same precision.
 - Bid and ask sizes must use the same precision.
-- `extract_price(PriceType.BID | ASK | MID)` returns the requested price basis.
+- `extract_price(...)` returns the `BID`, `ASK`, or `MID` price and `extract_size(...)` returns
+  the matching size; any other price type is an error.
+- `MID` results carry one extra digit of precision, capped at `FIXED_PRECISION`.
 - Quote bars can use `BID`, `ASK`, or `MID` price types.
 
 ## Example

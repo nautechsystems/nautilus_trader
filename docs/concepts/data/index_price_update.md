@@ -14,6 +14,7 @@ use index prices to calculate mark prices, funding, or settlement values.
 
 ## Behavior
 
+- Index prices are cached by instrument when received.
 - Index prices are reference data and do not imply a trade occurred.
 - Perpetual and futures venues may publish both mark and index prices.
 - The catalog stores index prices with instrument ID and price precision metadata.

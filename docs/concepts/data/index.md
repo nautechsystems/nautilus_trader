@@ -37,10 +37,8 @@ supports these book types:
 - `L2_MBP`: Level 2 market-by-price (MBP) data, aggregated by price level.
 - `L1_MBP`: Level 1 market-by-price (MBP) top-of-book data, also known as best bid and offer (BBO).
 
-:::note
-Quote, trade, and bar data (`QuoteTick`, `TradeTick`, and `Bar`) can also drive
-`L1_MBP` books in backtests.
-:::
+Quote, trade, and bar data (`QuoteTick`, `TradeTick`, and `Bar`) can also drive `L1_MBP` books in
+backtests.
 
 ### Delta flags and event boundaries
 
@@ -56,7 +54,7 @@ to signal event boundaries to the `DataEngine`:
   by `Add` deltas reconstructing the full book state. The last delta in a
   snapshot has both `F_SNAPSHOT | F_LAST` set.
 
-:::warning
+:::warning[Missing F_LAST stalls buffered consumers]
 A missing `F_LAST` on the final delta in an event group causes buffered consumers
 to accumulate deltas indefinitely without publishing. This applies to incremental
 updates and snapshots alike, including empty book snapshots where only a `Clear`
@@ -75,7 +73,7 @@ See [Instruments](../instruments/) for the instrument taxonomy and per-type guid
 
 ### Introduction to bars
 
-A *bar*, also known as a candle, candlestick, or kline, summarizes price and volume over an interval:
+A **bar**, also known as a candle, candlestick, or kline, summarizes price and volume over an interval:
 
 - Opening price
 - Highest price
@@ -83,7 +81,7 @@ A *bar*, also known as a candle, candlestick, or kline, summarizes price and vol
 - Closing price
 - Traded volume (or ticks as a volume proxy)
 
-An *aggregation method* defines how NautilusTrader groups input data into bars.
+An **aggregation method** defines how NautilusTrader groups input data into bars.
 
 ### Purpose of data aggregation
 
@@ -125,7 +123,7 @@ includes both imbalance and runs bars.
 ### Information-driven bars
 
 Information-driven bars adapt their sampling frequency to market activity rather than using fixed
-intervals. They are based on the concept of *aggressor side* (whether the trade initiator was a
+intervals. They are based on the concept of **aggressor side** (whether the trade initiator was a
 buyer or seller) and come in two families: **imbalance** and **runs**.
 
 **Imbalance bars** close when the *net* buy/sell activity reaches a threshold. Each trade contributes
@@ -145,10 +143,8 @@ Both families have three variants based on what is measured:
 | Volume  | `VOLUME_IMBALANCE` | `VOLUME_RUNS` | Traded quantity.              |
 | Value   | `VALUE_IMBALANCE`  | `VALUE_RUNS`  | Price multiplied by quantity. |
 
-:::note
-Information-driven bars require `TradeTick` data because they need the `aggressor_side` field
-to classify each trade. They cannot be aggregated from `QuoteTick` data alone.
-:::
+Information-driven bars require `TradeTick` data because they need the `aggressor_side` field to
+classify each trade. They cannot be aggregated from `QuoteTick` data alone.
 
 ### Types of aggregation
 
@@ -172,16 +168,19 @@ NautilusTrader supports three aggregation inputs:
 - **Aggregation source** (`AggregationSource`): Whether NautilusTrader or an external venue or data
   provider aggregated the bar.
 
-:::note
 The Rust/PyO3 `BarSpecification` validates fixed-subunit time aggregations so bars align cleanly
-with their parent clock or calendar unit. `MILLISECOND` steps must divide 1000 and be less than
-1000; `SECOND` and `MINUTE` steps must divide 60 and be less than 60; `HOUR` steps must divide 24
-and be less than 24; and `MONTH` steps must divide 12 and may equal 12. Except for `12-MONTH`, use
-the next larger aggregation when the step equals a parent unit, such as `1-HOUR` instead of
-`60-MINUTE`. In this model, `DAY`, `WEEK`, `YEAR`, threshold, information-driven, and `RENKO` bars
-are not restricted by this fixed-subunit rule. Time aggregations must also convert to a duration
-and nanosecond interval, so an oversized `DAY`, `WEEK`, or `YEAR` step is rejected.
-:::
+with their parent clock or calendar unit:
+
+- `MILLISECOND` steps must divide 1000 and be less than 1000.
+- `SECOND` and `MINUTE` steps must divide 60 and be less than 60.
+- `HOUR` steps must divide 24 and be less than 24.
+- `MONTH` steps must divide 12 and may equal 12.
+
+Except for `12-MONTH`, use the next larger aggregation when the step equals a parent unit, such as
+`1-HOUR` instead of `60-MINUTE`. In this model, `DAY`, `WEEK`, `YEAR`, threshold,
+information-driven, and `RENKO` bars are not restricted by this fixed-subunit rule. Time
+aggregations must also convert to a duration and nanosecond interval, so an oversized `DAY`,
+`WEEK`, or `YEAR` step is rejected.
 
 Bar types can also be classified as either *standard* or *composite*:
 
@@ -529,10 +528,10 @@ When constructing `Price` or `Quantity` with `from_raw()`, use a raw value from:
 - NautilusTrader fixed-point conversion functions.
 - Values from Nautilus-produced Arrow data.
 
-:::warning
+:::warning[Unvalidated raw values]
 For a precision below `FIXED_PRECISION`, the raw value must be divisible by
-`10^(FIXED_PRECISION - precision)`. Construction does not currently reject an invalid multiple,
-which can produce an incorrect value.
+`10^(FIXED_PRECISION - precision)`. Construction does not reject an invalid multiple, which can
+produce an incorrect value.
 :::
 
 #### Legacy raw value correction
@@ -540,11 +539,8 @@ which can produce an incorrect value.
 Older catalog writers could introduce floating-point errors by calculating raw values with
 `int(value * FIXED_SCALAR)`. Arrow decoding corrects affected price and quantity values to the
 nearest valid scale multiple for their precision while leaving sentinel values unchanged. These
-catalogs therefore remain readable without migration.
-
-:::note
-The compatibility correction adds a small amount of work during Arrow decoding.
-:::
+catalogs therefore remain readable without migration. The correction adds a small amount of work
+during Arrow decoding.
 
 ### Transformation pipeline
 
@@ -685,7 +681,7 @@ catalog/
 
 Custom data uses `data/custom/<type_name>/` with optional identifier path segments.
 
-:::warning
+:::warning[Overlapping writes]
 By default, overlapping writes raise an `OSError` to maintain data integrity.
 Set `skip_disjoint_check=True` only when the overlap is intentional.
 :::
@@ -830,9 +826,9 @@ When a backtest runs, the `BacktestNode` processes each `BacktestDataConfig`:
 ### Direct catalog access
 
 Use `ParquetDataCatalog` to query or write a catalog directly. Use `BacktestDataConfig` when a
-`BacktestNode` should load catalog data for a run. `LiveNodeConfig` does not accept catalog
-configuration; request historical data through a configured data client or query the catalog
-directly.
+`BacktestNode` should load catalog data for a run. `LiveNodeConfig` has no counterpart for loading
+catalog data; request historical data through a configured data client or query the catalog
+directly. Its `streaming` field configures feather writing only.
 
 ### Querying and filtering
 
@@ -855,7 +851,7 @@ model type. `query_custom_data` resolves custom decoders through the runtime reg
 typed market-data query methods, and `query_custom_data` use UNIX nanosecond time bounds and accept
 a DataFusion SQL `where_clause`.
 
-:::warning
+:::warning[Time-zone database mismatch]
 With the current `Cargo.lock`, DataFusion SQL temporal functions resolve named time zones with the
 transitive `chrono-tz` 0.10.4 database (IANA 2025b). Rust core time-zone operations use Jiff 0.2.35
 with its bundled IANA 2026c database. Zone results can differ when zone rules change or historical
@@ -950,12 +946,13 @@ Delete data within a time range, optionally limited to one data type and instrum
 for data partitioned by instrument.
 
 `delete_data_range(...)` supports quotes, trades, bars, order book deltas, order book depth 10, and
-registered custom types. Pass `order_book_depth10` for order book depth 10 and
-`custom/<TypeName>` for custom data, such as `custom/MarketTickPython`. The catalog-wide method
-continues after unsupported directories, logs a warning, and leaves their data unchanged. It also
-skips order book depth directories because their stored path name differs from the direct method's
-type name. Use the type-specific method when you need to confirm that the requested type is
-supported.
+registered custom types. Pass `order_book_depth10` for order book depth 10 and `custom/<TypeName>`
+for custom data, such as `custom/MarketTickPython`.
+
+`delete_catalog_range(...)` continues after unsupported directories, logs a warning, and leaves
+their data unchanged. It also skips order book depth directories because their stored path name
+differs from the direct method's type name. Use `delete_data_range(...)` when you need to confirm
+that the requested type is supported.
 
 ```python
 catalog.delete_catalog_range(
@@ -978,7 +975,7 @@ catalog.delete_data_range(
 )
 ```
 
-:::danger
+:::danger[Permanent data removal]
 Delete operations cannot be undone. The catalog splits partially overlapping files to preserve data
 outside the range.
 :::
@@ -1240,7 +1237,7 @@ if cached is not None:
 
 ### Publishing and receiving signal data
 
-A signal is a named custom-data message whose Python value is converted to a string. Publish and
+A **signal** is a named custom-data message whose Python value is converted to a string. Publish and
 subscribe from an actor or strategy:
 
 ```python

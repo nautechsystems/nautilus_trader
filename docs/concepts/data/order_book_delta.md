@@ -35,7 +35,7 @@ The `order` field contains the `BookOrder` payload for the delta.
 | `size`     | `Quantity`          | `Quantity`          | Order size.                          |
 | `order_id` | `OrderId` (`u64`)   | `int`               | Order ID carried by the source feed. |
 
-The null/default order uses `None` for its side, with zero price, zero size, and `order_id` zero.
+The null/default order uses `None` for its side, with zero price, zero size, and zero order ID.
 
 ## BookAction variants
 
