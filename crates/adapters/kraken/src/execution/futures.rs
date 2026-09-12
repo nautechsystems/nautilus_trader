@@ -65,7 +65,7 @@ use crate::{
     common::{
         consts::KRAKEN_VENUE,
         credential::KrakenCredential,
-        enums::{KrakenApiResult, KrakenSendStatus},
+        enums::{KrakenApiResult, KrakenProductType, KrakenSendStatus, product_type_from_symbol},
         parse::truncate_cl_ord_id,
     },
     config::KrakenExecutionClientConfig,
@@ -83,6 +83,9 @@ use crate::{
 };
 
 const FUTURES_BATCH_CANCEL_LIMIT: usize = 50;
+
+/// Maximum order IDs per `/orders/status` request for Kraken Futures API.
+const FUTURES_ORDERS_STATUS_LIMIT: usize = 50;
 
 /// Kraken Futures execution client.
 ///
@@ -784,6 +787,46 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             return Ok(None);
         };
 
+        // Held orders never appear on /openorders; query the 5-second window
+        let order_ids: Vec<String> = cmd
+            .venue_order_id
+            .or(order.venue_order_id())
+            .map(|id| id.to_string())
+            .into_iter()
+            .collect();
+        let cli_ord_ids: Vec<String> = cmd
+            .client_order_id
+            .map(|id| truncate_cl_ord_id(&id))
+            .into_iter()
+            .collect();
+
+        let recent_reports = self
+            .http
+            .request_orders_status_reports(account_id, &order_ids, &cli_ord_ids)
+            .await?;
+
+        let matched_recent = recent_reports
+            .iter()
+            .find(|report| {
+                cmd.venue_order_id
+                    .is_some_and(|id| report.venue_order_id == id)
+                    || cmd.client_order_id.is_some_and(|id| {
+                        report
+                            .client_order_id
+                            .as_ref()
+                            .is_some_and(|report_id| report_id.as_str() == truncate_cl_ord_id(&id))
+                    })
+            })
+            .cloned();
+
+        // Window filled reports have no avg_px; price them from fills below
+        if matched_recent
+            .as_ref()
+            .is_some_and(|report| report.order_status != OrderStatus::Filled)
+        {
+            return Ok(matched_recent);
+        }
+
         let now = Timestamp::now();
         let start = now - Duration::from_secs(5 * 60);
         let fills = self
@@ -796,7 +839,19 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             )
             .await?;
 
-        Ok(synthesize_filled_order_status_report(cmd, &order, &fills))
+        match (
+            synthesize_filled_order_status_report(cmd, &order, &fills),
+            matched_recent,
+        ) {
+            (Some(report), _) => Ok(Some(report)),
+            // Unpriced filled reports would close at the order price
+            (None, Some(_)) => anyhow::bail!(
+                "Order {} fully executed in the orders-status window without visible \
+                 fills; deferring until the fills feed prices it",
+                order.client_order_id(),
+            ),
+            (None, None) => Ok(None),
+        }
     }
 
     async fn generate_order_status_reports(
@@ -812,9 +867,31 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         let account_id = self.core.account_id;
         let start = cmd.start.map(Timestamp::from);
         let end = cmd.end.map(Timestamp::from);
-        self.http
+        let mut reports = self
+            .http
             .request_order_status_reports(account_id, cmd.instrument_id, start, end, cmd.open_only)
-            .await
+            .await?;
+
+        if cmd.open_only {
+            let extension = self
+                .reports_for_open_orders_absent_from_venue(account_id, cmd.instrument_id, &reports)
+                .await?;
+
+            for report in extension {
+                if report.order_status == OrderStatus::Filled {
+                    log::debug!(
+                        "Deferring fully executed order {} from the bulk response: fills-paired \
+                         pricing applies",
+                        report.venue_order_id,
+                    );
+                    continue;
+                }
+
+                reports.push(report);
+            }
+        }
+
+        Ok(reports)
     }
 
     async fn generate_fill_reports(
@@ -865,10 +942,28 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         let start = lookback_mins.map(|mins| Timestamp::now() - Duration::from_secs(mins * 60));
 
         let account_id = self.core.account_id;
-        let order_reports = self
+        let mut order_reports = self
             .http
             .request_order_status_reports(account_id, None, start, None, true)
             .await?;
+        let extension = self
+            .reports_for_open_orders_absent_from_venue(account_id, None, &order_reports)
+            .await?;
+
+        // Snapshot recon would infer uncovered fills at the order price
+        for report in extension {
+            if report.order_status == OrderStatus::Filled {
+                log::debug!(
+                    "Deferring fully executed order {} from mass status: fills-paired \
+                     pricing applies",
+                    report.venue_order_id,
+                );
+                continue;
+            }
+
+            order_reports.push(report);
+        }
+
         let fill_reports = self
             .http
             .request_fill_reports(account_id, None, start, None)
@@ -1433,6 +1528,91 @@ fn handle_cancel_failure(
 }
 
 impl KrakenFuturesExecutionClient {
+    /// Returns `/orders/status` reports for cached-open orders the given
+    /// venue reports do not cover.
+    ///
+    /// A Maker Protection hold never reaches the book, so it is invisible to
+    /// an open-orders snapshot while the venue still knows the order within
+    /// its 5-second `/orders/status` window. Orders without a venue order ID
+    /// yet (their submit acknowledgement is still inside the hold window) are
+    /// queried by their truncated client order ID, the only venue handle that
+    /// exists during the window.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying request fails or the venue rejects
+    /// it, so callers defer rather than treat the orders as missing.
+    async fn reports_for_open_orders_absent_from_venue(
+        &self,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+        reported: &[OrderStatusReport],
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        let mut order_ids = Vec::new();
+        let mut cli_ord_ids = Vec::new();
+
+        {
+            let cache = self.core.cache();
+            for order in cache.orders_open(
+                Some(&*KRAKEN_VENUE),
+                instrument_id.as_ref(),
+                None,
+                None,
+                None,
+            ) {
+                // Spot and Futures share the KRAKEN venue and one cache
+                if product_type_from_symbol(order.instrument_id().symbol.inner().as_str())
+                    != KrakenProductType::Futures
+                {
+                    continue;
+                }
+
+                match order.venue_order_id() {
+                    Some(venue_order_id) => {
+                        let already_reported = reported
+                            .iter()
+                            .any(|report| report.venue_order_id == venue_order_id);
+                        if !already_reported {
+                            order_ids.push(venue_order_id.to_string());
+                        }
+                    }
+                    None => {
+                        cli_ord_ids.push(truncate_cl_ord_id(&order.client_order_id()));
+                    }
+                }
+            }
+        }
+
+        if order_ids.is_empty() && cli_ord_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        log::debug!(
+            "Resolving {} venue order ID(s) and {} client order ID(s) from the orders-status window",
+            order_ids.len(),
+            cli_ord_ids.len(),
+        );
+
+        let mut reports = Vec::new();
+        for chunk in order_ids.chunks(FUTURES_ORDERS_STATUS_LIMIT) {
+            reports.extend(
+                self.http
+                    .request_orders_status_reports(account_id, chunk, &[])
+                    .await?,
+            );
+        }
+
+        for chunk in cli_ord_ids.chunks(FUTURES_ORDERS_STATUS_LIMIT) {
+            reports.extend(
+                self.http
+                    .request_orders_status_reports(account_id, &[], chunk)
+                    .await?,
+            );
+        }
+
+        Ok(reports)
+    }
+
     fn get_cached_order_for_status_command(
         &self,
         cmd: &GenerateOrderStatusReport,

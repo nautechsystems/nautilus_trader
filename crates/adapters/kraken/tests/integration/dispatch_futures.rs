@@ -139,6 +139,15 @@ fn make_fills_delta(
     venue_order_id: &str,
     trade_id: &str,
 ) -> KrakenFuturesFillsDelta {
+    make_fills_delta_with_qty(cli_ord_id, venue_order_id, trade_id, dec!(0.0001))
+}
+
+fn make_fills_delta_with_qty(
+    cli_ord_id: Option<&str>,
+    venue_order_id: &str,
+    trade_id: &str,
+    qty: Decimal,
+) -> KrakenFuturesFillsDelta {
     KrakenFuturesFillsDelta {
         feed: KrakenFuturesFeed::Fills,
         username: None,
@@ -146,7 +155,7 @@ fn make_fills_delta(
             instrument: Some(Ustr::from(FUTURES_PRODUCT)),
             time: 0,
             price: dec!(70000),
-            qty: dec!(0.0001),
+            qty,
             order_id: venue_order_id.to_string(),
             cli_ord_id: cli_ord_id.map(str::to_string),
             fill_id: trade_id.to_string(),
@@ -1319,5 +1328,387 @@ fn test_futures_late_fill_after_terminal_cancel_falls_back_to_report() {
         matches!(events[2], ExecutionEvent::Report(_)),
         "late fill must degrade to a FillReport, was {:?}",
         events[2]
+    );
+}
+
+fn register_tracked_identity(
+    state: &WsDispatchState,
+    client_order_id: &str,
+    quantity: &str,
+) -> ClientOrderId {
+    let cid = ClientOrderId::new(client_order_id);
+    state.register_identity(
+        cid,
+        OrderIdentity {
+            strategy_id: StrategyId::from("EXEC_TESTER-001"),
+            instrument_id: InstrumentId::from(FUTURES_INSTRUMENT_ID),
+            order_side: OrderSide::Buy,
+            order_type: OrderType::Limit,
+            quantity: Quantity::from(quantity),
+        },
+    );
+
+    cid
+}
+
+#[rstest]
+fn test_futures_partial_removal_after_fills_emits_canceled() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = register_tracked_identity(&state, "uuid-mp-part-fill-first", "0.001");
+    let instruments = instruments_with(make_futures_perpetual());
+
+    let fills = make_fills_delta_with_qty(
+        Some("uuid-mp-part-fill-first"),
+        "v-mp-part-fill-first",
+        "trade-mp-part-1",
+        dec!(0.0004),
+    );
+    dispatch::futures::fills_delta(
+        &fills,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_string_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let removal = make_open_orders_delta(
+        true,
+        Some("partial_fill"),
+        dec!(0.001),
+        dec!(0.0004),
+        Some("uuid-mp-part-fill-first"),
+        "v-mp-part-fill-first",
+    );
+    dispatch::futures::open_orders_delta(
+        &removal,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_instrument_id_map(),
+        &empty_string_map(),
+        &empty_quantity_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(
+        events.len(),
+        3,
+        "expected Accepted + Filled + Canceled, was {events:?}"
+    );
+    assert!(matches!(
+        events[0],
+        ExecutionEvent::Order(OrderEventAny::Accepted(_))
+    ));
+    assert!(matches!(
+        events[1],
+        ExecutionEvent::Order(OrderEventAny::Filled(_))
+    ));
+
+    let ExecutionEvent::Order(OrderEventAny::Canceled(canceled)) = &events[2] else {
+        panic!("expected OrderCanceled, was {:?}", events[2]);
+    };
+
+    assert_eq!(canceled.reason, Some(Ustr::from("partial_fill")));
+    assert!(state.lookup_identity(&cid).is_none());
+    assert!(state.pending_removal(&cid).is_none());
+}
+
+#[rstest]
+fn test_futures_partial_removal_before_fills_defers_cancel_until_fill() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = register_tracked_identity(&state, "uuid-mp-part-removal-first", "0.001");
+    let instruments = instruments_with(make_futures_perpetual());
+
+    let removal = make_open_orders_delta(
+        true,
+        Some("partial_fill"),
+        dec!(0.001),
+        dec!(0.0004),
+        Some("uuid-mp-part-removal-first"),
+        "v-mp-part-removal-first",
+    );
+    dispatch::futures::open_orders_delta(
+        &removal,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_instrument_id_map(),
+        &empty_string_map(),
+        &empty_quantity_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    assert!(
+        drain_events(&mut rx).is_empty(),
+        "deferred removal must not emit before its fill"
+    );
+    let pending = state.pending_removal(&cid).expect("removal parked");
+    assert_eq!(pending.venue_filled, Quantity::from("0.0004"));
+    assert_eq!(pending.reason.as_deref(), Some("partial_fill"));
+
+    let fills = make_fills_delta_with_qty(
+        Some("uuid-mp-part-removal-first"),
+        "v-mp-part-removal-first",
+        "trade-mp-part-2",
+        dec!(0.0004),
+    );
+    dispatch::futures::fills_delta(
+        &fills,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_string_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(
+        events.len(),
+        3,
+        "expected Accepted + Filled + Canceled, was {events:?}"
+    );
+    assert!(matches!(
+        events[0],
+        ExecutionEvent::Order(OrderEventAny::Accepted(_))
+    ));
+    assert!(matches!(
+        events[1],
+        ExecutionEvent::Order(OrderEventAny::Filled(_))
+    ));
+    assert!(matches!(
+        events[2],
+        ExecutionEvent::Order(OrderEventAny::Canceled(_))
+    ));
+    assert!(state.lookup_identity(&cid).is_none());
+    assert!(state.pending_removal(&cid).is_none());
+}
+
+#[rstest]
+fn test_futures_partial_removal_deferred_across_multiple_fills() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = register_tracked_identity(&state, "uuid-mp-part-multi", "0.001");
+    let instruments = instruments_with(make_futures_perpetual());
+
+    let removal = make_open_orders_delta(
+        true,
+        Some("partial_fill"),
+        dec!(0.001),
+        dec!(0.0006),
+        Some("uuid-mp-part-multi"),
+        "v-mp-part-multi",
+    );
+    dispatch::futures::open_orders_delta(
+        &removal,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_instrument_id_map(),
+        &empty_string_map(),
+        &empty_quantity_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+    let _ = drain_events(&mut rx);
+
+    let first_fill = make_fills_delta_with_qty(
+        Some("uuid-mp-part-multi"),
+        "v-mp-part-multi",
+        "trade-mp-multi-1",
+        dec!(0.0002),
+    );
+    dispatch::futures::fills_delta(
+        &first_fill,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_string_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(
+        events.len(),
+        2,
+        "first fill must not close the order, was {events:?}"
+    );
+    assert!(matches!(
+        events[0],
+        ExecutionEvent::Order(OrderEventAny::Accepted(_))
+    ));
+    assert!(matches!(
+        events[1],
+        ExecutionEvent::Order(OrderEventAny::Filled(_))
+    ));
+    assert!(state.lookup_identity(&cid).is_some());
+
+    let second_fill = make_fills_delta_with_qty(
+        Some("uuid-mp-part-multi"),
+        "v-mp-part-multi",
+        "trade-mp-multi-2",
+        dec!(0.0004),
+    );
+    dispatch::futures::fills_delta(
+        &second_fill,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_string_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(
+        events.len(),
+        2,
+        "expected Filled + Canceled, was {events:?}"
+    );
+    assert!(matches!(
+        events[0],
+        ExecutionEvent::Order(OrderEventAny::Filled(_))
+    ));
+    assert!(matches!(
+        events[1],
+        ExecutionEvent::Order(OrderEventAny::Canceled(_))
+    ));
+    assert!(state.lookup_identity(&cid).is_none());
+}
+
+#[rstest]
+fn test_futures_pending_removal_superseded_by_full_fill() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = register_tracked_identity(&state, "uuid-mp-part-full", "0.0001");
+    let instruments = instruments_with(make_futures_perpetual());
+
+    let removal = make_open_orders_delta(
+        true,
+        Some("partial_fill"),
+        dec!(0.0001),
+        dec!(0.0001),
+        Some("uuid-mp-part-full"),
+        "v-mp-part-full",
+    );
+    dispatch::futures::open_orders_delta(
+        &removal,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_instrument_id_map(),
+        &empty_string_map(),
+        &empty_quantity_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+    assert!(drain_events(&mut rx).is_empty());
+    assert!(state.pending_removal(&cid).is_some());
+
+    let fills = make_fills_delta(Some("uuid-mp-part-full"), "v-mp-part-full", "trade-mp-full");
+    dispatch::futures::fills_delta(
+        &fills,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_string_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(
+        events.len(),
+        2,
+        "expected Accepted + Filled with no trailing Canceled, was {events:?}"
+    );
+    assert!(matches!(
+        events[0],
+        ExecutionEvent::Order(OrderEventAny::Accepted(_))
+    ));
+    assert!(matches!(
+        events[1],
+        ExecutionEvent::Order(OrderEventAny::Filled(_))
+    ));
+    assert!(state.filled_orders.contains(&cid));
+    assert!(state.pending_removal(&cid).is_none());
+}
+
+#[rstest]
+fn test_futures_partial_removal_untracked_is_skipped() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+
+    let removal = make_open_orders_delta(
+        true,
+        Some("partial_fill"),
+        dec!(0.001),
+        dec!(0.0004),
+        Some("uuid-untracked-part"),
+        "v-untracked-part",
+    );
+    dispatch::futures::open_orders_delta(
+        &removal,
+        &state,
+        &emitter,
+        &instruments_with(make_futures_perpetual()),
+        &empty_string_map(),
+        &empty_instrument_id_map(),
+        &empty_string_map(),
+        &empty_quantity_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    assert!(drain_events(&mut rx).is_empty());
+}
+
+#[rstest]
+fn test_futures_partial_removal_without_client_id_is_skipped() {
+    // External report path would emit a terminal event and orphan the fill
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+
+    let removal = make_open_orders_delta(
+        true,
+        Some("partial_fill"),
+        dec!(0.001),
+        dec!(0.0004),
+        None,
+        "v-no-cli-id",
+    );
+    dispatch::futures::open_orders_delta(
+        &removal,
+        &state,
+        &emitter,
+        &instruments_with(make_futures_perpetual()),
+        &empty_string_map(),
+        &empty_instrument_id_map(),
+        &empty_string_map(),
+        &empty_quantity_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    assert!(
+        drain_events(&mut rx).is_empty(),
+        "unresolved partial-fill removal must not emit a terminal report"
     );
 }

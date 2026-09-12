@@ -21,9 +21,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::{
     enums::{
-        KrakenApiResult, KrakenFillType, KrakenFuturesOrderEventType, KrakenFuturesOrderStatus,
-        KrakenFuturesOrderType, KrakenInstrumentType, KrakenOrderSide, KrakenPositionSide,
-        KrakenSendStatus, KrakenTriggerSide, KrakenTriggerSignal,
+        KrakenApiResult, KrakenFillType, KrakenFuturesOrderEventType,
+        KrakenFuturesOrderLifecycleStatus, KrakenFuturesOrderStatus, KrakenFuturesOrderType,
+        KrakenInstrumentType, KrakenOrderSide, KrakenPositionSide, KrakenSendStatus,
+        KrakenTriggerSide, KrakenTriggerSignal,
     },
     serialization::{decimal, decimal_map, deserialize_decimal_pair, optional_decimal},
 };
@@ -265,6 +266,55 @@ pub struct FuturesOpenOrdersResponse {
     pub error: Option<String>,
     #[serde(default)]
     pub open_orders: Vec<FuturesOpenOrder>,
+}
+
+// Futures Orders Status Models (/orders/status)
+
+/// Order body returned by the `/orders/status` endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FuturesCachedOrder {
+    pub order_id: String,
+    #[serde(default)]
+    pub cli_ord_id: Option<String>,
+    pub symbol: String,
+    pub side: KrakenOrderSide,
+    #[serde(default, with = "optional_decimal")]
+    pub quantity: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub filled: Option<Decimal>,
+    #[serde(default, with = "optional_decimal")]
+    pub limit_price: Option<Decimal>,
+    #[serde(default)]
+    pub reduce_only: bool,
+    pub timestamp: String,
+    pub last_update_timestamp: String,
+}
+
+/// A single order status entry returned by the `/orders/status` endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FuturesOrderStatusDetails {
+    pub order: FuturesCachedOrder,
+    pub status: KrakenFuturesOrderLifecycleStatus,
+    #[serde(default)]
+    pub update_reason: Option<String>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+/// Response from the Kraken Futures `/orders/status` endpoint, which reports
+/// orders open or with a fill/cancel event in the last 5 seconds.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FuturesOrdersStatusResponse {
+    pub result: KrakenApiResult,
+    #[serde(default)]
+    pub server_time: Option<String>,
+    #[serde(default)]
+    pub error: Option<String>,
+    #[serde(default)]
+    pub orders: Vec<FuturesOrderStatusDetails>,
 }
 
 // Futures Order Events Models (v2 API)
@@ -887,6 +937,43 @@ mod tests {
             Some(KrakenTriggerSignal::Last)
         );
         assert_eq!(trigger_order.cli_ord_id, None);
+    }
+
+    #[rstest]
+    fn test_parse_futures_orders_status() {
+        let data = load_test_data("http_futures_orders_status.json");
+        let response: FuturesOrdersStatusResponse =
+            serde_json::from_str(&data).expect("Failed to parse futures orders status");
+
+        assert_eq!(response.result, KrakenApiResult::Success);
+        assert_eq!(response.orders.len(), 2);
+
+        let part_filled = &response.orders[0];
+        assert_eq!(
+            part_filled.order.order_id,
+            "5f6d15a5-8c9e-4b0a-9d3f-5a2b7c8d9e0f"
+        );
+        assert_eq!(
+            part_filled.order.cli_ord_id.as_deref(),
+            Some("uuid-mp-held-001")
+        );
+        assert_eq!(part_filled.order.side, KrakenOrderSide::Buy);
+        assert_eq!(part_filled.order.quantity, Some(dec!(0.001)));
+        assert_eq!(part_filled.order.filled, Some(dec!(0.0004)));
+        assert_eq!(part_filled.order.limit_price, Some(dec!(70000)));
+        assert!(!part_filled.order.reduce_only);
+        assert_eq!(
+            part_filled.status,
+            KrakenFuturesOrderLifecycleStatus::Cancelled
+        );
+        assert_eq!(part_filled.update_reason.as_deref(), Some("PARTIAL_FILL"));
+
+        let open = &response.orders[1];
+        assert_eq!(open.order.quantity, Some(dec!(0.0002)));
+        assert_eq!(open.order.filled, Some(dec!(0)));
+        assert!(open.order.reduce_only);
+        assert_eq!(open.status, KrakenFuturesOrderLifecycleStatus::EnteredBook);
+        assert_eq!(open.update_reason, None);
     }
 
     #[rstest]

@@ -40,13 +40,14 @@ use crate::{
     common::{
         consts::KRAKEN_VENUE,
         enums::{
-            KrakenFuturesOrderEventType, KrakenInstrumentType, KrakenPositionSide,
-            KrakenSpotTrigger, KrakenTriggerSignal,
+            KrakenFuturesOrderEventType, KrakenFuturesOrderLifecycleStatus, KrakenInstrumentType,
+            KrakenPositionSide, KrakenSpotTrigger, KrakenTriggerSignal,
         },
     },
     http::models::{
         AssetPairInfo, FuturesFill, FuturesInstrument, FuturesOpenOrder, FuturesOrderEvent,
-        FuturesPosition, FuturesPublicExecution, OhlcData, SpotOrder, SpotTrade,
+        FuturesOrderStatusDetails, FuturesPosition, FuturesPublicExecution, OhlcData, SpotOrder,
+        SpotTrade,
     },
 };
 
@@ -1029,6 +1030,115 @@ pub fn parse_futures_order_event_status_report(
         post_only: false,
         reduce_only: event.reduce_only,
         cancel_reason: None,
+        ts_triggered: None,
+    })
+}
+
+/// Parses a Kraken futures `/orders/status` entry into a Nautilus
+/// OrderStatusReport.
+///
+/// The endpoint reports orders which are open or were filled/cancelled in the
+/// last 5 seconds, so the entry's cumulative `filled` is authoritative for
+/// reconciliation even when the order is absent from the open-orders snapshot.
+///
+/// # Errors
+///
+/// Returns an error if order ID, quantities, prices, or timestamps cannot be
+/// parsed.
+pub fn parse_futures_order_status_details_report(
+    details: &FuturesOrderStatusDetails,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderStatusReport> {
+    let venue_order_id = VenueOrderId::new(&details.order.order_id);
+
+    let order_side = OrderSide::from(details.order.side).into();
+
+    let order_type = if details.order.limit_price.is_some() {
+        OrderType::Limit
+    } else {
+        OrderType::Market
+    };
+
+    let filled = details.order.filled.unwrap_or(Decimal::ZERO);
+
+    let order_status = match details.status {
+        KrakenFuturesOrderLifecycleStatus::EnteredBook
+        | KrakenFuturesOrderLifecycleStatus::TriggerPlaced => {
+            if filled > Decimal::ZERO {
+                OrderStatus::PartiallyFilled
+            } else {
+                OrderStatus::Accepted
+            }
+        }
+        KrakenFuturesOrderLifecycleStatus::FullyExecuted => OrderStatus::Filled,
+        KrakenFuturesOrderLifecycleStatus::Rejected
+        | KrakenFuturesOrderLifecycleStatus::TriggerActivationFailure => OrderStatus::Rejected,
+        KrakenFuturesOrderLifecycleStatus::Cancelled => OrderStatus::Canceled,
+    };
+
+    let quantity_value = details
+        .order
+        .quantity
+        .context("order status details missing quantity")?;
+    let quantity = Quantity::from_decimal_dp(quantity_value, instrument.size_precision())?;
+    let filled_qty = Quantity::from_decimal_dp(filled, instrument.size_precision())?;
+
+    let ts_accepted = parse_rfc3339_timestamp(&details.order.timestamp, "order.timestamp")?;
+    let ts_last = parse_rfc3339_timestamp(
+        &details.order.last_update_timestamp,
+        "order.last_update_timestamp",
+    )?;
+
+    let price = details
+        .order
+        .limit_price
+        .map(|p| Price::from_decimal_dp(p, instrument.price_precision()))
+        .transpose()?;
+
+    let cancel_reason = match details.status {
+        KrakenFuturesOrderLifecycleStatus::Cancelled
+        | KrakenFuturesOrderLifecycleStatus::Rejected
+        | KrakenFuturesOrderLifecycleStatus::TriggerActivationFailure => {
+            details.update_reason.clone()
+        }
+        _ => None,
+    };
+
+    Ok(OrderStatusReport {
+        account_id,
+        instrument_id: instrument.id(),
+        client_order_id: details.order.cli_ord_id.as_ref().map(|s| s.as_str().into()),
+        venue_order_id,
+        order_side,
+        order_type,
+        time_in_force: TimeInForce::Gtc,
+        order_status,
+        quantity,
+        filled_qty,
+        report_id: UUID4::new(),
+        ts_accepted,
+        ts_last,
+        ts_init,
+        order_list_id: None,
+        venue_position_id: None,
+        linked_order_ids: None,
+        parent_order_id: None,
+        contingency_type: None,
+        expire_time: None,
+        price,
+        activation_price: None,
+        trigger_price: None,
+        trigger_type: None,
+        limit_offset: None,
+        trailing_offset: None,
+        trailing_offset_type: None,
+        display_qty: None,
+        avg_px: None,
+        post_only: false,
+        reduce_only: details.order.reduce_only,
+        cancel_reason,
         ts_triggered: None,
     })
 }

@@ -407,6 +407,35 @@ Order-state handling accounts for the held-order semantics:
   match, overriding the configured self-trade strategy. The resting order is
   reported canceled with reason `CANCELLED_BY_SELF_TRADE`.
 
+The adapter closes an order only once the venue's fills for it are accounted.
+
+#### Order-update feed
+
+A removal with `is_cancel=true` and reason `partial_fill` discards the remainder
+and is terminal (a converted hold, or any IOC-style order). The delta carries
+the venue's cumulative filled.
+
+- For a tracked order, the adapter closes from the feed once the fills stream
+  has accounted that quantity. A fill still in flight is never orphaned, and a
+  tracked order is not left open after its fills are accounted.
+- For a removal it cannot match, the adapter skips and converges through
+  reconciliation.
+
+| Unmatched removal             | Reason                        |
+| ----------------------------- | ----------------------------- |
+| Cancel-only message           | Carries no cumulative filled. |
+| No resolvable client order ID | Cannot match a tracked order. |
+
+#### Reconciliation
+
+A held order never reaches the book, so it is absent from `/openorders`. Mass
+status, open-only report runs, and targeted single-order queries consult
+`POST /orders/status` before treating the order as missing. That window reports
+orders that are open or were filled or canceled in the last 5 seconds.
+
+A hold that fills after a cancel acknowledgement reconciles to its true
+terminal state with the venue's cumulative filled, not a premature cancellation.
+
 ## Order routing (Spot)
 
 The Spot execution client routes order submission, modification, cancellation,

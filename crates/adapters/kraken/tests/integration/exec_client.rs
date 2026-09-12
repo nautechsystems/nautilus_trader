@@ -46,8 +46,8 @@ use nautilus_common::{
     messages::{
         ExecutionEvent,
         execution::{
-            BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder,
-            SubmitOrderList,
+            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateOrderStatusReport,
+            GenerateOrderStatusReports, ModifyOrder, SubmitOrder, SubmitOrderList,
         },
     },
     testing::wait_until_async,
@@ -64,8 +64,8 @@ use nautilus_kraken::{
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, CashAccount, MarginAccount},
-    enums::{AccountType, OmsType, OrderSide, TimeInForce},
-    events::{AccountState, OrderEventAny},
+    enums::{AccountType, OmsType, OrderSide, OrderStatus, TimeInForce},
+    events::{AccountState, OrderAccepted, OrderEventAny},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, VenueOrderId,
     },
@@ -131,6 +131,9 @@ struct TestServerState {
     cancel_request_count: Arc<AtomicUsize>,
     batch_cancel_request_count: Arc<AtomicUsize>,
     cancel_all_request_count: Arc<AtomicUsize>,
+    orders_status_response: Arc<tokio::sync::Mutex<Option<String>>>,
+    orders_status_request_body: Arc<tokio::sync::Mutex<Option<String>>>,
+    fills_response: Arc<tokio::sync::Mutex<Option<String>>>,
     ws_message_tx: tokio::sync::broadcast::Sender<String>,
 }
 
@@ -145,6 +148,9 @@ impl Default for TestServerState {
             cancel_request_count: Arc::new(AtomicUsize::new(0)),
             batch_cancel_request_count: Arc::new(AtomicUsize::new(0)),
             cancel_all_request_count: Arc::new(AtomicUsize::new(0)),
+            orders_status_response: Arc::new(tokio::sync::Mutex::new(None)),
+            orders_status_request_body: Arc::new(tokio::sync::Mutex::new(None)),
+            fills_response: Arc::new(tokio::sync::Mutex::new(None)),
             ws_message_tx,
         }
     }
@@ -238,6 +244,28 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
         }
         "/derivatives/api/v3/openorders" => {
             json_response(r#"{"result":"success","openOrders":[]}"#.to_string())
+        }
+        "/derivatives/api/v3/orders/status" => {
+            let body = to_bytes(req.into_body(), 1024 * 1024).await.unwrap();
+            *state.orders_status_request_body.lock().await =
+                Some(String::from_utf8_lossy(&body).to_string());
+            let response = state.orders_status_response.lock().await;
+            json_response(
+                response
+                    .clone()
+                    .unwrap_or_else(|| r#"{"result":"success","orders":[]}"#.to_string()),
+            )
+        }
+        "/derivatives/api/v3/openpositions" => {
+            json_response(r#"{"result":"success","openPositions":[]}"#.to_string())
+        }
+        "/derivatives/api/v3/fills" => {
+            let response = state.fills_response.lock().await;
+            json_response(
+                response
+                    .clone()
+                    .unwrap_or_else(|| r#"{"result":"success","fills":[]}"#.to_string()),
+            )
         }
         "/api/history/v2/orders" => json_response(r#"{"orderEvents":[]}"#.to_string()),
         "/derivatives/api/v3/sendorder" => {
@@ -1278,6 +1306,552 @@ async fn test_futures_ioc_would_not_execute_submit_emits_rejected() {
     }
 
     assert_eq!(state.submit_request_count.load(Ordering::Relaxed), 1);
+}
+
+/// Applies an `OrderAccepted` carrying the venue order ID, mirroring how the
+/// engine records a venue ID on a cached order once the venue acknowledges it.
+fn set_venue_order_id_on_cached_order(
+    cache: &Rc<RefCell<Cache>>,
+    order: &OrderAny,
+    venue_order_id: &str,
+) {
+    let accepted = OrderAccepted::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        VenueOrderId::from(venue_order_id),
+        test_account_id(),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+    );
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Accepted(accepted))
+        .unwrap();
+}
+
+const ORDERS_STATUS_PART_FILLED_CANCEL: &str = r#"{
+    "result": "success",
+    "orders": [
+        {
+            "order": {
+                "type": "ORDER",
+                "orderId": "V-HELD-001",
+                "cliOrdId": "futures-held-001",
+                "symbol": "PI_XBTUSD",
+                "side": "buy",
+                "quantity": 5,
+                "filled": 2,
+                "limitPrice": 50000.0,
+                "reduceOnly": false,
+                "timestamp": "2026-09-12T04:05:06.100Z",
+                "lastUpdateTimestamp": "2026-09-12T04:05:06.300Z",
+                "algoId": null,
+                "priceTriggerOptions": null,
+                "triggerTime": null
+            },
+            "status": "CANCELLED",
+            "updateReason": "PARTIAL_FILL",
+            "error": null
+        }
+    ]
+}"#;
+
+const ORDERS_STATUS_ENTERED_BOOK: &str = r#"{
+    "result": "success",
+    "orders": [
+        {
+            "order": {
+                "type": "ORDER",
+                "orderId": "V-HELD-002",
+                "cliOrdId": "futures-held-002",
+                "symbol": "PI_XBTUSD",
+                "side": "buy",
+                "quantity": 1,
+                "filled": 0,
+                "limitPrice": 50000.0,
+                "reduceOnly": false,
+                "timestamp": "2026-09-12T04:05:06.100Z",
+                "lastUpdateTimestamp": "2026-09-12T04:05:06.100Z",
+                "algoId": null,
+                "priceTriggerOptions": null,
+                "triggerTime": null
+            },
+            "status": "ENTERED_BOOK",
+            "updateReason": null,
+            "error": null
+        },
+        {
+            "order": {
+                "type": "ORDER",
+                "orderId": "V-HELD-004",
+                "cliOrdId": "futures-held-004",
+                "symbol": "PI_XBTUSD",
+                "side": "buy",
+                "quantity": 2,
+                "filled": 1,
+                "limitPrice": 50100.0,
+                "reduceOnly": false,
+                "timestamp": "2026-09-12T04:05:06.100Z",
+                "lastUpdateTimestamp": "2026-09-12T04:05:06.200Z",
+                "algoId": null,
+                "priceTriggerOptions": null,
+                "triggerTime": null
+            },
+            "status": "ENTERED_BOOK",
+            "updateReason": "PARTIAL_FILL",
+            "error": null
+        }
+    ]
+}"#;
+
+const ORDERS_STATUS_HELD_BY_CLIENT_ID: &str = r#"{
+    "result": "success",
+    "orders": [
+        {
+            "order": {
+                "type": "ORDER",
+                "orderId": "V-HELD-003",
+                "cliOrdId": "cli+ord&id=001",
+                "symbol": "PI_XBTUSD",
+                "side": "buy",
+                "quantity": 1,
+                "filled": 0,
+                "limitPrice": 50000.0,
+                "reduceOnly": false,
+                "timestamp": "2026-09-12T04:05:06.100Z",
+                "lastUpdateTimestamp": "2026-09-12T04:05:06.100Z",
+                "algoId": null,
+                "priceTriggerOptions": null,
+                "triggerTime": null
+            },
+            "status": "ENTERED_BOOK",
+            "updateReason": null,
+            "error": null
+        }
+    ]
+}"#;
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_converges_part_filled_hold_from_orders_status() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let order = add_limit_order_to_cache(&cache, ClientOrderId::new("futures-held-001"));
+    set_venue_order_id_on_cached_order(&cache, &order, "V-HELD-001");
+    *state.orders_status_response.lock().await = Some(ORDERS_STATUS_PART_FILLED_CANCEL.to_string());
+
+    let mass_status = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status available");
+
+    let order_reports = mass_status.order_reports();
+    let report = order_reports
+        .get(&VenueOrderId::from("V-HELD-001"))
+        .expect("held order resolved from the orders-status window");
+
+    assert_eq!(report.order_status, OrderStatus::Canceled);
+    assert_eq!(report.filled_qty, Quantity::from("2"));
+    assert_eq!(report.cancel_reason.as_deref(), Some("PARTIAL_FILL"));
+    assert_eq!(
+        report.client_order_id,
+        Some(ClientOrderId::from("futures-held-001"))
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_open_order_reports_include_orders_status_window() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let order = add_limit_order_to_cache(&cache, ClientOrderId::new("futures-held-002"));
+    set_venue_order_id_on_cached_order(&cache, &order, "V-HELD-002");
+    *state.orders_status_response.lock().await = Some(ORDERS_STATUS_ENTERED_BOOK.to_string());
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+
+    let report = reports
+        .iter()
+        .find(|report| report.venue_order_id == VenueOrderId::from("V-HELD-002"))
+        .expect("held order reported from the orders-status window");
+
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert_eq!(report.filled_qty, Quantity::from("0"));
+
+    // Same window also reports a part-filled open order, not a fresh accept
+    let part_filled = reports
+        .iter()
+        .find(|report| report.venue_order_id == VenueOrderId::from("V-HELD-004"))
+        .expect("part-filled order reported from the orders-status window");
+
+    assert_eq!(part_filled.order_status, OrderStatus::PartiallyFilled);
+    assert_eq!(part_filled.filled_qty, Quantity::from("1"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_targeted_order_status_resolves_held_order_by_client_id() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    add_limit_order_to_cache(&cache, ClientOrderId::new("cli+ord&id=001"));
+    *state.orders_status_response.lock().await = Some(ORDERS_STATUS_HELD_BY_CLIENT_ID.to_string());
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(InstrumentId::from("PI_XBTUSD.KRAKEN")),
+        Some(ClientOrderId::new("cli+ord&id=001")),
+        None,
+        None,
+        None,
+    );
+
+    let report = client.generate_order_status_report(&cmd).await.unwrap();
+
+    let report = report.expect("held order resolved by client order ID");
+    assert_eq!(report.venue_order_id, VenueOrderId::from("V-HELD-003"));
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert_eq!(
+        report.client_order_id,
+        Some(ClientOrderId::from("cli+ord&id=001"))
+    );
+
+    // Reserved characters in the client order ID must stay inside one param
+    let body = state
+        .orders_status_request_body
+        .lock()
+        .await
+        .clone()
+        .expect("orders-status request recorded");
+    assert_eq!(body, "cliOrdIds=cli%2Bord%26id%3D001");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_orders_status_failure_fails_report_generation() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let order = add_limit_order_to_cache(&cache, ClientOrderId::new("futures-held-005"));
+    set_venue_order_id_on_cached_order(&cache, &order, "V-HELD-005");
+    *state.orders_status_response.lock().await =
+        Some(r#"{"result":"error","error":"maintenance"}"#.to_string());
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let result = client.generate_order_status_reports(&cmd).await;
+
+    let error = result.expect_err("orders-status failure must propagate");
+    assert!(
+        error.to_string().contains("maintenance"),
+        "unexpected error: {error}"
+    );
+}
+
+const ORDERS_STATUS_FULLY_EXECUTED: &str = r#"{
+    "result": "success",
+    "orders": [
+        {
+            "order": {
+                "type": "ORDER",
+                "orderId": "V-HELD-006",
+                "cliOrdId": "futures-filled-006",
+                "symbol": "PI_XBTUSD",
+                "side": "buy",
+                "quantity": 1,
+                "filled": 1,
+                "limitPrice": 50000.0,
+                "reduceOnly": false,
+                "timestamp": "2026-09-12T04:05:06.100Z",
+                "lastUpdateTimestamp": "2026-09-12T04:05:06.200Z",
+                "algoId": null,
+                "priceTriggerOptions": null,
+                "triggerTime": null
+            },
+            "status": "FULLY_EXECUTED",
+            "updateReason": "FULL_FILL",
+            "error": null
+        }
+    ]
+}"#;
+
+fn fills_fully_executed_now() -> String {
+    let fill_time = jiff::Timestamp::now() - jiff::Span::new().seconds(1);
+    format!(
+        r#"{{"result":"success","fills":[{{"fill_id":"f-006-1","symbol":"PI_XBTUSD","side":"buy","order_id":"V-HELD-006","fillTime":"{fill_time}","size":1,"price":50000.5,"fillType":"taker","cli_ord_id":"futures-filled-006","fee_paid":0.0,"fee_currency":"USD"}}]}}"#
+    )
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_targeted_fully_executed_prefers_fill_pricing() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    add_limit_order_to_cache(&cache, ClientOrderId::new("futures-filled-006"));
+    *state.orders_status_response.lock().await = Some(ORDERS_STATUS_FULLY_EXECUTED.to_string());
+    *state.fills_response.lock().await = Some(fills_fully_executed_now());
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(InstrumentId::from("PI_XBTUSD.KRAKEN")),
+        Some(ClientOrderId::new("futures-filled-006")),
+        None,
+        None,
+        None,
+    );
+
+    let report = client.generate_order_status_report(&cmd).await.unwrap();
+
+    let report = report.expect("fully executed order resolved");
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(report.filled_qty, Quantity::from("1"));
+    assert_eq!(
+        report.avg_px,
+        Some(rust_decimal::Decimal::from_str_exact("50000.5").unwrap()),
+        "the fills-derived report must price the execution, was {:?}",
+        report.avg_px
+    );
+}
+
+const ORDERS_STATUS_OPEN_AND_FILLED: &str = r#"{
+    "result": "success",
+    "orders": [
+        {
+            "order": {
+                "type": "ORDER",
+                "orderId": "V-HELD-007",
+                "cliOrdId": "futures-held-007",
+                "symbol": "PI_XBTUSD",
+                "side": "buy",
+                "quantity": 1,
+                "filled": 0,
+                "limitPrice": 50000.0,
+                "reduceOnly": false,
+                "timestamp": "2026-09-12T04:05:06.100Z",
+                "lastUpdateTimestamp": "2026-09-12T04:05:06.100Z",
+                "algoId": null,
+                "priceTriggerOptions": null,
+                "triggerTime": null
+            },
+            "status": "ENTERED_BOOK",
+            "updateReason": null,
+            "error": null
+        },
+        {
+            "order": {
+                "type": "ORDER",
+                "orderId": "V-HELD-008",
+                "cliOrdId": "futures-filled-008",
+                "symbol": "PI_XBTUSD",
+                "side": "buy",
+                "quantity": 1,
+                "filled": 1,
+                "limitPrice": 50000.0,
+                "reduceOnly": false,
+                "timestamp": "2026-09-12T04:05:06.100Z",
+                "lastUpdateTimestamp": "2026-09-12T04:05:06.200Z",
+                "algoId": null,
+                "priceTriggerOptions": null,
+                "triggerTime": null
+            },
+            "status": "FULLY_EXECUTED",
+            "updateReason": "FULL_FILL",
+            "error": null
+        }
+    ]
+}"#;
+
+const ORDERS_STATUS_UNPARSABLE_QUANTITY: &str = r#"{
+    "result": "success",
+    "orders": [
+        {
+            "order": {
+                "type": "ORDER",
+                "orderId": "V-HELD-009",
+                "cliOrdId": "futures-held-009",
+                "symbol": "PI_XBTUSD",
+                "side": "buy",
+                "quantity": null,
+                "filled": 0,
+                "limitPrice": 50000.0,
+                "reduceOnly": false,
+                "timestamp": "2026-09-12T04:05:06.100Z",
+                "lastUpdateTimestamp": "2026-09-12T04:05:06.100Z",
+                "algoId": null,
+                "priceTriggerOptions": null,
+                "triggerTime": null
+            },
+            "status": "ENTERED_BOOK",
+            "updateReason": null,
+            "error": null
+        }
+    ]
+}"#;
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_open_order_reports_exclude_unpriced_filled() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let open_order = add_limit_order_to_cache(&cache, ClientOrderId::new("futures-held-007"));
+    set_venue_order_id_on_cached_order(&cache, &open_order, "V-HELD-007");
+    let filled_order = add_limit_order_to_cache(&cache, ClientOrderId::new("futures-filled-008"));
+    set_venue_order_id_on_cached_order(&cache, &filled_order, "V-HELD-008");
+    *state.orders_status_response.lock().await = Some(ORDERS_STATUS_OPEN_AND_FILLED.to_string());
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+
+    assert!(
+        reports
+            .iter()
+            .any(|report| report.venue_order_id == VenueOrderId::from("V-HELD-007")),
+        "open order reported from the orders-status window, was {reports:?}"
+    );
+    assert!(
+        reports
+            .iter()
+            .all(|report| report.venue_order_id != VenueOrderId::from("V-HELD-008")),
+        "fully executed entry must defer to the fills-paired targeted path"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_targeted_fully_executed_without_fills_defers() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    add_limit_order_to_cache(&cache, ClientOrderId::new("futures-filled-006"));
+    *state.orders_status_response.lock().await = Some(ORDERS_STATUS_FULLY_EXECUTED.to_string());
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(InstrumentId::from("PI_XBTUSD.KRAKEN")),
+        Some(ClientOrderId::new("futures-filled-006")),
+        None,
+        None,
+        None,
+    );
+
+    let result = client.generate_order_status_report(&cmd).await;
+
+    let error = result.expect_err("unpriced fully executed order must defer");
+    assert!(
+        error.to_string().contains("without visible fills"),
+        "unexpected error: {error}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_orders_status_parse_failure_fails_lookup() {
+    // Ok(None) would let recon close an order that is live at the venue
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    add_limit_order_to_cache(&cache, ClientOrderId::new("futures-held-009"));
+    *state.orders_status_response.lock().await =
+        Some(ORDERS_STATUS_UNPARSABLE_QUANTITY.to_string());
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(InstrumentId::from("PI_XBTUSD.KRAKEN")),
+        Some(ClientOrderId::new("futures-held-009")),
+        None,
+        None,
+        None,
+    );
+
+    let result = client.generate_order_status_report(&cmd).await;
+
+    let error = result.expect_err("unparsable entry must fail the lookup");
+    assert!(
+        error
+            .to_string()
+            .contains("rather than the order as absent"),
+        "unexpected error: {error}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_targeted_absent_order_returns_none() {
+    let (client, _rx, cache, _state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    add_limit_order_to_cache(&cache, ClientOrderId::new("futures-absent-010"));
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(InstrumentId::from("PI_XBTUSD.KRAKEN")),
+        Some(ClientOrderId::new("futures-absent-010")),
+        None,
+        None,
+        None,
+    );
+
+    let report = client.generate_order_status_report(&cmd).await.unwrap();
+
+    assert_eq!(report, None, "venue absence must surface as Ok(None)");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_excludes_unpriced_filled() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let order = add_limit_order_to_cache(&cache, ClientOrderId::new("futures-filled-006"));
+    set_venue_order_id_on_cached_order(&cache, &order, "V-HELD-006");
+    *state.orders_status_response.lock().await = Some(ORDERS_STATUS_FULLY_EXECUTED.to_string());
+
+    let mass_status = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status available");
+
+    assert!(
+        !mass_status
+            .order_reports()
+            .contains_key(&VenueOrderId::from("V-HELD-006")),
+        "fully executed entry must defer to fills-paired pricing"
+    );
 }
 
 #[rstest]

@@ -68,8 +68,9 @@ use crate::{
         parse::{
             bar_type_to_futures_resolution, parse_bar, parse_futures_fill_report,
             parse_futures_instrument, parse_futures_order_event_status_report,
-            parse_futures_order_status_report, parse_futures_position_status_report,
-            parse_futures_public_execution, truncate_cl_ord_id,
+            parse_futures_order_status_details_report, parse_futures_order_status_report,
+            parse_futures_position_status_report, parse_futures_public_execution,
+            truncate_cl_ord_id,
         },
         urls::get_kraken_http_base_url,
     },
@@ -792,6 +793,41 @@ impl KrakenFuturesRawHttpClient {
         // For signing: query params go in postData, not endpoint
         // Kraken: message = postData + nonce + endpoint
         self.send_get_with_query(endpoint, url, &query_string).await
+    }
+
+    /// Requests the status of specific orders (requires authentication).
+    ///
+    /// The venue reports orders which are open or were filled/cancelled in
+    /// the last 5 seconds, which covers the Maker Protection race where an
+    /// order is absent from `/openorders` because its terminal transition is
+    /// younger than the open-orders snapshot.
+    pub async fn get_orders_status(
+        &self,
+        order_ids: &[String],
+        cli_ord_ids: &[String],
+    ) -> anyhow::Result<FuturesOrdersStatusResponse, KrakenHttpError> {
+        if self.credential.is_none() {
+            return Err(KrakenHttpError::AuthenticationError(
+                "API credentials required for futures orders status".to_string(),
+            ));
+        }
+
+        let pairs: Vec<(&str, &str)> = order_ids
+            .iter()
+            .map(|order_id| ("orderIds", order_id.as_str()))
+            .chain(
+                cli_ord_ids
+                    .iter()
+                    .map(|cli_ord_id| ("cliOrdIds", cli_ord_id.as_str())),
+            )
+            .collect();
+
+        let post_data = serde_urlencoded::to_string(&pairs).map_err(|e| {
+            KrakenHttpError::RequestNotStarted(format!("Failed to encode params: {e}"))
+        })?;
+
+        let endpoint = "/derivatives/api/v3/orders/status";
+        self.send_authenticated_post(endpoint, post_data).await
     }
 
     /// Requests fill/trade history (requires authentication).
@@ -1802,6 +1838,66 @@ impl KrakenFuturesHttpClient {
         }
 
         Ok(all_reports)
+    }
+
+    /// Requests order status reports from the venue's `/orders/status`
+    /// 5-second window for the given venue order IDs and client order IDs.
+    ///
+    /// Orders the venue no longer reports within that window are simply absent
+    /// from the result, which callers treat as absence of recent evidence.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying request fails or the venue rejects
+    /// it.
+    pub async fn request_orders_status_reports(
+        &self,
+        account_id: AccountId,
+        order_ids: &[String],
+        cli_ord_ids: &[String],
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        let ts_init = self.generate_ts_init();
+
+        let response = self
+            .inner
+            .get_orders_status(order_ids, cli_ord_ids)
+            .await
+            .map_err(|e| anyhow::anyhow!("get_orders_status failed: {e}"))?;
+
+        if response.result != KrakenApiResult::Success {
+            let error_msg = response
+                .error
+                .unwrap_or_else(|| "Unknown error".to_string());
+            anyhow::bail!("Failed to get orders status: {error_msg}");
+        }
+
+        let mut reports = Vec::with_capacity(response.orders.len());
+        for details in &response.orders {
+            let Some(instrument) = self.get_instrument_by_raw_symbol(&details.order.symbol) else {
+                anyhow::bail!(
+                    "No cached instrument for symbol: {}, order {} cannot be reported; \
+                     treating the lookup as failed rather than the order as absent",
+                    details.order.symbol,
+                    details.order.order_id,
+                );
+            };
+
+            match parse_futures_order_status_details_report(
+                details,
+                &instrument,
+                account_id,
+                ts_init,
+            ) {
+                Ok(report) => reports.push(report),
+                Err(e) => anyhow::bail!(
+                    "Failed to parse futures order status {}: {e}; treating the lookup as \
+                     failed rather than the order as absent",
+                    details.order.order_id,
+                ),
+            }
+        }
+
+        Ok(reports)
     }
 
     pub async fn request_fill_reports(

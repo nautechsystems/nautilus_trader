@@ -35,7 +35,7 @@ use nautilus_model::{
 use ustr::Ustr;
 
 use super::{
-    DeltaSnapshot, OrderIdentity, WsDispatchState, ensure_accepted_emitted,
+    DeltaSnapshot, OrderIdentity, PendingRemoval, WsDispatchState, ensure_accepted_emitted,
     fill_report_to_order_filled, resolve_client_order_id,
 };
 use crate::{
@@ -51,10 +51,13 @@ use crate::{
 
 /// Dispatches a Kraken Futures `OpenOrdersDelta` message.
 ///
-/// Fill-driven cancel deltas (`is_cancel=true` with reason `full_fill` /
-/// `partial_fill`) are skipped - the corresponding `FillsDelta` carries the
-/// real fill, so emitting a synthetic Canceled here would race with the
-/// genuine `OrderFilled`.
+/// Fill-driven cancel deltas (`is_cancel=true` with reason `full_fill`) are
+/// skipped - the corresponding `FillsDelta` carries the real fill, so emitting
+/// a synthetic Canceled here would race with the genuine `OrderFilled`.
+/// Part-fill removals (`is_cancel=true` with reason `partial_fill`) discard the
+/// order's remainder and are terminal: they close the order only once the
+/// fills feed has accounted the removal's cumulative filled, so a fill still
+/// in flight is never orphaned.
 #[expect(clippy::too_many_arguments)]
 pub fn open_orders_delta(
     delta: &KrakenFuturesOpenOrdersDelta,
@@ -68,7 +71,7 @@ pub fn open_orders_delta(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) {
-    if delta.is_fill_driven_cancel() {
+    if delta.is_fill_driven_cancel() && !delta.is_partial_fill_removal() {
         log::debug!(
             "Skipping fill-driven open_orders delta: order_id={}, reason={:?}",
             delta.order.order_id,
@@ -109,6 +112,33 @@ pub fn open_orders_delta(
     {
         log::debug!(
             "Skipping stale open_orders delta for filled order: cid={cid}, order_id={}",
+            delta.order.order_id,
+        );
+        return;
+    }
+
+    if delta.is_partial_fill_removal() {
+        // Untracked removals must not emit a terminal report; that orphans the fill
+        if let Some(client_order_id) = resolved_id {
+            venue_client_map.insert(delta.order.order_id.clone(), client_order_id);
+
+            if let Some(identity) = state.lookup_identity(&client_order_id) {
+                partial_removal_tracked(
+                    delta,
+                    client_order_id,
+                    &identity,
+                    instrument,
+                    state,
+                    emitter,
+                    account_id,
+                    ts_init,
+                );
+                return;
+            }
+        }
+
+        log::debug!(
+            "Skipping untracked partial-fill removal: order_id={}",
             delta.order.order_id,
         );
         return;
@@ -288,6 +318,83 @@ fn delta_tracked(
         false,
     );
     emitter.send_order_event(OrderEventAny::Updated(updated));
+}
+
+/// Converges a tracked terminal part-fill removal whose remainder the venue
+/// discarded (a converted Maker Protection hold or an IOC-style order).
+///
+/// The removal delta carries the venue's cumulative filled at the removal. If
+/// the fills feed has already accounted it the order closes immediately;
+/// otherwise the removal is parked until the cumulative fills reach it, so
+/// the closing cancel can never overtake the fill it belongs with.
+#[expect(clippy::too_many_arguments)]
+fn partial_removal_tracked(
+    delta: &KrakenFuturesOpenOrdersDelta,
+    client_order_id: ClientOrderId,
+    identity: &OrderIdentity,
+    instrument: &InstrumentAny,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+) {
+    let venue_order_id = VenueOrderId::new(&delta.order.order_id);
+    let ts_event = millis_to_nanos(delta.order.last_update_time);
+
+    let Ok(venue_filled) =
+        Quantity::from_decimal_dp(delta.order.filled, instrument.size_precision())
+    else {
+        log::error!("Failed to parse filled quantity: {}", delta.order.filled);
+        return;
+    };
+
+    let recorded_filled = state
+        .previous_filled_qty(&client_order_id)
+        .unwrap_or_else(|| Quantity::zero(instrument.size_precision()));
+
+    if recorded_filled < venue_filled {
+        log::debug!(
+            "Deferring partial-fill removal for {client_order_id}: filled={recorded_filled}, \
+             venue_filled={venue_filled}",
+        );
+        state.insert_pending_removal(
+            client_order_id,
+            PendingRemoval {
+                venue_filled,
+                reason: delta.reason.clone(),
+                ts_event,
+            },
+        );
+
+        return;
+    }
+
+    ensure_accepted_emitted(
+        client_order_id,
+        venue_order_id,
+        account_id,
+        identity,
+        state,
+        emitter,
+        ts_event,
+        ts_init,
+    );
+
+    let canceled = OrderCanceled::new(
+        emitter.trader_id(),
+        identity.strategy_id,
+        identity.instrument_id,
+        client_order_id,
+        UUID4::new(),
+        ts_event,
+        ts_init,
+        false,
+        Some(venue_order_id),
+        Some(account_id),
+        delta.reason.as_deref().map(Ustr::from),
+    );
+    emitter.send_order_event(OrderEventAny::Canceled(canceled));
+    state.cleanup_terminal(&client_order_id);
 }
 
 /// Dispatches a Kraken Futures `OpenOrdersCancel` (cancel-only) message.
@@ -514,6 +621,29 @@ fn single_fill(
 
             if cumulative >= identity.quantity {
                 state.insert_filled(client_order_id);
+                state.cleanup_terminal(&client_order_id);
+                return;
+            }
+
+            if let Some(pending) = state.pending_removal(&client_order_id)
+                && cumulative >= pending.venue_filled
+            {
+                state.remove_pending_removal(&client_order_id);
+
+                let canceled = OrderCanceled::new(
+                    emitter.trader_id(),
+                    identity.strategy_id,
+                    identity.instrument_id,
+                    client_order_id,
+                    UUID4::new(),
+                    pending.ts_event,
+                    ts_init,
+                    false,
+                    Some(report.venue_order_id),
+                    Some(account_id),
+                    pending.reason.as_deref().map(Ustr::from),
+                );
+                emitter.send_order_event(OrderEventAny::Canceled(canceled));
                 state.cleanup_terminal(&client_order_id);
             }
             return;

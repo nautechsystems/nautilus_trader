@@ -448,6 +448,15 @@ impl KrakenFuturesOpenOrdersDelta {
     pub fn is_fill_driven_cancel(&self) -> bool {
         self.is_cancel && matches!(self.reason.as_deref(), Some("full_fill" | "partial_fill"))
     }
+
+    /// Returns whether this delta terminally removes a part-filled order whose
+    /// remainder the venue discarded (a converted Maker Protection hold or an
+    /// IOC-style order), as opposed to a resting order's partial-fill update
+    /// which carries `is_cancel=false`.
+    #[must_use]
+    pub fn is_partial_fill_removal(&self) -> bool {
+        self.is_cancel && self.reason.as_deref() == Some("partial_fill")
+    }
 }
 
 /// Open orders cancel notification from Kraken Futures WebSocket.
@@ -761,6 +770,40 @@ mod tests {
         };
 
         assert_eq!(delta.is_fill_driven_cancel(), expected);
+    }
+
+    #[rstest]
+    #[case::partial_removal(true, Some("partial_fill"), true)]
+    #[case::resting_partial_fill(false, Some("partial_fill"), false)]
+    #[case::full_fill(true, Some("full_fill"), false)]
+    #[case::user_cancel(true, Some("cancelled_by_user"), false)]
+    fn test_open_orders_delta_is_partial_fill_removal(
+        #[case] is_cancel: bool,
+        #[case] reason: Option<&'static str>,
+        #[case] expected: bool,
+    ) {
+        let delta = KrakenFuturesOpenOrdersDelta {
+            feed: KrakenFuturesFeed::OpenOrders,
+            order: KrakenFuturesOpenOrder {
+                instrument: Ustr::from("PF_XBTUSD"),
+                time: 0,
+                last_update_time: 0,
+                qty: dec!(0.0001),
+                filled: Decimal::ZERO,
+                limit_price: Some(dec!(70000)),
+                stop_price: None,
+                order_type: KrakenFuturesOrderType::Limit,
+                order_id: "test".to_string(),
+                cli_ord_id: None,
+                direction: 0,
+                reduce_only: false,
+                trigger_signal: None,
+            },
+            is_cancel,
+            reason: reason.map(str::to_string),
+        };
+
+        assert_eq!(delta.is_partial_fill_removal(), expected);
     }
 
     #[rstest]

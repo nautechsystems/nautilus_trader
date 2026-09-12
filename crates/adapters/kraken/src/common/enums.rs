@@ -475,6 +475,40 @@ pub enum KrakenFuturesOrderStatus {
     Expired,
 }
 
+/// Kraken futures order lifecycle status from `POST /orders/status`, which
+/// reports orders open or with a fill/cancel event in the last 5 seconds.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumString,
+    FromRepr,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[strum(ascii_case_insensitive, serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum KrakenFuturesOrderLifecycleStatus {
+    /// Order entered the book and is open.
+    EnteredBook,
+    /// Order fully executed.
+    FullyExecuted,
+    /// Order rejected.
+    Rejected,
+    /// Order cancelled, including a part-filled removal whose remainder was
+    /// discarded.
+    Cancelled,
+    /// Trigger order placed and waiting.
+    TriggerPlaced,
+    /// Trigger order failed to activate.
+    TriggerActivationFailure,
+}
+
 /// Kraken futures trigger signal type.
 #[derive(
     Clone,
