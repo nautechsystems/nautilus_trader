@@ -290,6 +290,9 @@ impl DataClient for BacktestDataClient {
         anyhow::bail!("backtest data client cannot fetch option-chain reference prices")
     }
 
+    // Unlike the other request handlers, this stays silent: the engine itself issues this
+    // request when a DeFi subscription arrives before the pool is cached, and the replayed
+    // snapshot completes that flow. The default handler would warn during a successful backtest.
     #[cfg(feature = "defi")]
     fn request_pool_snapshot(&self, _request: RequestPoolSnapshot) -> anyhow::Result<()> {
         Ok(())

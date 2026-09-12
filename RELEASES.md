@@ -116,6 +116,7 @@ Released on TBD (UTC).
 - Fixed SBE market data decoding panics for malformed instrument and trade identifiers
 - Fixed nanosecond precision loss when `TestDataProvider` parses timestamps
 - Fixed `BacktestNode.run_streaming()` loading all records when more than one data config was used (#4897), thanks @abhijeetvichare76
+- Fixed backtest client hiding warnings for unsupported data requests (#4945), thanks @matvt-cell
 - Fixed stale or terminal single and list order submissions reaching execution clients
 - Fixed TWD, 1INCH, CAKE, and SHIB currency lookup panics
 - Fixed retiring `DataActor`, `Strategy`, and `ExecutionAlgorithm` instances retaining active or pending data subscriptions
