@@ -144,6 +144,22 @@ fn load_swap_instruments() -> Vec<InstrumentAny> {
         .collect()
 }
 
+fn load_usdc_spot_instruments() -> Vec<InstrumentAny> {
+    let payload = load_json("http_get_instruments_spot_usdc.json");
+    let response: OKXResponse<OKXInstrument> =
+        serde_json::from_value(payload).expect("invalid USDC instrument payload");
+    let ts_init = UnixNanos::default();
+    response
+        .data
+        .iter()
+        .filter_map(|raw| {
+            parse_instrument_any(raw, None, None, None, None, ts_init)
+                .ok()
+                .flatten()
+        })
+        .collect()
+}
+
 fn load_instruments() -> Vec<InstrumentAny> {
     let payload = load_json("http_get_instruments_spot.json");
     let response: OKXResponse<OKXInstrument> =
@@ -3884,6 +3900,231 @@ async fn test_spread_market_data_subscriptions_use_sprd_id() {
             );
         }
     }
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_submit_usdc_spot_order_serializes_usd_trade_quote_ccy() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url).await;
+    let instruments = load_usdc_spot_instruments();
+    client.cache_instruments(&instruments);
+    client.cache_inst_id_code(Ustr::from("BTC-USDC"), 20459);
+    client.cache_trade_quote_ccy_lists([(
+        Ustr::from("BTC-USDC"),
+        vec![Ustr::from("USD"), Ustr::from("USDC")],
+    )]);
+    client.set_spot_trade_quote_ccy(Some("USD".to_string()));
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    client
+        .submit_order(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRATEGY-001"),
+            InstrumentId::from("BTC-USDC.OKX"),
+            OKXTradeMode::Cash,
+            ClientOrderId::from("Ousdquote001"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("0.01"),
+            Some(TimeInForce::Gtc),
+            Some(Price::from("100000.0")),
+            None,
+            Some(false),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("submit USDC spot order failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { !state.order_messages.lock().await.is_empty() }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    let messages = state.order_messages().await;
+    let arg = &messages[0]["args"][0];
+    assert_eq!(arg["instIdCode"], 20459);
+    assert_eq!(arg["tradeQuoteCcy"], "USD");
+    assert!(arg.get("instId").is_none());
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_submit_usdc_spot_order_rejects_unlisted_trade_quote_ccy() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url).await;
+    client.cache_instruments(&load_usdc_spot_instruments());
+    client.cache_inst_id_code(Ustr::from("BTC-USDC"), 20459);
+    client.cache_trade_quote_ccy_lists([(
+        Ustr::from("BTC-USDC"),
+        vec![Ustr::from("USD"), Ustr::from("USDC")],
+    )]);
+    client.set_spot_trade_quote_ccy(Some("EUR".to_string()));
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    let error = client
+        .submit_order(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRATEGY-001"),
+            InstrumentId::from("BTC-USDC.OKX"),
+            OKXTradeMode::Cash,
+            ClientOrderId::from("Obadquote0001"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("0.01"),
+            Some(TimeInForce::Gtc),
+            Some(Price::from("100000.0")),
+            None,
+            Some(false),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect_err("unlisted tradeQuoteCcy must fail before send");
+
+    assert!(error.to_string().contains("tradeQuoteCcy 'EUR'"));
+    assert!(state.order_messages().await.is_empty());
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_stale_usd_subscription_is_not_mapped_to_usdc() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url).await;
+    let mut instruments = load_instruments();
+    instruments.extend(load_usdc_spot_instruments());
+    client.cache_instruments(&instruments);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    client
+        .subscribe_trades(InstrumentId::from("BTC-USD.OKX"), false)
+        .await
+        .expect("subscribe BTC-USD failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscriptions
+                    .lock()
+                    .await
+                    .iter()
+                    .any(|arg| arg.get("instId").and_then(Value::as_str) == Some("BTC-USD"))
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    let subscriptions = state.subscriptions.lock().await.clone();
+    assert!(
+        subscriptions
+            .iter()
+            .any(|arg| arg.get("instId").and_then(Value::as_str) == Some("BTC-USD"))
+    );
+    assert!(
+        subscriptions
+            .iter()
+            .all(|arg| arg.get("instId").and_then(Value::as_str) != Some("BTC-USDC"))
+    );
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_usdc_subscription_resubscribes_same_inst_id_after_reconnect() {
+    let state = Arc::new(TestServerState::default());
+    state.drop_next_connection.store(true, Ordering::Relaxed);
+
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url).await;
+    client.cache_instruments(&load_usdc_spot_instruments());
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    client
+        .subscribe_trades(InstrumentId::from("BTC-USDC.OKX"), false)
+        .await
+        .expect("subscribe BTC-USDC failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                let login_count = *state.login_count.lock().await;
+                let usdc_subs = state
+                    .subscriptions
+                    .lock()
+                    .await
+                    .iter()
+                    .filter(|arg| arg.get("instId").and_then(Value::as_str) == Some("BTC-USDC"))
+                    .count();
+                login_count >= 2 && usdc_subs >= 2
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let subscriptions = state.subscriptions.lock().await.clone();
+    assert!(
+        subscriptions
+            .iter()
+            .all(|arg| arg.get("instId").and_then(Value::as_str) != Some("BTC-USD"))
+    );
 
     client.close().await.expect("close failed");
 }

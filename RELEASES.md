@@ -37,6 +37,7 @@ Released on TBD (UTC).
 - Added Kraken Futures `makerProtectionMillis` decoding for Maker Protection markets
 - Added Kraken execution `max_retries` configuration (#4902), thanks @folknor
 - Added OKX raw HTTP account configuration queries (#4943), thanks @silarin
+- Added OKX USD-to-USDC spot migration support with `spot_trade_quote_ccy` and `activate_feature`
 - Added Polymarket collateral-sized limit BUY orders with exact limit price preservation
 - Added Polymarket limit order modification support
 - Added Polymarket parent event IDs and raw Gamma market and event metadata
@@ -237,6 +238,7 @@ Released on TBD (UTC).
 - Added an explicit statement that the documentation covers v2 only
 - Added Kraken Futures Maker Protection held-order semantics to the integration guide
 - Added OKX RPI minimum-notional thresholds and amend rejection rules
+- Added OKX USD-to-USDC spot migration guidance for `spot_trade_quote_ccy` and `activate_feature`
 - Changed install commands to require `--pre` for the v2 wheel (#4919), thanks for reporting @pcoughlin
 - Changed the getting started and tutorial guides to run on bundled sample data without a download
 - Simplified documented `StrategyConfig` and `DataActorConfig` subclassing to keyword-only fields

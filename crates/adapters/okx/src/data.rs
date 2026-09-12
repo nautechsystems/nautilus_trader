@@ -4099,6 +4099,7 @@ mod tests {
             rpi: None,
             rpi_min_level: None,
             rpi_min_px_band: None,
+            trade_quote_ccy_list: Vec::new(),
         };
         let instrument = crate::common::parse::parse_event_contract_instrument(
             &okx_inst,

@@ -50,7 +50,7 @@ use nautilus_model::{
 use nautilus_network::http::{HttpClient, HttpClientError};
 use nautilus_okx::{
     common::{
-        consts::OKX_NAUTILUS_BROKER_ID,
+        consts::{OKX_FEATURE_USDC_ORDER_BOOK, OKX_NAUTILUS_BROKER_ID},
         credential::Credential,
         enums::{
             OKXAccountLevel, OKXAlgoOrderStatus, OKXApiKeyPermission, OKXEnvironment, OKXFeeType,
@@ -59,6 +59,7 @@ use nautilus_okx::{
         },
         failure::classify_okx_http_failure,
         models::OKXInstrument,
+        parse::parse_instrument_any,
     },
     http::{
         client::{OKXHttpClient, OKXRawHttpClient, OKXResponse},
@@ -68,12 +69,12 @@ use nautilus_okx::{
             OKXPlaceOrderRequest,
         },
         query::{
-            GetAlgoOrdersParamsBuilder, GetEventContractMarketsParamsBuilder,
-            GetEventContractSeriesParamsBuilder, GetInstrumentsParamsBuilder,
-            GetOptionSummaryParamsBuilder, GetOrderHistoryParams, GetOrderListParams,
-            GetOrderParamsBuilder, GetPositionTiersParamsBuilder, GetPositionsParamsBuilder,
-            GetPriceLimitParamsBuilder, GetRpiOrderBookParams, GetSpreadsParamsBuilder,
-            GetTradeFeeParamsBuilder, GetTransactionDetailsParamsBuilder,
+            ActivateFeatureParams, GetAlgoOrdersParamsBuilder,
+            GetEventContractMarketsParamsBuilder, GetEventContractSeriesParamsBuilder,
+            GetInstrumentsParamsBuilder, GetOptionSummaryParamsBuilder, GetOrderHistoryParams,
+            GetOrderListParams, GetOrderParamsBuilder, GetPositionTiersParamsBuilder,
+            GetPositionsParamsBuilder, GetPriceLimitParamsBuilder, GetRpiOrderBookParams,
+            GetSpreadsParamsBuilder, GetTradeFeeParamsBuilder, GetTransactionDetailsParamsBuilder,
             SetPositionModeParamsBuilder,
         },
     },
@@ -5702,6 +5703,7 @@ async fn test_place_order_venue_error_preserves_submit_retry_gate(
         px_vol: None,
         reduce_only: None,
         tgt_ccy: None,
+        trade_quote_ccy: None,
         attach_algo_ords: None,
         outcome: None,
         slippage_pct: None,
@@ -5804,6 +5806,7 @@ async fn test_place_order_truncated_response_is_ambiguous_transport_failure() {
         px_vol: None,
         reduce_only: None,
         tgt_ccy: None,
+        trade_quote_ccy: None,
         attach_algo_ords: None,
         outcome: None,
         slippage_pct: None,
@@ -6719,6 +6722,7 @@ async fn test_rpi_rest_single_batch_place_and_amend_client_paths() {
         px_vol: None,
         reduce_only: None,
         tgt_ccy: None,
+        trade_quote_ccy: None,
         attach_algo_ords: None,
         outcome: None,
         slippage_pct: None,
@@ -6842,6 +6846,7 @@ async fn test_rpi_rest_batch_preserves_partial_success_items() {
         px_vol: None,
         reduce_only: None,
         tgt_ccy: None,
+        trade_quote_ccy: None,
         attach_algo_ords: None,
         outcome: None,
         slippage_pct: None,
@@ -7655,4 +7660,381 @@ async fn test_http_request_fill_reports_skips_out_of_window_missing_fee() {
         .unwrap();
 
     assert!(reports.is_empty());
+}
+
+fn load_usdc_spot_instrument() -> (InstrumentAny, OKXInstrument) {
+    let payload = load_test_data("http_get_instruments_spot_usdc.json");
+    let response: OKXResponse<OKXInstrument> =
+        serde_json::from_value(payload).expect("invalid USDC instrument payload");
+    let raw = response.data.into_iter().next().expect("USDC instrument");
+    let instrument = parse_instrument_any(&raw, None, None, None, None, UnixNanos::default())
+        .expect("USDC instrument parses")
+        .expect("USDC instrument supported");
+    (instrument, raw)
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_activate_feature_sends_usdc_order_book_feature() {
+    let captured = Arc::new(tokio::sync::Mutex::new(None));
+    let captured_for_server = captured.clone();
+
+    let router = Router::new().route(
+        "/api/v5/account/activate-feature",
+        post(move |Json(payload): Json<Value>| {
+            let captured = captured_for_server.clone();
+            async move {
+                *captured.lock().await = Some(payload);
+                Json(json!({"code": "0", "msg": "", "data": []}))
+            }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    client
+        .activate_feature(OKX_FEATURE_USDC_ORDER_BOOK)
+        .await
+        .unwrap();
+
+    let body = captured
+        .lock()
+        .await
+        .clone()
+        .expect("activate-feature body");
+    assert_eq!(
+        body,
+        json!({
+            "feature": OKX_FEATURE_USDC_ORDER_BOOK,
+        })
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_activate_feature_raw_client_serializes_feature() {
+    let captured = Arc::new(tokio::sync::Mutex::new(None));
+    let captured_for_server = captured.clone();
+
+    let router = Router::new().route(
+        "/api/v5/account/activate-feature",
+        post(move |Json(payload): Json<Value>| {
+            let captured = captured_for_server.clone();
+            async move {
+                *captured.lock().await = Some(payload);
+                Json(json!({"code": "0", "msg": "", "data": []}))
+            }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    let client = OKXRawHttpClient::with_credentials(
+        "test_key".to_string(),
+        "test_secret".to_string(),
+        "test_passphrase".to_string(),
+        format!("http://{addr}"),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let params = ActivateFeatureParams {
+        feature: OKX_FEATURE_USDC_ORDER_BOOK.to_string(),
+    };
+
+    let response = client.activate_feature(params).await.unwrap();
+    assert!(response.is_empty());
+
+    let body = captured
+        .lock()
+        .await
+        .clone()
+        .expect("activate-feature body");
+    assert_eq!(body["feature"], OKX_FEATURE_USDC_ORDER_BOOK);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_place_order_serializes_usd_trade_quote_ccy() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let (instrument, raw) = load_usdc_spot_instrument();
+    client.cache_instruments(std::slice::from_ref(&instrument));
+    client.cache_trade_quote_ccy_lists([(raw.inst_id, raw.trade_quote_ccy_list.clone())]);
+    client.set_spot_trade_quote_ccy(Some("USD".to_string()));
+
+    client
+        .place_order_with_domain_types(
+            instrument.id(),
+            OKXTradeMode::Cash,
+            ClientOrderId::from("Ousdquote001"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("0.01"),
+            Some(TimeInForce::Gtc),
+            Some(Price::from("100000.0")),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+    let body = state.last_order_body.lock().await.clone().unwrap();
+    assert_eq!(body["instId"], "BTC-USDC");
+    assert_eq!(body["tradeQuoteCcy"], "USD");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_place_order_omits_trade_quote_ccy_by_default() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let (instrument, raw) = load_usdc_spot_instrument();
+    client.cache_instruments(std::slice::from_ref(&instrument));
+    client.cache_trade_quote_ccy_lists([(raw.inst_id, raw.trade_quote_ccy_list)]);
+
+    client
+        .place_order_with_domain_types(
+            instrument.id(),
+            OKXTradeMode::Cash,
+            ClientOrderId::from("Ousdcdefault01"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("0.01"),
+            Some(TimeInForce::Gtc),
+            Some(Price::from("100000.0")),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+    let body = state.last_order_body.lock().await.clone().unwrap();
+    assert_eq!(body["instId"], "BTC-USDC");
+    assert!(body.get("tradeQuoteCcy").is_none());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_place_order_rejects_unlisted_trade_quote_ccy() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let (instrument, raw) = load_usdc_spot_instrument();
+    client.cache_instruments(std::slice::from_ref(&instrument));
+    client.cache_trade_quote_ccy_lists([(raw.inst_id, raw.trade_quote_ccy_list)]);
+    client.set_spot_trade_quote_ccy(Some("EUR".to_string()));
+
+    let error = client
+        .place_order_with_domain_types(
+            instrument.id(),
+            OKXTradeMode::Cash,
+            ClientOrderId::from("Obadquote0001"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("0.01"),
+            Some(TimeInForce::Gtc),
+            Some(Price::from("100000.0")),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+
+    match error {
+        OKXHttpError::ValidationError(message) => {
+            assert!(message.contains("tradeQuoteCcy 'EUR'"));
+            assert!(message.contains("was [USD, USDC]"));
+        }
+        other => panic!("expected validation error, was {other:?}"),
+    }
+
+    assert!(state.last_order_body.lock().await.is_none());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_refresh_account_trade_quote_ccy_lists_from_private_instruments() {
+    let router = Router::new().route(
+        "/api/v5/account/instruments",
+        get(|| async { Json(load_test_data("http_get_instruments_spot_usdc.json")) }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    client
+        .refresh_account_trade_quote_ccy_lists(OKXInstrumentType::Spot, None)
+        .await
+        .unwrap();
+
+    let lists = client.trade_quote_ccy_lists_snapshot();
+    assert_eq!(lists.len(), 1);
+    assert_eq!(lists[0].0, Ustr::from("BTC-USDC"));
+    assert_eq!(lists[0].1, vec![Ustr::from("USD"), Ustr::from("USDC")]);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_instruments_caches_usdc_inst_id_code_and_trade_quote_list() {
+    let router = Router::new().route(
+        "/api/v5/public/instruments",
+        get(|| async { Json(load_test_data("http_get_instruments_spot_usdc.json")) }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    let client = OKXHttpClient::new(
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let (instruments, inst_id_codes) = client
+        .request_instruments(OKXInstrumentType::Spot, None)
+        .await
+        .unwrap();
+
+    assert_eq!(instruments.len(), 1);
+    assert_eq!(instruments[0].id(), InstrumentId::from("BTC-USDC.OKX"));
+    assert_eq!(inst_id_codes, vec![(Ustr::from("BTC-USDC"), 20459)]);
+    assert_eq!(
+        client.trade_quote_ccy_lists_snapshot(),
+        vec![(
+            Ustr::from("BTC-USDC"),
+            vec![Ustr::from("USD"), Ustr::from("USDC")]
+        )]
+    );
 }

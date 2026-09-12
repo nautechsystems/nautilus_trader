@@ -192,6 +192,10 @@ impl OKXExecutionClient {
             "okx-business-user-streams",
         ));
 
+        http_client.set_spot_trade_quote_ccy(config.spot_trade_quote_ccy.clone());
+        ws_private.set_spot_trade_quote_ccy(config.spot_trade_quote_ccy.clone());
+        ws_business.set_spot_trade_quote_ccy(config.spot_trade_quote_ccy.clone());
+
         let trade_mode = Self::derive_default_trade_mode(core.account_type, &config);
         let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(
@@ -1397,11 +1401,25 @@ impl OKXExecutionClient {
                 );
             }
 
+            if instrument_types.contains(&OKXInstrumentType::Spot)
+                && let Err(e) = self
+                    .http_client
+                    .refresh_account_trade_quote_ccy_lists(OKXInstrumentType::Spot, None)
+                    .await
+            {
+                log::warn!("Failed to refresh account tradeQuoteCcyList: {e}");
+            }
+
+            let trade_quote_ccy_lists = self.http_client.trade_quote_ccy_lists_snapshot();
             self.ws_private.cache_instruments(&all_instruments);
             self.ws_private
                 .cache_inst_id_codes(all_inst_id_codes.clone());
+            self.ws_private
+                .cache_trade_quote_ccy_lists(trade_quote_ccy_lists.clone());
             self.ws_business.cache_instruments(&all_instruments);
             self.ws_business.cache_inst_id_codes(all_inst_id_codes);
+            self.ws_business
+                .cache_trade_quote_ccy_lists(trade_quote_ccy_lists);
             self.core.set_instruments_initialized();
         }
 

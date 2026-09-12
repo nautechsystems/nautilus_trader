@@ -85,6 +85,7 @@ use crate::common::{
     consts::{
         OKX_NAUTILUS_BROKER_ID, OKX_SUPPORTED_ORDER_TYPES, OKX_SUPPORTED_TIME_IN_FORCE,
         OKX_WS_PUBLIC_URL, OKX_WS_TOPIC_DELIMITER, okx_reduce_only_wire_value, select_book_channel,
+        spot_trade_quote_ccy_wire_value,
     },
     credential::Credential,
     enums::{
@@ -238,6 +239,8 @@ pub struct OKXWebSocketClient {
     request_id_counter: Arc<AtomicU64>,
     instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
     inst_id_code_cache: Arc<AtomicMap<Ustr, u64>>,
+    trade_quote_ccy_lists: Arc<AtomicMap<Ustr, Vec<Ustr>>>,
+    spot_trade_quote_ccy: Arc<Mutex<Option<Ustr>>>,
     pub(crate) pending_orders: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_cancels: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_amends: Arc<DashMap<String, PendingOrderInfo>>,
@@ -384,6 +387,8 @@ impl OKXWebSocketClient {
             request_id_counter: Arc::new(AtomicU64::new(1)),
             instruments_cache: Arc::new(AtomicMap::new()),
             inst_id_code_cache: Arc::new(AtomicMap::new()),
+            trade_quote_ccy_lists: Arc::new(AtomicMap::new()),
+            spot_trade_quote_ccy: Arc::new(Mutex::new(None)),
             pending_orders: Arc::new(DashMap::new()),
             pending_cancels: Arc::new(DashMap::new()),
             pending_amends: Arc::new(DashMap::new()),
@@ -564,6 +569,44 @@ impl OKXWebSocketClient {
     #[must_use]
     pub fn get_inst_id_code(&self, inst_id: &Ustr) -> Option<u64> {
         self.inst_id_code_cache.load().get(inst_id).copied()
+    }
+
+    /// Sets the optional SPOT `tradeQuoteCcy` override for subsequent order placement.
+    pub fn set_spot_trade_quote_ccy(&self, ccy: Option<String>) {
+        *self.spot_trade_quote_ccy.lock() = ccy.map(|value| Ustr::from(value.as_str()));
+    }
+
+    /// Caches `tradeQuoteCcyList` values keyed by instrument ID.
+    pub fn cache_trade_quote_ccy_lists(
+        &self,
+        mappings: impl IntoIterator<Item = (Ustr, Vec<Ustr>)>,
+    ) {
+        let entries: Vec<_> = mappings.into_iter().collect();
+        self.trade_quote_ccy_lists.rcu(|m| {
+            for (inst_id, list) in &entries {
+                m.insert(*inst_id, list.clone());
+            }
+        });
+    }
+
+    fn resolve_spot_trade_quote_ccy(
+        &self,
+        instrument_type: OKXInstrumentType,
+        inst_id: Ustr,
+    ) -> Result<Option<Ustr>, OKXWsError> {
+        let configured = *self.spot_trade_quote_ccy.lock();
+        let available = self
+            .trade_quote_ccy_lists
+            .load()
+            .get(&inst_id)
+            .cloned()
+            .unwrap_or_default();
+        spot_trade_quote_ccy_wire_value(
+            instrument_type,
+            configured.as_ref().map(Ustr::as_str),
+            &available,
+        )
+        .map_err(OKXWsError::ClientError)
     }
 
     fn inst_id_symbol_and_code_from_snapshot(
@@ -2603,6 +2646,12 @@ impl OKXWebSocketClient {
             builder.rpi_px_round(rpi_px_round);
         }
 
+        if let Some(trade_quote_ccy) =
+            self.resolve_spot_trade_quote_ccy(instrument_type, instrument_id.symbol.inner())?
+        {
+            builder.trade_quote_ccy(trade_quote_ccy);
+        }
+
         builder.ord_type(okx_ord_type);
         builder.sz(quantity.to_string());
 
@@ -3067,6 +3116,12 @@ impl OKXWebSocketClient {
 
                 if let Some(rpi_px_round) = rpi_px_round {
                     builder.rpi_px_round(rpi_px_round);
+                }
+
+                if let Some(trade_quote_ccy) =
+                    self.resolve_spot_trade_quote_ccy(inst_type, inst_id_symbol)?
+                {
+                    builder.trade_quote_ccy(trade_quote_ccy);
                 }
 
                 builder.tag(OKX_NAUTILUS_BROKER_ID);
@@ -4675,6 +4730,25 @@ mod tests {
         assert!(
             !err.contains("No instIdCode cached"),
             "Should pass instIdCode lookup, found: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_inst_id_code_cache_keeps_usd_and_usdc_instruments_distinct() {
+        use ustr::Ustr;
+
+        let client = OKXWebSocketClient::default();
+        client.cache_inst_id_code(Ustr::from("BTC-USD"), 10401);
+        client.cache_inst_id_code(Ustr::from("BTC-USDC"), 20459);
+
+        assert_eq!(client.get_inst_id_code(&Ustr::from("BTC-USD")), Some(10401));
+        assert_eq!(
+            client.get_inst_id_code(&Ustr::from("BTC-USDC")),
+            Some(20459)
+        );
+        assert_ne!(
+            client.get_inst_id_code(&Ustr::from("BTC-USD")),
+            client.get_inst_id_code(&Ustr::from("BTC-USDC"))
         );
     }
 

@@ -1347,6 +1347,10 @@ pub struct WsPostOrderParams {
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tgt_ccy: Option<OKXTargetCurrency>,
+    /// Quote currency used for trading. Only applicable to SPOT.
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trade_quote_ccy: Option<Ustr>,
     /// Order tag for categorization.
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2329,6 +2333,49 @@ mod tests {
 
         let json = serde_json::to_string(&params).unwrap();
         assert!(!json.contains("slippagePct"));
+        assert!(!json.contains("tradeQuoteCcy"));
+    }
+
+    #[rstest]
+    fn test_ws_post_order_params_serializes_trade_quote_ccy_usd() {
+        use super::WsPostOrderParamsBuilder;
+        use crate::common::enums::{OKXOrderType, OKXSide, OKXTradeMode};
+
+        let params = WsPostOrderParamsBuilder::default()
+            .inst_id_code(20459u64)
+            .td_mode(OKXTradeMode::Cash)
+            .side(OKXSide::Buy)
+            .ord_type(OKXOrderType::Limit)
+            .sz("0.01".to_string())
+            .px("100000".to_string())
+            .trade_quote_ccy("USD")
+            .build()
+            .unwrap();
+
+        let json: serde_json::Value = serde_json::to_value(&params).unwrap();
+        assert_eq!(json["instIdCode"], 20459);
+        assert_eq!(json["tradeQuoteCcy"], "USD");
+        assert!(json.get("instId").is_none());
+    }
+
+    #[rstest]
+    fn test_ws_post_order_params_serializes_trade_quote_ccy_usdc() {
+        use super::WsPostOrderParamsBuilder;
+        use crate::common::enums::{OKXOrderType, OKXSide, OKXTradeMode};
+
+        let params = WsPostOrderParamsBuilder::default()
+            .inst_id_code(20459u64)
+            .td_mode(OKXTradeMode::Cash)
+            .side(OKXSide::Buy)
+            .ord_type(OKXOrderType::Limit)
+            .sz("0.01".to_string())
+            .px("100000".to_string())
+            .trade_quote_ccy("USDC")
+            .build()
+            .unwrap();
+
+        let json: serde_json::Value = serde_json::to_value(&params).unwrap();
+        assert_eq!(json["tradeQuoteCcy"], "USDC");
     }
 
     #[rstest]

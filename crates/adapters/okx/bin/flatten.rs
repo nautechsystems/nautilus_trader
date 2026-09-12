@@ -395,6 +395,7 @@ async fn close_position(client: &OKXHttpClient, open: &OpenPosition) -> anyhow::
             px_vol: None,
             reduce_only: Some(true),
             tgt_ccy: None,
+            trade_quote_ccy: None,
             attach_algo_ords: None,
             outcome: None,
             slippage_pct: None,

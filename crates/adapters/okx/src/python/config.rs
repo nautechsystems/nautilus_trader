@@ -147,6 +147,7 @@ impl OKXExecutionClientConfig {
         load_spreads = false,
         auth_timeout_secs = None,
         transport_backend = None,
+        spot_trade_quote_ccy = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -169,6 +170,7 @@ impl OKXExecutionClientConfig {
         load_spreads: bool,
         auth_timeout_secs: Option<u64>,
         transport_backend: Option<TransportBackend>,
+        spot_trade_quote_ccy: Option<String>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -196,6 +198,7 @@ impl OKXExecutionClientConfig {
             use_spot_margin: defaults.use_spot_margin,
             auth_timeout_secs,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
+            spot_trade_quote_ccy,
         }
     }
 
@@ -274,9 +277,11 @@ mod tests {
             true,
             None,
             None,
+            Some("USD".to_string()),
         );
 
         assert!(config.load_spreads);
         assert_eq!(config.auth_timeout_secs, None);
+        assert_eq!(config.spot_trade_quote_ccy.as_deref(), Some("USD"));
     }
 }

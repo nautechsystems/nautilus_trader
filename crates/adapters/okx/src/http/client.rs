@@ -39,7 +39,7 @@ use std::{
     num::NonZeroU32,
     str::FromStr,
     sync::{
-        Arc, LazyLock,
+        Arc, LazyLock, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -96,7 +96,7 @@ use super::{
         OKXSpreadOrder, OKXSpreadTrade, OKXTransactionDetail,
     },
     query::{
-        GetAlgoOrderParams, GetAlgoOrderParamsBuilder, GetAlgoOrdersParams,
+        ActivateFeatureParams, GetAlgoOrderParams, GetAlgoOrderParamsBuilder, GetAlgoOrdersParams,
         GetAlgoOrdersParamsBuilder, GetCandlesticksParams, GetCandlesticksParamsBuilder,
         GetEventContractEventsParams, GetEventContractMarketsParams, GetEventContractSeriesParams,
         GetFundingRateHistoryParams, GetIndexTickerParams, GetIndexTickerParamsBuilder,
@@ -119,6 +119,7 @@ use crate::{
             OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_HTTP_URL, OKX_NAUTILUS_BROKER_ID,
             OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE, OKX_SUPPORTED_ORDER_TYPES,
             OKX_SUPPORTED_TIME_IN_FORCE, okx_reduce_only_wire_value,
+            spot_trade_quote_ccy_wire_value,
         },
         credential::Credential,
         enums::{
@@ -601,6 +602,10 @@ impl OKXRawHttpClient {
             (
                 "okx:/api/v5/account/set-position-mode".to_string(),
                 Quota::per_second(NonZeroU32::new(2).expect("non-zero")).expect("valid constant"),
+            ),
+            (
+                "okx:/api/v5/account/activate-feature".to_string(),
+                Quota::per_second(NonZeroU32::new(3).expect("non-zero")).expect("valid constant"),
             ),
             (
                 "okx:/api/v5/account/balance".to_string(),
@@ -1164,6 +1169,30 @@ impl OKXRawHttpClient {
         params: SetPositionModeParams,
     ) -> Result<Vec<serde_json::Value>, OKXHttpError> {
         let path = "/api/v5/account/set-position-mode";
+        let body = serde_json::to_vec(&params)?;
+        self.send_request::<_, ()>(Method::POST, path, None, Some(body), true)
+            .await
+    }
+
+    /// Activates an account feature such as USDC order book trading.
+    ///
+    /// Activation is one-time per master account and per sub-account. This method
+    /// does not run implicitly; callers must invoke it before trading a
+    /// `Crypto-USDC` instrument if the account has not already traded USDC.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if JSON serialization of `params` fails, if the HTTP
+    /// request fails, or if the response body cannot be deserialized.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/log_en/#upcoming-changes-okx-to-migrate-usd-spot-trading-pairs-new-endpoint-activate-usdc-trading>
+    pub async fn activate_feature(
+        &self,
+        params: ActivateFeatureParams,
+    ) -> Result<Vec<serde_json::Value>, OKXHttpError> {
+        let path = "/api/v5/account/activate-feature";
         let body = serde_json::to_vec(&params)?;
         self.send_request::<_, ()>(Method::POST, path, None, Some(body), true)
             .await
@@ -2056,6 +2085,8 @@ impl OKXRawHttpClient {
 pub struct OKXHttpClient {
     pub(crate) inner: Arc<OKXRawHttpClient>,
     pub(crate) instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
+    trade_quote_ccy_lists: Arc<AtomicMap<Ustr, Vec<Ustr>>>,
+    spot_trade_quote_ccy: Arc<Mutex<Option<Ustr>>>,
     cache_initialized: AtomicBool,
 }
 
@@ -2071,6 +2102,8 @@ impl Clone for OKXHttpClient {
         Self {
             inner: self.inner.clone(),
             instruments_cache: self.instruments_cache.clone(),
+            trade_quote_ccy_lists: self.trade_quote_ccy_lists.clone(),
+            spot_trade_quote_ccy: self.spot_trade_quote_ccy.clone(),
             cache_initialized,
         }
     }
@@ -2113,6 +2146,8 @@ impl OKXHttpClient {
                 proxy_url,
             )?),
             instruments_cache: Arc::new(AtomicMap::new()),
+            trade_quote_ccy_lists: Arc::new(AtomicMap::new()),
+            spot_trade_quote_ccy: Arc::new(Mutex::new(None)),
             cache_initialized: AtomicBool::new(false),
         })
     }
@@ -2181,6 +2216,8 @@ impl OKXHttpClient {
                 proxy_url,
             )?),
             instruments_cache: Arc::new(AtomicMap::new()),
+            trade_quote_ccy_lists: Arc::new(AtomicMap::new()),
+            spot_trade_quote_ccy: Arc::new(Mutex::new(None)),
             cache_initialized: AtomicBool::new(false),
         })
     }
@@ -2329,6 +2366,68 @@ impl OKXHttpClient {
         self.instruments_cache.get_cloned(symbol)
     }
 
+    /// Sets the optional SPOT `tradeQuoteCcy` override for subsequent order placement.
+    pub fn set_spot_trade_quote_ccy(&self, ccy: Option<String>) {
+        *self
+            .spot_trade_quote_ccy
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            ccy.map(|value| Ustr::from(value.as_str()));
+    }
+
+    /// Caches `tradeQuoteCcyList` values keyed by instrument ID.
+    pub fn cache_trade_quote_ccy_lists(
+        &self,
+        mappings: impl IntoIterator<Item = (Ustr, Vec<Ustr>)>,
+    ) {
+        let entries: Vec<_> = mappings.into_iter().collect();
+        self.trade_quote_ccy_lists.rcu(|m| {
+            for (inst_id, list) in &entries {
+                m.insert(*inst_id, list.clone());
+            }
+        });
+    }
+
+    /// Returns a snapshot of cached `tradeQuoteCcyList` values.
+    #[must_use]
+    pub fn trade_quote_ccy_lists_snapshot(&self) -> Vec<(Ustr, Vec<Ustr>)> {
+        self.trade_quote_ccy_lists
+            .load()
+            .iter()
+            .map(|(inst_id, list)| (*inst_id, list.clone()))
+            .collect()
+    }
+
+    fn cache_trade_quote_ccy_list_from_instrument(&self, instrument: &OKXInstrument) {
+        if !instrument.trade_quote_ccy_list.is_empty() {
+            self.trade_quote_ccy_lists
+                .insert(instrument.inst_id, instrument.trade_quote_ccy_list.clone());
+        }
+    }
+
+    fn resolve_spot_trade_quote_ccy(
+        &self,
+        instrument_type: OKXInstrumentType,
+        inst_id: Ustr,
+    ) -> Result<Option<Ustr>, OKXHttpError> {
+        let configured = *self
+            .spot_trade_quote_ccy
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let available = self
+            .trade_quote_ccy_lists
+            .load()
+            .get(&inst_id)
+            .cloned()
+            .unwrap_or_default();
+        spot_trade_quote_ccy_wire_value(
+            instrument_type,
+            configured.as_ref().map(Ustr::as_str),
+            &available,
+        )
+        .map_err(OKXHttpError::ValidationError)
+    }
+
     /// Requests the account state for the `account_id` from OKX.
     ///
     /// # Errors
@@ -2387,6 +2486,63 @@ impl OKXHttpClient {
                 anyhow::bail!(e)
             }
         }
+    }
+
+    /// Activates an account feature such as USDC order book trading.
+    ///
+    /// This does not run at client start. Call it once per master account and
+    /// once per sub-account before trading a `Crypto-USDC` instrument if that
+    /// account has not already traded USDC.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/log_en/#upcoming-changes-okx-to-migrate-usd-spot-trading-pairs-new-endpoint-activate-usdc-trading>
+    pub async fn activate_feature(&self, feature: &str) -> anyhow::Result<()> {
+        let params = ActivateFeatureParams {
+            feature: feature.to_string(),
+        };
+
+        self.inner
+            .activate_feature(params)
+            .await
+            .map(|_| ())
+            .map_err(Into::into)
+    }
+
+    /// Refreshes cached `tradeQuoteCcyList` values from private instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the authenticated instruments request fails.
+    pub async fn refresh_account_trade_quote_ccy_lists(
+        &self,
+        instrument_type: OKXInstrumentType,
+        instrument_family: Option<String>,
+    ) -> anyhow::Result<()> {
+        let mut params = GetInstrumentsParamsBuilder::default();
+        params.inst_type(instrument_type);
+        if let Some(family) = instrument_family {
+            params.inst_family(family);
+        }
+
+        let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
+        let instruments = self
+            .inner
+            .get_account_instruments(params)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+        self.cache_trade_quote_ccy_lists(
+            instruments
+                .iter()
+                .filter(|instrument| !instrument.trade_quote_ccy_list.is_empty())
+                .map(|instrument| (instrument.inst_id, instrument.trade_quote_ccy_list.clone())),
+        );
+
+        Ok(())
     }
 
     /// Requests all instruments for the `instrument_type` from OKX.
@@ -2486,12 +2642,18 @@ impl OKXHttpClient {
 
         let mut instruments: Vec<InstrumentAny> = Vec::new();
         let mut inst_id_codes: Vec<(Ustr, u64)> = Vec::new();
+        let mut trade_quote_ccy_lists: Vec<(Ustr, Vec<Ustr>)> = Vec::new();
 
         for inst in &resp {
             // Collect inst_id_code mappings for WebSocket order operations
             if let Some(code) = inst.inst_id_code {
                 inst_id_codes.push((inst.inst_id, code));
             }
+
+            if !inst.trade_quote_ccy_list.is_empty() {
+                trade_quote_ccy_lists.push((inst.inst_id, inst.trade_quote_ccy_list.clone()));
+            }
+
             // Skip pre-open instruments which have incomplete/empty field values
             // Keep suspended instruments as they have valid metadata and may return to live
             if inst.state == OKXInstrumentStatus::Preopen {
@@ -2538,6 +2700,8 @@ impl OKXHttpClient {
                 }
             }
         }
+
+        self.cache_trade_quote_ccy_lists(trade_quote_ccy_lists);
 
         Ok((instruments, inst_id_codes))
     }
@@ -2637,6 +2801,7 @@ impl OKXHttpClient {
         let raw_inst = resp
             .first()
             .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
+        self.cache_trade_quote_ccy_list_from_instrument(raw_inst);
 
         // Skip pre-open instruments which have incomplete/empty field values
         if raw_inst.state == OKXInstrumentStatus::Preopen {
@@ -6316,6 +6481,9 @@ impl OKXHttpClient {
             (px.map(|p| p.to_string()), None, None)
         };
 
+        let trade_quote_ccy =
+            self.resolve_spot_trade_quote_ccy(instrument_type, instrument_id.symbol.inner())?;
+
         let request = OKXPlaceOrderRequest {
             inst_id: instrument_id.symbol.as_str().to_string(),
             td_mode,
@@ -6331,6 +6499,7 @@ impl OKXHttpClient {
             px_vol,
             reduce_only,
             tgt_ccy,
+            trade_quote_ccy,
             attach_algo_ords,
             outcome,
             slippage_pct,

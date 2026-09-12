@@ -2449,6 +2449,19 @@ fn build_price_limit_info(definition: &OKXInstrument) -> Option<Params> {
         );
     }
 
+    if !definition.trade_quote_ccy_list.is_empty() {
+        info.insert(
+            "okx_trade_quote_ccy_list".to_string(),
+            serde_json::json!(
+                definition
+                    .trade_quote_ccy_list
+                    .iter()
+                    .map(Ustr::as_str)
+                    .collect::<Vec<_>>()
+            ),
+        );
+    }
+
     (!info.is_empty()).then_some(info)
 }
 
@@ -3318,6 +3331,41 @@ mod tests {
         assert_eq!(instrument.min_notional(), None);
         assert_eq!(instrument.max_price(), None);
         assert_eq!(instrument.min_price(), None);
+        assert!(okx_inst.trade_quote_ccy_list.is_empty());
+    }
+
+    #[rstest]
+    fn test_parse_spot_instrument_retains_trade_quote_ccy_list() {
+        let json_data = load_test_json("http_get_instruments_spot_usdc.json");
+        let response: OKXResponse<OKXInstrument> = serde_json::from_str(&json_data).unwrap();
+        let okx_inst: &OKXInstrument = response
+            .data
+            .first()
+            .expect("Test data must have an instrument");
+
+        assert_eq!(okx_inst.inst_id, "BTC-USDC");
+        assert_eq!(okx_inst.quote_ccy, "USDC");
+        assert_eq!(okx_inst.inst_id_code, Some(20459));
+        assert_eq!(
+            okx_inst.trade_quote_ccy_list,
+            vec![Ustr::from("USD"), Ustr::from("USDC")]
+        );
+
+        let instrument =
+            parse_spot_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
+
+        assert_eq!(instrument.id(), InstrumentId::from("BTC-USDC.OKX"));
+        assert_eq!(instrument.quote_currency(), Currency::USDC());
+
+        let InstrumentAny::CurrencyPair(pair) = instrument else {
+            panic!("expected CurrencyPair");
+        };
+
+        let info = pair.info.expect("trade quote info must be set");
+        assert_eq!(
+            info.get("okx_trade_quote_ccy_list"),
+            Some(&serde_json::json!(["USD", "USDC"]))
+        );
     }
 
     #[rstest]
@@ -3773,6 +3821,7 @@ mod tests {
             rpi: None,
             rpi_min_level: None,
             rpi_min_px_band: None,
+            trade_quote_ccy_list: Vec::new(),
         };
 
         let parsed = parse_event_contract_instrument(
@@ -4013,6 +4062,7 @@ mod tests {
             rpi: None,
             rpi_min_level: None,
             rpi_min_px_band: None,
+            trade_quote_ccy_list: Vec::new(),
         };
 
         let parsed =
@@ -5528,6 +5578,7 @@ mod tests {
             rpi: None,
             rpi_min_level: None,
             rpi_min_px_band: None,
+            trade_quote_ccy_list: Vec::new(),
         };
 
         let result =
@@ -5577,6 +5628,7 @@ mod tests {
             rpi: None,
             rpi_min_level: None,
             rpi_min_px_band: None,
+            trade_quote_ccy_list: Vec::new(),
         };
 
         let result =
@@ -5628,6 +5680,7 @@ mod tests {
             rpi: None,
             rpi_min_level: None,
             rpi_min_px_band: None,
+            trade_quote_ccy_list: Vec::new(),
         };
 
         let result =
@@ -5681,6 +5734,7 @@ mod tests {
             rpi: None,
             rpi_min_level: None,
             rpi_min_px_band: None,
+            trade_quote_ccy_list: Vec::new(),
         };
 
         let result =

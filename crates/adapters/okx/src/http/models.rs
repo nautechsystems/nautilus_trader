@@ -963,6 +963,9 @@ pub struct OKXPlaceOrderRequest {
     /// Target currency for spot market orders.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tgt_ccy: Option<OKXTargetCurrency>,
+    /// Quote currency used for trading. Only applicable to SPOT.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trade_quote_ccy: Option<Ustr>,
     /// Attached TP/SL OCO instructions.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attach_algo_ords: Option<Vec<OKXAttachAlgoOrdRequest>>,
@@ -2218,6 +2221,7 @@ mod tests {
             px_vol: None,
             reduce_only: None,
             tgt_ccy: None,
+            trade_quote_ccy: None,
             attach_algo_ords: None,
             outcome: None,
             slippage_pct: None,
@@ -2249,6 +2253,7 @@ mod tests {
             px_vol: Some("0.55".to_string()),
             reduce_only: None,
             tgt_ccy: None,
+            trade_quote_ccy: None,
             attach_algo_ords: None,
             outcome: None,
             slippage_pct: None,
@@ -2279,6 +2284,7 @@ mod tests {
             px_vol: None,
             reduce_only: None,
             tgt_ccy: None,
+            trade_quote_ccy: None,
             attach_algo_ords: None,
             outcome: None,
             slippage_pct: Some("0.005".to_string()),
@@ -2307,6 +2313,7 @@ mod tests {
             px_vol: None,
             reduce_only: Some(false),
             tgt_ccy: None,
+            trade_quote_ccy: None,
             attach_algo_ords: None,
             outcome: None,
             slippage_pct: None,
@@ -2509,6 +2516,7 @@ mod tests {
             px_vol: None,
             reduce_only: None,
             tgt_ccy: None,
+            trade_quote_ccy: None,
             attach_algo_ords: None,
             outcome: Some("yes".to_string()),
             slippage_pct: None,
@@ -2520,6 +2528,66 @@ mod tests {
 
         assert!(json.get("speedBump").is_none());
         assert_eq!(json["outcome"], "yes");
+        assert!(json.get("tradeQuoteCcy").is_none());
+    }
+
+    #[rstest]
+    fn test_place_order_request_serializes_trade_quote_ccy_usd() {
+        let request = OKXPlaceOrderRequest {
+            inst_id: "BTC-USDC".to_string(),
+            td_mode: OKXTradeMode::Cash,
+            ccy: None,
+            cl_ord_id: Some("usd-quote-1".to_string()),
+            tag: None,
+            side: OKXSide::Buy,
+            pos_side: None,
+            ord_type: OKXOrderType::Limit,
+            sz: "0.01".to_string(),
+            px: Some("100000".to_string()),
+            px_usd: None,
+            px_vol: None,
+            reduce_only: None,
+            tgt_ccy: None,
+            trade_quote_ccy: Some(Ustr::from("USD")),
+            attach_algo_ords: None,
+            outcome: None,
+            slippage_pct: None,
+            rpi_taker_access: None,
+            rpi_px_round: None,
+        };
+
+        let json: serde_json::Value = serde_json::to_value(&request).unwrap();
+        assert_eq!(json["instId"], "BTC-USDC");
+        assert_eq!(json["tradeQuoteCcy"], "USD");
+    }
+
+    #[rstest]
+    fn test_place_order_request_omits_trade_quote_ccy_when_unset() {
+        let request = OKXPlaceOrderRequest {
+            inst_id: "BTC-USDC".to_string(),
+            td_mode: OKXTradeMode::Cash,
+            ccy: None,
+            cl_ord_id: Some("usdc-default-1".to_string()),
+            tag: None,
+            side: OKXSide::Buy,
+            pos_side: None,
+            ord_type: OKXOrderType::Limit,
+            sz: "0.01".to_string(),
+            px: Some("100000".to_string()),
+            px_usd: None,
+            px_vol: None,
+            reduce_only: None,
+            tgt_ccy: None,
+            trade_quote_ccy: None,
+            attach_algo_ords: None,
+            outcome: None,
+            slippage_pct: None,
+            rpi_taker_access: None,
+            rpi_px_round: None,
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(!json.contains("tradeQuoteCcy"));
     }
 
     #[rstest]

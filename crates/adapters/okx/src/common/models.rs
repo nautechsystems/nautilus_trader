@@ -212,4 +212,7 @@ pub struct OKXInstrument {
         deserialize_with = "deserialize_optional_decimal_from_str"
     )]
     pub rpi_min_px_band: Option<Decimal>,
+    /// Quote currencies available for trading, e.g. `["USD", "USDC"]`.
+    #[serde(default)]
+    pub trade_quote_ccy_list: Vec<Ustr>,
 }

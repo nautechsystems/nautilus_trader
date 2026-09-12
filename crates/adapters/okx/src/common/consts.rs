@@ -276,6 +276,53 @@ pub const OKX_TARGET_CCY_BASE: &str = "base_ccy";
 /// Target currency literal for quote currency.
 pub const OKX_TARGET_CCY_QUOTE: &str = "quote_ccy";
 
+/// `feature` value for `POST /api/v5/account/activate-feature` USDC order book trading.
+pub const OKX_FEATURE_USDC_ORDER_BOOK: &str = "1";
+
+/// Resolves the optional `tradeQuoteCcy` wire value for a SPOT order.
+///
+/// Non-spot orders omit the field. When `configured` is unset or blank, the venue
+/// default (the quote currency in `instId`) is used. When set, `available` must be
+/// non-empty and contain the value.
+///
+/// # Errors
+///
+/// Returns an error when `configured` is set and `available` is empty, or when
+/// `configured` is not present in `available`.
+pub fn spot_trade_quote_ccy_wire_value(
+    instrument_type: OKXInstrumentType,
+    configured: Option<&str>,
+    available: &[Ustr],
+) -> Result<Option<Ustr>, String> {
+    if instrument_type != OKXInstrumentType::Spot {
+        return Ok(None);
+    }
+
+    let Some(ccy) = configured.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let ccy = Ustr::from(ccy);
+
+    if available.is_empty() {
+        return Err(format!(
+            "tradeQuoteCcyList is unknown for this instrument; cannot validate tradeQuoteCcy '{ccy}'"
+        ));
+    }
+
+    if !available.contains(&ccy) {
+        let listed = available
+            .iter()
+            .map(Ustr::as_str)
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!(
+            "tradeQuoteCcy '{ccy}' is not in tradeQuoteCcyList for this instrument, was [{listed}]"
+        ));
+    }
+
+    Ok(Some(ccy))
+}
+
 /// Resolves instrument families for a given instrument type.
 ///
 /// Returns `Some(families)` when the type supports family filtering, or `None`
@@ -454,5 +501,62 @@ mod tests {
             ),
             expected
         );
+    }
+
+    #[rstest]
+    fn test_spot_trade_quote_ccy_wire_value_omits_non_spot() {
+        assert_eq!(
+            spot_trade_quote_ccy_wire_value(
+                OKXInstrumentType::Swap,
+                Some("USD"),
+                &[Ustr::from("USD")],
+            ),
+            Ok(None)
+        );
+    }
+
+    #[rstest]
+    fn test_spot_trade_quote_ccy_wire_value_omits_when_unset() {
+        assert_eq!(
+            spot_trade_quote_ccy_wire_value(OKXInstrumentType::Spot, None, &[Ustr::from("USD")]),
+            Ok(None)
+        );
+        assert_eq!(
+            spot_trade_quote_ccy_wire_value(OKXInstrumentType::Spot, Some("  "), &[]),
+            Ok(None)
+        );
+    }
+
+    #[rstest]
+    fn test_spot_trade_quote_ccy_wire_value_sends_usd_when_listed() {
+        assert_eq!(
+            spot_trade_quote_ccy_wire_value(
+                OKXInstrumentType::Spot,
+                Some("USD"),
+                &[Ustr::from("USD"), Ustr::from("USDC")],
+            ),
+            Ok(Some(Ustr::from("USD")))
+        );
+    }
+
+    #[rstest]
+    fn test_spot_trade_quote_ccy_wire_value_rejects_when_list_unknown() {
+        let err =
+            spot_trade_quote_ccy_wire_value(OKXInstrumentType::Spot, Some("USD"), &[]).unwrap_err();
+        assert!(err.contains("tradeQuoteCcyList is unknown"));
+        assert!(err.contains("tradeQuoteCcy 'USD'"));
+    }
+
+    #[rstest]
+    fn test_spot_trade_quote_ccy_wire_value_rejects_unlisted() {
+        let err = spot_trade_quote_ccy_wire_value(
+            OKXInstrumentType::Spot,
+            Some("USD"),
+            &[Ustr::from("USDC")],
+        )
+        .unwrap_err();
+        assert!(err.contains("tradeQuoteCcy 'USD'"));
+        assert!(err.contains("was [USDC]"));
+        assert!(!err.contains(&format!(", {}", "got")));
     }
 }

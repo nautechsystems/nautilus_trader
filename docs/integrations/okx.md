@@ -405,6 +405,63 @@ aborts the connection before WebSockets open, even if another scope succeeds.
 Pre-open instruments and entries that cannot be parsed do not satisfy this
 requirement. Options without configured instrument families remain skipped.
 
+### USD to USDC spot migration
+
+OKX is consolidating USD and USDC spot books. This is a breaking venue change. Affected
+`Crypto-USD` instruments are replaced by `Crypto-USDC` instruments. See the
+[OKX changelog](https://www.okx.com/docs-v5/log_en/#upcoming-changes-okx-to-migrate-usd-spot-trading-pairs).
+
+| Event                  | Time                            |
+| ---------------------- | ------------------------------- |
+| Parallel trading opens | 08:00 UTC on 23 September 2026. |
+| USD pairs delisted     | 08:00 UTC on 30 September 2026. |
+
+#### Instrument IDs
+
+Subscribe to and trade the replacement instrument IDs:
+
+| Before        | After          |
+| ------------- | -------------- |
+| `BTC-USD.OKX` | `BTC-USDC.OKX` |
+
+OKX does not map old USD `instId` or `instIdCode` values to the new USDC instruments. The
+adapter does not rewrite USD keys in the instrument or `instIdCode` caches. After
+delisting, requests and subscriptions that still use a USD ID may fail or return no data.
+
+#### Trading quote currency
+
+The default `tradeQuoteCcy` is the quote currency in `instId`. Switching only the
+instrument ID from `Crypto-USD` to `Crypto-USDC` changes the default trading quote from
+USD to USDC.
+
+Set `spot_trade_quote_ccy` on `OKXExecutionClientConfig`:
+
+| `spot_trade_quote_ccy` | Effect                                                                            |
+| ---------------------- | --------------------------------------------------------------------------------- |
+| Unset (`None`)         | Omits the field; OKX uses the quote currency in `instId` (USDC on `Crypto-USDC`). |
+| `"USD"`                | Keeps trading in USD on a `Crypto-USDC` instrument.                               |
+
+The adapter sends `tradeQuoteCcy` on regular REST and WebSocket spot orders. It does not
+send the field on algo or conditional orders.
+
+The adapter rejects the order locally when:
+
+- The configured value is absent from that instrument's `tradeQuoteCcyList`.
+- The list is unknown.
+
+The list is retained from instrument definitions, including
+`GET /api/v5/account/instruments`, and stored on the instrument `info` map as
+`okx_trade_quote_ccy_list`.
+
+#### Account activation
+
+:::warning
+Before trading a `Crypto-USDC` instrument, call `OKXHttpClient.activate_feature("1")`
+once per master account and once per sub-account to enable USDC order book trading, if
+that account has not already traded USDC. The adapter never activates accounts
+implicitly.
+:::
+
 ### Client order ID requirements
 
 OKX requires client order IDs to be alphanumeric (letters and numbers only) and at most
@@ -1192,6 +1249,7 @@ The OKX execution client provides the following Python configuration options.
 | `environment`            | `LIVE`                     | Environment enum (`LIVE` or `DEMO`).                                                                    |
 | `region`                 | `GLOBAL`                   | Region enum (`GLOBAL`, `EEA`, or `US`).                                                                 |
 | `margin_mode`            | `None`                     | Margin mode (`ISOLATED` or `CROSS`).                                                                    |
+| `spot_trade_quote_ccy`   | `None`                     | SPOT `tradeQuoteCcy` override. Set `"USD"` to keep USD after migrating to `Crypto-USDC`.                |
 | `http_timeout_secs`      | `60`                       | REST trading request timeout.                                                                           |
 | `max_retries`            | `3`                        | Retry attempts for recoverable REST errors. Order submission endpoints are exempt and always send once. |
 | `retry_delay_initial_ms` | `1,000`                    | Initial delay before retrying.                                                                          |
@@ -1206,6 +1264,8 @@ Supported execution client `instrument_types` values are `SPOT`, `MARGIN`, `SWAP
 
 Spread instruments use OKX spread IDs instead of `instrument_types`; load them with
 `load_spreads=True` on the data and execution clients before trading them.
+
+See [USD to USDC spot migration](#usd-to-usdc-spot-migration) for `spot_trade_quote_ccy`.
 
 ### Manual endpoint overrides
 

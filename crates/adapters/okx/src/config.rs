@@ -255,6 +255,13 @@ pub struct OKXExecutionClientConfig {
     /// Enables margin/leverage for SPOT trading when true.
     #[builder(default)]
     pub use_spot_margin: bool,
+    /// Optional SPOT `tradeQuoteCcy` override sent on order payloads.
+    ///
+    /// Unset omits the field so OKX uses the quote currency in `instId` (USDC
+    /// on `Crypto-USDC` instruments). Set to `"USD"` to keep trading in USD
+    /// after the USD-to-USDC spot migration. The value must appear in that
+    /// instrument's `tradeQuoteCcyList`.
+    pub spot_trade_quote_ccy: Option<String>,
     /// Optional WebSocket authentication timeout (seconds), defaulting to
     /// `AUTHENTICATION_TIMEOUT_SECS` when unset.
     pub auth_timeout_secs: Option<u64>,
@@ -280,6 +287,7 @@ nautilus_core::impl_pyo3_config_getters!(OKXExecutionClientConfig {
     load_spreads: bool,
     auth_timeout_secs: Option<u64>,
     transport_backend: TransportBackend,
+    spot_trade_quote_ccy: Option<String>,
 });
 
 impl Default for OKXExecutionClientConfig {

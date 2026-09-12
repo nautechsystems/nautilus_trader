@@ -48,6 +48,15 @@ pub struct SetPositionModeParams {
     pub pos_mode: OKXPositionMode,
 }
 
+/// Parameters for the POST /api/v5/account/activate-feature endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct ActivateFeatureParams {
+    /// Feature to activate. `1` enables USDC order book trading.
+    pub feature: String,
+}
+
 /// Parameters for the GET /api/v5/public/position-tiers endpoint.
 #[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
 #[builder(default)]

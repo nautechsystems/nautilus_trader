@@ -265,6 +265,43 @@ impl OKXHttpClient {
         })
     }
 
+    /// Activates an account feature such as USDC order book trading.
+    ///
+    /// This does not run at client start. Call it once per master account and
+    /// once per sub-account before trading a `Crypto-USDC` instrument if that
+    /// account has not already traded USDC.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/log_en/#upcoming-changes-okx-to-migrate-usd-spot-trading-pairs-new-endpoint-activate-usdc-trading>
+    #[pyo3(name = "activate_feature")]
+    fn py_activate_feature<'py>(
+        &self,
+        py: Python<'py>,
+        feature: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .activate_feature(&feature)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| Ok(py.None()))
+        })
+    }
+
+    /// Sets the optional SPOT `tradeQuoteCcy` override for subsequent order placement.
+    #[pyo3(name = "set_spot_trade_quote_ccy")]
+    fn py_set_spot_trade_quote_ccy(&self, ccy: Option<String>) {
+        self.set_spot_trade_quote_ccy(ccy);
+    }
+
     /// Requests all instruments for the `instrument_type` from OKX.
     ///
     /// Option requests require `instrument_family` (OKX `instFamily`), for example `BTC-USD`.
