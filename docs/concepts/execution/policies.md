@@ -93,7 +93,7 @@ without inventing an outcome.
 A successful batch response can still contain definitive per-order failures. A whole-request
 failure without per-order evidence does not prove that every child command failed.
 
-:::note[Unknown live outcomes]
+:::warning[Unknown live outcomes]
 Transport errors, timeouts, disconnects, task cancellation, exhausted adapter request retries,
 missing acknowledgements, and parse failures after transmission usually leave the venue outcome
 unknown. HTTP status codes and rate limits are definitive only when venue-specific semantics prove
@@ -144,10 +144,12 @@ The final step is only the call into the adapter's `ExecutionClient`. The adapte
 wire send and maps venue responses or stream updates to order events. Neither a successful client
 call nor an `OrderSubmitted` event proves venue acceptance.
 
+:::warning[Persistence gap]
 A process failure can therefore occur after the venue receives an order but before the local order
 and origin become durable. Startup reconciliation can recover that order when the venue reports it,
 but incomplete venue history can leave the node without enough evidence to reconstruct the full
 execution history.
+:::
 
 The optional [event store](../event_sourcing.md) also captures asynchronously and does not gate message
 dispatch on durable commit. Live restart continues to use restored cache state plus venue
@@ -194,9 +196,11 @@ itself distinguish a venue status report from a local policy resolution:
 | Full-history order remains missing after retries and targeted query | `SUBMITTED`/`ACCEPTED`              | `OrderRejected`                 | `reconciliation=true`, reason `NOT_FOUND_AT_VENUE`.                                               |
 | Full-history order remains missing after retries and targeted query | `PARTIALLY_FILLED`                  | `OrderCanceled`                 | `reconciliation=true`; the event has no reason field.                                             |
 
+:::warning[Local terminal state is not venue confirmation]
 The first row is backed by an explicit venue status. The remaining rows restore a terminal local
 state after an operator-configured retry policy expires. They do not prove that the venue rejected
 the submit or canceled the working order.
+:::
 
 `OrderCanceled` has no reason field, so the event alone cannot distinguish a venue-reported
 cancellation from the two synthetic reconciliation paths. Consumers that require that distinction

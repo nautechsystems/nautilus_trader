@@ -91,7 +91,7 @@ client.
 
 ## Order management system (OMS)
 
-An order management system (OMS) type determines how orders map to positions for an instrument.
+An **order management system (OMS)** type determines how orders map to positions for an instrument.
 Strategies and venues, whether simulated or live, each use an OMS type defined by the `OmsType`
 enum.
 
@@ -102,7 +102,7 @@ The `OmsType` enum has three variants:
 - `HEDGING`: Multiple positions per instrument and strategy can remain open.
 
 When the strategy and venue OMS types differ, the `ExecutionEngine` assigns or overrides
-`position_id` values on `OrderFilled` events. A virtual position exists in NautilusTrader but not
+`position_id` values on `OrderFilled` events. A **virtual position** exists in NautilusTrader but not
 as a separate venue position.
 
 | Strategy OMS | Venue OMS | Result                                                              |
@@ -251,9 +251,12 @@ ID matches the order's cached open position. The order side must oppose the posi
 submitted quantity must not exceed the cached position quantity. Order lists and modifications are
 denied.
 
-The risk engine applies these rules before forwarding commands to execution. When
-`RiskEngineConfig.bypass` is enabled, trading state is not enforced. Execution clients still follow
+The risk engine applies these rules before forwarding commands to execution.
+
+:::warning[Bypassing trading-state checks]
+When `RiskEngineConfig.bypass` is enabled, trading state is not enforced. Execution clients still follow
 the [reduce-only send-or-reject contract](../adapters.md#reduce-only-execution-contract).
+:::
 
 See the
 [`RiskEngineConfig` API reference](/docs/python-api-latest/config.html#nautilus_trader.risk.RiskEngineConfig)
@@ -454,7 +457,7 @@ already await confirmation.
 
 ## Overfills
 
-An overfill occurs when an order's cumulative filled quantity exceeds its original quantity. For
+An **overfill** occurs when an order's cumulative filled quantity exceeds its original quantity. For
 example, fills totaling 110 units overfill a 100-unit order by 10 units.
 
 ### How overfills occur
@@ -553,12 +556,12 @@ not reopen `VOIDED`. See the complete
 
 A void is a venue action on a trade it already reported. The causes recur across asset classes:
 
-- Erroneous execution review: the venue nullifies a print that is substantially inconsistent with
+- **Erroneous execution review**: the venue nullifies a print that is substantially inconsistent with
   the market at the time of execution, or one caused by an exchange system fault.
-- Settlement failure: a matched trade fails to settle, so the fill never takes economic effect.
-- Event invalidation: the underlying event is abandoned or a competitor is withdrawn, so matched
+- **Settlement failure**: a matched trade fails to settle, so the fill never takes economic effect.
+- **Event invalidation**: the underlying event is abandoned or a competitor is withdrawn, so matched
   positions carry no exposure.
-- Post-trade restatement: the venue restates the quantity or fees of a trade during clearing.
+- **Post-trade restatement**: the venue restates the quantity or fees of a trade during clearing.
 
 The event does not restate the fill price, so a venue price adjustment is not expressible as a
 single correction.

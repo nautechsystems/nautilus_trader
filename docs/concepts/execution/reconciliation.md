@@ -32,7 +32,7 @@ windows.
 An **execution-client origin** is a write-once binding between an order and the client responsible
 for its execution.
 
-**An origin is recorded:**
+An origin is recorded:
 
 - From an explicit client on submission, or from the final client selected after routing and venue
   validation and before transport.
@@ -41,7 +41,7 @@ for its execution.
 - When external orders are materialized from runtime venue reports and the report's account
   matches exactly one registered client that handles the instrument venue.
 
-**An origin may be absent for:**
+An origin may be absent for:
 
 - Cache data written before resolved origins were persisted.
 - External orders whose runtime report does not identify exactly one registered client by account
@@ -100,15 +100,15 @@ authoritative position report can reconcile the current venue position separatel
 
 ### External order creation
 
-When a report references an order that is absent from the cache, the engine creates an *external
-order*. This covers venue-initiated ADL, liquidation, or settlement, orders placed by another
+When a report references an order that is absent from the cache, the engine creates an **external
+order**. This covers venue-initiated ADL, liquidation, or settlement, orders placed by another
 process, and orders not yet observed locally.
 
 The naming distinguishes configuration intent from live ownership state:
 
 - `external_order_instrument_ids` is the serializable strategy configuration intent. It names the
   instruments whose external orders should be assigned to the strategy when it is registered.
-- An external order claim is an active cache entry that maps one `InstrumentId` to one `StrategyId`.
+- An **external order claim** is an active cache entry that maps one `InstrumentId` to one `StrategyId`.
   The code uses `external_order_claims` for the collection of these live entries.
 
 Live strategy registration materializes the configured instrument IDs with
@@ -406,8 +406,10 @@ state.
 
 **Order consistency checks** (when cache state differs from venue state):
 
+:::info[Full-history checks]
 The *Not found* rows apply only in full-history mode (`open_check_open_only=False`);
 open-only mode is the default.
+:::
 
 | Cache status       | Venue status | Resolution   | Rationale                                                           |
 | ------------------ | ------------ | ------------ | ------------------------------------------------------------------- |
@@ -421,7 +423,6 @@ open-only mode is the default.
 | `PARTIALLY_FILLED` | `CANCELED`   | `CANCELED`   | Order canceled at venue with fills preserved.                       |
 | `PARTIALLY_FILLED` | *Not found*  | `CANCELED`   | Order doesn't exist but had fills (reconciles fill history).        |
 
-:::note
 **Runtime reconciliation caveats:**
 
 - **Open-only mode**: venue "open orders" endpoints exclude closed orders by design, making
@@ -436,10 +437,8 @@ open-only mode is the default.
   query limitations or timing delays.
 - **Position report failures**: if a venue position query fails, the engine skips cached
   positions for that venue during the cycle instead of treating missing reports as flat.
-- **`FILLED` orders** that are "not found" at the venue are silently ignored. Venues commonly
+- **Completed orders**: `FILLED` orders that are "not found" at the venue are silently ignored. Venues commonly
   drop completed orders from their query results.
-
-:::
 
 **Retry coordination.** The in-flight loop increments its own per-order retry count against
 `inflight_check_retries` and mirrors that value into missing-order tracking. The open-order loop
@@ -519,7 +518,7 @@ These scenarios apply when the mass status does not declare a `lookback_start`:
 | **Flat position**                         | The venue reports flat regardless of fill history.      | Makes no adjustment.                                    |
 | **No fills**                              | The report set contains no fills.                       | Returns the empty fill set.                             |
 
-**Concepts:**
+Concepts:
 
 - **Zero-crossing**: position quantity crosses through zero (FLAT), marking a lifecycle boundary.
 - **Lifecycle**: a sequence of fills between zero-crossings representing one open-close cycle.

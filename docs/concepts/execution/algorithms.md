@@ -62,16 +62,14 @@ matches the order's `exec_algorithm_id`. The optional `exec_algorithm_params` fi
 `Mapping[str, str]`. Override `on_order_list(...)` to handle a list as a unit; its default
 implementation passes each order to `on_order(...)`.
 
-:::warning
 Validate required `exec_algorithm_params` keys and parse their string values before executing an
 order. Call `deny_order(...)` with a standardized
 [reason code](index.md#order-denied-reasons), such as
 `VALIDATION_FAILED: horizon_secs not found in exec_algorithm_params`, when the order cannot be
 executed.
-:::
 
-An order received by an execution algorithm is the primary order. Use these methods to create
-spawned orders:
+An order received by an execution algorithm is the **primary order**. Use these methods to create
+**spawned orders**:
 
 - `spawn_market(...)`: Creates a `MARKET` order.
 - `spawn_market_to_limit(...)`: Creates a `MARKET_TO_LIMIT` order.
