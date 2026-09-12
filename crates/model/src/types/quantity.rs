@@ -70,8 +70,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 #[cfg(feature = "defi")]
 use super::fixed::compare_raw;
 use super::fixed::{
-    FIXED_PRECISION, FIXED_SCALAR, FIXED_SCALAR_RAW, MAX_FLOAT_PRECISION, canonical_raw,
-    check_fixed_precision, checked_mul_div_fixed, checked_mul_div_raw, format_scaled_u128,
+    FIXED_PRECISION, FIXED_SCALAR, FIXED_SCALAR_RAW, canonical_raw, check_fixed_precision,
+    checked_mul_div_fixed, checked_mul_div_raw, format_scaled_u128,
     mantissa_exponent_to_fixed_i128, mantissa_exponent_to_raw_checked, parse_decimal_mantissa,
     raw_scale, raw_scales_match, scaled_raw_to_decimal,
 };
@@ -79,6 +79,8 @@ use super::fixed::{
 use super::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
 #[cfg(feature = "high-precision")]
 use super::fixed::{f64_to_fixed_u128, fixed_u128_to_f64};
+#[cfg(feature = "defi")]
+use crate::types::fixed::MAX_FLOAT_PRECISION;
 
 // -----------------------------------------------------------------------------
 // QuantityRaw
@@ -1758,7 +1760,7 @@ mod tests {
         #[case] expected_debug: &str,
         #[case] expected_display: &str,
     ) {
-        let quantity = if precision > MAX_FLOAT_PRECISION {
+        let quantity = if precision > crate::types::fixed::MAX_FLOAT_PRECISION {
             // For high precision, use from_raw to avoid f64 conversion issues
             Quantity::from_raw(value as QuantityRaw, precision)
         } else {
@@ -2125,12 +2127,12 @@ mod property_tests {
 
     /// Strategy to generate valid precision values.
     fn precision_strategy() -> impl Strategy<Value = u8> {
-        let upper = FIXED_PRECISION.min(MAX_FLOAT_PRECISION);
+        let upper = FIXED_PRECISION.min(crate::types::fixed::MAX_FLOAT_PRECISION);
         prop_oneof![Just(0u8), 0u8..=upper, Just(FIXED_PRECISION),]
     }
 
     fn precision_strategy_non_zero() -> impl Strategy<Value = u8> {
-        let upper = FIXED_PRECISION.clamp(1, MAX_FLOAT_PRECISION);
+        let upper = FIXED_PRECISION.clamp(1, crate::types::fixed::MAX_FLOAT_PRECISION);
         prop_oneof![Just(upper), Just(FIXED_PRECISION.max(1)), 1u8..=upper,]
     }
 
@@ -2158,7 +2160,7 @@ mod property_tests {
     const DECIMAL_MAX_MANTISSA: u128 = 79_228_162_514_264_337_593_543_950_335;
 
     fn decimal_compatible(raw: QuantityRaw, precision: u8) -> bool {
-        if precision > MAX_FLOAT_PRECISION {
+        if precision > crate::types::fixed::MAX_FLOAT_PRECISION {
             return false;
         }
         let precision_diff = u32::from(FIXED_PRECISION.saturating_sub(precision));

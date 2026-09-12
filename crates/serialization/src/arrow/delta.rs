@@ -98,13 +98,13 @@ impl EncodeToRecordBatch for OrderBookDelta {
         let price_array = price_decimal_array(
             data.iter()
                 .map(std::borrow::Borrow::borrow)
-                .map(|delta| delta.order.price.raw),
+                .map(|delta| delta.order.price.raw()),
             "price",
         )?;
         let size_array = quantity_decimal_array(
             data.iter()
                 .map(std::borrow::Borrow::borrow)
-                .map(|delta| delta.order.size.raw),
+                .map(|delta| delta.order.size.raw()),
             "size",
         )?;
         let order_id_array = order_id_builder.finish();
@@ -605,9 +605,9 @@ mod tests {
 
         let decoded_data = OrderBookDelta::decode_batch(&metadata, record_batch).unwrap();
         assert_eq!(decoded_data.len(), 2);
-        assert_eq!(decoded_data[0].order.price.raw, PRICE_UNDEF);
+        assert_eq!(decoded_data[0].order.price.raw(), PRICE_UNDEF);
         assert_eq!(decoded_data[0].order.price.precision, 0);
-        assert_eq!(decoded_data[0].order.size.raw, QUANTITY_UNDEF);
+        assert_eq!(decoded_data[0].order.size.raw(), QUANTITY_UNDEF);
         assert_eq!(decoded_data[0].order.size.precision, 0);
         assert_eq!(decoded_data[1].order.price.precision, 2);
         assert_eq!(decoded_data[1].order.size.precision, 0);

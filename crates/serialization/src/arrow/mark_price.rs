@@ -84,7 +84,7 @@ impl EncodeToRecordBatch for MarkPriceUpdate {
                 Arc::new(price_decimal_array(
                     data.iter()
                         .map(std::borrow::Borrow::borrow)
-                        .map(|update| update.value.raw),
+                        .map(|update| update.value.raw()),
                     "value",
                 )?),
                 Arc::new(ts_event_builder.finish()),
@@ -247,11 +247,11 @@ mod tests {
         assert_eq!(value_values.len(), 2);
         assert_eq!(
             get_raw_price(value_values.value(0)),
-            Price::from(dec!(50200.00).to_string()).raw
+            Price::from(dec!(50200.00).to_string()).raw()
         );
         assert_eq!(
             get_raw_price(value_values.value(1)),
-            Price::from(dec!(50300.00).to_string()).raw
+            Price::from(dec!(50300.00).to_string()).raw()
         );
         assert_eq!(ts_event_values.len(), 2);
         assert_eq!(ts_event_values.value(0), 1);

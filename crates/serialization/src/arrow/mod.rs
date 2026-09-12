@@ -348,7 +348,7 @@ pub fn money_array(
 
     for value in values {
         if let Some(value) = value {
-            amounts.push(money_raw_to_decimal(value.raw));
+            amounts.push(money_raw_to_decimal(value.raw()));
             currencies.append(value.currency.to_string())?;
             validity.push(true);
         } else {
@@ -3620,7 +3620,7 @@ mod schema_invariant_tests {
     #[rstest]
     fn fixed_point_storage_uses_uniform_scale() {
         let price = Price::from("1.23456789");
-        let array = price_decimal_array([price.raw], "price").unwrap();
+        let array = price_decimal_array([price.raw()], "price").unwrap();
 
         assert_eq!(array.data_type(), &fixed_decimal_data_type());
         assert_eq!(
@@ -3755,7 +3755,7 @@ mod schema_invariant_tests {
 
         assert_eq!(array.value(0), raw);
         assert_eq!(
-            decode_decimal_price(&array, 16, "price", 0).unwrap().raw,
+            decode_decimal_price(&array, 16, "price", 0).unwrap().raw(),
             raw
         );
     }
