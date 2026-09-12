@@ -401,7 +401,7 @@ impl LiveNode {
         self.prepare_cache().await?;
 
         if let Some(runner) = self.runner.as_ref() {
-            runner.bind_senders();
+            runner.bind_senders_for_node(self.handle.clone());
         }
 
         self.handle.set_starting();
@@ -561,8 +561,8 @@ impl LiveNode {
     /// Disposes the live node kernel and releases resources.
     pub fn dispose(&mut self) {
         self.close_external_ingress();
-        self.kernel.dispose();
         self.handle.set_stopped();
+        self.kernel.dispose();
     }
 
     async fn process_runner_for(&mut self, duration: Duration) -> usize {
@@ -571,7 +571,7 @@ impl LiveNode {
             return 0;
         };
 
-        runner.bind_senders();
+        runner.bind_senders_for_node(self.handle.clone());
         let deadline = dst::time::Instant::now() + duration;
         let mut processed = 0;
 
@@ -1026,7 +1026,8 @@ impl LiveNode {
         let Some(runner) = self.runner.take() else {
             anyhow::bail!("Runner already consumed - run() called twice");
         };
-        runner.bind_senders();
+
+        runner.bind_senders_for_node(self.handle.clone());
 
         let AsyncRunnerChannels {
             mut time_evt_rx,

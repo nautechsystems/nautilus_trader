@@ -79,22 +79,41 @@ use nautilus_common::{
 };
 use nautilus_model::events::OrderEventAny;
 
+#[cfg(feature = "node")]
+use crate::node::{LiveNodeHandle, NodeState};
+
 /// Asynchronous implementation of `DataCommandSender` for live environments.
 #[derive(Debug)]
 pub struct AsyncDataCommandSender {
     cmd_tx: tokio::sync::mpsc::UnboundedSender<DataCommand>,
+    #[cfg(feature = "node")]
+    node_handle: Option<LiveNodeHandle>,
 }
 
 impl AsyncDataCommandSender {
     #[must_use]
     pub const fn new(cmd_tx: tokio::sync::mpsc::UnboundedSender<DataCommand>) -> Self {
-        Self { cmd_tx }
+        Self {
+            cmd_tx,
+            #[cfg(feature = "node")]
+            node_handle: None,
+        }
     }
 }
 
 impl DataCommandSender for AsyncDataCommandSender {
     fn execute(&self, command: DataCommand) {
         if let Err(e) = self.cmd_tx.send(command) {
+            // Disposal releases retained subscriptions after the node drops its receivers
+            #[cfg(feature = "node")]
+            if self
+                .node_handle
+                .as_ref()
+                .is_some_and(|handle| handle.state() == NodeState::Stopped)
+            {
+                return;
+            }
+
             log::error!("Failed to send data command: {e}");
         }
     }
@@ -263,6 +282,18 @@ impl AsyncRunner {
     /// and again before entering the event loop to reclaim ownership if another
     /// runner was constructed on this thread in the interim.
     pub fn bind_senders(&self) {
+        self.bind_senders_with_data_sender(AsyncDataCommandSender::new(self.data_cmd_tx.clone()));
+    }
+
+    #[cfg(feature = "node")]
+    pub(crate) fn bind_senders_for_node(&self, handle: LiveNodeHandle) {
+        self.bind_senders_with_data_sender(AsyncDataCommandSender {
+            cmd_tx: self.data_cmd_tx.clone(),
+            node_handle: Some(handle),
+        });
+    }
+
+    fn bind_senders_with_data_sender(&self, sender: AsyncDataCommandSender) {
         replace_time_event_sender(Arc::new(AsyncTimeEventSender::new(
             self.time_evt_tx.clone(),
         )));
@@ -273,9 +304,7 @@ impl AsyncRunner {
             self.exec_cmd_tx.clone(),
         )));
         replace_data_event_sender(self.data_evt_tx.clone());
-        replace_data_cmd_sender(Arc::new(AsyncDataCommandSender::new(
-            self.data_cmd_tx.clone(),
-        )));
+        replace_data_cmd_sender(Arc::new(sender));
     }
 
     /// Stops the runner with an internal shutdown signal.
@@ -926,6 +955,95 @@ mod tests {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let sender = AsyncDataCommandSender::new(tx);
         assert!(format!("{sender:?}").contains("AsyncDataCommandSender"));
+    }
+
+    #[cfg(feature = "node")]
+    #[rstest]
+    fn test_data_command_sender_shutdown_logging() {
+        struct ErrorCapture(std::sync::Mutex<Vec<String>>);
+
+        impl log::Log for ErrorCapture {
+            fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+                metadata.level() == log::Level::Error
+                    && metadata.target() == "nautilus_live::runner"
+            }
+
+            fn log(&self, record: &log::Record<'_>) {
+                if self.enabled(record.metadata()) {
+                    self.0.lock().unwrap().push(record.args().to_string());
+                }
+            }
+
+            fn flush(&self) {}
+        }
+
+        static ERRORS: ErrorCapture = ErrorCapture(std::sync::Mutex::new(Vec::new()));
+        log::set_logger(&ERRORS).unwrap();
+        log::set_max_level(log::LevelFilter::Error);
+
+        let runner = AsyncRunner::new();
+        let handle = LiveNodeHandle::new();
+        handle.set_starting();
+        runner.bind_senders_for_node(handle.clone());
+        let sender = get_data_cmd_sender();
+        let mut channels = runner.take_channels();
+
+        let command = DataCommand::Subscribe(SubscribeCommand::Data(SubscribeCustomData {
+            client_id: Some(ClientId::from("TEST")),
+            venue: None,
+            data_type: DataType::new("QuoteTick", None, None),
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            correlation_id: None,
+            params: None,
+        }));
+
+        // Stopping and final draining must still deliver commands while the receiver is alive
+        for stopped in [false, true] {
+            if stopped {
+                handle.set_stopped();
+            } else {
+                handle.set_shutting_down();
+            }
+
+            sender.execute(command.clone());
+            assert_eq!(channels.data_cmd_rx.try_recv().unwrap(), command);
+        }
+
+        drop(channels);
+        sender.execute(command.clone());
+        assert_eq!(*ERRORS.0.lock().unwrap(), Vec::<String>::new());
+
+        // A stopped previous node must not hide an unexpected closure in its replacement
+        let runner = AsyncRunner::new();
+        let handle = LiveNodeHandle::new();
+        runner.bind_senders_for_node(handle.clone());
+        let sender = get_data_cmd_sender();
+        drop(runner);
+
+        for shutting_down in [false, true] {
+            if shutting_down {
+                handle.set_shutting_down();
+            } else {
+                handle.set_starting();
+            }
+
+            sender.execute(command.clone());
+        }
+
+        assert_eq!(
+            *ERRORS.0.lock().unwrap(),
+            vec!["Failed to send data command: channel closed"; 2],
+        );
+
+        ERRORS.0.lock().unwrap().clear();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        drop(rx);
+        AsyncDataCommandSender::new(tx).execute(command);
+        assert_eq!(
+            *ERRORS.0.lock().unwrap(),
+            vec!["Failed to send data command: channel closed"],
+        );
     }
 
     #[rstest]

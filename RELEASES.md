@@ -88,6 +88,7 @@ Released on TBD (UTC).
 - Fixed `Money` ordering panics for mixed currencies, thanks for reporting @folknor
 - Fixed sell-balance checks when order quantities and account balances use different fixed-point scales
 - Fixed `LiveTimer` successor and time bar interval overflows causing runtime panics
+- Fixed spurious data command errors on `LiveNode` disposal (#4979), thanks for reporting @luk911
 - Fixed `AroonOscillator` oldest-low scans and tied extremes (#4914), thanks @haeganm
 - Fixed WMA and HMA accepting periods above 8192 (#4887), thanks @pucedoteth
 - Fixed `SortinoRatio` for single-day return samples (#4934), thanks @raunak2007

@@ -32,7 +32,7 @@ use std::{
 
 use async_trait::async_trait;
 use nautilus_common::{
-    actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
+    actor::{DataActor, DataActorCore, data_actor::DataActorConfig, registry::get_actor_unchecked},
     cache::CacheView,
     clients::{DataClient, ExecutionClient},
     clock::Clock,
@@ -40,7 +40,7 @@ use nautilus_common::{
     enums::Environment,
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
     live::{dst, runner::get_exec_event_sender},
-    logging::logger::LoggerConfig,
+    logging::{logger::LoggerConfig, logging_sync_to_disk, writer::FileWriterConfig},
     messages::{
         ExecutionEvent,
         execution::{
@@ -57,15 +57,15 @@ use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_live::{
     builder::LiveNodeBuilder,
     config::{LiveExecutionEngineConfig, LiveNodeConfig},
-    node::{LiveNode, LiveNodeHandle, NodeState},
+    node::{LiveNode, LiveNodeHandle, NodeRunMode, NodeState},
 };
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{OrderEventAny, account::state::AccountState},
     identifiers::{
-        AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, StrategyId, TradeId,
-        TraderId, Venue, VenueOrderId,
+        AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, StrategyId,
+        TradeId, TraderId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     orders::{
@@ -1771,6 +1771,95 @@ pub(crate) mod serial_tests {
                 "unexpected error: {error:#}"
             );
         }
+    }
+
+    #[rstest]
+    #[case::graceful(false)]
+    #[case::cancelled(true)]
+    #[tokio::test]
+    async fn test_dispose_after_run_releases_subscription_without_channel_error(
+        #[case] cancel_run: bool,
+    ) {
+        let directory = std::env::temp_dir().join(format!("nautilus-shutdown-{}", UUID4::new()));
+
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecutionEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            logging: LoggerConfig {
+                fileout_level: log::LevelFilter::Info,
+                file_config: Some(FileWriterConfig {
+                    directory: Some(directory.to_str().unwrap().to_string()),
+                    file_name: Some("shutdown".to_string()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut node = LiveNode::build("ShutdownNode".to_string(), Some(config)).unwrap();
+        let actor_id = ActorId::from("SHUTDOWN-ACTOR");
+        node.add_actor(TestActor::new(DataActorConfig {
+            actor_id: Some(actor_id),
+            log_commands: true,
+            ..Default::default()
+        }))
+        .unwrap();
+
+        get_actor_unchecked::<TestActor>(&actor_id.inner()).subscribe_quotes(
+            InstrumentId::from("ETHUSDT.BYBIT"),
+            None,
+            None,
+        );
+        let handle = node.handle();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            if cancel_run {
+                tokio::select! {
+                    result = node.run_with_mode(NodeRunMode::Hosted) => {
+                        panic!("Run completed before cancellation: {result:?}");
+                    }
+                    () = wait_until_async(
+                        || async { handle.is_running() },
+                        Duration::from_secs(2),
+                    ) => {}
+                }
+            } else {
+                let stop = async {
+                    wait_until_async(|| async { handle.is_running() }, Duration::from_secs(2))
+                        .await;
+                    handle.stop();
+                };
+
+                let (result, ()) = tokio::join!(node.run_with_mode(NodeRunMode::Hosted), stop);
+                result.unwrap();
+            }
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(
+            node.state(),
+            if cancel_run {
+                NodeState::Running
+            } else {
+                NodeState::Stopped
+            },
+        );
+
+        node.dispose();
+        assert_eq!(node.state(), NodeState::Stopped);
+        log::error!(target: "nautilus_live::runner", "Shutdown log capture control");
+        logging_sync_to_disk().unwrap();
+        let output = std::fs::read_to_string(directory.join("shutdown.log")).unwrap();
+        drop(node);
+        std::fs::remove_dir_all(directory).unwrap();
+
+        assert_eq!(output.matches("Unsubscribe(Quotes(").count(), 1);
+        assert_eq!(output.matches("Shutdown log capture control").count(), 1);
+        assert_eq!(output.matches("Failed to send data command").count(), 0);
     }
 
     #[rstest]
