@@ -48,7 +48,7 @@ As additional fills occur, the position:
 
 ### Closure
 
-A position closes when the net quantity becomes zero (`FLAT`). At closure:
+A position closes when the **net quantity becomes zero** (`FLAT`). At closure:
 
 - The closing order ID is recorded.
 - Duration is calculated from open to close.
@@ -113,7 +113,7 @@ replay, the position starts a new accounting episode for the residual exposure:
 - `buy_qty` and `sell_qty` restart with only the opening residual on the new entry side and zero on
   the other side. Later close averages therefore exclude volume from the previous direction.
 
-Only the closing portion realizes PnL against the previous entry price. The object's `realized_pnl` and commission
+**Only the closing portion** realizes PnL against the previous entry price. The object's `realized_pnl` and commission
 totals remain cumulative across this reversal, with the fill's commission counted once. The reset
 does not clear fill history, opening timestamps, or peak quantity. If the position instead reaches
 `FLAT` and a later fill reopens it, the full cycle resets, including realized PnL and commissions.
@@ -341,10 +341,12 @@ notional = position.notional_value(current_price)
 # Returns Money in quote (linear), base (inverse), or settlement currency (quanto)
 ```
 
+:::warning
 In Python, `notional_value()` raises `ValueError` if an inverse position lacks a base currency, the
 supplied inverse price is not positive, or the result cannot be represented as `Money`.
 Rust callers can use `try_notional_value()` to handle these calculation errors; `notional_value()`
 panics if the calculation fails.
+:::
 
 ## Position properties and state
 
@@ -480,7 +482,7 @@ Positions interact with several key components:
 - **Cache**: Stores current position state and closed-cycle snapshots.
 - **RiskEngine**: Reads open positions when it checks whether an order reduces exposure.
 
-:::note
+:::info
 Positions are not created for spread instruments. Contingent orders can still trigger for spreads,
 but they operate without position linkage. The engine handles spread instruments separately from
 regular positions.

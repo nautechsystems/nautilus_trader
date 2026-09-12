@@ -110,7 +110,7 @@ Call `book_check_integrity` to validate that the book state is consistent with i
 - **All types**: Best bid must not exceed best ask (crossed book). Locked markets
   (bid == ask) are considered valid.
 
-This is an explicit check: applying a delta does not call it. The Rust `apply_delta` and
+This is an **explicit check**: applying a delta does not call it. The Rust `apply_delta` and
 `apply_deltas` methods separately validate the incoming instrument ID against the book and return
 `BookIntegrityError::InstrumentMismatch` on mismatch.
 
@@ -119,7 +119,7 @@ cache. If no side is cached, an `Add` returns `BookIntegrityError::NoOrderSide`,
 or `Delete` is skipped. If the ID exists on both sides, an `Add` returns
 `BookIntegrityError::AmbiguousOrderSide`, while an `Update` or `Delete` is skipped with a warning.
 
-Out-of-order deltas and depth snapshots are applied rather than rejected, so a venue that replays
+Out-of-order deltas and depth snapshots are **applied rather than rejected**, so a venue that replays
 or reorders events still reaches the state those events describe. Only the book metadata is
 protected: `sequence` and `ts_last` are high-water marks and never regress. A stale update logs one
 warning for each field that regressed, `sequence` and `ts_event` independently, and how often it
@@ -287,6 +287,8 @@ The transformation works as follows:
 - NO asks at price `p` become bids at price `1 - p` in the combined book.
 - NO bids at price `p` become asks at price `1 - p` in the combined book.
 
+:::warning
 The method rejects matching instrument IDs, but it cannot verify that the two instruments are
 complementary. The caller must supply the actual opposite instrument. The resulting own book can
 filter the public YES book against your orders in either outcome instrument.
+:::

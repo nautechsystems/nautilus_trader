@@ -34,7 +34,7 @@ Correlated request responses are delivered through response handlers keyed by co
 
 ## Message integrity
 
-Once a message is created, its fields must not be mutated. This includes container fields such as
+Once a message is created, **its fields must not be mutated**. This includes container fields such as
 `params` maps. Components can read a message and derive local state from it, but they must not
 rewrite the original.
 
@@ -105,7 +105,7 @@ Patterns that also match signals or custom data log an error for each incompatib
 of invoking the Python callback.
 Python object publication does not send the object to external message-bus storage or transport.
 
-Delivery is synchronous. Nested publication finishes before the publishing callback continues.
+Delivery is **synchronous**. Nested publication finishes before the publishing callback continues.
 Higher subscription priorities run first; equal priority does not imply subscription insertion order.
 Use distinct priorities when callback order matters, including reproducible backtests.
 A handler exception is logged, and delivery continues to the remaining handlers. This delivery model
@@ -187,7 +187,7 @@ ordering.
 The Data publish/subscribe approach works well when you need:
 
 - **Exchange of structured trading data** like market data, indicators, custom metrics, or option greeks.
-- **Proper event ordering** via built-in timestamps (`ts_event`, `ts_init`) crucial for backtest accuracy.
+- **Event timestamps** (`ts_event`, `ts_init`) for ordering inputs during backtests; publication itself does not sort messages.
 - **Data persistence and serialization** through registered custom data classes, integrating with NautilusTrader's data catalog system.
 - **Standardized trading data exchange** between system components.
 
@@ -482,11 +482,13 @@ Python exposes the same builder method for built-in backing configs, currently
 `RedisMessageBusConfig`. The existing `RedisMessageBusFactory` wrapper remains supported. Python
 does not accept arbitrary factory classes.
 
+:::warning
 The built-in Redis ingress starts each configured stream at the current timestamp, so entries that
 already exist when the node starts are not replayed. After startup it advances the last-seen ID for
 each stream and preserves those IDs across connection retries. Use cache recovery or the event store
 when durable pre-start replay is required; `external_streams` provides live forwarding, not a
 consumer-group backlog.
+:::
 
 ### Encoding
 

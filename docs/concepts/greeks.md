@@ -121,7 +121,7 @@ result = refine_vol_and_greeks(
 )
 ```
 
-`refine_vol_and_greeks()` performs one refinement step, not a full convergence loop. Use it with a
+`refine_vol_and_greeks()` performs **one refinement step**, not a full convergence loop. Use it with a
 good starting estimate; use `imply_vol_and_greeks()` when a full implied-volatility solve is needed.
 
 The `BlackScholesGreeksResult` returned by these functions contains: `price`, `vol`,
@@ -289,7 +289,7 @@ Python surface does not expose that flag.
 
 Internally, `portfolio_greeks()` multiplies `pnl`, `price`, and the Greek values by each position's
 signed quantity before adding them to the portfolio result. The intermediate `quantity` field
-remains `1` and is not part of `PortfolioGreeks`. The calculation does not apply the `multiplier`
+remains `1` and is not part of `PortfolioGreeks`. The calculation **does not apply** the `multiplier`
 field, and the public Python types do not expose arithmetic operators for this aggregation.
 Rust callers can apply the same scaling with `quantity * &greeks_data`, which returns `GreeksData`
 with scaled `pnl`, `price`, and Greek values.

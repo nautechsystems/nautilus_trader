@@ -68,7 +68,7 @@ for GTD orders. See `Order.to_dict()` for the complete field list.
 
 ### Order fills report
 
-Provides a summary of filled orders (one row per order):
+Provides a summary of filled orders (**one row per order**):
 
 ```python
 # From a completed backtest run
@@ -84,7 +84,7 @@ converted to datetime objects in this report for easier analysis.
 
 ### Fills report
 
-Details individual fill events (one row per fill):
+Details individual fill events (**one row per fill**):
 
 ```python
 # From a completed backtest run
@@ -190,7 +190,7 @@ yields an empty DataFrame.
 | --------------- | ------------------------------------------ |
 | `ts_event`      | Index - timestamp of account state change. |
 | `account_id`    | Account identifier.                        |
-| `account_type`  | Type of account (e.g., SPOT, MARGIN).      |
+| `account_type`  | Type of account (e.g., CASH, MARGIN).      |
 | `base_currency` | Base currency for the account.             |
 | `total`         | Total balance amount (string).             |
 | `free`          | Available balance (string).                |
@@ -217,10 +217,10 @@ Accurate PnL accounting requires careful consideration of several factors:
   instead.
 
 :::warning
-PnL calculations depend on the OMS type. In `NETTING` OMS, position snapshots
-preserve historical PnL when positions reopen. Always include snapshots in
-reports for accurate total PnL calculation. In `HEDGING` OMS, snapshots are
-not used since each position has a unique ID and is never reopened.
+Position snapshots preserve historical PnL when a closed position reopens under the same ID,
+in either `NETTING` or `HEDGING` OMS. **Include snapshots in reports** for accurate total PnL
+calculation. See [Position snapshotting](positions.md#position-snapshotting) for reopening and
+flip behavior.
 :::
 
 ### Multi-currency accounting
@@ -316,8 +316,8 @@ stats_returns = result.stats_returns  # Keyed by statistic name
 stats_general = result.stats_general  # Keyed by statistic name
 ```
 
-Each statistic appears in exactly one category, determined by the input it consumes: realized PnLs,
-returns, or positions.
+Each statistic contributes to the categories for which it implements a calculation: realized PnLs,
+returns, or positions. A custom statistic can contribute to more than one category.
 
 :::info
 See the [Portfolio guide](portfolio.md#portfolio-statistics) for the default statistic set, how each

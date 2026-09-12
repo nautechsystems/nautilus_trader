@@ -143,7 +143,7 @@ It includes:
 - Optional `identifier` for persistence paths and cache database lookups. It
   does not affect routing, equality, or hashing.
 
-Equality, hashing, and topic routing are derived from `type_name` and
+**Equality, hashing, and topic routing** are derived from `type_name` and
 `metadata` only. Two `DataType` values with the same type name and metadata but
 different identifiers compare equal and publish to the same message bus topic.
 The `identifier` selects the catalog path under
@@ -281,11 +281,10 @@ custom-data branch is designed to transform the Arrow batches and write the
 result directly to the matching custom-data path.
 
 :::info
-Streaming Feather persistence for custom data is not currently available. The
-Python `StreamingFeatherWriter` rejects `CustomData` with an `OSError`, and
-`convert_stream_to_data` does not convert custom-data Feather streams to
-Parquet. This will be possible in a future version. In the meantime, write
-custom data directly to the catalog with `ParquetDataCatalog.write_custom_data`.
+The direct Python `StreamingFeatherWriter.write()` method rejects `CustomData` with an `OSError`.
+Write custom data directly to the catalog with `ParquetDataCatalog.write_custom_data` from Python.
+The Rust Feather writer supports custom data, but `convert_stream_to_data` does not currently
+convert custom-data Feather streams to Parquet.
 :::
 
 ## The Arrow C FFI bridge

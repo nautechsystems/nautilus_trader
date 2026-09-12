@@ -1,6 +1,6 @@
 # Actors
 
-A data actor receives requested and subscribed data, handles system events, and manages component
+A **data actor** receives requested and subscribed data, handles system events, and manages component
 state. In Python, extend the `DataActor` class; in Rust, implement the `DataActor` trait. A strategy
 adds order-management capabilities.
 

@@ -4,7 +4,7 @@ This page describes NautilusTrader's components, runtime boundaries, and data fl
 The [design principles and policies](../developer_guide/design_principles.md) guide this structure.
 
 :::note
-For this guide, the *Nautilus system boundary* means the runtime of one Nautilus node instance.
+For this guide, the **Nautilus system boundary** means the runtime of one Nautilus node instance.
 :::
 
 ## Architectural style
@@ -436,6 +436,7 @@ This separation allows:
 - **Both traits**: Data actors, including strategies and execution algorithms, that need lifecycle
   management and targeted dispatch.
 
+:::warning
 Separate thread-local registries support these access patterns. Both registry `get` methods return
 shared `Rc<UnsafeCell<dyn ...>>` handles. Component lifecycle wrapper functions use a private borrow
 guard to reject overlapping lifecycle access; that protection does not apply to arbitrary access
@@ -444,6 +445,7 @@ two simultaneous guards for the same actor. Creating overlapping mutable referen
 behavior. Obtain, use, and drop an `ActorRef` within one synchronous scope. Never store one or hold
 it across an `.await` point. Same-actor re-entrant lookup is a constraint of the current dispatch
 model, not a safe aliasing guarantee.
+:::
 
 For queued dispatch, releasing an actor guard alone does not establish a safe delivery boundary:
 enclosing mutable runtime borrows must also end. Subscriber admission order alone does not preserve
@@ -457,7 +459,7 @@ component references.
 
 #### Threading model
 
-Within a node, the core consumes and dispatches messages on a single thread. This includes:
+Within a node, the core consumes and dispatches messages on a **single thread**. This includes:
 
 - The `MessageBus` and actor callback dispatch.
 - Strategy logic and order management.

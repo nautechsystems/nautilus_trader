@@ -15,7 +15,7 @@ and environments.
 
 ## Immutability
 
-All value types are **immutable**. Once a value is constructed, it cannot be changed.
+In Python, all value types are **immutable**. Once a value is constructed, it cannot be changed.
 Operations do not mutate the original object.
 
 ```python
@@ -193,7 +193,7 @@ trades, order book deltas) are written to Parquet or Arrow format, precision is 
 the file metadata so that values can be correctly decoded. All market data values within
 a single file must share the same precision.
 
-:::note
+:::warning
 If a venue changes an instrument's tick size (and thus its precision), data files written
 before and after the change will have different precision metadata and should not be
 consolidated into a single file.
@@ -240,7 +240,7 @@ result = qty1 - qty2  # Would be -50, which is invalid
 ### Money
 
 `Money` values include a currency. Addition and subtraction between `Money` values
-require matching currencies:
+require **matching currencies**:
 
 ```python
 from nautilus_trader.model import Currency, Money

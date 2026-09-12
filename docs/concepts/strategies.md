@@ -78,7 +78,7 @@ These methods use the `on_*` prefix. Implement any or all of them as your strate
 Multiple handlers exist for similar event types to give you control over granularity.
 Respond to a specific event with a dedicated handler, or use a generic handler for a range
 of related events (using typical switch statement logic).
-The system calls handlers in sequence from most specific to most general.
+The system calls handlers in sequence from **most specific to most general**.
 
 Subscribed data, order, and position handlers dispatch only while the strategy is `RUNNING`.
 Messages that arrive in any other state are logged but not passed to your handlers. Request
@@ -306,7 +306,8 @@ unix_nanos: int = self.clock.timestamp_ns()
 #### Time alerts
 
 Time alerts can be set which will result in a `TimeEvent` being dispatched to the `on_time_event` handler at the
-specified alert time. In a live context, this might be slightly delayed by a few microseconds.
+specified alert time. In live trading, scheduling and queued work can delay delivery; the alert time
+is not a latency guarantee.
 
 This example sets a time alert to trigger one minute from the current time:
 
@@ -718,10 +719,11 @@ To automatically perform a market exit when the strategy is stopped, set `manage
 config = StrategyConfig(manage_stop=True)
 ```
 
-With this option, calling `stop()` will first perform a market exit, then stop the strategy
-once flat.
+With this option, calling `stop()` first performs a market exit, then stops the strategy
+once flat or once `market_exit_max_attempts` is reached. Reaching the attempt limit can leave
+orders or positions outstanding.
 
-:::note
+:::warning
 In a backtest, a managed stop requested at the end of the run cannot complete. `market_exit()`
 schedules its first completion check `market_exit_interval_ms` after the current time, which falls
 beyond the requested end, and the engine has already performed its final timer flush by then. No
@@ -923,7 +925,7 @@ Some venues (such as Binance Futures) support the GTD time in force, so to avoid
 
 If you intend running multiple instances of the same strategy, with different
 configurations (such as trading different instruments), then each instance needs a
-unique strategy ID and order ID tag.
+**unique strategy ID and order ID tag**.
 
 The system must be able to identify which strategy various commands and events belong to. The order
 ID tag also keeps generated client order IDs unique across strategies for the same trader.

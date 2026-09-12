@@ -5,9 +5,9 @@ execution also introduces venue, transport, timing, persistence, external-activi
 reconciliation behavior that a simulation may not reproduce.
 
 :::warning
-**Live trading involves real financial risk. Before deploying to production, understand
+**Live trading involves real financial risk.** Before deploying to production, understand
 system configuration, node operations, execution reconciliation, and the differences
-between backtesting and live trading.**
+between backtesting and live trading.
 :::
 
 ## Backtest and live differences
@@ -269,7 +269,7 @@ channels are ready together, the runner polls in this order:
 Events precede commands within the execution and data channel pairs.
 
 This polling order keeps a market-data backlog from taking priority over ready execution traffic.
-It does not define one global FIFO order across channels, adapters, or venues. Each selected branch
+It does not define **one global FIFO order** across channels, adapters, or venues. Each selected branch
 runs to completion before the runner polls again, so a slow handler delays every channel. The runner
 yields to the host event loop periodically, but yielding does not change channel priority or shorten
 a slow handler.
@@ -414,13 +414,14 @@ no `RST`, so writes keep succeeding into the send buffer and nothing surfaces th
 
 #### Heartbeat timeout
 
-Any transport configured with a heartbeat reconnects when no inbound frame of any kind arrives within
-**three heartbeat intervals**. Sending a heartbeat establishes that the peer answers it, so the interval
-alone is enough to say when silence means the connection is gone. A transport with no heartbeat gets
-no window, because nothing would guarantee the inbound frames needed to keep one open.
+Handler-mode WebSocket and raw TCP clients reconnect on heartbeat timeout. With a configured
+heartbeat, the default timeout is **three heartbeat intervals**. An explicit `heartbeat_timeout_secs`
+overrides that window. WebSocket clients reset it on any inbound frame; raw TCP clients reset it
+when bytes arrive. The client expects the peer to answer heartbeats, so a transport with no heartbeat
+gets no default window. An explicit timeout can still enable detection without a heartbeat.
 
-That window counts frames rather than data, so a keepalive reply refreshes it and a quiet market
-does not trip it.
+For WebSocket clients, that window counts all frames, so a keepalive reply refreshes it and a quiet
+market does not trip it.
 
 #### Feed idle timeout
 

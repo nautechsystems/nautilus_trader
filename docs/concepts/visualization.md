@@ -12,7 +12,7 @@ The visualization system has three parts:
 2. **Theme System** - Consistent styling with built-in and custom themes.
 3. **Configuration** - Declarative specification of what to render and how to display it.
 
-Tearsheets are written as self-contained HTML files that can be viewed in any modern
+Tearsheets are written as **self-contained HTML files** that can be viewed in any modern
 browser, shared with stakeholders, or archived for future reference. Passing a static
 image extension (such as `.png` or `.pdf`) as the output path exports a static image
 via Kaleido instead.
@@ -81,8 +81,10 @@ create_tearsheet(
 )
 ```
 
+:::warning
 Passing a node whose matching run configuration enables disposal raises `ValueError` because its
 cache and reports are no longer available.
+:::
 
 ### Customization
 
@@ -135,7 +137,7 @@ pass `currency` for multi-currency backtests so return charts use the selected
 currency.
 
 For `BacktestResult` input, `currency` filters PnL statistics and account balances. The result's
-stored return series remains unchanged.
+**stored return series remains unchanged**.
 
 ## Available charts
 

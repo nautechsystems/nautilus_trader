@@ -100,7 +100,7 @@ publish/subscribe, and request/response patterns.
 
 ## Accounting
 
-Account types (cash, margin, betting), the `AccountBalance` and `MarginBalance`
+Account types (cash, margin, betting, and wallet), the `AccountBalance` and `MarginBalance`
 data model, the per-instrument vs account-wide margin scopes, the strategy query
 API, built-in margin models, and the adapter convention across live venues.
 

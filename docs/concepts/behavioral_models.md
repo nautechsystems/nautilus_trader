@@ -2,7 +2,7 @@
 
 This page describes the pluggable models that change or extend NautilusTrader behavior.
 
-A behavioral model supplies the rules for a specific calculation or decision made by the system.
+A **behavioral model** supplies the rules for a specific calculation or decision made by the system.
 For example, a fill model determines simulated fill eligibility and liquidity, while a fee model
 calculates the commission on a fill. The engine calls the configured model through a defined
 interface, so users can change these rules without modifying the engine or their strategy.
@@ -48,7 +48,7 @@ through the same lifecycle and acknowledgement contract.
 ## Supplying implementations
 
 Rust callers can implement the model family's trait and pass the implementation through its runtime
-handle. Python support depends on both the family and the configuration API:
+handle. Python support depends on **both the family and the configuration API**:
 
 | Family  | `BacktestVenueConfig` from Python                    | `BacktestEngine.add_venue()` from Python             |
 | ------- | ---------------------------------------------------- | ---------------------------------------------------- |

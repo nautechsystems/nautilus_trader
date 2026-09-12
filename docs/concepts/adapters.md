@@ -57,7 +57,7 @@ A node can register multiple data and execution clients. Pass `client_id` from a
 when a specific client must handle a request, subscription, or order. Without an explicit client,
 the data and execution engines use the venue and default routes configured by the node.
 
-:::note[Custom adapter support]
+:::info[Custom adapter support]
 The public Python API does not yet define an interface for implementing an out-of-tree adapter
 entirely in Python. An out-of-tree Python adapter surface is planned. Custom venue integrations
 currently use the Rust adapter traits. See the
@@ -225,7 +225,7 @@ economics that the available evidence cannot support. See
 
 ### Reduce-only execution contract
 
-An execution client must never silently discard `reduce_only=true`. It must either send a
+An execution client **must never silently discard** `reduce_only=true`. It must either send a
 documented venue instruction that enforces the same intent or reject the order before transport.
 The venue can still reject an encoded instruction when the product does not support it, the order
 would not reduce an open position, or another venue rule makes the combination invalid.

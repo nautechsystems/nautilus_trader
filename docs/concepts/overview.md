@@ -113,7 +113,7 @@ plus [orders](orders/) and [positions](positions.md) that aggregate events to de
 
 ## Timestamps
 
-NautilusTrader represents system timestamps as UNIX nanoseconds. Its standard ISO 8601
+NautilusTrader represents system timestamps as **UNIX nanoseconds**. Its standard ISO 8601
 (RFC 3339) formatter uses UTC and preserves all nine fractional digits. A millisecond formatter
 preserves three fractional digits for selected displays, such as good-till-date (GTD) expiry times.
 

@@ -14,7 +14,7 @@ The cache:
 ## How caching works
 
 The engines add built-in data to the `Cache` as events flow through the system. Live adapters feed
-events to the engine asynchronously, so the cache changes when the engine processes an event, not
+events to the engine asynchronously, so the cache changes **when the engine processes an event**, not
 when the adapter first receives it.
 
 For quotes, trades, and bars, the `DataEngine` attempts to write to the `Cache` before publishing to
@@ -181,9 +181,11 @@ node.set_cache_database(cache_database)?;
 node.run().await?;
 ```
 
+:::warning
 With the default `LiveExecutionEngineConfig.load_cache = true`, the node restores persisted cache state
 and rebuilds derived indexes before connecting clients or reconciling execution state. Setting
 `CacheConfig.flush_on_start = true` clears the backing instead.
+:::
 
 Python passes the same database config to `LiveNodeBuilder.with_cache_database_factory`. The node
 constructs and owns the adapter when it starts, so the connection opens only when the node runs:
@@ -220,7 +222,7 @@ buffer when `CacheConfig.buffer_interval_ms` is set. Returning straight from `ru
 ### Accessing market data
 
 The `Cache` provides access to order books, quotes, trades, bars, and other market data. Bounded
-market-data sequences use reverse indexing, so the most recent entry sits at index 0.
+market-data sequences use reverse indexing, so the **most recent entry sits at index 0**.
 
 #### Bar access
 

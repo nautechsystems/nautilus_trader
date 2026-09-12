@@ -40,7 +40,7 @@ Application code constructs configs, registers official adapter factories, and a
 `BacktestNode`, `BacktestEngine`, or `LiveNode`. Rust remains responsible for routing, engine state,
 order management, accounting, and venue clients.
 
-Callbacks execute synchronously on the event-processing thread and must return promptly.
+Callbacks execute **synchronously** on the event-processing thread and must return promptly.
 Blocking I/O, model inference, or long calculations delay market-data handling and order execution.
 Offload that work to an executor or another process. See
 [Configure a live trading node](../how_to/configure_live_trading.md) for the live-trading rule.
@@ -119,7 +119,7 @@ Official adapters are implemented in Rust and exposed through Python configs, fa
 and data types under `nautilus_trader.adapters`. Their integration guides define the supported venue
 capabilities.
 
-:::note[Custom adapter support]
+:::info[Custom adapter support]
 The public Python API does not yet define an interface for implementing an out-of-tree adapter
 entirely in Python. Official adapters remain usable from Python. Custom venue integrations
 currently use the Rust adapter traits. An out-of-tree Python adapter surface is planned; see

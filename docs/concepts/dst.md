@@ -136,7 +136,7 @@ same platform produces bitwise-identical:
 
 ### Required conditions
 
-The contract holds only when every row below is satisfied:
+The contract holds **only when every row below is satisfied**:
 
 | Source of nondeterminism | Required condition                                                       | Failure when bypassed                                                                                                                                  |
 | ------------------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -732,7 +732,7 @@ core leg.
 
 Nextest compiles the selected library and test targets, so the gate does not run a separate Cargo
 build. The invocations resolve each feature set once across their package sets. Together they
-exercise seam-routed `QuantityRaw` and `PriceRaw` paths at both fixed-point widths: `u64` and `u128`.
+exercise seam-routed `QuantityRaw` (`u64` / `u128`) and `PriceRaw` (`i64` / `i128`) paths at both fixed-point widths.
 
 #### Common tests
 

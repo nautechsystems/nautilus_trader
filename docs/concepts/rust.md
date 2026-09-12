@@ -123,18 +123,18 @@ The minimum supported Rust version (MSRV) is **1.98.1**.
 
 ### Feature flags
 
-| Flag             | Crate               | Effect                                                        |
-| ---------------- | ------------------- | ------------------------------------------------------------- |
-| `high-precision` | `nautilus-model`    | 16-digit fixed precision (default is 9). Required for crypto. |
-| `test-support`   | `nautilus-model`    | Test fixtures, builders, specs, and defaults.                 |
-| `examples`       | `nautilus-trading`  | Example strategies (`EmaCross`, `GridMarketMaker`).           |
-| `streaming`      | `nautilus-backtest` | Catalog-based data streaming via `BacktestNode`.              |
-| `defi`           | `nautilus-model`    | DeFi data types. Implies `high-precision`.                    |
+| Flag             | Crate               | Effect                                              |
+| ---------------- | ------------------- | --------------------------------------------------- |
+| `high-precision` | `nautilus-model`    | 16-digit fixed precision (default is 9).            |
+| `test-support`   | `nautilus-model`    | Test fixtures, builders, specs, and defaults.       |
+| `examples`       | `nautilus-trading`  | Example strategies (`EmaCross`, `GridMarketMaker`). |
+| `streaming`      | `nautilus-backtest` | Catalog-based data streaming via `BacktestNode`.    |
+| `defi`           | `nautilus-model`    | DeFi data types. Implies `high-precision`.          |
 
 :::tip
 Standard 9-digit precision handles most traditional finance instruments.
-Enable `high-precision` for crypto venues where prices can have many decimal
-places (e.g. `0.00000001`).
+Enable `high-precision` for crypto venues where prices or quantities need more than nine decimal
+places.
 :::
 
 ### Memory allocator
@@ -161,7 +161,7 @@ fn main() {
 
 Declaring `GLOBAL` selects mimalloc. Call `register_allocator_mimalloc` at the start of `main`,
 before constructing a Nautilus node, so the version header reports `allocator: mimalloc <version>`.
-Registration only updates the header metadata; it does not select the allocator.
+Registration **only updates the header metadata**; it does not select the allocator.
 
 The default system allocator also works. Measure throughput and resident memory on your workload
 and platform when comparing allocator choices.

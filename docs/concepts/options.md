@@ -112,7 +112,7 @@ def on_option_chain(self, chain) -> None:
 | `AtmPercent`  | All strikes within a percentage band around ATM.    | `StrikeRange.atm_percent(0.10)`  |
 | `Delta`       | Strikes whose call or put delta is near a target.   | `StrikeRange.delta(0.25, 0.05)`  |
 
-For dynamic strike ranges, subscriptions are deferred until the ATM price is determined.
+For dynamic strike ranges, subscriptions are **deferred until the ATM price is determined**.
 ATM is derived from the venue reference price in `OptionGreeks.underlying_price`. It can
 also be seeded from a reference price fetched for the option series via HTTP, allowing
 instant bootstrap before live WebSocket ticks arrive. As ATM shifts, the active strike
@@ -289,7 +289,7 @@ active instrument set internally on the first ATM price.
 
 #### OptionChainAggregator
 
-Accumulates quotes and Greeks into call/put buffers using keep-latest semantics.
+Accumulates quotes and Greeks into call/put buffers using **keep-latest semantics**.
 Instruments that did not update since the last snapshot are still included. Greeks
 that arrive before any quote for an instrument are held in a `pending_greeks`
 buffer and attached when the first quote arrives. On each `snapshot()` call, the
@@ -385,13 +385,15 @@ Methods:
 
 ## Adapter support
 
-The following adapters currently support option Greeks subscriptions:
+The following adapters support option Greeks subscriptions:
 
-| Adapter | Per-instrument Greeks | Option chains |
-| ------- | :-------------------: | :-----------: |
-| Deribit | ✓                     | ✓             |
-| Bybit   | ✓                     | ✓             |
-| OKX     | ✓                     | -             |
+| Adapter             | Per-instrument Greeks | Option chains |
+| ------------------- | --------------------- | ------------- |
+| Deribit             | Yes                   | Yes           |
+| Bybit               | Yes                   | Yes           |
+| Derive              | Yes                   | Yes           |
+| Interactive Brokers | Yes                   | Yes           |
+| OKX                 | Yes                   | Yes           |
 
 ## See also
 

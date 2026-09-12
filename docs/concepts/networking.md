@@ -59,7 +59,7 @@ request bodies, and `GET`, `POST`, `PUT`, `PATCH`, and `DELETE` methods. A clien
 all requests unless a request supplies its own timeout. An optional proxy applies to both HTTP and
 HTTPS traffic.
 
-HTTP status errors remain normal `HttpResponse` values so each adapter can interpret the venue's
+**HTTP status errors remain normal `HttpResponse` values** so each adapter can interpret the venue's
 body and retry rules. The transport retries requests canceled before transmission on reused
 connections, and allows two retries for remote HTTP/2 `GOAWAY(NO_ERROR)` or `REFUSED_STREAM` errors.
 Other transport failures and HTTP status codes do not trigger retries. Adapters can wrap retryable
@@ -180,21 +180,25 @@ transport errors. `WebSocketConfig.backend` selects either backend at runtime:
 | [`tokio-tungstenite`](https://crates.io/crates/tokio-tungstenite) | Always compiled                              | Passed through the WebSocket handshake    | HTTP and HTTPS `CONNECT` tunnels |
 | [`sockudo-ws`](https://crates.io/crates/sockudo-ws)               | Default with the `transport-sockudo` feature | Passed through a local HTTP/1.1 handshake | HTTP and HTTPS `CONNECT` tunnels |
 
-Disabling default Cargo features removes `sockudo-ws` and makes Tungstenite the default. A recognized
-SOCKS proxy URL logs a warning and connects directly because WebSocket SOCKS tunneling is not
-implemented. Malformed proxy URLs and other unsupported schemes return an error. Both backends use
-`rustls` for `wss://` connections and set `TCP_NODELAY` on paths where Nautilus creates the TCP stream.
+Disabling default Cargo features removes `sockudo-ws` and makes Tungstenite the default. Both
+backends use `rustls` for `wss://` connections and set `TCP_NODELAY` on paths where Nautilus creates
+the TCP stream.
+
+:::warning
+A recognized SOCKS proxy URL logs a warning and **connects directly** because WebSocket SOCKS
+tunneling is not implemented. Malformed proxy URLs and other unsupported schemes return an error.
+:::
 
 ### Liveness and recovery
 
 The configured heartbeat sends either an RFC 6455 Ping or a venue-specific text message at a fixed
-interval. Configuring one also arms a response deadline: sending a heartbeat establishes that the
-peer answers it, so an unset `heartbeat_timeout_secs` defaults to three intervals. Set the field to
+interval. Configuring one also arms a response deadline: the client expects the
+peer to answer, so an unset `heartbeat_timeout_secs` defaults to three intervals. Set the field to
 choose a different window. A transport with no heartbeat gets no default, because nothing would
 guarantee the inbound frames needed to keep the window open.
 
-The heartbeat timeout resets on every inbound frame, including Ping and Pong, so it detects a peer
-that has stopped sending anything. The separate idle timeout resets only on text or binary
+The **heartbeat timeout** resets on every inbound frame, including Ping and Pong, so it detects a peer
+that has stopped sending anything. The separate **idle timeout** resets only on text or binary
 application data, so control traffic cannot hide a silent market-data stream. A venue that answers
 the keepalive with a text payload refreshes the idle timeout exactly like real data does, so that
 window means something only when it sits below the heartbeat interval.
@@ -225,7 +229,7 @@ Handler mode publishes `Disconnected` on entry to `Reconnecting` and `Connected`
 individual attempts and deliberate disconnects add no state-sink edges.
 
 The writer installs the replacement sink before the controller starts its reader and publishes the
-reconnect notification. A connection epoch advances with each sink replacement. Reader fences drop
+reconnect notification. A **connection epoch** advances with each sink replacement. Reader fences drop
 frames from retired sessions, while epoch-aware handlers and sends let an adapter bind work to the
 transport that produced it. Mutable reconnect headers apply to later handshakes without interrupting
 the active connection.
@@ -246,8 +250,9 @@ remain inside the window.
 
 Venues rate-limit new connections per IP (Binance permits 300 connections per five minutes, OKX
 three per second), so an unthrottled reconnect loop can otherwise escalate a transient drop into an
-IP-level throttle or ban affecting every client behind that address. The first attempts in any
-window are never delayed, so a single drop still recovers immediately.
+IP-level throttle or ban affecting every client behind that address. The first three attempts in any
+window incur no additional throttling delay; configured backoff still applies. A single drop can
+still trigger an immediate first reconnect.
 
 ### State reporting and explicit reconnect
 
@@ -270,17 +275,21 @@ caller-owned.
 ### Send semantics
 
 Application text and binary sends wait for their rate-limit keys and for an active connection. The
-ordinary send methods return after enqueueing the frame, so success does not prove delivery. The
+ordinary send methods return after enqueueing the frame, so **success does not prove delivery**. The
 writer keeps FIFO order for application messages buffered during reconnect or after a failed write
 and replays them on a replacement connection. A control frame belongs to the connection it was
 issued on, so a failed Ping, Pong, or Close is dropped rather than replayed. This in-memory buffer
 provides reconnect continuity, not durable or exactly-once delivery.
 
 Ownership-bound text sends take an expected connection epoch and wait for the writer result. They
-fail if ownership changes and never replay on another connection. If a bound write times out after
-it starts, delivery is undetermined and the caller must not retry blindly. Connection-bound Pong
-sends use the same epoch check so a response cannot leak onto the connection after the one that
-received its Ping.
+fail if ownership changes and never replay on another connection. Connection-bound Pong sends use
+the same epoch check so a response cannot leak onto the connection after the one that received its
+Ping.
+
+:::warning
+If a bound write times out after it starts, **delivery is undetermined** and the caller must not
+retry blindly.
+:::
 
 ### Backend benchmarks
 
@@ -424,10 +433,12 @@ sequenceDiagram
 A raw TCP replacement becomes active only after optional protocol replay and buffered application
 messages drain successfully; the reader and post-reconnection callback start afterward.
 
+:::warning
 `send_bytes` returns when the message enters the writer channel, not when the peer receives it. A
 concurrent disconnect can still prevent delivery. Reconnect replay and buffering are process memory,
 so protocols that require durable or exactly-once delivery must enforce those guarantees above the
 socket client.
+:::
 
 ## TCP socket options
 

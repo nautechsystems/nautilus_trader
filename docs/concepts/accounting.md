@@ -14,7 +14,8 @@ configuration (starting balances, margin-model selection per venue), see
 When you attach a venue to the engine for either live trading or a backtest, you
 pick one of three accounting modes via `account_type`: Cash, Margin, or Betting.
 A fourth account type, Wallet, models on-chain wallet state. The Blockchain
-adapter selects it, and its execution client is still in development.
+adapter selects it; its execution client supports locally signed Uniswap V3
+market swaps but is not production-ready.
 
 | Account type | Typical use case                                | What the engine locks                                                     |
 | ------------ | ----------------------------------------------- | ------------------------------------------------------------------------- |
@@ -25,7 +26,7 @@ adapter selects it, and its execution client is still in development.
 
 ### Cash accounts
 
-Cash accounts settle trades in full; there is no leverage and therefore no
+Cash accounts **settle trades in full**; there is no leverage and therefore no
 concept of margin. Locked balances reflect the value reserved for pending
 orders: the notional value of each pending buy and the quantity each pending
 sell would deliver.
@@ -64,7 +65,7 @@ Wallet accounts represent blockchain wallets: unleveraged, multi-currency
 holdings of native and ERC-20 token balances with no margin and no borrowing.
 For reported states, `total` is the observed on-chain balance; `locked` tracks
 local pending-order reservations, and `free = total - locked`. Account state
-events contribute totals only: the account ignores incoming `locked` and `free`
+events **contribute totals only**: the account ignores incoming `locked` and `free`
 values, retains its local reservations, and rederives `free`. It rebuilds
 transient reservations from submitted and open orders during live startup.
 While an amendment is pending, the account reserves the full observed balance
@@ -86,7 +87,7 @@ An `AccountBalance` holds three values in the same currency:
 - `locked`: amount reserved against open orders and positions.
 - `free`: amount available for new orders (`total - locked`).
 
-The invariant `total == locked + free` must always hold at currency precision.
+The **balance invariant** `total == locked + free` must always hold at currency precision.
 
 The Python `AccountBalance(total, locked, free)` constructor requires all three
 fields up front. Adapter code written in Rust has two additional derived
@@ -158,7 +159,7 @@ An `AccountState` event may carry entries in either or both scopes, and
 `MarginAccount.apply()` routes each entry to the correct store based on whether
 `instrument_id` is set.
 
-:::note
+:::warning
 `MarginAccount.apply()` **replaces** both stores from the incoming event. It does
 not merge with prior state, and an event carrying neither balances nor margins
 leaves the prior stores in place. Adapters that emit partial snapshots must
@@ -234,7 +235,7 @@ views as `MarginAccount.initial_margins` and
 `MarginAccount.maintenance_margins`; otherwise, they return `None`. For
 account-wide data on cross-margin venues, query the account directly via
 `portfolio.account(venue=venue).account_initial_margin(ccy)`. The returned account is
-a detached snapshot and cannot mutate Portfolio state.
+a **detached snapshot** and cannot mutate Portfolio state.
 
 PnL, exposure, mark-to-market, and equity queries all accept `venue` and an
 optional `account_id` to scope multi-account venues:
@@ -282,7 +283,7 @@ account's `margins` or `account_margins` stores without going through a model.
 
 Different venues treat leverage differently:
 
-- **Traditional brokers** (Interactive Brokers, TD Ameritrade): fixed margin percentages regardless of leverage.
+- **Traditional brokers** (e.g., Interactive Brokers): fixed margin percentages regardless of leverage.
 - **Crypto exchanges** (Binance, others): leverage may reduce margin requirements.
 
 Both built-in models compute margin as a percentage of notional using the
@@ -293,8 +294,9 @@ the percentage recovers the desired dollar amount.
 
 ### HEDGING-mode netting
 
-Under `OmsType.HEDGING` each fill opens its own `Position`, so an account can
-hold many open sub-positions for the same instrument. The accounts manager
+Under `OmsType.HEDGING`, the first fill for a new position ID opens a `Position`;
+later fills can update that position. An account can therefore hold many open
+sub-positions for the same instrument. The accounts manager
 nets those sub-positions onto a hypothetical NETTING position in `ts_opened`
 order, then runs the margin model once on the resulting net signed quantity
 and average open price.
@@ -306,14 +308,15 @@ the residual take the flipping fill's price. Sub-positions sharing a
 `ts_opened` fold in `(ts_opened, position_id)` order so the result does
 not depend on cache iteration order.
 
-HEDGING and NETTING accounts compute the same maintenance margin for the
-same fill sequence; the requirement scales with net economic exposure.
+HEDGING and NETTING accounts compute the same maintenance margin when the
+folded net quantity and average open price match under the same margin model
+and leverage; the requirement scales with **net economic exposure**.
 
 ### Available models
 
 #### `StandardMarginModel`
 
-Uses fixed percentages without leverage division, matching traditional broker
+Uses **fixed percentages without leverage division**, matching traditional broker
 behavior.
 
 ```python
@@ -329,7 +332,7 @@ fixed margin requirements.
 
 #### `LeveragedMarginModel`
 
-Divides margin requirements by leverage.
+Divides margin requirements **by leverage**.
 
 ```python
 # Leverage reduces margin requirements
@@ -368,7 +371,7 @@ allows it.
 ### Python model selection
 
 Pass `StandardMarginModel()` or `LeveragedMarginModel()` directly to the backtest venue. The
-current Python binding does not accept custom margin model subclasses or a `MarginModelConfig`
+Python binding does not accept custom margin model subclasses or a `MarginModelConfig`
 wrapper. See [Backtesting](backtesting/accounts-and-margin.md#margin-models).
 
 ## Adapter convention
@@ -393,7 +396,7 @@ Pick the scope that matches what the venue reports:
 | Single aggregate per collateral (cross margin) | Account-wide   | `MarginBalance::new(initial, maint, None)`                 |
 | Multiple aggregates, one per collateral        | Account-wide   | One `MarginBalance` per currency with `instrument_id=None` |
 
-:::note
+:::info
 Synthetic `ACCOUNT.{VENUE}` or `ACCOUNT-{COIN}.{VENUE}` `InstrumentId`
 placeholders are not used. Account-wide entries carry `instrument_id=None` and
 are keyed by `currency`.
