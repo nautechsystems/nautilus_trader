@@ -163,8 +163,8 @@ Declaring `GLOBAL` selects mimalloc. Call `register_allocator_mimalloc` at the s
 before constructing a Nautilus node, so the version header reports `allocator: mimalloc <version>`.
 Registration only updates the header metadata; it does not select the allocator.
 
-The default system allocator also works, but backtest throughput drops materially,
-especially on Windows, where allocator overhead can reach half of hot-loop run time.
+The default system allocator also works. Measure throughput and resident memory on your workload
+and platform when comparing allocator choices.
 See the [architecture guide](architecture.md#memory-allocation) for background.
 
 ## Actors

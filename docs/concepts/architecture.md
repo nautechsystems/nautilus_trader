@@ -716,15 +716,14 @@ For parallel execution or workload isolation, run each node in its own separate 
 
 ### Memory allocation
 
-The event-driven core allocates and frees small objects at high frequency: message bus dispatch,
-order event handling, and order book maintenance all exercise the heap on every event. Default
-system allocators handle this pattern poorly; profiling shows allocator overhead approaching half
-of hot-loop time on both the Windows CRT heap and glibc malloc under order-flow workloads.
+The event-driven core allocates and frees objects during message dispatch, order event handling,
+and order book maintenance. Allocator choice can affect throughput and resident memory; the effect
+depends on the workload, platform, and build configuration.
 
 The `nautilus` CLI and Python wheels use [mimalloc](https://crates.io/crates/mimalloc) for Rust
-allocations. Backtest engine benchmarks run roughly 3% to 44% faster depending on workload, with
-order-flow heavy paths gaining the most. The trade-off is a modest increase in resident memory from
-mimalloc's segment caching.
+allocations. Compare allocators on representative workloads before choosing one for a custom binary.
+Record the source revision, build settings, environment, measurement method, throughput, and resident
+memory using the [benchmarking guide](../developer_guide/benchmarking.md).
 
 A Rust binary links exactly one global allocator, and libraries do not impose one, so the
 NautilusTrader crates remain allocator-neutral. When building directly against the crates,

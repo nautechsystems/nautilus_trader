@@ -4,6 +4,8 @@ This page defines the principles, policies, and trade-offs that guide NautilusTr
 [Architecture](../concepts/architecture.md) describes the components and runtime structure.
 These policies guide implementation and review; they do not establish that every existing path
 already conforms. Specific guides describe current behavior and limits.
+[Runtime conformance contract](runtime_conformance.md) maps selected requirements to source,
+representative checks, and implementation limits.
 
 ## Design priorities
 
