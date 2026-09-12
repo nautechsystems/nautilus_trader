@@ -15,8 +15,14 @@ covers the event types, their dispatch, and how order fills and corrections prod
 
 ## Handler dispatch
 
-When an event reaches a strategy, the system calls handlers in a fixed order. The specific handler
-runs before the aggregate handler, so you can handle events at either granularity or use both.
+When an event reaches a strategy, the system calls handlers in a fixed order. The **specific
+handler** runs before the **aggregate handler**, so you can handle events at either granularity or
+use both. A strategy passes events to its handlers only while it is running; events that arrive
+before start or after stop are not dispatched.
+
+Python data actors do not expose order event callbacks or the raw message bus. Use signals to send
+derived values from a strategy to a data actor. See
+[Actors: order event handling](../actors.md#order-event-handling).
 
 ### Order events
 
@@ -32,10 +38,10 @@ For the position lifecycle events dispatched to strategies:
 
 ### Time events
 
-Timers and alerts produce `TimeEvent` objects. Pass a `callback` when calling
-`set_timer` or `set_time_alert` to direct events to your own method. If you
-omit the callback, a callback previously registered under the same name is
-used when present; otherwise the event is delivered to `on_time_event`.
+Timers and alerts produce `TimeEvent` objects. Pass a `callback` when calling `set_timer` or
+`set_time_alert` to direct events to your own method. If you omit the callback, a callback
+previously registered under the same name is used when present; otherwise the event is delivered to
+`on_time_event`.
 
 ## Order events
 
@@ -45,25 +51,25 @@ below shows the primary transitions; partially filled, external, and triggered o
 additional transitions documented in the full
 [order state flow](../orders/index.md#order-state-flow).
 
-| Event                                             | Primary transition                           | Handler                    |
-| ------------------------------------------------- | -------------------------------------------- | -------------------------- |
-| [`OrderInitialized`](order_initialized.md)        | Create or materialize order                  | `on_order_initialized`     |
-| [`OrderDenied`](order_denied.md)                  | Initialized -> Denied                        | `on_order_denied`          |
-| [`OrderEmulated`](order_emulated.md)              | Initialized -> Emulated                      | `on_order_emulated`        |
-| [`OrderReleased`](order_released.md)              | Emulated -> Released                         | `on_order_released`        |
-| [`OrderSubmitted`](order_submitted.md)            | Initialized/Released -> Submitted            | `on_order_submitted`       |
-| [`OrderAccepted`](order_accepted.md)              | Submitted -> Accepted                        | `on_order_accepted`        |
-| [`OrderRejected`](order_rejected.md)              | Submitted -> Rejected                        | `on_order_rejected`        |
-| [`OrderTriggered`](order_triggered.md)            | Accepted -> Triggered                        | `on_order_triggered`       |
-| [`OrderPendingUpdate`](order_pending_update.md)   | Accepted -> PendingUpdate                    | `on_order_pending_update`  |
-| [`OrderPendingCancel`](order_pending_cancel.md)   | Accepted -> PendingCancel                    | `on_order_pending_cancel`  |
-| [`OrderUpdated`](order_updated.md)                | PendingUpdate -> previous status             | `on_order_updated`         |
-| [`OrderModifyRejected`](order_modify_rejected.md) | PendingUpdate -> previous status             | `on_order_modify_rejected` |
-| [`OrderCancelRejected`](order_cancel_rejected.md) | PendingCancel -> previous status             | `on_order_cancel_rejected` |
-| [`OrderCanceled`](order_canceled.md)              | PendingCancel/Accepted -> Canceled           | `on_order_canceled`        |
-| [`OrderExpired`](order_expired.md)                | Accepted -> Expired                          | `on_order_expired`         |
-| [`OrderFilled`](order_filled.md)                  | Accepted -> Filled/PartiallyFilled           | `on_order_filled`          |
-| [`OrderFillVoided`](order_fill_voided.md)         | Revise known fill; otherwise assert terminal | `on_order_fill_voided`     |
+| Event                                             | Primary transition                            | Handler                    |
+| ------------------------------------------------- | --------------------------------------------- | -------------------------- |
+| [`OrderInitialized`](order_initialized.md)        | Create or materialize order                   | `on_order_initialized`     |
+| [`OrderDenied`](order_denied.md)                  | Initialized -> Denied                         | `on_order_denied`          |
+| [`OrderEmulated`](order_emulated.md)              | Initialized -> Emulated                       | `on_order_emulated`        |
+| [`OrderReleased`](order_released.md)              | Emulated -> Released                          | `on_order_released`        |
+| [`OrderSubmitted`](order_submitted.md)            | Initialized/Released -> Submitted             | `on_order_submitted`       |
+| [`OrderAccepted`](order_accepted.md)              | Submitted -> Accepted                         | `on_order_accepted`        |
+| [`OrderRejected`](order_rejected.md)              | Submitted -> Rejected                         | `on_order_rejected`        |
+| [`OrderTriggered`](order_triggered.md)            | Accepted -> Triggered                         | `on_order_triggered`       |
+| [`OrderPendingUpdate`](order_pending_update.md)   | Accepted -> PendingUpdate                     | `on_order_pending_update`  |
+| [`OrderPendingCancel`](order_pending_cancel.md)   | Accepted -> PendingCancel                     | `on_order_pending_cancel`  |
+| [`OrderUpdated`](order_updated.md)                | PendingUpdate -> previous status              | `on_order_updated`         |
+| [`OrderModifyRejected`](order_modify_rejected.md) | PendingUpdate -> previous status              | `on_order_modify_rejected` |
+| [`OrderCancelRejected`](order_cancel_rejected.md) | PendingCancel -> previous status              | `on_order_cancel_rejected` |
+| [`OrderCanceled`](order_canceled.md)              | PendingCancel/Accepted -> Canceled            | `on_order_canceled`        |
+| [`OrderExpired`](order_expired.md)                | Accepted -> Expired                           | `on_order_expired`         |
+| [`OrderFilled`](order_filled.md)                  | Accepted -> Filled/PartiallyFilled            | `on_order_filled`          |
+| [`OrderFillVoided`](order_fill_voided.md)         | Correct known fill; otherwise assert terminal | `on_order_fill_voided`     |
 
 ### Common Python order event fields
 
@@ -86,11 +92,6 @@ and `reconciliation` only on the Python event classes that expose them. For exam
 [`OrderFillVoided`](order_fill_voided.md) identifies the corrected trade and carries its cumulative
 voided quantity.
 
-:::tip
-Override `on_order_event` to handle all order events in one place. The specific
-handlers fire first, so you can combine both approaches.
-:::
-
 ## Position events
 
 Position lifecycle events describe cached position changes caused by fills and fill corrections.
@@ -108,15 +109,17 @@ for one that is closed. An order-only correction does not produce a position eve
 | [`PositionChanged`](position_changed.md) | A fill or correction changes an open position. | `on_position_changed` |
 | [`PositionClosed`](position_closed.md)   | A fill or correction leaves quantity at zero.  | `on_position_closed`  |
 
+:::warning[PositionAdjusted never reaches a position handler]
 [`PositionAdjusted`](../positions.md#position-adjustments) records quantity or realized PnL changes
-outside normal fills, such as base-currency commissions and funding. Strategies do not receive it
-through the position event handlers; inspect `position.adjustments()` for the recorded history.
+outside normal fills, such as base-currency commissions and funding. The `ExecutionEngine` publishes
+it, but neither `on_position_event` nor any specific handler receives it. Inspect
+`position.adjustments()` for the recorded history.
+:::
 
 ### From fill to position: the causal chain
 
-The following diagram shows how a single `OrderFilled` event produces a
-position event. This is the key link between order management and position
-tracking.
+The following diagram shows how a single `OrderFilled` event produces a position event, the link
+between order management and position tracking.
 
 ```mermaid
 sequenceDiagram
@@ -142,26 +145,24 @@ sequenceDiagram
     end
 ```
 
-**Step by step:**
+Step by step:
 
 1. **Fill arrives.** The `ExecutionEngine` receives an `OrderFilled` event through the execution
    pipeline.
-2. **Order state updates.** The engine applies the fill to the order object
-   and writes the updated order to the `Cache`.
-3. **Position ID resolved.** The engine determines which position this fill
-   belongs to, based on OMS type and strategy configuration.
+2. **Order state updates.** The engine applies the fill to the order object and writes the updated
+   order to the `Cache`.
+3. **Position ID resolved.** The engine determines which position this fill belongs to, based on OMS
+   type and strategy configuration.
 4. **Position created or updated.** Three outcomes:
-   - **No position exists** for this ID: the engine creates a `Position` from
-     the fill, adds it to the `Cache`, and emits `PositionOpened`.
-   - **Position exists and remains open** after the fill: the engine applies
-     the fill to the position, updates the `Cache`, and emits
-     `PositionChanged`.
-   - **Position exists and closes** (quantity reaches zero): the engine
-     applies the fill, updates the `Cache`, and emits `PositionClosed`.
-5. **Flip case.** When a fill reverses the position (e.g. long 10 filled
-   sell 15), the engine splits the fill into two parts: one that closes the
-   original position (`PositionClosed`) and one that opens the new position
-   (`PositionOpened`).
+   - **No position exists** for this ID: the engine creates a `Position` from the fill, adds it to
+     the `Cache`, and emits `PositionOpened`.
+   - **Position exists and remains open** after the fill: the engine applies the fill to the
+     position, updates the `Cache`, and emits `PositionChanged`.
+   - **Position exists and closes** (quantity reaches zero): the engine applies the fill, updates
+     the `Cache`, and emits `PositionClosed`.
+5. **Flip case.** When a fill reverses the position, for example a sell of 15 against a long 10, the
+   engine splits the fill into two parts: one that closes the original position (`PositionClosed`)
+   and one that opens the new position (`PositionOpened`).
 
 ### Position event fields
 
@@ -219,20 +220,12 @@ opening_order_id = position.opening_order_id
 `AccountState` events represent balance and margin snapshots. They fire when:
 
 - The venue reports an account update (via the execution client).
-- The `Portfolio` recalculates account state after a position update
-  (for margin accounts with `calculate_account_state` enabled).
+- The `Portfolio` recalculates account state after a position update (for margin accounts with
+  `calculate_account_state` enabled).
 
-Account state contains balances, margins, account type, and base currency.
-The `Portfolio` subscribes to these events internally to maintain exposure
-and balance tracking. See [`AccountState`](account_state.md) for the full
-field list.
-
-## Event handling
-
-Strategies receive order events through specific callbacks such as `on_order_filled()` or the
-aggregate `on_order_event()` callback. Python data actors do not expose order event callbacks or
-the raw message bus. Use signals to send derived values from a strategy to a data actor. See
-[Actors: order event handling](../actors.md#order-event-handling).
+Account state contains balances, margins, account type, and base currency. The `Portfolio`
+subscribes to these events internally to maintain exposure and balance tracking. See
+[`AccountState`](account_state.md) for the full field list.
 
 ## Related guides
 

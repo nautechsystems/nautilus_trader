@@ -7,8 +7,8 @@ Handler: `on_position_changed`.
 
 ## Fields
 
-See [Position event fields](index.md#position-event-fields) for the complete field matrix. In addition
-to the opening snapshot fields, `PositionChanged` exposes:
+See [Position event fields](index.md#position-event-fields) for the complete field matrix. In
+addition to the opening snapshot fields, `PositionChanged` exposes:
 
 | Field             | Python type       | Description                                                  |
 | ----------------- | ----------------- | ------------------------------------------------------------ |

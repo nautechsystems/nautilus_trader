@@ -10,7 +10,7 @@ Strategies receive `OrderFillVoided` after the corrected cache state is availabl
 position changes, the engine then publishes `PositionChanged` if it remains open or `PositionClosed`
 if it is closed. A successful order-only correction does not produce a position event.
 
-A correction is not an opposite-side fill. It retains the original trade identity so replay,
+A **correction** is not an opposite-side fill. It retains the original trade identity so replay,
 reconciliation, and strategy audit history describe the venue action directly.
 
 Handler: `on_order_fill_voided`.
@@ -32,17 +32,19 @@ interprets the correction:
 | No            | `false`       | Apply; whole order becomes terminal with zero leaves.                 |
 | No            | `true`        | Reject.                                                               |
 
-An unapplied non-reopened correction is an order-level terminal assertion. This remains true when
-`voided_qty` is less than the order quantity: the value records the ineffective fill quantity, not
-working leaves. The event must match the order identity, cannot exceed the order quantity, and cannot
-void a non-zero commission. Nautilus does not reverse position or account exposure without a local
-fill.
+An unapplied non-reopened correction is an **order-level terminal assertion**. This remains true
+when `voided_qty` is less than the order quantity: the value records the ineffective fill quantity,
+not working leaves. The event must match the order identity, cannot exceed the order quantity, and
+cannot void a non-zero commission. Nautilus does not reverse position or account exposure without a
+local fill.
 
 ### Adapter requirements
 
 - Publish and persist the referenced `OrderFilled` before a reopened correction or any partial
-  correction that should leave the order executable. Replay enforces the same ordering as live processing.
-- Emit a correction without its referenced fill only when the whole order is authoritatively terminal.
+  correction that should leave the order executable. Replay enforces the same ordering as live
+  processing.
+- Emit a correction without its referenced fill only when the whole order is authoritatively
+  terminal.
 - Do not rely on a later working `OrderStatusReport` to repair event ordering. Continuous
   reconciliation ignores fill decreases in working reports without explicit void evidence,
   `VOIDED` does not reopen, and snapshot reconciliation derives corrections only from retained
@@ -63,15 +65,15 @@ The corrected quantity does not become executable by default:
 `VOIDED` is terminal regardless of the correction path. Later fills, cancels, updates, corrections,
 and working status reports do not reopen it.
 
-:::note
+:::warning[Upgrade consumers before they read corrected data]
 The schemas append this event and status without changing existing records. Older v2 readers do not
 recognize the new values, so upgrade consumers before they read corrected streams or catalog data.
 :::
 
 ## Fields
 
-Beyond the [common Python order event fields](index.md#common-python-order-event-fields), `OrderFillVoided`
-carries:
+Beyond the [common Python order event fields](index.md#common-python-order-event-fields),
+`OrderFillVoided` carries:
 
 | Field               | Python type                | Required/default | Description                                             |
 | ------------------- | -------------------------- | ---------------- | ------------------------------------------------------- |
@@ -90,7 +92,6 @@ carries:
 | `reason`            | `str` or `None`            | `None`           | Venue or reconciliation reason for the correction.      |
 | `info`              | `dict[str, str]` or `None` | `None`           | Additional venue correction metadata.                   |
 | `is_reopened`       | `bool`                     | `False`          | Whether the venue proves the order is executable again. |
-| `causation_id`      | `UUID4` or `None`          | `None`           | Source event or report that caused this correction.     |
 | `reconciliation`    | `bool`                     | Required         | If generated during reconciliation.                     |
 
 ## Example

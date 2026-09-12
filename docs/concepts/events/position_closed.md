@@ -1,14 +1,14 @@
 # PositionClosed
 
-`PositionClosed` records the final snapshot of a position. The `ExecutionEngine` emits it when a fill
-flattens the position or a fill correction leaves the corrected position closed. See
+`PositionClosed` records the final snapshot of a position. The `ExecutionEngine` emits it when a
+fill flattens the position or a fill correction leaves the corrected position closed. See
 [From fill to position](index.md#from-fill-to-position-the-causal-chain). Handler:
 `on_position_closed`.
 
 ## Fields
 
-See [Position event fields](index.md#position-event-fields) for the complete field matrix. The fields
-that describe the close and final result are:
+See [Position event fields](index.md#position-event-fields) for the complete field matrix. The
+fields that describe the close and final result are:
 
 | Field              | Python type               | Description                                                 |
 | ------------------ | ------------------------- | ----------------------------------------------------------- |

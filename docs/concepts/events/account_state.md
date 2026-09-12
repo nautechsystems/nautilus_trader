@@ -21,6 +21,7 @@ The `is_reported` flag distinguishes venue-reported snapshots from system-calcul
 | `event_id`      | `UUID4`                | Required         | The event ID.                                                             |
 | `ts_event`      | `int`                  | Required         | UNIX timestamp (nanoseconds) when the event occurred.                     |
 | `ts_init`       | `int`                  | Required         | UNIX timestamp (nanoseconds) when the object was initialized.             |
+| `info`          | `dict`                 | `None`           | Venue-specific account data with no typed field (empty dict when unset).  |
 
 ## Example
 
