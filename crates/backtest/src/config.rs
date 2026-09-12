@@ -71,6 +71,23 @@ pub enum NautilusDataType {
     InstrumentClose,
 }
 
+impl NautilusDataType {
+    /// All variants, in declaration order.
+    pub const ALL: [Self; 11] = [
+        Self::QuoteTick,
+        Self::TradeTick,
+        Self::Bar,
+        Self::OrderBookDelta,
+        Self::OrderBookDepth10,
+        Self::MarkPriceUpdate,
+        Self::IndexPriceUpdate,
+        Self::FundingRateUpdate,
+        Self::InstrumentStatus,
+        Self::OptionGreeks,
+        Self::InstrumentClose,
+    ];
+}
+
 impl Display for NautilusDataType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Debug::fmt(self, f)
@@ -81,20 +98,13 @@ impl FromStr for NautilusDataType {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> anyhow::Result<Self> {
-        match s {
-            stringify!(QuoteTick) => Ok(Self::QuoteTick),
-            stringify!(TradeTick) => Ok(Self::TradeTick),
-            stringify!(Bar) => Ok(Self::Bar),
-            stringify!(OrderBookDelta) => Ok(Self::OrderBookDelta),
-            stringify!(OrderBookDepth10) => Ok(Self::OrderBookDepth10),
-            stringify!(MarkPriceUpdate) => Ok(Self::MarkPriceUpdate),
-            stringify!(IndexPriceUpdate) => Ok(Self::IndexPriceUpdate),
-            stringify!(FundingRateUpdate) => Ok(Self::FundingRateUpdate),
-            stringify!(InstrumentStatus) => Ok(Self::InstrumentStatus),
-            stringify!(OptionGreeks) => Ok(Self::OptionGreeks),
-            stringify!(InstrumentClose) => Ok(Self::InstrumentClose),
-            _ => anyhow::bail!("Invalid `NautilusDataType`: '{s}'"),
-        }
+        Self::ALL
+            .into_iter()
+            .find(|data_type| data_type.to_string() == s)
+            .ok_or_else(|| {
+                let expected = Self::ALL.map(|data_type| data_type.to_string()).join(", ");
+                anyhow::anyhow!("Invalid `NautilusDataType`: '{s}' (expected one of: {expected})")
+            })
     }
 }
 
@@ -1226,6 +1236,33 @@ mod tests {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
         };
+    }
+
+    #[rstest]
+    fn test_nautilus_data_type_from_str_round_trips_every_variant() {
+        for data_type in NautilusDataType::ALL {
+            assert_eq!(
+                data_type.to_string().parse::<NautilusDataType>().unwrap(),
+                data_type
+            );
+        }
+    }
+
+    #[rstest]
+    #[case::fully_qualified_name("nautilus_trader.model:TradeTick")]
+    #[case::catalog_directory("trades")]
+    fn test_nautilus_data_type_from_str_error_lists_expected_values(#[case] input: &str) {
+        let error = input.parse::<NautilusDataType>().unwrap_err().to_string();
+
+        assert_eq!(
+            error,
+            concat!(
+                "Invalid `NautilusDataType`: '{input}' (expected one of: QuoteTick, TradeTick, Bar, ",
+                "OrderBookDelta, OrderBookDepth10, MarkPriceUpdate, IndexPriceUpdate, ",
+                "FundingRateUpdate, InstrumentStatus, OptionGreeks, InstrumentClose)"
+            )
+            .replace("{input}", input)
+        );
     }
 
     macro_rules! minimal_simulated_builder {
