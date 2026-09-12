@@ -8338,6 +8338,54 @@ impl Cache {
             .map(|account_cell| account_cell.borrow().clone())
     }
 
+    /// Returns a borrow of the account for `instrument_id` (if found).
+    ///
+    /// A plain venue lookup is not sufficient for broker-routed instruments: the account is
+    /// registered under the broker venue (e.g. `IB`) while the instrument carries the routing
+    /// venue or exchange MIC (e.g. `SMART`, `IBIS`). Resolution order:
+    ///
+    /// 1. The explicit `account_id`, when provided.
+    /// 2. Exact venue match on the instrument's venue.
+    /// 3. The account owning an existing position for the instrument.
+    #[must_use]
+    pub fn account_for_instrument(
+        &self,
+        instrument_id: &InstrumentId,
+        account_id: Option<&AccountId>,
+    ) -> Option<AccountRef<'_>> {
+        match account_id {
+            Some(account_id) => self.account(account_id),
+            None => self
+                .account_for_venue(&instrument_id.venue)
+                .or_else(|| self.account_owning_position(instrument_id)),
+        }
+    }
+
+    /// Returns a borrow of the account owning an existing position for `instrument_id`.
+    fn account_owning_position(&self, instrument_id: &InstrumentId) -> Option<AccountRef<'_>> {
+        self.positions(None, Some(instrument_id), None, None, None)
+            .into_iter()
+            .next()
+            .and_then(|position| self.account(&position.account_id))
+    }
+
+    /// Returns a borrow of the sole account in the cache, when exactly one is registered.
+    ///
+    /// Useful as a last-resort resolution for broker-routed instruments, where the account is
+    /// registered under the broker venue while the instrument carries a routing venue or
+    /// exchange MIC, so a venue lookup misses. Returns `None` when zero or multiple accounts
+    /// are registered, since the choice would then be ambiguous.
+    #[must_use]
+    pub fn account_sole(&self) -> Option<AccountRef<'_>> {
+        if self.accounts.len() != 1 {
+            return None;
+        }
+        self.accounts
+            .values()
+            .next()
+            .map(|account_cell| AccountRef::new(account_cell.borrow()))
+    }
+
     /// Returns a reference to the account ID for the `venue` (if found).
     #[must_use]
     pub fn account_id(&self, venue: &Venue) -> Option<&AccountId> {

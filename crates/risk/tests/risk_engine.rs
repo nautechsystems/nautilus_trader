@@ -71,7 +71,7 @@ use nautilus_model::{
         },
     },
     instruments::{
-        Commodity, CryptoPerpetual, CurrencyPair, FuturesSpread, Instrument, InstrumentAny,
+        Commodity, CryptoPerpetual, CurrencyPair, Equity, FuturesSpread, Instrument, InstrumentAny,
         OptionSpread, PerpetualContract,
         stubs::{
             audusd_sim, betting, commodity_gold, crypto_perpetual_ethusdt, currency_pair_btcusdt,
@@ -10358,4 +10358,190 @@ fn test_spot_notional_fields_ignore_metadata(
         };
         assert_eq!(command.client_order_id, order.client_order_id());
     }
+}
+
+// -------------------------------------------------------------------------------------------------
+// Broker-routed instruments: the account is registered under the broker venue (e.g. `IB`) while
+// the instrument carries the routing venue or exchange MIC (e.g. `SMART`), so a plain
+// `account_for_venue` lookup on the instrument's venue misses and every account-scoped check
+// was previously skipped.
+// -------------------------------------------------------------------------------------------------
+
+/// Builds an equity routed via `SMART`, as an IB instrument loaded with RAW symbology is.
+fn instrument_broker_routed() -> InstrumentAny {
+    InstrumentAny::Equity(
+        Equity::builder()
+            .instrument_id(InstrumentId::from("AAPL.SMART"))
+            .raw_symbol(Symbol::from("AAPL"))
+            .currency(Currency::from("USD"))
+            .price_precision(2)
+            .price_increment(Price::from("0.01"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    )
+}
+
+/// Cash account whose ID issuer is the broker venue `IB`, not the instrument's venue.
+fn broker_account() -> AccountAny {
+    AccountAny::Cash(cash_account(AccountState::new(
+        AccountId::from("IB-DU123456"),
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::from("1000000 USD"),
+            Money::from("0 USD"),
+            Money::from("1000000 USD"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        0.into(),
+        0.into(),
+        Some(Currency::USD()),
+    )))
+}
+
+#[rstest]
+fn test_max_notional_denies_order_for_broker_routed_instrument(
+    strategy_id_ema_cross: StrategyId,
+    trader_id: TraderId,
+) {
+    let process_handler = register_process_handler();
+    let instrument = instrument_broker_routed();
+
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument.clone()).unwrap();
+    cache.add_account(broker_account()).unwrap();
+
+    let mut risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+
+    // Cap of 1 USD against a notional of ~100 USD.
+    risk_engine.set_max_notional_per_order(instrument.id(), Decimal::from_i64(1).unwrap());
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00"))
+        .quantity(Quantity::from("100"))
+        .build();
+
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        None, // no explicit client_id: routing is resolved downstream by the default route
+        strategy_id_ema_cross,
+        instrument.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let saved_events = get_process_order_event_handler_messages(&process_handler);
+    assert_eq!(saved_events.len(), 1);
+    assert!(
+        matches!(saved_events[0], OrderEventAny::Denied(_)),
+        "expected the max_notional check to deny the order, got {:?}",
+        saved_events[0]
+    );
+}
+
+#[rstest]
+fn test_account_scoped_checks_still_skipped_when_no_account_registered(
+    strategy_id_ema_cross: StrategyId,
+    trader_id: TraderId,
+) {
+    let process_handler = register_process_handler();
+    let instrument = instrument_broker_routed();
+
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument.clone()).unwrap();
+    // Deliberately no account registered: fail-open behavior must be preserved.
+
+    let mut risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    risk_engine.set_max_notional_per_order(instrument.id(), Decimal::from_i64(1).unwrap());
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00"))
+        .quantity(Quantity::from("100"))
+        .build();
+
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        None,
+        strategy_id_ema_cross,
+        instrument.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let saved_events = get_process_order_event_handler_messages(&process_handler);
+    assert!(
+        !saved_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Denied(_))),
+        "no account is resolvable, so account-scoped checks should be skipped, not denied"
+    );
+}
+
+#[rstest]
+fn test_account_sole_returns_none_when_multiple_accounts_registered() {
+    let mut cache = Cache::default();
+    assert!(cache.account_sole().is_none(), "no accounts registered");
+
+    cache.add_account(broker_account()).unwrap();
+    assert_eq!(
+        cache.account_sole().map(|account| account.id()),
+        Some(AccountId::from("IB-DU123456"))
+    );
+
+    cache
+        .add_account(AccountAny::Cash(cash_account(AccountState::new(
+            AccountId::from("SIM-000001"),
+            AccountType::Cash,
+            vec![AccountBalance::new(
+                Money::from("1000000 USD"),
+                Money::from("0 USD"),
+                Money::from("1000000 USD"),
+            )],
+            vec![],
+            true,
+            UUID4::new(),
+            0.into(),
+            0.into(),
+            Some(Currency::USD()),
+        ))))
+        .unwrap();
+    assert!(
+        cache.account_sole().is_none(),
+        "ambiguous with more than one account"
+    );
 }
