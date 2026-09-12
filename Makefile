@@ -634,7 +634,7 @@ docsrs-check: export DOCS_RS=1
 docsrs-check: export RUSTDOCFLAGS=--cfg docsrs -D warnings
 docsrs-check: check-hack-installed #-- Check documentation builds for docs.rs compatibility
 	cargo +$(DOCSRS_TOOLCHAIN) hack --workspace --ignore-private --ignore-unknown-features \
-		--features arrow,capnp,cloud,defi,display \
+		--features arrow,arrow-display,capnp,cloud,defi \
 		--features example-databento,examples,ffi,high-precision,host \
 		--features hypersync,indicators,live,node,persistence,plugin \
 		--features postgres,redis,replay,sbe,simulation,streaming,test-support \

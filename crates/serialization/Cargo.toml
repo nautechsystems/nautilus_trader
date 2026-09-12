@@ -33,8 +33,8 @@ crate-type = ["rlib"]
 [features]
 default = []
 arrow = ["dep:arrow", "nautilus-model/arrow"]
+arrow-display = ["arrow"]
 capnp = ["dep:capnp", "dep:capnpc", "dep:walkdir"]
-display = ["arrow"]
 sbe = []
 extension-module = [
   "nautilus-core/extension-module",
@@ -58,7 +58,7 @@ ignored = [
 
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
-features = ["arrow", "capnp", "display", "high-precision", "sbe"]
+features = ["arrow", "arrow-display", "capnp", "high-precision", "sbe"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]

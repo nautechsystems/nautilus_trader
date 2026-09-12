@@ -35,7 +35,7 @@ pub mod report;
 pub mod snapshot;
 pub mod trade;
 
-#[cfg(feature = "display")]
+#[cfg(feature = "arrow-display")]
 pub mod display;
 
 use std::{
