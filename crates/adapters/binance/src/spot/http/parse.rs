@@ -434,6 +434,13 @@ pub fn decode_new_order_full(buf: &[u8]) -> Result<BinanceNewOrderResponse, SbeD
         return Err(SbeDecodeError::UnknownTemplateId(header.template_id));
     }
 
+    if usize::from(header.block_length) < NEW_ORDER_FULL_FIELDS_END {
+        return Err(SbeDecodeError::InvalidBlockLength {
+            expected: NEW_ORDER_FULL_FIELDS_END as u16,
+            actual: header.block_length,
+        });
+    }
+
     cursor.require(header.block_length as usize)?;
 
     let price_exponent = cursor.read_i8()?;
@@ -2612,6 +2619,22 @@ mod tests {
         assert_eq!(response.fills[0].qty_mantissa, 10_000);
         assert_eq!(response.fills[0].trade_id, Some(555));
         assert_eq!(response.fills[0].commission_asset, "USDT");
+    }
+
+    #[rstest]
+    fn test_decode_new_order_full_rejects_short_block() {
+        let mut buf = build_new_order_full_buffer(ExpiryReason::NullVal);
+        resize_fixed_block(&mut buf, 116);
+
+        let error = decode_new_order_full(&buf).unwrap_err();
+
+        assert_eq!(
+            error,
+            SbeDecodeError::InvalidBlockLength {
+                expected: 117,
+                actual: 116,
+            }
+        );
     }
 
     #[rstest]
