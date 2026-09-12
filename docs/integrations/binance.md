@@ -129,10 +129,10 @@ listings use the same suffix, so `XAUUSDT` becomes `XAUUSDT-PERP`.
 The adapter maps `TRADIFI_PERPETUAL` listings to
 `PerpetualContract` and derives their asset class from Binance's `underlyingType`:
 
-| Binance `underlyingType`                        | Nautilus asset class |
-| ----------------------------------------------- | -------------------- |
-| `EQUITY`, `KR_EQUITY`, `HK_EQUITY`, `PREMARKET` | Equity               |
-| `COMMODITY`                                     | Commodity            |
+| Binance `underlyingType`                                     | Nautilus asset class |
+| ------------------------------------------------------------ | -------------------- |
+| `EQUITY`, `CN_EQUITY`, `KR_EQUITY`, `HK_EQUITY`, `PREMARKET` | Equity               |
+| `COMMODITY`                                                  | Commodity            |
 
 Listings with other or missing values are skipped with a warning.
 
