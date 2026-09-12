@@ -242,15 +242,108 @@ def test_publish_with_no_subscribers(bus: object) -> None:
     assert bus.pub_count == 1
 
 
-def test_publish_delivers_to_subscriber(bus: object) -> None:
+@pytest.mark.parametrize("keyword_arguments", [False, True])
+def test_publish_delivers_to_subscriber(bus: object, keyword_arguments: bool) -> None:
     """
     Test publish delivers to subscriber.
     """
     received = []
     bus.subscribe("system", received.append)
-    bus.publish("system", "hello")
+    if keyword_arguments:
+        bus.publish(topic="system", msg="hello")
+    else:
+        bus.publish("system", "hello")
     assert received == ["hello"]
     assert bus.pub_count == 1
+
+
+def test_publish_nested_preserves_identity_and_completion_counts(bus: object) -> None:
+    """
+    Test nested publication remains synchronous and counts completed calls.
+    """
+    outer = object()
+    nested = object()
+    received = []
+
+    def first(msg: object) -> None:
+        received.append(("first", msg, bus.pub_count))
+        if msg is outer:
+            bus.publish("nested", nested, external_pub=False)
+            received.append(("returned", msg, bus.pub_count))
+
+    def second(msg: object) -> None:
+        received.append(("second", msg, bus.pub_count))
+
+    bus.subscribe("*", first, priority=10)
+    bus.subscribe("*", second)
+    bus.publish("outer", outer, external_pub=False)
+
+    assert received == [
+        ("first", outer, 0),
+        ("first", nested, 0),
+        ("second", nested, 0),
+        ("returned", outer, 1),
+        ("second", outer, 1),
+    ]
+    assert bus.pub_count == 2
+
+
+def test_publish_rejects_borrowed_bus_before_delivery(bus: object) -> None:
+    """
+    Test a conflicting facade borrow rejects publication before delivery.
+    """
+    received = []
+    rejected = []
+
+    def handler(msg: object) -> None:
+        try:
+            bus.publish("topic", msg, external_pub=False)
+        except RuntimeError as e:
+            rejected.append(str(e))
+
+    bus.register("endpoint", handler)
+    bus.subscribe("topic", received.append)
+    bus.send("endpoint", object())
+
+    assert rejected == ["Already borrowed"]
+    assert received == []
+    assert bus.sent_count == 1
+    assert bus.pub_count == 0
+
+
+def test_publish_serializer_can_mutate_bus_and_publish(trader_id: TraderId) -> None:
+    """
+    Test external serialization can reenter the message bus.
+    """
+    received = []
+    payload = object()
+
+    class Serializer:
+        def serialize(self, msg: object) -> bytes:
+            received.append(("serialize", msg, bus.pub_count))
+            bus.add_streaming_type(int)
+            bus.publish("nested", b"nested", external_pub=False)
+            return b"serialized"
+
+    class Listener:
+        def is_closed(self) -> bool:
+            return False
+
+        def publish(self, topic: str, data: bytes) -> None:
+            received.append((topic, data, bus.pub_count))
+
+    bus = MessageBus(trader_id=trader_id, serializer=Serializer())
+    bus.add_listener(Listener())
+    bus.subscribe("nested", lambda msg: received.append(("nested", msg, bus.pub_count)))
+    bus.publish("outer", payload)
+
+    assert received == [
+        ("serialize", payload, 0),
+        ("nested", b"nested", 0),
+        ("outer", b"serialized", 1),
+    ]
+    assert bus.streaming_types() == [int]
+    assert bus.pub_count == 2
 
 
 def test_publish_delivers_to_multiple_subscribers(bus: object) -> None:
@@ -770,6 +863,42 @@ def test_add_listener_receives_published_bytes(bus: object) -> None:
     bus.add_listener(DummyListener())
     bus.publish("any.topic", b"data")
     assert events == [("any.topic", b"data")]
+
+
+def test_listener_reentry_preserves_publication_snapshot(bus: object) -> None:
+    """
+    Test listener changes apply to nested publications without changing the current one.
+    """
+    received = []
+
+    class AddedListener:
+        def is_closed(self) -> bool:
+            return False
+
+        def publish(self, topic: str, payload: bytes) -> None:
+            received.append(("added", topic, payload, bus.pub_count))
+
+    class Listener:
+        def is_closed(self) -> bool:
+            return False
+
+        def publish(self, topic: str, payload: bytes) -> None:
+            received.append(("original", topic, payload, bus.pub_count))
+            if topic == "outer":
+                bus.add_listener(AddedListener())
+                bus.publish("nested", b"nested")
+                received.append(("returned", topic, payload, bus.pub_count))
+
+    bus.add_listener(Listener())
+    bus.publish("outer", b"outer")
+
+    assert received == [
+        ("original", "outer", b"outer", 0),
+        ("original", "nested", b"nested", 0),
+        ("added", "nested", b"nested", 0),
+        ("returned", "outer", b"outer", 1),
+    ]
+    assert bus.pub_count == 2
 
 
 def test_add_listener_skips_closed(bus: object) -> None:

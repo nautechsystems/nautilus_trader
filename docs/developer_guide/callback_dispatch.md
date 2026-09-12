@@ -7,6 +7,7 @@ the policy.
 :::info
 These requirements are design constraints for queued actor and strategy callback delivery, not
 guarantees of the existing synchronous dispatch paths.
+Support for synchronous message-bus reentry does not activate queued actor or strategy callbacks.
 :::
 
 ## Ordering and reentrancy
@@ -66,8 +67,8 @@ recipient of their enclosing publication. Scopes nest and drop in stack order. D
 restores publication state without delivering callbacks. A publication unwind latches a fatal error.
 The message bus does not install these scopes automatically.
 
-Admission reserves count, known storage, and a queue slot before the caller constructs owned
-captures. A successful reservation accepts its capture even if another operation subsequently
+Admission reserves count, known storage, and a queue slot **before the caller constructs owned
+captures**. A successful reservation accepts its capture even if another operation subsequently
 latches a failure. An unfinished reservation blocks later deliveries and teardown; cancellation
 leaves a slot that an explicit drain or teardown releases. Actor reservations retain registration
 identity, so replacement or re-registration of the same allocation cancels stale delivery.
@@ -76,13 +77,17 @@ identity, so replacement or re-registration of the same allocation cancels stale
 
 A drain processes at most its supplied slot budget, including cancelled slots. A busy head prevents
 later delivery. Drains do no work during publication, recursive draining, teardown, or checked
-allocation access. **Guard destruction only releases access.** The caller must also end enclosing
+allocation access.
+
+:::warning
+Guard destruction only releases access; it does not drain callbacks. The caller must also end enclosing
 engine, cache, and other untracked borrows before draining.
+:::
 
 The callback-chain counter persists while queued work remains and faults at its limit. Accounting
-across command-mediated chains and runtime quiescence belongs to runtime integration. Before activation, runtime integration must
-separate independent ingress from callback chains so sustained legitimate traffic does not exhaust
-the chain limit, and detect a busy head that cannot make progress.
+across command-mediated chains and runtime quiescence belongs to runtime integration. Before activation,
+runtime integration must separate independent ingress from callback chains so sustained legitimate
+traffic does not exhaust the chain limit, and detect a busy head that cannot make progress.
 
 ### Storage limits
 
@@ -130,21 +135,12 @@ before constructing each capture and acquires preparation guards inside that cal
 cannot control arbitrary locals that author code constructs or explicitly destroys while holding a
 borrow. Destructors must not panic during an existing unwind.
 
-### Backing-binding compatibility
+### Backend compatibility
 
-These requirements govern runtime integration with direct and dynamic backends. A callback-scoped
-binding associates an author with its host backing for the duration of that callback. A nested
-callback shadows the enclosing binding, temporarily preventing use of its access token.
+Direct and dynamic backends must preserve the same callback ordering, exclusive component access,
+and lifecycle eligibility requirements. Facade effects remain synchronous. The
+[plug-in boundary rules](plugins.md#boundary-rules) apply to all values crossing a dynamic-library
+boundary; callback dispatch does not implicitly transfer allocation ownership across that boundary.
 
-Queued work must retain owned payloads and registration identity without retaining an active
-callback-scoped binding token. Backend-owned entry code must install the proper binding and validate
-the current instance and lifecycle before author delivery. Expired or shadowed tokens cannot authorize
-a later callback. Host backing operations remain synchronous while author delivery follows the shared
-ordering rule.
-
-Dynamic backends must own callback storage, binding installation, module lifetime, and
-producer-side release. The [plug-in boundary rules](plugins.md#boundary-rules) still apply. The
-dispatcher neither assumes that thread-local storage crosses module boundaries nor transfers
-allocation ownership implicitly across a dynamic-library boundary. Admission tickets and
-cleanup scopes remain framework machinery; author fields, callback signatures, and canonical facade
-APIs do not expose them.
+Admission tickets and cleanup scopes remain framework machinery; author fields, callback signatures,
+and canonical facade APIs do not expose them.

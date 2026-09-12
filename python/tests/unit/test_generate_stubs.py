@@ -381,6 +381,53 @@ impl PriceType {
     assert fixups["PriceType"].staticmethods == set()
 
 
+@pytest.mark.parametrize("receiver", ["slf", "this"])
+def test_bound_receiver_is_not_a_python_parameter(tmp_path: Path, receiver: str) -> None:
+    """
+    Test explicit bound receivers are omitted while ordinary arguments remain.
+    """
+    rust_file = tmp_path / "crates" / "common" / "src" / "python" / "sample.rs"
+    rust_file.parent.mkdir(parents=True)
+    rust_file.write_text(
+        """
+#[pymethods]
+impl Sample {
+    #[pyo3(name = "publish")]
+    fn py_publish(RECEIVER: &Bound<'_, Self>, topic: &str) {
+        todo!()
+    }
+
+    #[staticmethod]
+    fn consume(RECEIVER: &Bound<'_, Self>) {
+        todo!()
+    }
+
+    fn compare(&self, RECEIVER: &Bound<'_, Self>) {
+        todo!()
+    }
+}
+""".replace("RECEIVER", receiver),
+        encoding="utf-8",
+    )
+    source = (
+        "class Sample:\n"
+        f"    def publish(self, {receiver}: Sample, topic: str) -> None: ...\n"
+        f"    def consume(self, {receiver}: Sample) -> None: ...\n"
+        f"    def compare(self, {receiver}: Sample) -> None: ...\n"
+    )
+
+    fixups = generate_stubs.collect_rust_class_fixups(tmp_path)
+    updated = generate_stubs.apply_rust_class_fixups(source, fixups)
+
+    assert updated == (
+        "class Sample:\n"
+        "    def publish(self, topic: str) -> None: ...\n"
+        "    @staticmethod\n"
+        f"    def consume({receiver}: Sample) -> None: ...\n"
+        f"    def compare(self, {receiver}: Sample) -> None: ...\n"
+    )
+
+
 def test_signature_defaults_handle_lifetime_generic_methods(tmp_path: Path) -> None:
     """
     Test signature defaults handle lifetime generic methods.

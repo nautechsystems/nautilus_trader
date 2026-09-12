@@ -90,6 +90,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed Python `MessageBus.publish()` reentry from subscribers and listeners, and external serialization reentry
 - Fixed `Money` ordering panics for mixed currencies, thanks for reporting @folknor
 - Fixed sell-balance checks when order quantities and account balances use different fixed-point scales
 - Fixed `LiveTimer` successor and time bar interval overflows causing runtime panics

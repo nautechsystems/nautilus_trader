@@ -286,7 +286,7 @@ pub struct MessageBus {
     req_count: u64,
     res_count: u64,
     pub_count: u64,
-    external_egress: Option<Box<dyn MessageBusExternalEgress>>,
+    external_egress: Option<Rc<RefCell<Box<dyn MessageBusExternalEgress>>>>,
     has_external_streams: bool,
     encoding: SerializationEncoding,
     encoding_market_data: Option<SerializationEncoding>,
@@ -433,7 +433,7 @@ impl MessageBus {
         external_egress: Box<dyn MessageBusExternalEgress>,
         encoding: SerializationEncoding,
     ) {
-        self.external_egress = Some(external_egress);
+        self.external_egress = Some(Rc::new(RefCell::new(external_egress)));
         self.has_external_streams = false;
         self.encoding = encoding;
         self.encoding_market_data = None;
@@ -456,7 +456,7 @@ impl MessageBus {
     ) -> crate::config::ConfigResult<()> {
         config.validate()?;
 
-        self.external_egress = Some(external_egress);
+        self.external_egress = Some(Rc::new(RefCell::new(external_egress)));
         self.has_external_streams = config
             .external_streams
             .as_ref()
@@ -513,8 +513,8 @@ impl MessageBus {
         self.has_external_streams
     }
 
-    pub(crate) fn external_egress(&self) -> Option<&dyn MessageBusExternalEgress> {
-        self.external_egress.as_deref()
+    pub(crate) fn external_egress(&self) -> Option<Rc<RefCell<Box<dyn MessageBusExternalEgress>>>> {
+        self.external_egress.clone()
     }
 
     pub(crate) fn encoding_for(&self, payload_type: BusPayloadType) -> SerializationEncoding {
@@ -586,8 +586,8 @@ impl MessageBus {
         self.res_count = 0;
         self.pub_count = 0;
 
-        if let Some(mut external_egress) = self.external_egress.take() {
-            external_egress.close();
+        if let Some(external_egress) = self.external_egress.take() {
+            external_egress.borrow_mut().close();
         }
         self.has_external_streams = false;
         self.has_backing = false;
@@ -727,8 +727,8 @@ impl MessageBus {
     ///
     /// This function never returns an error (TBD once backing database added).
     pub fn close(&mut self) -> anyhow::Result<()> {
-        if let Some(mut external_egress) = self.external_egress.take() {
-            external_egress.close();
+        if let Some(external_egress) = self.external_egress.take() {
+            external_egress.borrow_mut().close();
         }
         self.has_external_streams = false;
         self.has_backing = false;

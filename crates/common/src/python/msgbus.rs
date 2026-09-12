@@ -691,26 +691,27 @@ impl PyMessageBus {
     }
 
     /// Publishes a message for the given topic.
-    #[pyo3(name = "publish")]
-    #[pyo3(signature = (topic, msg, external_pub=true))]
+    #[pyo3(name = "publish", signature = (topic, msg, external_pub=true))]
     #[expect(clippy::needless_pass_by_value)]
     fn py_publish(
-        &mut self,
+        slf: &Bound<'_, Self>,
         py: Python<'_>,
         topic: &str,
         msg: Py<PyAny>,
         external_pub: bool,
     ) -> PyResult<()> {
+        // Reject an enclosing facade borrow before publication has synchronous effects
+        drop(slf.try_borrow_mut()?);
         let topic_mstr = MStr::<Topic>::topic(topic).map_err(to_pyruntime_err)?;
 
         let py_msg = PyMessage(msg.clone_ref(py));
         msgbus_api::publish_any(topic_mstr, &py_msg);
 
         if external_pub {
-            self.publish_external(py, topic, &msg)?;
+            Self::publish_external(slf, py, topic, &msg)?;
         }
 
-        self.pub_count += 1;
+        slf.try_borrow_mut()?.pub_count += 1;
         Ok(())
     }
 
@@ -750,8 +751,26 @@ impl PyMessageBus {
 }
 
 impl PyMessageBus {
-    fn publish_external(&self, py: Python<'_>, topic: &str, msg: &Py<PyAny>) -> PyResult<()> {
-        if let Some(ref filter) = self.types_filter {
+    fn publish_external(
+        slf: &Bound<'_, Self>,
+        py: Python<'_>,
+        topic: &str,
+        msg: &Py<PyAny>,
+    ) -> PyResult<()> {
+        let (types_filter, serializer, backing, listeners) = {
+            let bus = slf.try_borrow()?;
+            (
+                bus.types_filter.as_ref().map(|value| value.clone_ref(py)),
+                bus.serializer.as_ref().map(|value| value.clone_ref(py)),
+                bus.backing.as_ref().map(|value| value.clone_ref(py)),
+                bus.listeners
+                    .iter()
+                    .map(|value| value.clone_ref(py))
+                    .collect::<Vec<_>>(),
+            )
+        };
+
+        if let Some(ref filter) = types_filter {
             let is_excluded = py
                 .import("builtins")?
                 .call_method1("isinstance", (msg, filter))?
@@ -766,20 +785,20 @@ impl PyMessageBus {
         let msg_ref = msg.bind(py);
         let payload: Py<PyAny> = if msg_ref.is_instance_of::<pyo3::types::PyBytes>() {
             msg.clone_ref(py)
-        } else if let Some(ref serializer) = self.serializer {
+        } else if let Some(ref serializer) = serializer {
             serializer.call_method1(py, "serialize", (msg,))?
         } else {
             return Ok(());
         };
 
-        if let Some(ref backing) = self.backing {
+        if let Some(ref backing) = backing {
             let db = backing.bind(py);
             if !db.call_method0("is_closed")?.extract::<bool>()? {
                 db.call_method1("publish", (topic, &payload))?;
             }
         }
 
-        for listener in &self.listeners {
+        for listener in &listeners {
             let l = listener.bind(py);
             if l.call_method0("is_closed")?.extract::<bool>()? {
                 continue;
@@ -1002,6 +1021,49 @@ mod tests {
         msgbus::set_message_bus,
         python::{actor::PyDataActor, wrappers::release_python_wrapper},
     };
+
+    #[rstest]
+    fn test_publish_checks_facade_borrow_before_delivery() {
+        Python::initialize();
+        Python::attach(|py| {
+            let bus = py
+                .get_type::<PyMessageBus>()
+                .call1((TraderId::from("TRADER-001"),))
+                .unwrap()
+                .cast_into::<PyMessageBus>()
+                .unwrap();
+            let locals = PyDict::new(py);
+            locals.set_item("bus", &bus).unwrap();
+            py.run(
+                c_str!("seen = []\nbus.subscribe('topic', seen.append)"),
+                Some(&locals),
+                None,
+            )
+            .unwrap();
+            let borrowed = bus.borrow_mut();
+            py.run(
+                c_str!(
+                    "try:\n    bus.publish('topic', 37, external_pub=False)\nexcept BaseException as e:\n    error = (type(e).__name__, str(e))"
+                ),
+                Some(&locals),
+                None,
+            )
+            .unwrap();
+            drop(borrowed);
+
+            let seen: Vec<i64> = locals.get_item("seen").unwrap().unwrap().extract().unwrap();
+            let error: (String, String) = locals
+                .get_item("error")
+                .unwrap()
+                .unwrap()
+                .extract()
+                .unwrap();
+
+            assert_eq!(seen, Vec::<i64>::new());
+            assert_eq!(error, ("RuntimeError".into(), "Already borrowed".into()));
+            assert_eq!(bus.borrow().pub_count, 0);
+        });
+    }
 
     #[rstest]
     fn test_message_bus_factory_registry_compatibility_constructors() {
