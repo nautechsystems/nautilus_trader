@@ -96,7 +96,7 @@ impl Handler<dyn Any> for CountingAnyHandler {
 
     fn handle(&self, message: &dyn Any) {
         let quote = message.downcast_ref::<QuoteTick>().unwrap();
-        COUNTER.fetch_add(quote.bid_price.raw as u64, Ordering::Relaxed);
+        COUNTER.fetch_add(quote.bid_price.raw() as u64, Ordering::Relaxed);
     }
 }
 
@@ -111,7 +111,7 @@ impl Handler<QuoteTick> for CountingTypedHandler {
     }
 
     fn handle(&self, quote: &QuoteTick) {
-        COUNTER.fetch_add(quote.bid_price.raw as u64, Ordering::Relaxed);
+        COUNTER.fetch_add(quote.bid_price.raw() as u64, Ordering::Relaxed);
     }
 }
 

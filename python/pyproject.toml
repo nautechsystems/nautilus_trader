@@ -477,4 +477,7 @@ filterwarnings = [
   "error::EncodingWarning",
   # Plotly reads its bundled validator JSON without an explicit encoding
   'ignore::EncodingWarning:^plotly\.validator_cache$',
+  # pytest-memray opens binary Memray captures through Python
+  'ignore::EncodingWarning:^pytest_memray\.plugin$',
+  'ignore::EncodingWarning:^pytest_memray\.marks$',
 ]
