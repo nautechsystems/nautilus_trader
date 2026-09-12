@@ -141,20 +141,20 @@ impl EncodeToRecordBatch for OrderBookDepth {
             }
 
             for (bid, count) in depth.bids.iter().zip(&depth.bid_counts) {
-                price_raw_to_decimal(bid.price.raw, "bids.price")?;
+                price_raw_to_decimal(bid.price.raw(), "bids.price")?;
                 if is_depth_level_present(bid) {
-                    bid_prices.push(bid.price.raw);
-                    bid_sizes.push(bid.size.raw);
+                    bid_prices.push(bid.price.raw());
+                    bid_sizes.push(bid.size.raw());
                     bid_order_ids.push(bid.order_id);
                     bid_counts.push(*count);
                 }
             }
 
             for (ask, count) in depth.asks.iter().zip(&depth.ask_counts) {
-                price_raw_to_decimal(ask.price.raw, "asks.price")?;
+                price_raw_to_decimal(ask.price.raw(), "asks.price")?;
                 if is_depth_level_present(ask) {
-                    ask_prices.push(ask.price.raw);
-                    ask_sizes.push(ask.size.raw);
+                    ask_prices.push(ask.price.raw());
+                    ask_sizes.push(ask.size.raw());
                     ask_order_ids.push(ask.order_id);
                     ask_counts.push(*count);
                 }

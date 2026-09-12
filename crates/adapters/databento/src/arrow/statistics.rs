@@ -99,14 +99,14 @@ impl EncodeToRecordBatch for DatabentoStatistics {
                 )?),
                 Arc::new(price_decimal_array(
                     data.iter()
-                        .map(|item| item.borrow().price.map_or(PRICE_UNDEF, |value| value.raw)),
+                        .map(|item| item.borrow().price.map_or(PRICE_UNDEF, |value| value.raw())),
                     "price",
                 )?),
                 Arc::new(quantity_decimal_array(
                     data.iter().map(|item| {
                         item.borrow()
                             .quantity
-                            .map_or(QUANTITY_UNDEF, |value| value.raw)
+                            .map_or(QUANTITY_UNDEF, |value| value.raw())
                     }),
                     "quantity",
                 )?),

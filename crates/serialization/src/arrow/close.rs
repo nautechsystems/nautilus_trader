@@ -88,7 +88,7 @@ impl EncodeToRecordBatch for InstrumentClose {
                 Arc::new(price_decimal_array(
                     data.iter()
                         .map(std::borrow::Borrow::borrow)
-                        .map(|item| item.close_price.raw),
+                        .map(|item| item.close_price.raw()),
                     "close_price",
                 )?),
                 Arc::new(enum_dictionary_array(

@@ -76,26 +76,26 @@ impl EncodeToRecordBatch for DatabentoImbalance {
             Self::get_schema(Some(metadata.clone())).into(),
             vec![
                 Arc::new(price_decimal_array(
-                    data.iter().map(|item| item.borrow().ref_price.raw),
+                    data.iter().map(|item| item.borrow().ref_price.raw()),
                     "ref_price",
                 )?),
                 Arc::new(price_decimal_array(
                     data.iter()
-                        .map(|item| item.borrow().cont_book_clr_price.raw),
+                        .map(|item| item.borrow().cont_book_clr_price.raw()),
                     "cont_book_clr_price",
                 )?),
                 Arc::new(price_decimal_array(
                     data.iter()
-                        .map(|item| item.borrow().auct_interest_clr_price.raw),
+                        .map(|item| item.borrow().auct_interest_clr_price.raw()),
                     "auct_interest_clr_price",
                 )?),
                 Arc::new(quantity_decimal_array(
-                    data.iter().map(|item| item.borrow().paired_qty.raw),
+                    data.iter().map(|item| item.borrow().paired_qty.raw()),
                     "paired_qty",
                 )?),
                 Arc::new(quantity_decimal_array(
                     data.iter()
-                        .map(|item| item.borrow().total_imbalance_qty.raw),
+                        .map(|item| item.borrow().total_imbalance_qty.raw()),
                     "total_imbalance_qty",
                 )?),
                 Arc::new(enum_dictionary_array(data.iter().map(|item| {

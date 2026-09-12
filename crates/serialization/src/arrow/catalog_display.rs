@@ -332,7 +332,8 @@ fn append_identifier_column_if_present(
 }
 
 fn price_to_f64(price: &Price) -> f64 {
-    if price.is_undefined() || price.raw == PRICE_ERROR || price.precision > DISPLAY_MAX_PRECISION {
+    if price.is_undefined() || price.raw() == PRICE_ERROR || price.precision > DISPLAY_MAX_PRECISION
+    {
         return f64::NAN;
     }
 
