@@ -1541,8 +1541,10 @@ PUBLISH_DATA_PARAMETERS = ("data_type", "data")
 PUBLISH_SIGNAL_PARAMETERS = ("name", "value", "ts_event")
 SIGNAL_SUBSCRIPTION_PARAMETERS = ("name", "priority")
 SIGNAL_UNSUBSCRIBE_PARAMETERS = ("name",)
-STATE_SUBSCRIPTION_PARAMETERS = ("priority",)
-STATE_UNSUBSCRIBE_PARAMETERS = ()
+QUEUE_STATE_SUBSCRIPTION_PARAMETERS = ("channel", "priority")
+SOCKET_STATE_SUBSCRIPTION_PARAMETERS = ("client_id", "endpoint", "priority")
+QUEUE_STATE_UNSUBSCRIBE_PARAMETERS = ("channel",)
+SOCKET_STATE_UNSUBSCRIBE_PARAMETERS = ("client_id", "endpoint")
 SYNTHETIC_PARAMETERS = ("synthetic",)
 DATA_SURFACE_SIGNATURES = [
     ("publish_data", PUBLISH_DATA_PARAMETERS),
@@ -1551,8 +1553,8 @@ DATA_SURFACE_SIGNATURES = [
     ("update_synthetic", SYNTHETIC_PARAMETERS),
     ("subscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
     ("subscribe_signal", SIGNAL_SUBSCRIPTION_PARAMETERS),
-    ("subscribe_queue_state", STATE_SUBSCRIPTION_PARAMETERS),
-    ("subscribe_socket_state", STATE_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_queue_state", QUEUE_STATE_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_socket_state", SOCKET_STATE_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_book_deltas", BOOK_DELTAS_SUBSCRIPTION_PARAMETERS),
@@ -1570,8 +1572,8 @@ DATA_SURFACE_SIGNATURES = [
     ("subscribe_option_chain", OPTION_CHAIN_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_signal", SIGNAL_UNSUBSCRIBE_PARAMETERS),
-    ("unsubscribe_queue_state", STATE_UNSUBSCRIBE_PARAMETERS),
-    ("unsubscribe_socket_state", STATE_UNSUBSCRIBE_PARAMETERS),
+    ("unsubscribe_queue_state", QUEUE_STATE_UNSUBSCRIBE_PARAMETERS),
+    ("unsubscribe_socket_state", SOCKET_STATE_UNSUBSCRIBE_PARAMETERS),
     ("unsubscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_book_deltas", INSTRUMENT_SUBSCRIPTION_PARAMETERS),

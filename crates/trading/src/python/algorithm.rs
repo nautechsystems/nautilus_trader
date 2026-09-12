@@ -24,6 +24,7 @@ use nautilus_common::{
     enums::ComponentState,
     messages::system::{QueueStateChanged, SocketStateChanged},
     python::{cache::PyCache, clock::PyClock, logging::PyLogger, wrappers::get_python_message_bus},
+    runner::SystemChannel,
     signal::Signal,
     timer::TimeEvent,
 };
@@ -873,18 +874,27 @@ impl PyExecutionAlgorithm {
     }
 
     #[pyo3(name = "subscribe_queue_state")]
-    #[pyo3(signature = (priority=None))]
-    fn py_subscribe_queue_state(&mut self, priority: Option<u32>) -> PyResult<()> {
+    #[pyo3(signature = (channel=None, priority=None))]
+    fn py_subscribe_queue_state(
+        &mut self,
+        channel: Option<SystemChannel>,
+        priority: Option<u32>,
+    ) -> PyResult<()> {
         self.ensure_registered()?;
-        DataActor::subscribe_queue_state(self, priority);
+        DataActor::subscribe_queue_state(self, channel, priority);
         Ok(())
     }
 
     #[pyo3(name = "subscribe_socket_state")]
-    #[pyo3(signature = (priority=None))]
-    fn py_subscribe_socket_state(&mut self, priority: Option<u32>) -> PyResult<()> {
+    #[pyo3(signature = (client_id=None, endpoint=None, priority=None))]
+    fn py_subscribe_socket_state(
+        &mut self,
+        client_id: Option<ClientId>,
+        endpoint: Option<&str>,
+        priority: Option<u32>,
+    ) -> PyResult<()> {
         self.ensure_registered()?;
-        DataActor::subscribe_socket_state(self, priority);
+        DataActor::subscribe_socket_state(self, client_id, endpoint, priority);
         Ok(())
     }
 
@@ -897,16 +907,22 @@ impl PyExecutionAlgorithm {
     }
 
     #[pyo3(name = "unsubscribe_queue_state")]
-    fn py_unsubscribe_queue_state(&mut self) -> PyResult<()> {
+    #[pyo3(signature = (channel=None))]
+    fn py_unsubscribe_queue_state(&mut self, channel: Option<SystemChannel>) -> PyResult<()> {
         self.ensure_registered()?;
-        DataActor::unsubscribe_queue_state(self);
+        DataActor::unsubscribe_queue_state(self, channel);
         Ok(())
     }
 
     #[pyo3(name = "unsubscribe_socket_state")]
-    fn py_unsubscribe_socket_state(&mut self) -> PyResult<()> {
+    #[pyo3(signature = (client_id=None, endpoint=None))]
+    fn py_unsubscribe_socket_state(
+        &mut self,
+        client_id: Option<ClientId>,
+        endpoint: Option<&str>,
+    ) -> PyResult<()> {
         self.ensure_registered()?;
-        DataActor::unsubscribe_socket_state(self);
+        DataActor::unsubscribe_socket_state(self, client_id, endpoint);
         Ok(())
     }
 
@@ -1707,7 +1723,11 @@ class SocketStateTracker:
     }
 
     #[rstest]
-    fn test_python_subscribe_and_unsubscribe_queue_state_update_msgbus() {
+    #[case(None)]
+    #[case(Some(SystemChannel::ExecCommands))]
+    fn test_python_subscribe_and_unsubscribe_queue_state_update_msgbus(
+        #[case] channel: Option<SystemChannel>,
+    ) {
         *get_message_bus().borrow_mut() = MessageBus::default();
 
         let mut algorithm = PyExecutionAlgorithm::new(None);
@@ -1715,21 +1735,41 @@ class SocketStateTracker:
         let cache = Rc::new(RefCell::new(Cache::default()));
         Component::register(&mut algorithm, TraderId::from("TRADER-001"), clock, cache).unwrap();
 
-        algorithm.py_subscribe_queue_state(Some(50)).unwrap();
+        algorithm
+            .py_subscribe_queue_state(channel, Some(50))
+            .unwrap();
 
-        let topic = MessagingSwitchboard::queue_state_changed_topic();
+        let topic = MessagingSwitchboard::queue_state_changed_topic(SystemChannel::ExecCommands);
         let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
         assert_eq!(subscriptions.len(), 1);
         assert_eq!(subscriptions[0].priority, 50);
+        let unrelated = MessagingSwitchboard::queue_state_changed_topic(SystemChannel::DataEvents);
+        assert_eq!(
+            get_message_bus()
+                .borrow_mut()
+                .matching_subscriptions(unrelated)
+                .len(),
+            usize::from(channel.is_none())
+        );
 
-        algorithm.py_unsubscribe_queue_state().unwrap();
+        algorithm.py_unsubscribe_queue_state(channel).unwrap();
 
         let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
         assert!(subscriptions.is_empty());
     }
 
     #[rstest]
-    fn test_python_subscribe_and_unsubscribe_socket_state_update_msgbus() {
+    #[case(None, None)]
+    #[case(Some(ClientId::from("BINANCE")), None)]
+    #[case(None, Some("binance-futures-market-streams"))]
+    #[case(
+        Some(ClientId::from("BINANCE")),
+        Some("binance-futures-market-streams")
+    )]
+    fn test_python_subscribe_and_unsubscribe_socket_state_update_msgbus(
+        #[case] client_id: Option<ClientId>,
+        #[case] endpoint: Option<&str>,
+    ) {
         *get_message_bus().borrow_mut() = MessageBus::default();
 
         let mut algorithm = PyExecutionAlgorithm::new(None);
@@ -1737,14 +1777,30 @@ class SocketStateTracker:
         let cache = Rc::new(RefCell::new(Cache::default()));
         Component::register(&mut algorithm, TraderId::from("TRADER-001"), clock, cache).unwrap();
 
-        algorithm.py_subscribe_socket_state(Some(50)).unwrap();
+        algorithm
+            .py_subscribe_socket_state(client_id, endpoint, Some(50))
+            .unwrap();
 
-        let topic = MessagingSwitchboard::socket_state_changed_topic();
+        let topic = MessagingSwitchboard::socket_state_changed_topic(
+            ClientId::from("BINANCE"),
+            "binance-futures-market-streams",
+        );
         let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
         assert_eq!(subscriptions.len(), 1);
         assert_eq!(subscriptions[0].priority, 50);
+        let unrelated =
+            MessagingSwitchboard::socket_state_changed_topic(ClientId::from("BYBIT"), "orders");
+        assert_eq!(
+            get_message_bus()
+                .borrow_mut()
+                .matching_subscriptions(unrelated)
+                .len(),
+            usize::from(client_id.is_none() && endpoint.is_none())
+        );
 
-        algorithm.py_unsubscribe_socket_state().unwrap();
+        algorithm
+            .py_unsubscribe_socket_state(client_id, endpoint)
+            .unwrap();
 
         let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
         assert!(subscriptions.is_empty());

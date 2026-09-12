@@ -3322,7 +3322,7 @@ pub(crate) mod serial_tests {
         });
 
         msgbus::subscribe_any(
-            MessagingSwitchboard::queue_state_changed_topic().into(),
+            MessagingSwitchboard::queue_state_changed_pattern(None),
             handler,
             None,
         );

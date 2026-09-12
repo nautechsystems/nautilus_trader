@@ -150,7 +150,10 @@ HISTORICAL_CALLBACKS = [
 
 NO_PARAMETERS = ()
 STATE_PARAMETERS = ("state",)
-STATE_SUBSCRIPTION_PARAMETERS = ("priority",)
+QUEUE_STATE_SUBSCRIPTION_PARAMETERS = ("channel", "priority")
+SOCKET_STATE_SUBSCRIPTION_PARAMETERS = ("client_id", "endpoint", "priority")
+QUEUE_STATE_UNSUBSCRIBE_PARAMETERS = ("channel",)
+SOCKET_STATE_UNSUBSCRIBE_PARAMETERS = ("client_id", "endpoint")
 
 LIFECYCLE_HOOK_SIGNATURES = [
     ("on_start", NO_PARAMETERS),
@@ -286,8 +289,8 @@ REGISTRATION_REQUIRED_SIGNATURES = [
     ("update_synthetic", SYNTHETIC_PARAMETERS),
     ("subscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
     ("subscribe_signal", SIGNAL_SUBSCRIPTION_PARAMETERS),
-    ("subscribe_queue_state", STATE_SUBSCRIPTION_PARAMETERS),
-    ("subscribe_socket_state", STATE_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_queue_state", QUEUE_STATE_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_socket_state", SOCKET_STATE_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_book_deltas", BOOK_DELTAS_SUBSCRIPTION_PARAMETERS),
@@ -311,8 +314,8 @@ REGISTRATION_REQUIRED_SIGNATURES = [
     ("subscribe_pool_flash_events", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_signal", SIGNAL_UNSUBSCRIBE_PARAMETERS),
-    ("unsubscribe_queue_state", NO_PARAMETERS),
-    ("unsubscribe_socket_state", NO_PARAMETERS),
+    ("unsubscribe_queue_state", QUEUE_STATE_UNSUBSCRIBE_PARAMETERS),
+    ("unsubscribe_socket_state", SOCKET_STATE_UNSUBSCRIBE_PARAMETERS),
     ("unsubscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_book_deltas", INSTRUMENT_SUBSCRIPTION_PARAMETERS),

@@ -4,6 +4,8 @@ Released on TBD (UTC).
 
 ### Enhancements
 
+- Added `client_id` and `endpoint` filters to actor `subscribe_socket_state`
+- Added a `channel` filter to actor `subscribe_queue_state`
 - Added `HttpClient::get_stream` and `HttpResponseStream` for HTTP bodies consumed without full buffering
 - Added `publish_message(...)`, `subscribe_topic(...)`, and `unsubscribe_topic(...)` for Python `DataActor`, `Strategy`, and `ExecutionAlgorithm`
 - Added `Cache` APIs and Redis/PostgreSQL persistence for `InstrumentClose` data
@@ -57,6 +59,9 @@ Released on TBD (UTC).
 - Renamed Cargo binary targets to kebab-case, including `to_json` to `to-json`, `to_parquet` to `to-parquet`, and `node_wallet` to `node-wallet`; update any `cargo run --bin` invocation to the new name
 - Renamed Rust `Data::Delta`, `Data::Deltas`, and `Data::Depth10` variants to `Data::BookDelta`, `Data::BookDeltas`, and `Data::BookDepth10`; JSON and SBE wire formats are unchanged
 - Renamed `StrategyConfig.external_order_claims` to `external_order_instrument_ids`; use `Strategy.set_external_order_instrument_ids()` after registration to replace active claims
+- Changed actor state subscription signatures; pass filters before `priority`, or use `priority=` in Python
+- Changed Rust state unsubscribe methods to require filters; pass `None` for unfiltered subscriptions
+- Changed `QueueStateChanged` and `SocketStateChanged` topics; use actor filters or switchboard patterns
 - Changed Rust mixed-scale addition/subtraction to panic; use `checked_add`/`checked_sub` for fallible handling
 - Changed Rust `BinaryOption` constructors to require an `event_id` argument; pass `None` when unknown
 - Changed`OrderCanceled::new` to require an optional cancellation reason (#4903), thanks @folknor

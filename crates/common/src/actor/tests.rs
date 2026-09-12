@@ -6139,28 +6139,28 @@ fn test_unsubscribe_signal_panics_when_unregistered() {
 #[should_panic(expected = "Actor has not been registered")]
 fn test_subscribe_queue_state_panics_when_unregistered() {
     let mut actor = TestDataActor::new(DataActorConfig::default());
-    actor.subscribe_queue_state(None);
+    actor.subscribe_queue_state(None, None);
 }
 
 #[rstest]
 #[should_panic(expected = "Actor has not been registered")]
 fn test_unsubscribe_queue_state_panics_when_unregistered() {
     let mut actor = TestDataActor::new(DataActorConfig::default());
-    actor.unsubscribe_queue_state();
+    actor.unsubscribe_queue_state(None);
 }
 
 #[rstest]
 #[should_panic(expected = "Actor has not been registered")]
 fn test_subscribe_socket_state_panics_when_unregistered() {
     let mut actor = TestDataActor::new(DataActorConfig::default());
-    actor.subscribe_socket_state(None);
+    actor.subscribe_socket_state(None, None, None);
 }
 
 #[rstest]
 #[should_panic(expected = "Actor has not been registered")]
 fn test_unsubscribe_socket_state_panics_when_unregistered() {
     let mut actor = TestDataActor::new(DataActorConfig::default());
-    actor.unsubscribe_socket_state();
+    actor.unsubscribe_socket_state(None, None);
 }
 
 #[rstest]
@@ -6276,6 +6276,163 @@ fn test_publish_signal_reaches_subscriber(
 }
 
 #[rstest]
+#[case(None, None, vec![0, 1, 2, 3])]
+#[case(Some("BINANCE"), None, vec![0, 1])]
+#[case(None, Some("market"), vec![0, 2])]
+#[case(Some("BINANCE"), Some("market"), vec![0])]
+#[case(Some("MISSING"), None, vec![])]
+fn test_socket_state_filters_route_matching_events(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    #[case] client_id: Option<&str>,
+    #[case] endpoint: Option<&str>,
+    #[case] expected: Vec<usize>,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    actor.subscribe_socket_state(client_id.map(ClientId::from), endpoint, Some(50));
+    drop(actor);
+
+    let mut events = Vec::new();
+
+    for (client, endpoint) in [
+        ("BINANCE", "market"),
+        ("BINANCE", "orders"),
+        ("BYBIT", "market"),
+        ("BYBIT", "orders"),
+    ] {
+        let mut event = make_socket_state_changed(SocketState::Connected);
+        event.client_id = ClientId::from(client);
+        event.endpoint = Ustr::from(endpoint);
+        msgbus::publish_any(
+            MessagingSwitchboard::socket_state_changed_topic(event.client_id, endpoint),
+            &event,
+        );
+        events.push(event);
+    }
+
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(
+        actor.received_socket_state_changes,
+        expected
+            .into_iter()
+            .map(|i| events[i].clone())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[rstest]
+#[case(None, vec![0, 1, 2, 3, 4])]
+#[case(Some(SystemChannel::ExecCommands), vec![2])]
+#[case(Some(SystemChannel::DataEvents), vec![3])]
+fn test_queue_state_filters_route_matching_events(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    #[case] channel: Option<SystemChannel>,
+    #[case] expected: Vec<usize>,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    actor.subscribe_queue_state(channel, Some(50));
+    drop(actor);
+
+    let mut events = Vec::new();
+
+    for channel in [
+        SystemChannel::TimeEvents,
+        SystemChannel::ExecEvents,
+        SystemChannel::ExecCommands,
+        SystemChannel::DataEvents,
+        SystemChannel::DataCommands,
+    ] {
+        let mut event = make_queue_state_changed(QueueState::Triggered, 71);
+        event.channel = channel;
+        msgbus::publish_any(
+            MessagingSwitchboard::queue_state_changed_topic(channel),
+            &event,
+        );
+        events.push(event);
+    }
+
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(
+        actor.received_queue_state_changes,
+        expected
+            .into_iter()
+            .map(|i| events[i].clone())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[rstest]
+fn test_socket_state_unsubscribe_preserves_other_filters(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    let client_id = ClientId::from("BINANCE");
+    actor.subscribe_socket_state(Some(client_id), Some("market"), None);
+    actor.subscribe_socket_state(Some(client_id), Some("orders"), None);
+    actor.subscribe_socket_state(None, None, None);
+    actor.unsubscribe_socket_state(None, None);
+    actor.unsubscribe_socket_state(Some(client_id), Some("market"));
+    drop(actor);
+
+    let mut event = make_socket_state_changed(SocketState::Connected);
+    event.endpoint = Ustr::from("market");
+    msgbus::publish_any(
+        MessagingSwitchboard::socket_state_changed_topic(client_id, "market"),
+        &event,
+    );
+    event.endpoint = Ustr::from("orders");
+    msgbus::publish_any(
+        MessagingSwitchboard::socket_state_changed_topic(client_id, "orders"),
+        &event,
+    );
+
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(actor.received_socket_state_changes, vec![event]);
+}
+
+#[rstest]
+fn test_queue_state_unsubscribe_preserves_other_filters(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    actor.subscribe_queue_state(Some(SystemChannel::ExecCommands), None);
+    actor.subscribe_queue_state(Some(SystemChannel::DataEvents), None);
+    actor.subscribe_queue_state(None, None);
+    actor.unsubscribe_queue_state(None);
+    actor.unsubscribe_queue_state(Some(SystemChannel::ExecCommands));
+    drop(actor);
+
+    let mut event = make_queue_state_changed(QueueState::Triggered, 71);
+    msgbus::publish_any(
+        MessagingSwitchboard::queue_state_changed_topic(event.channel),
+        &event,
+    );
+    event.channel = SystemChannel::DataEvents;
+    msgbus::publish_any(
+        MessagingSwitchboard::queue_state_changed_topic(event.channel),
+        &event,
+    );
+
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(actor.received_queue_state_changes, vec![event]);
+}
+
+#[rstest]
 fn test_queue_state_changed_reaches_typed_subscriber(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
@@ -6284,11 +6441,14 @@ fn test_queue_state_changed_reaches_typed_subscriber(
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
-    actor.subscribe_queue_state(None);
+    actor.subscribe_queue_state(None, None);
     drop(actor);
 
     let event = make_queue_state_changed(QueueState::Triggered, 71);
-    msgbus::publish_any(MessagingSwitchboard::queue_state_changed_topic(), &event);
+    msgbus::publish_any(
+        MessagingSwitchboard::queue_state_changed_topic(SystemChannel::ExecCommands),
+        &event,
+    );
 
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     assert_eq!(actor.received_queue_state_changes, vec![event]);
@@ -6303,11 +6463,17 @@ fn test_socket_state_changed_reaches_typed_subscriber(
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
-    actor.subscribe_socket_state(None);
+    actor.subscribe_socket_state(None, None, None);
     drop(actor);
 
     let event = make_socket_state_changed(SocketState::Connected);
-    msgbus::publish_any(MessagingSwitchboard::socket_state_changed_topic(), &event);
+    msgbus::publish_any(
+        MessagingSwitchboard::socket_state_changed_topic(
+            ClientId::from("BINANCE"),
+            "binance-futures-market-streams",
+        ),
+        &event,
+    );
 
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     assert_eq!(actor.received_socket_state_changes, vec![event]);
@@ -6347,11 +6513,17 @@ fn test_socket_state_changed_skips_delivery_when_not_running(
 ) {
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
-    actor.subscribe_socket_state(None);
+    actor.subscribe_socket_state(None, None, None);
     drop(actor);
 
     let event = make_socket_state_changed(SocketState::Connected);
-    msgbus::publish_any(MessagingSwitchboard::socket_state_changed_topic(), &event);
+    msgbus::publish_any(
+        MessagingSwitchboard::socket_state_changed_topic(
+            ClientId::from("BINANCE"),
+            "binance-futures-market-streams",
+        ),
+        &event,
+    );
 
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     assert_eq!(actor.received_socket_state_changes, Vec::new());
@@ -6366,22 +6538,28 @@ fn test_unsubscribe_socket_state_stops_delivery(
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
-    actor.subscribe_socket_state(None);
+    actor.subscribe_socket_state(None, None, None);
     drop(actor);
 
     let connected = make_socket_state_changed(SocketState::Connected);
     msgbus::publish_any(
-        MessagingSwitchboard::socket_state_changed_topic(),
+        MessagingSwitchboard::socket_state_changed_topic(
+            ClientId::from("BINANCE"),
+            "binance-futures-market-streams",
+        ),
         &connected,
     );
 
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
-    actor.unsubscribe_socket_state();
+    actor.unsubscribe_socket_state(None, None);
     drop(actor);
 
     let disconnected = make_socket_state_changed(SocketState::Disconnected);
     msgbus::publish_any(
-        MessagingSwitchboard::socket_state_changed_topic(),
+        MessagingSwitchboard::socket_state_changed_topic(
+            ClientId::from("BINANCE"),
+            "binance-futures-market-streams",
+        ),
         &disconnected,
     );
 
@@ -6418,15 +6596,18 @@ fn test_subscribe_socket_state_dispatches_in_priority_order(
 
     let mut high = get_actor_unchecked::<TestDataActor>(&high_id);
     high.start().unwrap();
-    high.subscribe_socket_state(Some(100));
+    high.subscribe_socket_state(None, None, Some(100));
     drop(high);
 
     let mut low = get_actor_unchecked::<TestDataActor>(&low_id);
     low.start().unwrap();
-    low.subscribe_socket_state(Some(10));
+    low.subscribe_socket_state(None, None, Some(10));
     drop(low);
 
-    let topic = MessagingSwitchboard::socket_state_changed_topic();
+    let topic = MessagingSwitchboard::socket_state_changed_topic(
+        ClientId::from("BINANCE"),
+        "binance-futures-market-streams",
+    );
     let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
     assert_eq!(subscriptions.len(), 2);
     assert_eq!(subscriptions[0].priority, 100);
@@ -6450,11 +6631,14 @@ fn test_subscribe_socket_state_resubscribe_does_not_update_priority(
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
-    actor.subscribe_socket_state(Some(10));
-    actor.subscribe_socket_state(Some(100));
+    actor.subscribe_socket_state(None, None, Some(10));
+    actor.subscribe_socket_state(None, None, Some(100));
     drop(actor);
 
-    let topic = MessagingSwitchboard::socket_state_changed_topic();
+    let topic = MessagingSwitchboard::socket_state_changed_topic(
+        ClientId::from("BINANCE"),
+        "binance-futures-market-streams",
+    );
     let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
     assert_eq!(subscriptions.len(), 1);
     assert_eq!(subscriptions[0].priority, 10);
@@ -6468,11 +6652,14 @@ fn test_queue_state_changed_skips_delivery_when_not_running(
 ) {
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
-    actor.subscribe_queue_state(None);
+    actor.subscribe_queue_state(None, None);
     drop(actor);
 
     let event = make_queue_state_changed(QueueState::Triggered, 73);
-    msgbus::publish_any(MessagingSwitchboard::queue_state_changed_topic(), &event);
+    msgbus::publish_any(
+        MessagingSwitchboard::queue_state_changed_topic(SystemChannel::ExecCommands),
+        &event,
+    );
 
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     assert_eq!(actor.received_queue_state_changes, Vec::new());
@@ -6487,21 +6674,24 @@ fn test_unsubscribe_queue_state_stops_delivery(
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
-    actor.subscribe_queue_state(None);
+    actor.subscribe_queue_state(None, None);
     drop(actor);
 
     let triggered = make_queue_state_changed(QueueState::Triggered, 79);
     msgbus::publish_any(
-        MessagingSwitchboard::queue_state_changed_topic(),
+        MessagingSwitchboard::queue_state_changed_topic(SystemChannel::ExecCommands),
         &triggered,
     );
 
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
-    actor.unsubscribe_queue_state();
+    actor.unsubscribe_queue_state(None);
     drop(actor);
 
     let cleared = make_queue_state_changed(QueueState::Cleared, 83);
-    msgbus::publish_any(MessagingSwitchboard::queue_state_changed_topic(), &cleared);
+    msgbus::publish_any(
+        MessagingSwitchboard::queue_state_changed_topic(SystemChannel::ExecCommands),
+        &cleared,
+    );
 
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     assert_eq!(actor.received_queue_state_changes, vec![triggered]);
@@ -6536,15 +6726,15 @@ fn test_subscribe_queue_state_dispatches_in_priority_order(
 
     let mut high = get_actor_unchecked::<TestDataActor>(&high_id);
     high.start().unwrap();
-    high.subscribe_queue_state(Some(100));
+    high.subscribe_queue_state(None, Some(100));
     drop(high);
 
     let mut low = get_actor_unchecked::<TestDataActor>(&low_id);
     low.start().unwrap();
-    low.subscribe_queue_state(Some(10));
+    low.subscribe_queue_state(None, Some(10));
     drop(low);
 
-    let topic = MessagingSwitchboard::queue_state_changed_topic();
+    let topic = MessagingSwitchboard::queue_state_changed_topic(SystemChannel::ExecCommands);
     let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
     assert_eq!(subscriptions.len(), 2);
     assert_eq!(subscriptions[0].priority, 100);
@@ -6568,11 +6758,11 @@ fn test_subscribe_queue_state_resubscribe_does_not_update_priority(
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
-    actor.subscribe_queue_state(Some(10));
-    actor.subscribe_queue_state(Some(100));
+    actor.subscribe_queue_state(None, Some(10));
+    actor.subscribe_queue_state(None, Some(100));
     drop(actor);
 
-    let topic = MessagingSwitchboard::queue_state_changed_topic();
+    let topic = MessagingSwitchboard::queue_state_changed_topic(SystemChannel::ExecCommands);
     let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
     assert_eq!(subscriptions.len(), 1);
     assert_eq!(subscriptions[0].priority, 10);

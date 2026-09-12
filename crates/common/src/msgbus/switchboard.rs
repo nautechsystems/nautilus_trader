@@ -27,16 +27,18 @@
 //! re-entrancy implications of direct dispatch. The risk and execution queued endpoints can fall
 //! back to direct dispatch when no trading command sender is installed.
 
-use std::{num::NonZeroUsize, sync::OnceLock};
+use std::{fmt::Write, num::NonZeroUsize, sync::OnceLock};
 
 use ahash::AHashMap;
 use nautilus_model::{
     data::{BarType, DataType},
-    identifiers::{ClientOrderId, InstrumentId, OptionSeriesId, PositionId, StrategyId, Venue},
+    identifiers::{
+        ClientId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId, StrategyId, Venue,
+    },
 };
 
 use super::mstr::{Endpoint, MStr, Pattern, Topic};
-use crate::msgbus::get_message_bus;
+use crate::{msgbus::get_message_bus, runner::SystemChannel};
 
 pub const CLOSE_TOPIC: &str = "CLOSE";
 pub const TIME_EVENT_TOPIC: &str = "clock.time_event";
@@ -59,8 +61,6 @@ static RISK_EVENTS_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
 static ORDER_EMULATOR_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static PORTFOLIO_ACCOUNT_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static PORTFOLIO_ORDER_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
-static SYSTEM_QUEUE_STATE_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
-static SYSTEM_SOCKET_STATE_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
 static SYSTEM_SHUTDOWN_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
 static RECONCILIATION_RAW_ORDER_REPORT_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
 static RECONCILIATION_RAW_FILL_REPORT_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
@@ -240,18 +240,40 @@ macro_rules! define_switchboard {
                 *PORTFOLIO_ORDER_ENDPOINT.get_or_init(|| "Portfolio.update_order".into())
             }
 
-            /// Pub/sub topic carrying `QueueStateChanged` events.
-            #[inline]
+            /// Pub/sub topic carrying queue state changes for one runner channel.
             #[must_use]
-            pub fn queue_state_changed_topic() -> MStr<Topic> {
-                *SYSTEM_QUEUE_STATE_TOPIC.get_or_init(|| "events.system.QueueStateChanged".into())
+            pub fn queue_state_changed_topic(channel: SystemChannel) -> MStr<Topic> {
+                Self::queue_state_changed_pattern(Some(channel)).as_ref().into()
             }
 
-            /// Pub/sub topic carrying `SocketStateChanged` events.
-            #[inline]
+            /// Subscription pattern for queue state changes. `None` matches every channel.
             #[must_use]
-            pub fn socket_state_changed_topic() -> MStr<Topic> {
-                *SYSTEM_SOCKET_STATE_TOPIC.get_or_init(|| "events.system.SocketStateChanged".into())
+            pub fn queue_state_changed_pattern(channel: Option<SystemChannel>) -> MStr<Pattern> {
+                let channel = channel.map_or_else(|| "*".to_string(), |value| format!("{value:?}"));
+                format!("events.system.QueueStateChanged.{channel}").into()
+            }
+
+            /// Pub/sub topic carrying socket state changes for one client endpoint.
+            #[must_use]
+            pub fn socket_state_changed_topic(client_id: ClientId, endpoint: &str) -> MStr<Topic> {
+                Self::socket_state_changed_pattern(Some(client_id), Some(endpoint)).as_ref().into()
+            }
+
+            /// Subscription pattern for socket state changes.
+            ///
+            /// Each `None` matches every value of that field. Supplied values match literally;
+            /// topic components percent-encode bytes other than ASCII letters, digits, `-`, and `_`.
+            #[must_use]
+            pub fn socket_state_changed_pattern(
+                client_id: Option<ClientId>,
+                endpoint: Option<&str>,
+            ) -> MStr<Pattern> {
+                let client_id = client_id.map_or_else(
+                    || "*".to_string(),
+                    |value| state_topic_component(value.as_str()),
+                );
+                let endpoint = endpoint.map_or_else(|| "*".to_string(), state_topic_component);
+                format!("events.system.SocketStateChanged.{client_id}.{endpoint}").into()
             }
 
             /// Pub/sub topic carrying `ShutdownSystem` commands published by
@@ -757,6 +779,19 @@ pub fn get_signal_pattern(name: &str) -> MStr<Pattern> {
         .signal_pattern(name)
 }
 
+fn state_topic_component(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_') {
+            encoded.push(char::from(byte));
+        } else {
+            write!(encoded, "%{byte:02X}").expect("String formatting cannot fail");
+        }
+    }
+
+    encoded
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
@@ -1062,18 +1097,74 @@ mod tests {
     }
 
     #[rstest]
+    #[case(
+        "CLIENT.A",
+        "orders",
+        "events.system.SocketStateChanged.CLIENT%2EA.orders"
+    )]
+    #[case(
+        "CLIENT*?",
+        "public.market",
+        "events.system.SocketStateChanged.CLIENT%2A%3F.public%2Emarket"
+    )]
+    #[case(
+        "CLIENT%2E",
+        "market",
+        "events.system.SocketStateChanged.CLIENT%252E.market"
+    )]
+    fn test_socket_state_topic_encodes_literal_components(
+        #[case] client_id: &str,
+        #[case] endpoint: &str,
+        #[case] expected: &str,
+    ) {
+        let topic =
+            MessagingSwitchboard::socket_state_changed_topic(ClientId::from(client_id), endpoint);
+        assert_eq!(topic.as_ref(), expected);
+    }
+
+    #[rstest]
+    #[case(Some("CLIENT"), None, "CLIENT.A", "market", false)]
+    #[case(None, Some("market"), "CLIENT", "public.market", false)]
+    #[case(Some("CLIENT*"), None, "CLIENT1", "market", false)]
+    #[case(Some("CLIENT?"), None, "CLIENT1", "market", false)]
+    #[case(
+        Some("CLIENT.A"),
+        Some("public.market"),
+        "CLIENT.A",
+        "public.market",
+        true
+    )]
+    #[case(None, Some("public.market"), "CLIENT.A", "public.market", true)]
+    fn test_socket_state_pattern_matches_literal_fields(
+        #[case] client_filter: Option<&str>,
+        #[case] endpoint_filter: Option<&str>,
+        #[case] client_id: &str,
+        #[case] endpoint: &str,
+        #[case] expected: bool,
+    ) {
+        let topic =
+            MessagingSwitchboard::socket_state_changed_topic(ClientId::from(client_id), endpoint);
+        let pattern = MessagingSwitchboard::socket_state_changed_pattern(
+            client_filter.map(ClientId::from),
+            endpoint_filter,
+        );
+        assert_eq!(is_matching_backtracking(topic, pattern), expected);
+    }
+
+    #[rstest]
     fn test_queue_state_changed_topic_identity() {
         assert_eq!(
-            MessagingSwitchboard::queue_state_changed_topic().as_ref(),
-            "events.system.QueueStateChanged"
+            MessagingSwitchboard::queue_state_changed_topic(SystemChannel::ExecCommands).as_ref(),
+            "events.system.QueueStateChanged.ExecCommands"
         );
     }
 
     #[rstest]
     fn test_socket_state_changed_topic_identity() {
         assert_eq!(
-            MessagingSwitchboard::socket_state_changed_topic().as_ref(),
-            "events.system.SocketStateChanged"
+            MessagingSwitchboard::socket_state_changed_topic(ClientId::from("BINANCE"), "market")
+                .as_ref(),
+            "events.system.SocketStateChanged.BINANCE.market"
         );
     }
 

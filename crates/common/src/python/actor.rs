@@ -83,6 +83,7 @@ use crate::{
         logging::PyLogger,
         wrappers::{get_python_message_bus, retain_python_wrapper},
     },
+    runner::SystemChannel,
     signal::Signal,
     timer::{TimeEvent, TimeEventCallback},
 };
@@ -1675,18 +1676,27 @@ impl PyDataActor {
     }
 
     #[pyo3(name = "subscribe_queue_state")]
-    #[pyo3(signature = (priority=None))]
-    fn py_subscribe_queue_state(&mut self, priority: Option<u32>) -> PyResult<()> {
+    #[pyo3(signature = (channel=None, priority=None))]
+    fn py_subscribe_queue_state(
+        &mut self,
+        channel: Option<SystemChannel>,
+        priority: Option<u32>,
+    ) -> PyResult<()> {
         self.ensure_registered()?;
-        DataActor::subscribe_queue_state(self.inner_mut(), priority);
+        DataActor::subscribe_queue_state(self.inner_mut(), channel, priority);
         Ok(())
     }
 
     #[pyo3(name = "subscribe_socket_state")]
-    #[pyo3(signature = (priority=None))]
-    fn py_subscribe_socket_state(&mut self, priority: Option<u32>) -> PyResult<()> {
+    #[pyo3(signature = (client_id=None, endpoint=None, priority=None))]
+    fn py_subscribe_socket_state(
+        &mut self,
+        client_id: Option<ClientId>,
+        endpoint: Option<&str>,
+        priority: Option<u32>,
+    ) -> PyResult<()> {
         self.ensure_registered()?;
-        DataActor::subscribe_socket_state(self.inner_mut(), priority);
+        DataActor::subscribe_socket_state(self.inner_mut(), client_id, endpoint, priority);
         Ok(())
     }
 
@@ -1986,16 +1996,22 @@ impl PyDataActor {
     }
 
     #[pyo3(name = "unsubscribe_queue_state")]
-    fn py_unsubscribe_queue_state(&mut self) -> PyResult<()> {
+    #[pyo3(signature = (channel=None))]
+    fn py_unsubscribe_queue_state(&mut self, channel: Option<SystemChannel>) -> PyResult<()> {
         self.ensure_registered()?;
-        DataActor::unsubscribe_queue_state(self.inner_mut());
+        DataActor::unsubscribe_queue_state(self.inner_mut(), channel);
         Ok(())
     }
 
     #[pyo3(name = "unsubscribe_socket_state")]
-    fn py_unsubscribe_socket_state(&mut self) -> PyResult<()> {
+    #[pyo3(signature = (client_id=None, endpoint=None))]
+    fn py_unsubscribe_socket_state(
+        &mut self,
+        client_id: Option<ClientId>,
+        endpoint: Option<&str>,
+    ) -> PyResult<()> {
         self.ensure_registered()?;
-        DataActor::unsubscribe_socket_state(self.inner_mut());
+        DataActor::unsubscribe_socket_state(self.inner_mut(), client_id, endpoint);
         Ok(())
     }
 
@@ -3631,10 +3647,13 @@ class PreparedActor(DataActor):
     }
 
     #[rstest]
+    #[case(None)]
+    #[case(Some(SystemChannel::ExecCommands))]
     fn test_queue_state_changed_subscription_dispatches_and_unsubscribes(
         clock: Rc<RefCell<TestClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
+        #[case] channel: Option<SystemChannel>,
     ) {
         *get_message_bus().borrow_mut() = MessageBus::default();
 
@@ -3648,12 +3667,24 @@ class PreparedActor(DataActor):
             rust_actor.register(trader_id, clock, cache).unwrap();
             rust_actor.register_in_global_registries().unwrap();
             rust_actor.py_start().unwrap();
-            rust_actor.py_subscribe_queue_state(Some(50)).unwrap();
+            rust_actor
+                .py_subscribe_queue_state(channel, Some(50))
+                .unwrap();
 
-            let topic = MessagingSwitchboard::queue_state_changed_topic();
+            let topic =
+                MessagingSwitchboard::queue_state_changed_topic(SystemChannel::ExecCommands);
             let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
             assert_eq!(subscriptions.len(), 1);
             assert_eq!(subscriptions[0].priority, 50);
+            let unrelated =
+                MessagingSwitchboard::queue_state_changed_topic(SystemChannel::DataEvents);
+            assert_eq!(
+                get_message_bus()
+                    .borrow_mut()
+                    .matching_subscriptions(unrelated)
+                    .len(),
+                usize::from(channel.is_none())
+            );
 
             let triggered = sample_queue_state_changed(QueueState::Triggered);
             msgbus::publish_any(topic, &triggered);
@@ -3665,7 +3696,7 @@ class PreparedActor(DataActor):
                 .unwrap();
             assert_eq!(received, triggered);
 
-            rust_actor.py_unsubscribe_queue_state().unwrap();
+            rust_actor.py_unsubscribe_queue_state(channel).unwrap();
             let cleared = sample_queue_state_changed(QueueState::Cleared);
             msgbus::publish_any(topic, &cleared);
 
@@ -3674,10 +3705,19 @@ class PreparedActor(DataActor):
     }
 
     #[rstest]
+    #[case(None, None)]
+    #[case(Some(ClientId::from("BINANCE")), None)]
+    #[case(None, Some("binance-futures-market-streams"))]
+    #[case(
+        Some(ClientId::from("BINANCE")),
+        Some("binance-futures-market-streams")
+    )]
     fn test_socket_state_changed_subscription_dispatches_and_unsubscribes(
         clock: Rc<RefCell<TestClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
+        #[case] client_id: Option<ClientId>,
+        #[case] endpoint: Option<&str>,
     ) {
         *get_message_bus().borrow_mut() = MessageBus::default();
 
@@ -3691,12 +3731,26 @@ class PreparedActor(DataActor):
             rust_actor.register(trader_id, clock, cache).unwrap();
             rust_actor.register_in_global_registries().unwrap();
             rust_actor.py_start().unwrap();
-            rust_actor.py_subscribe_socket_state(Some(50)).unwrap();
+            rust_actor
+                .py_subscribe_socket_state(client_id, endpoint, Some(50))
+                .unwrap();
 
-            let topic = MessagingSwitchboard::socket_state_changed_topic();
+            let topic = MessagingSwitchboard::socket_state_changed_topic(
+                ClientId::from("BINANCE"),
+                "binance-futures-market-streams",
+            );
             let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
             assert_eq!(subscriptions.len(), 1);
             assert_eq!(subscriptions[0].priority, 50);
+            let unrelated =
+                MessagingSwitchboard::socket_state_changed_topic(ClientId::from("BYBIT"), "orders");
+            assert_eq!(
+                get_message_bus()
+                    .borrow_mut()
+                    .matching_subscriptions(unrelated)
+                    .len(),
+                usize::from(client_id.is_none() && endpoint.is_none())
+            );
 
             let connected = sample_socket_state_changed(SocketState::Connected);
             msgbus::publish_any(topic, &connected);
@@ -3708,7 +3762,9 @@ class PreparedActor(DataActor):
                 .unwrap();
             assert_eq!(received, connected);
 
-            rust_actor.py_unsubscribe_socket_state().unwrap();
+            rust_actor
+                .py_unsubscribe_socket_state(client_id, endpoint)
+                .unwrap();
             let disconnected = sample_socket_state_changed(SocketState::Disconnected);
             msgbus::publish_any(topic, &disconnected);
 

@@ -96,6 +96,7 @@ use crate::{
             get_option_greeks_topic, get_quotes_topic, get_signal_pattern, get_trades_topic,
         },
     },
+    runner::SystemChannel,
     signal::Signal,
     timer::{TimeEvent, TimeEventCallback},
 };
@@ -1478,10 +1479,12 @@ pub trait DataActor {
 
     /// Subscribes to [`QueueStateChanged`] events.
     ///
+    /// `channel=None` matches all runner channels.
+    ///
     /// `priority` controls dispatch order when multiple actors subscribe to the event. Higher
     /// values receive the event first. Re-subscribing does not update an existing priority; call
     /// [`unsubscribe_queue_state`](Self::unsubscribe_queue_state) first.
-    fn subscribe_queue_state(&mut self, priority: Option<u32>)
+    fn subscribe_queue_state(&mut self, channel: Option<SystemChannel>, priority: Option<u32>)
     where
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
@@ -1495,16 +1498,23 @@ pub trait DataActor {
             }
         });
 
-        DataActorCore::subscribe_queue_state(self.core_mut(), handler, priority);
+        DataActorCore::subscribe_queue_state(self.core_mut(), handler, channel, priority);
     }
 
     /// Subscribes to [`SocketStateChanged`] events.
     ///
+    /// `client_id=None` and `endpoint=None` each match all values of that field.
+    /// Supplied filters match literal values, including dots and wildcard characters.
+    ///
     /// `priority` controls dispatch order when multiple actors subscribe to the event. Higher
     /// values receive the event first. Re-subscribing does not update an existing priority; call
     /// [`unsubscribe_socket_state`](Self::unsubscribe_socket_state) first.
-    fn subscribe_socket_state(&mut self, priority: Option<u32>)
-    where
+    fn subscribe_socket_state(
+        &mut self,
+        client_id: Option<ClientId>,
+        endpoint: Option<&str>,
+        priority: Option<u32>,
+    ) where
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
@@ -1517,7 +1527,13 @@ pub trait DataActor {
             }
         });
 
-        DataActorCore::subscribe_socket_state(self.core_mut(), handler, priority);
+        DataActorCore::subscribe_socket_state(
+            self.core_mut(),
+            handler,
+            client_id,
+            endpoint,
+            priority,
+        );
     }
 
     /// Subscribe to streaming [`QuoteTick`] data for the `instrument_id`.
@@ -2226,22 +2242,26 @@ pub trait DataActor {
         DataActorCore::unsubscribe_signal(self.core_mut(), name);
     }
 
-    /// Unsubscribes from [`QueueStateChanged`] events.
-    fn unsubscribe_queue_state(&mut self)
+    /// Unsubscribes from [`QueueStateChanged`] events for the same subscription filters.
+    ///
+    /// Omitted filters identify the all-values subscription, not every filtered subscription.
+    fn unsubscribe_queue_state(&mut self, channel: Option<SystemChannel>)
     where
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_queue_state(self.core_mut());
+        DataActorCore::unsubscribe_queue_state(self.core_mut(), channel);
     }
 
-    /// Unsubscribes from [`SocketStateChanged`] events.
-    fn unsubscribe_socket_state(&mut self)
+    /// Unsubscribes from [`SocketStateChanged`] events for the same subscription filters.
+    ///
+    /// Omitted filters identify the all-values subscription, not every filtered subscription.
+    fn unsubscribe_socket_state(&mut self, client_id: Option<ClientId>, endpoint: Option<&str>)
     where
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_socket_state(self.core_mut());
+        DataActorCore::unsubscribe_socket_state(self.core_mut(), client_id, endpoint);
     }
 
     /// Unsubscribe from streaming [`InstrumentAny`] data for the `venue`.
@@ -3129,7 +3149,7 @@ impl DataActorCore {
     //// Logs a warning if the actor is already subscribed to the topic.
     pub(crate) fn add_subscription_any(
         &mut self,
-        topic: MStr<Topic>,
+        topic: impl Into<MStr<Pattern>>,
         handler: ShareableMessageHandler,
         priority: Option<u32>,
         command: Option<DataCommand>,
@@ -3142,7 +3162,7 @@ impl DataActorCore {
             }
 
             log::warn!(
-                "Actor {} attempted duplicate subscription to topic '{topic}'",
+                "Actor {} attempted duplicate subscription to topic '{pattern}'",
                 self.actor_id,
             );
             return false;
@@ -3162,14 +3182,17 @@ impl DataActorCore {
     /// Removes a subscription handler for the `topic` if present.
     ///
     /// Logs a warning if the actor is not currently subscribed to the topic.
-    pub(crate) fn remove_subscription_any(&mut self, topic: MStr<Topic>) -> Option<DataCommand> {
+    pub(crate) fn remove_subscription_any(
+        &mut self,
+        topic: impl Into<MStr<Pattern>>,
+    ) -> Option<DataCommand> {
         let pattern: MStr<Pattern> = topic.into();
         if let Some(subscription) = self.topic_handlers.remove(&pattern) {
             msgbus::unsubscribe_any(pattern, &subscription.handler);
             subscription.command
         } else {
             log::warn!(
-                "Actor {} attempted to unsubscribe from topic '{topic}' when not subscribed",
+                "Actor {} attempted to unsubscribe from topic '{pattern}' when not subscribed",
                 self.actor_id,
             );
             None
@@ -4436,11 +4459,12 @@ impl DataActorCore {
     pub fn subscribe_queue_state(
         &mut self,
         handler: ShareableMessageHandler,
+        channel: Option<SystemChannel>,
         priority: Option<u32>,
     ) {
         self.check_registered();
 
-        let topic = MessagingSwitchboard::queue_state_changed_topic();
+        let topic = MessagingSwitchboard::queue_state_changed_pattern(channel);
         self.add_subscription_any(topic, handler, priority, None);
     }
 
@@ -4452,11 +4476,13 @@ impl DataActorCore {
     pub fn subscribe_socket_state(
         &mut self,
         handler: ShareableMessageHandler,
+        client_id: Option<ClientId>,
+        endpoint: Option<&str>,
         priority: Option<u32>,
     ) {
         self.check_registered();
 
-        let topic = MessagingSwitchboard::socket_state_changed_topic();
+        let topic = MessagingSwitchboard::socket_state_changed_pattern(client_id, endpoint);
         self.add_subscription_any(topic, handler, priority, None);
     }
 
@@ -4947,10 +4973,10 @@ impl DataActorCore {
     /// # Panics
     ///
     /// Panics if the actor is not registered with a trader.
-    pub fn unsubscribe_queue_state(&mut self) {
+    pub fn unsubscribe_queue_state(&mut self, channel: Option<SystemChannel>) {
         self.check_registered();
 
-        let topic = MessagingSwitchboard::queue_state_changed_topic();
+        let topic = MessagingSwitchboard::queue_state_changed_pattern(channel);
         let _ = self.remove_subscription_any(topic);
     }
 
@@ -4959,10 +4985,14 @@ impl DataActorCore {
     /// # Panics
     ///
     /// Panics if the actor is not registered with a trader.
-    pub fn unsubscribe_socket_state(&mut self) {
+    pub fn unsubscribe_socket_state(
+        &mut self,
+        client_id: Option<ClientId>,
+        endpoint: Option<&str>,
+    ) {
         self.check_registered();
 
-        let topic = MessagingSwitchboard::socket_state_changed_topic();
+        let topic = MessagingSwitchboard::socket_state_changed_pattern(client_id, endpoint);
         let _ = self.remove_subscription_any(topic);
     }
 

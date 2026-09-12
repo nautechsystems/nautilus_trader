@@ -113,17 +113,23 @@ Both entry points run the same lifecycle, so a hosted node performs the same sta
 maintenance, reconciliation, and shutdown as an owned one. The mode decides only who owns signal
 handling: a hosted node installs no handlers, leaving `SIGINT` and `SIGTERM` to the host.
 
-`run_async()` returns a coroutine and lends the node to it for the run's duration. Capture `cache`,
-`portfolio`, and `handle()` before starting, because each stays usable while the node runs, whereas
-reading state through the node itself raises until the run returns it. `handle()` is the exception
-and works throughout, since it is how a host stops the node. `is_running` also answers throughout,
-because it reads the same handle. Calling `dispose()` during the run returns without doing anything;
-it does not defer disposal. Call it after the run task finishes to release the node's resources.
+### Access and shutdown
+
+`run_async()` returns a coroutine and lends the node to it for the run's duration:
+
+- Capture `cache`, `portfolio`, and `handle()` **before starting**. Each stays usable while the node
+  runs, whereas reading state through the node itself raises until the run returns it.
+- `handle()` works throughout, since it is how a host stops the node. `is_running` also answers
+  throughout because it reads the same handle.
+- Call `dispose()` **after the run task finishes** to release the node's resources. Calling it during
+  the run returns without doing anything; it does not defer disposal.
 
 `LiveNodeHandle` is safe to call from any thread, including a signal handler. `stop()` requests a
 graceful shutdown and returns immediately, so the awaiting task resolves only once shutdown
 finishes. Cancelling that task requests the same shutdown, waits for it, then re-raises the
 cancellation, which keeps `asyncio.timeout` and task groups behaving as their callers expect.
+
+### Host integration and limits
 
 Compatibility is tested with the default asyncio loop and uvloop. An ASGI lifespan managed by
 Uvicorn can apply the same ownership pattern without transferring signal handling to the node.
@@ -234,20 +240,33 @@ tokio::spawn(async move {
 node.run().await?;
 ```
 
+### Snapshot scope and interpretation
+
 The snapshot covers `LiveNode::run` channel dispatch after startup, including residual dispatch
-during the shutdown grace period. `dispatch_busy_ns` covers the five dispatch branches;
-`maintenance_busy_ns` and `external_msgbus_busy_ns` cover non-dispatch loop work. The snapshot does
-not include startup buffering, startup flushes, or the final post-loop drain. Queue depths are point
-samples from the maintenance tick while the node is running, and can be stale during shutdown grace.
-Snapshots are lock-free and may not be a consistent cross-field view; derive rates from successive
-snapshots with saturating deltas. Counters reset when `LiveNode::run` enters steady state.
+during the shutdown grace period. It does **not** include startup buffering, startup flushes, or the
+final post-loop drain.
+
+- `dispatch_busy_ns` covers the five dispatch branches. `maintenance_busy_ns` and
+  `external_msgbus_busy_ns` cover non-dispatch loop work.
+- Queue depths are point samples from the maintenance tick while the node is running, and can be
+  stale during shutdown grace.
+- Snapshots are lock-free and may not be a consistent cross-field view. Derive rates from successive
+  snapshots with **saturating deltas**.
+- Counters reset when `LiveNode::run` enters steady state.
 
 ## Dispatch priority and overload behavior
 
 The live runner's seven internal message channels are separate and unbounded. When several message
-channels are ready together, the runner polls time and system work first, then execution events,
-execution commands, external message-bus ingress, data events, and data commands. Events precede
-commands within the execution and data channel pairs.
+channels are ready together, the runner polls in this order:
+
+1. Time and system work.
+1. Execution events.
+1. Execution commands.
+1. External message-bus ingress.
+1. Data events.
+1. Data commands.
+
+Events precede commands within the execution and data channel pairs.
 
 This polling order keeps a market-data backlog from taking priority over ready execution traffic.
 It does not define one global FIFO order across channels, adapters, or venues. Each selected branch
@@ -255,10 +274,12 @@ runs to completion before the runner polls again, so a slow handler delays every
 yields to the host event loop periodically, but yielding does not change channel priority or shorten
 a slow handler.
 
+:::warning[Unbounded queues]
 Runner channels do not apply producer backpressure, coalesce messages, shed market data, or impose a
 maximum queue depth. Sustained input above dispatch capacity therefore increases queue depth,
 latency, and memory use. The runner does not automatically throttle a feed, halt trading, or shut
 down when a threshold is crossed.
+:::
 
 Use runner metrics and queue-state events to detect this pressure. The thresholds are operational
 signals, not service-time guarantees. The application must decide how to alert, reduce input, halt
@@ -267,7 +288,7 @@ new exposure, or stop the node when pressure persists.
 ## Queue pressure monitoring
 
 `LiveNode` converts runner queue samples into typed state transitions when
-`LiveNodeConfig.queue_monitor` is set. The monitor is disabled by default and publishes no
+`LiveNodeConfig.queue_monitor` is set. The monitor is **disabled by default** and publishes no
 queue-state events while the field is unset.
 
 ### Configure thresholds
@@ -312,7 +333,7 @@ The four values apply to each monitored runner channel:
 - `data_events`
 - `data_commands`
 
-Each clear threshold must be lower than its trigger threshold. Configuration validation rejects
+Each clear threshold must be **lower than its trigger threshold**. Configuration validation rejects
 equal or inverted thresholds.
 
 ### State transitions
@@ -326,18 +347,22 @@ time accumulated since the previous metrics snapshot.
 | `Backlogged` | Point-in-time queue depth.                            | `queue_depth >= queue_depth_trigger`           | `queue_depth <= queue_depth_clear`           |
 | `Slow`       | Per-channel mean dispatch time for the sample window. | `mean_dispatch_ns >= mean_dispatch_ns_trigger` | `mean_dispatch_ns <= mean_dispatch_ns_clear` |
 
-Each channel tracks `Backlogged` and `Slow` independently. A value between the clear and trigger
-thresholds retains the prior state, so it does not publish another event. If both conditions cross
-on one tick, the node publishes two events, and each condition clears independently. A sample window
-with no dispatches does not evaluate `Slow`; the condition retains its prior state until a window
-contains a dispatch.
+Each channel tracks `Backlogged` and `Slow` independently:
+
+- A value between the clear and trigger thresholds retains the prior state, so it does not publish
+  another event.
+- If both conditions cross on one tick, the node publishes two events. Each condition clears
+  independently.
+- A sample window with no dispatches does not evaluate `Slow`. The condition retains its prior state
+  until a window contains a dispatch.
 
 ### Typed delivery
 
 Each transition publishes a fresh `QueueStateChanged` value on
-`events.system.QueueStateChanged`. The event identifies the configured trader, runner channel,
-condition, and transition state. It also records the queue depth and mean dispatch time at the
-crossing, a fresh event ID, and event timestamps.
+`events.system.QueueStateChanged.<channel>`, where `<channel>` is the Rust variant name, such as
+`DataEvents` for Python `SystemChannel.DATA_EVENTS`. The event identifies the configured trader,
+runner channel, condition, and transition state. It also records the queue depth and mean dispatch
+time at the crossing, a fresh event ID, and event timestamps.
 
 Actors subscribe with `subscribe_queue_state(...)` and receive events through
 `on_queue_state(...)`. The Python API exposes `SystemChannel`, `QueueCondition`, `QueueState`, and
@@ -350,38 +375,57 @@ bus, and the event has no wire representation for external message-bus streaming
 ### Publication and routing
 
 Actors can observe transport availability for adapters that opt into socket state reporting.
-`LiveNode` publishes `SocketStateChanged` on `events.system.SocketStateChanged` with the trader ID,
-client ID, optional venue, stable endpoint label, state, fresh event ID, and event timestamps. The
-endpoint label identifies one logical adapter transport without exposing its URL. `LiveNode` sets
+`LiveNode` publishes `SocketStateChanged` on
+`events.system.SocketStateChanged.<client_id>.<endpoint>` with the trader ID, client ID, optional venue,
+stable endpoint label, state, fresh event ID, and event timestamps. The endpoint label identifies one
+logical adapter transport without exposing its URL. `LiveNode` sets
 both timestamps from the kernel clock when it handles the transport's neutral state notification.
 Adapters send the notification through the runner's system-event channel, separately from market
 data. The internal channel is not part of queue-pressure monitoring.
 
+The client ID and endpoint components percent-encode bytes other than ASCII letters, digits, `-`,
+and `_`, so dots and wildcard characters in labels cannot change topic matching. Use
+`subscribe_socket_state` filters to select a client, endpoint, or both without constructing topic names.
+
 ### State semantics
 
-`Connected` means the TCP or WebSocket transport is available. It does not mean that authentication,
-subscription replay, or adapter recovery has completed. `Disconnected` means an active transport was
-lost. Failed connection and retry attempts do not publish events, and deliberate shutdown does not
-publish a disconnect event. Reconnect exhaustion also adds no event after the transport loss was
-reported.
+| Transport event or condition        | Publication                                            |
+| ----------------------------------- | ------------------------------------------------------ |
+| TCP or WebSocket becomes available. | `Connected`.                                           |
+| Active transport is lost.           | `Disconnected`.                                        |
+| Connection or retry attempt fails.  | No event.                                              |
+| Deliberate shutdown.                | No disconnect event.                                   |
+| Reconnect attempts are exhausted.   | No additional event after the reported transport loss. |
 
+`Connected` reports **transport availability**. It does not mean that authentication, subscription
+replay, or adapter recovery has completed.
+
+:::warning
 Socket state is operational evidence, not an execution-command outcome. A disconnect by itself does
 not reject, cancel, or resolve an in-flight command; stream updates, queries, or reconciliation
 provide that evidence under the
 [command outcome policy](execution/policies.md#command-outcomes).
+:::
 
 ### Dead-peer detection
 
 A connection can stop delivering without closing: a NAT or load balancer drops it with no `FIN` and
-no `RST`, so writes keep succeeding into the send buffer and nothing surfaces the loss. Any transport
-configured with a heartbeat therefore reconnects when no inbound frame of any kind arrives within
-three heartbeat intervals. Sending a heartbeat establishes that the peer answers it, so the interval
+no `RST`, so writes keep succeeding into the send buffer and nothing surfaces the loss.
+
+#### Heartbeat timeout
+
+Any transport configured with a heartbeat reconnects when no inbound frame of any kind arrives within
+**three heartbeat intervals**. Sending a heartbeat establishes that the peer answers it, so the interval
 alone is enough to say when silence means the connection is gone. A transport with no heartbeat gets
 no window, because nothing would guarantee the inbound frames needed to keep one open.
 
 That window counts frames rather than data, so a keepalive reply refreshes it and a quiet market
-does not trip it. An adapter that also needs to detect a feed which stopped flowing while the
-transport stays healthy sets a separate idle timeout, which only Text and Binary frames refresh.
+does not trip it.
+
+#### Feed idle timeout
+
+An adapter that also needs to detect a feed which stopped flowing while the transport stays healthy
+sets a separate idle timeout, which only Text and Binary frames refresh.
 That second window suits a venue which pushes data on a known cadence. Where the venue answers the
 keepalive with a text payload, its reply refreshes the idle timeout exactly like real data does, so
 the window means something only when it sits below the heartbeat interval.
@@ -404,12 +448,18 @@ state event. The runner routes the typed command through the kernel and the engi
 registered endpoint. The engine invokes only that transport's reconnect handle. It does not call
 the containing `DataClient` or `ExecutionClient` disconnect and connect lifecycle.
 
-The API is fire-and-observe. A successful return means the command passed local validation and was
-queued. It does not acknowledge kernel acceptance or completed recovery. An accepted request emits
-`SocketStateChanged` with `SocketState.DISCONNECTED` for the selected endpoint as it enters reconnect
-mode. A later `SocketState.CONNECTED` event reports transport recovery. The transport's normal
-reconnect controller preserves its authentication, subscription replay, and adapter recovery
-behavior.
+:::note
+The API is **fire-and-observe**. A successful return means the command passed local validation and was
+queued. It does not acknowledge kernel acceptance or completed recovery.
+:::
+
+An accepted request emits `SocketStateChanged` for the selected endpoint:
+
+1. `SocketState.DISCONNECTED` as the transport enters reconnect mode.
+1. `SocketState.CONNECTED` after transport recovery.
+
+The transport's normal reconnect controller preserves its authentication, subscription replay, and
+adapter recovery behavior.
 
 The kernel logs unknown clients, unsupported clients, unknown or ambiguous endpoints, duplicate
 requests, disconnecting transports, and closed transports. These rejections emit no socket state
@@ -433,12 +483,17 @@ from nautilus_trader.config import LiveNodeConfig
 config = LiveNodeConfig(shutdown_on_error=True)
 ```
 
-Error logs suppressed by component filters or logging bypass mode still request shutdown.
-The trigger is cleared and re-armed when a new kernel run starts, so a process can restart
-a node without reinitializing the logging system. The per-engine
-`graceful_shutdown_on_error` option has been removed; configure shutdown-on-error at the
-node/kernel level instead. Shutdown-on-error observes Rust `log` records, not Python
-`logging.error(...)` calls.
+The trigger follows these rules:
+
+- Error logs suppressed by component filters or logging bypass mode still request shutdown.
+- A new kernel run clears and re-arms the trigger, so a process can restart a node without
+  reinitializing the logging system.
+- Shutdown-on-error observes **Rust `log` records**, not Python `logging.error(...)` calls.
+
+:::note
+The per-engine `graceful_shutdown_on_error` option has been removed. Configure shutdown-on-error at
+the node/kernel level instead.
+:::
 
 ## Related guides
 

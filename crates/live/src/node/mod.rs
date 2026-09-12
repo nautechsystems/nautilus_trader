@@ -709,7 +709,10 @@ impl LiveNode {
         );
 
         msgbus::publish_any(
-            MessagingSwitchboard::socket_state_changed_topic(),
+            MessagingSwitchboard::socket_state_changed_topic(
+                event.client_id,
+                event.endpoint.as_str(),
+            ),
             event.as_any(),
         );
     }
@@ -1879,9 +1882,8 @@ impl LiveNode {
     }
 
     fn publish_queue_state_transitions(&self, transitions: &[QueueStateTransition]) {
-        let topic = MessagingSwitchboard::queue_state_changed_topic();
-
         for transition in transitions {
+            let topic = MessagingSwitchboard::queue_state_changed_topic(transition.channel);
             let timestamp = self.kernel.generate_timestamp_ns();
             let event = QueueStateChanged::new(
                 self.config.trader_id,
@@ -4140,7 +4142,7 @@ mod tests {
 
     impl DataActor for StartupSocketActor {
         fn on_start(&mut self) -> anyhow::Result<()> {
-            self.subscribe_socket_state(None);
+            self.subscribe_socket_state(None, None, None);
             Ok(())
         }
 
@@ -4218,7 +4220,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_publish_queue_state_transitions_reaches_typed_subscriber() {
+    #[case(None, 2)]
+    #[case(Some(SystemChannel::DataEvents), 1)]
+    #[case(Some(SystemChannel::ExecCommands), 1)]
+    fn test_publish_queue_state_transitions_reaches_typed_subscriber(
+        #[case] channel: Option<SystemChannel>,
+        #[case] expected_count: usize,
+    ) {
         let config = LiveNodeConfig {
             trader_id: TraderId::from("QUEUE-001"),
             exec_engine: crate::config::LiveExecutionEngineConfig {
@@ -4236,7 +4244,7 @@ mod tests {
         });
 
         msgbus::subscribe_any(
-            MessagingSwitchboard::queue_state_changed_topic().into(),
+            MessagingSwitchboard::queue_state_changed_pattern(channel),
             handler,
             None,
         );
@@ -4249,7 +4257,7 @@ mod tests {
                 mean_dispatch_ns: 23,
             },
             QueueStateTransition {
-                channel: SystemChannel::DataEvents,
+                channel: SystemChannel::ExecCommands,
                 condition: QueueCondition::Slow,
                 state: QueueState::Triggered,
                 queue_depth: 17,
@@ -4260,9 +4268,12 @@ mod tests {
         node.publish_queue_state_transitions(&transitions);
 
         let events = received.borrow();
-        assert_eq!(events.len(), 2);
+        assert_eq!(events.len(), expected_count);
 
-        for (event, transition) in events.iter().zip(transitions) {
+        let expected = transitions
+            .into_iter()
+            .filter(|transition| channel.is_none_or(|channel| channel == transition.channel));
+        for (event, transition) in events.iter().zip(expected) {
             assert_eq!(event.trader_id, TraderId::from("QUEUE-001"));
             assert_eq!(event.channel, transition.channel);
             assert_eq!(event.condition, transition.condition);
@@ -4273,13 +4284,27 @@ mod tests {
             assert_ne!(event.ts_event, UnixNanos::default());
             assert_eq!(event.ts_init, event.ts_event);
         }
-        assert_ne!(events[0].event_id, events[1].event_id);
+
+        if channel.is_none() {
+            assert_ne!(events[0].event_id, events[1].event_id);
+        }
+
         drop(events);
         msgbus::get_message_bus().borrow_mut().dispose();
     }
 
     #[rstest]
-    fn test_process_socket_state_change_reaches_typed_subscriber() {
+    #[case(None, None)]
+    #[case(Some(ClientId::from("BINANCE")), None)]
+    #[case(None, Some("binance-futures-market-streams"))]
+    #[case(
+        Some(ClientId::from("BINANCE")),
+        Some("binance-futures-market-streams")
+    )]
+    fn test_process_socket_state_change_reaches_typed_subscriber(
+        #[case] client_id: Option<ClientId>,
+        #[case] endpoint: Option<&str>,
+    ) {
         let config = LiveNodeConfig {
             trader_id: TraderId::from("SOCKET-001"),
             exec_engine: crate::config::LiveExecutionEngineConfig {
@@ -4295,7 +4320,7 @@ mod tests {
             move |event: &SocketStateChanged| received.borrow_mut().push(event.clone())
         });
         msgbus::subscribe_any(
-            MessagingSwitchboard::socket_state_changed_topic().into(),
+            MessagingSwitchboard::socket_state_changed_pattern(client_id, endpoint),
             handler,
             None,
         );
@@ -4511,7 +4536,7 @@ mod tests {
         });
 
         msgbus::subscribe_any(
-            MessagingSwitchboard::queue_state_changed_topic().into(),
+            MessagingSwitchboard::queue_state_changed_pattern(None),
             handler,
             None,
         );

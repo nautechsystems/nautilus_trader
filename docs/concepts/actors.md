@@ -156,9 +156,13 @@ def _on_alert(self, event: TimeEvent) -> None:
 ```
 
 Pass a `callback` to direct `TimeEvent` objects to your own method. Without one, the actor runtime
-connects the clock's registered default handler to `on_time_event()`. Use explicit callbacks when
-components share a clock. Timer names also share the clock's namespace, so use names unique to the
-component; registering the same name replaces the existing timer.
+connects the clock's registered default handler to `on_time_event()`.
+
+When components share a clock:
+
+- Use **explicit callbacks** to route events to the intended component.
+- Use **unique timer names** within the clock's namespace. Registering the same name replaces the
+  existing timer.
 
 ## System access
 
@@ -197,12 +201,12 @@ use nautilus_common::{
 
 impl DataActor for MyActor {
     fn on_start(&mut self) -> anyhow::Result<()> {
-        self.subscribe_queue_state(Some(50));
+        self.subscribe_queue_state(None, Some(50));
         Ok(())
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
-        self.unsubscribe_queue_state();
+        self.unsubscribe_queue_state(None);
         Ok(())
     }
 
@@ -238,9 +242,24 @@ def on_queue_state(self, event: QueueStateChanged) -> None:
     )
 ```
 
-The optional priority controls delivery order among matching subscribers. Higher values run first.
+#### Filters and delivery
+
+The optional priority controls delivery order among matching subscribers. **Higher values run first.**
 Subscribing again does not change an existing priority; unsubscribe before subscribing with a new
 priority.
+
+Pass `channel` to select one runner channel, for example
+`self.subscribe_queue_state(channel=SystemChannel.DATA_EVENTS)` in Python. Import `SystemChannel`
+from `nautilus_trader.common`.
+
+- Omitting `channel` subscribes to all monitored channels.
+- To remove a subscription, pass the **same channel** to `unsubscribe_queue_state`. Omitting it
+  removes only the unfiltered subscription.
+- Overlapping subscriptions each invoke the callback for a matching event.
+
+Runner queues are shared across clients, so they have no client filter.
+
+#### Queue event contents
 
 `QueueStateChanged` includes the trader ID, runner channel, queue condition, condition state, queue
 depth, mean dispatch time, event ID, and timestamps. Delivery uses the typed in-process message bus
@@ -259,12 +278,12 @@ use nautilus_common::{
 
 impl DataActor for MyActor {
     fn on_start(&mut self) -> anyhow::Result<()> {
-        self.subscribe_socket_state(Some(50));
+        self.subscribe_socket_state(None, None, Some(50));
         Ok(())
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
-        self.unsubscribe_socket_state();
+        self.unsubscribe_socket_state(None, None);
         Ok(())
     }
 
@@ -298,15 +317,32 @@ def on_socket_state(self, event: SocketStateChanged) -> None:
     )
 ```
 
-The optional priority controls delivery order among matching subscribers. Higher values run first.
+#### Filters and delivery
+
+The optional priority controls delivery order among matching subscribers. **Higher values run first.**
 Subscribing again does not change an existing priority; unsubscribe before subscribing with a new
 priority.
 
+Pass `client_id`, `endpoint`, or both to filter socket events. In Python,
+`self.subscribe_socket_state(client_id=ClientId("BINANCE"), endpoint="binance-futures-market-streams")`
+selects one transport. Import `ClientId` from `nautilus_trader.model`.
+
+- Each omitted filter matches all values of that field.
+- Supplied values match literally, including dots and wildcard characters.
+- Pass the **same filters** to `unsubscribe_socket_state` to remove that subscription. Omitting both
+  removes only the unfiltered subscription.
+- Overlapping subscriptions each invoke the callback for a matching event.
+
+#### Socket event contents
+
 `SocketStateChanged` includes the trader ID, client ID, optional venue, stable endpoint label,
-transport state, event ID, and timestamps. `SocketState.CONNECTED` reports transport availability,
-not authentication, subscription replay, or adapter readiness. `SocketState.DISCONNECTED` reports
-the loss of an active transport. The endpoint is a non-secret logical label, not a raw connection
-URL.
+transport state, event ID, and timestamps. The endpoint is a non-secret logical label, not a raw
+connection URL. `SocketState.DISCONNECTED` reports the loss of an active transport.
+
+:::note
+`SocketState.CONNECTED` reports **transport availability**, not authentication, subscription replay,
+or adapter readiness.
+:::
 
 Delivery uses the typed in-process message bus and has no external wire representation. See
 [Socket transport state](live.md#socket-transport-state) for supported adapters and the precise
@@ -343,17 +379,27 @@ def recover_market_socket(self) -> None:
     )
 ```
 
-This API is fire-and-observe. A successful return means the command passed local validation and was
-queued. It does not acknowledge that the kernel accepted the request or that recovery completed.
-Subscribe with `subscribe_socket_state()` and inspect `SocketStateChanged` events for the same
-client and endpoint. An accepted request reports `SocketState.DISCONNECTED` as the transport enters
-reconnect mode, followed by `SocketState.CONNECTED` after transport recovery.
+#### Observe recovery
 
-The kernel logs unknown clients, unsupported clients, unknown or ambiguous endpoints, duplicate
-requests, disconnecting transports, and closed transports. These rejections do not emit a socket
-state change or affect another endpoint. Invalid endpoint labels and unavailable or closed runner
-channels fail synchronously. Endpoint labels accept only ASCII letters, digits, `.`, `-`, and `_`;
-pass a logical label rather than a raw URL.
+:::note
+This API is **fire-and-observe**. A successful return means the command passed local validation and
+was queued. It does not acknowledge that the kernel accepted the request or that recovery completed.
+:::
+
+Subscribe with `subscribe_socket_state` using the same `client_id` and `endpoint` filters, then
+inspect the `SocketStateChanged` events. An accepted request reports:
+
+1. `SocketState.DISCONNECTED` as the transport enters reconnect mode.
+1. `SocketState.CONNECTED` after transport recovery.
+
+#### Request failures
+
+- **Synchronous failures**: Invalid endpoint labels and unavailable or closed runner channels fail
+  synchronously. Endpoint labels accept only ASCII letters, digits, `.`, `-`, and `_`; pass a logical
+  label rather than a raw URL.
+- **Kernel rejections**: The kernel logs unknown clients, unsupported clients, unknown or ambiguous
+  endpoints, duplicate requests, disconnecting transports, and closed transports. These rejections
+  do not emit a socket state change or affect another endpoint.
 
 ## Data handling and callbacks
 
