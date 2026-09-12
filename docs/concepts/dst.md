@@ -216,11 +216,19 @@ The transitive closure of `nautilus-live` contains 16 in-scope crates:
 The hook also covers `backtest`, bringing the total to 17 crates.
 
 Adapter crates and infrastructure crates (Redis, Postgres) are out of scope unless an audited
-slice is listed here. The OKX public Spot state slice routes state-affecting clock reads and timers
-through the DST seams and sorts reconnect and bulk-unsubscribe subscription commands. The static
-hook covers `book_sync.rs`, `data.rs`, `http/client.rs`, `websocket/client.rs`, and
-`websocket/handler.rs` in `crates/adapters/okx/src`. These files also serve paths outside the proven
-slice: static coverage alone does not establish their runtime eligibility.
+slice is listed here. Audited OKX DST-path production files route state-affecting clock reads and
+timers through the DST seams and sort reconnect and bulk-unsubscribe subscription commands. The
+static hook covers `book_sync.rs`, `common/task.rs`, `data.rs`, `execution.rs`, `http/client.rs`,
+`websocket/client.rs`, `websocket/dispatch.rs`, and `websocket/handler.rs` in
+`crates/adapters/okx/src`. These files also serve paths outside a proven runtime slice: static
+coverage alone does not establish their runtime eligibility.
+
+Focused Madsim tests in `crates/adapters/okx/tests/integration/dst.rs` cover subscribe-wire bytes for public
+WebSocket quotes, trades, and books, business WebSocket bars, and multi-instrument quote reconnect
+in topic order. Reconnect also clears quote and funding caches in `data.rs` so a new generation
+cannot reuse prior values. Complete request-to-wire-to-domain fresh-process comparison stays in the
+downstream DST harness. Other public channels, private data, and execution share the DST facades
+and convention gate but remain unproven runtime slices.
 
 ## Simulated HTTP and WebSocket transport
 
@@ -711,14 +719,15 @@ The dedicated workflow and local pre-flight use the same DST targets:
 `check-code-sim` runs pinned stable Clippy with `--features simulation` and `cfg(madsim)` across
 `nautilus-common`, `nautilus-core`, `nautilus-event-store`, `nautilus-network`,
 `nautilus-execution`, and `nautilus-live`. A separate `--no-default-features` leg compiles and lints
-the audited OKX public Spot state slice without enabling OKX's default `high-precision` feature in
-the standard-precision core leg.
+the OKX adapter without enabling OKX's default `high-precision` feature in the standard-precision
+core leg.
 
-`cargo-test-sim` uses two feature-coherent nextest invocations:
+`cargo-test-sim` uses three feature-coherent nextest invocations:
 
 | Precision | Packages                                                                                                              | Features                    | Selection                                                                                      |
 | --------- | --------------------------------------------------------------------------------------------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------- |
 | Standard  | `nautilus-common`, `nautilus-core`, `nautilus-event-store`, `nautilus-network`, `nautilus-execution`, `nautilus-live` | `simulation`                | All compatible common, event-store, network, and execution tests; focused live and core tests. |
+| Standard  | `nautilus-okx`                                                                                                        | `simulation`                | Integration `dst` tests only, without OKX's default `high-precision` feature.                  |
 | High      | `nautilus-common`, `nautilus-execution`                                                                               | `simulation,high-precision` | All tests in both packages.                                                                    |
 
 Nextest compiles the selected library and test targets, so the gate does not run a separate Cargo
@@ -781,11 +790,17 @@ runtime. `default_std_rng()` therefore takes its host-RNG fallback in these test
 
 The focused `nautilus-core` selection pins `wall_clock_now` against virtual time.
 
+#### OKX adapter tests
+
+The standard-precision OKX leg runs the integration `dst` tests under `simulation` without the
+crate's default `high-precision` feature. Those `#[madsim::test]` cases cover public WebSocket
+quotes, trades, and books, business WebSocket bars, and multi-instrument quote reconnect order.
+
 #### Overall gate coverage
 
-`#[madsim::test]` cases in `nautilus-common`, `nautilus-core`, `nautilus-network`, and
-`nautilus-live` provide deterministic-scheduler coverage. The complete gate catches drift in the
-cfg-gated seams but does not verify end-to-end adapter determinism.
+`#[madsim::test]` cases in `nautilus-common`, `nautilus-core`, `nautilus-network`,
+`nautilus-live`, and `nautilus-okx` provide deterministic-scheduler coverage. The complete gate
+catches drift in the cfg-gated seams but does not verify end-to-end adapter determinism.
 
 ## Further reading
 

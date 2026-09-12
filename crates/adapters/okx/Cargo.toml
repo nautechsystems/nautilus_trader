@@ -44,6 +44,7 @@ python = [
 ]
 high-precision = ["nautilus-model/high-precision"]
 simulation = [
+  "dep:madsim",
   "nautilus-common/simulation",
   "nautilus-core/simulation",
   "nautilus-live/simulation",
@@ -95,6 +96,7 @@ tokio-util = { workspace = true }
 ustr = { workspace = true }
 zeroize = { workspace = true }
 
+madsim = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }

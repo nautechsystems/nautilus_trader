@@ -6524,6 +6524,7 @@ dependencies = [
  "futures-util",
  "jiff",
  "log",
+ "madsim",
  "nautilus-common",
  "nautilus-core",
  "nautilus-live",

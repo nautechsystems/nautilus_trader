@@ -1021,12 +1021,13 @@ endif
 
 # DST simulation smoke test. Nextest compiles every selected lib/test target
 # before applying its filter, so the standard-precision run is also the compile
-# gate without a separate build. Two feature-coherent runs execute every test
-# that is sim-compatible today: all of nautilus-common, nautilus-event-store,
-# nautilus-network, and nautilus-execution. Transport-bound and thread-blocking
-# tests are gated out at the source. The lane also runs the LiveNode startup
-# reconciliation timeout regression and the cross-crate seam pinning tests in
-# nautilus-core.
+# gate without a separate build. Feature-coherent runs execute every test that
+# is sim-compatible today: all of nautilus-common, nautilus-event-store,
+# nautilus-network, and nautilus-execution, plus nautilus-okx integration dst
+# tests without the crate's default high-precision feature. Transport-bound and
+# thread-blocking tests are gated out at the source. The lane also runs the
+# LiveNode startup reconciliation timeout regression and the cross-crate seam
+# pinning tests in nautilus-core.
 # Precision-sensitive common and execution tests also run under `high-precision`,
 # so the seam-routed code paths are exercised under both `QuantityRaw` /
 # `PriceRaw` widths (u64 vs u128). See docs/concepts/dst.md for the full
@@ -1037,6 +1038,8 @@ cargo-test-sim: check-nextest-installed
 cargo-test-sim:  #-- Run DST simulation smoke tests (cfg madsim + simulation feature)
 	$(info $(M) Running in-scope DST tests under simulation...)
 	cargo nextest run --locked $(SIM_CARGO_CONFIG) $(SIM_PACKAGES) --lib --tests --features simulation -E '$(SIM_FILTERSET)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) $(NEXTEST_OUTPUT_ARGS)
+	$(info $(M) Running OKX DST integration tests under simulation...)
+	cargo nextest run --locked $(SIM_CARGO_CONFIG) $(SIM_ADAPTER_PACKAGES) --test integration --no-default-features --features simulation -E 'test(dst::)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) $(NEXTEST_OUTPUT_ARGS)
 	$(info $(M) Running precision-sensitive DST tests under simulation + high-precision...)
 	cargo nextest run --locked $(SIM_CARGO_CONFIG) $(SIM_HIGH_PRECISION_PACKAGES) --lib --tests --features "simulation,high-precision" $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) $(NEXTEST_OUTPUT_ARGS)
 

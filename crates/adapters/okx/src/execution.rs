@@ -15,11 +15,7 @@
 
 //! Live execution client implementation for the OKX adapter.
 
-use std::{
-    future::Future,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{future::Future, sync::Arc};
 
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
@@ -27,7 +23,10 @@ use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::ExecutionClient,
-    live::runner::get_exec_event_sender,
+    live::{
+        dst::time::{self, Duration, Instant},
+        runner::get_exec_event_sender,
+    },
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
@@ -1278,7 +1277,7 @@ impl OKXExecutionClient {
         let interval = Duration::from_millis(10);
 
         loop {
-            tokio::time::sleep(interval).await;
+            time::sleep(interval).await;
 
             if self.core.cache().account(&account_id).is_some() {
                 log::info!("Account {account_id} registered");

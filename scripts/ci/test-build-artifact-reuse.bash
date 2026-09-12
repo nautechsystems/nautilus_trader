@@ -165,14 +165,17 @@ PATH="$MOCK_BIN:$PATH" \
   CARGO_CI_PROFILE=nextest \
   NEXTEST_PROFILE=ci \
   cargo-test-sim > /dev/null
-[[ "$(grep -Fc 'nextest run ' "$CARGO_LOG")" -eq 2 ]] ||
-  fail "DST smoke tests did not use two feature-coherent nextest runs"
+[[ "$(grep -Fc 'nextest run ' "$CARGO_LOG")" -eq 3 ]] ||
+  fail "DST smoke tests did not use three feature-coherent nextest runs"
 if grep -Eq '^build ' "$CARGO_LOG"; then
   fail "DST smoke tests used a redundant Cargo build"
 fi
 grep -Fq \
   'nextest run --locked --config target."cfg(all())".rustflags=["--cfg","madsim"] -p nautilus-common -p nautilus-core -p nautilus-event-store -p nautilus-network -p nautilus-execution -p nautilus-live --lib --tests --features simulation' \
   "$CARGO_LOG" || fail "Standard-precision DST tests did not compile the full package scope together"
+grep -Fq \
+  'nextest run --locked --config target."cfg(all())".rustflags=["--cfg","madsim"] -p nautilus-okx --test integration --no-default-features --features simulation' \
+  "$CARGO_LOG" || fail "OKX DST tests did not use a standard-precision simulation build"
 grep -Fq \
   'nextest run --locked --config target."cfg(all())".rustflags=["--cfg","madsim"] -p nautilus-common -p nautilus-execution --lib --tests --features simulation,high-precision' \
   "$CARGO_LOG" || fail "High-precision DST tests did not share one feature-coherent build"

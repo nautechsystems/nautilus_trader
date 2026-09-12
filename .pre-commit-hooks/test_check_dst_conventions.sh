@@ -182,11 +182,19 @@ done
 
 adapter_case="$CASE_ROOT/adapter"
 create_case "$adapter_case"
-mkdir -p "$adapter_case/crates/adapters/okx/src"
+mkdir -p \
+  "$adapter_case/crates/adapters/okx/src/common" \
+  "$adapter_case/crates/adapters/okx/src/websocket"
 printf '%s\n' 'pub async fn run() { tokio::time::sleep(delay).await; }' \
   'use tokio::time;' \
   'pub async fn imported() { time::sleep(delay).await; }' \
   > "$adapter_case/crates/adapters/okx/src/data.rs"
+printf '%s\n' 'pub async fn run() { tokio::time::sleep(delay).await; }' \
+  > "$adapter_case/crates/adapters/okx/src/execution.rs"
+printf '%s\n' 'pub async fn run() { tokio::time::sleep(delay).await; }' \
+  > "$adapter_case/crates/adapters/okx/src/websocket/dispatch.rs"
+printf '%s\n' 'pub async fn run() { tokio::time::sleep(delay).await; }' \
+  > "$adapter_case/crates/adapters/okx/src/common/task.rs"
 run_hook "$adapter_case"
 if [ "$RUN_STATUS" -ne 1 ]; then
   echo "Expected the audited OKX path to reject a raw Tokio timer"
@@ -196,5 +204,8 @@ fi
 strip_color "$adapter_case/output.txt" > "$adapter_case/plain.txt"
 rg -Fq "Error (rule7): crates/adapters/okx/src/data.rs:1" "$adapter_case/plain.txt"
 rg -Fq "Error (rule7): crates/adapters/okx/src/data.rs:2" "$adapter_case/plain.txt"
+rg -Fq "Error (rule7): crates/adapters/okx/src/execution.rs:1" "$adapter_case/plain.txt"
+rg -Fq "Error (rule7): crates/adapters/okx/src/websocket/dispatch.rs:1" "$adapter_case/plain.txt"
+rg -Fq "Error (rule7): crates/adapters/okx/src/common/task.rs:1" "$adapter_case/plain.txt"
 
 echo "DST convention hook tests passed"

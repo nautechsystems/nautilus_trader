@@ -797,6 +797,8 @@ impl OKXDataClient {
             }
             OKXWsMessage::Reconnected => {
                 log::info!("Websocket reconnected");
+                quote_cache.clear();
+                funding_cache.clear();
 
                 if book_channel_scope == BookChannelScope::Public {
                     book_sync.reset_sequences(book_channels, book_channel_scope);
@@ -3028,6 +3030,163 @@ mod tests {
                 .is_empty(),
             "rejected subscription must remove book synchronization state"
         );
+    }
+
+    #[rstest]
+    fn reconnect_clears_quote_and_funding_caches() {
+        let instrument_id = InstrumentId::from("OMI-USD.OKX");
+        let mut pair = currency_pair_btcusdt();
+        pair.id = instrument_id;
+        pair.raw_symbol = Symbol::from("OMI-USD");
+        let instrument = InstrumentAny::CurrencyPair(pair);
+
+        let instruments_by_symbol = Arc::new(AtomicMap::new());
+        instruments_by_symbol.insert(Ustr::from("OMI-USD"), instrument);
+        let book_channels = Arc::new(AtomicMap::new());
+        let book_sync = BookSyncTracker::default();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let http = offline_http_client();
+        let update_lock = InstrumentUpdateLock::default();
+        let mut quote_cache = QuoteCache::new();
+        quote_cache
+            .process(
+                instrument_id,
+                Some(Price::from("1.0")),
+                Some(Price::from("1.1")),
+                Some(Quantity::from("1")),
+                Some(Quantity::from("2")),
+                UnixNanos::from(1),
+                UnixNanos::from(2),
+            )
+            .expect("seed quote cache");
+        let mut funding_cache =
+            AHashMap::from([(Ustr::from("OMI-USD"), (Ustr::from("0.0001"), 1))]);
+        let index_ticker_map = Arc::new(AtomicMap::new());
+        let option_greeks_subs = Arc::new(AtomicMap::new());
+        let task_group = TaskGroup::new();
+        let tasks = task_group.spawner().expect("task spawner");
+
+        OKXDataClient::handle_ws_message(
+            OKXWsMessage::Reconnected,
+            &sender,
+            &instruments_by_symbol,
+            &http,
+            &OKXDataClientConfig::default(),
+            &update_lock,
+            &book_channels,
+            &book_sync,
+            None,
+            None,
+            &mut quote_cache,
+            &mut funding_cache,
+            &index_ticker_map,
+            &option_greeks_subs,
+            BookChannelScope::Public,
+            Duration::ZERO,
+            &tasks,
+            get_atomic_clock_realtime(),
+        );
+
+        assert!(
+            quote_cache.is_empty(),
+            "reconnect must drop quotes from the previous generation"
+        );
+        assert!(
+            funding_cache.is_empty(),
+            "reconnect must drop funding rates from the previous generation"
+        );
+
+        OKXDataClient::handle_ws_message(
+            OKXWsMessage::ChannelData {
+                channel: OKXWsChannel::BboTbt,
+                inst_id: Some(Ustr::from("OMI-USD")),
+                data: json!([{
+                    "asks": [{
+                        "price": "1.2",
+                        "size": "3",
+                        "liquidated_orders_count": "0",
+                        "orders_count": "1"
+                    }],
+                    "bids": [],
+                    "seqId": 1,
+                    "ts": "3"
+                }]),
+            },
+            &sender,
+            &instruments_by_symbol,
+            &http,
+            &OKXDataClientConfig::default(),
+            &update_lock,
+            &book_channels,
+            &book_sync,
+            None,
+            None,
+            &mut quote_cache,
+            &mut funding_cache,
+            &index_ticker_map,
+            &option_greeks_subs,
+            BookChannelScope::Public,
+            Duration::ZERO,
+            &tasks,
+            get_atomic_clock_realtime(),
+        );
+
+        assert!(
+            receiver.try_recv().is_err(),
+            "partial BBO after reconnect must not invent a quote from the previous generation"
+        );
+        assert!(quote_cache.is_empty());
+
+        OKXDataClient::handle_ws_message(
+            OKXWsMessage::ChannelData {
+                channel: OKXWsChannel::BboTbt,
+                inst_id: Some(Ustr::from("OMI-USD")),
+                data: json!([{
+                    "asks": [{
+                        "price": "1.2",
+                        "size": "3",
+                        "liquidated_orders_count": "0",
+                        "orders_count": "1"
+                    }],
+                    "bids": [{
+                        "price": "1.0",
+                        "size": "4",
+                        "liquidated_orders_count": "0",
+                        "orders_count": "1"
+                    }],
+                    "seqId": 2,
+                    "ts": "4"
+                }]),
+            },
+            &sender,
+            &instruments_by_symbol,
+            &http,
+            &OKXDataClientConfig::default(),
+            &update_lock,
+            &book_channels,
+            &book_sync,
+            None,
+            None,
+            &mut quote_cache,
+            &mut funding_cache,
+            &index_ticker_map,
+            &option_greeks_subs,
+            BookChannelScope::Public,
+            Duration::ZERO,
+            &tasks,
+            get_atomic_clock_realtime(),
+        );
+
+        match receiver.try_recv().expect("complete BBO after reconnect") {
+            DataEvent::Data(Data::Quote(quote)) => {
+                assert_eq!(quote.instrument_id, instrument_id);
+                assert_eq!(quote.bid_price, Price::from("1.0"));
+                assert_eq!(quote.ask_price, Price::from("1.2"));
+                assert_eq!(quote.bid_size, Quantity::from("4"));
+                assert_eq!(quote.ask_size, Quantity::from("3"));
+            }
+            other => panic!("Expected DataEvent::Data(Data::Quote), was {other:?}"),
+        }
     }
 
     #[rstest]
