@@ -27,9 +27,13 @@ Examples include `SPX.XCBO`, `VIX.XCBO`, and venue-specific reference indexes.
 ## Behavior
 
 - `IndexInstrument` has asset class `Index` and instrument class `Spot`.
-- It is a reference instrument and should not be used for order submission.
 - It has no limits, margins, fees, contract multiplier, expiry, or settlement currency.
 - Use option or futures types for tradable derivatives whose underlyings are indexes.
+
+:::warning
+`IndexInstrument` is a reference instrument, not a tradable contract. Do not submit orders
+against it; trade the corresponding futures or option instrument instead.
+:::
 
 ## Example
 

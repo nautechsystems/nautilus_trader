@@ -45,6 +45,8 @@ Examples include listed futures calendar spreads and exchange-supported spread m
 - `FuturesSpread` has instrument class `FuturesSpread`.
 - The venue publishes the spread as a single tradable instrument.
 - It trades in whole contracts with size precision `0` and size increment `1`.
+- Spread prices can be zero or negative, and the `RiskEngine` accepts non-positive prices
+  for this instrument class.
 - Use leg data from the adapter metadata when a strategy needs venue-specific leg details.
 
 ## Example

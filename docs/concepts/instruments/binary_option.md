@@ -48,8 +48,8 @@ Examples include prediction market outcomes and binary event contracts.
   allowed price range and tick size.
 - `outcome` and `description` provide human-readable context for the contract.
 - `event_id` identifies the event containing the instrument's market, scoped to its venue.
-  Instruments sharing an event ID belong to the same event; this does not imply shared collateral,
-  mutually exclusive outcomes, or identical settlement rules.
+- Instruments sharing an `event_id` belong to the same event. That does not imply shared
+  collateral, mutually exclusive outcomes, or identical settlement rules.
 
 ## Example
 

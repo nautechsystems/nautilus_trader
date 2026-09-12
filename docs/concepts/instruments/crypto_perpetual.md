@@ -43,11 +43,15 @@ Examples include `ETHUSDT-PERP.BINANCE`, `XBTUSD.BITMEX`, and `BTC-USD-SWAP.OKX`
 
 - `CryptoPerpetual` has asset class `Cryptocurrency` and instrument class `Swap`.
 - It has no activation or expiration timestamp.
-- Linear contracts typically set `is_inverse=False` and settle in the quote currency.
-- Inverse contracts set `is_inverse=True` and typically settle in the base currency.
-- Quanto contracts settle in a third currency that differs from both base and quote.
-- The cost currency is base for inverse contracts, settlement for quanto contracts, and
-  quote otherwise.
+
+The currency set determines the settlement style:
+
+- **Linear**: typically sets `is_inverse=False` and settles in the quote currency.
+- **Inverse**: sets `is_inverse=True` and typically settles in the base currency.
+- **Quanto**: settles in a third currency that differs from both base and quote.
+
+The cost currency follows from that style: base for inverse contracts, settlement for
+quanto contracts, and quote otherwise.
 
 :::note
 Funding payments are not fields on the instrument. They arrive as data, such as

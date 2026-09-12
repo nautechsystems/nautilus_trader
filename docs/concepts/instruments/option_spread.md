@@ -45,6 +45,8 @@ Examples include listed vertical spreads, calendar spreads, and other option str
 - `OptionSpread` has instrument class `OptionSpread`.
 - The venue publishes the spread as a single tradable instrument.
 - It trades in whole contracts with size precision `0` and size increment `1`.
+- Spread prices can be zero or negative, and the `RiskEngine` accepts non-positive prices
+  for this instrument class.
 - Store venue-specific leg details in `info` when the adapter provides them.
 
 ## Example

@@ -96,10 +96,10 @@ complete constructor and struct fields for that type.
 | `min_notional`    | Minimum order notional value when known.                            |
 | `max_price`       | Maximum valid quote or order price when known.                      |
 | `min_price`       | Minimum valid quote or order price when known.                      |
+| `tick_scheme`     | Registered variable tick scheme name where the type supports one.   |
 | `info`            | Adapter metadata preserved from the venue or data source.           |
 | `ts_event`        | UNIX nanosecond timestamp for when the definition event occurred.   |
 | `ts_init`         | UNIX nanosecond timestamp for when Nautilus initialized the object. |
-| `tick_scheme`     | Registered variable tick scheme name where the type supports one.   |
 
 ## Symbology
 

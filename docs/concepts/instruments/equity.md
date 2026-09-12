@@ -40,6 +40,11 @@ Examples include `AAPL.XNAS`, `MSFT.XNAS`, and venue-specific ETF symbols.
 - It has no base currency, expiry, strike, option kind, or inverse costing flag.
 - Use price limits only when the venue publishes them.
 
+:::warning
+`Equity` fixes size precision at zero. The `RiskEngine` denies any order whose quantity
+precision exceeds the instrument size precision, so fractional-share quantities are rejected.
+:::
+
 ## Example
 
 ```rust tab="Rust"
