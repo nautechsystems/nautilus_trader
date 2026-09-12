@@ -37,7 +37,9 @@ use nautilus_core::{
 };
 use nautilus_execution::{
     matching_core::RestingOrder,
-    matching_engine::{OrderMatchingEngine, config::OrderMatchingEngineConfig},
+    matching_engine::{
+        OrderMatchingEngine, config::OrderMatchingEngineConfig, inflight::InflightOrders,
+    },
     models::{
         fee::FeeModelHandle,
         fill::FillModelHandle,
@@ -170,6 +172,7 @@ pub struct SimulatedExchange {
     cache: Rc<RefCell<Cache>>,
     message_queue: VecDeque<TradingCommand>,
     inflight_queue: BinaryHeap<InflightCommand>,
+    inflight_orders: InflightOrders,
     inflight_counter: AHashMap<UnixNanos, u32>,
     bar_execution: bool,
     bar_adaptive_high_low_ordering: bool,
@@ -259,6 +262,7 @@ impl SimulatedExchange {
             cache,
             message_queue: VecDeque::new(),
             inflight_queue: BinaryHeap::new(),
+            inflight_orders: InflightOrders::default(),
             inflight_counter: AHashMap::new(),
             bar_execution: config.bar_execution,
             bar_adaptive_high_low_ordering: config.bar_adaptive_high_low_ordering,
@@ -507,6 +511,7 @@ impl SimulatedExchange {
             matching_engine.set_event_handler(Rc::clone(handler));
         }
         self.instruments.insert(instrument_id, instrument);
+        matching_engine.set_inflight_orders(self.inflight_orders.clone());
         self.matching_engines.insert(instrument_id, matching_engine);
 
         log::info!("Added instrument {instrument_id} and created matching engine");
@@ -830,6 +835,10 @@ impl SimulatedExchange {
         ) {
             log::warn!("Simulated exchange does not support queries: {command}");
             return;
+        }
+
+        if self.use_message_queue {
+            self.inflight_orders.insert(&command);
         }
 
         if !self.use_message_queue {
@@ -1709,6 +1718,7 @@ impl SimulatedExchange {
         self.funding_settlements.clear();
         self.message_queue.clear();
         self.inflight_queue.clear();
+        self.inflight_orders.clear();
         self.inflight_counter.clear();
 
         log::info!("Resetting exchange state");
@@ -1844,6 +1854,7 @@ impl SimulatedExchange {
     }
 
     fn process_trading_command(&mut self, command: TradingCommand) {
+        self.inflight_orders.remove(&command);
         let instrument_id = command.instrument_id();
         assert!(
             self.matching_engines.contains_key(&instrument_id),

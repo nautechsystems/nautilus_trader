@@ -43,7 +43,7 @@ use nautilus_common::{
 use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos, WeakCell};
 use nautilus_execution::{
     client::core::ExecutionClientCore,
-    matching_engine::OrderMatchingEngine,
+    matching_engine::{OrderMatchingEngine, inflight::InflightOrders},
     models::{fee::FeeModelHandle, fill::FillModelHandle, latency::LatencyModel},
 };
 use nautilus_model::{
@@ -144,6 +144,7 @@ impl SandboxExecutionClient {
                 balances,
                 event_handler: None,
                 inbound_queue: BinaryHeap::new(),
+                inflight_orders: InflightOrders::default(),
                 inbound_seq: 0,
                 client_id: core.client_id,
                 account_id: core.account_id,
@@ -877,6 +878,7 @@ struct SandboxInner {
     event_handler: Option<Rc<dyn Fn(OrderEventAny)>>,
     /// Inbound commands deferred by latency, ordered as a min-heap by due time.
     inbound_queue: BinaryHeap<DelayedCommand>,
+    inflight_orders: InflightOrders,
     /// Monotonic sequence providing FIFO tie-breaking for deferred commands sharing a due time, so
     /// no queued command can be overtaken by one enqueued after it.
     inbound_seq: u64,
@@ -950,6 +952,7 @@ impl SandboxInner {
                 engine.set_event_handler(handler.clone());
             }
 
+            engine.set_inflight_orders(self.inflight_orders.clone());
             self.matching_engines.insert(instrument_id, engine);
         }
     }
@@ -1136,6 +1139,8 @@ impl SandboxInner {
 
     /// Routes a deferred [`TradingCommand`] to its venue-side apply helper.
     fn apply_trading_command(&mut self, cmd: &TradingCommand) -> anyhow::Result<()> {
+        self.inflight_orders.remove(cmd);
+
         // Only a deferred command can overtake the submit that would have created the engine, so
         // build it here and let the venue raise the rejection.
         if matches!(
@@ -1499,25 +1504,11 @@ impl SandboxInner {
 
     fn apply_cancel_all_orders(&mut self, cmd: &CancelAllOrders) {
         let instrument_id = cmd.instrument_id;
-        let in_transit = self.in_transit_submit_ids();
         if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
-            engine.process_cancel_all_excluding(cmd, self.account_id, &in_transit);
+            engine.process_cancel_all(cmd, self.account_id);
         } else {
             log::debug!("No open orders to cancel for {instrument_id}: no matching engine");
         }
-    }
-
-    /// Returns the client order IDs of every queued submit and submit-list leg, which the venue
-    /// has not received yet.
-    fn in_transit_submit_ids(&self) -> Vec<ClientOrderId> {
-        self.inbound_queue
-            .iter()
-            .flat_map(|delayed| match &delayed.command {
-                TradingCommand::SubmitOrder(cmd) => vec![cmd.client_order_id],
-                TradingCommand::SubmitOrderList(cmd) => cmd.order_list.client_order_ids.clone(),
-                _ => Vec::new(),
-            })
-            .collect()
     }
 
     fn apply_batch_cancel_orders(&mut self, cmd: &BatchCancelOrders) {
@@ -1536,6 +1527,7 @@ impl SandboxInner {
         let seq = self.inbound_seq;
         self.inbound_seq += 1;
 
+        self.inflight_orders.insert(&command);
         self.inbound_queue.push(DelayedCommand {
             due_ns,
             seq,
@@ -1660,6 +1652,8 @@ impl SandboxInner {
     /// Takes every command still deferred by inbound latency, ordered for [`Self::reject_discarded`]
     /// to unwind last-issued-first.
     fn take_inbound_queue(&mut self) -> Vec<DelayedCommand> {
+        self.inflight_orders.clear();
+
         if self.inbound_queue.is_empty() {
             return Vec::new();
         }
@@ -1695,6 +1689,7 @@ impl SandboxInner {
     /// `reset` discards all client state, so there is nothing to release.
     fn clear_inbound_queue(&mut self) {
         self.inbound_queue.clear();
+        self.inflight_orders.clear();
     }
 
     /// (Re)arms the `LiveClock` alert for the earliest queued `due_ns` while that is still ahead

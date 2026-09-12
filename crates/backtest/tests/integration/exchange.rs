@@ -60,9 +60,9 @@ use nautilus_model::{
         OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
     },
     enums::{
-        AccountType, AggressorSide, AssetClass, BookAction, BookType, LiquiditySide, MarketStatus,
-        MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
-        PositionAdjustmentType,
+        AccountType, AggressorSide, AssetClass, BookAction, BookType, ContingencyType,
+        LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OptionKind, OrderSide,
+        OrderStatus, OrderType, PositionAdjustmentType,
     },
     events::{
         AccountState, FundingSettlement, OrderEventAny, OrderFilled, PositionEvent,
@@ -4973,4 +4973,134 @@ fn test_module_pre_process_and_process_call_order(crypto_perpetual_ethusdt: Cryp
 
     assert_eq!(counts.pre_process.get(), 2);
     assert_eq!(counts.process.get(), 1);
+}
+
+#[rstest]
+#[case::oco(ContingencyType::Oco)]
+#[case::ouo(ContingencyType::Ouo)]
+#[case::oto(ContingencyType::Oto)]
+fn test_contingent_fill_preserves_later_queued_submit(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] contingency: ContingencyType,
+    #[values(false, true)] latency: bool,
+) {
+    let (handler, saving_handler) = get_typed_into_message_saving_handler::<OrderEventAny>(None);
+    msgbus::register_order_event_endpoint(MessagingSwitchboard::exec_engine_process(), handler);
+    let exchange = get_exchange(
+        Venue::new("BINANCE"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        None,
+    );
+
+    if latency {
+        exchange
+            .borrow_mut()
+            .set_latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
+                DurationNanos::default(),
+                DurationNanos::new(100),
+                DurationNanos::default(),
+                DurationNanos::default(),
+            )));
+    }
+
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    exchange.borrow_mut().add_instrument(instrument).unwrap();
+    let parent_id = ClientOrderId::from("O-PARENT");
+    let child_id = ClientOrderId::from("O-CHILD");
+    let parent = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .client_order_id(parent_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("1000.00"))
+        .contingency_type(contingency)
+        .linked_order_ids(vec![child_id])
+        .build();
+    let mut child_builder = OrderTestBuilder::new(OrderType::Limit);
+    child_builder
+        .instrument_id(instrument_id)
+        .client_order_id(child_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("998.00"));
+
+    if contingency == ContingencyType::Oto {
+        child_builder.parent_order_id(parent_id);
+    } else {
+        child_builder
+            .contingency_type(contingency)
+            .linked_order_ids(vec![parent_id]);
+    }
+
+    let child = child_builder.build();
+    let marker_id = ClientOrderId::from("O-MARKER");
+    let marker = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .client_order_id(marker_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("997.00"))
+        .build();
+    let cache = exchange.borrow().cache().clone();
+    for order in [&parent, &marker, &child] {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .update_order(&TestOrderEventStubs::submitted(
+                order,
+                AccountId::test_default(),
+            ))
+            .unwrap();
+        exchange
+            .borrow_mut()
+            .send(TradingCommand::SubmitOrder(SubmitOrder::from_order(
+                order,
+                TraderId::test_default(),
+                None,
+                None,
+                UUID4::default(),
+                UnixNanos::from(1),
+            )));
+    }
+
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from("999.00"),
+        Price::from("999.50"),
+        Quantity::from("0.500"),
+        Quantity::from("0.500"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    exchange.borrow_mut().process_quote_tick(&quote).unwrap();
+    exchange.borrow_mut().process(UnixNanos::from(101));
+
+    let events: Vec<_> = saving_handler
+        .get_messages()
+        .iter()
+        .map(|event| match event {
+            OrderEventAny::Accepted(event) => ("accepted", event.client_order_id),
+            OrderEventAny::Filled(event) => ("filled", event.client_order_id),
+            other => panic!("Unexpected contingent event: {other:?}"),
+        })
+        .collect();
+
+    assert_eq!(
+        events,
+        vec![
+            ("accepted", parent_id),
+            ("filled", parent_id),
+            ("accepted", marker_id),
+            ("accepted", child_id)
+        ]
+    );
+    assert_eq!(
+        cache.borrow().order(&child_id).unwrap().quantity(),
+        Quantity::from("1.000")
+    );
 }

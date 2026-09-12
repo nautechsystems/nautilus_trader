@@ -6379,13 +6379,15 @@ fn test_inbound_latency_inline_cancel_all_leaves_queued_submit_unaffected(
     );
 }
 
-/// Canceling an order cascades into its contingent orders, so the cancel-all exclusion has to hold
-/// there too: an OCO sibling whose submit is still in transit keeps its `SUBMITTED` status and
-/// rests once that submit arrives, rather than closing on a cancellation the venue never made.
+// A contingent sibling stays submitted until the venue receives and rejects its late submit
 #[rstest]
-fn test_inbound_latency_cancel_all_leaves_in_transit_contingent_unaffected(
+#[case::cancel_all(DeferredCommand::CancelAll)]
+#[case::cancel(DeferredCommand::Cancel)]
+#[case::batch_cancel(DeferredCommand::BatchCancel)]
+fn test_inbound_latency_cancel_leaves_in_transit_contingent_unaffected(
     trader_id: TraderId,
     instrument: InstrumentAny,
+    #[case] kind: DeferredCommand,
 ) {
     const INSERT_LATENCY_NS: u64 = 3_000_000_000;
     const DELETE_LATENCY_NS: u64 = 1_000_000_000;
@@ -6428,13 +6430,13 @@ fn test_inbound_latency_cancel_all_leaves_in_transit_contingent_unaffected(
         OrderStatus::Accepted
     );
 
-    // Submitted on a separate command, so the cancel-all overtakes its insert leg
+    // Submitted on a separate command, so the cancellation overtakes its insert leg
     let t0 = harness.test_clock.borrow().timestamp_ns();
     submit_cached_through_engine(&harness, trader_id, &in_transit);
     send_command_through_engine(
         &harness,
         trader_id,
-        DeferredCommand::CancelAll,
+        kind,
         std::slice::from_ref(&received),
         t0,
     );
@@ -6559,4 +6561,343 @@ fn test_stop_raises_no_rejection_for_an_order_closed_in_flight(
         OrderStatus::Filled,
         "the order must keep the status its fill established",
     );
+}
+
+#[rstest]
+#[case::oco(ContingencyType::Oco, false)]
+#[case::ouo(ContingencyType::Ouo, false)]
+#[case::oto_in_transit(ContingencyType::Oto, false)]
+#[case::oto_received(ContingencyType::Oto, true)]
+fn test_inbound_latency_contingent_fill_respects_receipt(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    mut margin_account_state: AccountState,
+    #[case] contingency: ContingencyType,
+    #[case] child_received: bool,
+) {
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(3_000_000_000, 0, 0)),
+    );
+    margin_account_state.account_id =
+        AccountId::from(format!("{}-001", instrument.id().venue).as_str());
+    harness
+        .cache
+        .borrow_mut()
+        .add_account(AccountAny::Margin(MarginAccount::new(
+            margin_account_state,
+            true,
+        )))
+        .unwrap();
+    let parent_id = ClientOrderId::from("O-PARENT");
+    let child_id = ClientOrderId::from("O-CHILD");
+    let ts = harness.test_clock.borrow().timestamp_ns();
+    let mut parent = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("100.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(parent_id)
+        .contingency_type(contingency)
+        .linked_order_ids(vec![child_id])
+        .ts_init(ts)
+        .build();
+    let parent_position_id =
+        PositionId::from(format!("{}-{}", instrument.id(), parent.strategy_id()).as_str());
+    parent.set_position_id(Some(parent_position_id));
+    let mut child_builder = OrderTestBuilder::new(OrderType::Limit);
+    child_builder
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("98.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(child_id)
+        .ts_init(ts);
+
+    if contingency == ContingencyType::Oto {
+        child_builder.parent_order_id(parent_id);
+    } else {
+        child_builder
+            .contingency_type(contingency)
+            .linked_order_ids(vec![parent_id]);
+    }
+
+    let child = child_builder.build();
+    cache_order(&harness, &parent);
+    cache_order(&harness, &child);
+    msgbus::send_trading_command(
+        MessagingSwitchboard::exec_engine_execute(),
+        TradingCommand::SubmitOrder(SubmitOrder::from_order(
+            &parent,
+            trader_id,
+            Some(harness.client_id),
+            Some(parent_position_id),
+            UUID4::new(),
+            ts,
+        )),
+    );
+
+    if child_received {
+        submit_cached_through_engine(&harness, trader_id, &child);
+    }
+
+    let _ = harness.settle();
+    advance_and_fire(&harness.test_clock, UnixNanos::from(*ts + 3_000_000_000));
+    let _ = harness.settle();
+    assert_eq!(
+        cached_status(&harness.cache, &parent),
+        OrderStatus::Accepted
+    );
+
+    if !child_received {
+        submit_cached_through_engine(&harness, trader_id, &child);
+        let _ = harness.settle();
+    }
+
+    assert_eq!(
+        cached_status(&harness.cache, &child),
+        OrderStatus::Submitted
+    );
+
+    let quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("99.00"),
+        Price::from("99.50"),
+        Quantity::from("0.500"),
+        Quantity::from("0.500"),
+        UnixNanos::from(*ts + 4_000_000_000),
+        UnixNanos::from(*ts + 4_000_000_000),
+    );
+    msgbus::publish_quote(
+        format!("data.quotes.{}.{}", instrument.id().venue, instrument.id()).into(),
+        &quote,
+    );
+
+    if !child_received {
+        assert_eq!(harness.cache.borrow().position_id(&child_id), None);
+    }
+
+    let events: Vec<_> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+
+    let expected = if child_received {
+        vec![("filled", parent_id), ("accepted", child_id)]
+    } else {
+        vec![("filled", parent_id)]
+    };
+
+    assert_eq!(events, expected);
+    assert_eq!(
+        cached_status(&harness.cache, &parent),
+        OrderStatus::PartiallyFilled
+    );
+    {
+        let cache = harness.cache.borrow();
+        let cached_child = cache.order(&child_id).unwrap();
+        assert_eq!(cached_child.quantity(), Quantity::from("1.000"));
+        assert_eq!(
+            cached_child.status(),
+            if child_received {
+                OrderStatus::Accepted
+            } else {
+                OrderStatus::Submitted
+            }
+        );
+        let parent_position_id = cache.position_id(&parent_id).unwrap();
+        let position = cache.position(parent_position_id).unwrap();
+        assert_eq!(position.quantity, Quantity::from("0.500"));
+
+        if contingency == ContingencyType::Oto {
+            assert_eq!(cache.position_id(&child_id), Some(parent_position_id));
+        } else {
+            assert_eq!(cache.position_id(&child_id), None);
+        }
+    }
+
+    if !child_received {
+        advance_and_fire(&harness.test_clock, UnixNanos::from(*ts + 6_000_000_000));
+        let events: Vec<_> = harness
+            .settle()
+            .iter()
+            .map(|event| (order_event_kind(event), event.client_order_id()))
+            .collect();
+        assert_eq!(events, vec![("accepted", child_id)]);
+        assert_eq!(cached_status(&harness.cache, &child), OrderStatus::Accepted);
+    }
+}
+
+#[rstest]
+#[case::modify(false)]
+#[case::expire(true)]
+fn test_inbound_latency_contingent_change_preserves_in_transit_order(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] expiry: bool,
+) {
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(3_000_000_000, 0, 0)),
+    );
+    let ts = harness.test_clock.borrow().timestamp_ns();
+    let parent_id = ClientOrderId::from("O-PARENT");
+    let child_id = ClientOrderId::from("O-CHILD");
+
+    let contingency = if expiry {
+        ContingencyType::Oco
+    } else {
+        ContingencyType::Ouo
+    };
+
+    let mut parent_builder = OrderTestBuilder::new(OrderType::Limit);
+    parent_builder
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("100.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(parent_id)
+        .contingency_type(contingency)
+        .linked_order_ids(vec![child_id])
+        .ts_init(ts);
+
+    if expiry {
+        parent_builder
+            .time_in_force(TimeInForce::Gtd)
+            .expire_time(UnixNanos::from(*ts + 4_000_000_000));
+    }
+
+    let parent = parent_builder.build();
+    let child = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("98.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(child_id)
+        .contingency_type(contingency)
+        .linked_order_ids(vec![parent_id])
+        .ts_init(ts)
+        .build();
+    cache_order(&harness, &parent);
+    cache_order(&harness, &child);
+    submit_cached_through_engine(&harness, trader_id, &parent);
+    let _ = harness.settle();
+    advance_and_fire(&harness.test_clock, UnixNanos::from(*ts + 3_000_000_000));
+    let _ = harness.settle();
+    submit_cached_through_engine(&harness, trader_id, &child);
+    let _ = harness.settle();
+
+    if expiry {
+        advance_and_fire(&harness.test_clock, UnixNanos::from(*ts + 4_000_000_000));
+
+        let quote = QuoteTick::new(
+            instrument.id(),
+            Price::from("101.00"),
+            Price::from("102.00"),
+            Quantity::from("1.000"),
+            Quantity::from("1.000"),
+            UnixNanos::from(*ts + 4_000_000_000),
+            UnixNanos::from(*ts + 4_000_000_000),
+        );
+        msgbus::publish_quote(
+            format!("data.quotes.{}.{}", instrument.id().venue, instrument.id()).into(),
+            &quote,
+        );
+    } else {
+        let mut command = modify_command(
+            harness.client_id,
+            trader_id,
+            &parent,
+            UnixNanos::from(*ts + 3_000_000_000),
+        );
+        command.quantity = Some(Quantity::from("0.500"));
+        msgbus::send_trading_command(
+            MessagingSwitchboard::exec_engine_execute(),
+            TradingCommand::ModifyOrder(command),
+        );
+    }
+
+    let events: Vec<_> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        events,
+        vec![(if expiry { "expired" } else { "updated" }, parent_id)]
+    );
+    let cache = harness.cache.borrow();
+    let child = cache.order(&child_id).unwrap();
+    assert_eq!(child.status(), OrderStatus::Submitted);
+    assert_eq!(child.quantity(), Quantity::from("1.000"));
+    assert_eq!(child.price(), Some(Price::from("98.00")));
+}
+
+#[rstest]
+fn test_cancel_all_after_first_duplicate_submit_receipt(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    let (context, mut rx) = setup_channel_context(
+        trader_id,
+        account_id,
+        venue,
+        &instrument,
+        Some(static_latency_model(3_000_000_000, 0, 0)),
+    );
+    let ts = context.test_clock.borrow().timestamp_ns();
+    let order = resting_limit(&instrument, "O-DUPLICATE", "100.00", ts);
+    submit_to_client(&context, trader_id, &order);
+    let submitted = drain_order_events(&mut rx);
+    context
+        .cache
+        .borrow_mut()
+        .update_order(&submitted[0])
+        .unwrap();
+    advance_and_fire(&context.test_clock, UnixNanos::from(*ts + 1_000_000_000));
+    context
+        .client
+        .submit_order(SubmitOrder::from_order(
+            &order,
+            trader_id,
+            Some(context.client.client_id()),
+            None,
+            UUID4::new(),
+            ts,
+        ))
+        .unwrap();
+    let _ = drain_order_events(&mut rx);
+    advance_and_fire(&context.test_clock, UnixNanos::from(*ts + 3_000_000_000));
+    let accepted = drain_order_events(&mut rx);
+    assert_eq!(accepted.len(), 1);
+    context
+        .cache
+        .borrow_mut()
+        .update_order(&accepted[0])
+        .unwrap();
+
+    context
+        .client
+        .cancel_all_orders(CancelAllOrders::new(
+            trader_id,
+            Some(context.client.client_id()),
+            order.strategy_id(),
+            instrument.id(),
+            None,
+            UUID4::new(),
+            UnixNanos::from(*ts + 3_000_000_000),
+            None,
+            None,
+        ))
+        .unwrap();
+    let events: Vec<_> = drain_order_events(&mut rx)
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(events, vec![("canceled", order.client_order_id())]);
 }

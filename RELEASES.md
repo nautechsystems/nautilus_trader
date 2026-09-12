@@ -38,6 +38,7 @@ Released on TBD (UTC).
 - Added Polymarket limit order modification support
 - Added Polymarket parent event IDs and raw Gamma market and event metadata
 - Added Polymarket resolution subscriptions for data-only clients (#4895), thanks @mystic-io
+- Added inbound latency modeling to sandbox execution client (#4865), thanks @ChrisAB
 
 ### Breaking Changes
 
@@ -166,6 +167,7 @@ Released on TBD (UTC).
 - Added experimental executable component bindings for plug-ins
 - Added acceptance tests running the documentation guides and resolving their documented imports
 - Replaced Reqwest HTTP execution with Hyper and removed direct Reqwest dependencies
+- Improved contingent order handling to respect venue receipt in backtest and sandbox execution
 - Improved Betfair execution client test synchronization (#4866), thanks @folknor
 - Improved task lifecycle tests to avoid stalled timer polling (#4899), thanks @folknor
 - Improved Hyperliquid exchange error message fixtures and rejection routing tests

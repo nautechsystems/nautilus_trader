@@ -17,6 +17,7 @@
 
 pub mod config;
 pub mod ids_generator;
+pub mod inflight;
 
 mod settlement;
 
@@ -72,7 +73,9 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
-use self::{config::OrderMatchingEngineConfig, ids_generator::IdsGenerator};
+use self::{
+    config::OrderMatchingEngineConfig, ids_generator::IdsGenerator, inflight::InflightOrders,
+};
 use crate::{
     matching_core::{MatchAction, OrderMatchingCore, RestingOrder},
     models::{
@@ -108,6 +111,7 @@ pub struct OrderMatchingEngine {
     fill_model: FillModelHandle,
     fee_model: FeeModelHandle,
     event_handler: Option<Rc<dyn Fn(OrderEventAny)>>,
+    inflight_orders: InflightOrders,
     target_bid: Option<Price>,
     target_ask: Option<Price>,
     target_last: Option<Price>,
@@ -193,6 +197,7 @@ impl OrderMatchingEngine {
             fill_model,
             fee_model,
             event_handler: None,
+            inflight_orders: InflightOrders::default(),
             book_type,
             oms_type,
             account_type,
@@ -253,6 +258,11 @@ impl OrderMatchingEngine {
     /// re-entrancy panics.
     pub fn set_event_handler(&mut self, handler: Rc<dyn Fn(OrderEventAny)>) {
         self.event_handler = Some(handler);
+    }
+
+    /// Attaches the venue's shared state for submits awaiting receipt.
+    pub fn set_inflight_orders(&mut self, orders: InflightOrders) {
+        self.inflight_orders = orders;
     }
 
     fn dispatch_order_event(&self, event: OrderEventAny) {
@@ -3284,14 +3294,14 @@ impl OrderMatchingEngine {
     }
 
     /// Processes a cancel all orders command for an instrument.
+    ///
+    /// Orders still awaiting venue receipt are left untouched.
     pub fn process_cancel_all(&mut self, command: &CancelAllOrders, account_id: AccountId) {
         self.process_cancel_all_excluding(command, account_id, &[]);
     }
 
     /// Processes a cancel all orders command for an instrument, leaving `excluded` untouched,
     /// including when canceling an order cascades into its contingent orders.
-    ///
-    /// A venue modeling inbound latency excludes the orders whose submit it has not received yet.
     pub fn process_cancel_all_excluding(
         &mut self,
         command: &CancelAllOrders,
@@ -5347,6 +5357,10 @@ impl OrderMatchingEngine {
                                 continue;
                             }
 
+                            if self.inflight_orders.contains(*client_order_id) {
+                                continue;
+                            }
+
                             // Check if we need to index position id
                             if let (None, Some(position_id)) =
                                 (child_order.position_id(), order.position_id())
@@ -6057,6 +6071,10 @@ impl OrderMatchingEngine {
         cancel_contingencies: Option<bool>,
         excluded: &[ClientOrderId],
     ) {
+        if self.inflight_orders.contains(order.client_order_id()) {
+            return;
+        }
+
         let cancel_contingencies = cancel_contingencies.unwrap_or(true);
 
         if order.is_active_local()
@@ -6103,6 +6121,10 @@ impl OrderMatchingEngine {
         trigger_price: Option<Price>,
         update_contingencies: Option<bool>,
     ) -> bool {
+        if self.inflight_orders.contains(order.client_order_id()) {
+            return false;
+        }
+
         let update_contingencies = update_contingencies.unwrap_or(true);
         let quantity = quantity.unwrap_or(order.quantity());
 

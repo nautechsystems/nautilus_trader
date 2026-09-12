@@ -136,7 +136,15 @@ ahead of each tick it receives, and the client's clock alert releases a queue no
 to. A command whose latency leg is zero is applied on arrival, unless a command is already due
 and not yet released, in which case it joins the queue behind it. A cancel-all reaching the venue
 cancels only orders the venue has received: an order whose submit is still in transit is left
-alone and rests once that submit arrives.
+alone until the venue processes its submit.
+
+In both backtest and sandbox, contingent actions also respect venue receipt. Fills, updates,
+expirations, and cancellations cannot activate, amend, or cancel a linked order the venue has
+not yet received. Each submit list arrives as a unit. An OTO child already received by the venue
+can still activate when its parent fills. A late submit is checked against the current state of
+its linked orders and may be rejected if a linked order has already closed.
+Contingent quantity changes skipped before receipt are not replayed when the submit arrives;
+the order retains its submitted quantity unless another applicable rule changes it.
 
 Stopping the client discards anything still in flight. A discarded submit, modify, or targeted
 cancel is rejected (`OrderRejected`, `OrderModifyRejected`, `OrderCancelRejected`) so its order
