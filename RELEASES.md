@@ -32,6 +32,7 @@ Released on TBD (UTC).
 - Added Bybit self-match prevention, set with `smp_type` on the execution client config or per order
 - Added Hyperliquid definite rejection events for submit, modify, and cancel command paths
 - Added Hyperliquid local denial of over-decimal order prices when `normalize_prices` is disabled
+- Added Kraken Futures `makerProtectionMillis` decoding for Maker Protection markets
 - Added Kraken execution `max_retries` configuration (#4902), thanks @folknor
 - Added OKX raw HTTP account configuration queries (#4943), thanks @silarin
 - Added Polymarket collateral-sized limit BUY orders with exact limit price preservation
@@ -145,6 +146,7 @@ Released on TBD (UTC).
 - Fixed Hyperliquid shared REST quotas and WebSocket rate and capacity limits
 - Fixed Hyperliquid WebSocket post deadlines across queueing, transport writes, and replies
 - Fixed Kraken Futures silently returning partial catalogs when instrument precision is unsupported
+- Fixed Kraken Futures `iocWouldNotExecute` order outcomes staying ambiguous instead of rejecting
 - Fixed Kraken Spot available balances excluding funds held by the venue (#4922), thanks @zhaow-de
 - Fixed Kraken Spot instrument fees to use account rates when credentials are configured (#4890), thanks @matvt-cell
 - Fixed Lighter post-only GTD recovery and account-wide cancellation during flattening
@@ -221,6 +223,7 @@ Released on TBD (UTC).
 - Added the NumPy and pandas prerequisites the wheel does not install
 - Added an environment report snippet to the bug report template
 - Added an explicit statement that the documentation covers v2 only
+- Added Kraken Futures Maker Protection held-order semantics to the integration guide
 - Added OKX RPI minimum-notional thresholds and amend rejection rules
 - Changed install commands to require `--pre` for the v2 wheel (#4919), thanks for reporting @pcoughlin
 - Changed the getting started and tutorial guides to run on bundled sample data without a download

@@ -2691,6 +2691,7 @@ pub(crate) fn is_futures_submit_rejection(status: &str) -> bool {
             | KrakenSendStatus::InvalidSize
             | KrakenSendStatus::WouldCauseLiquidation
             | KrakenSendStatus::PostWouldExecute
+            | KrakenSendStatus::IocWouldNotExecute
             | KrakenSendStatus::ReduceOnlyWouldIncreasePosition)
     )
 }

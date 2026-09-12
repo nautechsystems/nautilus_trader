@@ -680,6 +680,12 @@ pub enum KrakenSendStatus {
     WouldCauseLiquidation,
     /// Post-only order would have crossed.
     PostWouldExecute,
+    /// Immediate-or-cancel order would not execute.
+    ///
+    /// Also the final outcome of a Maker Protection hold that was converted
+    /// by a cancel and cannot trade at release: the venue releases the order
+    /// as immediate-or-cancel and reports this status when nothing fills.
+    IocWouldNotExecute,
     /// Reduce-only order would increase position.
     ReduceOnlyWouldIncreasePosition,
 }
@@ -943,6 +949,7 @@ mod tests {
     #[case("\"invalidSize\"", KrakenSendStatus::InvalidSize)]
     #[case("\"wouldCauseLiquidation\"", KrakenSendStatus::WouldCauseLiquidation)]
     #[case("\"postWouldExecute\"", KrakenSendStatus::PostWouldExecute)]
+    #[case("\"iocWouldNotExecute\"", KrakenSendStatus::IocWouldNotExecute)]
     #[case(
         "\"reduceOnlyWouldIncreasePosition\"",
         KrakenSendStatus::ReduceOnlyWouldIncreasePosition

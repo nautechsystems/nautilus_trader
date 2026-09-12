@@ -380,6 +380,33 @@ time rather than silently coercing them.
 | Bracket orders     | -    | -       | *Not supported*.                            |
 | Conditional orders | ✓    | ✓       | Stop and take-profit orders.                |
 
+### Maker Protection (Futures)
+
+Kraken Futures applies
+[Maker Protection](https://docs.kraken.com/exchange/guides/futures/maker-protection)
+on selected markets: placements and edits that could take liquidity are held
+for the market's configured window before reaching the matching engine. The
+classification is by order type, so any order not marked `post_only` is held
+even when it would in fact have rested. Post-only placements and all
+cancellations are never held, and no held-order state is exposed on any API.
+The venue applies the hold per market to every client; the adapter decodes
+the per-market window (`makerProtectionMillis`) on the raw venue instrument
+model and exposes no configuration for it.
+
+Order-state handling accounts for the held-order semantics:
+
+- A cancel acknowledged while an order is held is not terminal. The order is
+  released as IOC and can still fill. Fills and terminal states are driven
+  by venue order updates, never by the cancel acknowledgement itself.
+- An order that cannot trade after such a release is reported with the venue
+  status `iocWouldNotExecute` on REST (`IOC_WOULD_ENTER_BOOK` on market data),
+  which the adapter treats as a terminal rejection. On the order-update feed
+  the same outcome arrives as a terminal cancellation whose venue reason the
+  adapter preserves.
+- A released order cancels a resting order of the same account it would
+  match, overriding the configured self-trade strategy. The resting order is
+  reported canceled with reason `CANCELLED_BY_SELF_TRADE`.
+
 ## Order routing (Spot)
 
 The Spot execution client routes order submission, modification, cancellation,

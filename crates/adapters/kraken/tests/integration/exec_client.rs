@@ -100,6 +100,7 @@ enum OrderCommandResponse {
     AmbiguousFailure,
     StructuredReject,
     UnknownStatus,
+    IocWouldNotExecute,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -258,6 +259,10 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
                     r#"{"result":"success","sendStatus":{"status":"processing","order_id":"F-SUBMIT"}}"#
                         .to_string(),
                 ),
+                OrderCommandResponse::IocWouldNotExecute => json_response(
+                    r#"{"result":"success","sendStatus":{"status":"iocWouldNotExecute"}}"#
+                        .to_string(),
+                ),
             }
         }
         "/derivatives/api/v3/editorder" => {
@@ -275,7 +280,8 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
                     r#"{"result":"error","editStatus":{"status":"notFound","order_id":"F-MODIFY"}}"#
                         .to_string(),
                 ),
-                OrderCommandResponse::UnknownStatus => json_response(
+                OrderCommandResponse::UnknownStatus
+                | OrderCommandResponse::IocWouldNotExecute => json_response(
                     r#"{"result":"success","editStatus":{"status":"processing","order_id":"F-MODIFY"}}"#
                         .to_string(),
                 ),
@@ -393,7 +399,8 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
                 OrderCommandResponse::StructuredReject => {
                     json_response(r#"{"error":["EOrder:Insufficient funds"]}"#.to_string())
                 }
-                OrderCommandResponse::UnknownStatus => {
+                OrderCommandResponse::UnknownStatus
+                | OrderCommandResponse::IocWouldNotExecute => {
                     json_response(r#"{"error":[],"result":{"txid":[]}}"#.to_string())
                 }
             }
@@ -411,7 +418,8 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
                 OrderCommandResponse::StructuredReject => {
                     json_response(r#"{"error":["EOrder:Unknown order"]}"#.to_string())
                 }
-                OrderCommandResponse::UnknownStatus => {
+                OrderCommandResponse::UnknownStatus
+                | OrderCommandResponse::IocWouldNotExecute => {
                     json_response(r#"{"error":[],"result":{}}"#.to_string())
                 }
             }
@@ -1231,6 +1239,44 @@ async fn test_futures_unknown_submit_status_does_not_emit_rejected() {
         matches!(event, OrderEventAny::Rejected(event) if event.client_order_id == client_order_id)
     })
     .await;
+    assert_eq!(state.submit_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_ioc_would_not_execute_submit_emits_rejected() {
+    // Maker Protection outcome: `iocWouldNotExecute` is the venue's terminal
+    // answer for an order that cannot trade (including a converted hold that
+    // finds no liquidity at release). It must reject the order, not leave it
+    // ambiguous like an unknown status.
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            submit: OrderCommandResponse::IocWouldNotExecute,
+            ..Default::default()
+        })
+        .await;
+
+    let client_order_id = ClientOrderId::new("futures-submit-ioc-001");
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+
+    client.submit_order(submit_order_command(&order)).unwrap();
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Rejected(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+            assert!(event.reason.contains("iocWouldNotExecute"));
+        }
+        other => panic!("Expected OrderRejected event, was {other:?}"),
+    }
+
     assert_eq!(state.submit_request_count.load(Ordering::Relaxed), 1);
 }
 

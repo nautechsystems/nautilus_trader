@@ -71,6 +71,12 @@ pub struct FuturesInstrument {
     pub isin: Option<String>,
     pub contract_value_trade_precision: i32,
     pub post_only: bool,
+    /// Maker Protection hold window in milliseconds for this market.
+    ///
+    /// Only present when the venue has Maker Protection configured for the
+    /// market; absent means no hold (treat the same as zero).
+    #[serde(default)]
+    pub maker_protection_millis: Option<i64>,
     #[serde(default)]
     pub fee_schedule_uid: Option<String>,
     pub mtf: bool,
@@ -881,6 +887,26 @@ mod tests {
             Some(KrakenTriggerSignal::Last)
         );
         assert_eq!(trigger_order.cli_ord_id, None);
+    }
+
+    #[rstest]
+    fn test_parse_futures_instruments_maker_protection() {
+        let data = load_test_data("http_futures_instruments_maker_protection.json");
+        let response: FuturesInstrumentsResponse =
+            serde_json::from_str(&data).expect("Failed to parse futures instruments");
+
+        assert_eq!(response.result, KrakenApiResult::Success);
+        assert_eq!(response.instruments.len(), 2);
+
+        let protected = &response.instruments[0];
+        assert_eq!(protected.symbol, "PF_ATOMUSD");
+        assert_eq!(protected.maker_protection_millis, Some(20));
+
+        // The venue omits makerProtectionMillis entirely on unprotected
+        // markets; absent must decode the same as no protection configured.
+        let unprotected = &response.instruments[1];
+        assert_eq!(unprotected.symbol, "PF_ETHUSD");
+        assert_eq!(unprotected.maker_protection_millis, None);
     }
 
     #[rstest]

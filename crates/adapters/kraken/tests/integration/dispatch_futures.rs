@@ -1001,3 +1001,323 @@ fn test_truncated_id_map_resolves_full_client_order_id() {
     };
     assert_eq!(accepted.client_order_id, full_cid);
 }
+
+#[rstest]
+fn test_futures_converted_hold_cancel_emits_canceled_with_reason() {
+    // Maker Protection: the REST cancel of a held order was acknowledged by
+    // the gateway (no dispatch event), and the converted order could not
+    // trade at release. The terminal cancel delta must converge the order
+    // with the venue reason preserved.
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("uuid-mp-converted");
+    state.register_identity(
+        cid,
+        make_identity(FUTURES_INSTRUMENT_ID, OrderSide::Buy, OrderType::Limit),
+    );
+
+    let delta = make_open_orders_delta(
+        true,
+        Some("IOC_WOULD_ENTER_BOOK"),
+        dec!(0.0001),
+        dec!(0.0),
+        Some("uuid-mp-converted"),
+        "v-mp-converted",
+    );
+    dispatch::futures::open_orders_delta(
+        &delta,
+        &state,
+        &emitter,
+        &instruments_with(make_futures_perpetual()),
+        &empty_string_map(),
+        &empty_instrument_id_map(),
+        &empty_string_map(),
+        &empty_quantity_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 2);
+    assert!(matches!(
+        events[0],
+        ExecutionEvent::Order(OrderEventAny::Accepted(_))
+    ));
+
+    let ExecutionEvent::Order(OrderEventAny::Canceled(canceled)) = &events[1] else {
+        panic!("expected OrderCanceled, was {:?}", events[1]);
+    };
+
+    assert_eq!(canceled.reason, Some(Ustr::from("IOC_WOULD_ENTER_BOOK")));
+    assert!(state.lookup_identity(&cid).is_none());
+}
+
+#[rstest]
+fn test_futures_converted_hold_fill_after_cancel_ack_converges() {
+    // Maker Protection core trap: the cancel was already acknowledged over
+    // REST, then the held order fills at release. The fill must still be
+    // processed, and the subsequent fill-driven removal must not emit a
+    // spurious cancel.
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("uuid-mp-filled");
+    state.register_identity(
+        cid,
+        make_identity(FUTURES_INSTRUMENT_ID, OrderSide::Buy, OrderType::Limit),
+    );
+    let instruments = instruments_with(make_futures_perpetual());
+
+    let fills = make_fills_delta(Some("uuid-mp-filled"), "v-mp-filled", "trade-mp-filled");
+    dispatch::futures::fills_delta(
+        &fills,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_string_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let removal = make_open_orders_delta(
+        true,
+        Some("full_fill"),
+        dec!(0.0),
+        dec!(0.0001),
+        Some("uuid-mp-filled"),
+        "v-mp-filled",
+    );
+    dispatch::futures::open_orders_delta(
+        &removal,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_instrument_id_map(),
+        &empty_string_map(),
+        &empty_quantity_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(
+        events.len(),
+        2,
+        "expected Accepted + Filled, was {events:?}"
+    );
+    assert!(matches!(
+        events[0],
+        ExecutionEvent::Order(OrderEventAny::Accepted(_))
+    ));
+    assert!(matches!(
+        events[1],
+        ExecutionEvent::Order(OrderEventAny::Filled(_))
+    ));
+    assert!(state.filled_orders.contains(&cid));
+    assert!(state.lookup_identity(&cid).is_none());
+}
+
+#[rstest]
+fn test_futures_held_amend_cancel_absorbed_then_amend_outcome_drives_state() {
+    // Maker Protection: a cancel sent while an amend is held is absorbed by
+    // the gateway and never reaches the book, so dispatch never sees it. At
+    // release the amendment reprices the same order (modify ack), then it
+    // trades. The amend outcome alone must drive the order state.
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("uuid-mp-amend");
+    state.register_identity(
+        cid,
+        make_identity(FUTURES_INSTRUMENT_ID, OrderSide::Buy, OrderType::Limit),
+    );
+    let instruments = instruments_with(make_futures_perpetual());
+
+    let placement = make_open_orders_delta(
+        false,
+        Some("new_placed_order_by_user"),
+        dec!(0.0001),
+        dec!(0.0),
+        Some("uuid-mp-amend"),
+        "v-mp-amend",
+    );
+    dispatch::futures::open_orders_delta(
+        &placement,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_instrument_id_map(),
+        &empty_string_map(),
+        &empty_quantity_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+    let _ = drain_events(&mut rx);
+
+    // The released amendment reprices the order to cross the book.
+    let mut reprice = make_open_orders_delta(
+        false,
+        None,
+        dec!(0.0001),
+        dec!(0.0),
+        Some("uuid-mp-amend"),
+        "v-mp-amend",
+    );
+    reprice.order.limit_price = Some(dec!(70100));
+    dispatch::futures::open_orders_delta(
+        &reprice,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_instrument_id_map(),
+        &empty_string_map(),
+        &empty_quantity_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let fills = make_fills_delta(Some("uuid-mp-amend"), "v-mp-amend", "trade-mp-amend");
+    dispatch::futures::fills_delta(
+        &fills,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_string_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 2, "expected Updated + Filled, was {events:?}");
+
+    let ExecutionEvent::Order(OrderEventAny::Updated(updated)) = &events[0] else {
+        panic!("expected OrderUpdated, was {:?}", events[0]);
+    };
+
+    assert_eq!(updated.price, Some(Price::from("70100.0")));
+    assert!(matches!(
+        events[1],
+        ExecutionEvent::Order(OrderEventAny::Filled(_))
+    ));
+}
+
+#[rstest]
+fn test_futures_self_trade_on_release_cancels_resting_maker() {
+    // Maker Protection: a released aggressor cancels the account's own
+    // resting maker regardless of the configured self-trade strategy. The
+    // maker's cancel delta must converge with the venue reason preserved.
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("uuid-mp-maker");
+    state.register_identity(
+        cid,
+        make_identity(FUTURES_INSTRUMENT_ID, OrderSide::Sell, OrderType::Limit),
+    );
+
+    let delta = make_open_orders_delta(
+        true,
+        Some("CANCELLED_BY_SELF_TRADE"),
+        dec!(0.0001),
+        dec!(0.0),
+        Some("uuid-mp-maker"),
+        "v-mp-maker",
+    );
+    dispatch::futures::open_orders_delta(
+        &delta,
+        &state,
+        &emitter,
+        &instruments_with(make_futures_perpetual()),
+        &empty_string_map(),
+        &empty_instrument_id_map(),
+        &empty_string_map(),
+        &empty_quantity_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 2);
+    assert!(matches!(
+        events[0],
+        ExecutionEvent::Order(OrderEventAny::Accepted(_))
+    ));
+
+    let ExecutionEvent::Order(OrderEventAny::Canceled(canceled)) = &events[1] else {
+        panic!("expected OrderCanceled, was {:?}", events[1]);
+    };
+
+    assert_eq!(canceled.reason, Some(Ustr::from("CANCELLED_BY_SELF_TRADE")));
+    assert!(state.lookup_identity(&cid).is_none());
+}
+
+#[rstest]
+fn test_futures_late_fill_after_terminal_cancel_falls_back_to_report() {
+    // Cross-feed race safety net: a terminal cancel delta that overtakes the
+    // fill it belongs with must not strand the fill. Once the identity is
+    // cleaned up the late fill degrades to an external FillReport instead of
+    // being dropped silently.
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("uuid-mp-late-fill");
+    state.register_identity(
+        cid,
+        make_identity(FUTURES_INSTRUMENT_ID, OrderSide::Buy, OrderType::Limit),
+    );
+    let instruments = instruments_with(make_futures_perpetual());
+
+    let cancel = make_open_orders_delta(
+        true,
+        Some("cancelled_by_user"),
+        dec!(0.0001),
+        dec!(0.0),
+        Some("uuid-mp-late-fill"),
+        "v-mp-late-fill",
+    );
+    dispatch::futures::open_orders_delta(
+        &cancel,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_instrument_id_map(),
+        &empty_string_map(),
+        &empty_quantity_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let fills = make_fills_delta(Some("uuid-mp-late-fill"), "v-mp-late-fill", "trade-mp-late");
+    dispatch::futures::fills_delta(
+        &fills,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_string_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(
+        events.len(),
+        3,
+        "expected Accepted + Canceled + FillReport, was {events:?}"
+    );
+    assert!(matches!(
+        events[0],
+        ExecutionEvent::Order(OrderEventAny::Accepted(_))
+    ));
+    assert!(matches!(
+        events[1],
+        ExecutionEvent::Order(OrderEventAny::Canceled(_))
+    ));
+    assert!(
+        matches!(events[2], ExecutionEvent::Report(_)),
+        "late fill must degrade to a FillReport, was {:?}",
+        events[2]
+    );
+}
