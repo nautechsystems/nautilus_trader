@@ -32,6 +32,9 @@ pub mod indicators;
 pub mod registry;
 
 mod access;
+mod dispatch;
+mod invocation;
+mod storage;
 
 #[cfg(test)]
 pub(crate) mod tests;

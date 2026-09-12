@@ -45,6 +45,12 @@ thread_local! {
     static BORROWED: Rc<RefCell<AHashSet<*const ()>>> = Rc::default();
 }
 
+pub(super) fn is_active() -> bool {
+    BORROWED
+        .try_with(|borrowed| !borrowed.borrow().is_empty())
+        .unwrap_or(true)
+}
+
 /// Owns an allocation and excludes other checked accesses to that allocation until it drops.
 ///
 /// Retaining the `Rc` prevents address reuse while access is held.
