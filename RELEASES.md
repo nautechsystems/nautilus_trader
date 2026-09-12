@@ -232,6 +232,7 @@ Released on TBD (UTC).
 - Updated Hyperliquid guide for rejection events, price guard, and trigger-order resting
 - Restructured execution documentation around algorithms, policies, reconciliation, and live recovery
 - Standardized Rust documentation links and added offline link coverage
+- Standardized admonition severity levels to match the documented taxonomy
 - Fixed the actor configuration example rejecting a positional argument
 - Fixed option Greeks examples ignoring string `actor_id` overrides
 - Corrected documented enum values for instrument classes, wallet accounts, position entry sides, and Polymarket close types

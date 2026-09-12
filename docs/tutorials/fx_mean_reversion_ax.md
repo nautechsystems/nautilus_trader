@@ -193,7 +193,7 @@ rates.
 | `rsi_sell_threshold` | `0.70` | Short entry confirmation.                                  |
 | `trade_size`         | `1`    | One contract per trade (1,000 EUR notional).               |
 
-:::tip
+:::note
 NautilusTrader RSI returns values in `[0.0, 1.0]`, not `[0, 100]`. The
 `0.30` / `0.70` thresholds correspond to the textbook 30 / 70 levels.
 :::

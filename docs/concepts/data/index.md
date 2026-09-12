@@ -978,7 +978,7 @@ catalog.delete_data_range(
 )
 ```
 
-:::warning
+:::danger
 Delete operations cannot be undone. The catalog splits partially overlapping files to preserve data
 outside the range.
 :::

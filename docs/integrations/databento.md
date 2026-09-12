@@ -41,7 +41,7 @@ The following adapter classes are available:
 - `DatabentoDataClient`: Data client for live trading nodes, wrapping the historical and live clients.
 - `DatabentoDataClientFactory`: Builds the data client from a `DatabentoDataClientConfig` for `LiveNode`.
 
-:::info
+:::note
 Most users configure a live trading node (covered below) and do not work with
 these components directly.
 :::
@@ -689,7 +689,7 @@ The `statistics` module follows the same pattern with
 `get_databento_arrow_schema_map(DatabentoImbalance)` from Python to inspect the
 Arrow field map for either type.
 
-:::warning
+:::info
 Neither type is registered with the `ParquetDataCatalog` custom data encoders, so
 `write_custom_data` and `query_custom_data` fail with an unregistered-type error,
 and neither type streams through `BacktestNode` or `BacktestEngine`. For research

@@ -355,7 +355,7 @@ To programmatically fetch and list available versions:
 curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | sed -n 's/.*<a href="\([^"]*\)".*/\1/p' | awk -F'#' '{print $1}' | sort
 ```
 
-> [!NOTE]
+> [!IMPORTANT]
 >
 > On Linux, confirm your glibc version with `ldd --version` and ensure it reports **2.35** or newer before installing binary wheels.
 
@@ -384,7 +384,7 @@ NautilusTrader GitHub Actions workflow and has not been tampered with since.
 
 For step-by-step verification commands, see [Verifying releases](SECURITY.md#verifying-releases) in `SECURITY.md`.
 
-> [!NOTE]
+> [!IMPORTANT]
 >
 > Verification requires the [GitHub CLI](https://cli.github.com/) (`gh`) for Python artifacts
 > and [cosign](https://github.com/sigstore/cosign) for Docker images.

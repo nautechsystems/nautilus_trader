@@ -190,7 +190,7 @@ NautilusTrader GitHub Actions workflow and has not been tampered with since.
 
 For step-by-step verification commands, see [Verifying releases](https://github.com/nautechsystems/nautilus_trader/blob/develop/SECURITY.md#verifying-releases) in `SECURITY.md`.
 
-:::note
+:::info
 Verification requires the [GitHub CLI](https://cli.github.com/) (`gh`) for Python artifacts
 and [cosign](https://github.com/sigstore/cosign) for Docker images.
 Development wheels from `develop` and `nightly` branches are also attested.

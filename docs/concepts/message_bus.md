@@ -624,7 +624,7 @@ flowchart TB
     stream --> consumer2
 ```
 
-:::tip
+:::info
 Set the `LiveDataEngineConfig.external_clients` with the list of `client_id`s intended to represent the external streaming clients.
 The `DataEngine` will filter out subscription commands for these clients, ensuring that the external streaming provides the necessary data for any subscriptions to these clients.
 When the Rust `DataEngine` skips an external-client subscription, it registers the corresponding streaming payload type for inbound republishing on the message bus.

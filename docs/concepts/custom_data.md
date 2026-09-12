@@ -280,7 +280,7 @@ When converting a Feather stream to Parquet, such as after a backtest, the
 custom-data branch is designed to transform the Arrow batches and write the
 result directly to the matching custom-data path.
 
-:::warning
+:::info
 Streaming Feather persistence for custom data is not currently available. The
 Python `StreamingFeatherWriter` rejects `CustomData` with an `OSError`, and
 `convert_stream_to_data` does not convert custom-data Feather streams to

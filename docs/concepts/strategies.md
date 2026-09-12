@@ -28,7 +28,7 @@ There are two main parts of a Nautilus trading strategy:
 - The strategy implementation itself, defined by inheriting the `Strategy` class.
 - The *optional* strategy configuration, defined by inheriting the `StrategyConfig` class.
 
-:::tip
+:::note
 The same strategy source can run in backtest and live environments. Live execution still introduces
 venue, transport, timing, persistence, external-activity, and reconciliation behavior that a
 simulation may not reproduce. See

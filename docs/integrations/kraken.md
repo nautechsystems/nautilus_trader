@@ -127,7 +127,7 @@ The adapter uses buffering instead of timer-based emission because:
 
 This favors the latest venue update at the cost of latency.
 
-:::warning
+:::tip
 If bar latency matters for your strategy, consider using trade tick data
 and aggregating bars locally with `BarAggregator`.
 :::

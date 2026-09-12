@@ -9,7 +9,7 @@ You can run those directly as scripts or open them as notebooks with Jupytext.
 Rust tutorials use the commands shown on their pages.
 :::
 
-:::tip
+:::note
 
 - **Latest**: docs built from the `master` branch for stable releases.
   See <https://nautilustrader.io/docs/latest/tutorials/>.
