@@ -76,13 +76,13 @@ impl EncodeToRecordBatch for TradeTick {
         let price_array = Arc::new(required_price_decimal_array(
             data.iter()
                 .map(std::borrow::Borrow::borrow)
-                .map(|tick| tick.price.raw),
+                .map(|tick| tick.price.raw()),
             "price",
         )?);
         let size_array = Arc::new(required_quantity_decimal_array(
             data.iter()
                 .map(std::borrow::Borrow::borrow)
-                .map(|tick| tick.size.raw),
+                .map(|tick| tick.size.raw()),
             "size",
         )?);
         let aggressor_side_array = Arc::new(enum_dictionary_array(

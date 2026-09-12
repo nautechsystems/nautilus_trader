@@ -369,7 +369,7 @@ impl ArrowFieldDescriptor {
                                     nautilus_serialization::arrow::FIXED_DECIMAL_SCALE,
                                 )));
                             }
-                            builder.push(value.raw);
+                            builder.push(value.raw());
                         } else {
                             builder.push(nautilus_model::types::PRICE_UNDEF);
                         }
@@ -384,7 +384,7 @@ impl ArrowFieldDescriptor {
                                 nautilus_serialization::arrow::FIXED_DECIMAL_SCALE,
                             )));
                         }
-                        builder.push(item.#name.raw);
+                        builder.push(item.#name.raw());
                     }
                 }
             }
@@ -400,7 +400,7 @@ impl ArrowFieldDescriptor {
                                     nautilus_serialization::arrow::FIXED_DECIMAL_SCALE,
                                 )));
                             }
-                            builder.push(value.raw);
+                            builder.push(value.raw());
                         } else {
                             builder.push(nautilus_model::types::QUANTITY_UNDEF);
                         }
@@ -415,7 +415,7 @@ impl ArrowFieldDescriptor {
                                 nautilus_serialization::arrow::FIXED_DECIMAL_SCALE,
                             )));
                         }
-                        builder.push(item.#name.raw);
+                        builder.push(item.#name.raw());
                     }
                 }
             }

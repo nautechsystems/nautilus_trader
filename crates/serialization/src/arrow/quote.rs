@@ -76,25 +76,25 @@ impl EncodeToRecordBatch for QuoteTick {
                 Arc::new(required_price_decimal_array(
                     data.iter()
                         .map(std::borrow::Borrow::borrow)
-                        .map(|quote| quote.bid_price.raw),
+                        .map(|quote| quote.bid_price.raw()),
                     "bid_price",
                 )?),
                 Arc::new(required_price_decimal_array(
                     data.iter()
                         .map(std::borrow::Borrow::borrow)
-                        .map(|quote| quote.ask_price.raw),
+                        .map(|quote| quote.ask_price.raw()),
                     "ask_price",
                 )?),
                 Arc::new(required_quantity_decimal_array(
                     data.iter()
                         .map(std::borrow::Borrow::borrow)
-                        .map(|quote| quote.bid_size.raw),
+                        .map(|quote| quote.bid_size.raw()),
                     "bid_size",
                 )?),
                 Arc::new(required_quantity_decimal_array(
                     data.iter()
                         .map(std::borrow::Borrow::borrow)
-                        .map(|quote| quote.ask_size.raw),
+                        .map(|quote| quote.ask_size.raw()),
                     "ask_size",
                 )?),
                 Arc::new(ts_event_builder.finish()),

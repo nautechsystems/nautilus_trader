@@ -105,31 +105,31 @@ impl EncodeToRecordBatch for BinanceBar {
                 Arc::new(price_decimal_array(
                     data.iter()
                         .map(std::borrow::Borrow::borrow)
-                        .map(|bar| bar.open.raw),
+                        .map(|bar| bar.open.raw()),
                     "open",
                 )?),
                 Arc::new(price_decimal_array(
                     data.iter()
                         .map(std::borrow::Borrow::borrow)
-                        .map(|bar| bar.high.raw),
+                        .map(|bar| bar.high.raw()),
                     "high",
                 )?),
                 Arc::new(price_decimal_array(
                     data.iter()
                         .map(std::borrow::Borrow::borrow)
-                        .map(|bar| bar.low.raw),
+                        .map(|bar| bar.low.raw()),
                     "low",
                 )?),
                 Arc::new(price_decimal_array(
                     data.iter()
                         .map(std::borrow::Borrow::borrow)
-                        .map(|bar| bar.close.raw),
+                        .map(|bar| bar.close.raw()),
                     "close",
                 )?),
                 Arc::new(quantity_decimal_array(
                     data.iter()
                         .map(std::borrow::Borrow::borrow)
-                        .map(|bar| bar.volume.raw),
+                        .map(|bar| bar.volume.raw()),
                     "volume",
                 )?),
                 Arc::new(decimal_array(

@@ -607,7 +607,7 @@ fn transcode_instrument_close_rows(
             )
         })?;
 
-        prices.push(price.raw);
+        prices.push(price.raw());
         type_builder.append_value(close_type as u8);
         event_builder.append_value(ts_events.value(row));
         init_builder.append_value(ts_inits.value(row));

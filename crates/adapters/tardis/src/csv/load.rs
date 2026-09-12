@@ -1525,7 +1525,6 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         assert_eq!(first.asks[4].size, Quantity::from("0.918"));
         assert_eq!(first.asks[4].side, OrderSide::Sell.into());
 
-
         // Logical checks: bid prices should decrease
         for i in 1..5 {
             assert!(
