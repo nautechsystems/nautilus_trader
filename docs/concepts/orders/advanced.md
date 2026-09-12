@@ -21,18 +21,18 @@ instrument must resolve each order individually.
 
 Caveats for mixed-instrument lists:
 
-- Pre-trade checks for price precision, quantity precision, and GTD expiry use each order's own
+- **Pre-trade checks**: Price precision, quantity precision, and GTD expiry use each order's own
   instrument.
-- The cumulative risk check for free balance, notional bounds, position-reducing exposure, and
-  market data uses the list's representative instrument. For a mixed list, this produces a
-  single-instrument bound rather than per-instrument accuracy.
-- Cache lookups like `cache.order_lists(instrument_id=...)` filter against the representative
+- **Cumulative risk check**: Free balance, notional bounds, position-reducing exposure, and market
+  data use the list's representative instrument. For a mixed list, this produces a single-instrument
+  bound rather than per-instrument accuracy.
+- **Cache lookups**: `cache.order_lists(instrument_id=...)` filters against the representative
   `instrument_id`; lists containing other instruments will not match queries for those other
   instruments.
-- The execution engine denies mixed-instrument lists when a `position_id` is supplied
-  (a position belongs to a single instrument, regardless of OMS).
-- Adapter `submit_order_list` implementations vary. Some iterate orders per leg and resolve
-  each order's own `instrument_id` against the venue API; others still build the batch
+- **Position IDs**: The execution engine denies mixed-instrument lists when a `position_id` is
+  supplied (a position belongs to a single instrument, regardless of OMS).
+- **Adapter batching**: `submit_order_list` implementations vary. Some iterate orders per leg and
+  resolve each order's own `instrument_id` against the venue API; others still build the batch
   request around the list's representative `instrument_id` and will misroute non-first
   orders. Treat mixed-instrument lists as adapter-specific; verify the target adapter's
   behavior before relying on it. Backtesting and strategy-managed routing avoid relying on an
@@ -40,10 +40,10 @@ Caveats for mixed-instrument lists:
 
 ## Contingency types
 
-- **OTO (One-Triggers-Other):** A parent order releases one or more child orders after a configured
+- **OTO (One-Triggers-Other)**: A parent order releases one or more child orders after a configured
   fill condition.
-- **OCO (One-Cancels-Other):** A fill in one linked order requests cancellation of the others.
-- **OUO (One-Updates-Other):** A fill in one linked order requests a quantity update for the others.
+- **OCO (One-Cancels-Other)**: A fill in one linked order requests cancellation of the others.
+- **OUO (One-Updates-Other)**: A fill in one linked order requests a quantity update for the others.
 
 :::info
 These types correspond to FIX

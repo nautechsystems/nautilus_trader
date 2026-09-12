@@ -18,13 +18,14 @@ limit price of 1.3000 USD once the market reaches 1.30010 USD. The order expires
 creation:
 
 ```rust tab="Rust"
+use nautilus_core::DurationNanos;
 use nautilus_model::{
     enums::{OrderSide, TimeInForce, TriggerType},
     identifiers::InstrumentId,
     types::{Price, Quantity},
 };
 
-let expire_time = self.clock().timestamp_ns() + 3_600_000_000_000_u64;
+let expire_time = self.clock().timestamp_ns() + DurationNanos::from_mins(60);
 let order = self.order().stop_limit(
     InstrumentId::from("GBP/USD.CURRENEX"),
     OrderSide::Buy,

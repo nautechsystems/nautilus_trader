@@ -82,6 +82,11 @@ order: TrailingStopLimitOrder = self.order_factory.trailing_stop_limit(
 )
 ```
 
+:::info
+If both `activation_price` and `trigger_price` are omitted, the order activates immediately at the
+current market and its trigger price materializes from `trailing_offset` on the first update.
+:::
+
 See the
 [`TrailingStopLimitOrder` API reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.TrailingStopLimitOrder)
 for further details.
