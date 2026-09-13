@@ -29,6 +29,7 @@ use std::{
 const MAX_PENDING: usize = 65_536;
 const MAX_KNOWN_BYTES: usize = 64 * 1024 * 1024;
 const MAX_CHAIN: usize = 1_048_576;
+const CHAIN_BYTES: usize = size_of::<Chain>() + 2 * size_of::<usize>();
 
 thread_local! {
     static DISPATCH: RefCell<Dispatcher> = RefCell::new(Dispatcher::default());
@@ -52,8 +53,9 @@ pub(super) struct DrainResult {
 }
 
 pub(super) struct PublicationScope {
-    previous: Option<u64>,
     active: bool,
+    previous: Option<u64>,
+    previous_chain: Option<Rc<Chain>>,
     marker: std::marker::PhantomData<Rc<()>>,
 }
 
@@ -63,11 +65,20 @@ impl PublicationScope {
             let mut state = state.borrow_mut();
             let ordinal = state.sequence();
             state.depth += 1;
-            std::mem::replace(&mut state.publication, ordinal)
+            let previous_chain = state.current.clone();
+            (
+                std::mem::replace(&mut state.publication, ordinal),
+                previous_chain,
+            )
         });
+
+        let active = previous.is_ok();
+        let (previous, previous_chain) = previous.unwrap_or_default();
+
         Self {
-            active: previous.is_ok(),
-            previous: previous.unwrap_or(None),
+            active,
+            previous,
+            previous_chain,
             marker: std::marker::PhantomData,
         }
     }
@@ -80,6 +91,11 @@ impl Drop for PublicationScope {
                 let mut state = state.borrow_mut();
                 state.publication = self.previous;
                 state.depth -= 1;
+
+                if state.depth == 0 || self.previous_chain.is_some() {
+                    state.current = self.previous_chain.take();
+                }
+
                 if std::thread::panicking() {
                     state.fail(DispatchError::PublicationUnwound);
                 }
@@ -96,6 +112,8 @@ pub(super) fn reserve<T: 'static>(heap_bytes: usize) -> Option<Admission<T>> {
             if state.error.is_some() || state.clearing {
                 return None;
             }
+
+            let chain = state.chain()?;
             let bytes = heap_bytes
                 .checked_add(size_of::<Delivery<T>>())
                 .and_then(|bytes| bytes.checked_add(size_of::<Slot>() + 2 * size_of::<usize>()));
@@ -123,6 +141,7 @@ pub(super) fn reserve<T: 'static>(heap_bytes: usize) -> Option<Admission<T>> {
                 .set(accounting.reservations.get() + 1);
             let slot = Rc::new(Slot {
                 state: RefCell::new(SlotState::Reserved),
+                chain,
                 bytes,
                 accounting,
             });
@@ -192,20 +211,24 @@ pub(super) fn drain(budget: usize) -> Result<DrainResult, DispatchError> {
                 return Err(e);
             }
 
-            if !state.pending.is_empty() && state.chain >= MAX_CHAIN {
-                state.fail(DispatchError::Runaway);
-                return Err(DispatchError::Runaway);
-            }
             Ok(state.pending.front().map(|(_, slot)| slot.clone()))
         })?;
         let Some(slot) = slot else {
             break;
         };
+
+        let _chain = ChainScope::enter(slot.chain.clone());
         let pending = std::mem::replace(&mut *slot.state.borrow_mut(), SlotState::Reserved);
         match pending {
             SlotState::Reserved => break,
             SlotState::Cancelled => {}
             SlotState::Ready(mut delivery) => {
+                if slot.chain.delivered.get() >= MAX_CHAIN {
+                    *slot.state.borrow_mut() = SlotState::Ready(delivery);
+                    record_failure(DispatchError::Runaway);
+                    return Err(DispatchError::Runaway);
+                }
+
                 if !delivery.run() {
                     *slot.state.borrow_mut() = SlotState::Ready(delivery);
                     break;
@@ -213,7 +236,7 @@ pub(super) fn drain(budget: usize) -> Result<DrainResult, DispatchError> {
                 // Callback-local guards end before the owned capture is destroyed
                 drop(delivery);
                 delivered += 1;
-                DISPATCH.with_borrow_mut(|state| state.chain += 1);
+                slot.chain.delivered.set(slot.chain.delivered.get() + 1);
             }
         }
         processed += 1;
@@ -226,9 +249,6 @@ pub(super) fn drain(budget: usize) -> Result<DrainResult, DispatchError> {
             return Err(e);
         }
 
-        if state.pending.is_empty() {
-            state.chain = 0;
-        }
         Ok(DrainResult {
             delivered,
             pending: !state.pending.is_empty(),
@@ -244,6 +264,8 @@ pub(super) fn retain(bytes: usize) -> Option<RetainedStorage> {
                 return None;
             }
 
+            let chain = state.chain()?;
+
             if !state.fits(bytes, state.pending.capacity()) {
                 state.fail(DispatchError::Overflow);
                 return None;
@@ -251,7 +273,11 @@ pub(super) fn retain(bytes: usize) -> Option<RetainedStorage> {
             let accounting = state.accounting.clone();
             accounting.count.set(accounting.count.get() + 1);
             accounting.bytes.set(accounting.bytes.get() + bytes);
-            Some(RetainedStorage { accounting, bytes })
+            Some(RetainedStorage {
+                chain,
+                accounting,
+                bytes,
+            })
         })
         .ok()
         .flatten()
@@ -262,16 +288,23 @@ pub(super) fn record_failure(error: DispatchError) {
 }
 
 pub(super) struct RetainedStorage {
+    chain: Rc<Chain>,
     accounting: Rc<Accounting>,
     bytes: usize,
 }
 
 impl RetainedStorage {
+    pub(super) fn with_chain<T>(&self, run: impl FnOnce() -> T) -> T {
+        let _scope = ChainScope::enter(self.chain.clone());
+        run()
+    }
+
     pub(super) fn grow(&mut self, bytes: usize) -> Option<()> {
         if bytes == 0 {
             return Some(());
         }
-        let mut extra = retain(bytes)?;
+
+        let mut extra = self.with_chain(|| retain(bytes))?;
         self.bytes += bytes;
         extra.bytes = 0;
         Some(())
@@ -311,7 +344,8 @@ pub(super) fn clear() -> Result<(), DispatchError> {
                 return Ok(None);
             }
 
-            if state.draining
+            if state.current.is_some()
+                || state.draining
                 || state.depth != 0
                 || state.accounting.reservations.get() != 0
                 || state.accounting.count.get() != state.pending.len()
@@ -354,6 +388,7 @@ enum SlotState {
 }
 
 struct Slot {
+    chain: Rc<Chain>,
     state: RefCell<SlotState>,
     bytes: usize,
     accounting: Rc<Accounting>,
@@ -387,11 +422,41 @@ struct Dispatcher {
     depth: usize,
     draining: bool,
     clearing: bool,
-    chain: usize,
+    current: Option<Rc<Chain>>,
     error: Option<DispatchError>,
 }
 
 impl Dispatcher {
+    fn chain(&mut self) -> Option<Rc<Chain>> {
+        if self.error.is_some() || self.clearing {
+            return None;
+        }
+
+        if let Some(chain) = &self.current {
+            return Some(chain.clone());
+        }
+
+        if !self.fits(CHAIN_BYTES, self.pending.capacity()) {
+            self.fail(DispatchError::Overflow);
+            return None;
+        }
+
+        self.accounting
+            .bytes
+            .set(self.accounting.bytes.get() + CHAIN_BYTES);
+
+        let chain = Rc::new(Chain {
+            delivered: Cell::new(0),
+            accounting: self.accounting.clone(),
+        });
+
+        if self.depth != 0 {
+            self.current = Some(chain.clone());
+        }
+
+        Some(chain)
+    }
+
     fn sequence(&mut self) -> Option<u64> {
         if let Some(value) = self.sequence.checked_add(1) {
             self.sequence = value;
@@ -416,6 +481,39 @@ impl Dispatcher {
         if self.error.is_none() {
             self.error = Some(error);
         }
+    }
+}
+
+struct Chain {
+    delivered: Cell<usize>,
+    accounting: Rc<Accounting>,
+}
+
+impl Drop for Chain {
+    fn drop(&mut self) {
+        self.accounting
+            .bytes
+            .set(self.accounting.bytes.get() - CHAIN_BYTES);
+    }
+}
+
+struct ChainScope {
+    previous: Option<Rc<Chain>>,
+}
+
+impl ChainScope {
+    fn enter(chain: Rc<Chain>) -> Self {
+        let previous = DISPATCH
+            .try_with(|state| state.borrow_mut().current.replace(chain))
+            .ok()
+            .flatten();
+        Self { previous }
+    }
+}
+
+impl Drop for ChainScope {
+    fn drop(&mut self) {
+        let _ = DISPATCH.try_with(|state| state.borrow_mut().current = self.previous.take());
     }
 }
 
@@ -460,7 +558,7 @@ mod tests {
         drop(storage);
         let released = DISPATCH
             .with_borrow(|state| (state.accounting.count.get(), state.accounting.bytes.get()));
-        assert_eq!(retained, (1, 46));
+        assert_eq!(retained, (1, 46 + CHAIN_BYTES));
         assert_eq!(released, (0, 0));
         assert_eq!(failure(), None);
         clear().unwrap();
@@ -601,6 +699,9 @@ mod tests {
         for _ in 0..MAX_PENDING {
             reserve(0).unwrap().commit((), |()| true);
         }
+
+        drop(PublicationScope::enter());
+        assert_eq!(failure(), None);
         assert!(reserve::<()>(0).is_none());
         assert_eq!(
             DISPATCH.with_borrow(|state| state.accounting.count.get()),
@@ -741,11 +842,19 @@ mod tests {
     #[rstest]
     fn progress_limit_persists_between_bounded_drains() {
         clear().unwrap();
-        DISPATCH.with_borrow_mut(|state| state.chain = MAX_CHAIN - 1);
-        reserve(0).unwrap().commit((), |()| true);
-        reserve(0)
-            .unwrap()
-            .commit((), |()| panic!("runaway callback must not run"));
+        {
+            let _publication = PublicationScope::enter();
+            {
+                let _nested = PublicationScope::enter();
+                retain(0).unwrap().chain.delivered.set(MAX_CHAIN - 1);
+            }
+
+            reserve(0).unwrap().commit((), |()| true);
+            reserve(0)
+                .unwrap()
+                .commit((), |()| panic!("runaway callback must not run"));
+        }
+
         assert_eq!(
             drain(1),
             Ok(DrainResult {
@@ -755,6 +864,347 @@ mod tests {
         );
         assert_eq!(drain(1), Err(DispatchError::Runaway));
         clear().unwrap();
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn independent_roots_have_separate_budgets(#[case] publication: bool) {
+        clear().unwrap();
+        let scope = publication.then(PublicationScope::enter);
+        let first = reserve(0).unwrap();
+        let first_chain = Rc::downgrade(&first.slot.chain);
+        first.slot.chain.delivered.set(MAX_CHAIN - 1);
+        first.commit((), |()| true);
+        drop(scope);
+        let scope = publication.then(PublicationScope::enter);
+        let second = reserve(0).unwrap();
+        let second_chain = second.slot.chain.clone();
+        second.commit((), |()| true);
+        drop(scope);
+        assert_eq!(
+            drain(2),
+            Ok(DrainResult {
+                delivered: 2,
+                pending: false
+            })
+        );
+        assert_eq!(second_chain.delivered.get(), 1);
+        assert_eq!(first_chain.strong_count(), 0);
+        assert_eq!(failure(), None);
+        drop(second_chain);
+        assert_eq!(
+            DISPATCH.with_borrow(|state| state.accounting.bytes.get()),
+            0
+        );
+        clear().unwrap();
+    }
+
+    #[rstest]
+    fn nested_callback_publication_inherits_root() {
+        clear().unwrap();
+        let root = reserve(0).unwrap();
+        let chain = root.slot.chain.clone();
+        chain.delivered.set(MAX_CHAIN - 1);
+        root.commit((), |()| {
+            let _publication = PublicationScope::enter();
+            reserve(0)
+                .unwrap()
+                .commit((), |()| panic!("exhausted child must not run"));
+            true
+        });
+
+        assert_eq!(
+            drain(1),
+            Ok(DrainResult {
+                delivered: 1,
+                pending: true
+            })
+        );
+        assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(&state.pending[0].1.chain, &chain)));
+        assert_eq!(chain.delivered.get(), MAX_CHAIN);
+        assert_eq!(drain(1), Err(DispatchError::Runaway));
+        drop(chain);
+        clear().unwrap();
+        assert!(!has_pending());
+    }
+
+    #[rstest]
+    #[case(MAX_CHAIN - 2, false)]
+    #[case(MAX_CHAIN - 1, true)]
+    fn retained_continuation_preserves_root_across_empty_queue(
+        #[case] delivered: usize,
+        #[case] exhausted: bool,
+    ) {
+        clear().unwrap();
+        let continuation = Rc::new(RefCell::new(None));
+        let root = reserve(0).unwrap();
+        root.slot.chain.delivered.set(delivered);
+        root.commit(continuation.clone(), |continuation| {
+            *continuation.borrow_mut() = Some(retain(17).unwrap());
+            true
+        });
+
+        assert_eq!(
+            drain(1),
+            Ok(DrainResult {
+                delivered: 1,
+                pending: false
+            })
+        );
+        assert!(has_pending());
+        assert_eq!(clear(), Err(DispatchError::Active));
+        reserve(0).unwrap().commit((), |()| true);
+        assert_eq!(
+            drain(1),
+            Ok(DrainResult {
+                delivered: 1,
+                pending: false
+            })
+        );
+        let mut continuation = continuation.borrow_mut().take().unwrap();
+        let chain = Rc::downgrade(&continuation.chain);
+        continuation.grow(29).unwrap();
+        assert_eq!(continuation.chain.delivered.get(), delivered + 1);
+        assert_eq!(
+            DISPATCH.with_borrow(|state| state.accounting.bytes.get()),
+            46 + CHAIN_BYTES
+        );
+        let received = Rc::new(RefCell::new(Vec::new()));
+        continuation.with_chain(|| {
+            reserve(0).unwrap().commit((received.clone(), 23), record);
+        });
+
+        drop(continuation);
+        assert_eq!(chain.strong_count(), 1);
+        let result = drain(1);
+
+        let expected = if exhausted {
+            Err(DispatchError::Runaway)
+        } else {
+            Ok(DrainResult {
+                delivered: 1,
+                pending: false,
+            })
+        };
+
+        assert_eq!(result, expected);
+        assert_eq!(
+            *received.borrow(),
+            if exhausted { vec![] } else { vec![23] }
+        );
+        clear().unwrap();
+        assert_eq!(chain.strong_count(), 0);
+        assert!(!has_pending());
+    }
+
+    #[rstest]
+    fn cancelled_and_busy_slots_do_not_charge_chain() {
+        clear().unwrap();
+        let cancelled = reserve::<()>(0).unwrap();
+        let cancelled_chain = Rc::downgrade(&cancelled.slot.chain);
+        cancelled.slot.chain.delivered.set(MAX_CHAIN);
+        drop(cancelled);
+        let busy = Rc::new(Cell::new(true));
+        let admission = reserve(0).unwrap();
+        let chain = admission.slot.chain.clone();
+        admission.commit(busy.clone(), |busy| !busy.get());
+        assert_eq!(
+            drain(2),
+            Ok(DrainResult {
+                delivered: 0,
+                pending: true
+            })
+        );
+        assert_eq!(cancelled_chain.strong_count(), 0);
+        assert_eq!(chain.delivered.get(), 0);
+        busy.set(false);
+        assert_eq!(
+            drain(1),
+            Ok(DrainResult {
+                delivered: 1,
+                pending: false
+            })
+        );
+        assert_eq!(chain.delivered.get(), 1);
+        drop(chain);
+        clear().unwrap();
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn retained_scope_restores_parent_and_releases_after_failure(#[case] unwind: bool) {
+        clear().unwrap();
+        let retained = retain(17).unwrap();
+        let chain = Rc::downgrade(&retained.chain);
+        let accounting = retained.accounting.clone();
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _publication = PublicationScope::enter();
+            let parent = retain(0).unwrap().chain.clone();
+            retained.with_chain(|| {
+                assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(
+                    state.current.as_ref().unwrap(),
+                    &retained.chain
+                )));
+                reserve(0).unwrap().commit((), |()| true);
+            });
+
+            assert!(
+                DISPATCH.with_borrow(|state| Rc::ptr_eq(state.current.as_ref().unwrap(), &parent))
+            );
+            retained.with_chain(|| {
+                assert!(!unwind, "retained continuation failed");
+                record_failure(DispatchError::InvalidDestination);
+            });
+        }));
+
+        assert_eq!(result.is_err(), unwind);
+        assert_eq!(
+            failure(),
+            Some(if unwind {
+                DispatchError::PublicationUnwound
+            } else {
+                DispatchError::InvalidDestination
+            })
+        );
+        assert!(DISPATCH.with_borrow(|state| state.current.is_none()));
+        assert_eq!(clear(), Err(DispatchError::Active));
+        drop(retained);
+        assert_eq!(chain.strong_count(), 1);
+        clear().unwrap();
+        assert_eq!(chain.strong_count(), 0);
+        assert_eq!(accounting.bytes.get(), 0);
+    }
+
+    #[rstest]
+    fn invocation_work_keeps_callback_root() {
+        clear().unwrap();
+        let root = reserve(0).unwrap();
+        let chain = root.slot.chain.clone();
+        root.slot.chain.delivered.set(MAX_CHAIN - 1);
+        root.commit((), |()| {
+            super::super::invocation::run(
+                |batch| batch.reserve(0).unwrap().commit(()),
+                |()| {
+                    reserve(0)
+                        .unwrap()
+                        .commit((), |()| panic!("invocation must inherit exhausted root"));
+                },
+            );
+
+            true
+        });
+
+        assert_eq!(
+            drain(1),
+            Ok(DrainResult {
+                delivered: 1,
+                pending: true
+            })
+        );
+        assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(&state.pending[0].1.chain, &chain)));
+        assert_eq!(chain.delivered.get(), MAX_CHAIN);
+        assert_eq!(drain(1), Err(DispatchError::Runaway));
+        drop(chain);
+        clear().unwrap();
+    }
+
+    #[rstest]
+    fn invocation_restores_root_after_preparation_scope_ends() {
+        clear().unwrap();
+        super::super::invocation::run(
+            |batch| {
+                let _publication = PublicationScope::enter();
+                batch.reserve(0).unwrap().commit(());
+                DISPATCH
+                    .with_borrow(|state| state.current.as_ref().unwrap().delivered.set(MAX_CHAIN));
+            },
+            |()| {
+                reserve(0)
+                    .unwrap()
+                    .commit((), |()| panic!("invocation must restore preparation root"));
+            },
+        );
+
+        assert!(DISPATCH.with_borrow(|state| state.current.is_none()));
+        assert_eq!(drain(1), Err(DispatchError::Runaway));
+        clear().unwrap();
+        assert!(!has_pending());
+    }
+
+    #[rstest]
+    fn uninvoked_capture_destruction_preserves_root() {
+        struct Capture(bool);
+
+        impl Drop for Capture {
+            fn drop(&mut self) {
+                if self.0 {
+                    reserve(0)
+                        .unwrap()
+                        .commit((), |()| panic!("exhausted cleanup must not run"));
+                }
+            }
+        }
+
+        clear().unwrap();
+
+        let result = std::panic::catch_unwind(|| {
+            super::super::invocation::run(
+                |batch| {
+                    let _publication = PublicationScope::enter();
+                    batch.reserve(0).unwrap().commit(Capture(false));
+                    batch.reserve(0).unwrap().commit(Capture(true));
+                    DISPATCH.with_borrow(|state| {
+                        state.current.as_ref().unwrap().delivered.set(MAX_CHAIN);
+                    });
+                },
+                |_| panic!("invocation failed"),
+            );
+        });
+
+        assert!(result.is_err());
+        assert_eq!(failure(), None);
+        assert_eq!(DISPATCH.with_borrow(|state| state.pending.len()), 1);
+        assert_eq!(drain(1), Err(DispatchError::Runaway));
+        clear().unwrap();
+        assert!(!has_pending());
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn capture_destruction_preserves_root_until_cleanup(#[case] unwind: bool) {
+        struct Capture(std::rc::Weak<Chain>);
+
+        impl Drop for Capture {
+            fn drop(&mut self) {
+                let chain = self.0.upgrade().unwrap();
+                assert!(
+                    DISPATCH
+                        .with_borrow(|state| Rc::ptr_eq(state.current.as_ref().unwrap(), &chain))
+                );
+                reserve(0).unwrap().commit((), |()| true);
+            }
+        }
+
+        clear().unwrap();
+        let admission = reserve(0).unwrap();
+        let chain = Rc::downgrade(&admission.slot.chain);
+        admission.commit((Capture(chain.clone()), unwind), |value| {
+            assert!(!value.1, "callback failed");
+            true
+        });
+
+        let result = std::panic::catch_unwind(|| drain(1));
+        assert_eq!(result.is_err(), unwind);
+        assert_eq!(failure(), unwind.then_some(DispatchError::DeliveryUnwound));
+        assert!(DISPATCH.with_borrow(|state| state.current.is_none()));
+        assert_eq!(chain.strong_count(), if unwind { 2 } else { 1 });
+        clear().unwrap();
+        assert_eq!(chain.strong_count(), 0);
+        assert!(!has_pending());
     }
 
     #[rstest]
@@ -781,7 +1231,9 @@ mod tests {
     #[rstest]
     fn byte_boundary_includes_inflight_and_variable_payload_storage() {
         clear().unwrap();
-        let storage = retain(MAX_KNOWN_BYTES).unwrap();
+        let storage = retain(MAX_KNOWN_BYTES - CHAIN_BYTES).unwrap();
+        drop(PublicationScope::enter());
+        assert_eq!(failure(), None);
         assert!(reserve::<Vec<u8>>(0).is_none());
         assert_eq!(failure(), Some(DispatchError::Overflow));
         drop(storage);
@@ -819,6 +1271,30 @@ mod tests {
         assert_eq!(DISPATCH.with_borrow(|state| state.pending.len()), 1);
         drop(_scope);
         clear().unwrap();
+    }
+
+    #[rstest]
+    fn retained_storage_rejects_growth_after_dispatcher_teardown() {
+        struct Retained(Option<RetainedStorage>);
+
+        impl Drop for Retained {
+            fn drop(&mut self) {
+                let storage = self.0.as_mut().unwrap();
+                assert!(DISPATCH.try_with(|_| ()).is_err());
+                assert_eq!(storage.grow(29), None);
+                assert_eq!(storage.bytes, 17);
+            }
+        }
+
+        thread_local! {
+            static RETAINED: RefCell<Retained> = const { RefCell::new(Retained(None)) };
+        }
+
+        std::thread::spawn(|| {
+            RETAINED.with_borrow_mut(|retained| retained.0 = Some(retain(17).unwrap()));
+        })
+        .join()
+        .unwrap();
     }
 
     #[rstest]

@@ -37,9 +37,9 @@ pub(super) fn run<T>(prepare: impl FnOnce(&mut InvocationBatch<T>), mut invoke: 
         storage: _storage,
     } = batch;
 
-    for retained in pending {
-        let Retained { value, _storage } = retained;
-        invoke(value);
+    for mut retained in pending {
+        let value = retained.value.take().expect("retained value is present");
+        retained.storage.with_chain(|| invoke(value));
 
         if dispatch::failure().is_some() {
             break;
@@ -93,15 +93,21 @@ impl<T> InvocationAdmission<'_, T> {
     pub(super) fn commit(self, value: T) {
         let Self { batch, storage } = self;
         batch.pending.push(Retained {
-            value,
-            _storage: storage,
+            value: Some(value),
+            storage,
         });
     }
 }
 
 struct Retained<T> {
-    value: T,
-    _storage: RetainedStorage,
+    value: Option<T>,
+    storage: RetainedStorage,
+}
+
+impl<T> Drop for Retained<T> {
+    fn drop(&mut self) {
+        self.storage.with_chain(|| drop(self.value.take()));
+    }
 }
 
 #[cfg(test)]
