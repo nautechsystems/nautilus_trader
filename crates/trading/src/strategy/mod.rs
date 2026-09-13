@@ -1357,6 +1357,22 @@ pub trait Strategy: DataActor {
             return;
         }
 
+        if matches!(&event, OrderEventAny::CancelRejected(_)) {
+            let order = StrategyNative::strategy_core_mut(self)
+                .cache_ref()
+                .order(&client_order_id)
+                .map(|order| order.clone());
+            if let Some(order) = order
+                && (order.is_open() || order.is_inflight())
+                && !self.has_gtd_expiry_timer(&client_order_id)
+                && let Err(e) = self.set_gtd_expiry(&order)
+            {
+                log::error!(
+                    "Failed to restore GTD expiry for cancel-rejected order {client_order_id}: {e}"
+                );
+            }
+        }
+
         if matches!(&event, OrderEventAny::FillVoided(event) if event.is_reopened) {
             let order = StrategyNative::strategy_core_mut(self)
                 .cache_ref()
@@ -2483,8 +2499,8 @@ mod tests {
         events::{
             OrderAccepted, OrderCanceled, OrderFilled, OrderRejected, PositionAdjusted,
             order::spec::{
-                OrderAcceptedSpec, OrderCanceledSpec, OrderEmulatedSpec, OrderExpiredSpec,
-                OrderFillVoidedSpec, OrderFilledSpec, OrderRejectedSpec,
+                OrderAcceptedSpec, OrderCancelRejectedSpec, OrderCanceledSpec, OrderEmulatedSpec,
+                OrderExpiredSpec, OrderFillVoidedSpec, OrderFilledSpec, OrderRejectedSpec,
             },
         },
         identifiers::{
@@ -2658,7 +2674,20 @@ mod tests {
         TestStrategy::new(config)
     }
 
+    fn create_gtd_managed_strategy() -> TestStrategy {
+        TestStrategy::new(StrategyConfig {
+            strategy_id: Some(StrategyId::from("TEST-001")),
+            order_id_tag: Some("001".to_string()),
+            manage_gtd_expiry: true,
+            ..Default::default()
+        })
+    }
+
     fn register_strategy(strategy: &mut TestStrategy) {
+        let _clock = register_strategy_with_clock(strategy);
+    }
+
+    fn register_strategy_with_clock(strategy: &mut TestStrategy) -> Rc<RefCell<TestClock>> {
         let trader_id = TraderId::from("TRADER-001");
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
@@ -2670,9 +2699,18 @@ mod tests {
 
         strategy
             .core
-            .register(trader_id, clock, cache, portfolio)
+            .register(trader_id, clock.clone(), cache, portfolio)
             .unwrap();
         strategy.initialize().unwrap();
+        clock
+    }
+
+    fn register_gtd_strategy(strategy: &mut TestStrategy) -> Rc<RefCell<TestClock>> {
+        let clock = register_strategy_with_clock(strategy);
+        clock
+            .borrow_mut()
+            .register_default_handler(TimeEventCallback::from(|_event: TimeEvent| {}));
+        clock
     }
 
     fn start_strategy(strategy: &mut TestStrategy) {
@@ -2743,6 +2781,20 @@ mod tests {
                 .account_id(AccountId::from("ACC-001"))
                 .reason("Test rejection".into())
                 .event_id(UUID4::default())
+                .build(),
+        )
+    }
+
+    fn make_cancel_rejected(client_order_id: ClientOrderId) -> OrderEventAny {
+        OrderEventAny::CancelRejected(
+            OrderCancelRejectedSpec::builder()
+                .trader_id(TraderId::from("TRADER-001"))
+                .strategy_id(StrategyId::from("TEST-001"))
+                .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+                .client_order_id(client_order_id)
+                .reason("Test rejection".into())
+                .venue_order_id(VenueOrderId::from(client_order_id.as_str()))
+                .account_id(AccountId::from("ACC-001"))
                 .build(),
         )
     }
@@ -2849,6 +2901,38 @@ mod tests {
                 &order,
                 account_id,
                 // Derived per order, as above.
+                VenueOrderId::from(client_order_id),
+            ))
+            .unwrap();
+        order
+    }
+
+    fn make_submitted_gtd_limit_order(client_order_id: &str, expire_time: UnixNanos) -> OrderAny {
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("TEST-001"))
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .client_order_id(ClientOrderId::from(client_order_id))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .price(Price::from("50000.0"))
+            .time_in_force(TimeInForce::Gtd)
+            .expire_time(expire_time)
+            .build();
+        let account_id = AccountId::from("ACC-001");
+        order
+            .apply(TestOrderEventStubs::submitted(&order, account_id))
+            .unwrap();
+        order
+    }
+
+    fn make_accepted_gtd_limit_order(client_order_id: &str, expire_time: UnixNanos) -> OrderAny {
+        let mut order = make_submitted_gtd_limit_order(client_order_id, expire_time);
+        let account_id = AccountId::from("ACC-001");
+        order
+            .apply(TestOrderEventStubs::accepted(
+                &order,
+                account_id,
                 VenueOrderId::from(client_order_id),
             ))
             .unwrap();
@@ -5346,6 +5430,430 @@ mod tests {
         strategy.handle_order_event(make_fill_voided(client_order_id, true));
 
         assert!(strategy.has_gtd_expiry_timer(&client_order_id));
+    }
+
+    #[rstest]
+    fn test_handle_cancel_rejected_restores_future_gtd_timer() {
+        let mut strategy = create_gtd_managed_strategy();
+        let clock = register_gtd_strategy(&mut strategy);
+        start_strategy(&mut strategy);
+        let expire_time = UnixNanos::from(clock.borrow().timestamp_ns().as_u64() + 1_000_000_000);
+
+        let order = make_accepted_gtd_limit_order("O-001", expire_time);
+        let client_order_id = order.client_order_id();
+        add_order_to_cache(&strategy, &order);
+
+        strategy.handle_order_event(make_cancel_rejected(client_order_id));
+
+        assert_eq!(
+            strategy.core.gtd_timers.get(&client_order_id),
+            Some(&Ustr::from("GTD-EXPIRY:O-001"))
+        );
+    }
+
+    #[rstest]
+    fn test_cancel_rejected_restores_timer_after_cancel_order_removes_it() {
+        let mut strategy = create_gtd_managed_strategy();
+        let clock = register_gtd_strategy(&mut strategy);
+        start_strategy(&mut strategy);
+        let expire_time = UnixNanos::from(clock.borrow().timestamp_ns().as_u64() + 1_000_000_000);
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+
+        let order = make_accepted_gtd_limit_order("O-001", expire_time);
+        let client_order_id = order.client_order_id();
+        add_order_to_cache(&strategy, &order);
+        strategy
+            .core
+            .gtd_timers
+            .insert(client_order_id, Ustr::from("GTD-EXPIRY:O-001"));
+
+        strategy.cancel_order(client_order_id, None, None).unwrap();
+        assert!(!strategy.has_gtd_expiry_timer(&client_order_id));
+
+        let event = make_cancel_rejected(client_order_id);
+        strategy
+            .core
+            .cache_rc()
+            .borrow_mut()
+            .update_order(&event)
+            .unwrap();
+        assert_eq!(
+            strategy
+                .core
+                .cache_ref()
+                .order(&client_order_id)
+                .unwrap()
+                .status(),
+            OrderStatus::Accepted
+        );
+
+        strategy.handle_order_event(event);
+
+        assert_eq!(
+            strategy.core.gtd_timers.get(&client_order_id),
+            Some(&Ustr::from("GTD-EXPIRY:O-001"))
+        );
+        assert_eq!(exec_messages.get_messages().len(), 1);
+    }
+
+    #[rstest]
+    fn test_cancel_rejected_while_submitted_restores_timer_through_acceptance() {
+        let mut strategy = create_gtd_managed_strategy();
+        let clock = register_gtd_strategy(&mut strategy);
+        start_strategy(&mut strategy);
+        let expire_time = UnixNanos::from(clock.borrow().timestamp_ns().as_u64() + 1_000_000_000);
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+
+        let order = make_submitted_gtd_limit_order("O-001", expire_time);
+        let client_order_id = order.client_order_id();
+        add_order_to_cache(&strategy, &order);
+        strategy.set_gtd_expiry(&order).unwrap();
+
+        strategy.cancel_order(client_order_id, None, None).unwrap();
+        assert!(!strategy.has_gtd_expiry_timer(&client_order_id));
+
+        let cancel_rejected = make_cancel_rejected(client_order_id);
+        strategy
+            .core
+            .cache_rc()
+            .borrow_mut()
+            .update_order(&cancel_rejected)
+            .unwrap();
+        assert_eq!(
+            strategy
+                .core
+                .cache_ref()
+                .order(&client_order_id)
+                .unwrap()
+                .status(),
+            OrderStatus::Submitted
+        );
+        strategy.handle_order_event(cancel_rejected);
+        assert_eq!(
+            strategy.core.gtd_timers.get(&client_order_id),
+            Some(&Ustr::from("GTD-EXPIRY:O-001"))
+        );
+        assert_eq!(strategy.core.gtd_timers.len(), 1);
+
+        let accepted = make_accepted(client_order_id);
+        strategy
+            .core
+            .cache_rc()
+            .borrow_mut()
+            .update_order(&accepted)
+            .unwrap();
+        strategy.handle_order_event(accepted);
+
+        assert_eq!(
+            strategy.core.gtd_timers.get(&client_order_id),
+            Some(&Ustr::from("GTD-EXPIRY:O-001"))
+        );
+        assert_eq!(strategy.core.gtd_timers.len(), 1);
+        assert_eq!(exec_messages.get_messages().len(), 1);
+    }
+
+    #[rstest]
+    fn test_cancel_rejected_while_submitted_retries_already_expired_gtd_order() {
+        let mut strategy = create_gtd_managed_strategy();
+        let clock = register_gtd_strategy(&mut strategy);
+        start_strategy(&mut strategy);
+        clock.borrow_mut().set_time(UnixNanos::from(1_000_000_000));
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+
+        let order = make_submitted_gtd_limit_order("O-001", UnixNanos::from(1));
+        let client_order_id = order.client_order_id();
+        add_order_to_cache(&strategy, &order);
+
+        strategy.handle_order_event(make_cancel_rejected(client_order_id));
+
+        assert!(!strategy.has_gtd_expiry_timer(&client_order_id));
+        assert!(matches!(
+            exec_messages.get_messages().as_slice(),
+            [TradingCommand::CancelOrder(command)]
+                if command.client_order_id == client_order_id
+        ));
+        assert_eq!(
+            strategy
+                .core
+                .cache_ref()
+                .order(&client_order_id)
+                .unwrap()
+                .status(),
+            OrderStatus::PendingCancel
+        );
+    }
+
+    #[rstest]
+    fn test_cancel_rejected_while_submitted_preserves_existing_gtd_timer() {
+        let mut strategy = create_gtd_managed_strategy();
+        let clock = register_gtd_strategy(&mut strategy);
+        start_strategy(&mut strategy);
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+
+        let order =
+            make_submitted_gtd_limit_order("O-001", UnixNanos::from(2_000_000_000_000_000_000));
+        let client_order_id = order.client_order_id();
+        add_order_to_cache(&strategy, &order);
+        let timer_name = Ustr::from("GTD-EXPIRY:O-001");
+        strategy.core.gtd_timers.insert(client_order_id, timer_name);
+
+        strategy.handle_order_event(make_cancel_rejected(client_order_id));
+
+        assert_eq!(
+            strategy.core.gtd_timers.get(&client_order_id),
+            Some(&timer_name)
+        );
+        assert_eq!(strategy.core.gtd_timers.len(), 1);
+        // The map entry is seeded without a clock alert, so an unintended
+        // re-arm is observable only as a new alert on the clock.
+        assert!(!clock.borrow().timer_names().contains(&timer_name.as_str()));
+        assert!(exec_messages.get_messages().is_empty());
+    }
+
+    #[rstest]
+    fn test_handle_cancel_rejected_retries_already_expired_gtd_order() {
+        let mut strategy = create_gtd_managed_strategy();
+        let clock = register_gtd_strategy(&mut strategy);
+        start_strategy(&mut strategy);
+        clock.borrow_mut().set_time(UnixNanos::from(1_000_000_000));
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+
+        let order = make_accepted_gtd_limit_order("O-001", UnixNanos::from(1));
+        let client_order_id = order.client_order_id();
+        add_order_to_cache(&strategy, &order);
+
+        strategy.handle_order_event(make_cancel_rejected(client_order_id));
+
+        assert!(!strategy.has_gtd_expiry_timer(&client_order_id));
+        assert!(matches!(
+            exec_messages.get_messages().as_slice(),
+            [TradingCommand::CancelOrder(command)]
+                if command.client_order_id == client_order_id
+        ));
+        assert_eq!(
+            strategy
+                .core
+                .cache_ref()
+                .order(&client_order_id)
+                .unwrap()
+                .status(),
+            OrderStatus::PendingCancel
+        );
+    }
+
+    #[rstest]
+    fn test_handle_cancel_rejected_preserves_existing_gtd_timer() {
+        let mut strategy = create_gtd_managed_strategy();
+        let _clock = register_gtd_strategy(&mut strategy);
+        start_strategy(&mut strategy);
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+
+        let order =
+            make_accepted_gtd_limit_order("O-001", UnixNanos::from(2_000_000_000_000_000_000));
+        let client_order_id = order.client_order_id();
+        add_order_to_cache(&strategy, &order);
+        strategy
+            .core
+            .gtd_timers
+            .insert(client_order_id, Ustr::from("GTD-EXPIRY:O-001"));
+
+        strategy.handle_order_event(make_cancel_rejected(client_order_id));
+
+        assert_eq!(
+            strategy.core.gtd_timers.get(&client_order_id),
+            Some(&Ustr::from("GTD-EXPIRY:O-001"))
+        );
+        assert!(exec_messages.get_messages().is_empty());
+    }
+
+    #[rstest]
+    fn test_handle_cancel_rejected_preserves_existing_timer_for_expired_order() {
+        let mut strategy = create_gtd_managed_strategy();
+        let clock = register_gtd_strategy(&mut strategy);
+        start_strategy(&mut strategy);
+        clock.borrow_mut().set_time(UnixNanos::from(1_000_000_000));
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+
+        let order = make_accepted_gtd_limit_order("O-001", UnixNanos::from(1));
+        let client_order_id = order.client_order_id();
+        add_order_to_cache(&strategy, &order);
+        strategy
+            .core
+            .gtd_timers
+            .insert(client_order_id, Ustr::from("GTD-EXPIRY:O-001"));
+
+        strategy.handle_order_event(make_cancel_rejected(client_order_id));
+
+        assert_eq!(
+            strategy.core.gtd_timers.get(&client_order_id),
+            Some(&Ustr::from("GTD-EXPIRY:O-001"))
+        );
+        assert!(exec_messages.get_messages().is_empty());
+    }
+
+    #[rstest]
+    fn test_restored_gtd_timer_event_cancels_order() {
+        let mut strategy = create_gtd_managed_strategy();
+        let clock = register_gtd_strategy(&mut strategy);
+        start_strategy(&mut strategy);
+        let expire_time = UnixNanos::from(clock.borrow().timestamp_ns().as_u64() + 1_000_000_000);
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+
+        let order = make_accepted_gtd_limit_order("O-001", expire_time);
+        let client_order_id = order.client_order_id();
+        add_order_to_cache(&strategy, &order);
+
+        strategy.handle_order_event(make_cancel_rejected(client_order_id));
+        assert!(strategy.has_gtd_expiry_timer(&client_order_id));
+
+        let events = clock.borrow_mut().advance_time(expire_time, true);
+        for event in &events {
+            route_time_event(&mut strategy, event);
+        }
+
+        assert!(!strategy.has_gtd_expiry_timer(&client_order_id));
+        assert!(matches!(
+            exec_messages.get_messages().as_slice(),
+            [TradingCommand::CancelOrder(command)]
+                if command.client_order_id == client_order_id
+        ));
+    }
+
+    enum IneligibleRestoreCase {
+        MissingOrder,
+        ClosedOrder,
+        NonGtdOrder,
+        ManagementDisabled,
+        Stopped,
+        Emulated,
+    }
+
+    fn assert_cancel_rejected_does_not_restore(case: &IneligibleRestoreCase) {
+        let mut strategy = match case {
+            IneligibleRestoreCase::ManagementDisabled => create_test_strategy(),
+            _ => create_gtd_managed_strategy(),
+        };
+        let _clock = register_gtd_strategy(&mut strategy);
+        start_strategy(&mut strategy);
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+
+        let client_order_id = ClientOrderId::from("O-001");
+        let order = match case {
+            IneligibleRestoreCase::MissingOrder => None,
+            IneligibleRestoreCase::NonGtdOrder => {
+                Some(make_accepted_limit_order(client_order_id.as_str()))
+            }
+            IneligibleRestoreCase::ClosedOrder => {
+                let mut order = make_accepted_gtd_limit_order(
+                    client_order_id.as_str(),
+                    UnixNanos::from(2_000_000_000_000_000_000),
+                );
+                order.apply(make_canceled(client_order_id)).unwrap();
+                Some(order)
+            }
+            IneligibleRestoreCase::Emulated => {
+                let mut order = make_submitted_gtd_limit_order(
+                    client_order_id.as_str(),
+                    UnixNanos::from(2_000_000_000_000_000_000),
+                );
+                order.set_emulation_trigger(Some(TriggerType::BidAsk));
+                Some(order)
+            }
+            IneligibleRestoreCase::ManagementDisabled | IneligibleRestoreCase::Stopped => {
+                Some(make_accepted_gtd_limit_order(
+                    client_order_id.as_str(),
+                    UnixNanos::from(2_000_000_000_000_000_000),
+                ))
+            }
+        };
+
+        if let Some(order) = order {
+            add_order_to_cache(&strategy, &order);
+        }
+
+        if matches!(case, IneligibleRestoreCase::Stopped) {
+            stop_strategy(&mut strategy);
+        }
+
+        strategy.handle_order_event(make_cancel_rejected(client_order_id));
+
+        assert!(!strategy.has_gtd_expiry_timer(&client_order_id));
+        assert!(exec_messages.get_messages().is_empty());
+    }
+
+    #[rstest]
+    fn test_handle_cancel_rejected_does_not_restore_missing_order() {
+        assert_cancel_rejected_does_not_restore(&IneligibleRestoreCase::MissingOrder);
+    }
+
+    #[rstest]
+    fn test_handle_cancel_rejected_does_not_restore_closed_order() {
+        assert_cancel_rejected_does_not_restore(&IneligibleRestoreCase::ClosedOrder);
+    }
+
+    #[rstest]
+    fn test_handle_cancel_rejected_does_not_restore_non_gtd_order() {
+        assert_cancel_rejected_does_not_restore(&IneligibleRestoreCase::NonGtdOrder);
+    }
+
+    #[rstest]
+    fn test_handle_cancel_rejected_does_not_restore_when_disabled() {
+        assert_cancel_rejected_does_not_restore(&IneligibleRestoreCase::ManagementDisabled);
+    }
+
+    #[rstest]
+    fn test_handle_cancel_rejected_does_not_restore_when_stopped() {
+        assert_cancel_rejected_does_not_restore(&IneligibleRestoreCase::Stopped);
+    }
+
+    #[rstest]
+    fn test_handle_cancel_rejected_does_not_restore_emulated_order() {
+        assert_cancel_rejected_does_not_restore(&IneligibleRestoreCase::Emulated);
     }
 
     #[rstest]
