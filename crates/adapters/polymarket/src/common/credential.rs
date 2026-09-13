@@ -21,6 +21,7 @@ use std::{
 };
 
 use alloy::signers::local::PrivateKeySigner;
+use alloy_primitives::Address;
 use aws_lc_rs::hmac;
 use base64::{Engine, engine::general_purpose::URL_SAFE};
 use nautilus_core::{
@@ -37,6 +38,8 @@ const API_SECRET_VAR: &str = "POLYMARKET_API_SECRET";
 const PASSPHRASE_VAR: &str = "POLYMARKET_PASSPHRASE";
 const PRIVATE_KEY_VAR: &str = "POLYMARKET_PK";
 const FUNDER_VAR: &str = "POLYMARKET_FUNDER";
+const RELAYER_API_KEY_VAR: &str = "POLYMARKET_RELAYER_API_KEY";
+const RELAYER_SIGNER_ADDRESS_VAR: &str = "POLYMARKET_RELAYER_SIGNER_ADDRESS";
 
 /// Returns `(api_key_var, api_secret_var, passphrase_var, private_key_var, funder_var)`.
 #[must_use]
@@ -54,6 +57,12 @@ pub const fn credential_env_vars() -> (
         PRIVATE_KEY_VAR,
         FUNDER_VAR,
     )
+}
+
+/// Returns `(relayer_api_key_var, relayer_signer_address_var)`.
+#[must_use]
+pub const fn relayer_credential_env_vars() -> (&'static str, &'static str) {
+    (RELAYER_API_KEY_VAR, RELAYER_SIGNER_ADDRESS_VAR)
 }
 
 /// Secure wrapper for an EVM private key, zeroized on drop.
@@ -202,6 +211,81 @@ impl Credential {
 
     pub fn from_env() -> Result<Self> {
         Self::resolve(None, None, None)
+    }
+}
+
+/// Relayer API key used to authorize gasless Deposit Wallet submissions.
+#[derive(Clone)]
+pub struct RelayerApiKey {
+    key: SecretString,
+    address: String,
+}
+
+impl RelayerApiKey {
+    /// Creates a Relayer API key from the key value and signer address.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the key is empty or `address` is not a valid EVM address.
+    pub fn new(key: SecretString, address: &str) -> Result<Self> {
+        if key.expose_secret().trim().is_empty() {
+            return Err(Error::bad_request("Relayer API key must not be empty"));
+        }
+
+        let parsed = Address::from_str(address.trim())
+            .map_err(|e| Error::bad_request(format!("Invalid Relayer API key address: {e}")))?;
+        Ok(Self {
+            key,
+            address: format!("{parsed:#x}"),
+        })
+    }
+
+    #[must_use]
+    pub fn key(&self) -> &str {
+        self.key.expose_secret()
+    }
+
+    #[must_use]
+    pub fn address(&self) -> &str {
+        &self.address
+    }
+
+    /// Resolves from provided values, falling back to environment variables.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either value is missing or invalid.
+    pub fn resolve(key: Option<SecretString>, address: Option<String>) -> Result<Self> {
+        let key = resolve_secret(key, RELAYER_API_KEY_VAR)?;
+
+        let address = match address.filter(|value| !value.trim().is_empty()) {
+            Some(address) => address,
+            None => get_or_env_var(None, RELAYER_SIGNER_ADDRESS_VAR).map_err(|_| {
+                Error::bad_request(format!(
+                    "{RELAYER_SIGNER_ADDRESS_VAR} environment variable is not set"
+                ))
+            })?,
+        };
+
+        Self::new(key, &address)
+    }
+
+    /// Resolves Relayer credentials from the environment.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either environment variable is missing or invalid.
+    pub fn from_env() -> Result<Self> {
+        Self::resolve(None, None)
+    }
+}
+
+impl Debug for RelayerApiKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(RelayerApiKey))
+            .field("key", &REDACTED)
+            .field("address", &self.address)
+            .finish()
     }
 }
 
@@ -514,5 +598,52 @@ mod tests {
         assert!(!debug.contains("my_api_key_12345678"));
         assert!(!debug.contains("test_secret"));
         assert!(!debug.contains("my_passphrase"));
+    }
+
+    #[rstest]
+    fn test_relayer_api_key_normalizes_address_and_redacts_key() {
+        let key = RelayerApiKey::new(
+            "relayer-secret".into(),
+            "0xF39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        )
+        .unwrap();
+        assert_eq!(key.key(), "relayer-secret");
+        assert_eq!(key.address(), "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266");
+        let debug = format!("{key:?}");
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains("relayer-secret"));
+    }
+
+    #[rstest]
+    fn test_relayer_api_key_retains_secret_owner_and_allocation() {
+        let mut value = String::with_capacity(4096);
+        value.push_str("relayer-secret");
+        let allocation = value.as_ptr();
+        let key =
+            RelayerApiKey::new(value.into(), "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266").unwrap();
+        let secret: &SecretString = &key.key;
+
+        assert_eq!(secret.expose_secret().as_ptr(), allocation);
+
+        let cloned = key.clone();
+        drop(key);
+
+        assert_eq!(cloned.key(), "relayer-secret");
+        assert_eq!(
+            cloned.address(),
+            "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266"
+        );
+        assert_eq!(
+            format!("{cloned:?}"),
+            "RelayerApiKey { key: \"<redacted>\", address: \"0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266\" }",
+        );
+    }
+
+    #[rstest]
+    fn test_relayer_api_key_rejects_empty_key_and_invalid_address() {
+        assert!(
+            RelayerApiKey::new("".into(), "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266").is_err()
+        );
+        assert!(RelayerApiKey::new("key".into(), "not-an-address").is_err());
     }
 }

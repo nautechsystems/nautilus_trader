@@ -32,7 +32,7 @@ use alloy::{
     signers::{SignerSync, local::PrivateKeySigner},
     sol_types::{SolStruct, SolValue, eip712_domain},
 };
-use alloy_primitives::{Address, B256, FixedBytes, U256, address, keccak256};
+use alloy_primitives::{Address, B256, Bytes, FixedBytes, U256, address, keccak256};
 #[cfg(test)]
 use nautilus_core::string::secret::SecretString;
 use rust_decimal::Decimal;
@@ -59,9 +59,15 @@ pub const CTF_EXCHANGE: Address = address!("0xE111180000d2663C0091e4f400237545B8
 /// Neg Risk CTF Exchange contract address on Polygon mainnet (CLOB V2).
 pub const NEG_RISK_CTF_EXCHANGE: Address = address!("0xe2222d279d744050d28e00520010520000310F59");
 
+/// Standard CTF collateral adapter address on Polygon mainnet.
+pub const CTF_COLLATERAL_ADAPTER: Address = address!("0xAdA100Db00Ca00073811820692005400218FcE1f");
+
 /// Neg Risk CTF collateral adapter address on Polygon mainnet.
 pub const NEG_RISK_CTF_COLLATERAL_ADAPTER: Address =
     address!("0xadA2005600Dec949baf300f4C6120000bDB6eAab");
+
+/// Deposit Wallet factory address on Polygon mainnet.
+pub const DEPOSIT_WALLET_FACTORY: Address = address!("0x00000000000Fb5C9ADea0298D729A0CB3823Cc07");
 
 /// Polymarket pUSD collateral token contract address on Polygon mainnet.
 pub const POLYMARKET_COLLATERAL_TOKEN: Address =
@@ -150,6 +156,24 @@ alloy::sol! {
         string timestamp;
         uint256 nonce;
         string message;
+    }
+}
+
+// EIP-712 Deposit Wallet batch authorization.
+//
+// Reference: <https://docs.polymarket.com/trading/wallets-auth#execute-gasless-transactions>
+alloy::sol! {
+    struct Call {
+        address target;
+        uint256 value;
+        bytes data;
+    }
+
+    struct Batch {
+        address wallet;
+        uint256 nonce;
+        uint256 deadline;
+        Call[] calls;
     }
 }
 
@@ -262,6 +286,48 @@ impl OrderSigner {
         ))
     }
 
+    /// Signs a Deposit Wallet `Batch` and returns the hex-encoded ECDSA signature.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `calls` is empty or signing fails.
+    pub fn sign_deposit_wallet_batch(
+        &self,
+        deposit_wallet: Address,
+        nonce: U256,
+        deadline: U256,
+        calls: &[DepositWalletCall],
+    ) -> Result<String> {
+        if calls.is_empty() {
+            return Err(Error::bad_request(
+                "Deposit Wallet batch must contain at least one call",
+            ));
+        }
+
+        let batch = Batch {
+            wallet: deposit_wallet,
+            nonce,
+            deadline,
+            calls: calls
+                .iter()
+                .map(|call| Call {
+                    target: call.target,
+                    value: call.value,
+                    data: call.data.clone(),
+                })
+                .collect(),
+        };
+
+        let domain = eip712_domain! {
+            name: DEPOSIT_WALLET_DOMAIN_NAME,
+            version: DEPOSIT_WALLET_DOMAIN_VERSION,
+            chain_id: POLYGON_CHAIN_ID,
+            verifying_contract: deposit_wallet,
+        };
+        let signing_hash = batch.eip712_signing_hash(&domain);
+        self.sign_hash(&signing_hash.0)
+    }
+
     fn sign_hash_b256(&self, hash: &B256) -> Result<[u8; 65]> {
         let signature = self
             .signer
@@ -278,6 +344,17 @@ impl OrderSigner {
             alloy_primitives::hex::encode(signature.as_slice())
         ))
     }
+}
+
+/// One contract call in a Deposit Wallet batch.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DepositWalletCall {
+    /// Contract receiving the call.
+    pub target: Address,
+    /// Native POL value in wei.
+    pub value: U256,
+    /// ABI-encoded calldata.
+    pub data: Bytes,
 }
 
 /// Computes the EIP-712 signing hash used by Polymarket as the order ID.
@@ -452,11 +529,11 @@ fn build_eip712_order(order: &PolymarketOrder) -> Result<Order> {
     })
 }
 
-fn parse_address(addr: &str, field: &str) -> Result<Address> {
+pub(crate) fn parse_address(addr: &str, field: &str) -> Result<Address> {
     Address::from_str(addr).map_err(|e| Error::bad_request(format!("Invalid {field} address: {e}")))
 }
 
-fn parse_bytes32(value: &str, field: &str) -> Result<FixedBytes<32>> {
+pub(crate) fn parse_bytes32(value: &str, field: &str) -> Result<FixedBytes<32>> {
     FixedBytes::<32>::from_str(value)
         .map_err(|e| Error::bad_request(format!("Invalid {field} bytes32: {e}")))
 }
@@ -533,6 +610,15 @@ mod tests {
     }
 
     #[rstest]
+    fn test_signer_debug_redacts_private_key() {
+        let signer = test_signer();
+        let debug = format!("{signer:?}");
+
+        assert!(debug.contains(&format!("{:#x}", signer.address())));
+        assert!(!debug.contains(TEST_PRIVATE_KEY.trim_start_matches("0x")));
+    }
+
+    #[rstest]
     fn test_signer_address_derivation() {
         let signer = test_signer();
         // Hardhat account #0
@@ -602,6 +688,71 @@ mod tests {
         let sig1 = signer.sign_order(&order, false).unwrap();
         let sig2 = signer.sign_order(&order, false).unwrap();
         assert_eq!(sig1, sig2);
+    }
+
+    #[rstest]
+    fn test_sign_deposit_wallet_batch_format_and_recovery() {
+        let signer = test_signer();
+        let deposit_wallet = address!("0x1111111111111111111111111111111111111111");
+
+        let calls = [DepositWalletCall {
+            target: CTF_COLLATERAL_ADAPTER,
+            value: U256::ZERO,
+            data: Bytes::from_static(&[0xde, 0xad, 0xbe, 0xef]),
+        }];
+
+        let sig = signer
+            .sign_deposit_wallet_batch(
+                deposit_wallet,
+                U256::from(7u64),
+                U256::from(1_714_000_000u64),
+                &calls,
+            )
+            .unwrap();
+
+        assert!(sig.starts_with("0x"));
+        assert_eq!(sig.len(), 132);
+
+        let batch = Batch {
+            wallet: deposit_wallet,
+            nonce: U256::from(7u64),
+            deadline: U256::from(1_714_000_000u64),
+            calls: vec![Call {
+                target: CTF_COLLATERAL_ADAPTER,
+                value: U256::ZERO,
+                data: Bytes::from_static(&[0xde, 0xad, 0xbe, 0xef]),
+            }],
+        };
+
+        let domain = eip712_domain! {
+            name: DEPOSIT_WALLET_DOMAIN_NAME,
+            version: DEPOSIT_WALLET_DOMAIN_VERSION,
+            chain_id: POLYGON_CHAIN_ID,
+            verifying_contract: deposit_wallet,
+        };
+        let signing_hash = batch.eip712_signing_hash(&domain);
+        let recovered = Signature::from_str(&sig)
+            .unwrap()
+            .recover_address_from_prehash(&signing_hash)
+            .unwrap();
+        assert_eq!(recovered, signer.address());
+    }
+
+    #[rstest]
+    fn test_sign_deposit_wallet_batch_rejects_empty_calls() {
+        let signer = test_signer();
+        let err = signer
+            .sign_deposit_wallet_batch(
+                address!("0x1111111111111111111111111111111111111111"),
+                U256::from(1u64),
+                U256::from(1_714_000_000u64),
+                &[],
+            )
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Deposit Wallet batch must contain at least one call")
+        );
     }
 
     #[rstest]
@@ -718,8 +869,16 @@ mod tests {
             "0xe2222d279d744050d28e00520010520000310f59"
         );
         assert_eq!(
+            format!("{CTF_COLLATERAL_ADAPTER:#x}"),
+            "0xada100db00ca00073811820692005400218fce1f"
+        );
+        assert_eq!(
             format!("{NEG_RISK_CTF_COLLATERAL_ADAPTER:#x}"),
             "0xada2005600dec949baf300f4c6120000bdb6eaab"
+        );
+        assert_eq!(
+            format!("{DEPOSIT_WALLET_FACTORY:#x}"),
+            "0x00000000000fb5c9adea0298d729a0cb3823cc07"
         );
         assert_eq!(
             format!("{POLYMARKET_COLLATERAL_TOKEN:#x}"),

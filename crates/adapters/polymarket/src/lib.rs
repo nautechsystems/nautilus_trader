@@ -59,6 +59,7 @@ pub mod factories;
 pub mod filters;
 pub mod http;
 pub mod models;
+pub mod positions;
 pub mod providers;
 pub mod signing;
 pub mod websocket;

@@ -26,6 +26,7 @@
 pub mod config;
 pub mod factories;
 pub mod loader;
+pub mod positions;
 pub mod sort;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
@@ -517,6 +518,9 @@ pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PolymarketExecutionClientFactory>()?;
     m.add_class::<PolymarketFeeModel>()?;
     m.add_class::<loader::PyPolymarketDataLoader>()?;
+    m.add_class::<positions::PyPolymarketPositionClient>()?;
+    m.add_class::<positions::PyPolymarketPositionOutcome>()?;
+    m.add_class::<positions::PyPolymarketPositionTransaction>()?;
     m.add_class::<PolymarketRtdsCryptoPrice>()?;
     m.add_class::<PolymarketRtdsCryptoTwap>()?;
     m.add_class::<PolymarketRtdsEquityPrice>()?;

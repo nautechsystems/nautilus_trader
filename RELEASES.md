@@ -41,6 +41,7 @@ Released on TBD (UTC).
 - Added OKX raw HTTP account configuration queries (#4943), thanks @silarin
 - Added OKX USD-to-USDC spot migration support with `spot_trade_quote_ccy` and `activate_feature`
 - Added Polymarket collateral-sized limit BUY orders with exact limit price preservation
+- Added Polymarket Deposit Wallet split, merge, and redeem position operations
 - Added Polymarket limit order modification support
 - Added Polymarket parent event IDs and raw Gamma market and event metadata
 - Added Polymarket resolution subscriptions for data-only clients (#4895), thanks @mystic-io
