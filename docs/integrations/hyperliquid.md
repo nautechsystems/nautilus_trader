@@ -614,9 +614,10 @@ Nautilus symbol collides with an earlier definition is dropped with a warning an
 The data client then refetches the universe every `update_instruments_interval_mins` minutes and
 publishes the definitions that are new or materially changed; unchanged definitions are not
 republished. The execution client receives those updates and registers each instrument's asset
-index, so a market listed after startup becomes tradable without a process restart. Set
-`update_instruments_interval_mins` to `0` to disable the periodic refresh; a `RequestInstruments`
-or a data client reconnect still refetches and recaches the whole universe on demand.
+index, so a market listed after startup becomes tradable without a process restart. A
+`RequestInstrument` or `RequestInstruments` also refetches the whole universe and publishes new or
+changed definitions the same way. Set `update_instruments_interval_mins` to `0` to disable the
+periodic refresh; requests and a data client reconnect still refetch the universe on demand.
 
 Submitting for a symbol the execution client has never loaded is denied with
 `INSTRUMENT_NOT_FOUND`.
@@ -928,10 +929,13 @@ identifiers from the live `perpDexs` info endpoint. The empty string `""`
 represents Hyperliquid's default perp dex; non-empty values such as `xyz`,
 `flx`, or `vntl` are venue-defined builder dex identifiers.
 
-The mapping is resolved from the instruments loaded at connect, and the feed is
-positional (no per-entry coin name), so perps listed later only appear after a
-reconnect. A context-count mismatch for a dex logs a warning to reconnect;
-entries stay aligned positionally, which is correct for appended listings.
+The mapping is rebuilt from the cached instruments at connect, on every
+instrument refresh, and on every instrument request, and the feed is positional
+(no per-entry coin name), so perps listed later appear after the next rebuild.
+When `allPerpMetas` is unavailable the rebuild covers only the default dex and
+keeps the existing mapping for every builder dex. A context-count mismatch for a
+dex logs a warning until the next rebuild; entries stay aligned positionally,
+which is correct for appended listings.
 
 ```python
 from nautilus_trader.adapters.hyperliquid import HYPERLIQUID_CLIENT_ID
