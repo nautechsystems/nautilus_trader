@@ -118,14 +118,17 @@ pub(super) fn reserve<T: 'static>(heap_bytes: usize) -> Option<Admission<T>> {
                 .checked_add(size_of::<Delivery<T>>())
                 .and_then(|bytes| bytes.checked_add(size_of::<Slot>() + 2 * size_of::<usize>()));
             let capacity = state.pending.capacity().max(state.pending.len() + 1);
+
             let Some(bytes) = bytes.filter(|bytes| state.fits(*bytes, capacity)) else {
                 state.fail(DispatchError::Overflow);
                 return None;
             };
+
             let publication = match state.publication {
                 Some(value) => value,
                 None => state.sequence()?,
             };
+
             let key = (publication, state.sequence()?);
             if state.pending.try_reserve_exact(1).is_err()
                 || !state.fits(bytes, state.pending.capacity())
@@ -133,18 +136,21 @@ pub(super) fn reserve<T: 'static>(heap_bytes: usize) -> Option<Admission<T>> {
                 state.fail(DispatchError::Overflow);
                 return None;
             }
+
             let accounting = state.accounting.clone();
             accounting.count.set(accounting.count.get() + 1);
             accounting.bytes.set(accounting.bytes.get() + bytes);
             accounting
                 .reservations
                 .set(accounting.reservations.get() + 1);
+
             let slot = Rc::new(Slot {
                 state: RefCell::new(SlotState::Reserved),
                 chain,
                 bytes,
                 accounting,
             });
+
             let position = state.pending.partition_point(|(queued, _)| queued < &key);
             state.pending.insert(position, (key, slot.clone()));
             Some(Admission {
@@ -174,6 +180,7 @@ impl<T> Drop for Admission<T> {
         if matches!(*state, SlotState::Reserved) {
             *state = SlotState::Cancelled;
         }
+
         self.slot
             .accounting
             .reservations
@@ -192,16 +199,19 @@ pub(super) fn drain(budget: usize) -> Result<DrainResult, DispatchError> {
             if state.draining || state.clearing || state.depth != 0 || super::access::is_active() {
                 return Ok(false);
             }
+
             state.draining = true;
             Ok(true)
         })
         .unwrap_or(Ok(false))?;
+
     if !entered {
         return Ok(DrainResult {
             delivered: 0,
             pending: has_pending(),
         });
     }
+
     let _scope = DrainScope;
     let mut delivered = 0;
     let mut processed = 0;
@@ -213,6 +223,7 @@ pub(super) fn drain(budget: usize) -> Result<DrainResult, DispatchError> {
 
             Ok(state.pending.front().map(|(_, slot)| slot.clone()))
         })?;
+
         let Some(slot) = slot else {
             break;
         };
@@ -233,17 +244,20 @@ pub(super) fn drain(budget: usize) -> Result<DrainResult, DispatchError> {
                     *slot.state.borrow_mut() = SlotState::Ready(delivery);
                     break;
                 }
+
                 // Callback-local guards end before the owned capture is destroyed
                 drop(delivery);
                 delivered += 1;
                 slot.chain.delivered.set(slot.chain.delivered.get() + 1);
             }
         }
+
         processed += 1;
         let removed = DISPATCH.with_borrow_mut(|state| state.pending.pop_front());
         drop(removed);
         drop(slot);
     }
+
     DISPATCH.with_borrow_mut(|state| {
         if let Some(e) = state.error {
             return Err(e);
@@ -270,6 +284,7 @@ pub(super) fn retain(bytes: usize) -> Option<RetainedStorage> {
                 state.fail(DispatchError::Overflow);
                 return None;
             }
+
             let accounting = state.accounting.clone();
             accounting.count.set(accounting.count.get() + 1);
             accounting.bytes.set(accounting.bytes.get() + bytes);
@@ -357,6 +372,7 @@ pub(super) fn clear() -> Result<(), DispatchError> {
             {
                 return Err(DispatchError::Active);
             }
+
             let previous = std::mem::take(&mut *state);
             state.clearing = true;
             Ok(Some(previous))
@@ -367,6 +383,7 @@ pub(super) fn clear() -> Result<(), DispatchError> {
         let _scope = ClearScope;
         drop(previous);
     }
+
     Ok(())
 }
 
@@ -607,15 +624,22 @@ impl Drop for ClearScope {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::UUID4;
     use proptest::prelude::*;
     use rstest::rstest;
 
     use super::*;
     use crate::{
-        messages::data::{DataCommand, SubscribeCommand, SubscribeQuotes},
-        msgbus,
+        messages::{
+            data::{DataCommand, SubscribeCommand, SubscribeQuotes},
+            execution::{QueryAccount, TradingCommand},
+        },
+        msgbus::{self, MessagingSwitchboard, TypedIntoHandler},
         runner::{
-            DataCommandSender, SyncDataCommandSender, data_cmd_queue_is_empty, drain_data_cmd_queue,
+            DataCommandSender, SyncDataCommandSender, SyncTradingCommandSender,
+            TradingCommandMessage, TradingCommandSender, capture_trading_cmd,
+            data_cmd_queue_is_empty, drain_data_cmd_queue, drain_trading_cmd_queue,
+            trading_cmd_is_dispatching, trading_cmd_queue_is_empty,
         },
     };
 
@@ -651,6 +675,7 @@ mod tests {
                 let _nested = PublicationScope::enter();
                 reserve(0).unwrap().commit((received.clone(), 21), record);
             }
+
             reserve(0).unwrap().commit((received.clone(), 12), record);
             assert_eq!(
                 drain(10),
@@ -660,6 +685,7 @@ mod tests {
                 })
             );
         }
+
         assert_eq!(
             drain(10),
             Ok(DrainResult {
@@ -736,10 +762,12 @@ mod tests {
                 Some(3 - recipient),
             );
         }
+
         {
             let _publication = PublicationScope::enter();
             msgbus::publish_any("outer".into(), &1_u32);
         }
+
         assert_eq!(
             drain(10),
             Ok(DrainResult {
@@ -772,6 +800,7 @@ mod tests {
     #[rstest]
     fn event_count_limit_latches_after_exact_capacity() {
         clear().unwrap();
+
         for _ in 0..MAX_PENDING {
             reserve(0).unwrap().commit((), |()| true);
         }
@@ -801,6 +830,7 @@ mod tests {
             );
             !busy.get()
         });
+
         let received = Rc::new(RefCell::new(Vec::new()));
         reserve(0).unwrap().commit((received.clone(), 22), record);
         assert_eq!(
@@ -866,6 +896,7 @@ mod tests {
                 true
             },
         );
+
         let result = std::panic::catch_unwind(|| drain(1));
         assert_eq!(result.is_err(), unwind);
         assert_eq!(dropped.get(), 1);
@@ -885,6 +916,7 @@ mod tests {
             },
             |_| true,
         );
+
         {
             let _guard = super::super::access::AllocationGuard::acquire(allocation).unwrap();
             let rejected = reserve::<DropProbe>(usize::MAX);
@@ -892,6 +924,7 @@ mod tests {
             assert_eq!(clear(), Err(DispatchError::Active));
             assert_eq!(dropped.get(), 0);
         }
+
         clear().unwrap();
         assert_eq!(dropped.get(), 1);
         assert_eq!(failure(), None);
@@ -900,12 +933,14 @@ mod tests {
     #[rstest]
     fn nested_publication_unwind_restores_frames() {
         clear().unwrap();
+
         let result = std::panic::catch_unwind(|| {
             let _outer = PublicationScope::enter();
             let _inner = PublicationScope::enter();
             reserve(0).unwrap().commit((), |()| true);
             panic!("publication failed");
         });
+
         assert!(result.is_err());
         assert_eq!(failure(), Some(DispatchError::PublicationUnwound));
         assert_eq!(
@@ -1323,6 +1358,7 @@ mod tests {
             );
             true
         });
+
         assert_eq!(
             drain(1),
             Ok(DrainResult {
@@ -2025,6 +2061,853 @@ mod tests {
         })
         .join()
         .unwrap();
+
         assert!(dropped.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[rstest]
+    #[case(MAX_CHAIN - 2, false)]
+    #[case(MAX_CHAIN - 1, true)]
+    fn trading_command_preserves_callback_budget(
+        #[case] delivered: usize,
+        #[case] exhausted: bool,
+    ) {
+        clear().unwrap();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let values = received.clone();
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_execute(),
+            TypedIntoHandler::from(move |command| {
+                assert_eq!(command, trading_command(1));
+                capture_trading_cmd(trading_message(2));
+            }),
+        );
+
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_execute(),
+            TypedIntoHandler::from(move |command| {
+                assert_eq!(command, trading_command(2));
+                reserve(0).unwrap().commit((values.clone(), 23), record);
+            }),
+        );
+
+        let root = reserve(0).unwrap();
+        root.slot.chain.delivered.set(delivered);
+        let chain = Rc::downgrade(&root.slot.chain);
+        let accounting = root.slot.accounting.clone();
+        root.commit((), |()| {
+            SyncTradingCommandSender.execute(trading_message(1));
+            true
+        });
+
+        assert_eq!(
+            drain(1),
+            Ok(DrainResult {
+                delivered: 1,
+                pending: false
+            })
+        );
+        assert_eq!(accounting.contexts.get(), 1);
+        assert_eq!(accounting.bytes.get(), CHAIN_BYTES);
+        assert_eq!(clear(), Err(DispatchError::Active));
+        reserve(0).unwrap().commit((), |()| true);
+        assert_eq!(
+            drain(1),
+            Ok(DrainResult {
+                delivered: 1,
+                pending: false
+            })
+        );
+
+        drain_trading_cmd_queue();
+
+        assert!(trading_cmd_queue_is_empty());
+        assert!(!trading_cmd_is_dispatching());
+        assert_eq!(accounting.contexts.get(), 0);
+        assert!(DISPATCH.with_borrow(|state| state.current.is_none()));
+        assert_eq!(chain.upgrade().unwrap().delivered.get(), delivered + 1);
+        assert_eq!(
+            drain(1),
+            if exhausted {
+                Err(DispatchError::Runaway)
+            } else {
+                Ok(DrainResult {
+                    delivered: 1,
+                    pending: false,
+                })
+            }
+        );
+        assert_eq!(
+            *received.borrow(),
+            if exhausted { vec![] } else { vec![23] }
+        );
+        clear().unwrap();
+        assert_eq!(chain.strong_count(), 0);
+        assert_eq!(accounting.bytes.get(), 0);
+    }
+
+    #[rstest]
+    fn trading_children_capture_nested_context_and_preserve_depth_first_order() {
+        clear().unwrap();
+        let nested = retain(17).unwrap();
+        let nested_chain = nested.chain.clone();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let roots = Rc::new(RefCell::new(Vec::new()));
+
+        for endpoint in [
+            MessagingSwitchboard::exec_engine_execute(),
+            MessagingSwitchboard::risk_engine_execute(),
+        ] {
+            let observed = received.clone();
+            let chains = roots.clone();
+            let context = nested.with_chain(ChainContext::capture);
+            msgbus::register_trading_command_endpoint(
+                endpoint,
+                TypedIntoHandler::from(move |command| {
+                    let id = command_id(&command);
+                    assert_eq!(trading_message(id).endpoint(), endpoint);
+                    assert_eq!(clear(), Err(DispatchError::Active));
+                    observed.borrow_mut().push(id);
+                    if id == 1 {
+                        assert!(DISPATCH.with_borrow(|state| state.current.is_none()));
+                        capture_trading_cmd(trading_message(3));
+                        context.with_chain(|| capture_trading_cmd(trading_message(4)));
+                        capture_trading_cmd(trading_message(5));
+                        SyncTradingCommandSender.execute(trading_message(7));
+                    } else if id == 3 {
+                        capture_trading_cmd(trading_message(6));
+                    }
+
+                    let callback = reserve(0).unwrap();
+                    chains.borrow_mut().push((id, callback.slot.chain.clone()));
+                    callback.commit((), |()| true);
+                }),
+            );
+        }
+
+        SyncTradingCommandSender.execute(trading_message(1));
+        SyncTradingCommandSender.execute(trading_message(2));
+        nested.with_chain(|| {
+            drain_trading_cmd_queue();
+            assert!(
+                DISPATCH.with_borrow(|state| Rc::ptr_eq(
+                    state.current.as_ref().unwrap(),
+                    &nested.chain
+                ))
+            );
+        });
+
+        assert_eq!(*received.borrow(), [1, 3, 6, 4, 5, 2]);
+        assert!(!trading_cmd_queue_is_empty());
+        drain_trading_cmd_queue();
+        assert_eq!(*received.borrow(), [1, 3, 6, 4, 5, 2, 7]);
+        assert_eq!(
+            drain(7),
+            Ok(DrainResult {
+                delivered: 7,
+                pending: false
+            })
+        );
+        let roots = roots.borrow();
+        for (id, root) in roots.iter() {
+            let expected = match id {
+                2 => 1,
+                4 => 1,
+                _ => 5,
+            };
+
+            assert_eq!(root.delivered.get(), expected);
+            assert_eq!(Rc::ptr_eq(root, &nested_chain), *id == 4);
+
+            for (other, other_root) in roots.iter() {
+                assert_eq!(
+                    Rc::ptr_eq(root, other_root),
+                    id == other || (!matches!(id, 2 | 4) && !matches!(other, 2 | 4))
+                );
+            }
+        }
+
+        assert!(trading_cmd_queue_is_empty());
+        assert!(!trading_cmd_is_dispatching());
+        assert_eq!(failure(), None);
+    }
+
+    #[rstest]
+    #[case(1)]
+    #[case(3)]
+    fn trading_command_unwind_releases_children_and_batch(#[case] failing: u8) {
+        clear().unwrap();
+        let parent = retain(11).unwrap();
+        let abandoned = retain(23).unwrap();
+        let accounting = parent.accounting.clone();
+        let root = Rc::downgrade(&parent.chain);
+        let abandoned_root = Rc::downgrade(&abandoned.chain);
+        let child_root = Rc::new(RefCell::new(None::<std::rc::Weak<Chain>>));
+        parent.with_chain(|| SyncTradingCommandSender.execute(trading_message(1)));
+        abandoned.with_chain(|| SyncTradingCommandSender.execute(trading_message(2)));
+        let received = Rc::new(RefCell::new(Vec::new()));
+
+        for endpoint in [
+            MessagingSwitchboard::exec_engine_execute(),
+            MessagingSwitchboard::risk_engine_execute(),
+        ] {
+            let observed = received.clone();
+            let expected_root = root.clone();
+            let child_chain = child_root.clone();
+            msgbus::register_trading_command_endpoint(
+                endpoint,
+                TypedIntoHandler::from(move |command| {
+                    let id = command_id(&command);
+                    assert_eq!(trading_message(id).endpoint(), endpoint);
+                    assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(
+                        state.current.as_ref().unwrap(),
+                        &expected_root.upgrade().unwrap()
+                    )));
+                    observed.borrow_mut().push(id);
+                    if id == 1 {
+                        capture_trading_cmd(trading_message(3));
+                        let _scope = ChainScope::enter(None);
+                        let child = retain(0).unwrap();
+                        *child_chain.borrow_mut() = Some(Rc::downgrade(&child.chain));
+                        child.with_chain(|| capture_trading_cmd(trading_message(4)));
+                    }
+
+                    if id == failing {
+                        capture_trading_cmd(trading_message(5));
+                        SyncTradingCommandSender.execute(trading_message(7));
+                        panic!("trading handler failed");
+                    }
+                }),
+            );
+        }
+
+        drop(parent);
+        drop(abandoned);
+        let enclosing = retain(37).unwrap();
+        enclosing.with_chain(|| {
+            let error = std::panic::catch_unwind(drain_trading_cmd_queue).unwrap_err();
+            assert_eq!(*error.downcast::<&str>().unwrap(), "trading handler failed");
+            assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(
+                state.current.as_ref().unwrap(),
+                &enclosing.chain
+            )));
+        });
+
+        assert_eq!(
+            *received.borrow(),
+            if failing == 1 { vec![1] } else { vec![1, 3] }
+        );
+        assert_eq!(abandoned_root.strong_count(), 0);
+        assert_eq!(child_root.borrow().as_ref().unwrap().strong_count(), 0);
+        assert_eq!(root.strong_count(), 1);
+        assert_eq!(accounting.contexts.get(), 1);
+        assert_eq!(accounting.bytes.get(), 37 + 2 * CHAIN_BYTES);
+        assert!(!trading_cmd_is_dispatching());
+        assert!(!trading_cmd_queue_is_empty());
+        drain_trading_cmd_queue();
+        assert_eq!(
+            *received.borrow(),
+            if failing == 1 {
+                vec![1, 7]
+            } else {
+                vec![1, 3, 7]
+            }
+        );
+        assert!(trading_cmd_queue_is_empty());
+        assert_eq!(root.strong_count(), 0);
+        assert_eq!(accounting.contexts.get(), 0);
+        assert_eq!(failure(), None);
+        drop(enclosing);
+        clear().unwrap();
+        assert_eq!(accounting.bytes.get(), 0);
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn recursive_trading_drain_restores_context_and_capture_frame(#[case] unwind: bool) {
+        clear().unwrap();
+        let outer = retain(13).unwrap();
+        let inner = retain(29).unwrap();
+        let outer_chain = outer.chain.clone();
+        let inner_chain = inner.chain.clone();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let observed = received.clone();
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_execute(),
+            TypedIntoHandler::from(move |command| {
+                let id = command_id(&command);
+                observed.borrow_mut().push(id);
+                if id == 1 {
+                    inner.with_chain(|| SyncTradingCommandSender.execute(trading_message(3)));
+                    let result = std::panic::catch_unwind(drain_trading_cmd_queue);
+                    assert_eq!(
+                        result.err().map(|e| *e.downcast::<&str>().unwrap()),
+                        unwind.then_some("inner failed")
+                    );
+                    assert!(trading_cmd_is_dispatching());
+                    assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(
+                        state.current.as_ref().unwrap(),
+                        &outer_chain
+                    )));
+                    capture_trading_cmd(trading_message(5));
+                } else if id == 3 {
+                    assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(
+                        state.current.as_ref().unwrap(),
+                        &inner_chain
+                    )));
+                    assert!(!unwind, "inner failed");
+                } else {
+                    assert_eq!(id, 5);
+                    assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(
+                        state.current.as_ref().unwrap(),
+                        &outer_chain
+                    )));
+                }
+            }),
+        );
+
+        outer.with_chain(|| SyncTradingCommandSender.execute(trading_message(1)));
+        drain_trading_cmd_queue();
+        assert_eq!(*received.borrow(), [1, 3, 5]);
+        assert!(!trading_cmd_is_dispatching());
+        assert!(trading_cmd_queue_is_empty());
+        assert!(DISPATCH.with_borrow(|state| state.current.is_none()));
+        assert_eq!(failure(), None);
+    }
+
+    #[rstest]
+    #[case(CHAIN_BYTES - 1, true)]
+    #[case(CHAIN_BYTES, false)]
+    #[case(CHAIN_BYTES + 1, false)]
+    fn trading_command_root_allocation_does_not_reject_children(
+        #[case] remaining: usize,
+        #[case] overflow: bool,
+    ) {
+        clear().unwrap();
+        let storage = retain(MAX_KNOWN_BYTES - CHAIN_BYTES - remaining).unwrap();
+        let accounting = storage.accounting.clone();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let observed = received.clone();
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_execute(),
+            TypedIntoHandler::from(move |command| {
+                let id = command_id(&command);
+                observed.borrow_mut().push(id);
+                if id == 1 {
+                    capture_trading_cmd(trading_message(3));
+                    capture_trading_cmd(trading_message(5));
+                }
+            }),
+        );
+
+        {
+            let _publication = PublicationScope::enter();
+            SyncTradingCommandSender.execute(trading_message(1));
+        }
+
+        assert_eq!(failure(), overflow.then_some(DispatchError::Overflow));
+        assert_eq!(accounting.contexts.get(), usize::from(!overflow));
+        assert_eq!(accounting.count.get(), 1);
+        assert_eq!(
+            accounting.bytes.get(),
+            MAX_KNOWN_BYTES - remaining + if overflow { 0 } else { CHAIN_BYTES }
+        );
+        drain_trading_cmd_queue();
+        assert_eq!(*received.borrow(), [1, 3, 5]);
+        assert_eq!(accounting.contexts.get(), 0);
+        assert_eq!(accounting.count.get(), 1);
+        assert_eq!(accounting.bytes.get(), MAX_KNOWN_BYTES - remaining);
+        assert_eq!(failure(), overflow.then_some(DispatchError::Overflow));
+        drop(storage);
+        clear().unwrap();
+        assert_eq!(accounting.bytes.get(), 0);
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn trading_command_admission_ignores_callback_limits(#[case] limit_count: bool) {
+        clear().unwrap();
+
+        let storage = retain(if limit_count {
+            0
+        } else {
+            MAX_KNOWN_BYTES - CHAIN_BYTES
+        })
+        .unwrap();
+
+        let units = storage.with_chain(|| {
+            (1..if limit_count { MAX_PENDING } else { 1 })
+                .map(|_| retain(0).unwrap())
+                .collect::<Vec<_>>()
+        });
+
+        let accounting = storage.accounting.clone();
+        let count = accounting.count.get();
+        let bytes = accounting.bytes.get();
+        let root = Rc::downgrade(&storage.chain);
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let observed = received.clone();
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_execute(),
+            TypedIntoHandler::from(move |command| {
+                let id = command_id(&command);
+                observed.borrow_mut().push(id);
+                assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(
+                    state.current.as_ref().unwrap(),
+                    &root.upgrade().unwrap()
+                )));
+
+                if id == 1 {
+                    capture_trading_cmd(trading_message(3));
+                    assert!(reserve::<()>(0).is_none());
+                    capture_trading_cmd(trading_message(5));
+                    SyncTradingCommandSender.execute(trading_message(7));
+                }
+            }),
+        );
+
+        storage.with_chain(|| SyncTradingCommandSender.execute(trading_message(1)));
+        drain_trading_cmd_queue();
+        assert_eq!(*received.borrow(), [1, 3, 5]);
+        assert_eq!(accounting.contexts.get(), 1);
+        drain_trading_cmd_queue();
+        assert_eq!(*received.borrow(), [1, 3, 5, 7]);
+        assert!(trading_cmd_queue_is_empty());
+        assert_eq!(accounting.contexts.get(), 0);
+        assert_eq!(accounting.count.get(), count);
+        assert_eq!(accounting.bytes.get(), bytes);
+        assert_eq!(failure(), Some(DispatchError::Overflow));
+        drop(units);
+        drop(storage);
+        clear().unwrap();
+        assert_eq!(accounting.count.get(), 0);
+        assert_eq!(accounting.bytes.get(), 0);
+    }
+
+    #[rstest]
+    fn trading_command_only_ingress_allocates_no_root() {
+        clear().unwrap();
+        let accounting = DISPATCH.with_borrow(|state| state.accounting.clone());
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_execute(),
+            TypedIntoHandler::from(move |command| {
+                assert_eq!(command, trading_command(1));
+                assert_eq!(clear(), Err(DispatchError::Active));
+                assert!(DISPATCH.with_borrow(|state| state.current.is_none()));
+            }),
+        );
+
+        SyncTradingCommandSender.execute(trading_message(1));
+        assert_eq!(accounting.contexts.get(), 0);
+        assert_eq!(accounting.bytes.get(), 0);
+        drain_trading_cmd_queue();
+        assert_eq!(accounting.contexts.get(), 0);
+        assert_eq!(accounting.bytes.get(), 0);
+        assert_eq!(failure(), None);
+        clear().unwrap();
+    }
+
+    #[rstest]
+    fn trading_and_data_commands_share_originating_root() {
+        clear().unwrap();
+        let storage = retain(0).unwrap();
+        let root = storage.chain.clone();
+        let expected = root.clone();
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_execute(),
+            TypedIntoHandler::from(move |command| {
+                assert_eq!(command, trading_command(1));
+                assert!(
+                    DISPATCH.with_borrow(|state| Rc::ptr_eq(
+                        state.current.as_ref().unwrap(),
+                        &expected
+                    ))
+                );
+                SyncDataCommandSender.execute(data_command(1));
+            }),
+        );
+
+        let expected = root.clone();
+        msgbus::register_data_command_endpoint(
+            MessagingSwitchboard::data_engine_execute(),
+            TypedIntoHandler::from(move |command| {
+                assert_eq!(command, data_command(1));
+                assert!(
+                    DISPATCH.with_borrow(|state| Rc::ptr_eq(
+                        state.current.as_ref().unwrap(),
+                        &expected
+                    ))
+                );
+                SyncTradingCommandSender.execute(trading_message(2));
+            }),
+        );
+
+        let expected = root.clone();
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_execute(),
+            TypedIntoHandler::from(move |command| {
+                assert_eq!(command, trading_command(2));
+                let callback = reserve(0).unwrap();
+                assert!(Rc::ptr_eq(&callback.slot.chain, &expected));
+                callback.commit((), |()| true);
+            }),
+        );
+
+        storage.with_chain(|| SyncTradingCommandSender.execute(trading_message(1)));
+        drop(storage);
+        drain_trading_cmd_queue();
+        drain_data_cmd_queue();
+        drain_trading_cmd_queue();
+        assert_eq!(
+            drain(1),
+            Ok(DrainResult {
+                delivered: 1,
+                pending: false
+            })
+        );
+        assert_eq!(root.delivered.get(), 1);
+        assert_eq!(root.accounting.contexts.get(), 0);
+        assert_eq!(root.accounting.bytes.get(), CHAIN_BYTES);
+        assert_eq!(failure(), None);
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn queued_trading_commands_release_at_thread_exit(#[case] queue_first: bool) {
+        struct Observe {
+            accounting: Rc<Accounting>,
+            root: std::rc::Weak<Chain>,
+            result: std::sync::Arc<std::sync::Mutex<Option<(usize, usize, usize)>>>,
+        }
+        impl Drop for Observe {
+            fn drop(&mut self) {
+                *self.result.lock().unwrap() = Some((
+                    self.accounting.contexts.get(),
+                    self.accounting.bytes.get(),
+                    self.root.strong_count(),
+                ));
+            }
+        }
+        thread_local! {
+            static OBSERVE: RefCell<Option<Observe>> = const { RefCell::new(None) };
+        }
+        let result = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let observed = result.clone();
+
+        std::thread::spawn(move || {
+            OBSERVE.with_borrow_mut(|observer| {
+                if queue_first {
+                    assert!(trading_cmd_queue_is_empty());
+                }
+
+                let storage = retain(0).unwrap();
+                storage.with_chain(|| {
+                    SyncTradingCommandSender.execute(trading_message(1));
+                    SyncTradingCommandSender.execute(trading_message(2));
+                });
+
+                assert_eq!(storage.accounting.contexts.get(), 2);
+                *observer = Some(Observe {
+                    accounting: storage.accounting.clone(),
+                    root: Rc::downgrade(&storage.chain),
+                    result: observed,
+                });
+            });
+        })
+        .join()
+        .unwrap();
+
+        assert_eq!(*result.lock().unwrap(), Some((0, 0, 0)));
+    }
+
+    proptest! {
+        #[rstest]
+        fn prop_trading_command_ancestry_and_order(
+            nodes in prop::collection::vec((any::<u8>(), any::<bool>(), any::<bool>(), any::<bool>()), 1..24),
+            budgets in prop::collection::vec(0usize..8, 1..12),
+            panic_at in prop::option::of(any::<u8>()),
+        ) {
+            std::thread::spawn(move || {
+                let failing = panic_at.map(|index| usize::from(index) % nodes.len());
+                let parents: Vec<_> = nodes.iter().enumerate().map(|(i, (parent, _, _, _))| usize::from(*parent) % (i + 1)).collect();
+                let mut ancestors = Vec::new();
+                for (i, parent) in parents.iter().copied().enumerate() {
+                    ancestors.push(if parent == i || nodes[i].3 { i } else { ancestors[parent] });
+                }
+                let mut pending: VecDeque<_> = parents.iter().enumerate().filter_map(|(i, parent)| (i == *parent).then_some(i)).collect();
+                let mut expected = Vec::new();
+                let mut drains = Vec::new();
+                while !pending.is_empty() {
+                    let batch: Vec<_> = pending.drain(..).collect();
+                    let mut panicked = false;
+
+                    for index in batch {
+                        if !visit_commands(index, &parents, &nodes, &mut expected, &mut pending, failing) {
+                            panicked = true;
+                            break;
+                        }
+                    }
+                    drains.push((expected.clone(), pending.len(), panicked));
+                }
+                let received = Rc::new(RefCell::new(Vec::new()));
+                let roots = Rc::new(RefCell::new(vec![None; nodes.len()]));
+
+                for endpoint in [MessagingSwitchboard::exec_engine_execute(), MessagingSwitchboard::risk_engine_execute()] {
+                    let observed = received.clone();
+                    let chains = roots.clone();
+                    let links = parents.clone();
+                    let inputs = nodes.clone();
+                    msgbus::register_trading_command_endpoint(endpoint, TypedIntoHandler::from(move |command| {
+                        let id = command_id(&command);
+                        assert_eq!(trading_message(id).endpoint(), endpoint);
+                        let index = usize::from(id - 1);
+                        let scope = inputs[index].2.then(PublicationScope::enter);
+                        for (child, parent) in links.iter().enumerate() {
+                            if *parent == index && child != index {
+                                let _scope = inputs[child].3.then(|| ChainScope::enter(None));
+                                let message = trading_message(child as u8 + 1);
+                                if inputs[child].1 { capture_trading_cmd(message); } else { SyncTradingCommandSender.execute(message); }
+                            }
+                        }
+                        let callback = reserve(0).unwrap();
+                        assert!(chains.borrow_mut()[index].replace(callback.slot.chain.clone()).is_none());
+                        observed.borrow_mut().push(index);
+                        callback.commit((), |()| true);
+                        drop(scope);
+
+                        assert!(Some(index) != failing, "trading handler failed");
+                    }));
+                }
+
+                for (i, parent) in parents.iter().enumerate() {
+                    if i == *parent { SyncTradingCommandSender.execute(trading_message(i as u8 + 1)); }
+                }
+                assert_eq!(DISPATCH.with_borrow(|state| state.accounting.bytes.get()), 0);
+                let enclosing = retain(17).unwrap();
+                let accounting = enclosing.accounting.clone();
+                let mut delivered = 0;
+
+                for (i, (visited, queued, panicked)) in drains.iter().enumerate() {
+                    enclosing.with_chain(|| {
+                        let result = std::panic::catch_unwind(drain_trading_cmd_queue);
+                        assert_eq!(result.err().map(|e| *e.downcast::<&str>().unwrap()), panicked.then_some("trading handler failed"));
+                        assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(state.current.as_ref().unwrap(), &enclosing.chain)));
+                    });
+                    assert_eq!(*received.borrow(), *visited);
+                    assert_eq!(trading_cmd_queue_is_empty(), *queued == 0);
+                    assert!(!trading_cmd_is_dispatching());
+                    assert!(DISPATCH.with_borrow(|state| state.current.is_none()));
+                    assert_eq!(accounting.contexts.get(), *queued);
+                    let remaining = visited.len() - delivered;
+                    let count = remaining.min(budgets[i % budgets.len()]);
+                    assert_eq!(drain(budgets[i % budgets.len()]), Ok(DrainResult { delivered: count, pending: remaining > count }));
+                    delivered += count;
+                    assert_eq!(accounting.count.get(), 1 + visited.len() - delivered);
+                }
+                assert_eq!(drain(usize::MAX), Ok(DrainResult { delivered: expected.len() - delivered, pending: false }));
+                let chains = roots.borrow();
+                for (i, root) in chains.iter().enumerate() {
+                    assert_eq!(root.is_some(), expected.contains(&i));
+                    if let Some(root) = root {
+                        assert_eq!(root.delivered.get(), expected.iter().filter(|index| ancestors[**index] == ancestors[i]).count());
+                        for (j, other) in chains.iter().enumerate() {
+                            if let Some(other) = other {
+                                assert_eq!(Rc::ptr_eq(root, other), ancestors[i] == ancestors[j]);
+                            }
+                        }
+                    }
+                }
+                assert_eq!(enclosing.chain.delivered.get(), 0);
+                assert_eq!(failure(), None);
+                drop(chains);
+                roots.borrow_mut().clear();
+                drop(enclosing);
+                clear().unwrap();
+                assert_eq!((accounting.contexts.get(), accounting.count.get(), accounting.bytes.get()), (0, 0, 0));
+            }).join().unwrap_or_else(|e| std::panic::resume_unwind(e));
+        }
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn public_trading_dispatch_restores_synchronous_capture_frame(#[case] unwind: bool) {
+        clear().unwrap();
+        let storage = retain(7).unwrap();
+        let expected = storage.chain.clone();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let observed = received.clone();
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_execute(),
+            TypedIntoHandler::from(move |command| {
+                let id = command_id(&command);
+                observed.borrow_mut().push(id);
+                assert!(
+                    DISPATCH.with_borrow(|state| Rc::ptr_eq(
+                        state.current.as_ref().unwrap(),
+                        &expected
+                    ))
+                );
+
+                if id == 1 {
+                    let contexts = expected.accounting.contexts.get();
+                    let result = std::panic::catch_unwind(|| trading_message(2).dispatch());
+
+                    if unwind {
+                        assert_eq!(
+                            *result.unwrap_err().downcast::<&str>().unwrap(),
+                            "unscoped handler failed"
+                        );
+                    } else {
+                        let children = result.unwrap();
+                        assert_eq!(children.len(), 1);
+                        assert_eq!(children[0].command(), &trading_command(4));
+                        assert_eq!(children[0].endpoint(), trading_message(4).endpoint());
+                        drop(children);
+                    }
+
+                    assert_eq!(expected.accounting.contexts.get(), contexts);
+                    assert!(trading_cmd_is_dispatching());
+                    capture_trading_cmd(trading_message(3));
+                }
+            }),
+        );
+
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_execute(),
+            TypedIntoHandler::from(move |command| {
+                assert_eq!(command, trading_command(2));
+                capture_trading_cmd(trading_message(4));
+                assert!(!unwind, "unscoped handler failed");
+            }),
+        );
+
+        storage.with_chain(|| SyncTradingCommandSender.execute(trading_message(1)));
+        drain_trading_cmd_queue();
+        assert_eq!(*received.borrow(), [1, 3]);
+        assert!(trading_cmd_queue_is_empty());
+        assert!(!trading_cmd_is_dispatching());
+        assert_eq!(storage.accounting.contexts.get(), 0);
+        assert_eq!(failure(), None);
+    }
+
+    #[rstest]
+    fn public_trading_dispatch_children_remain_send_and_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<TradingCommandMessage>();
+        let input = trading_message(1);
+
+        let children = std::thread::spawn(move || {
+            msgbus::register_trading_command_endpoint(
+                input.endpoint(),
+                TypedIntoHandler::from(|command| {
+                    assert_eq!(command, trading_command(1));
+                    capture_trading_cmd(trading_message(2));
+                }),
+            );
+
+            let children = input.dispatch();
+            assert!(!trading_cmd_is_dispatching());
+            assert_eq!(
+                DISPATCH.with_borrow(|state| state.accounting.contexts.get()),
+                0
+            );
+            assert_eq!(
+                DISPATCH.with_borrow(|state| state.accounting.bytes.get()),
+                0
+            );
+            children
+        })
+        .join()
+        .unwrap();
+
+        assert_eq!(children.len(), 1);
+        let child = children.into_iter().next().unwrap();
+        assert_eq!(child.command(), &trading_command(2));
+        assert_eq!(child.endpoint(), trading_message(2).endpoint());
+
+        std::thread::spawn(move || {
+            let received = Rc::new(RefCell::new(Vec::new()));
+            let observed = received.clone();
+            msgbus::register_trading_command_endpoint(
+                child.endpoint(),
+                TypedIntoHandler::from(move |command| {
+                    observed.borrow_mut().push(command);
+                }),
+            );
+
+            assert!(child.dispatch().is_empty());
+            assert_eq!(*received.borrow(), [trading_command(2)]);
+            assert!(!trading_cmd_is_dispatching());
+        })
+        .join()
+        .unwrap();
+    }
+
+    fn visit_commands(
+        index: usize,
+        parents: &[usize],
+        nodes: &[(u8, bool, bool, bool)],
+        visited: &mut Vec<usize>,
+        pending: &mut VecDeque<usize>,
+        failing: Option<usize>,
+    ) -> bool {
+        visited.push(index);
+        let children: Vec<_> = parents
+            .iter()
+            .enumerate()
+            .filter_map(|(i, parent)| (*parent == index && i != index).then_some(i))
+            .collect();
+        pending.extend(children.iter().copied().filter(|child| !nodes[*child].1));
+
+        if failing == Some(index) {
+            return false;
+        }
+
+        for child in children {
+            if nodes[child].1 && !visit_commands(child, parents, nodes, visited, pending, failing) {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn trading_message(id: u8) -> TradingCommandMessage {
+        let endpoint = if id % 2 == 1 {
+            MessagingSwitchboard::exec_engine_execute()
+        } else {
+            MessagingSwitchboard::risk_engine_execute()
+        };
+
+        TradingCommandMessage::new(endpoint, trading_command(id))
+    }
+
+    fn trading_command(id: u8) -> TradingCommand {
+        TradingCommand::QueryAccount(QueryAccount::new(
+            "TRADER-001".into(),
+            Some("SIM".into()),
+            "SIM-002".into(),
+            UUID4::from(format!("00000000-0000-4000-8000-{id:012}").as_str()),
+            u64::from(id).into(),
+            None,
+            None,
+        ))
+    }
+
+    fn command_id(command: &TradingCommand) -> u8 {
+        let TradingCommand::QueryAccount(command) = command else {
+            panic!("expected account query")
+        };
+
+        let id = command.ts_init.as_u64() as u8;
+        assert_eq!(
+            TradingCommand::QueryAccount(command.clone()),
+            trading_command(id)
+        );
+        id
     }
 }

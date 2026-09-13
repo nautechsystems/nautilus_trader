@@ -578,7 +578,17 @@ impl TradingCommandMessage {
     /// Dispatches the command and returns commands deferred by the endpoint handler.
     #[must_use]
     pub fn dispatch(self) -> Vec<Self> {
-        let guard = TradingCommandDispatchGuard::new();
+        let TradingCommandDispatch::Unscoped(messages) =
+            self.dispatch_with(TradingCommandDispatch::Unscoped(Vec::new()))
+        else {
+            unreachable!("unscoped dispatch returns unscoped commands");
+        };
+
+        messages
+    }
+
+    fn dispatch_with(self, dispatch: TradingCommandDispatch) -> TradingCommandDispatch {
+        let guard = TradingCommandDispatchGuard::new(dispatch);
         msgbus::send_trading_command(self.endpoint, self.command);
         guard.finish()
     }
@@ -594,17 +604,22 @@ impl Display for TradingCommandMessage {
     }
 }
 
+enum TradingCommandDispatch {
+    Unscoped(Vec<TradingCommandMessage>),
+    Sync(Vec<QueuedTradingCommand>),
+}
+
 struct TradingCommandDispatchGuard {
     active: bool,
 }
 
 impl TradingCommandDispatchGuard {
-    fn new() -> Self {
-        TRADING_CMD_DISPATCHES.with(|dispatches| dispatches.borrow_mut().push(Vec::new()));
+    fn new(dispatch: TradingCommandDispatch) -> Self {
+        TRADING_CMD_DISPATCHES.with(|dispatches| dispatches.borrow_mut().push(dispatch));
         Self { active: true }
     }
 
-    fn finish(mut self) -> Vec<TradingCommandMessage> {
+    fn finish(mut self) -> TradingCommandDispatch {
         self.active = false;
         TRADING_CMD_DISPATCHES.with(|dispatches| {
             dispatches
@@ -618,9 +633,8 @@ impl TradingCommandDispatchGuard {
 impl Drop for TradingCommandDispatchGuard {
     fn drop(&mut self) {
         if self.active {
-            TRADING_CMD_DISPATCHES.with(|dispatches| {
-                dispatches.borrow_mut().pop();
-            });
+            let dispatch = TRADING_CMD_DISPATCHES.with(|dispatches| dispatches.borrow_mut().pop());
+            drop(dispatch);
         }
     }
 }
@@ -638,11 +652,16 @@ pub fn trading_cmd_is_dispatching() -> bool {
 /// Panics if no deferred trading command is being dispatched.
 pub fn capture_trading_cmd(message: TradingCommandMessage) {
     TRADING_CMD_DISPATCHES.with(|dispatches| {
-        dispatches
+        match dispatches
             .borrow_mut()
             .last_mut()
             .expect("trading command dispatch should be active")
-            .push(message);
+        {
+            TradingCommandDispatch::Unscoped(messages) => messages.push(message),
+            TradingCommandDispatch::Sync(messages) => {
+                messages.push(QueuedTradingCommand::new(message));
+            }
+        }
     });
 }
 
@@ -666,24 +685,69 @@ pub struct SyncTradingCommandSender;
 
 impl TradingCommandSender for SyncTradingCommandSender {
     fn execute(&self, message: TradingCommandMessage) {
-        TRADING_CMD_QUEUE.with(|q| q.borrow_mut().push(message));
+        let queued = QueuedTradingCommand::new(message);
+        TRADING_CMD_QUEUE.with(|q| q.borrow_mut().push(queued));
     }
 }
 
 /// Drains all buffered trading commands to their direct endpoints.
+///
+/// Deferred children run depth-first before the next command in the collected batch.
+/// Commands enqueued by handlers stay queued for a subsequent drain.
+///
+/// # Panics
+///
+/// Panics if a command handler panics; pending children and the remaining batch are then dropped.
 pub fn drain_trading_cmd_queue() {
     TRADING_CMD_QUEUE.with(|q| {
-        let messages: Vec<TradingCommandMessage> = q.borrow_mut().drain(..).collect();
+        let messages: Vec<QueuedTradingCommand> = q.borrow_mut().drain(..).collect();
         for message in messages {
             dispatch_trading_cmd(message);
         }
     });
 }
 
-fn dispatch_trading_cmd(message: TradingCommandMessage) {
-    let mut messages = vec![message];
+fn dispatch_trading_cmd(message: QueuedTradingCommand) {
+    // Reuse the child buffer so leaf commands need no traversal allocation
+    let mut messages = message.dispatch();
+    messages.reverse();
     while let Some(message) = messages.pop() {
         messages.extend(message.dispatch().into_iter().rev());
+    }
+}
+
+struct QueuedTradingCommand {
+    message: Option<TradingCommandMessage>,
+    context: ChainContext,
+}
+
+impl QueuedTradingCommand {
+    fn new(message: TradingCommandMessage) -> Self {
+        Self {
+            message: Some(message),
+            context: ChainContext::capture(),
+        }
+    }
+
+    fn dispatch(mut self) -> Vec<Self> {
+        let message = self.message.take().expect("queued command is present");
+        self.context.with_chain(|| {
+            let TradingCommandDispatch::Sync(messages) =
+                message.dispatch_with(TradingCommandDispatch::Sync(Vec::new()))
+            else {
+                unreachable!("synchronous dispatch returns scoped commands");
+            };
+
+            messages
+        })
+    }
+}
+
+impl Drop for QueuedTradingCommand {
+    fn drop(&mut self) {
+        if self.message.is_some() {
+            self.context.with_chain(|| drop(self.message.take()));
+        }
     }
 }
 
@@ -748,8 +812,8 @@ thread_local! {
     static DATA_CMD_SENDER: RefCell<Option<Arc<dyn DataCommandSender>>> = const { RefCell::new(None) };
     static EXEC_CMD_SENDER: RefCell<Option<Arc<dyn TradingCommandSender>>> = const { RefCell::new(None) };
     static DATA_CMD_QUEUE: RefCell<Vec<QueuedDataCommand>> = const { RefCell::new(Vec::new()) };
-    static TRADING_CMD_QUEUE: RefCell<Vec<TradingCommandMessage>> = const { RefCell::new(Vec::new()) };
-    static TRADING_CMD_DISPATCHES: RefCell<Vec<Vec<TradingCommandMessage>>> = const { RefCell::new(Vec::new()) };
+    static TRADING_CMD_QUEUE: RefCell<Vec<QueuedTradingCommand>> = const { RefCell::new(Vec::new()) };
+    static TRADING_CMD_DISPATCHES: RefCell<Vec<TradingCommandDispatch>> = const { RefCell::new(Vec::new()) };
 }
 
 #[cfg(test)]
