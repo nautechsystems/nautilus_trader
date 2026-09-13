@@ -4390,9 +4390,9 @@ mod tests {
             assert_eq!(order.side, Some(OrderSide::Sell));
             assert_eq!(order.order_id, 0);
         }
-        assert_eq!(depth10.sequence, 123456);
+        assert_eq!(depth10.sequence, 123_456);
         assert_eq!(depth10.flags, RecordFlag::F_SNAPSHOT as u8);
-        assert_eq!(depth10.ts_event, UnixNanos::from(1597026383085000000));
+        assert_eq!(depth10.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
         assert_eq!(depth10.ts_init, UnixNanos::default());
     }
 
