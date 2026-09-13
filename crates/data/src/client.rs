@@ -270,45 +270,24 @@ impl DataClientAdapter {
     }
 
     #[must_use]
+    #[rustfmt::skip]
     pub(crate) fn has_active_subscription(&self, cmd: &SubscribeCommand) -> bool {
         match cmd {
             SubscribeCommand::Data(cmd) => self.subscriptions_custom.contains(&cmd.data_type),
-            SubscribeCommand::Instrument(cmd) => {
-                self.subscriptions_instrument.contains(&cmd.instrument_id)
-            }
-            SubscribeCommand::Instruments(cmd) => {
-                self.subscriptions_instrument_venue.contains(&cmd.venue)
-            }
-            SubscribeCommand::BookDeltas(cmd) => {
-                self.subscriptions_book_deltas.contains(&cmd.instrument_id)
-            }
-            SubscribeCommand::BookDepth10(cmd) => {
-                self.subscriptions_book_depth10.contains(&cmd.instrument_id)
-            }
+            SubscribeCommand::Instrument(cmd) => self.subscriptions_instrument.contains(&cmd.instrument_id),
+            SubscribeCommand::Instruments(cmd) => self.subscriptions_instrument_venue.contains(&cmd.venue),
+            SubscribeCommand::BookDeltas(cmd) => self.subscriptions_book_deltas.contains(&cmd.instrument_id),
+            SubscribeCommand::BookDepth10(cmd) => self.subscriptions_book_depth10.contains(&cmd.instrument_id),
             SubscribeCommand::Quotes(cmd) => self.subscriptions_quotes.contains(&cmd.instrument_id),
             SubscribeCommand::Trades(cmd) => self.subscriptions_trades.contains(&cmd.instrument_id),
             SubscribeCommand::Bars(cmd) => self.subscriptions_bars.contains(&cmd.bar_type),
-            SubscribeCommand::MarkPrices(cmd) => {
-                self.subscriptions_mark_prices.contains(&cmd.instrument_id)
-            }
-            SubscribeCommand::IndexPrices(cmd) => {
-                self.subscriptions_index_prices.contains(&cmd.instrument_id)
-            }
-            SubscribeCommand::FundingRates(cmd) => self
-                .subscriptions_funding_rates
-                .contains(&cmd.instrument_id),
-            SubscribeCommand::InstrumentStatus(cmd) => self
-                .subscriptions_instrument_status
-                .contains(&cmd.instrument_id),
-            SubscribeCommand::InstrumentClose(cmd) => self
-                .subscriptions_instrument_close
-                .contains(&cmd.instrument_id),
-            SubscribeCommand::OptionGreeks(cmd) => self
-                .subscriptions_option_greeks
-                .contains(&cmd.instrument_id),
-            SubscribeCommand::BookSnapshots(_) | SubscribeCommand::OptionChain(_) => self
-                .subscriptions_active
-                .contains(&SubscriptionKey::from_subscribe(cmd)),
+            SubscribeCommand::MarkPrices(cmd) => self.subscriptions_mark_prices.contains(&cmd.instrument_id),
+            SubscribeCommand::IndexPrices(cmd) => self.subscriptions_index_prices.contains(&cmd.instrument_id),
+            SubscribeCommand::FundingRates(cmd) => self.subscriptions_funding_rates.contains(&cmd.instrument_id),
+            SubscribeCommand::InstrumentStatus(cmd) => self.subscriptions_instrument_status.contains(&cmd.instrument_id),
+            SubscribeCommand::InstrumentClose(cmd) => self.subscriptions_instrument_close.contains(&cmd.instrument_id),
+            SubscribeCommand::OptionGreeks(cmd) => self.subscriptions_option_greeks.contains(&cmd.instrument_id),
+            SubscribeCommand::BookSnapshots(_) | SubscribeCommand::OptionChain(_) => self.subscriptions_active.contains(&SubscriptionKey::from_subscribe(cmd)),
         }
     }
 

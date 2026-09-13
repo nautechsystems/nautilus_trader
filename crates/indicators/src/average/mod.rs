@@ -84,6 +84,7 @@ pub struct MovingAverageFactory;
 
 impl MovingAverageFactory {
     #[must_use]
+    #[rustfmt::skip]
     pub fn create(
         moving_average_type: MovingAverageType,
         period: usize,
@@ -92,12 +93,8 @@ impl MovingAverageFactory {
 
         match moving_average_type {
             MovingAverageType::Simple => Box::new(SimpleMovingAverage::new(period, price_type)),
-            MovingAverageType::Exponential => {
-                Box::new(ExponentialMovingAverage::new(period, price_type))
-            }
-            MovingAverageType::DoubleExponential => {
-                Box::new(DoubleExponentialMovingAverage::new(period, price_type))
-            }
+            MovingAverageType::Exponential => Box::new(ExponentialMovingAverage::new(period, price_type)),
+            MovingAverageType::DoubleExponential => Box::new(DoubleExponentialMovingAverage::new(period, price_type)),
             MovingAverageType::Wilder => Box::new(WilderMovingAverage::new(period, price_type)),
             MovingAverageType::Hull => Box::new(HullMovingAverage::new(period, price_type)),
         }

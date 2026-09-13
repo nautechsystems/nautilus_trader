@@ -1165,6 +1165,7 @@ pub fn instrument_close_type_from_capnp(
 }
 
 #[must_use]
+#[rustfmt::skip]
 pub fn market_status_action_to_capnp(value: MarketStatusAction) -> enums_capnp::MarketStatusAction {
     match value {
         MarketStatusAction::None => enums_capnp::MarketStatusAction::None,
@@ -1173,9 +1174,7 @@ pub fn market_status_action_to_capnp(value: MarketStatusAction) -> enums_capnp::
         MarketStatusAction::Quoting => enums_capnp::MarketStatusAction::Quoting,
         MarketStatusAction::Cross => enums_capnp::MarketStatusAction::Cross,
         MarketStatusAction::Rotation => enums_capnp::MarketStatusAction::Rotation,
-        MarketStatusAction::NewPriceIndication => {
-            enums_capnp::MarketStatusAction::NewPriceIndication
-        }
+        MarketStatusAction::NewPriceIndication => enums_capnp::MarketStatusAction::NewPriceIndication,
         MarketStatusAction::Trading => enums_capnp::MarketStatusAction::Trading,
         MarketStatusAction::Halt => enums_capnp::MarketStatusAction::Halt,
         MarketStatusAction::Pause => enums_capnp::MarketStatusAction::Pause,
@@ -1183,16 +1182,13 @@ pub fn market_status_action_to_capnp(value: MarketStatusAction) -> enums_capnp::
         MarketStatusAction::PreClose => enums_capnp::MarketStatusAction::PreClose,
         MarketStatusAction::Close => enums_capnp::MarketStatusAction::Close,
         MarketStatusAction::PostClose => enums_capnp::MarketStatusAction::PostClose,
-        MarketStatusAction::ShortSellRestrictionChange => {
-            enums_capnp::MarketStatusAction::ShortSellRestrictionChange
-        }
-        MarketStatusAction::NotAvailableForTrading => {
-            enums_capnp::MarketStatusAction::NotAvailableForTrading
-        }
+        MarketStatusAction::ShortSellRestrictionChange => enums_capnp::MarketStatusAction::ShortSellRestrictionChange,
+        MarketStatusAction::NotAvailableForTrading => enums_capnp::MarketStatusAction::NotAvailableForTrading,
     }
 }
 
 #[must_use]
+#[rustfmt::skip]
 pub fn market_status_action_from_capnp(
     value: enums_capnp::MarketStatusAction,
 ) -> MarketStatusAction {
@@ -1203,9 +1199,7 @@ pub fn market_status_action_from_capnp(
         enums_capnp::MarketStatusAction::Quoting => MarketStatusAction::Quoting,
         enums_capnp::MarketStatusAction::Cross => MarketStatusAction::Cross,
         enums_capnp::MarketStatusAction::Rotation => MarketStatusAction::Rotation,
-        enums_capnp::MarketStatusAction::NewPriceIndication => {
-            MarketStatusAction::NewPriceIndication
-        }
+        enums_capnp::MarketStatusAction::NewPriceIndication => MarketStatusAction::NewPriceIndication,
         enums_capnp::MarketStatusAction::Trading => MarketStatusAction::Trading,
         enums_capnp::MarketStatusAction::Halt => MarketStatusAction::Halt,
         enums_capnp::MarketStatusAction::Pause => MarketStatusAction::Pause,
@@ -1213,12 +1207,8 @@ pub fn market_status_action_from_capnp(
         enums_capnp::MarketStatusAction::PreClose => MarketStatusAction::PreClose,
         enums_capnp::MarketStatusAction::Close => MarketStatusAction::Close,
         enums_capnp::MarketStatusAction::PostClose => MarketStatusAction::PostClose,
-        enums_capnp::MarketStatusAction::ShortSellRestrictionChange => {
-            MarketStatusAction::ShortSellRestrictionChange
-        }
-        enums_capnp::MarketStatusAction::NotAvailableForTrading => {
-            MarketStatusAction::NotAvailableForTrading
-        }
+        enums_capnp::MarketStatusAction::ShortSellRestrictionChange => MarketStatusAction::ShortSellRestrictionChange,
+        enums_capnp::MarketStatusAction::NotAvailableForTrading => MarketStatusAction::NotAvailableForTrading,
     }
 }
 

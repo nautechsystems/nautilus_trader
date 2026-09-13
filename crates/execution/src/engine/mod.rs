@@ -3768,31 +3768,16 @@ impl ExecutionEngine {
         let topic = switchboard::get_event_order_topic(event.strategy_id());
         msgbus::publish_order_event(topic, event);
 
+        #[rustfmt::skip]
         let topic = match event {
-            OrderEventAny::Submitted(_) => {
-                switchboard::get_order_submitted_topic(event.instrument_id())
-            }
-            OrderEventAny::Rejected(_) => {
-                switchboard::get_order_rejected_topic(event.instrument_id())
-            }
-            OrderEventAny::PendingUpdate(_) => {
-                switchboard::get_order_pending_update_topic(event.instrument_id())
-            }
-            OrderEventAny::PendingCancel(_) => {
-                switchboard::get_order_pending_cancel_topic(event.instrument_id())
-            }
-            OrderEventAny::ModifyRejected(_) => {
-                switchboard::get_order_modify_rejected_topic(event.instrument_id())
-            }
-            OrderEventAny::CancelRejected(_) => {
-                switchboard::get_order_cancel_rejected_topic(event.instrument_id())
-            }
-            OrderEventAny::Canceled(_) => {
-                switchboard::get_order_canceled_topic(event.instrument_id())
-            }
-            OrderEventAny::FillVoided(_) => {
-                switchboard::get_order_fill_voided_topic(event.instrument_id())
-            }
+            OrderEventAny::Submitted(_) => switchboard::get_order_submitted_topic(event.instrument_id()),
+            OrderEventAny::Rejected(_) => switchboard::get_order_rejected_topic(event.instrument_id()),
+            OrderEventAny::PendingUpdate(_) => switchboard::get_order_pending_update_topic(event.instrument_id()),
+            OrderEventAny::PendingCancel(_) => switchboard::get_order_pending_cancel_topic(event.instrument_id()),
+            OrderEventAny::ModifyRejected(_) => switchboard::get_order_modify_rejected_topic(event.instrument_id()),
+            OrderEventAny::CancelRejected(_) => switchboard::get_order_cancel_rejected_topic(event.instrument_id()),
+            OrderEventAny::Canceled(_) => switchboard::get_order_canceled_topic(event.instrument_id()),
+            OrderEventAny::FillVoided(_) => switchboard::get_order_fill_voided_topic(event.instrument_id()),
             // Keep Filled out of this generic fanout: handle_order_fill publishes the instrument
             // topic, while leg fills stay on the strategy topic.
             _ => return,

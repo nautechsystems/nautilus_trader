@@ -2098,62 +2098,27 @@ impl<'a> ToCapnp<'a> for InstrumentAny {
 impl<'a> FromCapnp<'a> for InstrumentAny {
     type Reader = instruments_capnp::instrument_any::Reader<'a>;
 
+    #[rustfmt::skip]
     fn from_capnp(reader: Self::Reader) -> Result<Self, Box<dyn Error>> {
         match reader.which()? {
-            instruments_capnp::instrument_any::Betting(reader) => {
-                Ok(Self::Betting(BettingInstrument::from_capnp(reader?)?))
-            }
-            instruments_capnp::instrument_any::BinaryOption(reader) => {
-                Ok(Self::BinaryOption(BinaryOption::from_capnp(reader?)?))
-            }
-            instruments_capnp::instrument_any::Cfd(reader) => {
-                Ok(Self::Cfd(Cfd::from_capnp(reader?)?))
-            }
-            instruments_capnp::instrument_any::Commodity(reader) => {
-                Ok(Self::Commodity(Commodity::from_capnp(reader?)?))
-            }
-            instruments_capnp::instrument_any::CryptoFuture(reader) => {
-                Ok(Self::CryptoFuture(CryptoFuture::from_capnp(reader?)?))
-            }
-            instruments_capnp::instrument_any::CryptoFuturesSpread(reader) => Ok(
-                Self::CryptoFuturesSpread(CryptoFuturesSpread::from_capnp(reader?)?),
-            ),
-            instruments_capnp::instrument_any::CryptoOption(reader) => {
-                Ok(Self::CryptoOption(CryptoOption::from_capnp(reader?)?))
-            }
-            instruments_capnp::instrument_any::CryptoOptionSpread(reader) => Ok(
-                Self::CryptoOptionSpread(CryptoOptionSpread::from_capnp(reader?)?),
-            ),
-            instruments_capnp::instrument_any::CryptoPerpetual(reader) => {
-                Ok(Self::CryptoPerpetual(CryptoPerpetual::from_capnp(reader?)?))
-            }
-            instruments_capnp::instrument_any::CurrencyPair(reader) => {
-                Ok(Self::CurrencyPair(CurrencyPair::from_capnp(reader?)?))
-            }
-            instruments_capnp::instrument_any::Equity(reader) => {
-                Ok(Self::Equity(Equity::from_capnp(reader?)?))
-            }
-            instruments_capnp::instrument_any::FuturesContract(reader) => {
-                Ok(Self::FuturesContract(FuturesContract::from_capnp(reader?)?))
-            }
-            instruments_capnp::instrument_any::FuturesSpread(reader) => {
-                Ok(Self::FuturesSpread(FuturesSpread::from_capnp(reader?)?))
-            }
-            instruments_capnp::instrument_any::IndexInstrument(reader) => {
-                Ok(Self::IndexInstrument(IndexInstrument::from_capnp(reader?)?))
-            }
-            instruments_capnp::instrument_any::OptionContract(reader) => {
-                Ok(Self::OptionContract(OptionContract::from_capnp(reader?)?))
-            }
-            instruments_capnp::instrument_any::OptionSpread(reader) => {
-                Ok(Self::OptionSpread(OptionSpread::from_capnp(reader?)?))
-            }
-            instruments_capnp::instrument_any::PerpetualContract(reader) => Ok(
-                Self::PerpetualContract(PerpetualContract::from_capnp(reader?)?),
-            ),
-            instruments_capnp::instrument_any::TokenizedAsset(reader) => {
-                Ok(Self::TokenizedAsset(TokenizedAsset::from_capnp(reader?)?))
-            }
+            instruments_capnp::instrument_any::Betting(reader) => Ok(Self::Betting(BettingInstrument::from_capnp(reader?)?)),
+            instruments_capnp::instrument_any::BinaryOption(reader) => Ok(Self::BinaryOption(BinaryOption::from_capnp(reader?)?)),
+            instruments_capnp::instrument_any::Cfd(reader) => Ok(Self::Cfd(Cfd::from_capnp(reader?)?)),
+            instruments_capnp::instrument_any::Commodity(reader) => Ok(Self::Commodity(Commodity::from_capnp(reader?)?)),
+            instruments_capnp::instrument_any::CryptoFuture(reader) => Ok(Self::CryptoFuture(CryptoFuture::from_capnp(reader?)?)),
+            instruments_capnp::instrument_any::CryptoFuturesSpread(reader) => Ok(Self::CryptoFuturesSpread(CryptoFuturesSpread::from_capnp(reader?)?)),
+            instruments_capnp::instrument_any::CryptoOption(reader) => Ok(Self::CryptoOption(CryptoOption::from_capnp(reader?)?)),
+            instruments_capnp::instrument_any::CryptoOptionSpread(reader) => Ok(Self::CryptoOptionSpread(CryptoOptionSpread::from_capnp(reader?)?)),
+            instruments_capnp::instrument_any::CryptoPerpetual(reader) => Ok(Self::CryptoPerpetual(CryptoPerpetual::from_capnp(reader?)?)),
+            instruments_capnp::instrument_any::CurrencyPair(reader) => Ok(Self::CurrencyPair(CurrencyPair::from_capnp(reader?)?)),
+            instruments_capnp::instrument_any::Equity(reader) => Ok(Self::Equity(Equity::from_capnp(reader?)?)),
+            instruments_capnp::instrument_any::FuturesContract(reader) => Ok(Self::FuturesContract(FuturesContract::from_capnp(reader?)?)),
+            instruments_capnp::instrument_any::FuturesSpread(reader) => Ok(Self::FuturesSpread(FuturesSpread::from_capnp(reader?)?)),
+            instruments_capnp::instrument_any::IndexInstrument(reader) => Ok(Self::IndexInstrument(IndexInstrument::from_capnp(reader?)?)),
+            instruments_capnp::instrument_any::OptionContract(reader) => Ok(Self::OptionContract(OptionContract::from_capnp(reader?)?)),
+            instruments_capnp::instrument_any::OptionSpread(reader) => Ok(Self::OptionSpread(OptionSpread::from_capnp(reader?)?)),
+            instruments_capnp::instrument_any::PerpetualContract(reader) => Ok(Self::PerpetualContract(PerpetualContract::from_capnp(reader?)?)),
+            instruments_capnp::instrument_any::TokenizedAsset(reader) => Ok(Self::TokenizedAsset(TokenizedAsset::from_capnp(reader?)?)),
         }
     }
 }

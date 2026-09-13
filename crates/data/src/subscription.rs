@@ -48,6 +48,7 @@ pub(crate) enum SubscriptionKey {
 }
 
 impl SubscriptionKey {
+    #[rustfmt::skip]
     pub(crate) fn from_subscribe(command: &SubscribeCommand) -> Self {
         match command {
             SubscribeCommand::Data(command) => Self::Data(command.data_type.clone()),
@@ -55,9 +56,7 @@ impl SubscriptionKey {
             SubscribeCommand::Instruments(command) => Self::Instruments(command.venue),
             SubscribeCommand::BookDeltas(command) => Self::BookDeltas(command.instrument_id),
             SubscribeCommand::BookDepth10(command) => Self::BookDepth10(command.instrument_id),
-            SubscribeCommand::BookSnapshots(command) => {
-                Self::BookSnapshots(command.instrument_id, command.interval_ms)
-            }
+            SubscribeCommand::BookSnapshots(command) => Self::BookSnapshots(command.instrument_id, command.interval_ms),
             SubscribeCommand::OptionChain(command) => Self::OptionChain(command.series_id),
             SubscribeCommand::Quotes(command) => Self::Quotes(command.instrument_id),
             SubscribeCommand::Trades(command) => Self::Trades(command.instrument_id),
@@ -65,16 +64,13 @@ impl SubscriptionKey {
             SubscribeCommand::MarkPrices(command) => Self::MarkPrices(command.instrument_id),
             SubscribeCommand::IndexPrices(command) => Self::IndexPrices(command.instrument_id),
             SubscribeCommand::FundingRates(command) => Self::FundingRates(command.instrument_id),
-            SubscribeCommand::InstrumentStatus(command) => {
-                Self::InstrumentStatus(command.instrument_id)
-            }
-            SubscribeCommand::InstrumentClose(command) => {
-                Self::InstrumentClose(command.instrument_id)
-            }
+            SubscribeCommand::InstrumentStatus(command) => Self::InstrumentStatus(command.instrument_id),
+            SubscribeCommand::InstrumentClose(command) => Self::InstrumentClose(command.instrument_id),
             SubscribeCommand::OptionGreeks(command) => Self::OptionGreeks(command.instrument_id),
         }
     }
 
+    #[rustfmt::skip]
     pub(crate) fn from_unsubscribe(command: &UnsubscribeCommand) -> Self {
         match command {
             UnsubscribeCommand::Data(command) => Self::Data(command.data_type.clone()),
@@ -82,9 +78,7 @@ impl SubscriptionKey {
             UnsubscribeCommand::Instruments(command) => Self::Instruments(command.venue),
             UnsubscribeCommand::BookDeltas(command) => Self::BookDeltas(command.instrument_id),
             UnsubscribeCommand::BookDepth10(command) => Self::BookDepth10(command.instrument_id),
-            UnsubscribeCommand::BookSnapshots(command) => {
-                Self::BookSnapshots(command.instrument_id, command.interval_ms)
-            }
+            UnsubscribeCommand::BookSnapshots(command) => Self::BookSnapshots(command.instrument_id, command.interval_ms),
             UnsubscribeCommand::OptionChain(command) => Self::OptionChain(command.series_id),
             UnsubscribeCommand::Quotes(command) => Self::Quotes(command.instrument_id),
             UnsubscribeCommand::Trades(command) => Self::Trades(command.instrument_id),
@@ -92,12 +86,8 @@ impl SubscriptionKey {
             UnsubscribeCommand::MarkPrices(command) => Self::MarkPrices(command.instrument_id),
             UnsubscribeCommand::IndexPrices(command) => Self::IndexPrices(command.instrument_id),
             UnsubscribeCommand::FundingRates(command) => Self::FundingRates(command.instrument_id),
-            UnsubscribeCommand::InstrumentStatus(command) => {
-                Self::InstrumentStatus(command.instrument_id)
-            }
-            UnsubscribeCommand::InstrumentClose(command) => {
-                Self::InstrumentClose(command.instrument_id)
-            }
+            UnsubscribeCommand::InstrumentStatus(command) => Self::InstrumentStatus(command.instrument_id),
+            UnsubscribeCommand::InstrumentClose(command) => Self::InstrumentClose(command.instrument_id),
             UnsubscribeCommand::OptionGreeks(command) => Self::OptionGreeks(command.instrument_id),
         }
     }

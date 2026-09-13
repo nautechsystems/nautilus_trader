@@ -138,6 +138,7 @@ pub enum FeeModelAny {
 }
 
 impl FeeModel for FeeModelAny {
+    #[rustfmt::skip]
     fn get_commission(
         &self,
         order: &OrderAny,
@@ -147,26 +148,17 @@ impl FeeModel for FeeModelAny {
     ) -> anyhow::Result<Money> {
         match self {
             Self::Fixed(model) => model.get_commission(order, fill_quantity, fill_px, instrument),
-            Self::MakerTaker(model) => {
-                model.get_commission(order, fill_quantity, fill_px, instrument)
-            }
-            Self::PerContract(model) => {
-                model.get_commission(order, fill_quantity, fill_px, instrument)
-            }
-            Self::ProbabilityPrice(model) => {
-                model.get_commission(order, fill_quantity, fill_px, instrument)
-            }
-            Self::CappedOption(model) => {
-                model.get_commission(order, fill_quantity, fill_px, instrument)
-            }
-            Self::TieredNotionalOption(model) => {
-                model.get_commission(order, fill_quantity, fill_px, instrument)
-            }
+            Self::MakerTaker(model) => model.get_commission(order, fill_quantity, fill_px, instrument),
+            Self::PerContract(model) => model.get_commission(order, fill_quantity, fill_px, instrument),
+            Self::ProbabilityPrice(model) => model.get_commission(order, fill_quantity, fill_px, instrument),
+            Self::CappedOption(model) => model.get_commission(order, fill_quantity, fill_px, instrument),
+            Self::TieredNotionalOption(model) => model.get_commission(order, fill_quantity, fill_px, instrument),
             #[cfg(feature = "python")]
             Self::Python(model) => model.get_commission(order, fill_quantity, fill_px, instrument),
         }
     }
 
+    #[rustfmt::skip]
     fn get_commission_with_context(
         &self,
         order: &OrderAny,
@@ -176,56 +168,14 @@ impl FeeModel for FeeModelAny {
         underlying_px: Option<Price>,
     ) -> anyhow::Result<Money> {
         match self {
-            Self::Fixed(model) => model.get_commission_with_context(
-                order,
-                fill_quantity,
-                fill_px,
-                instrument,
-                underlying_px,
-            ),
-            Self::MakerTaker(model) => model.get_commission_with_context(
-                order,
-                fill_quantity,
-                fill_px,
-                instrument,
-                underlying_px,
-            ),
-            Self::PerContract(model) => model.get_commission_with_context(
-                order,
-                fill_quantity,
-                fill_px,
-                instrument,
-                underlying_px,
-            ),
-            Self::ProbabilityPrice(model) => model.get_commission_with_context(
-                order,
-                fill_quantity,
-                fill_px,
-                instrument,
-                underlying_px,
-            ),
-            Self::CappedOption(model) => model.get_commission_with_context(
-                order,
-                fill_quantity,
-                fill_px,
-                instrument,
-                underlying_px,
-            ),
-            Self::TieredNotionalOption(model) => model.get_commission_with_context(
-                order,
-                fill_quantity,
-                fill_px,
-                instrument,
-                underlying_px,
-            ),
+            Self::Fixed(model) => model.get_commission_with_context(order, fill_quantity, fill_px, instrument, underlying_px),
+            Self::MakerTaker(model) => model.get_commission_with_context(order, fill_quantity, fill_px, instrument, underlying_px),
+            Self::PerContract(model) => model.get_commission_with_context(order, fill_quantity, fill_px, instrument, underlying_px),
+            Self::ProbabilityPrice(model) => model.get_commission_with_context(order, fill_quantity, fill_px, instrument, underlying_px),
+            Self::CappedOption(model) => model.get_commission_with_context(order, fill_quantity, fill_px, instrument, underlying_px),
+            Self::TieredNotionalOption(model) => model.get_commission_with_context(order, fill_quantity, fill_px, instrument, underlying_px),
             #[cfg(feature = "python")]
-            Self::Python(model) => model.get_commission_with_context(
-                order,
-                fill_quantity,
-                fill_px,
-                instrument,
-                underlying_px,
-            ),
+            Self::Python(model) => model.get_commission_with_context(order, fill_quantity, fill_px, instrument, underlying_px),
         }
     }
 }

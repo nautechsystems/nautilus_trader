@@ -1366,6 +1366,7 @@ impl DataEngine {
         };
         let resolved_client_id = client.client_id();
 
+        #[rustfmt::skip]
         match req {
             RequestCommand::Data(req) => client.request_data(req),
             RequestCommand::Instrument(req) => client.request_instrument(req),
@@ -1376,13 +1377,9 @@ impl DataEngine {
             RequestCommand::Quotes(req) => client.request_quotes(req),
             RequestCommand::Trades(req) => client.request_trades(req),
             RequestCommand::FundingRates(req) => client.request_funding_rates(req),
-            RequestCommand::OptionChainReferencePrice(req) => {
-                client.request_option_chain_reference_price(req)
-            }
+            RequestCommand::OptionChainReferencePrice(req) => client.request_option_chain_reference_price(req),
             RequestCommand::Bars(req) => client.request_bars(req),
-            RequestCommand::Join(_) => {
-                anyhow::bail!("RequestJoin must be handled by handle_request_join")
-            }
+            RequestCommand::Join(_) => anyhow::bail!("RequestJoin must be handled by handle_request_join"),
         }?;
 
         Ok(resolved_client_id)
@@ -5646,17 +5643,14 @@ where
     msgbus::publish_any(topic.into(), command);
 }
 
+#[rustfmt::skip]
 fn streaming_payload_type(cmd: &SubscribeCommand) -> Option<BusPayloadType> {
     match cmd {
         SubscribeCommand::Data(cmd) => Some(BusPayloadType::Custom(Ustr::from(
             cmd.data_type.type_name(),
         ))),
-        SubscribeCommand::Instrument(_) | SubscribeCommand::Instruments(_) => {
-            Some(BusPayloadType::Instrument)
-        }
-        SubscribeCommand::BookDeltas(_) | SubscribeCommand::BookSnapshots(_) => {
-            Some(BusPayloadType::OrderBookDeltas)
-        }
+        SubscribeCommand::Instrument(_) | SubscribeCommand::Instruments(_) => Some(BusPayloadType::Instrument),
+        SubscribeCommand::BookDeltas(_) | SubscribeCommand::BookSnapshots(_) => Some(BusPayloadType::OrderBookDeltas),
         SubscribeCommand::BookDepth10(_) => Some(BusPayloadType::OrderBookDepth10),
         SubscribeCommand::Quotes(_) => Some(BusPayloadType::QuoteTick),
         SubscribeCommand::Trades(_) => Some(BusPayloadType::TradeTick),

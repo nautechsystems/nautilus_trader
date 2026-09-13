@@ -45,32 +45,22 @@ impl DataClientAdapter {
         cmd: DefiSubscribeCommand,
         retain_on_failure: bool,
     ) {
+        #[rustfmt::skip]
         let key = match &cmd {
             DefiSubscribeCommand::Blocks(command) => DefiSubscriptionKey::Blocks(command.chain),
             DefiSubscribeCommand::Pool(command) => DefiSubscriptionKey::Pool(command.instrument_id),
-            DefiSubscribeCommand::PoolSwaps(command) => {
-                DefiSubscriptionKey::PoolSwaps(command.instrument_id)
-            }
-            DefiSubscribeCommand::PoolLiquidityUpdates(command) => {
-                DefiSubscriptionKey::PoolLiquidityUpdates(command.instrument_id)
-            }
-            DefiSubscribeCommand::PoolFeeCollects(command) => {
-                DefiSubscriptionKey::PoolFeeCollects(command.instrument_id)
-            }
-            DefiSubscribeCommand::PoolFlashEvents(command) => {
-                DefiSubscriptionKey::PoolFlashEvents(command.instrument_id)
-            }
+            DefiSubscribeCommand::PoolSwaps(command) => DefiSubscriptionKey::PoolSwaps(command.instrument_id),
+            DefiSubscribeCommand::PoolLiquidityUpdates(command) => DefiSubscriptionKey::PoolLiquidityUpdates(command.instrument_id),
+            DefiSubscribeCommand::PoolFeeCollects(command) => DefiSubscriptionKey::PoolFeeCollects(command.instrument_id),
+            DefiSubscribeCommand::PoolFlashEvents(command) => DefiSubscriptionKey::PoolFlashEvents(command.instrument_id),
         };
+        #[rustfmt::skip]
         let active = match &key {
             DefiSubscriptionKey::Blocks(chain) => self.subscriptions_blocks.contains(chain),
             DefiSubscriptionKey::Pool(id) => self.subscriptions_pools.contains(id),
             DefiSubscriptionKey::PoolSwaps(id) => self.subscriptions_pool_swaps.contains(id),
-            DefiSubscriptionKey::PoolLiquidityUpdates(id) => {
-                self.subscriptions_pool_liquidity_updates.contains(id)
-            }
-            DefiSubscriptionKey::PoolFeeCollects(id) => {
-                self.subscriptions_pool_fee_collects.contains(id)
-            }
+            DefiSubscriptionKey::PoolLiquidityUpdates(id) => self.subscriptions_pool_liquidity_updates.contains(id),
+            DefiSubscriptionKey::PoolFeeCollects(id) => self.subscriptions_pool_fee_collects.contains(id),
             DefiSubscriptionKey::PoolFlashEvents(id) => self.subscriptions_pool_flash.contains(id),
         };
 
@@ -82,13 +72,12 @@ impl DataClientAdapter {
 
         let retained = cmd.clone();
         let cmd_debug = format!("{cmd:?}");
+        #[rustfmt::skip]
         let result = match cmd {
             DefiSubscribeCommand::Blocks(cmd) => self.subscribe_blocks(cmd),
             DefiSubscribeCommand::Pool(cmd) => self.subscribe_pool(cmd),
             DefiSubscribeCommand::PoolSwaps(cmd) => self.subscribe_pool_swaps(cmd),
-            DefiSubscribeCommand::PoolLiquidityUpdates(cmd) => {
-                self.subscribe_pool_liquidity_updates(cmd)
-            }
+            DefiSubscribeCommand::PoolLiquidityUpdates(cmd) => self.subscribe_pool_liquidity_updates(cmd),
             DefiSubscribeCommand::PoolFeeCollects(cmd) => self.subscribe_pool_fee_collects(cmd),
             DefiSubscribeCommand::PoolFlashEvents(cmd) => self.subscribe_pool_flash_events(cmd),
         };
@@ -112,23 +101,14 @@ impl DataClientAdapter {
 
     #[inline]
     pub fn execute_defi_unsubscribe(&mut self, cmd: &DefiUnsubscribeCommand) {
+        #[rustfmt::skip]
         let key = match cmd {
             DefiUnsubscribeCommand::Blocks(command) => DefiSubscriptionKey::Blocks(command.chain),
-            DefiUnsubscribeCommand::Pool(command) => {
-                DefiSubscriptionKey::Pool(command.instrument_id)
-            }
-            DefiUnsubscribeCommand::PoolSwaps(command) => {
-                DefiSubscriptionKey::PoolSwaps(command.instrument_id)
-            }
-            DefiUnsubscribeCommand::PoolLiquidityUpdates(command) => {
-                DefiSubscriptionKey::PoolLiquidityUpdates(command.instrument_id)
-            }
-            DefiUnsubscribeCommand::PoolFeeCollects(command) => {
-                DefiSubscriptionKey::PoolFeeCollects(command.instrument_id)
-            }
-            DefiUnsubscribeCommand::PoolFlashEvents(command) => {
-                DefiSubscriptionKey::PoolFlashEvents(command.instrument_id)
-            }
+            DefiUnsubscribeCommand::Pool(command) => DefiSubscriptionKey::Pool(command.instrument_id),
+            DefiUnsubscribeCommand::PoolSwaps(command) => DefiSubscriptionKey::PoolSwaps(command.instrument_id),
+            DefiUnsubscribeCommand::PoolLiquidityUpdates(command) => DefiSubscriptionKey::PoolLiquidityUpdates(command.instrument_id),
+            DefiUnsubscribeCommand::PoolFeeCollects(command) => DefiSubscriptionKey::PoolFeeCollects(command.instrument_id),
+            DefiUnsubscribeCommand::PoolFlashEvents(command) => DefiSubscriptionKey::PoolFlashEvents(command.instrument_id),
         };
         let command = match self.subscriptions_active_defi.release(&key) {
             SubscriptionRelease::Retained => return,
@@ -138,16 +118,17 @@ impl DataClientAdapter {
             SubscriptionRelease::Untracked => cmd.clone(),
         };
 
-        if let Err(e) = match &command {
+        #[rustfmt::skip]
+        let unsub_result = match &command {
             DefiUnsubscribeCommand::Blocks(cmd) => self.unsubscribe_blocks(cmd),
             DefiUnsubscribeCommand::Pool(cmd) => self.unsubscribe_pool(cmd),
             DefiUnsubscribeCommand::PoolSwaps(cmd) => self.unsubscribe_pool_swaps(cmd),
-            DefiUnsubscribeCommand::PoolLiquidityUpdates(cmd) => {
-                self.unsubscribe_pool_liquidity_updates(cmd)
-            }
+            DefiUnsubscribeCommand::PoolLiquidityUpdates(cmd) => self.unsubscribe_pool_liquidity_updates(cmd),
             DefiUnsubscribeCommand::PoolFeeCollects(cmd) => self.unsubscribe_pool_fee_collects(cmd),
             DefiUnsubscribeCommand::PoolFlashEvents(cmd) => self.unsubscribe_pool_flash_events(cmd),
-        } {
+        };
+
+        if let Err(e) = unsub_result {
             log_command_error(&command, &e);
         } else {
             self.subscriptions_active_defi.remove(&key);

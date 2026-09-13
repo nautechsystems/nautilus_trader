@@ -187,26 +187,17 @@ pub fn decode_batch_to_data(
         .or_else(|| metadata.get("bar_type").map(|_| "bars".to_string()))
         .ok_or_else(|| anyhow::anyhow!("Missing type_name in metadata"))?;
 
-    match type_name.as_str() {
+    #[rustfmt::skip]
+    let result = match type_name.as_str() {
         "QuoteTick" | "quotes" => Ok(QuoteTick::decode_data_batch(metadata, batch)?),
         "TradeTick" | "trades" => Ok(TradeTick::decode_data_batch(metadata, batch)?),
         "Bar" | "bars" => Ok(Bar::decode_data_batch(metadata, batch)?),
-        "OrderBookDelta" | "order_book_deltas" => {
-            Ok(OrderBookDelta::decode_data_batch(metadata, batch)?)
-        }
-        "OrderBookDepth10" | "order_book_depths" => {
-            Ok(OrderBookDepth10::decode_data_batch(metadata, batch)?)
-        }
-        "MarkPriceUpdate" | "mark_price_updates" => {
-            Ok(MarkPriceUpdate::decode_data_batch(metadata, batch)?)
-        }
-        "IndexPriceUpdate" | "index_price_updates" => {
-            Ok(IndexPriceUpdate::decode_data_batch(metadata, batch)?)
-        }
+        "OrderBookDelta" | "order_book_deltas" => Ok(OrderBookDelta::decode_data_batch(metadata, batch)?),
+        "OrderBookDepth10" | "order_book_depths" => Ok(OrderBookDepth10::decode_data_batch(metadata, batch)?),
+        "MarkPriceUpdate" | "mark_price_updates" => Ok(MarkPriceUpdate::decode_data_batch(metadata, batch)?),
+        "IndexPriceUpdate" | "index_price_updates" => Ok(IndexPriceUpdate::decode_data_batch(metadata, batch)?),
         "OptionGreeks" | "option_greeks" => Ok(OptionGreeks::decode_data_batch(metadata, batch)?),
-        "InstrumentClose" | "instrument_closes" => {
-            Ok(InstrumentClose::decode_data_batch(metadata, batch)?)
-        }
+        "InstrumentClose" | "instrument_closes" => Ok(InstrumentClose::decode_data_batch(metadata, batch)?),
         _ => {
             if allow_custom_fallback {
                 #[cfg(feature = "python")]
@@ -222,7 +213,8 @@ pub fn decode_batch_to_data(
                 "Unknown data type: {type_name}; custom decode only allowed in custom data context"
             )
         }
-    }
+    };
+    result
 }
 
 /// Decodes multiple `RecordBatches` (e.g. from custom data files) into a single `Vec<Data>`.

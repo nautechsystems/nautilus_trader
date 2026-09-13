@@ -575,41 +575,21 @@ fn dispatch_query(
     let filter = config.filter_expr();
     let optimize = config.optimize_file_loading();
 
-    match config.data_type() {
-        NautilusDataType::QuoteTick => {
-            catalog.query::<QuoteTick>(identifiers, start, end, filter, None, optimize)
-        }
-        NautilusDataType::TradeTick => {
-            catalog.query::<TradeTick>(identifiers, start, end, filter, None, optimize)
-        }
-        NautilusDataType::Bar => {
-            catalog.query::<Bar>(identifiers, start, end, filter, None, optimize)
-        }
-        NautilusDataType::OrderBookDelta => {
-            catalog.query::<OrderBookDelta>(identifiers, start, end, filter, None, optimize)
-        }
-        NautilusDataType::OrderBookDepth10 => {
-            catalog.query::<OrderBookDepth10>(identifiers, start, end, filter, None, optimize)
-        }
-        NautilusDataType::MarkPriceUpdate => {
-            catalog.query::<MarkPriceUpdate>(identifiers, start, end, filter, None, optimize)
-        }
-        NautilusDataType::IndexPriceUpdate => {
-            catalog.query::<IndexPriceUpdate>(identifiers, start, end, filter, None, optimize)
-        }
-        NautilusDataType::FundingRateUpdate => {
-            catalog.query::<FundingRateUpdate>(identifiers, start, end, filter, None, optimize)
-        }
-        NautilusDataType::InstrumentStatus => {
-            catalog.query::<InstrumentStatus>(identifiers, start, end, filter, None, optimize)
-        }
-        NautilusDataType::OptionGreeks => {
-            catalog.query::<OptionGreeks>(identifiers, start, end, filter, None, optimize)
-        }
-        NautilusDataType::InstrumentClose => {
-            catalog.query::<InstrumentClose>(identifiers, start, end, filter, None, optimize)
-        }
-    }
+    #[rustfmt::skip]
+    let result = match config.data_type() {
+        NautilusDataType::QuoteTick => catalog.query::<QuoteTick>(identifiers, start, end, filter, None, optimize),
+        NautilusDataType::TradeTick => catalog.query::<TradeTick>(identifiers, start, end, filter, None, optimize),
+        NautilusDataType::Bar => catalog.query::<Bar>(identifiers, start, end, filter, None, optimize),
+        NautilusDataType::OrderBookDelta => catalog.query::<OrderBookDelta>(identifiers, start, end, filter, None, optimize),
+        NautilusDataType::OrderBookDepth10 => catalog.query::<OrderBookDepth10>(identifiers, start, end, filter, None, optimize),
+        NautilusDataType::MarkPriceUpdate => catalog.query::<MarkPriceUpdate>(identifiers, start, end, filter, None, optimize),
+        NautilusDataType::IndexPriceUpdate => catalog.query::<IndexPriceUpdate>(identifiers, start, end, filter, None, optimize),
+        NautilusDataType::FundingRateUpdate => catalog.query::<FundingRateUpdate>(identifiers, start, end, filter, None, optimize),
+        NautilusDataType::InstrumentStatus => catalog.query::<InstrumentStatus>(identifiers, start, end, filter, None, optimize),
+        NautilusDataType::OptionGreeks => catalog.query::<OptionGreeks>(identifiers, start, end, filter, None, optimize),
+        NautilusDataType::InstrumentClose => catalog.query::<InstrumentClose>(identifiers, start, end, filter, None, optimize),
+    };
+    result
 }
 
 fn max_opt(a: Option<UnixNanos>, b: Option<UnixNanos>) -> Option<UnixNanos> {

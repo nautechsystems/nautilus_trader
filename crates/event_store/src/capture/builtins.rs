@@ -1269,29 +1269,18 @@ pub fn encode_time_event(event: &TimeEvent) -> Result<EncodedPayload, EncodeErro
 ///
 /// Returns [`EncodeError::Serialize`] when MessagePack rejects the inner payload, or
 /// when a future non-exhaustive [`DataCommand`] variant has no encoder yet.
+#[rustfmt::skip]
 pub fn encode_data_command(command: &DataCommand) -> Result<EncodedPayload, EncodeError> {
     match command {
-        DataCommand::Request(cmd) => {
-            encode_data_command_category(cmd, PAYLOAD_TYPE_REQUEST_COMMAND)
-        }
-        DataCommand::Subscribe(cmd) => {
-            encode_data_command_category(cmd, PAYLOAD_TYPE_SUBSCRIBE_COMMAND)
-        }
-        DataCommand::Unsubscribe(cmd) => {
-            encode_data_command_category(cmd, PAYLOAD_TYPE_UNSUBSCRIBE_COMMAND)
-        }
+        DataCommand::Request(cmd) => encode_data_command_category(cmd, PAYLOAD_TYPE_REQUEST_COMMAND),
+        DataCommand::Subscribe(cmd) => encode_data_command_category(cmd, PAYLOAD_TYPE_SUBSCRIBE_COMMAND),
+        DataCommand::Unsubscribe(cmd) => encode_data_command_category(cmd, PAYLOAD_TYPE_UNSUBSCRIBE_COMMAND),
         #[cfg(feature = "defi")]
-        DataCommand::DefiRequest(cmd) => {
-            encode_data_command_category(cmd, PAYLOAD_TYPE_DEFI_REQUEST_COMMAND)
-        }
+        DataCommand::DefiRequest(cmd) => encode_data_command_category(cmd, PAYLOAD_TYPE_DEFI_REQUEST_COMMAND),
         #[cfg(feature = "defi")]
-        DataCommand::DefiSubscribe(cmd) => {
-            encode_data_command_category(cmd, PAYLOAD_TYPE_DEFI_SUBSCRIBE_COMMAND)
-        }
+        DataCommand::DefiSubscribe(cmd) => encode_data_command_category(cmd, PAYLOAD_TYPE_DEFI_SUBSCRIBE_COMMAND),
         #[cfg(feature = "defi")]
-        DataCommand::DefiUnsubscribe(cmd) => {
-            encode_data_command_category(cmd, PAYLOAD_TYPE_DEFI_UNSUBSCRIBE_COMMAND)
-        }
+        DataCommand::DefiUnsubscribe(cmd) => encode_data_command_category(cmd, PAYLOAD_TYPE_DEFI_UNSUBSCRIBE_COMMAND),
         _ => Err(EncodeError::Serialize(
             "unsupported DataCommand variant".to_string(),
         )),

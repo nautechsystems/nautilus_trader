@@ -423,105 +423,54 @@ pub enum OrderDeniedReason {
 impl OrderDeniedCode {
     /// Returns a one-line description of this denial code.
     #[must_use]
+    #[rustfmt::skip]
     pub fn description(&self) -> &'static str {
         match self {
-            Self::PricePrecisionExceedsMaximum => {
-                "The price precision exceeds the instrument maximum."
-            }
+            Self::PricePrecisionExceedsMaximum => "The price precision exceeds the instrument maximum.",
             Self::PriceNotPositive => "The price is not positive.",
-            Self::QuantityPrecisionExceedsMaximum => {
-                "The quantity precision exceeds the instrument maximum."
-            }
-            Self::QuantityConversionFailed => {
-                "The order quantity could not be converted for risk checks."
-            }
-            Self::QuantityExceedsMaximum => {
-                "The effective order quantity exceeds the instrument maximum."
-            }
-            Self::QuantityBelowMinimum => {
-                "The effective order quantity is below the instrument minimum."
-            }
-            Self::InvalidMaxNotionalPerOrder => {
-                "The configured maximum notional per order is invalid."
-            }
+            Self::QuantityPrecisionExceedsMaximum => "The quantity precision exceeds the instrument maximum.",
+            Self::QuantityConversionFailed => "The order quantity could not be converted for risk checks.",
+            Self::QuantityExceedsMaximum => "The effective order quantity exceeds the instrument maximum.",
+            Self::QuantityBelowMinimum => "The effective order quantity is below the instrument minimum.",
+            Self::InvalidMaxNotionalPerOrder => "The configured maximum notional per order is invalid.",
             Self::MissingExpireTime => "A GTD order is missing its expire time.",
             Self::ExpireTimeInPast => "The order's expire time is in the past.",
-            Self::MissingTrailingOffsetType => {
-                "The order is missing a required trailing offset type."
-            }
-            Self::UnsupportedTrailingOffsetType => {
-                "The order's trailing offset type is not supported."
-            }
+            Self::MissingTrailingOffsetType => "The order is missing a required trailing offset type.",
+            Self::UnsupportedTrailingOffsetType => "The order's trailing offset type is not supported.",
             Self::MissingTriggerType => "The order is missing a required trigger type.",
             Self::MissingTrailingOffset => "The order is missing a required trailing offset.",
             Self::InstrumentNotFound => "The instrument was not found in the cache.",
             Self::PositionNotFound => "The position for a reduce-only order was not found.",
-            Self::MarketPriceUnavailable => {
-                "No market price is available for the order risk check."
-            }
-            Self::TrailingStopCalculationFailed => {
-                "The trailing stop trigger price could not be calculated."
-            }
+            Self::MarketPriceUnavailable => "No market price is available for the order risk check.",
+            Self::TrailingStopCalculationFailed => "The trailing stop trigger price could not be calculated.",
             Self::NotionalCalculationFailed => "The order notional value could not be calculated.",
             Self::NotionalBelowMinimum => "The order notional is below the instrument minimum.",
             Self::NotionalExceedsMaximum => "The order notional exceeds the instrument maximum.",
-            Self::NotionalExceedsMaxPerOrder => {
-                "The order notional exceeds the configured maximum per order."
-            }
-            Self::NotionalExceedsFreeBalance => {
-                "The order notional exceeds the account free balance."
-            }
-            Self::InitialMarginCalculationFailed => {
-                "The order initial margin could not be calculated."
-            }
-            Self::InitialMarginExceedsFreeBalance => {
-                "The order initial margin exceeds the account free balance."
-            }
-            Self::BettingBalanceLockedCalculationFailed => {
-                "The balance to lock for the betting order could not be calculated."
-            }
-            Self::CumulativeNotionalExceedsFreeBalance => {
-                "The cumulative order notional exceeds the account free balance."
-            }
-            Self::CumulativeInitialMarginCalculationFailed => {
-                "The cumulative initial margin could not be calculated."
-            }
-            Self::CumulativeInitialMarginExceedsFreeBalance => {
-                "The cumulative initial margin exceeds the account free balance."
-            }
-            Self::ReduceOnlyWouldIncreasePosition => {
-                "A reduce-only order would increase the position."
-            }
+            Self::NotionalExceedsMaxPerOrder => "The order notional exceeds the configured maximum per order.",
+            Self::NotionalExceedsFreeBalance => "The order notional exceeds the account free balance.",
+            Self::InitialMarginCalculationFailed => "The order initial margin could not be calculated.",
+            Self::InitialMarginExceedsFreeBalance => "The order initial margin exceeds the account free balance.",
+            Self::BettingBalanceLockedCalculationFailed => "The balance to lock for the betting order could not be calculated.",
+            Self::CumulativeNotionalExceedsFreeBalance => "The cumulative order notional exceeds the account free balance.",
+            Self::CumulativeInitialMarginCalculationFailed => "The cumulative initial margin could not be calculated.",
+            Self::CumulativeInitialMarginExceedsFreeBalance => "The cumulative initial margin exceeds the account free balance.",
+            Self::ReduceOnlyWouldIncreasePosition => "A reduce-only order would increase the position.",
             Self::OrderListIncomplete => "The order list is missing orders in the cache.",
-            Self::OrderListDenied => {
-                "The order was denied because its order list failed risk checks."
-            }
-            Self::TradingHalted => {
-                "Trading is halted; new submissions and modifications are denied."
-            }
-            Self::TradingStateReducing => {
-                "Trading is reducing; only eligible reduce-only submissions are permitted."
-            }
+            Self::OrderListDenied => "The order was denied because its order list failed risk checks.",
+            Self::TradingHalted => "Trading is halted; new submissions and modifications are denied.",
+            Self::TradingStateReducing => "Trading is reducing; only eligible reduce-only submissions are permitted.",
             Self::RateLimitExceeded => "The order submission rate limit was exceeded.",
-            Self::StreamReconciling => {
-                "The execution stream is unavailable or recovering; retry after recovery."
-            }
+            Self::StreamReconciling => "The execution stream is unavailable or recovering; retry after recovery.",
             Self::NoExecutionClient => "No execution client was found for the routed command.",
             Self::ClientVenueMismatch => "The execution client does not handle the order venue.",
             Self::SubmitFailed => "Submitting the order to the execution client failed.",
             Self::InvalidClientOrderId => "The client order ID is invalid for the venue.",
-            Self::InvalidPositionId => {
-                "The supplied position ID is invalid for the order submission."
-            }
+            Self::InvalidPositionId => "The supplied position ID is invalid for the order submission.",
             Self::UnsupportedOrderList => "The venue does not support the requested order list.",
             Self::UnsupportedOrderType => "The order type is not supported.",
-            Self::UnsupportedReduceOnly => {
-                "The execution client or venue does not support the requested reduce-only instruction."
-            }
+            Self::UnsupportedReduceOnly => "The execution client or venue does not support the requested reduce-only instruction.",
             Self::UnsupportedTimeInForce => "The order's time in force is not supported.",
-            Self::UnsupportedTpSl => {
-                "The venue does not support the requested take-profit/stop-loss parameters."
-            }
+            Self::UnsupportedTpSl => "The venue does not support the requested take-profit/stop-loss parameters.",
             Self::ValidationFailed => "The order failed validation before submission.",
         }
     }

@@ -1355,6 +1355,7 @@ impl FillModel for FillModelAny {
         }
     }
 
+    #[rustfmt::skip]
     fn get_orderbook_for_fill_simulation(
         &mut self,
         instrument: &InstrumentAny,
@@ -1363,39 +1364,17 @@ impl FillModel for FillModelAny {
         best_ask: Price,
     ) -> anyhow::Result<Option<OrderBook>> {
         match self {
-            Self::Default(m) => {
-                m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask)
-            }
-            Self::BestPrice(m) => {
-                m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask)
-            }
-            Self::OneTickSlippage(m) => {
-                m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask)
-            }
-            Self::Probabilistic(m) => {
-                m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask)
-            }
-            Self::TwoTier(m) => {
-                m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask)
-            }
-            Self::ThreeTier(m) => {
-                m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask)
-            }
-            Self::LimitOrderPartialFill(m) => {
-                m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask)
-            }
-            Self::SizeAware(m) => {
-                m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask)
-            }
-            Self::CompetitionAware(m) => {
-                m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask)
-            }
-            Self::VolumeSensitive(m) => {
-                m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask)
-            }
-            Self::MarketHours(m) => {
-                m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask)
-            }
+            Self::Default(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
+            Self::BestPrice(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
+            Self::OneTickSlippage(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
+            Self::Probabilistic(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
+            Self::TwoTier(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
+            Self::ThreeTier(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
+            Self::LimitOrderPartialFill(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
+            Self::SizeAware(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
+            Self::CompetitionAware(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
+            Self::VolumeSensitive(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
+            Self::MarketHours(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
         }
     }
 }
