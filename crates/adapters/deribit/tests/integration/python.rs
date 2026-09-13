@@ -143,6 +143,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
             "DERIBIT-EXEC-EXTRACTED",
             extracted_config.as_ref(),
             cache.into(),
+            Rc::new(RefCell::new(TestClock::new())),
         )
         .expect("extracted factory should create exec client");
 

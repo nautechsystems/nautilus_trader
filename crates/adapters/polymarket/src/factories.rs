@@ -178,6 +178,7 @@ impl ExecutionClientFactory for PolymarketExecutionClientFactory {
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
+        _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let polymarket_config = config
             .as_any()
@@ -356,6 +357,7 @@ mod tests {
             POLYMARKET,
             &wrong_config,
             cache.into(),
+            Rc::new(RefCell::new(TestClock::new())),
         );
         assert!(result.is_err());
         assert!(
@@ -398,6 +400,7 @@ mod tests {
             POLYMARKET,
             &config,
             cache.into(),
+            Rc::new(RefCell::new(TestClock::new())),
         ) else {
             panic!("malformed proxy URL should fail");
         };

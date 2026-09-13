@@ -77,7 +77,7 @@ pub trait ExecutionClientFactory: Debug {
     /// Create a new execution client instance.
     ///
     /// Execution clients receive a read-only cache view so venue adapters can query platform state
-    /// during construction without mutating the cache. The trader ID comes from the owning node.
+    /// during construction without mutating the cache. The trader ID and clock come from the owning node.
     ///
     /// # Errors
     ///
@@ -88,6 +88,7 @@ pub trait ExecutionClientFactory: Debug {
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
+        clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>>;
 
     /// Returns the name of this factory.

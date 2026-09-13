@@ -434,6 +434,13 @@ Interactive Brokers execution factories now use no-argument constructors. Custom
 factories must accept `TraderId` in their `ExecutionClientFactory::create` or
 `SimulatedExecutionClientFactory::create` implementation.
 
+`ExecutionClientFactory::create` also requires `clock: Rc<RefCell<dyn Clock>>` after the cache
+argument, matching `DataClientFactory::create`. Pass the owning node's clock when calling an
+execution factory directly. `SimulatedExecutionClientFactory` keeps its existing signature.
+The Python execution client bridge uses the supplied clock. Existing native execution adapters
+continue to use their realtime clocks internally; this signature change does not add test-clock
+support to those adapters.
+
 The v1 fill, fee, latency, margin, and simulation-module config and factory wrappers are also
 removed. This includes `Importable*ModelConfig`, `MarginModelConfig`, and their factories, which
 loaded Python or Cython classes by import path. Construct the current model or module directly,

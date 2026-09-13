@@ -450,6 +450,16 @@ impl LiveNodeBuilder {
         self.add_data_client_with_routing(name, factory, config, RoutingConfig::default())
     }
 
+    #[cfg(feature = "python")]
+    pub(crate) fn has_data_client(&self, name: &str) -> bool {
+        self.data_client_factories.contains_key(name)
+    }
+
+    #[cfg(feature = "python")]
+    pub(crate) fn has_exec_client(&self, name: &str) -> bool {
+        self.exec_client_factories.contains_key(name)
+    }
+
     /// Adds a data client factory with configuration and explicit routing.
     ///
     /// # Errors
@@ -555,6 +565,10 @@ impl LiveNodeBuilder {
     ///
     /// Returns an error if node construction fails.
     pub fn build(mut self) -> anyhow::Result<LiveNode> {
+        self.build_in_place()
+    }
+
+    pub(crate) fn build_in_place(&mut self) -> anyhow::Result<LiveNode> {
         log::info!(
             "Building LiveNode with {} data clients and {} execution clients",
             self.data_client_factories.len(),
@@ -587,7 +601,7 @@ impl LiveNodeBuilder {
             self.name.clone(),
             self.config.clone(),
             NautilusKernelDependencies::default()
-                .with_clock_factory(self.clock_factory.take())
+                .with_clock_factory(self.clock_factory.clone())
                 .with_event_store_factory(self.event_store_factory.take()),
         )?;
         #[cfg(feature = "python")]
@@ -602,26 +616,21 @@ impl LiveNodeBuilder {
             );
         }
 
-        self.install_external_msgbus_factory(&kernel)?;
+        let (external_egress, external_ingress) = self.create_external_msgbus(&kernel)?;
 
-        if let Some(external_egress) = self.external_msgbus_egress.take() {
+        if let Some(external_egress) = external_egress {
             let config = self.config.msgbus.clone().unwrap_or_default();
             nautilus_common::msgbus::get_message_bus()
                 .borrow_mut()
                 .set_external_egress_config(external_egress, &config)?;
         }
 
-        for (name, factory) in self.data_client_factories {
-            if let Some(config) = self.data_client_configs.remove(&name) {
+        for (name, factory) in &self.data_client_factories {
+            if let Some(config) = self.data_client_configs.get(name) {
                 log::debug!("Creating data client {name}");
 
                 let client = socket_registry.scope(|| {
-                    factory.create(
-                        &name,
-                        config.as_ref(),
-                        kernel.cache().into(),
-                        kernel.clock(),
-                    )
+                    factory.create(name, config.as_ref(), kernel.cache().into(), kernel.clock())
                 })?;
                 let client_id = client.client_id();
                 let venue = client.venue();
@@ -633,7 +642,11 @@ impl LiveNodeBuilder {
                     client,
                 );
 
-                let routing = self.data_client_routing.remove(&name).unwrap_or_default();
+                let routing = self
+                    .data_client_routing
+                    .get(name)
+                    .cloned()
+                    .unwrap_or_default();
 
                 {
                     let mut data_engine = kernel.data_engine.borrow_mut();
@@ -661,30 +674,32 @@ impl LiveNodeBuilder {
 
         let mut exec_clients = Vec::new();
 
-        for (name, factory) in self.exec_client_factories {
-            if let Some(config) = self.exec_client_configs.remove(&name) {
+        for (name, factory) in &self.exec_client_factories {
+            if let Some(config) = self.exec_client_configs.get(name) {
                 log::debug!("Creating execution client {name}");
 
                 let client = socket_registry.scope(|| match factory {
                     ExecutionClientFactoryEntry::Adapter(factory) => factory.create(
                         self.config.trader_id,
-                        &name,
+                        name,
                         config.as_ref(),
                         kernel.cache().into(),
+                        kernel.clock(),
                     ),
-                    ExecutionClientFactoryEntry::Simulated(factory) => factory.create(
-                        self.config.trader_id,
-                        &name,
-                        config.as_ref(),
-                        kernel.cache(),
-                    ),
+                    ExecutionClientFactoryEntry::Simulated(factory) => {
+                        factory.create(self.config.trader_id, name, config.as_ref(), kernel.cache())
+                    }
                 })?;
                 let client = LiveExecutionClient::new(client);
                 let client_id = client.client_id();
                 let venue = client.venue();
                 socket_registry.register_client(client_id);
 
-                let routing = self.exec_client_routing.remove(&name).unwrap_or_default();
+                let routing = self
+                    .exec_client_routing
+                    .get(name)
+                    .cloned()
+                    .unwrap_or_default();
 
                 {
                     let mut exec_engine = kernel.exec_engine.borrow_mut();
@@ -727,26 +742,40 @@ impl LiveNodeBuilder {
             );
         }
 
-        let node = LiveNode::new_from_builder(
+        let mut node = LiveNode::new_from_builder(
             kernel,
             runner,
-            self.config,
+            self.config.clone(),
             exec_manager,
             exec_clients,
             socket_registry,
-            self.cache_database_factory,
-            self.external_msgbus_ingress,
+            None,
+            external_ingress,
         );
         node.load_configured_plugins()?;
+        node.cache_database_factory = self.cache_database_factory.take();
 
         log::info!("Built successfully");
 
         Ok(node)
     }
 
-    fn install_external_msgbus_factory(&mut self, kernel: &NautilusKernel) -> anyhow::Result<()> {
-        let Some(factory) = self.external_msgbus_factory.take() else {
-            return Ok(());
+    #[expect(
+        clippy::type_complexity,
+        reason = "external backing returns its paired egress and ingress"
+    )]
+    fn create_external_msgbus(
+        &mut self,
+        kernel: &NautilusKernel,
+    ) -> anyhow::Result<(
+        Option<Box<dyn MessageBusExternalEgress>>,
+        Option<ExternalMessageBusIngress>,
+    )> {
+        let Some(factory) = self.external_msgbus_factory.as_ref() else {
+            return Ok((
+                self.external_msgbus_egress.take(),
+                self.external_msgbus_ingress.take(),
+            ));
         };
 
         let config = self.config.msgbus.clone().unwrap_or_default();
@@ -759,13 +788,13 @@ impl LiveNodeBuilder {
 
         if has_external_streams {
             let (external_egress, external_ingress) = external_io_from_backing(backing);
-            self.external_msgbus_egress = Some(external_egress);
-            self.external_msgbus_ingress = Some(ExternalMessageBusIngress(external_ingress));
+            Ok((
+                Some(external_egress),
+                Some(ExternalMessageBusIngress(external_ingress)),
+            ))
         } else {
-            self.external_msgbus_egress = Some(external_egress_from_backing(backing));
+            Ok((Some(external_egress_from_backing(backing)), None))
         }
-
-        Ok(())
     }
 }
 

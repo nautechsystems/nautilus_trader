@@ -158,6 +158,7 @@ impl ExecutionClientFactory for BetfairExecutionClientFactory {
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
+        _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let betfair_config = config
             .as_any()
@@ -309,7 +310,13 @@ mod tests {
         let config = exec_config();
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create(TraderId::from("TRADER-001"), BETFAIR, &config, cache.into());
+        let result = factory.create(
+            TraderId::from("TRADER-001"),
+            BETFAIR,
+            &config,
+            cache.into(),
+            Rc::new(RefCell::new(TestClock::new())),
+        );
         assert!(result.is_ok());
 
         let client = result.unwrap();
@@ -327,6 +334,7 @@ mod tests {
             BETFAIR,
             &wrong_config,
             cache.into(),
+            Rc::new(RefCell::new(TestClock::new())),
         );
         assert!(result.is_err());
         assert!(

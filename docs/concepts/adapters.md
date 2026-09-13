@@ -57,12 +57,58 @@ A node can register multiple data and execution clients. Pass `client_id` from a
 when a specific client must handle a request, subscription, or order. Without an explicit client,
 the data and execution engines use the venue and default routes configured by the node.
 
-:::info[Custom adapter support]
-The public Python API does not yet define an interface for implementing an out-of-tree adapter
-entirely in Python. An out-of-tree Python adapter surface is planned. Custom venue integrations
-currently use the Rust adapter traits. See the
-[Python concept guide](python.md#support-boundaries).
-:::
+## Custom adapters
+
+You can develop an adapter as a separate Python package without rebuilding NautilusTrader. Custom
+adapters implement the same data and execution responsibilities as built-in adapters, and can run
+alongside them in one `LiveNode`. Strategies continue to use the standard request, subscription, and
+order APIs; the node routes those operations to the registered clients.
+
+A custom package can implement its clients in Python or delegate venue operations to its own
+Rust/PyO3 extension. Both use the [Python client interface](../developer_guide/python_adapters.md).
+An independent extension exchanges Python objects from the installed NautilusTrader wheel through
+PyO3 and the GIL. It does not require a shared Rust ABI or a second copy of the Nautilus model types.
+Choose a package version tested against your installed NautilusTrader release.
+
+Register the package's factories and configs with the node under distinct client names. Custom
+configs can retain venue-specific fields, and importable configs support loading factories from
+package paths. Set venue and default routes as you would for built-in clients, or select a client
+explicitly from a strategy. The [deterministic Python template](../../examples/live/_template/README.md)
+demonstrates data delivery, execution reconciliation, and an order fill without a venue connection.
+
+### Cache and state ownership
+
+Custom clients receive a read-only cache view. They can inspect instruments, quotes, orders,
+accounts, and positions, but cannot mutate the core cache. Returned objects are snapshots: changing
+a snapshot does not change the state seen by strategies or engines.
+
+Adapters operate outside the synchronous core boundary. They submit typed data, responses, and
+execution events for the core to process, so an adapter's output call does not mean the corresponding
+cache update has already occurred. This keeps cache mutation and engine state transitions under
+core ownership. Cache access and output remain bound to the owning node's thread and lifetime;
+holding the GIL alone does not permit access from another thread or after disposal.
+
+### Running and stopping
+
+Use `node.run()` when the node owns its event loop, or await `node.run_async()` inside an existing
+asyncio application. Both launch modes support custom Python and independent PyO3 clients. The
+node binds clients to the running loop before connection, then uses its normal startup,
+reconciliation, and shutdown sequence. Constructors do not start networking or background tasks.
+
+Commands and subscription changes execute in admission order for each custom client. Historical
+requests and reconciliation can progress separately. A slow command delays later commands for that
+client, and a full command queue rejects new work rather than silently dropping it.
+
+Await shutdown before closing a host event loop. Disconnection stops admission and asks adapter
+work to terminate; requesting cancellation does not prove that work has finished. Incomplete
+cleanup is reported. Client instances belong to one node run and must not be reused for another.
+
+Redis/PostgreSQL cache backing is unsupported with custom clients in either launch mode. The
+interface also requires migration of v1 Cython adapters rather than accepting their source
+unchanged. See the [migration details and remaining limitations](../developer_guide/python_adapters.md#migration-from-v1)
+for historical request completion, revised bars, custom publication/subscription, and networking
+API differences. For independent extensions, see
+[package construction and installed-wheel validation](../developer_guide/python_adapters.md#independent-rustpyo3-packages).
 
 ## Instrument providers
 

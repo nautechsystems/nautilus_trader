@@ -139,6 +139,7 @@ impl ExecutionClientFactory for BitmexExecutionClientFactory {
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
+        _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let mut bitmex_config = config
             .as_any()

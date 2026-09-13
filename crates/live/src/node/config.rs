@@ -661,7 +661,7 @@ impl Default for InstrumentProviderConfig {
 /// Shared configuration for data clients registered with a live node.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", subclass, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -684,7 +684,7 @@ pub struct DataClientConfig {
 /// Shared configuration for execution clients registered with a live node.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", subclass, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -736,7 +736,7 @@ impl Default for PluginConfig {
 /// Configuration for live Nautilus system nodes.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", dict, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

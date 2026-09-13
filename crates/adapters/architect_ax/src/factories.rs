@@ -196,6 +196,7 @@ impl ExecutionClientFactory for AxExecutionClientFactory {
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
+        _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let ax_config = config
             .as_any()

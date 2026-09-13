@@ -114,6 +114,15 @@ impl CacheView {
         Self { inner }
     }
 
+    /// Tries to borrow the cache without panicking when an engine owns a mutable borrow.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the cache is mutably borrowed.
+    pub fn try_borrow(&self) -> Result<Ref<'_, Cache>, std::cell::BorrowError> {
+        self.inner.try_borrow()
+    }
+
     /// Borrows the cache immutably.
     ///
     /// # Panics

@@ -314,6 +314,7 @@ pub(crate) mod serial_tests {
         connected: Arc<AtomicBool>,
         disconnect_attempted: Arc<AtomicBool>,
         factory_trader_id: Arc<Mutex<Option<TraderId>>>,
+        factory_clock_id: Arc<Mutex<Option<usize>>>,
         mass_status_requested: Arc<AtomicBool>,
         mass_status: Arc<Mutex<Option<ExecutionMassStatus>>>,
         registered_external_orders: Arc<Mutex<Vec<ClientOrderId>>>,
@@ -522,8 +523,10 @@ pub(crate) mod serial_tests {
             _name: &str,
             _config: &dyn ClientConfig,
             _cache: CacheView,
+            clock: Rc<RefCell<dyn Clock>>,
         ) -> anyhow::Result<Box<dyn ExecutionClient>> {
             *self.state.factory_trader_id.lock() = Some(trader_id);
+            *self.state.factory_clock_id.lock() = Some(Rc::as_ptr(&clock).cast::<()>() as usize);
             Ok(Box::new(StartupMassStatusExecutionClient::new(
                 self.state.clone(),
                 self.behavior,
@@ -595,6 +598,7 @@ pub(crate) mod serial_tests {
             _name: &str,
             _config: &dyn ClientConfig,
             _cache: CacheView,
+            _clock: Rc<RefCell<dyn Clock>>,
         ) -> anyhow::Result<Box<dyn ExecutionClient>> {
             Ok(Box::new(LifecycleExecutionClient {
                 state: self.state.clone(),
@@ -752,20 +756,24 @@ pub(crate) mod serial_tests {
     }
 
     #[rstest]
-    fn test_execution_factory_receives_live_node_trader_id() {
+    fn test_execution_factory_receives_live_node_trader_id_and_clock() {
         let trader_id = TraderId::from("NODE-TRADER-001");
         let config = LiveNodeConfig {
             trader_id,
             ..Default::default()
         };
 
-        let (_node, state) = live_node_with_startup_mass_status_client(
+        let (node, state) = live_node_with_startup_mass_status_client(
             "TraderIdentityNode",
             config,
             StartupMassStatusBehavior::Unavailable,
         );
 
         assert_eq!(*state.factory_trader_id.lock(), Some(trader_id));
+        assert_eq!(
+            *state.factory_clock_id.lock(),
+            Some(Rc::as_ptr(&node.kernel().clock()).cast::<()>() as usize),
+        );
     }
 
     #[async_trait(?Send)]
@@ -1197,6 +1205,7 @@ pub(crate) mod serial_tests {
             _name: &str,
             _config: &dyn ClientConfig,
             _cache: CacheView,
+            _clock: Rc<RefCell<dyn Clock>>,
         ) -> anyhow::Result<Box<dyn ExecutionClient>> {
             Ok(Box::new(BlockingReportExecutionClient::new(self)))
         }

@@ -26,6 +26,14 @@ use serde::{Deserialize, Serialize};
 use super::check_client_id_or_venue;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
 pub struct SubscribeCustomData {
     pub client_id: Option<ClientId>,
     pub venue: Option<Venue>,
@@ -61,6 +69,14 @@ impl SubscribeCustomData {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
 pub struct SubscribeInstrument {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -96,6 +112,14 @@ impl SubscribeInstrument {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
 pub struct SubscribeInstruments {
     pub client_id: Option<ClientId>,
     pub venue: Venue,
@@ -127,6 +151,14 @@ impl SubscribeInstruments {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
 pub struct SubscribeBookDeltas {
     pub instrument_id: InstrumentId,
     pub book_type: BookType,
@@ -172,6 +204,14 @@ impl SubscribeBookDeltas {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
 pub struct SubscribeBookDepth10 {
     pub instrument_id: InstrumentId,
     pub book_type: BookType,
@@ -262,6 +302,14 @@ impl SubscribeBookSnapshots {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
 pub struct SubscribeQuotes {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -297,6 +345,14 @@ impl SubscribeQuotes {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
 pub struct SubscribeTrades {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -332,6 +388,14 @@ impl SubscribeTrades {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
 pub struct SubscribeBars {
     pub bar_type: BarType,
     pub client_id: Option<ClientId>,
@@ -367,6 +431,14 @@ impl SubscribeBars {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
 pub struct SubscribeMarkPrices {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -402,6 +474,14 @@ impl SubscribeMarkPrices {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
 pub struct SubscribeIndexPrices {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -437,6 +517,14 @@ impl SubscribeIndexPrices {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
 pub struct SubscribeFundingRates {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -472,6 +560,14 @@ impl SubscribeFundingRates {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
 pub struct SubscribeInstrumentStatus {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -507,6 +603,14 @@ impl SubscribeInstrumentStatus {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
 pub struct SubscribeOptionGreeks {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -542,6 +646,14 @@ impl SubscribeOptionGreeks {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
 pub struct SubscribeInstrumentClose {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,

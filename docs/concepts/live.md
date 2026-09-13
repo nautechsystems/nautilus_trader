@@ -153,7 +153,8 @@ handling with processes that do not construct a trading node.
 
 A node configured with a cache database backing is rejected on a host loop. Those backings wait for
 their worker task by blocking the calling thread, which stalls the host loop rather than slowing it.
-Use `run()` for a database-backed node.
+Native-only nodes can use `run()` for database backing. Custom Python clients drive asyncio in
+both launch modes, so neither supports cache database backing.
 
 ## Configuration
 

@@ -17,6 +17,8 @@
 
 use std::{any::Any, cell::RefCell, rc::Rc};
 
+#[cfg(test)]
+use nautilus_common::clock::TestClock;
 use nautilus_common::{
     cache::CacheView,
     clients::{DataClient, ExecutionClient},
@@ -136,6 +138,7 @@ impl ExecutionClientFactory for BybitExecutionClientFactory {
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
+        _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let bybit_config = config
             .as_any()
@@ -253,6 +256,7 @@ mod tests {
             "BYBIT-TEST",
             &config,
             cache.into(),
+            Rc::new(RefCell::new(TestClock::new())),
         );
         assert!(result.is_ok());
 
@@ -277,6 +281,7 @@ mod tests {
             "BYBIT-DERIV",
             &config,
             cache.into(),
+            Rc::new(RefCell::new(TestClock::new())),
         );
         result.unwrap();
     }
@@ -293,6 +298,7 @@ mod tests {
             "BYBIT-TEST",
             &wrong_config,
             cache.into(),
+            Rc::new(RefCell::new(TestClock::new())),
         );
         assert!(result.is_err());
         assert!(

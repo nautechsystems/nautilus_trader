@@ -77,6 +77,7 @@ use nautilus_trading::{
 };
 use parking_lot::{Condvar, Mutex};
 use pyo3::{
+    exceptions::PyBaseExceptionGroup,
     ffi::c_str,
     intern,
     prelude::*,
@@ -85,6 +86,7 @@ use pyo3::{
 };
 use serde_json;
 
+use super::client::{PythonClientConfig, PythonClients, PythonDataFactory, PythonExecutionFactory};
 // Re-exported so the `live` module registers every Python class through this module.
 pub use crate::node::NodeState;
 use crate::{
@@ -109,15 +111,19 @@ use crate::{
 pub struct PyLiveNode {
     inner: Rc<RefCell<Option<LiveNode>>>,
     handle: LiveNodeHandle,
+    clients: PythonClients,
 }
 
 impl PyLiveNode {
     /// Wraps an owned node for Python.
     #[must_use]
     pub fn new(node: LiveNode) -> Self {
+        let handle = node.handle();
+
         Self {
-            handle: node.handle(),
             inner: Rc::new(RefCell::new(Some(node))),
+            handle,
+            clients: PythonClients::default(),
         }
     }
 
@@ -494,6 +500,7 @@ unsafe impl<T> Send for SendPtr<T> {}
 /// blocks it. Awaiting resolves once the node has fully stopped.
 #[pyo3::pyclass(name = "NodeRun", unsendable)]
 pub struct PyNodeRun {
+    clients: PythonClients,
     // Declared before `node` so the future is dropped first; it borrows the node.
     future: Option<Pin<Box<dyn Future<Output = anyhow::Result<()>>>>>,
     node: Option<Box<LiveNode>>,
@@ -536,6 +543,7 @@ impl PyNodeRun {
         event_loop: Bound<'_, PyAny>,
         state: Arc<RunWakeState>,
         wake_pump: HostWakePump,
+        clients: PythonClients,
     ) -> Self {
         let handle = node.handle();
         let mut node = Box::new(node);
@@ -550,6 +558,7 @@ impl PyNodeRun {
         });
 
         Self {
+            clients,
             future: Some(future),
             node: Some(node),
             owner,
@@ -567,6 +576,12 @@ impl PyNodeRun {
     /// Releases the per-thread run guard here rather than only on drop, so a completed run does
     /// not block the next one until the coroutine object happens to be collected.
     fn restore_node(&mut self, py: Option<Python<'_>>) {
+        Python::attach(|py| {
+            if let Err(e) = self.clients.finish(py) {
+                log::error!("{e}");
+            }
+        });
+
         self.state.close();
         self.wake_pump.close();
         self.future = None;
@@ -652,7 +667,12 @@ impl PyNodeRun {
 
         match poll {
             Poll::Ready(result) => {
+                let cleanup = self.clients.finish(py);
                 self.restore_node(Some(py));
+
+                if let Err(e) = &cleanup {
+                    log::error!("{e}");
+                }
 
                 if let Err(e) = &result {
                     log::error!("Hosted run failed: {e}");
@@ -664,7 +684,9 @@ impl PyNodeRun {
                     return Err(raised);
                 }
 
-                result.map(|()| None).map_err(to_pyruntime_err)
+                result.map_err(to_pyruntime_err)?;
+                cleanup?;
+                Ok(None)
             }
             Poll::Pending => {
                 let suspended = self
@@ -816,11 +838,16 @@ impl PyLiveNode {
     /// Returns an error if kernel construction fails.
     #[staticmethod]
     #[pyo3(name = "build")]
-    #[pyo3(signature = (name, config=None))]
-    fn py_build(name: String, config: Option<LiveNodeConfig>) -> PyResult<Self> {
-        LiveNode::build(name, config)
-            .map(Self::new)
-            .map_err(to_pyruntime_err)
+    #[pyo3(signature = (name, config=None, *, data_factories=None, exec_factories=None))]
+    fn py_build(
+        py: Python<'_>,
+        name: String,
+        config: Option<Py<LiveNodeConfig>>,
+        data_factories: Option<Bound<'_, PyDict>>,
+        exec_factories: Option<Bound<'_, PyDict>>,
+    ) -> PyResult<Self> {
+        PyLiveNodeBuilder::py_from_config(py, name, config, data_factories, exec_factories)?
+            .py_build()
     }
 
     /// Creates a new `LiveNodeBuilder` for fluent configuration.
@@ -837,6 +864,7 @@ impl PyLiveNode {
     ) -> PyResult<PyLiveNodeBuilder> {
         match LiveNode::builder(trader_id, environment) {
             Ok(builder) => Ok(PyLiveNodeBuilder {
+                clients: PythonClients::default(),
                 state: Rc::new(Cell::new(PyLiveNodeBuilderState::Ready(Box::new(
                     builder.with_name(name),
                 )))),
@@ -981,8 +1009,8 @@ impl PyLiveNode {
         if self.node()?.has_pending_cache_database() {
             return Err(to_pyruntime_err(
                 "a cache database backing is not supported on a host event loop, because its \
-                 blocking calls would stall the loop; use `run()` to have the node own the thread, \
-                 or configure the node without a cache database",
+                 blocking calls would stall the loop; native-only nodes can use `run()`, \
+                 but custom Python clients require a node without a cache database",
             ));
         }
 
@@ -1012,12 +1040,22 @@ impl PyLiveNode {
             self.handle.clone(),
         )?;
 
+        self.clients.bind(py, &event_loop)?;
+
         let node = self
             .inner
             .borrow_mut()
             .take()
             .ok_or_else(node_consumed_err)?;
-        let run = PyNodeRun::new(node, self.inner.clone(), event_loop, state, wake_pump);
+
+        let run = PyNodeRun::new(
+            node,
+            self.inner.clone(),
+            event_loop,
+            state,
+            wake_pump,
+            self.clients.clone(),
+        );
         HOSTED_RUN_ACTIVE.set(true);
 
         driver.call1(py, (Py::new(py, run)?,))
@@ -1044,14 +1082,63 @@ impl PyLiveNode {
     /// # Errors
     ///
     /// Returns an error if the node fails to start or encounters a runtime error.
-    #[pyo3(name = "run")]
-    fn py_run(&self, py: Python) -> PyResult<()> {
-        if self.node()?.is_running() {
+    #[pyo3(name = "run", signature = ())]
+    fn py_run(slf: &Bound<'_, Self>, py: Python) -> PyResult<()> {
+        let this = slf.borrow();
+        if !this.clients.is_empty() {
+            let asyncio = py.import("asyncio")?;
+            if asyncio.call_method0("get_running_loop").is_ok() {
+                return Err(to_pyruntime_err(
+                    "run() cannot be called from a running event loop; await run_async()",
+                ));
+            }
+
+            let handle = this.handle.clone();
+            drop(this);
+            let driver = PyModule::from_code(
+                py,
+                c_str!("async def run(node):\n    return await node.run_async()\n"),
+                c_str!("client_run.py"),
+                c_str!("client_run"),
+            )?;
+            let event_loop = asyncio.call_method0("new_event_loop")?;
+            let signal = py.import("signal")?;
+            let threading = py.import("threading")?;
+            let is_main = threading
+                .call_method0("current_thread")?
+                .is(&threading.call_method0("main_thread")?);
+
+            let mut handlers = Vec::new();
+
+            let result = (|| -> PyResult<()> {
+                if is_main {
+                    let callback = new_sync_py_callback(py, move |_args, _kwargs| {
+                        handle.stop();
+                        Ok(())
+                    })?;
+
+                    for name in ["SIGINT", "SIGTERM"] {
+                        if let Ok(signum) = signal.getattr(name) {
+                            let original = signal.call_method1("signal", (&signum, &callback))?;
+                            handlers.push((signum, original));
+                        }
+                    }
+                }
+
+                let coroutine = driver.getattr("run")?.call1((slf,))?;
+                event_loop.call_method1("run_until_complete", (coroutine,))?;
+                Ok(())
+            })();
+
+            return finish_owned_run(&event_loop, &signal, handlers, result);
+        }
+
+        if this.node()?.is_running() {
             return Err(to_pyruntime_err("LiveNode is already running"));
         }
 
         // Get a handle for coordinating with the signal checker
-        let handle = self.node()?.handle();
+        let handle = this.node()?.handle();
 
         // Import signal module
         let signal_module = py.import("signal")?;
@@ -1075,7 +1162,7 @@ impl PyLiveNode {
         signal_module.call_method1("signal", (2, signal_callback))?;
 
         // Run the node and restore signal handler afterward
-        let mut node = self.node_mut()?;
+        let mut node = this.node_mut()?;
         let result = run_live_node_detached(py, &mut node);
 
         // Restore original signal handler
@@ -1124,7 +1211,9 @@ impl PyLiveNode {
         }
 
         node.dispose();
-        stop_result
+        drop(node);
+        let cleanup_result = self.clients.finish(py);
+        stop_result.and(cleanup_result)
     }
 
     /// Adds a constructed Python actor to the trader.
@@ -1725,6 +1814,34 @@ impl PyLiveNode {
     }
 }
 
+fn finish_owned_run<'py>(
+    event_loop: &Bound<'py, PyAny>,
+    signal: &Bound<'py, PyModule>,
+    handlers: Vec<(Bound<'py, PyAny>, Bound<'py, PyAny>)>,
+    result: PyResult<()>,
+) -> PyResult<()> {
+    let mut errors: Vec<PyErr> = result.err().into_iter().collect();
+
+    if let Err(e) = event_loop.call_method0("close") {
+        errors.push(e);
+    }
+
+    for (signum, original) in handlers {
+        if let Err(e) = signal.call_method1("signal", (signum, original)) {
+            errors.push(e);
+        }
+    }
+
+    match errors.len() {
+        0 => Ok(()),
+        1 => Err(errors.pop().unwrap()),
+        _ => Err(PyBaseExceptionGroup::new_err((
+            "LiveNode run and cleanup failed",
+            errors,
+        ))),
+    }
+}
+
 fn new_sync_py_callback<F>(py: Python<'_>, closure: F) -> PyResult<Bound<'_, PyCFunction>>
 where
     F: Fn(&Bound<'_, PyTuple>, Option<&Bound<'_, PyDict>>) -> PyResult<()> + Send + Sync + 'static,
@@ -2013,12 +2130,60 @@ fn register_data_tester(node: &mut LiveNode, config: &Bound<'_, PyAny>) -> PyRes
 #[pyclass(name = "LiveNodeBuilder", module = "nautilus_trader.live", unsendable)]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")]
 pub struct PyLiveNodeBuilder {
+    clients: PythonClients,
     state: Rc<Cell<PyLiveNodeBuilderState>>,
 }
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl PyLiveNodeBuilder {
+    #[staticmethod]
+    #[pyo3(name = "from_config", signature = (name, config=None, *, data_factories=None, exec_factories=None))]
+    fn py_from_config(
+        py: Python<'_>,
+        name: String,
+        config: Option<Py<LiveNodeConfig>>,
+        data_factories: Option<Bound<'_, PyDict>>,
+        exec_factories: Option<Bound<'_, PyDict>>,
+    ) -> PyResult<Self> {
+        let native_config = config
+            .as_ref()
+            .map(|config| config.bind(py).extract::<LiveNodeConfig>())
+            .transpose()?
+            .unwrap_or_default();
+
+        let builder = Self {
+            clients: PythonClients::default(),
+            state: Rc::new(Cell::new(PyLiveNodeBuilderState::Ready(Box::new(
+                LiveNodeBuilder::from_config(native_config)
+                    .map_err(to_pyruntime_err)?
+                    .with_name(name),
+            )))),
+        };
+
+        if let Some(config) = config {
+            let configured_clients = py
+                .import("nautilus_trader.live.config")?
+                .getattr("configured_clients")?;
+            let data: Vec<(String, Py<PyAny>, Py<PyAny>)> = configured_clients
+                .call1((config.getattr(py, "data_clients")?, data_factories))?
+                .extract()?;
+            let execution: Vec<(String, Py<PyAny>, Py<PyAny>)> = configured_clients
+                .call1((config.getattr(py, "exec_clients")?, exec_factories))?
+                .extract()?;
+
+            for (name, factory, config) in data {
+                builder.py_add_data_client(Some(name), factory, config, None)?;
+            }
+
+            for (name, factory, config) in execution {
+                builder.py_add_exec_client(Some(name), factory, config, None)?;
+            }
+        }
+
+        Ok(builder)
+    }
+
     #[pyo3(name = "with_instance_id")]
     fn py_with_instance_id(&self, instance_id: UUID4) -> PyResult<Self> {
         self.update_builder(|builder| builder.with_instance_id(instance_id))
@@ -2135,7 +2300,6 @@ impl PyLiveNodeBuilder {
     }
 
     #[pyo3(name = "add_data_client", signature = (name, factory, config, routing=None))]
-    #[expect(clippy::needless_pass_by_value)]
     fn py_add_data_client(
         &self,
         name: Option<String>,
@@ -2145,7 +2309,63 @@ impl PyLiveNodeBuilder {
     ) -> PyResult<Self> {
         let mut operation = self.begin_operation()?;
         Python::attach(|py| -> PyResult<Self> {
+            let (factory, config): (Py<PyAny>, Py<PyAny>) = py
+                .import("nautilus_trader.live.config")?
+                .getattr("resolve_client_registration")?
+                .call1((factory, config))?
+                .extract()?;
             let registry = get_global_pyo3_registry();
+            let base = py
+                .import("nautilus_trader.live.clients")?
+                .getattr("DataClientFactory")?;
+
+            let is_custom = if let Ok(factory_type) = factory.bind(py).cast::<pyo3::types::PyType>()
+            {
+                factory_type.is_subclass(&base)?
+            } else {
+                factory.bind(py).is_instance(&base)?
+            };
+
+            if is_custom {
+                config.extract::<crate::config::DataClientConfig>(py)?;
+                let client_name =
+                    name.ok_or_else(|| to_pyvalue_err("Python clients require an explicit name"))?;
+
+                let routing = match routing {
+                    Some(routing) => routing,
+                    None => config
+                        .getattr(py, "routing")?
+                        .extract::<RoutingConfig>(py)?,
+                };
+
+                if operation
+                    .builder
+                    .as_ref()
+                    .is_some_and(|builder| builder.has_data_client(&client_name))
+                {
+                    return Err(to_pyvalue_err(format!(
+                        "Data client '{client_name}' is already registered"
+                    )));
+                }
+
+                let builder = operation.take_builder()?;
+
+                let updated = builder
+                    .add_data_client_with_routing(
+                        Some(client_name),
+                        Box::new(PythonDataFactory {
+                            factory,
+                            clients: self.clients.clone(),
+                        }),
+                        Box::new(PythonClientConfig(config)),
+                        routing,
+                    )
+                    .map_err(to_pyruntime_err)?;
+
+                operation.complete(updated);
+                return Ok(self.shared());
+            }
+
             let boxed_factory = registry.extract_factory(py, factory.clone_ref(py))?;
             let boxed_config = registry.extract_config(py, config.clone_ref(py))?;
             let factory_name = factory
@@ -2153,6 +2373,17 @@ impl PyLiveNodeBuilder {
                 .call0(py)?
                 .extract::<String>(py)?;
             let client_name = name.unwrap_or(factory_name);
+
+            if operation
+                .builder
+                .as_ref()
+                .is_some_and(|builder| builder.has_data_client(&client_name))
+            {
+                return Err(to_pyvalue_err(format!(
+                    "Client '{client_name}' is already registered"
+                )));
+            }
+
             let builder = operation.take_builder()?;
             let updated_builder = match routing {
                 Some(routing) => builder.add_data_client_with_routing(
@@ -2170,7 +2401,6 @@ impl PyLiveNodeBuilder {
     }
 
     #[pyo3(name = "add_exec_client", signature = (name, factory, config, routing=None))]
-    #[expect(clippy::needless_pass_by_value)]
     fn py_add_exec_client(
         &self,
         name: Option<String>,
@@ -2180,7 +2410,63 @@ impl PyLiveNodeBuilder {
     ) -> PyResult<Self> {
         let mut operation = self.begin_operation()?;
         Python::attach(|py| -> PyResult<Self> {
+            let (factory, config): (Py<PyAny>, Py<PyAny>) = py
+                .import("nautilus_trader.live.config")?
+                .getattr("resolve_client_registration")?
+                .call1((factory, config))?
+                .extract()?;
             let registry = get_global_pyo3_registry();
+            let base = py
+                .import("nautilus_trader.live.clients")?
+                .getattr("ExecutionClientFactory")?;
+
+            let is_custom = if let Ok(factory_type) = factory.bind(py).cast::<pyo3::types::PyType>()
+            {
+                factory_type.is_subclass(&base)?
+            } else {
+                factory.bind(py).is_instance(&base)?
+            };
+
+            if is_custom {
+                config.extract::<crate::config::ExecutionClientConfig>(py)?;
+                let client_name =
+                    name.ok_or_else(|| to_pyvalue_err("Python clients require an explicit name"))?;
+
+                let routing = match routing {
+                    Some(routing) => routing,
+                    None => config
+                        .getattr(py, "routing")?
+                        .extract::<RoutingConfig>(py)?,
+                };
+
+                if operation
+                    .builder
+                    .as_ref()
+                    .is_some_and(|builder| builder.has_exec_client(&client_name))
+                {
+                    return Err(to_pyvalue_err(format!(
+                        "Execution client '{client_name}' is already registered"
+                    )));
+                }
+
+                let builder = operation.take_builder()?;
+
+                let updated = builder
+                    .add_exec_client_with_routing(
+                        Some(client_name),
+                        Box::new(PythonExecutionFactory {
+                            factory,
+                            clients: self.clients.clone(),
+                        }),
+                        Box::new(PythonClientConfig(config)),
+                        routing,
+                    )
+                    .map_err(to_pyruntime_err)?;
+
+                operation.complete(updated);
+                return Ok(self.shared());
+            }
+
             let boxed_factory = registry.extract_exec_factory(py, factory.clone_ref(py))?;
             let boxed_config = registry.extract_config(py, config.clone_ref(py))?;
             let factory_name = factory
@@ -2188,6 +2474,17 @@ impl PyLiveNodeBuilder {
                 .call0(py)?
                 .extract::<String>(py)?;
             let client_name = name.unwrap_or(factory_name);
+
+            if operation
+                .builder
+                .as_ref()
+                .is_some_and(|builder| builder.has_exec_client(&client_name))
+            {
+                return Err(to_pyvalue_err(format!(
+                    "Client '{client_name}' is already registered"
+                )));
+            }
+
             let builder = operation.take_builder()?;
             let updated_builder = match routing {
                 Some(routing) => builder.add_exec_client_with_routing(
@@ -2236,11 +2533,27 @@ impl PyLiveNodeBuilder {
     #[pyo3(name = "build")]
     fn py_build(&self) -> PyResult<PyLiveNode> {
         let mut operation = self.begin_operation()?;
-        let builder = operation.take_builder()?;
-        builder
-            .build()
-            .map(PyLiveNode::new)
-            .map_err(to_pyruntime_err)
+        let mut builder = operation.take_builder()?;
+
+        let node = match builder.build_in_place() {
+            Ok(node) => node,
+            Err(e) => {
+                Python::attach(|py| {
+                    if let Err(cleanup_error) = self.clients.finish(py) {
+                        log::error!(
+                            "Failed to clean up Python clients after build failure: {cleanup_error}"
+                        );
+                    }
+                });
+
+                operation.complete(builder);
+                return Err(to_pyruntime_err(e));
+            }
+        };
+
+        let mut node = PyLiveNode::new(node);
+        node.clients = self.clients.take();
+        Ok(node)
     }
 
     fn __repr__(&self) -> String {
@@ -2293,6 +2606,7 @@ impl PyLiveNodeBuilder {
     fn shared(&self) -> Self {
         Self {
             state: self.state.clone(),
+            clients: self.clients.clone(),
         }
     }
 }
@@ -2409,7 +2723,7 @@ mod tests {
     };
     use parking_lot::Mutex;
     use pyo3::{
-        Py, PyRef, Python,
+        IntoPyObject, Py, PyRef, Python,
         ffi::c_str,
         types::{PyAnyMethods, PyDict, PyModule, PyModuleMethods},
     };
@@ -2417,9 +2731,112 @@ mod tests {
 
     use super::{
         BUILDER_OPERATION_IN_PROGRESS, LiveNode, PyLiveNode, PyLiveNodeBuilder,
-        PyLiveNodeBuilderState, get_global_pyo3_registry,
+        PyLiveNodeBuilderState, finish_owned_run, get_global_pyo3_registry,
     };
     use crate::node::config::RoutingConfig;
+
+    #[rstest]
+    fn test_owned_run_cleanup_preserves_all_errors(
+        #[values(false, true)] run_error: bool,
+        #[values(false, true)] close_error: bool,
+        #[values(false, true)] restore_error: bool,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let module = PyModule::from_code(
+                py,
+                c_str!(
+                    r#"
+calls = []
+
+class Loop:
+    def close(self):
+        calls.append("close")
+        if close_error:
+            raise RuntimeError("close failed")
+
+def signal(signum, original):
+    calls.append(f"signal:{signum}")
+    if restore_error and signum == 1:
+        raise OSError("restore failed")
+
+loop = Loop()
+primary = KeyboardInterrupt("run failed")
+"#
+                ),
+                c_str!("owned_cleanup_test.py"),
+                c_str!("owned_cleanup_test"),
+            )
+            .unwrap();
+            module.setattr("close_error", close_error).unwrap();
+            module.setattr("restore_error", restore_error).unwrap();
+            let primary = module.getattr("primary").unwrap();
+
+            let result = if run_error {
+                Err(pyo3::PyErr::from_value(primary.clone()))
+            } else {
+                Ok(())
+            };
+
+            let handlers = [1_i32, 2]
+                .into_iter()
+                .map(|signum| {
+                    (
+                        signum.into_pyobject(py).unwrap().into_any(),
+                        py.None().into_bound(py),
+                    )
+                })
+                .collect();
+
+            let result =
+                finish_owned_run(&module.getattr("loop").unwrap(), &module, handlers, result);
+            let expected: Vec<&str> = [
+                (run_error, "run failed"),
+                (close_error, "close failed"),
+                (restore_error, "restore failed"),
+            ]
+            .into_iter()
+            .filter_map(|(failed, message)| failed.then_some(message))
+            .collect();
+
+            let actual = match result {
+                Ok(()) => Vec::new(),
+                Err(e) => {
+                    let error = e.value(py);
+
+                    let errors = if error.is_instance_of::<pyo3::exceptions::PyBaseExceptionGroup>()
+                    {
+                        error
+                            .getattr("exceptions")
+                            .unwrap()
+                            .extract::<Vec<pyo3::Bound<'_, pyo3::PyAny>>>()
+                            .unwrap()
+                    } else {
+                        vec![error.clone().into_any()]
+                    };
+
+                    if run_error {
+                        assert!(errors[0].is(&primary));
+                    }
+
+                    errors
+                        .into_iter()
+                        .map(|e| e.str().unwrap().to_string())
+                        .collect()
+                }
+            };
+
+            assert_eq!(actual, expected);
+            assert_eq!(
+                module
+                    .getattr("calls")
+                    .unwrap()
+                    .extract::<Vec<String>>()
+                    .unwrap(),
+                ["close", "signal:1", "signal:2"],
+            );
+        });
+    }
 
     #[derive(Clone, Copy, Debug)]
     enum ShutdownRunPath {
@@ -3220,15 +3637,22 @@ mod tests {
 
             assert_eq!(
                 duplicate_error.to_string(),
-                "RuntimeError: Failed to add data client: Data client 'REENTRANT_DATA' is already registered"
+                "ValueError: Client 'REENTRANT_DATA' is already registered"
             );
             let builder_ref = builder.borrow(py);
             let state = builder_ref
                 .state
                 .replace(PyLiveNodeBuilderState::InProgress);
-            let is_consumed = matches!(&state, PyLiveNodeBuilderState::Consumed);
+            let retains_registration = matches!(
+                &state,
+                PyLiveNodeBuilderState::Ready(inner) if inner.has_data_client("REENTRANT_DATA")
+            );
             builder_ref.state.set(state);
-            assert!(is_consumed);
+            assert!(retains_registration);
+            drop(builder_ref);
+            builder
+                .call_method1(py, "with_save_state", (true,))
+                .unwrap();
             locals.call_method0("clear").unwrap();
         });
     }

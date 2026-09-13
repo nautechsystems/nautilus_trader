@@ -13,6 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Exposes Rust live-node, engine, and client configuration types through PyO3.
+//!
+//! Implements Python constructors and property access, converting Python inputs into Rust
+//! configuration values and reporting invalid inputs as Python exceptions. Includes routing,
+//! instrument-provider, plugin, and queue-monitor settings used when constructing a live node.
+
 use std::{collections::HashMap, hash::BuildHasher, time::Duration};
 
 use nautilus_common::{
@@ -27,8 +33,8 @@ use nautilus_model::{
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_trading::ImportableControllerConfig;
 use pyo3::{
-    IntoPyObject, Py, PyAny, PyResult, Python, pymethods,
-    types::{PyAnyMethods, PyDict, PyDictMethods},
+    Bound, IntoPyObject, Py, PyAny, PyResult, Python, pymethods,
+    types::{PyAnyMethods, PyBytes, PyDict, PyDictMethods, PyTuple},
 };
 
 use crate::config::{
@@ -844,17 +850,53 @@ impl InstrumentProviderConfig {
 impl DataClientConfig {
     /// Shared configuration for data clients registered with a live node.
     #[new]
-    #[pyo3(signature = (handle_revised_bars=None, instrument_provider=None, routing=None))]
+    #[gen_stub(override_return_type(type_repr = "typing.Self", imports = ("typing",)))]
+    #[pyo3(signature = (handle_revised_bars=None, instrument_provider=None, routing=None, **_kwargs))]
     fn py_new(
         handle_revised_bars: Option<bool>,
         instrument_provider: Option<InstrumentProviderConfig>,
         routing: Option<RoutingConfig>,
+        _kwargs: Option<&Bound<'_, PyDict>>,
     ) -> Self {
         Self {
             handle_revised_bars: handle_revised_bars.unwrap_or(false),
             instrument_provider: instrument_provider.unwrap_or_default(),
             routing: routing.unwrap_or_default(),
         }
+    }
+
+    #[pyo3(signature = ())]
+    fn dict(slf: &Bound<'_, Self>) -> PyResult<Py<PyDict>> {
+        Ok(slf
+            .py()
+            .import("nautilus_trader.live.config")?
+            .getattr("config_values")?
+            .call1((slf,))?
+            .cast::<PyDict>()?
+            .clone()
+            .unbind())
+    }
+
+    #[pyo3(signature = ())]
+    fn json(slf: &Bound<'_, Self>) -> PyResult<Py<PyBytes>> {
+        Ok(slf
+            .py()
+            .import("nautilus_trader.live.config")?
+            .getattr("config_json")?
+            .call1((slf,))?
+            .cast::<PyBytes>()?
+            .clone()
+            .unbind())
+    }
+
+    #[pyo3(signature = (factory=None))]
+    fn to_importable(slf: &Bound<'_, Self>, factory: Option<Py<PyAny>>) -> PyResult<Py<PyAny>> {
+        Ok(slf
+            .py()
+            .import("nautilus_trader.live.config")?
+            .getattr("config_importable")?
+            .call1((slf, factory))?
+            .unbind())
     }
 
     fn __repr__(&self) -> String {
@@ -886,15 +928,51 @@ impl DataClientConfig {
 impl ExecutionClientConfig {
     /// Shared configuration for execution clients registered with a live node.
     #[new]
-    #[pyo3(signature = (instrument_provider=None, routing=None))]
+    #[gen_stub(override_return_type(type_repr = "typing.Self", imports = ("typing",)))]
+    #[pyo3(signature = (instrument_provider=None, routing=None, **_kwargs))]
     fn py_new(
         instrument_provider: Option<InstrumentProviderConfig>,
         routing: Option<RoutingConfig>,
+        _kwargs: Option<Bound<'_, PyDict>>,
     ) -> Self {
         Self {
             instrument_provider: instrument_provider.unwrap_or_default(),
             routing: routing.unwrap_or_default(),
         }
+    }
+
+    #[pyo3(signature = ())]
+    fn dict(slf: &Bound<'_, Self>) -> PyResult<Py<PyDict>> {
+        Ok(slf
+            .py()
+            .import("nautilus_trader.live.config")?
+            .getattr("config_values")?
+            .call1((slf,))?
+            .cast::<PyDict>()?
+            .clone()
+            .unbind())
+    }
+
+    #[pyo3(signature = ())]
+    fn json(slf: &Bound<'_, Self>) -> PyResult<Py<PyBytes>> {
+        Ok(slf
+            .py()
+            .import("nautilus_trader.live.config")?
+            .getattr("config_json")?
+            .call1((slf,))?
+            .cast::<PyBytes>()?
+            .clone()
+            .unbind())
+    }
+
+    #[pyo3(signature = (factory=None))]
+    fn to_importable(slf: &Bound<'_, Self>, factory: Option<Py<PyAny>>) -> PyResult<Py<PyAny>> {
+        Ok(slf
+            .py()
+            .import("nautilus_trader.live.config")?
+            .getattr("config_importable")?
+            .call1((slf, factory))?
+            .unbind())
     }
 
     fn __repr__(&self) -> String {
@@ -1020,7 +1098,7 @@ impl LiveNodeConfig {
     /// Configuration for live Nautilus system nodes.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (environment=None, trader_id=None, load_state=None, save_state=None, shutdown_on_error=None, logging=None, instance_id=None, timeout_connection_secs=None, timeout_reconciliation_secs=None, timeout_portfolio_secs=None, timeout_disconnection_secs=None, delay_post_stop_secs=None, timeout_shutdown_secs=None, cache=None, msgbus=None, portfolio=None, queue_monitor=None, loop_debug=None, data_engine=None, risk_engine=None, exec_engine=None, controller=None, plugins=None))]
+    #[pyo3(signature = (environment=None, trader_id=None, load_state=None, save_state=None, shutdown_on_error=None, logging=None, instance_id=None, timeout_connection_secs=None, timeout_reconciliation_secs=None, timeout_portfolio_secs=None, timeout_disconnection_secs=None, delay_post_stop_secs=None, timeout_shutdown_secs=None, cache=None, msgbus=None, portfolio=None, queue_monitor=None, loop_debug=None, data_engine=None, risk_engine=None, exec_engine=None, controller=None, plugins=None, *, data_clients=None, exec_clients=None))]
     fn py_new(
         environment: Option<Environment>,
         trader_id: Option<TraderId>,
@@ -1045,7 +1123,10 @@ impl LiveNodeConfig {
         exec_engine: Option<LiveExecutionEngineConfig>,
         controller: Option<ImportableControllerConfig>,
         plugins: Option<Vec<PluginConfig>>,
+        data_clients: Option<Bound<'_, PyDict>>,
+        exec_clients: Option<Bound<'_, PyDict>>,
     ) -> PyResult<Self> {
+        let _ = (data_clients, exec_clients);
         let default = Self::default();
 
         let to_duration = |value: f64, name: &str| -> PyResult<Duration> {
@@ -1100,6 +1181,60 @@ impl LiveNodeConfig {
             controller,
             plugins: plugins.unwrap_or_default(),
         })
+    }
+
+    #[gen_stub(skip)]
+    #[pyo3(signature = (*_args, **kwargs))]
+    fn __init__(
+        slf: &Bound<'_, Self>,
+        _args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<()> {
+        for name in ["data_clients", "exec_clients"] {
+            let values = kwargs
+                .map(|kwargs| kwargs.get_item(name))
+                .transpose()?
+                .flatten();
+
+            let values = match values {
+                Some(values) if !values.is_none() => values.cast::<PyDict>()?.copy()?,
+                _ => PyDict::new(slf.py()),
+            };
+
+            slf.setattr(format!("_{name}"), values)?;
+        }
+
+        Ok(())
+    }
+
+    #[getter]
+    fn data_clients(slf: &Bound<'_, Self>) -> PyResult<Py<PyDict>> {
+        let values = slf.getattr("__dict__")?;
+        let values = values.cast::<PyDict>()?;
+        match values.get_item("_data_clients")? {
+            Some(values) => Ok(values.cast::<PyDict>()?.copy()?.unbind()),
+            None => Ok(slf
+                .borrow()
+                .data_clients
+                .clone()
+                .into_pyobject(slf.py())?
+                .unbind()),
+        }
+    }
+
+    #[getter]
+    fn exec_clients(slf: &Bound<'_, Self>) -> PyResult<Py<PyDict>> {
+        let values = slf.getattr("__dict__")?;
+        let values = values.cast::<PyDict>()?;
+        match values.get_item("_exec_clients")? {
+            Some(values) => Ok(values.cast::<PyDict>()?.copy()?.unbind()),
+            None => Ok(slf
+                .borrow()
+                .exec_clients
+                .clone()
+                .into_pyobject(slf.py())?
+                .unbind()),
+        }
     }
 
     fn __repr__(&self) -> String {

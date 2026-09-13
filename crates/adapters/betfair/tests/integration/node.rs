@@ -34,7 +34,9 @@
 //! ```
 
 use std::{
+    cell::RefCell,
     net::SocketAddr,
+    rc::Rc,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -51,6 +53,7 @@ use nautilus_common::{
     actor::DataActor,
     cache::CacheView,
     clients::ExecutionClient,
+    clock::Clock,
     enums::Environment,
     factories::{ClientConfig, ExecutionClientFactory},
     testing::wait_until_async,
@@ -106,6 +109,7 @@ impl ExecutionClientFactory for MockBetfairExecutionClientFactory {
         name: &str,
         _config: &dyn ClientConfig,
         cache: CacheView,
+        _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let core = ExecutionClientCore::new(
             trader_id,

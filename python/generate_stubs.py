@@ -166,6 +166,9 @@ MODULE_FIXUPS: dict[str, StubFixup] = {
 # every regeneration; the redundant `as` alias marks them as explicit re-exports so
 # `from <module> import <symbol>` type-checks. Keyed by stub path suffix.
 EXTRA_REEXPORTS: dict[str, tuple[str, ...]] = {
+    "nautilus_trader/live/__init__.pyi": (
+        "from nautilus_trader.live.providers import InstrumentProvider as InstrumentProvider",
+    ),
     "nautilus_trader/analysis/__init__.pyi": (
         "from nautilus_trader.analysis.config import GridLayout as GridLayout",
         (

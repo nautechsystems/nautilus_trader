@@ -27,6 +27,7 @@ This approach combines Python's simplicity and ecosystem with Rust's performance
 - [Release Notes](releases.md)
 - [Security Architecture](security.md)
 - [Adapters](adapters.md)
+- [Python Adapters](python_adapters.md)
 - [Data Testing Spec](spec_data_testing.md)
 - [Execution Testing Spec](spec_exec_testing.md)
 - [Benchmarking](benchmarking.md)

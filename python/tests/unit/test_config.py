@@ -30,6 +30,7 @@ CONFIG_MODULE_NAMES = (
     "data",
     "execution",
     "live",
+    "live.config",
     "persistence",
     "portfolio",
     "risk",

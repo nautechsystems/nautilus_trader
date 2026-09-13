@@ -31,7 +31,19 @@ def load_example_module(adapter: str, module: str) -> ModuleType:
     """
     Load example module.
     """
-    module_name = f"{adapter}_{module}_example"
+    package_name = f"{adapter}_example"
+    if package_name not in sys.modules:
+        package_path = _EXAMPLES_DIR / adapter / "__init__.py"
+        package_spec = importlib.util.spec_from_file_location(package_name, package_path)
+        assert package_spec is not None
+        assert package_spec.loader is not None
+        package = importlib.util.module_from_spec(package_spec)
+        sys.modules[package_name] = package
+        package_spec.loader.exec_module(package)
+
+    module_name = f"{package_name}.{module}"
+    if module_name in sys.modules:
+        return sys.modules[module_name]
     module_path = _EXAMPLES_DIR / adapter / f"{module}.py"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     assert spec is not None

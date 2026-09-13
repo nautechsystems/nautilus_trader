@@ -139,6 +139,7 @@ impl ExecutionClientFactory for HyperliquidExecutionClientFactory {
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
+        _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let hyperliquid_config = config
             .as_any()
@@ -279,6 +280,7 @@ mod tests {
             "HYPERLIQUID-TEST",
             &wrong_config,
             cache.into(),
+            Rc::new(RefCell::new(TestClock::new())),
         );
         assert!(result.is_err());
         assert!(

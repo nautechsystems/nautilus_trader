@@ -153,6 +153,7 @@ impl ExecutionClientFactory for KrakenExecutionClientFactory {
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
+        _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let kraken_config = config
             .as_any()
@@ -288,6 +289,7 @@ mod tests {
             "KRAKEN-TEST",
             &config,
             cache.into(),
+            Rc::new(RefCell::new(TestClock::new())),
         );
         assert!(result.is_ok());
 
@@ -311,6 +313,7 @@ mod tests {
             "KRAKEN-TEST",
             &config,
             cache.into(),
+            Rc::new(RefCell::new(TestClock::new())),
         );
         assert!(result.is_ok());
 
@@ -336,6 +339,7 @@ mod tests {
             "KRAKEN-TEST",
             &config,
             cache.into(),
+            Rc::new(RefCell::new(TestClock::new())),
         );
         let err = match result {
             Ok(_) => panic!("expected validation error, factory returned Ok"),
@@ -388,6 +392,7 @@ mod tests {
             "KRAKEN-TEST",
             &config,
             cache.into(),
+            Rc::new(RefCell::new(TestClock::new())),
         );
         assert!(result.is_ok());
     }

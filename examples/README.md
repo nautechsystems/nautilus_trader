@@ -14,6 +14,11 @@ Maintained Rust-native adapter testers use the generic `data_tester.py` and `exe
 under `live/<adapter>/`. These replace the removed adapter-prefixed tester variants.
 The maintained sandbox execution tester is `live/sandbox/exec_tester.py`.
 
+The [Python adapter template](live/_template/README.md) implements deterministic data and
+execution clients without network access. The
+[independent package guide](../docs/developer_guide/python_adapters.md#independent-rustpyo3-packages)
+describes how to implement a Rust/PyO3 adapter outside this repository.
+
 All tracked Python examples import the current public package surface. Adapter examples use
 `nautilus_trader.live.LiveNode`, built-in tester configs from `nautilus_trader.testkit`, or
 self-contained actors and strategies maintained with the example.

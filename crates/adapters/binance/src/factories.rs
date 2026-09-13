@@ -17,6 +17,8 @@
 
 use std::{cell::RefCell, rc::Rc};
 
+#[cfg(test)]
+use nautilus_common::clock::TestClock;
 use nautilus_common::{
     cache::CacheView,
     clients::{DataClient, ExecutionClient},
@@ -147,6 +149,7 @@ impl ExecutionClientFactory for BinanceExecutionClientFactory {
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
+        _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let binance_config = config
             .as_any()
@@ -268,6 +271,7 @@ mod tests {
                 "BINANCE-TEST",
                 &config,
                 cache.into(),
+                Rc::new(RefCell::new(TestClock::new())),
             )
             .unwrap();
 

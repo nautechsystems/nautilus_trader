@@ -30,6 +30,7 @@ Released on TBD (UTC).
 - Added Python `OrderBookDelta.is_add`, `is_update`, `is_delete`, `is_clear`, and `OrderBookDeltas.is_snapshot`
 - Added Python `activation_utc` and `expiration_utc` properties to expiring instruments
 - Added Python `symbol` and `venue` properties to regular and synthetic instruments
+- Added Python bindings for subscription, execution, and historical data messages
 - Added Cap'n Proto serialization for all instrument types and `InstrumentAny`
 - Added Binance USD-M Futures RPI order support (#4927), thanks @AlphaTraderK
 - Added Binance USD-M weekly delivery contract support
@@ -66,6 +67,7 @@ Released on TBD (UTC).
 - Changed actor state subscription signatures; pass filters before `priority`, or use `priority=` in Python
 - Changed Rust state unsubscribe methods to require filters; pass `None` for unfiltered subscriptions
 - Changed `QueueStateChanged` and `SocketStateChanged` topics; use actor filters or switchboard patterns
+- Changed Rust `ExecutionClientFactory::create` to require the node's clock after the cache argument
 - Changed Rust mixed-scale addition/subtraction to panic; use `checked_add`/`checked_sub` for fallible handling
 - Changed Rust `BinaryOption` constructors to require an `event_id` argument; pass `None` when unknown
 - Changed`OrderCanceled::new` to require an optional cancellation reason (#4903), thanks @folknor
@@ -98,6 +100,8 @@ Released on TBD (UTC).
 - Fixed managed GTD expiry after cancel rejections (#4974), thanks @folknor
 - Fixed cancel rejections being dropped when order acceptance arrives first
 - Fixed Python `MessageBus.publish()` reentry from subscribers and listeners, and external serialization reentry
+- Fixed live node builders losing client registrations after a failed build
+- Fixed Python live node cleanup masking run errors and skipping signal handler restoration after a cleanup failure
 - Fixed `Money` ordering panics for mixed currencies, thanks for reporting @folknor
 - Fixed sell-balance checks when order quantities and account balances use different fixed-point scales
 - Fixed `LiveTimer` successor and time bar interval overflows causing runtime panics
@@ -196,6 +200,7 @@ Released on TBD (UTC).
 - Added crate feature documentation checks for README and Rustdoc lists
 - Added early Cargo dependency cooldown checks to builds and pre-flight
 - Added Cargo convention checks for redundant README keys, uninherited workspace fields, and binary target naming
+- Added Rust client bridges for custom Python data and execution adapters
 - Added experimental executable component bindings for plug-ins
 - Added acceptance tests running the documentation guides and resolving their documented imports
 - Added deterministic simulation testing (DST) transports for HTTP and WebSocket I/O
@@ -224,6 +229,7 @@ Released on TBD (UTC).
 - Standardized uv commands, CI, Docker, and documentation on the default `python/.venv` project environment
 - Upgraded Rust (MSRV) to 1.98.1
 - Upgraded `cargo-hawk` tool to v0.1.14
+- Upgraded `cargo-llvm-cov` tool to v0.9.1
 - Upgraded `prek` tool to v0.5.2
 - Upgraded `uv` tool to v0.12.12
 - Upgraded `typos` pre-commit hook to v1.50.1
@@ -234,19 +240,18 @@ Released on TBD (UTC).
 - Upgraded `rcgen` crate to v0.14.10
 - Upgraded `arrow`, `arrow-row`, and `parquet` crates to v59.3.0
 - Upgraded `aws-lc-rs` crate to v1.18.1
+- Upgraded `capnp` crate to v0.27.2
 - Upgraded `databento` crate to v0.61.0
+- Upgraded `hypersync-client` crate to v1.4.1
 - Upgraded `redis` crate to v1.7.0
 - Upgraded `rust_decimal` crate to v1.43.0
+- Upgraded `rustls` crate to v0.23.44
 - Upgraded `smallvec` crate to v1.16.0
 - Upgraded `tokio-rustls` crate to v0.26.5
 - Upgraded `toml` crate to v1.1.5
-- Upgraded `capnp` crate to v0.27.2
-- Upgraded `hypersync-client` crate to v1.4.1
-- Upgraded `rustls` crate to v0.23.44
 - Upgraded `kaleido` package to v1.4.0
 - Upgraded `linkify-it-py` package to v2.2.0
 - Upgraded `plotly` package to v7.0.0
-- Upgraded `cargo-llvm-cov` to v0.9.1
 - Upgraded `ruff` package (dev) and pre-commit hook to v0.16.6
 - Upgraded `simplejson` package to v4.1.2
 - Upgraded `ty` package (dev) to v0.0.78

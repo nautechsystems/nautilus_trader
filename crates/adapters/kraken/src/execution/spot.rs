@@ -2104,13 +2104,14 @@ mod tests {
             ..Default::default()
         };
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let _clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(TestClock::new()));
 
         let result = factory.create(
             TraderId::from("TRADER-001"),
             "KRAKEN-WS",
             &config,
             cache.into(),
+            clock,
         );
         assert!(result.is_ok(), "construction failed: {:?}", result.err());
     }
