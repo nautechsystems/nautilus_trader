@@ -40,7 +40,7 @@ pub enum BuildError {
     /// Both after and before cursors specified.
     #[error("Cannot specify both 'after' and 'before' cursors")]
     BothCursors,
-    /// Invalid time range: after_ms should be greater than before_ms.
+    /// Invalid time range: `after_ms` should be greater than `before_ms`.
     #[error(
         "Invalid time range: after_ms ({after_ms}) must be greater than before_ms ({before_ms})"
     )]
@@ -100,7 +100,7 @@ pub enum OKXHttpError {
     /// Request was canceled, typically due to shutdown or disconnect.
     #[error("Request canceled: {0}")]
     Canceled(String),
-    /// Wrapping the underlying HttpClientError from the network crate.
+    /// Wrapping the underlying `HttpClientError` from the network crate.
     #[error("Network error: {0}")]
     HttpClientError(#[from] HttpClientError),
     /// A temporary HTTP status without a decodable OKX error envelope.

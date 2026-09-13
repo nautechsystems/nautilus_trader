@@ -1095,7 +1095,7 @@ pub struct OKXOrderMsg {
     pub tag: Option<String>,
     /// Trade mode.
     pub td_mode: OKXTradeMode,
-    /// Target currency (base_ccy or quote_ccy). Empty for margin modes.
+    /// Target currency (`base_ccy` or `quote_ccy`). Empty for margin modes.
     #[serde(default, deserialize_with = "deserialize_target_currency_as_none")]
     pub tgt_ccy: Option<OKXTargetCurrency>,
     /// Take-profit order price.
@@ -1146,7 +1146,7 @@ pub struct OKXAlgoOrderMsg {
     pub inst_id: Ustr,
     /// Instrument type.
     pub inst_type: OKXInstrumentType,
-    /// Algo order type (trigger, move_order_stop, oco, iceberg, twap).
+    /// Algo order type (trigger, `move_order_stop`, oco, iceberg, twap).
     pub ord_type: OKXAlgoOrderType,
     /// Order state.
     pub state: OKXAlgoOrderStatus,
@@ -1230,7 +1230,7 @@ pub struct OKXAlgoOrderMsg {
     /// Currency.
     #[serde(default, deserialize_with = "deserialize_empty_ustr_as_none")]
     pub ccy: Option<Ustr>,
-    /// Target currency (base_ccy or quote_ccy).
+    /// Target currency (`base_ccy` or `quote_ccy`).
     #[serde(default, deserialize_with = "deserialize_target_currency_as_none")]
     pub tgt_ccy: Option<OKXTargetCurrency>,
     /// Fee amount.
@@ -1318,7 +1318,7 @@ pub struct WsPostOrderParams {
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pos_side: Option<OKXPositionSide>,
-    /// Order type: limit, market, post_only, fok, ioc, etc.
+    /// Order type: limit, market, `post_only`, fok, ioc, etc.
     pub ord_type: OKXOrderType,
     /// Order size.
     pub sz: String,
@@ -2696,7 +2696,7 @@ mod tests {
             "asks": [["16.7", "100", "1"]],
             "bids": [["16.65", "100", "1"]],
             "ts": "1780044924909",
-            "seqId": 1779935772619784_u64,
+            "seqId": 1_779_935_772_619_784_u64,
         }))
         .unwrap();
         assert_eq!(msg.asks[0].price, "16.7");

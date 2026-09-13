@@ -21,7 +21,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicI64, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -3305,12 +3305,12 @@ async fn test_request_trades_range_mode_pagination() {
 
                             // Calculate timestamp: trade IDs > 999900 are recent (< 1 hour ago)
                             // trade IDs <= 999900 are historical (90+ minutes ago, within 1-2 hour range)
-                            let ts_ms = if trade_id > 999900 {
+                            let ts_ms = if trade_id > 999_900 {
                                 // Recent: 1-10 seconds ago (will be filtered out)
-                                now_ms - ((999999 - trade_id) * 100)
+                                now_ms - ((999_999 - trade_id) * 100)
                             } else {
                                 // Historical: 90-92 minutes ago (within 1-2 hour range)
-                                let offset_from_boundary = 999900 - trade_id;
+                                let offset_from_boundary = 999_900 - trade_id;
                                 now_ms - (90 * 60 * 1000) - (offset_from_boundary * 1000)
                             };
 
@@ -3765,7 +3765,7 @@ async fn test_request_trades_overlapping_pages_chronological_order() {
 async fn test_request_trades_default_limit_with_end_only() {
     // Regression test: verify that limit=None defaults to 100 trades
     // and doesn't paginate forever when only end timestamp is provided
-    let call_count = Arc::new(AtomicUsize::new(0));
+    let call_count = Arc::new(AtomicI64::new(0));
     let call_count_clone = call_count.clone();
 
     let router = Router::new()
@@ -3788,7 +3788,7 @@ async fn test_request_trades_default_limit_with_end_only() {
                         // Mock returns 100 trades per page
                         let mut data = Vec::new();
                         let base_id = 2000 - (call_num * 100);
-                        let base_ts = 1747087170000i64 - (call_num as i64 * 10000);
+                        let base_ts = 1_747_087_170_000_i64 - (call_num * 10000);
 
                         for i in 0..100 {
                             data.push(json!({
@@ -3797,7 +3797,7 @@ async fn test_request_trades_default_limit_with_end_only() {
                                 "sz": "0.01",
                                 "px": "100000.0",
                                 "tradeId": (base_id - i).to_string(),
-                                "ts": (base_ts - (i as i64 * 100)).to_string(),
+                                "ts": (base_ts - (i * 100)).to_string(),
                             }));
                         }
 
@@ -3888,47 +3888,51 @@ async fn test_request_trades_historical_with_filtered_pages() {
                     let after_trade_id = params.get("after").and_then(|s| s.parse::<i64>().ok());
 
                     let data = if let Some(after_id) = after_trade_id {
-                        if after_id == 3102 {
-                            // Return 2 trades within 1.5-2.5 hour historical range
-                            let historical_ms = now_ms - (2 * 3600 * 1000) - (10 * 60 * 1000);
-                            vec![
-                                json!({
-                                    "instId": "BTC-USD",
-                                    "side": "buy",
-                                    "sz": "0.01",
-                                    "px": "100000.0",
-                                    "tradeId": "3000",
-                                    "ts": (historical_ms + 1000).to_string(),
-                                }),
-                                json!({
-                                    "instId": "BTC-USD",
-                                    "side": "sell",
-                                    "sz": "0.01",
-                                    "px": "100000.0",
-                                    "tradeId": "2999",
-                                    "ts": historical_ms.to_string(),
-                                }),
-                            ]
-                        } else if after_id < 3102 {
-                            vec![]
-                        } else {
-                            let mut trades = Vec::new();
-
-                            for i in 0..100 {
-                                let trade_id = after_id - i - 1;
-                                if trade_id < 3102 {
-                                    break;
-                                }
-                                trades.push(json!({
-                                    "instId": "BTC-USD",
-                                    "side": if i % 2 == 0 { "buy" } else { "sell" },
-                                    "sz": "0.01",
-                                    "px": "100000.0",
-                                    "tradeId": trade_id.to_string(),
-                                    "ts": (now_ms - ((trade_id - 3100) * 10)).to_string(),
-                                }));
+                        match after_id {
+                            3102 => {
+                                // Return 2 trades within 1.5-2.5 hour historical range
+                                let historical_ms = now_ms - (2 * 3600 * 1000) - (10 * 60 * 1000);
+                                vec![
+                                    json!({
+                                        "instId": "BTC-USD",
+                                        "side": "buy",
+                                        "sz": "0.01",
+                                        "px": "100000.0",
+                                        "tradeId": "3000",
+                                        "ts": (historical_ms + 1000).to_string(),
+                                    }),
+                                    json!({
+                                        "instId": "BTC-USD",
+                                        "side": "sell",
+                                        "sz": "0.01",
+                                        "px": "100000.0",
+                                        "tradeId": "2999",
+                                        "ts": historical_ms.to_string(),
+                                    }),
+                                ]
                             }
-                            trades
+                            id if id < 3102 => vec![],
+                            _ => {
+                                let mut trades = Vec::new();
+
+                                for i in 0..100 {
+                                    let trade_id = after_id - i - 1;
+                                    if trade_id < 3102 {
+                                        break;
+                                    }
+
+                                    trades.push(json!({
+                                        "instId": "BTC-USD",
+                                        "side": if i % 2 == 0 { "buy" } else { "sell" },
+                                        "sz": "0.01",
+                                        "px": "100000.0",
+                                        "tradeId": trade_id.to_string(),
+                                        "ts": (now_ms - ((trade_id - 3100) * 10)).to_string(),
+                                    }));
+                                }
+
+                                trades
+                            }
                         }
                     } else {
                         vec![

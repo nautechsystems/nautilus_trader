@@ -164,8 +164,8 @@ pub(crate) fn okx_reduce_only_wire_value(
 ///
 /// - OKX implements IOC and FOK as order types rather than separate time-in-force parameters.
 /// - FOK is only supported with Limit orders (Market + FOK is not supported).
-/// - IOC with Market orders uses OptimalLimitIoc, with Limit orders uses Ioc.
-/// - GTD is supported via expire_time parameter.
+/// - IOC with Market orders uses `OptimalLimitIoc`, with Limit orders uses Ioc.
+/// - GTD is supported via `expire_time` parameter.
 pub const OKX_SUPPORTED_TIME_IN_FORCE: &[TimeInForce] = &[
     TimeInForce::Gtc, // Good Till Cancel (default)
     TimeInForce::Ioc, // Immediate or Cancel (mapped to OKXOrderType::Ioc or OptimalLimitIoc)
@@ -176,7 +176,7 @@ pub const OKX_SUPPORTED_TIME_IN_FORCE: &[TimeInForce] = &[
 ///
 /// # Notes
 ///
-/// - PostOnly is supported as a flag on limit orders.
+/// - `PostOnly` is supported as a flag on limit orders.
 /// - Conditional orders (stop/trigger) are supported via algo orders.
 pub const OKX_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
     OrderType::Market,

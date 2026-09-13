@@ -19,7 +19,7 @@
 //! 1. Queries the cache for all BTC option instruments
 //! 2. Finds the nearest expiry
 //! 3. Filters for CALL options at that expiry
-//! 4. Subscribes to OptionGreeks for each one, alternating three param shapes:
+//! 4. Subscribes to `OptionGreeks` for each one, alternating three param shapes:
 //!    the first third with no params (defaults to both conventions), the second
 //!    third narrowed to Black-Scholes only, and the final third narrowed to
 //!    price-adjusted only.

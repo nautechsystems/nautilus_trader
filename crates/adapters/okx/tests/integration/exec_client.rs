@@ -2949,7 +2949,10 @@ async fn handle_exec_ws_upgrade(
 async fn handle_exec_ws_socket(mut socket: WebSocket, state: Arc<WsTeardownState>) {
     state.opened.fetch_add(1, Ordering::Relaxed);
 
-    let mut messages = state.messages.as_ref().map(|tx| tx.subscribe());
+    let mut messages = state
+        .messages
+        .as_ref()
+        .map(tokio::sync::broadcast::Sender::subscribe);
 
     loop {
         let message = tokio::select! {
@@ -3020,6 +3023,10 @@ async fn start_exec_session_failure_server() -> (SocketAddr, Arc<WsTeardownState
 }
 
 #[derive(Default)]
+#[allow(
+    clippy::struct_field_names,
+    reason = "field names document which report route each captured query belongs to"
+)]
 struct ReportRouteState {
     regular_order_pending_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
     regular_order_history_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,

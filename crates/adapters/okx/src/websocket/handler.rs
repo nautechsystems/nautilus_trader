@@ -68,7 +68,7 @@ use crate::{
 
 /// Commands sent from the outer client to the inner message handler.
 pub enum HandlerCommand {
-    /// Set the WebSocketClient for the handler to use.
+    /// Set the `WebSocketClient` for the handler to use.
     SetClient(WebSocketClient),
     /// Disconnect the WebSocket connection.
     Disconnect,

@@ -94,6 +94,10 @@ fn bench_parse_trade(c: &mut Criterion) {
     group.finish();
 }
 
+#[allow(
+    clippy::manual_let_else,
+    reason = "the match form is clearer than let-else for unpacking the fixture frame"
+)]
 fn bench_parse_book_deltas(c: &mut Criterion) {
     let instrument = btc_usdt_spot();
     let frame: OKXWsFrame = serde_json::from_str(fixtures::BOOK_UPDATE).unwrap();

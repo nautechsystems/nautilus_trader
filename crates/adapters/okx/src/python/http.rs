@@ -237,7 +237,7 @@ impl OKXHttpClient {
 
     /// Sets the position mode for the account.
     ///
-    /// Defaults to NetMode if no position mode is provided.
+    /// Defaults to `NetMode` if no position mode is provided.
     ///
     /// # Errors
     ///
@@ -315,7 +315,7 @@ impl OKXHttpClient {
     ///
     /// A tuple containing:
     /// - `Vec<InstrumentAny>`: The parsed instruments
-    /// - `Vec<(Ustr, u64)>`: Mappings of inst_id to inst_id_code for WebSocket order operations
+    /// - `Vec<(Ustr, u64)>`: Mappings of `inst_id` to `inst_id_code` for WebSocket order operations
     #[pyo3(name = "request_instruments")]
     #[pyo3(signature = (instrument_type, instrument_family=None))]
     fn py_request_instruments<'py>(

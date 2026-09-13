@@ -254,7 +254,7 @@ impl OKXDataClient {
     }
 
     fn vip_level(&self) -> Option<OKXVipLevel> {
-        self.ws_public.as_ref().map(|ws| ws.vip_level())
+        self.ws_public.as_ref().map(OKXWebSocketClient::vip_level)
     }
 
     fn public_ws(&self) -> anyhow::Result<&OKXWebSocketClient> {
@@ -1967,7 +1967,7 @@ impl DataClient for OKXDataClient {
             return Ok(());
         }
 
-        let raw_depth = cmd.depth.map_or(0, |d| d.get());
+        let raw_depth = cmd.depth.map_or(0, std::num::NonZero::get);
         let depth = resolve_book_depth(raw_depth);
         if depth != raw_depth {
             log::debug!("Clamped book depth {raw_depth} to {depth} (OKX supports 50 or 400)");
@@ -2152,7 +2152,7 @@ impl DataClient for OKXDataClient {
 
     fn subscribe_option_greeks(&mut self, cmd: SubscribeOptionGreeks) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
-        let conventions = parse_greeks_conventions_from_params(&cmd.params);
+        let conventions = parse_greeks_conventions_from_params(cmd.params.as_ref());
         self.option_greeks_subs.insert(instrument_id, conventions);
 
         let family = extract_inst_family(instrument_id.symbol.inner().as_str())?;
@@ -2949,12 +2949,12 @@ impl DataClient for OKXDataClient {
 /// Returns the default set `{Bs, Pa}` when the key is absent, unparsable, or
 /// yields no valid entries so every subscription defaults to both conventions.
 pub(crate) fn parse_greeks_conventions_from_params(
-    params: &Option<Params>,
+    params: Option<&Params>,
 ) -> AHashSet<OKXGreeksType> {
     let default_set: AHashSet<OKXGreeksType> =
         [OKXGreeksType::Bs, OKXGreeksType::Pa].into_iter().collect();
 
-    let Some(value) = params.as_ref().and_then(|p| p.get("greeks_convention")) else {
+    let Some(value) = params.and_then(|p| p.get("greeks_convention")) else {
         return default_set;
     };
 
@@ -3380,7 +3380,7 @@ mod tests {
 
     #[rstest]
     fn parse_conventions_returns_both_when_params_missing() {
-        let result = parse_greeks_conventions_from_params(&None);
+        let result = parse_greeks_conventions_from_params(None);
         assert_eq!(result, both());
     }
 
@@ -3388,7 +3388,7 @@ mod tests {
     fn parse_conventions_returns_both_when_key_absent() {
         let mut params = Params::new();
         params.insert("other_key".to_string(), json!("value"));
-        let result = parse_greeks_conventions_from_params(&Some(params));
+        let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, both());
     }
 
@@ -3400,7 +3400,7 @@ mod tests {
     fn parse_conventions_accepts_single_string(#[case] raw: &str, #[case] expected: OKXGreeksType) {
         let mut params = Params::new();
         params.insert("greeks_convention".to_string(), json!(raw));
-        let result = parse_greeks_conventions_from_params(&Some(params));
+        let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, only(expected));
     }
 
@@ -3411,7 +3411,7 @@ mod tests {
             "greeks_convention".to_string(),
             json!(["BLACK_SCHOLES", "PRICE_ADJUSTED"]),
         );
-        let result = parse_greeks_conventions_from_params(&Some(params));
+        let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, both());
     }
 
@@ -3419,7 +3419,7 @@ mod tests {
     fn parse_conventions_accepts_single_entry_list() {
         let mut params = Params::new();
         params.insert("greeks_convention".to_string(), json!(["PRICE_ADJUSTED"]));
-        let result = parse_greeks_conventions_from_params(&Some(params));
+        let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, only(OKXGreeksType::Pa));
     }
 
@@ -3430,7 +3430,7 @@ mod tests {
             "greeks_convention".to_string(),
             json!(["BLACK_SCHOLES", "black_scholes"]),
         );
-        let result = parse_greeks_conventions_from_params(&Some(params));
+        let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, only(OKXGreeksType::Bs));
     }
 
@@ -3441,7 +3441,7 @@ mod tests {
             "greeks_convention".to_string(),
             json!(["BOGUS", "PRICE_ADJUSTED"]),
         );
-        let result = parse_greeks_conventions_from_params(&Some(params));
+        let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, only(OKXGreeksType::Pa));
     }
 
@@ -3449,7 +3449,7 @@ mod tests {
     fn parse_conventions_falls_back_to_both_on_all_unknown() {
         let mut params = Params::new();
         params.insert("greeks_convention".to_string(), json!(["BOGUS"]));
-        let result = parse_greeks_conventions_from_params(&Some(params));
+        let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, both());
     }
 
@@ -3461,7 +3461,7 @@ mod tests {
     fn parse_conventions_falls_back_on_non_string_value(#[case] value: serde_json::Value) {
         let mut params = Params::new();
         params.insert("greeks_convention".to_string(), value);
-        let result = parse_greeks_conventions_from_params(&Some(params));
+        let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, both());
     }
 
@@ -3469,7 +3469,7 @@ mod tests {
     fn parse_conventions_falls_back_on_unknown_single_string() {
         let mut params = Params::new();
         params.insert("greeks_convention".to_string(), json!("BOGUS"));
-        let result = parse_greeks_conventions_from_params(&Some(params));
+        let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, both());
     }
 
@@ -4063,7 +4063,7 @@ mod tests {
         let okx_inst = OKXInstrument {
             inst_type: OKXInstrumentType::Events,
             inst_id: Ustr::from("BTC-ABOVE-DAILY-260224-1600-65000"),
-            inst_id_code: Some(1000000001),
+            inst_id_code: Some(1_000_000_001),
             uly: Ustr::from(""),
             inst_family: Ustr::from(""),
             series_id: Some(Ustr::from("BTC-ABOVE-DAILY")),
@@ -4079,8 +4079,8 @@ mod tests {
             ct_val_ccy: String::new(),
             opt_type: crate::common::enums::OKXOptionType::None,
             stk: String::new(),
-            list_time: Some(1769697132335),
-            exp_time: Some(1769700732335),
+            list_time: Some(1_769_697_132_335),
+            exp_time: Some(1_769_700_732_335),
             lever: String::new(),
             tick_sz: "0.001".to_string(),
             lot_sz: "1".to_string(),

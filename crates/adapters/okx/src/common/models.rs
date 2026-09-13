@@ -173,7 +173,7 @@ pub struct OKXInstrument {
     pub ct_type: OKXContractType,
     /// Instrument status.
     pub state: OKXInstrumentStatus,
-    /// Rule type, e.g. "DynamicPL", "CT", etc.
+    /// Rule type, e.g. "`DynamicPL`", "CT", etc.
     pub rule_type: String,
     /// Maximum limit order size.
     #[serde(default)]

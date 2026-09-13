@@ -13,6 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![allow(
+    clippy::too_many_lines,
+    reason = "integration tests combine arrange-act-assert flows that exceed the default threshold"
+)]
+
 mod data_client;
 mod dst;
 mod exec_client;

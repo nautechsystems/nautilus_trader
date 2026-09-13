@@ -208,6 +208,10 @@ pub static OKX_RATE_LIMIT_KEY_ALGO_CANCEL: LazyLock<[Ustr; 1]> =
 /// Fields are read in `python/websocket.rs` (behind the `python` feature gate).
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
+#[allow(
+    clippy::struct_field_names,
+    reason = "fields follow the codebase-wide trader_id/strategy_id/instrument_id naming family"
+)]
 pub(crate) struct PendingOrderInfo {
     pub trader_id: TraderId,
     pub strategy_id: StrategyId,
@@ -487,13 +491,13 @@ impl OKXWebSocketClient {
 
     /// Returns the public API key being used by the client.
     pub fn api_key(&self) -> Option<&str> {
-        self.credential.as_ref().map(|c| c.api_key())
+        self.credential.as_ref().map(Credential::api_key)
     }
 
     /// Returns a masked version of the API key for logging purposes.
     #[must_use]
     pub fn api_key_masked(&self) -> Option<String> {
-        self.credential.as_ref().map(|c| c.api_key_masked())
+        self.credential.as_ref().map(Credential::api_key_masked)
     }
 
     /// Returns a value indicating whether the client is active.
@@ -889,7 +893,7 @@ impl OKXWebSocketClient {
                         }
                         None => {
                             if handler.is_stopped() {
-                                log::debug!("Stop signal received, ending message processing",);
+                                log::debug!("Stop signal received, ending message processing");
                                 break;
                             }
                             log::debug!("WebSocket stream closed");
@@ -1759,6 +1763,11 @@ impl OKXWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the unsubscription request fails.
+    #[allow(
+        clippy::unused_async,
+        clippy::unused_async_trait_impl,
+        reason = "async signature is kept for parity with the other unsubscribe methods and callers"
+    )]
     pub async fn unsubscribe_instrument(
         &self,
         instrument_id: InstrumentId,

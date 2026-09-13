@@ -330,6 +330,10 @@ async fn handle_ws_upgrade(
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
+#[allow(
+    clippy::match_wildcard_for_single_variants,
+    reason = "the wildcard arm tolerates any unhandled socket message type"
+)]
 async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
     state.authenticated.store(false, Ordering::Relaxed);
     {
@@ -644,7 +648,7 @@ async fn start_ws_server(state: Arc<TestServerState>) -> SocketAddr {
     addr
 }
 
-async fn connect_client(ws_url: &str) -> OKXWebSocketClient {
+fn connect_client(ws_url: &str) -> OKXWebSocketClient {
     OKXWebSocketClient::new(
         Some(ws_url.to_string()),
         Some("api_key".to_string()),
@@ -665,7 +669,7 @@ async fn test_submit_event_order_omits_speed_bump() {
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     cache_event_instrument(&client);
     client.connect().await.expect("connect failed");
     client
@@ -728,7 +732,7 @@ async fn test_submit_event_post_only_order_omits_speed_bump() {
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     cache_event_instrument(&client);
     client.connect().await.expect("connect failed");
     client
@@ -797,7 +801,7 @@ async fn test_rejected_subscription_emits_subscription_failed_message() {
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
@@ -855,7 +859,7 @@ async fn test_submit_margin_cross_order_preserves_reduce_only_on_wire() {
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&load_margin_instruments());
     client.cache_inst_id_code(Ustr::from("BTC-USDT"), 1_000_000_101);
     client.connect().await.expect("connect failed");
@@ -918,7 +922,7 @@ async fn test_submit_order_during_reconnect_is_not_replayed() {
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&load_margin_instruments());
     client.cache_inst_id_code(Ustr::from("BTC-USDT"), 1_000_000_101);
     client.connect().await.expect("connect failed");
@@ -1011,7 +1015,7 @@ async fn test_submit_cash_spot_order_rejects_reduce_only() {
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&load_instruments());
     client.cache_inst_id_code(Ustr::from("BTC-USD"), 10_459);
     client.connect().await.expect("connect failed");
@@ -1064,7 +1068,7 @@ async fn test_submit_swap_hedge_mode_order_omits_reduce_only_on_wire() {
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&load_swap_instruments());
     client.cache_inst_id_code(Ustr::from("BTC-USD-SWAP"), 10_458);
     client.connect().await.expect("connect failed");
@@ -1130,7 +1134,7 @@ async fn test_submit_swap_hedge_mode_rejects_non_closing_reduce_only_order() {
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&load_swap_instruments());
     client.cache_inst_id_code(Ustr::from("BTC-USD-SWAP"), 10_458);
     client.connect().await.expect("connect failed");
@@ -1183,7 +1187,7 @@ async fn test_submit_swap_net_mode_order_preserves_reduce_only_on_wire() {
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&load_swap_instruments());
     client.cache_inst_id_code(Ustr::from("BTC-USD-SWAP"), 10_458);
     client.connect().await.expect("connect failed");
@@ -1247,7 +1251,7 @@ async fn test_batch_submit_orders_scope_reduce_only_on_wire() {
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&load_instruments());
     client.cache_instruments(&load_margin_instruments());
     client.cache_instruments(&load_swap_instruments());
@@ -1368,7 +1372,7 @@ async fn test_batch_submit_orders_scope_reduce_only_on_wire() {
 
 #[tokio::test]
 async fn test_submit_event_order_requires_outcome() {
-    let client = connect_client("ws://127.0.0.1:0/ws").await;
+    let client = connect_client("ws://127.0.0.1:0/ws");
     cache_event_instrument(&client);
 
     let result = client
@@ -1409,7 +1413,7 @@ async fn test_submit_event_order_requires_outcome() {
 
 #[tokio::test]
 async fn test_batch_submit_event_order_requires_outcome() {
-    let client = connect_client("ws://127.0.0.1:0/ws").await;
+    let client = connect_client("ws://127.0.0.1:0/ws");
     cache_event_instrument(&client);
 
     let result = client
@@ -1447,7 +1451,7 @@ async fn test_batch_submit_event_order_omits_speed_bump() {
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     cache_event_instrument(&client);
     client.connect().await.expect("connect failed");
     client
@@ -1505,7 +1509,7 @@ async fn test_modify_event_order_omits_speed_bump(#[case] batch: bool, #[case] o
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     cache_event_instrument(&client);
     client.connect().await.expect("connect failed");
     client
@@ -1581,7 +1585,7 @@ async fn test_rpi_websocket_subscription_and_single_batch_order_matrix() {
     let ws_url = format!("ws://{addr}/ws");
     let instrument_id = InstrumentId::from("BTC-USD.OKX");
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&load_instruments());
     client.cache_inst_id_code(Ustr::from("BTC-USD"), 10_459);
     client.connect().await.expect("connect failed");
@@ -1788,7 +1792,7 @@ async fn test_websocket_connection_uses_default_timeout(
         ..Default::default()
     });
     let addr = start_ws_server(state).await;
-    let mut client = connect_client(&format!("ws://{addr}/ws")).await;
+    let mut client = connect_client(&format!("ws://{addr}/ws"));
 
     let result = tokio::time::timeout(Duration::from_secs(15), client.connect())
         .await
@@ -1820,15 +1824,12 @@ async fn test_websocket_connection(#[case] endpoint: &str) {
 
     let instruments = load_instruments();
 
-    let mut client =
-        connect_client(&ws_url)
-            .await
-            .with_socket_control(SocketControl::with_registry(
-                ClientId::from("OKX"),
-                Some(Venue::from("OKX")),
-                endpoint,
-                &registry,
-            ));
+    let mut client = connect_client(&ws_url).with_socket_control(SocketControl::with_registry(
+        ClientId::from("OKX"),
+        Some(Venue::from("OKX")),
+        endpoint,
+        &registry,
+    ));
     client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
 
@@ -1904,7 +1905,7 @@ async fn test_trades_subscription_flow() {
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
@@ -1947,7 +1948,7 @@ async fn test_reauth_and_resubscribe_after_disconnect() {
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
@@ -2079,7 +2080,7 @@ async fn test_reconnection_retries_failed_subscriptions() {
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
@@ -2189,7 +2190,7 @@ async fn test_reconnection_waits_for_delayed_auth_ack() {
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
@@ -2282,7 +2283,7 @@ async fn test_login_failure_emits_error() {
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
 
     let connect_result = tokio::time::timeout(Duration::from_secs(1), client.connect()).await;
@@ -2318,7 +2319,7 @@ async fn test_subscription_restoration_tracking() {
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
@@ -2443,7 +2444,7 @@ async fn test_true_auto_reconnect_with_verification() {
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
@@ -2493,7 +2494,7 @@ async fn test_true_auto_reconnect_with_verification() {
             Ok(Some(OKXWsMessage::Reconnected | OKXWsMessage::Authenticated)) => {}
             Ok(Some(other)) => panic!("unexpected message after reconnect: {other:?}"),
             Ok(None) => panic!("stream closed after reconnect"),
-            Err(_) => panic!("timeout waiting for data after reconnect"),
+            Err(e) => panic!("timeout waiting for data after reconnect: {e}"),
         }
     }
     assert!(got_data, "never received data after reconnect");
@@ -2511,7 +2512,7 @@ async fn test_sends_pong_for_text_ping() {
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
@@ -2543,7 +2544,7 @@ async fn test_sends_pong_for_control_ping() {
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
@@ -2578,7 +2579,7 @@ async fn test_unsubscribe_orders_sends_request() {
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
@@ -2639,7 +2640,7 @@ async fn test_subscribe_liquidation_warning_sends_request() {
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
@@ -2680,7 +2681,7 @@ async fn test_subscribe_to_orderbook() {
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
@@ -2723,7 +2724,7 @@ async fn test_multiple_symbols_subscription() {
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
@@ -2774,7 +2775,7 @@ async fn test_unsubscribed_private_channel_not_resubscribed_after_disconnect() {
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
@@ -2894,7 +2895,7 @@ async fn test_auth_and_subscription_restoration_order() {
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
@@ -3015,7 +3016,7 @@ async fn test_rapid_consecutive_reconnections() {
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
@@ -3129,7 +3130,7 @@ async fn test_multiple_partial_subscription_failures() {
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
@@ -3243,7 +3244,7 @@ async fn test_reconnection_race_condition() {
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
@@ -3352,7 +3353,7 @@ async fn test_subscribe_after_stream_call() {
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client.wait_until_active(5.0).await.expect("wait failed");
@@ -3380,7 +3381,7 @@ async fn test_batch_cancel_orders_sends_message() {
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
     client.cache_inst_id_code(Ustr::from("BTC-USDT-SWAP"), 10459);
     client.connect().await.expect("connect failed");
@@ -3409,7 +3410,7 @@ async fn test_is_active_lifecycle() {
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
 
     assert!(
@@ -3451,7 +3452,7 @@ async fn test_is_active_false_after_close() {
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
 
     client.connect().await.expect("connect failed");
@@ -3492,7 +3493,7 @@ async fn test_is_active_false_during_reconnection() {
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
 
     client.connect().await.expect("connect failed");
@@ -3567,7 +3568,7 @@ async fn test_index_price_refcount_shares_venue_subscription() {
 
     let instruments = load_swap_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
@@ -3721,7 +3722,7 @@ async fn test_index_price_refcount_cleared_on_close() {
 
     let instruments = load_swap_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
     client
@@ -3808,7 +3809,7 @@ async fn test_spread_market_data_subscriptions_use_sprd_id() {
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -3910,7 +3911,7 @@ async fn test_submit_usdc_spot_order_serializes_usd_trade_quote_ccy() {
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     let instruments = load_usdc_spot_instruments();
     client.cache_instruments(&instruments);
     client.cache_inst_id_code(Ustr::from("BTC-USDC"), 20459);
@@ -3978,7 +3979,7 @@ async fn test_submit_usdc_spot_order_rejects_unlisted_trade_quote_ccy() {
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&load_usdc_spot_instruments());
     client.cache_inst_id_code(Ustr::from("BTC-USDC"), 20459);
     client.cache_trade_quote_ccy_lists([(
@@ -4033,7 +4034,7 @@ async fn test_stale_usd_subscription_is_not_mapped_to_usdc() {
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     let mut instruments = load_instruments();
     instruments.extend(load_usdc_spot_instruments());
     client.cache_instruments(&instruments);
@@ -4087,7 +4088,7 @@ async fn test_usdc_subscription_resubscribes_same_inst_id_after_reconnect() {
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client = connect_client(&ws_url);
     client.cache_instruments(&load_usdc_spot_instruments());
     client.connect().await.expect("connect failed");
     client

@@ -51,7 +51,7 @@ pub struct OKXTrade {
 }
 
 /// Represents a candlestick from the GET /api/v5/market/history-candles endpoint.
-/// The tuple contains [timestamp(ms), open, high, low, close, volume, turnover, base_volume, count].
+/// The tuple contains [timestamp(ms), open, high, low, close, volume, turnover, `base_volume`, count].
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OKXCandlestick(
     /// Timestamp in milliseconds.
@@ -442,16 +442,16 @@ pub struct OKXIndexTicker {
 }
 
 /// Represents an order book level from the GET /api/v5/market/books endpoint.
-/// Each entry is a 4-element tuple: [price, size, liquidated_orders, num_orders].
+/// Each entry is a 4-element tuple: [price, size, `liquidated_orders`, `num_orders`].
 pub type OKXOrderBookLevel = (String, String, String, String);
 
 /// Represents an order book snapshot from the GET /api/v5/market/books endpoint.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OKXOrderBookSnapshot {
-    /// Ask levels [price, size, liquidated_orders_count, orders_count].
+    /// Ask levels [price, size, `liquidated_orders_count`, `orders_count`].
     pub asks: Vec<OKXOrderBookLevel>,
-    /// Bid levels [price, size, liquidated_orders_count, orders_count].
+    /// Bid levels [price, size, `liquidated_orders_count`, `orders_count`].
     pub bids: Vec<OKXOrderBookLevel>,
     /// Timestamp in milliseconds.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
@@ -1385,7 +1385,7 @@ pub struct OKXPlaceAlgoOrderRequest {
     pub td_mode: OKXTradeMode,
     /// Order side (buy, sell).
     pub side: OKXSide,
-    /// Algo order type (trigger, conditional, move_order_stop, etc.).
+    /// Algo order type (trigger, conditional, `move_order_stop`, etc.).
     #[serde(rename = "ordType")]
     pub ord_type: OKXAlgoOrderType,
     /// Order size. Omitted for `closeFraction` close orders.
@@ -1421,7 +1421,7 @@ pub struct OKXPlaceAlgoOrderRequest {
     /// Take-profit trigger type (last, mark, index).
     #[serde(rename = "tpTriggerPxType", skip_serializing_if = "Option::is_none")]
     pub tp_trigger_px_type: Option<OKXTriggerType>,
-    /// Target currency (base_ccy or quote_ccy).
+    /// Target currency (`base_ccy` or `quote_ccy`).
     #[serde(rename = "tgtCcy", skip_serializing_if = "Option::is_none")]
     pub tgt_ccy: Option<OKXTargetCurrency>,
     /// Position side (net, long, short).

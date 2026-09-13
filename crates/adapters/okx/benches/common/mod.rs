@@ -86,8 +86,8 @@ fn spot_instrument(
     let symbol_str = format!("{base}-{quote}");
     let raw_symbol = Symbol::new(&symbol_str);
     let instrument_id = InstrumentId::new(raw_symbol, *OKX_VENUE);
-    let price_increment = Price::new(10f64.powi(-(price_precision as i32)), price_precision);
-    let size_increment = Quantity::new(10f64.powi(-(size_precision as i32)), size_precision);
+    let price_increment = Price::new(10f64.powi(-i32::from(price_precision)), price_precision);
+    let size_increment = Quantity::new(10f64.powi(-i32::from(size_precision)), size_precision);
     InstrumentAny::CurrencyPair(
         CurrencyPair::builder()
             .instrument_id(instrument_id)
@@ -114,8 +114,8 @@ fn perp_instrument(
 ) -> InstrumentAny {
     let raw_symbol = Symbol::new(symbol);
     let instrument_id = InstrumentId::new(raw_symbol, *OKX_VENUE);
-    let price_increment = Price::new(10f64.powi(-(price_precision as i32)), price_precision);
-    let size_increment = Quantity::new(10f64.powi(-(size_precision as i32)), size_precision);
+    let price_increment = Price::new(10f64.powi(-i32::from(price_precision)), price_precision);
+    let size_increment = Quantity::new(10f64.powi(-i32::from(size_precision)), size_precision);
     InstrumentAny::CryptoPerpetual(
         CryptoPerpetual::builder()
             .instrument_id(instrument_id)

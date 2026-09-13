@@ -536,7 +536,7 @@ struct PageSweep<T> {
 impl<T> PageSweep<T> {
     fn from_pages(items: Vec<T>, exhausted: bool) -> Self {
         Self {
-            complete: !(exhausted && !items.is_empty()),
+            complete: !exhausted || items.is_empty(),
             items,
         }
     }
@@ -2295,13 +2295,16 @@ impl OKXHttpClient {
 
     /// Returns the public API key being used by the client.
     pub fn api_key(&self) -> Option<&str> {
-        self.inner.credential.as_ref().map(|c| c.api_key())
+        self.inner.credential.as_ref().map(Credential::api_key)
     }
 
     /// Returns a masked version of the API key for logging purposes.
     #[must_use]
     pub fn api_key_masked(&self) -> Option<String> {
-        self.inner.credential.as_ref().map(|c| c.api_key_masked())
+        self.inner
+            .credential
+            .as_ref()
+            .map(Credential::api_key_masked)
     }
 
     /// Returns whether the client is configured for demo trading.
@@ -2336,7 +2339,7 @@ impl OKXHttpClient {
         self.instruments_cache
             .load()
             .keys()
-            .map(|k| k.to_string())
+            .map(ToString::to_string)
             .collect()
     }
 
@@ -2454,7 +2457,7 @@ impl OKXHttpClient {
 
     /// Sets the position mode for the account.
     ///
-    /// Defaults to NetMode if no position mode is provided.
+    /// Defaults to `NetMode` if no position mode is provided.
     ///
     /// # Errors
     ///
@@ -2558,7 +2561,7 @@ impl OKXHttpClient {
     ///
     /// A tuple containing:
     /// - `Vec<InstrumentAny>`: The parsed instruments
-    /// - `Vec<(Ustr, u64)>`: Mappings of inst_id to inst_id_code for WebSocket order operations
+    /// - `Vec<(Ustr, u64)>`: Mappings of `inst_id` to `inst_id_code` for WebSocket order operations
     pub async fn request_instruments(
         &self,
         instrument_type: OKXInstrumentType,
@@ -3398,8 +3401,8 @@ impl OKXHttpClient {
             (Some(_), Some(_)) => Mode::Range,
         };
 
-        let start_ms = start.map(|s| s.as_millisecond());
-        let end_ms = end.map(|e| e.as_millisecond());
+        let start_ms = start.map(jiff::Timestamp::as_millisecond);
+        let end_ms = end.map(jiff::Timestamp::as_millisecond);
 
         let ts_init = self.generate_ts_init();
         let inst = self.instrument_from_cache_by_id(instrument_id)?;
@@ -6880,20 +6883,18 @@ impl OKXHttpClient {
                 orders.retain(|order| order.state == state);
             }
 
-            complete &= self
-                .collect_algo_reports(
-                    account_id,
-                    &orders,
-                    false,
-                    &mut instruments_cache,
-                    ts_init,
-                    start_ns,
-                    end_ns,
-                    &mut seen,
-                    &mut reports,
-                    &mut ambiguous_triggered_child_ids,
-                )
-                .await?;
+            complete &= self.collect_algo_reports(
+                account_id,
+                &orders,
+                false,
+                &mut instruments_cache,
+                ts_init,
+                start_ns,
+                end_ns,
+                &mut seen,
+                &mut reports,
+                &mut ambiguous_triggered_child_ids,
+            )?;
 
             if let Some(limit) = limit {
                 reports.truncate(limit as usize);
@@ -6976,21 +6977,18 @@ impl OKXHttpClient {
                     pending.retain(|order| order.state == state);
                 }
 
-                let pending_reports_complete = match self
-                    .collect_algo_reports(
-                        account_id,
-                        &pending,
-                        require_complete_active_coverage,
-                        &mut instruments_cache,
-                        ts_init,
-                        start_ns,
-                        end_ns,
-                        &mut seen,
-                        &mut reports,
-                        &mut ambiguous_triggered_child_ids,
-                    )
-                    .await
-                {
+                let pending_reports_complete = match self.collect_algo_reports(
+                    account_id,
+                    &pending,
+                    require_complete_active_coverage,
+                    &mut instruments_cache,
+                    ts_init,
+                    start_ns,
+                    end_ns,
+                    &mut seen,
+                    &mut reports,
+                    &mut ambiguous_triggered_child_ids,
+                ) {
                     Ok(complete) => complete,
                     Err(e) if require_complete_active_coverage => {
                         return Err(OKXPendingAlgoOrderReportsError::new(e).into());
@@ -7042,20 +7040,18 @@ impl OKXHttpClient {
                     history.retain(|order| order.state == state);
                 }
 
-                complete &= self
-                    .collect_algo_reports(
-                        account_id,
-                        &history,
-                        false,
-                        &mut instruments_cache,
-                        ts_init,
-                        start_ns,
-                        end_ns,
-                        &mut seen,
-                        &mut reports,
-                        &mut ambiguous_triggered_child_ids,
-                    )
-                    .await?;
+                complete &= self.collect_algo_reports(
+                    account_id,
+                    &history,
+                    false,
+                    &mut instruments_cache,
+                    ts_init,
+                    start_ns,
+                    end_ns,
+                    &mut seen,
+                    &mut reports,
+                    &mut ambiguous_triggered_child_ids,
+                )?;
 
                 if let Some(lim) = limit
                     && reports.len() >= lim as usize
@@ -7109,7 +7105,7 @@ impl OKXHttpClient {
     }
 
     #[expect(clippy::too_many_arguments)]
-    async fn collect_algo_reports(
+    fn collect_algo_reports(
         &self,
         account_id: AccountId,
         orders: &[OKXOrderAlgo],
