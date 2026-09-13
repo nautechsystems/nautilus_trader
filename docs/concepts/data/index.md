@@ -12,7 +12,7 @@ Each main built-in market data type has a dedicated guide to its fields, behavio
 | --------------------------------------------- | -------------------- | ---------------------------------------------------- |
 | [`OrderBookDelta`](order_book_delta.md)       | Order book           | Single incremental order book change.                |
 | [`OrderBookDeltas`](order_book_deltas.md)     | Order book           | Batch of related order book deltas.                  |
-| [`OrderBookDepth10`](order_book_depth10.md)   | Order book           | Fixed top 10 bid and ask levels.                     |
+| [`OrderBookDepth`](order_book_depth10.md)     | Order book           | Variable-depth bid and ask snapshots.                |
 | [`QuoteTick`](quote_tick.md)                  | Top-of-book          | Best bid and ask prices and sizes.                   |
 | [`TradeTick`](trade_tick.md)                  | Trades               | Single venue trade or match event.                   |
 | [`Bar`](bar.md)                               | Aggregation          | OHLCV bar for a specific `BarType`.                  |
@@ -503,13 +503,13 @@ precision. See the [tutorials](../../tutorials/) for complete catalog and backte
 
 The PyO3 persistence module provides these wranglers for schema-compatible Arrow IPC streams:
 
-| Wrangler                       | Constructor identity               | Return type              |
-| ------------------------------ | ---------------------------------- | ------------------------ |
-| `OrderBookDeltaDataWrangler`   | Instrument ID and both precisions. | `list[OrderBookDelta]`   |
-| `OrderBookDepth10DataWrangler` | Instrument ID and both precisions. | `list[OrderBookDepth10]` |
-| `QuoteTickDataWrangler`        | Instrument ID and both precisions. | `list[QuoteTick]`        |
-| `TradeTickDataWrangler`        | Instrument ID and both precisions. | `list[TradeTick]`        |
-| `BarDataWrangler`              | Bar type and both precisions.      | `list[Bar]`              |
+| Wrangler                       | Constructor identity               | Return type            |
+| ------------------------------ | ---------------------------------- | ---------------------- |
+| `OrderBookDeltaDataWrangler`   | Instrument ID and both precisions. | `list[OrderBookDelta]` |
+| `OrderBookDepth10DataWrangler` | Instrument ID and both precisions. | `list[OrderBookDepth]` |
+| `QuoteTickDataWrangler`        | Instrument ID and both precisions. | `list[QuoteTick]`      |
+| `TradeTickDataWrangler`        | Instrument ID and both precisions. | `list[TradeTick]`      |
+| `BarDataWrangler`              | Bar type and both precisions.      | `list[Bar]`            |
 
 Each constructor takes the identity as a string, followed by `price_precision` and
 `size_precision`. Pass the complete Arrow IPC stream as `bytes` to
@@ -526,7 +526,8 @@ When constructing `Price` or `Quantity` with `from_raw()`, use a raw value from:
 
 - The `.raw` field of an existing value, such as `price.raw`.
 - NautilusTrader fixed-point conversion functions.
-- Values from Nautilus-produced Arrow data.
+- Decimal values from current Arrow columns through `Price.from_decimal` or `Quantity.from_decimal`,
+  rather than through `from_raw`.
 
 :::warning[Unvalidated raw values]
 For a precision below `FIXED_PRECISION`, the raw value must be divisible by
@@ -534,13 +535,17 @@ For a precision below `FIXED_PRECISION`, the raw value must be divisible by
 produce an incorrect value.
 :::
 
+Current catalog price and size columns use `Decimal128(38, 16)`. Their decoded values are decimals;
+their physical mantissas use the storage scale, which can differ from the model's raw integer scale.
+Use `from_raw()` only for integers already encoded at the active model scale.
+
 #### Legacy raw value correction
 
 Older catalog writers could introduce floating-point errors by calculating raw values with
-`int(value * FIXED_SCALAR)`. Arrow decoding corrects affected price and quantity values to the
+`int(value * FIXED_SCALAR)`. Explicit migration corrects affected price and quantity values to the
 nearest valid scale multiple for their precision while leaving sentinel values unchanged. These
-catalogs therefore remain readable without migration. The correction adds a small amount of work
-during Arrow decoding.
+catalogs require explicit migration before runtime queries. The correction adds a small amount of
+work during Arrow decoding.
 
 ### Transformation pipeline
 
@@ -576,6 +581,10 @@ backtesting, live trading, and research.
 `ParquetDataCatalog` is the Python interface to the Rust catalog and DataFusion query engine.
 The Rust model and persistence crates define the Arrow schemas for built-in data. Registered custom
 data supplies its schema and encode/decode handlers at runtime.
+
+Instant timestamps use `Timestamp(Nanosecond, Some("UTC"))`; durations remain integers. Arrow readers
+and Nautilus queries preserve the nanoseconds and UTC annotation. SQL readers that map these columns
+to microsecond-precision `TIMESTAMPTZ`, including DuckDB, can truncate sub-microsecond values.
 
 Parquet provides compressed columnar storage and cross-language access. The catalog stores these
 files under one root without requiring a separate database service. A local path or object-store
@@ -710,7 +719,7 @@ trades = catalog.query_trade_ticks(
 
 #### Core parameters
 
-- `data_type` is one of `QuoteTick`, `TradeTick`, `Bar`, `OrderBookDelta`, `OrderBookDepth10`,
+- `data_type` is one of `QuoteTick`, `TradeTick`, `Bar`, `OrderBookDelta`, `OrderBookDepth`,
   `MarkPriceUpdate`, `IndexPriceUpdate`, `FundingRateUpdate`, `InstrumentStatus`, `OptionGreeks`, or
   `InstrumentClose`.
 - `catalog_path` identifies the catalog root.
@@ -982,10 +991,18 @@ outside the range.
 
 ### Feather streaming and conversion
 
-The Python API exposes `StreamingFeatherWriter` for direct streaming and accepts `StreamingConfig`
-through `BacktestEngineConfig` when running a `BacktestNode`. The node owns the writer lifecycle and
-writes each run below `<catalog_path>/backtest/<instance_id>`. Use
-`ParquetDataCatalog.convert_stream_to_data()` to convert a completed Feather stream to Parquet.
+The runtime can stage records in Feather and promote them into the Parquet catalog with
+`StreamingConfig(writer_backend="Parquet", ...)`. Staged records become available to catalog queries
+after promotion succeeds. A staging flush and a catalog commit are separate steps.
+
+Parquet defaults to promotion on close, no interval-based promotion, and retention of committed
+Feather sources. A positive `parquet_commit_interval_ms` uses live wall-clock scheduling or checks
+against the supplied backtest clock during writes and flushes. See
+[stream data into a Parquet catalog](../../how_to/stream_parquet_catalog.md) for defaults, configuration,
+query visibility, and recovery.
+
+`StreamingFeatherWriter` remains available for direct staging. Its completed sessions can be converted
+manually with `ParquetDataCatalog.convert_stream_to_data()`.
 
 ## Data migrations
 

@@ -36,11 +36,12 @@ use nautilus_data::client::DataClientAdapter;
 use nautilus_execution::engine::ExecutionEngine;
 use nautilus_model::identifiers::{TraderId, Venue};
 use nautilus_portfolio::config::PortfolioConfig;
+#[cfg(feature = "streaming")]
+use nautilus_system::config::StreamingConfig;
 #[cfg(feature = "python")]
 use nautilus_system::trader::Trader;
 use nautilus_system::{
     clock_factory::ClockFactory,
-    config::StreamingConfig,
     event_store::{EventStoreFactory, KernelEventStore},
     kernel::{NautilusKernel, NautilusKernelDependencies},
 };
@@ -345,6 +346,7 @@ impl LiveNodeBuilder {
     ///
     /// The Rust live runtime does not support this setting yet.
     /// `build()` returns an error when it is set.
+    #[cfg(feature = "streaming")]
     #[must_use]
     pub fn with_streaming_config(mut self, config: StreamingConfig) -> Self {
         self.config.streaming = Some(config);

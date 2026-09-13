@@ -1716,7 +1716,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_ws_order_book_depth10_pads_levels() {
+    fn test_parse_ws_order_book_depth10_preserves_sparse_levels() {
         let instrument = create_test_instrument();
         let depth = parse_ws_order_book_depth10(
             &stub_book(),
@@ -1726,22 +1726,23 @@ mod tests {
         )
         .unwrap();
 
+        assert_eq!(depth.instrument_id, instrument.id());
+        assert_eq!(depth.bids.len(), 1);
+        assert_eq!(depth.asks.len(), 1);
         assert_eq!(depth.bids[0].price, Price::from("2064.30"));
-        // Populated level must round-trip price AND size, otherwise a
-        // future refactor that swaps fields or drops precision would not
-        // be caught by this test.
         assert_eq!(depth.bids[0].size, Quantity::from("1.0392"));
         assert_eq!(depth.bids[0].side, OrderSide::Buy.into());
+        assert_eq!(depth.bids[0].order_id, 0);
         assert_eq!(depth.asks[0].price, Price::from("2064.54"));
         assert_eq!(depth.asks[0].size, Quantity::from("0.3285"));
         assert_eq!(depth.asks[0].side, OrderSide::Sell.into());
+        assert_eq!(depth.asks[0].order_id, 0);
         assert_eq!(depth.sequence, 9_182_390_020);
-        assert_eq!(depth.bid_counts[0], 1);
-        assert_eq!(depth.ask_counts[0], 1);
-        assert_eq!(depth.bid_counts[1], 0);
-        assert_eq!(depth.ask_counts[1], 0);
-        assert!(depth.bids[1].size.is_zero());
-        assert!(depth.asks[1].size.is_zero());
+        assert_eq!(depth.bid_counts.as_slice(), &[1]);
+        assert_eq!(depth.ask_counts.as_slice(), &[1]);
+        assert_eq!(depth.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(depth.ts_event, UnixNanos::from(1_774_884_082_326_000_000));
+        assert_eq!(depth.ts_init, UnixNanos::from(1));
     }
 
     #[rstest]

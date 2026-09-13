@@ -29,6 +29,7 @@ use rust_decimal::prelude::ToPrimitive;
 use super::{
     bool_field, float64_field, quantity_to_f64, timestamp_field, unix_nanos_to_i64, utf8_field,
 };
+use crate::arrow::timestamp_data_type;
 
 /// Returns the display-mode Arrow schema for [`OrderStatusReport`].
 #[must_use]
@@ -93,15 +94,19 @@ pub fn encode_order_status_reports(data: &[OrderStatusReport]) -> Result<RecordB
     let mut quantity = Float64Builder::with_capacity(data.len());
     let mut filled_qty = Float64Builder::with_capacity(data.len());
     let mut report_id = StringBuilder::new();
-    let mut ts_accepted = TimestampNanosecondBuilder::with_capacity(data.len());
-    let mut ts_last = TimestampNanosecondBuilder::with_capacity(data.len());
-    let mut ts_init = TimestampNanosecondBuilder::with_capacity(data.len());
+    let mut ts_accepted =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
+    let mut ts_last =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
+    let mut ts_init =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
     let mut order_list_id = StringBuilder::new();
     let mut venue_position_id = StringBuilder::new();
     let mut linked_order_ids = StringBuilder::new();
     let mut parent_order_id = StringBuilder::new();
     let mut contingency_type = StringBuilder::new();
-    let mut expire_time = TimestampNanosecondBuilder::with_capacity(data.len());
+    let mut expire_time =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
     let mut price = Float64Builder::with_capacity(data.len());
     let mut activation_price = Float64Builder::with_capacity(data.len());
     let mut trigger_price = Float64Builder::with_capacity(data.len());
@@ -114,7 +119,8 @@ pub fn encode_order_status_reports(data: &[OrderStatusReport]) -> Result<RecordB
     let mut post_only = BooleanBuilder::with_capacity(data.len());
     let mut reduce_only = BooleanBuilder::with_capacity(data.len());
     let mut cancel_reason = StringBuilder::new();
-    let mut ts_triggered = TimestampNanosecondBuilder::with_capacity(data.len());
+    let mut ts_triggered =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
 
     for report in data {
         account_id.append_value(report.account_id);
@@ -277,7 +283,7 @@ mod tests {
         assert_eq!(fields[11].name(), "ts_accepted");
         assert_eq!(
             fields[11].data_type(),
-            &DataType::Timestamp(TimeUnit::Nanosecond, None)
+            &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into()))
         );
         assert_eq!(fields[21].name(), "activation_price");
         assert_eq!(fields[21].data_type(), &DataType::Float64);

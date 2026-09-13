@@ -26,7 +26,7 @@
 //! `BettingInstrument::market_id`, `BinaryOption::outcome`,
 //! `FuturesSpread::strategy_type`) is intentionally not emitted. Consumers
 //! that need those fields should encode the concrete variant through the
-//! FixedSizeBinary encoders in the parent [`crate::arrow`] module.
+//! open storage encoders in the parent [`crate::arrow`] module.
 
 use std::sync::Arc;
 
@@ -45,6 +45,7 @@ use super::{
     bool_field, float64_field, money_to_f64, price_to_f64, quantity_to_f64, timestamp_field,
     uint8_field, unix_nanos_to_i64, utf8_field,
 };
+use crate::arrow::timestamp_data_type;
 
 /// Returns the display-mode Arrow schema for [`InstrumentAny`].
 #[must_use]
@@ -148,8 +149,10 @@ pub fn encode_instruments(data: &[InstrumentAny]) -> Result<RecordBatch, ArrowEr
     let mut option_kind = StringBuilder::new();
     let mut exchange = StringBuilder::new();
     let mut strike_price = Float64Builder::with_capacity(data.len());
-    let mut activation_ns = TimestampNanosecondBuilder::with_capacity(data.len());
-    let mut expiration_ns = TimestampNanosecondBuilder::with_capacity(data.len());
+    let mut activation_ns =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
+    let mut expiration_ns =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
     let mut is_inverse = BooleanBuilder::with_capacity(data.len());
     let mut is_quanto = BooleanBuilder::with_capacity(data.len());
     let mut price_precision = UInt8Builder::with_capacity(data.len());
@@ -170,8 +173,10 @@ pub fn encode_instruments(data: &[InstrumentAny]) -> Result<RecordBatch, ArrowEr
     let mut margin_maint = Float64Builder::with_capacity(data.len());
     let mut maker_fee = Float64Builder::with_capacity(data.len());
     let mut taker_fee = Float64Builder::with_capacity(data.len());
-    let mut ts_event = TimestampNanosecondBuilder::with_capacity(data.len());
-    let mut ts_init = TimestampNanosecondBuilder::with_capacity(data.len());
+    let mut ts_event =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
+    let mut ts_init =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
 
     for instrument in data {
         instrument_id.append_value(instrument.id().to_string());
@@ -379,7 +384,7 @@ mod tests {
         assert_eq!(fields[37].name(), "ts_event");
         assert_eq!(
             fields[37].data_type(),
-            &DataType::Timestamp(TimeUnit::Nanosecond, None)
+            &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into()))
         );
     }
 

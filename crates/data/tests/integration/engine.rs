@@ -1325,7 +1325,7 @@ fn test_emit_quotes_from_book_depths_publishes_top_of_book(stub_msgbus: Rc<RefCe
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
-    data_engine.process_data(Data::BookDepth10(Box::new(depth)));
+    data_engine.process_data(Data::BookDepth(Box::new(depth.clone())));
 
     let messages = saver.get_messages();
     assert_eq!(
@@ -1337,11 +1337,11 @@ fn test_emit_quotes_from_book_depths_publishes_top_of_book(stub_msgbus: Rc<RefCe
     assert!(cached_quote.is_some(), "synthetic quote should be cached",);
 
     // Same top-of-book: must not republish
-    data_engine.process_data(Data::BookDepth10(Box::new(depth)));
+    data_engine.process_data(Data::BookDepth(Box::new(depth.clone())));
     assert_eq!(saver.get_messages().len(), 1);
 
     // Shifted top-of-book: must republish
-    let mut shifted = depth;
+    let mut shifted = depth.clone();
     shifted.bids[0] = BookOrder::new(
         depth.bids[0].side,
         Price::new(98.50, 2),
@@ -1350,7 +1350,7 @@ fn test_emit_quotes_from_book_depths_publishes_top_of_book(stub_msgbus: Rc<RefCe
     );
     shifted.ts_event = UnixNanos::from(depth.ts_event.as_u64() + 1);
     shifted.ts_init = UnixNanos::from(depth.ts_init.as_u64() + 1);
-    data_engine.process_data(Data::BookDepth10(Box::new(shifted)));
+    data_engine.process_data(Data::BookDepth(Box::new(shifted)));
 
     let messages = saver.get_messages();
     assert_eq!(
@@ -1394,7 +1394,7 @@ fn test_emit_quotes_from_book_depths_skips_no_order_side_padding(
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
-    data_engine.process_data(Data::BookDepth10(Box::new(depth)));
+    data_engine.process_data(Data::BookDepth(Box::new(depth)));
 
     assert!(
         saver.get_messages().is_empty(),
@@ -4833,7 +4833,7 @@ fn test_unsubscribe_composite_deltas_keeps_composite_depth10_alive(
 
     let mut depth = stub_depth10();
     depth.instrument_id = esz1_id;
-    data_engine.process_data(Data::BookDepth10(Box::new(depth)));
+    data_engine.process_data(Data::BookDepth(Box::new(depth)));
 
     let cache_view = cache.borrow();
     let esz1_book = cache_view
@@ -5009,7 +5009,7 @@ fn test_snapshot_after_deltas_keeps_depth10_handler_alive(
 
     let mut depth = stub_depth10();
     depth.instrument_id = esz1_id;
-    data_engine.process_data(Data::BookDepth10(Box::new(depth)));
+    data_engine.process_data(Data::BookDepth(Box::new(depth)));
 
     let cache_view = cache.borrow();
     let book = cache_view
@@ -5746,7 +5746,7 @@ fn test_emit_quotes_from_book_publishes_on_depth_apply(
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
-    data_engine.process_data(Data::BookDepth10(Box::new(depth)));
+    data_engine.process_data(Data::BookDepth(Box::new(depth)));
 
     let messages = saver.get_messages();
     assert_eq!(
@@ -10373,7 +10373,7 @@ fn test_process_book_depth10(
     msgbus::subscribe_book_depth10(topic.into(), handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    dispatch_data(&mut data_engine, Data::from(depth), borrowed);
+    dispatch_data(&mut data_engine, Data::from(depth.clone()), borrowed);
     let _cache = &data_engine.get_cache();
     let messages = saver.get_messages();
 
@@ -18018,7 +18018,7 @@ fn test_process_pipeline_depth10_publishes_on_pipeline_topic_only(
     msgbus::subscribe_book_depth10(live_topic.into(), live_handler, None);
     msgbus::subscribe_book_depth10(pipeline_topic.into(), pipeline_handler, None);
 
-    data_engine.process_pipeline(Data::BookDepth10(Box::new(depth)));
+    data_engine.process_pipeline(Data::BookDepth(Box::new(depth.clone())));
 
     assert!(
         live_saver.get_messages().is_empty(),
@@ -18201,7 +18201,7 @@ fn test_process_pipeline_depth10_skips_derived_quote_emission(
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
-    data_engine.process_pipeline(Data::BookDepth10(Box::new(depth)));
+    data_engine.process_pipeline(Data::BookDepth(Box::new(depth)));
 
     assert!(
         saver.get_messages().is_empty(),
@@ -19860,7 +19860,7 @@ fn test_time_range_pipeline_supports_book_depth_variant(
         instrument_id,
         client_id,
         1,
-        vec![depth_msg],
+        vec![depth_msg.clone()],
     ));
 
     let pipeline_messages = pipeline_saver.get_messages();

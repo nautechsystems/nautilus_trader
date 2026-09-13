@@ -41,9 +41,10 @@ struct ReplayKey {
 fn replay_key(data: DataRef<'_>) -> ReplayKey {
     let ts = data.ts_init();
     match data {
-        DataRef::BookDelta(_)
+        DataRef::Instrument(_)
+        | DataRef::BookDelta(_)
         | DataRef::BookDeltas(_)
-        | DataRef::BookDepth10(_)
+        | DataRef::BookDepth(_)
         | DataRef::Quote(_)
         | DataRef::Trade(_)
         | DataRef::Bar(_)
@@ -76,14 +77,18 @@ fn replay_key(data: DataRef<'_>) -> ReplayKey {
 
 fn sort_by_replay_key(batch: &mut DataBatch) {
     match batch {
+        DataBatch::Instrument(data) => {
+            sort_view_by_replay_key(data, |item| DataRef::Instrument(item));
+        }
+        DataBatch::Custom(data) => sort_view_by_replay_key(data, |item| DataRef::Custom(item)),
         DataBatch::BookDelta(data) => {
             sort_view_by_replay_key(data, |item| DataRef::BookDelta(item));
         }
         DataBatch::BookDeltas(data) => {
             sort_view_by_replay_key(data, |item| DataRef::BookDeltas(item));
         }
-        DataBatch::BookDepth10(data) => {
-            sort_view_by_replay_key(data, |item| DataRef::BookDepth10(item));
+        DataBatch::BookDepth(data) => {
+            sort_view_by_replay_key(data, |item| DataRef::BookDepth(item));
         }
         DataBatch::Quote(data) => sort_view_by_replay_key(data, |item| DataRef::Quote(item)),
         DataBatch::Trade(data) => sort_view_by_replay_key(data, |item| DataRef::Trade(item)),

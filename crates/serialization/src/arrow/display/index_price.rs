@@ -26,6 +26,7 @@ use arrow::{
 use nautilus_model::data::IndexPriceUpdate;
 
 use super::{float64_field, price_to_f64, timestamp_field, unix_nanos_to_i64, utf8_field};
+use crate::arrow::timestamp_data_type;
 
 /// Returns the display-mode Arrow schema for [`IndexPriceUpdate`].
 #[must_use]
@@ -53,8 +54,10 @@ pub fn index_prices_schema() -> Schema {
 pub fn encode_index_prices(data: &[IndexPriceUpdate]) -> Result<RecordBatch, ArrowError> {
     let mut instrument_id_builder = StringBuilder::new();
     let mut value_builder = Float64Builder::with_capacity(data.len());
-    let mut ts_event_builder = TimestampNanosecondBuilder::with_capacity(data.len());
-    let mut ts_init_builder = TimestampNanosecondBuilder::with_capacity(data.len());
+    let mut ts_event_builder =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
+    let mut ts_init_builder =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
 
     for update in data {
         instrument_id_builder.append_value(update.instrument_id.to_string());
@@ -106,7 +109,7 @@ mod tests {
         assert_eq!(fields[2].name(), "ts_event");
         assert_eq!(
             fields[2].data_type(),
-            &DataType::Timestamp(TimeUnit::Nanosecond, None)
+            &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into()))
         );
         assert_eq!(fields[3].name(), "ts_init");
     }

@@ -499,7 +499,7 @@ async fn test_subscribe_book_depth_mbp10() {
 
     let msg = recv_msg(&mut msg_rx).await;
     match msg {
-        DatabentoMessage::Data(Data::BookDepth10(depth)) => {
+        DatabentoMessage::Data(Data::BookDepth(depth)) => {
             assert_eq!(depth.instrument_id.symbol.as_str(), RAW_SYMBOL);
             // Bids descending, asks ascending
             for i in 0..9 {
@@ -517,7 +517,7 @@ async fn test_subscribe_book_depth_mbp10() {
                 );
             }
         }
-        other => panic!("expected Data::BookDepth10, was {other:?}"),
+        other => panic!("expected Data::BookDepth, was {other:?}"),
     }
 
     cmd_tx.send(HandlerCommand::Close).unwrap();

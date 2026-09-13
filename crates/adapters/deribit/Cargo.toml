@@ -60,7 +60,6 @@ nautilus-core = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true, features = ["transport-sockudo"] }
-nautilus-persistence-macros = { workspace = true }
 nautilus-serialization = { workspace = true, features = [
   "arrow",
 ], optional = true }

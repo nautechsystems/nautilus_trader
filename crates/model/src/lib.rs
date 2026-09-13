@@ -120,6 +120,7 @@
 pub use serde as __serde;
 
 pub mod accounts;
+pub mod catalog;
 pub mod currencies;
 pub mod data;
 pub mod enums;
@@ -147,3 +148,6 @@ pub mod stubs;
 
 #[cfg(feature = "defi")]
 pub mod defi;
+
+/// Generates custom-data model behavior.
+pub use nautilus_macros::custom_data;

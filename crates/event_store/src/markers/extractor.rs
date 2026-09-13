@@ -23,7 +23,7 @@ use std::{
 use ahash::AHashMap;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::{Bar, BookOrder, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick},
+    data::{Bar, BookOrder, DEPTH10_LEN, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick},
     types::{Price, Quantity, fixed::FIXED_PRECISION},
 };
 
@@ -32,6 +32,7 @@ use crate::markers::DataClass;
 const QUOTE_FINGERPRINT_DOMAIN: &[u8] = b"nautilus-event-store/marker/fingerprint/quote/v1";
 const TRADE_FINGERPRINT_DOMAIN: &[u8] = b"nautilus-event-store/marker/fingerprint/trade/v1";
 const BAR_FINGERPRINT_DOMAIN: &[u8] = b"nautilus-event-store/marker/fingerprint/bar/v1";
+const DEPTH_FINGERPRINT_DOMAIN: &[u8] = b"nautilus-event-store/marker/fingerprint/depth/v1";
 const DEPTH10_FINGERPRINT_DOMAIN: &[u8] = b"nautilus-event-store/marker/fingerprint/depth10/v1";
 const DELTAS_FINGERPRINT_DOMAIN: &[u8] = b"nautilus-event-store/marker/fingerprint/deltas/v1";
 
@@ -281,12 +282,19 @@ fn fingerprint_bar(bar: &Bar) -> [u8; 32] {
 
 fn fingerprint_depth10(depth: &OrderBookDepth10) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
-    hasher.update(DEPTH10_FINGERPRINT_DOMAIN);
-    for (order, count) in depth.bids.iter().zip(depth.bid_counts) {
+    if depth.bids.len() == DEPTH10_LEN && depth.asks.len() == DEPTH10_LEN {
+        hasher.update(DEPTH10_FINGERPRINT_DOMAIN);
+    } else {
+        hasher.update(DEPTH_FINGERPRINT_DOMAIN);
+        hasher.update(&(depth.bids.len() as u64).to_be_bytes());
+        hasher.update(&(depth.asks.len() as u64).to_be_bytes());
+    }
+
+    for (order, count) in depth.bids.iter().zip(depth.bid_counts.iter().copied()) {
         write_depth_level(&mut hasher, order, count);
     }
 
-    for (order, count) in depth.asks.iter().zip(depth.ask_counts) {
+    for (order, count) in depth.asks.iter().zip(depth.ask_counts.iter().copied()) {
         write_depth_level(&mut hasher, order, count);
     }
     write_unix_nanos(&mut hasher, depth.ts_event);
@@ -439,9 +447,38 @@ mod tests {
         Quantity::from_raw(QuantityRaw::from(cents) * scale, 2)
     }
 
+    #[rstest]
+    fn variable_depth_fingerprint_distinguishes_side_boundaries() {
+        let bid = BookOrder::new(OrderSide::Buy, Price::from("1.00"), Quantity::from("2"), 0);
+        let ask = BookOrder::new(OrderSide::Sell, bid.price, bid.size, 0);
+        let left = OrderBookDepth10::new(
+            InstrumentId::from("ETHUSDT.BINANCE"),
+            vec![bid],
+            vec![ask; 2],
+            vec![1],
+            vec![1; 2],
+            0,
+            0,
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+        );
+        let right = OrderBookDepth10::new(
+            left.instrument_id,
+            vec![bid; 2],
+            vec![ask],
+            vec![1; 2],
+            vec![1],
+            left.flags,
+            left.sequence,
+            left.ts_event,
+            left.ts_init,
+        );
+        assert_ne!(fingerprint_depth10(&left), fingerprint_depth10(&right));
+    }
+
     fn depth10() -> OrderBookDepth10 {
         let instrument_id = InstrumentId::from("ETHUSDT.BINANCE");
-        let bids = std::array::from_fn(|i| {
+        let bids: [BookOrder; 10] = std::array::from_fn(|i| {
             let level = i64::try_from(i).expect("depth10 index fits i64");
             let order_offset = u64::try_from(i).expect("depth10 index fits u64");
 
@@ -452,7 +489,7 @@ mod tests {
                 1_000 + order_offset,
             )
         });
-        let asks = std::array::from_fn(|i| {
+        let asks: [BookOrder; 10] = std::array::from_fn(|i| {
             let level = i64::try_from(i).expect("depth10 index fits i64");
             let order_offset = u64::try_from(i).expect("depth10 index fits u64");
 
@@ -463,9 +500,9 @@ mod tests {
                 2_000 + order_offset,
             )
         });
-        let bid_counts =
+        let bid_counts: [u32; 10] =
             std::array::from_fn(|i| 10 + u32::try_from(i).expect("depth10 index fits u32"));
-        let ask_counts =
+        let ask_counts: [u32; 10] =
             std::array::from_fn(|i| 20 + u32::try_from(i).expect("depth10 index fits u32"));
 
         OrderBookDepth10::new(
@@ -709,7 +746,7 @@ mod tests {
         #[case] mutate: fn(&mut OrderBookDepth10),
     ) {
         let base = depth10();
-        let mut changed = base;
+        let mut changed = base.clone();
         mutate(&mut changed);
 
         assert_ne!(fingerprint_depth10(&base), fingerprint_depth10(&changed));

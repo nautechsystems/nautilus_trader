@@ -26,6 +26,7 @@ use arrow::{
 use nautilus_model::events::AccountState;
 
 use super::{bool_field, timestamp_field, unix_nanos_to_i64, utf8_field};
+use crate::arrow::timestamp_data_type;
 
 /// Returns the display-mode Arrow schema for [`AccountState`].
 #[must_use]
@@ -95,8 +96,10 @@ pub fn encode_account_states(data: &[AccountState]) -> Result<RecordBatch, Arrow
     let mut margins = StringBuilder::new();
     let mut is_reported = BooleanBuilder::with_capacity(data.len());
     let mut event_id = StringBuilder::new();
-    let mut ts_event = TimestampNanosecondBuilder::with_capacity(data.len());
-    let mut ts_init = TimestampNanosecondBuilder::with_capacity(data.len());
+    let mut ts_event =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
+    let mut ts_init =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
 
     for state in data {
         account_id.append_value(state.account_id);
@@ -176,7 +179,7 @@ mod tests {
         assert_eq!(fields[7].name(), "ts_event");
         assert_eq!(
             fields[7].data_type(),
-            &DataType::Timestamp(TimeUnit::Nanosecond, None)
+            &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into()))
         );
     }
 

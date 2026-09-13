@@ -28,6 +28,7 @@ use nautilus_model::data::Bar;
 use super::{
     float64_field, price_to_f64, quantity_to_f64, timestamp_field, unix_nanos_to_i64, utf8_field,
 };
+use crate::arrow::timestamp_data_type;
 
 /// Returns the display-mode Arrow schema for [`Bar`].
 #[must_use]
@@ -66,8 +67,10 @@ pub fn encode_bars(data: &[Bar]) -> Result<RecordBatch, ArrowError> {
     let mut low_builder = Float64Builder::with_capacity(data.len());
     let mut close_builder = Float64Builder::with_capacity(data.len());
     let mut volume_builder = Float64Builder::with_capacity(data.len());
-    let mut ts_event_builder = TimestampNanosecondBuilder::with_capacity(data.len());
-    let mut ts_init_builder = TimestampNanosecondBuilder::with_capacity(data.len());
+    let mut ts_event_builder =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
+    let mut ts_init_builder =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
 
     for bar in data {
         instrument_id_builder.append_value(bar.instrument_id().to_string());
@@ -153,7 +156,7 @@ mod tests {
         assert_eq!(fields[7].name(), "ts_event");
         assert_eq!(
             fields[7].data_type(),
-            &DataType::Timestamp(TimeUnit::Nanosecond, None)
+            &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into()))
         );
         assert_eq!(fields[8].name(), "ts_init");
     }

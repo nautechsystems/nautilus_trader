@@ -265,7 +265,7 @@ endif
 CORE_CRATES := nautilus-analysis nautilus-backtest nautilus-common nautilus-core \
     nautilus-cryptography nautilus-data nautilus-event-store nautilus-execution \
     nautilus-indicators nautilus-infrastructure nautilus-live nautilus-model \
-    nautilus-network nautilus-persistence nautilus-persistence-macros \
+    nautilus-network nautilus-persistence nautilus-macros \
     nautilus-plugin nautilus-portfolio nautilus-risk nautilus-serialization \
     nautilus-system nautilus-testkit nautilus-trading
 

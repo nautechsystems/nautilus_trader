@@ -15,12 +15,10 @@
 
 //! Arrow serialization for IndexInstrument instruments.
 
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{borrow::Borrow, collections::HashMap, str::FromStr, sync::Arc};
 
 use arrow::{
-    array::{
-        Array, BinaryArray, BinaryBuilder, StringArray, StringBuilder, UInt8Array, UInt64Array,
-    },
+    array::{Array, StringArray, StringBuilder, UInt8Array, UInt64Array},
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
     record_batch::RecordBatch,
@@ -36,7 +34,8 @@ use super::KEY_CLASS;
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
     KEY_PRICE_PRECISION, extract_column, extract_column_by_name_or_index,
-    extract_optional_string_column_by_name, optional_ustr_value,
+    extract_optional_string_column_by_name, json_string_field, optional_ustr_value,
+    record_batch_with_timestamps, record_batch_with_u64_timestamps, timestamp_data_type,
 };
 
 impl ArrowSchemaProvider for IndexInstrument {
@@ -50,9 +49,9 @@ impl ArrowSchemaProvider for IndexInstrument {
             Field::new("size_precision", DataType::UInt8, false),
             Field::new("size_increment", DataType::Utf8, false),
             Field::new("tick_scheme", DataType::Utf8, true),
-            Field::new("info", DataType::Binary, true), // nullable
-            Field::new("ts_event", DataType::UInt64, false),
-            Field::new("ts_init", DataType::UInt64, false),
+            json_string_field("info", true),
+            Field::new("ts_event", timestamp_data_type(), false),
+            Field::new("ts_init", timestamp_data_type(), false),
         ];
 
         let mut final_metadata = HashMap::new();
@@ -67,10 +66,13 @@ impl ArrowSchemaProvider for IndexInstrument {
 }
 
 impl EncodeToRecordBatch for IndexInstrument {
-    fn encode_batch(
+    fn encode_batch<T>(
         #[allow(unused)] metadata: &HashMap<String, String>,
-        data: &[Self],
-    ) -> Result<RecordBatch, ArrowError> {
+        data: &[T],
+    ) -> Result<RecordBatch, ArrowError>
+    where
+        T: std::borrow::Borrow<Self>,
+    {
         let mut id_builder = StringBuilder::new();
         let mut raw_symbol_builder = StringBuilder::new();
         let mut currency_builder = StringBuilder::new();
@@ -79,11 +81,11 @@ impl EncodeToRecordBatch for IndexInstrument {
         let mut price_increment_builder = StringBuilder::new();
         let mut size_increment_builder = StringBuilder::new();
         let mut tick_scheme_builder = StringBuilder::new();
-        let mut info_builder = BinaryBuilder::new();
+        let mut info_builder = StringBuilder::new();
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
 
-        for index in data {
+        for index in data.iter().map(Borrow::borrow) {
             id_builder.append_value(index.id.to_string());
             raw_symbol_builder.append_value(index.raw_symbol);
             currency_builder.append_value(index.currency.to_string());
@@ -98,11 +100,10 @@ impl EncodeToRecordBatch for IndexInstrument {
                 tick_scheme_builder.append_null();
             }
 
-            // Encode info dict as JSON bytes (matching Python's msgspec.json.encode)
             if let Some(ref info) = index.info {
-                match serde_json::to_vec(info) {
-                    Ok(json_bytes) => {
-                        info_builder.append_value(json_bytes);
+                match serde_json::to_string(info) {
+                    Ok(json) => {
+                        info_builder.append_value(json);
                     }
                     Err(e) => {
                         return Err(ArrowError::InvalidArgumentError(format!(
@@ -121,7 +122,7 @@ impl EncodeToRecordBatch for IndexInstrument {
         let mut final_metadata = metadata.clone();
         final_metadata.insert(KEY_CLASS.to_string(), "IndexInstrument".to_string());
 
-        RecordBatch::try_new(
+        record_batch_with_timestamps(
             Self::get_schema(Some(final_metadata)).into(),
             vec![
                 Arc::new(id_builder.finish()),
@@ -163,6 +164,8 @@ pub fn decode_index_instrument_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
     record_batch: &RecordBatch,
 ) -> Result<Vec<IndexInstrument>, EncodingError> {
+    let record_batch = record_batch_with_u64_timestamps(record_batch)?;
+    let record_batch = &record_batch;
     let cols = record_batch.columns();
     let num_rows = record_batch.num_rows();
 
@@ -179,7 +182,7 @@ pub fn decode_index_instrument_batch(
         extract_column::<StringArray>(cols, "size_increment", 6, DataType::Utf8)?;
     let tick_scheme_values = extract_optional_string_column_by_name(record_batch, "tick_scheme")?;
     let info_values =
-        extract_column_by_name_or_index::<BinaryArray>(record_batch, "info", 7, DataType::Binary)?;
+        extract_column_by_name_or_index::<StringArray>(record_batch, "info", 7, DataType::Utf8)?;
     let ts_event_values = extract_column_by_name_or_index::<UInt64Array>(
         record_batch,
         "ts_event",
@@ -213,17 +216,16 @@ pub fn decode_index_instrument_batch(
         let size_increment = Quantity::from_str(size_increment_values.value(i))
             .map_err(|e| EncodingError::ParseError("size_increment", format!("row {i}: {e}")))?;
 
-        // Decode info dict from JSON bytes (matching Python's msgspec.json.decode)
         let info = if info_values.is_null(i) {
             None
         } else {
-            let info_bytes = info_values
+            let info_json = info_values
                 .as_any()
-                .downcast_ref::<BinaryArray>()
+                .downcast_ref::<StringArray>()
                 .ok_or_else(|| EncodingError::ParseError("info", format!("row {i}: invalid type")))?
                 .value(i);
 
-            match serde_json::from_slice::<Params>(info_bytes) {
+            match serde_json::from_str::<Params>(info_json) {
                 Ok(info_dict) => Some(info_dict),
                 Err(e) => {
                     return Err(EncodingError::ParseError(

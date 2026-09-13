@@ -952,7 +952,7 @@ impl SimulatedExchange {
     ///
     /// Returns an error if module pre-processing or matching engine processing fails.
     pub fn process_order_book_depth10(&mut self, depth: &OrderBookDepth10) -> anyhow::Result<()> {
-        self.pre_process_modules(&Data::BookDepth10(Box::new(*depth)))?;
+        self.pre_process_modules(&Data::BookDepth(Box::new(depth.clone())))?;
 
         if !self.matching_engines.contains_key(&depth.instrument_id) {
             let instrument = {

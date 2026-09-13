@@ -180,6 +180,21 @@ impl MarketSbeMessage for OrderBookDepth10 {
         (DEPTH10_LEVEL_BLOCK_LENGTH * 20) + (DEPTH10_COUNTS_BLOCK_LENGTH as u16 * 2) + 25;
 
     fn encode_body(&self, writer: &mut SbeWriter<'_>) -> Result<(), SbeEncodeError> {
+        for (group, count) in [
+            ("bids", self.bids.len()),
+            ("asks", self.asks.len()),
+            ("bid_counts", self.bid_counts.len()),
+            ("ask_counts", self.ask_counts.len()),
+        ] {
+            if count != DEPTH10_LEVEL_COUNT {
+                return Err(SbeEncodeError::InvalidGroupSize {
+                    group,
+                    count,
+                    expected: DEPTH10_LEVEL_COUNT,
+                });
+            }
+        }
+
         for bid in &self.bids {
             encode_price(writer, &bid.price);
             encode_quantity(writer, &bid.size);
@@ -245,10 +260,10 @@ impl MarketSbeMessage for OrderBookDepth10 {
 
         Ok(Self {
             instrument_id,
-            bids,
-            asks,
-            bid_counts,
-            ask_counts,
+            bids: bids.into(),
+            asks: asks.into(),
+            bid_counts: bid_counts.into(),
+            ask_counts: ask_counts.into(),
             flags,
             sequence,
             ts_event,

@@ -163,9 +163,10 @@ def test_funding_rate_update_get_fields() -> None:
     fields = FundingRateUpdate.get_fields()
 
     assert fields == {
-        "rate": "Decimal128",
-        "interval": "UInt16",
-        "next_funding_ns": "UInt64",
-        "ts_event": "UInt64",
-        "ts_init": "UInt64",
+        "instrument_id": "Utf8",
+        "rate": "Utf8",
+        "interval": "UInt64",
+        "next_funding_ns": 'Timestamp(Nanosecond, Some("UTC"))',
+        "ts_event": 'Timestamp(Nanosecond, Some("UTC"))',
+        "ts_init": 'Timestamp(Nanosecond, Some("UTC"))',
     }

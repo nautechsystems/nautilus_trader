@@ -5352,16 +5352,20 @@ mod rust_tests {
         assert!(futures_util::poll!(&mut initial).is_pending());
         tokio::time::advance(Duration::from_secs(1)).await;
         tokio::task::yield_now().await;
+        // Real socket I/O must complete without auto-advancing the timeout clock.
+        tokio::time::resume();
         let mut inner = initial.await.unwrap();
 
         inner
             .connection_mode
             .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+        tokio::time::pause();
         let reconnect = inner.reconnect_with_outcome();
         tokio::pin!(reconnect);
         assert!(futures_util::poll!(&mut reconnect).is_pending());
         tokio::time::advance(Duration::from_secs(1)).await;
         tokio::task::yield_now().await;
+        tokio::time::resume();
         assert_eq!(reconnect.await.unwrap(), ReconnectOutcome::Reconnected);
 
         server.abort();

@@ -15,9 +15,15 @@
 
 //! Data types for the trading domain model.
 
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+};
+
 pub mod bar;
 pub mod bet;
 pub mod close;
+pub mod data_type;
 pub mod delta;
 pub mod deltas;
 pub mod depth;
@@ -34,106 +40,231 @@ pub mod trade;
 pub mod custom;
 
 #[cfg(feature = "python")]
-use nautilus_core::python::{
-    params::{params_to_pydict, pydict_to_params},
-    to_pyruntime_err, to_pytype_err, to_pyvalue_err,
-};
-#[cfg(feature = "defi")]
-use pyo3::IntoPyObjectExt;
+use nautilus_core::python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err};
 use pyo3::prelude::*;
-#[cfg(feature = "python")]
-use pyo3::types::PyDict;
 
-use crate::data::{
-    Bar, CustomData, Data, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
-    MarkPriceUpdate, OptionGreeks, OrderBookDelta, QuoteTick, TradeTick, close::InstrumentClose,
-    is_monotonically_increasing_by_init, register_python_data_class,
+use crate::{
+    data::{
+        Bar, CustomData, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
+        MarkPriceUpdate, NautilusDataType, NautilusRecordType, OptionGreeks, OrderBookDelta,
+        QuoteTick, TradeTick, close::InstrumentClose, is_monotonically_increasing_by_init,
+        register_python_data_class,
+    },
+    python::instruments::instrument_any_to_pyobject,
 };
 
 const ERROR_MONOTONICITY: &str = "`data` was not monotonically increasing by the `ts_init` field";
 
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[pyclass(
+    frozen,
+    name = "NautilusDataType",
+    module = "nautilus_trader.model",
+    skip_from_py_object
+)]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")]
+pub struct PyNautilusDataType {
+    inner: NautilusDataType,
+}
+
+impl PyNautilusDataType {
+    #[must_use]
+    pub const fn new(inner: NautilusDataType) -> Self {
+        Self { inner }
+    }
+
+    #[must_use]
+    pub fn into_inner(self) -> NautilusDataType {
+        self.inner
+    }
+
+    #[must_use]
+    pub fn inner(&self) -> NautilusDataType {
+        self.inner.clone()
+    }
+}
+
+macro_rules! define_nautilus_data_type_class_attrs {
+    (
+        $(($variant:ident, $type:ident, $data:ident, $batch:ident, $prefix:literal)),+ $(,)?
+    ) => {
+        #[pyo3_stub_gen::derive::gen_stub_pymethods]
+        #[pymethods]
+        impl PyNautilusDataType {
+            $(
+                #[classattr]
+                #[expect(
+                    non_snake_case,
+                    reason = "Python selector attributes match Rust data type variant names"
+                )]
+                fn $variant() -> PyNautilusDataType {
+                    Self::new(NautilusDataType::$variant)
+                }
+            )+
+        }
+    };
+}
+
+crate::for_each_data_type!(define_nautilus_data_type_class_attrs);
+
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
-#[cfg_attr(feature = "python", pyo3_stub_gen::derive::gen_stub_pymethods)]
-impl DataType {
-    /// Represents a data type including metadata.
+impl PyNautilusDataType {
+    #[classattr]
+    #[expect(
+        non_snake_case,
+        clippy::use_self,
+        reason = "PyO3 stub generation expands class attributes outside the impl scope"
+    )]
+    fn OrderBook() -> PyNautilusDataType {
+        Self::new(NautilusDataType::OrderBook)
+    }
+
+    #[cfg(feature = "defi")]
+    #[classattr]
+    #[expect(
+        clippy::use_self,
+        reason = "PyO3 stub generation needs the concrete return type"
+    )]
+    #[expect(
+        non_snake_case,
+        reason = "Python selector attributes match Rust data type variant names"
+    )]
+    fn Defi() -> PyNautilusDataType {
+        Self::new(NautilusDataType::Defi)
+    }
+
     #[new]
-    #[pyo3(signature = (type_name, metadata=None, identifier=None))]
-    fn py_new(
-        py: Python<'_>,
-        type_name: &str,
-        metadata: Option<Py<PyDict>>,
-        identifier: Option<String>,
-    ) -> PyResult<Self> {
-        let params = match metadata {
-            None => None,
-            Some(d) => pydict_to_params(py, &d)?,
-        };
-        Ok(Self::new(type_name, params, identifier))
+    fn py_new(value: &str) -> PyResult<Self> {
+        value
+            .parse::<NautilusDataType>()
+            .map(Self::new)
+            .map_err(to_pyruntime_err)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "Custom")]
+    fn py_custom(type_name: String) -> Self {
+        Self::new(NautilusDataType::Custom { type_name })
+    }
+
+    #[getter]
+    fn type_name(&self) -> Option<&str> {
+        match &self.inner {
+            NautilusDataType::Custom { type_name } => Some(type_name),
+            _ => None,
+        }
+    }
+
+    fn __str__(&self) -> String {
+        self.inner.to_string()
+    }
+
+    fn __repr__(&self) -> String {
+        match &self.inner {
+            NautilusDataType::Custom { type_name } => {
+                format!("NautilusDataType.Custom({type_name:?})")
+            }
+            _ => format!("NautilusDataType.{}", self.inner),
+        }
     }
 
     fn __richcmp__(&self, other: &Self, op: pyo3::pyclass::CompareOp, py: Python<'_>) -> Py<PyAny> {
         use nautilus_core::python::IntoPyObjectNautilusExt;
 
         match op {
-            pyo3::pyclass::CompareOp::Eq => (self.topic() == other.topic()).into_py_any_unwrap(py),
-            pyo3::pyclass::CompareOp::Ne => (self.topic() != other.topic()).into_py_any_unwrap(py),
+            pyo3::pyclass::CompareOp::Eq => (self.inner == other.inner).into_py_any_unwrap(py),
+            pyo3::pyclass::CompareOp::Ne => (self.inner != other.inner).into_py_any_unwrap(py),
             _ => py.NotImplemented(),
         }
     }
 
     fn __hash__(&self) -> isize {
-        self.precomputed_hash() as isize
-    }
-
-    /// Returns the type name for the data type.
-    #[getter]
-    #[pyo3(name = "type_name")]
-    fn py_type_name(&self) -> &str {
-        self.type_name()
-    }
-
-    /// Returns the metadata for the data type.
-    #[getter]
-    #[pyo3(name = "metadata")]
-    fn py_metadata(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        match self.metadata() {
-            None => Ok(py.None()),
-            Some(p) => Ok(params_to_pydict(py, p)?
-                .bind(py)
-                .clone()
-                .into_any()
-                .unbind()),
-        }
-    }
-
-    /// Returns the messaging topic for the data type.
-    #[getter]
-    #[pyo3(name = "topic")]
-    fn py_topic(&self) -> &str {
-        self.topic()
-    }
-
-    /// Returns the optional catalog path identifier (can contain subdirs, e.g. `"venue//symbol"`).
-    #[getter]
-    #[pyo3(name = "identifier")]
-    fn py_identifier(&self) -> Option<&str> {
-        self.identifier()
+        let mut hasher = DefaultHasher::new();
+        self.inner.hash(&mut hasher);
+        hasher.finish() as isize
     }
 }
 
-/// Converts a [`Data`] variant into its Python model object.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[pyclass(
+    frozen,
+    name = "NautilusRecordType",
+    module = "nautilus_trader.model",
+    skip_from_py_object
+)]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")]
+pub struct PyNautilusRecordType {
+    inner: NautilusRecordType,
+}
+
+impl PyNautilusRecordType {
+    #[must_use]
+    pub const fn new(inner: NautilusRecordType) -> Self {
+        Self { inner }
+    }
+
+    #[must_use]
+    pub fn into_inner(self) -> NautilusRecordType {
+        self.inner
+    }
+
+    #[must_use]
+    pub fn inner(&self) -> NautilusRecordType {
+        self.inner.clone()
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl PyNautilusRecordType {
+    #[new]
+    fn py_new(value: &str) -> PyResult<Self> {
+        value
+            .parse::<NautilusRecordType>()
+            .map(Self::new)
+            .map_err(to_pyruntime_err)
+    }
+
+    fn __str__(&self) -> String {
+        self.inner.to_string()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("NautilusRecordType.{}", self.inner)
+    }
+
+    fn __richcmp__(&self, other: &Self, op: pyo3::pyclass::CompareOp, py: Python<'_>) -> Py<PyAny> {
+        use nautilus_core::python::IntoPyObjectNautilusExt;
+
+        match op {
+            pyo3::pyclass::CompareOp::Eq => (self.inner == other.inner).into_py_any_unwrap(py),
+            pyo3::pyclass::CompareOp::Ne => (self.inner != other.inner).into_py_any_unwrap(py),
+            _ => py.NotImplemented(),
+        }
+    }
+
+    fn __hash__(&self) -> isize {
+        let mut hasher = DefaultHasher::new();
+        self.inner.hash(&mut hasher);
+        hasher.finish() as isize
+    }
+}
+
+/// Converts a [`Data`] value into its native PyO3 object.
 ///
 /// # Errors
 ///
-/// Returns an error if Python object allocation fails.
+/// Returns an error for data variants without a Python representation.
 pub fn data_to_pyobject(py: Python<'_>, data: Data) -> PyResult<Py<PyAny>> {
     match data {
-        Data::BookDelta(delta) => Py::new(py, delta).map(Py::into_any),
-        Data::BookDeltas(deltas) => Py::new(py, *deltas).map(Py::into_any),
-        Data::BookDepth10(depth) => Py::new(py, *depth).map(Py::into_any),
+        Data::Instrument(instrument) => instrument_any_to_pyobject(py, *instrument),
         Data::Quote(quote) => Py::new(py, quote).map(Py::into_any),
         Data::Trade(trade) => Py::new(py, trade).map(Py::into_any),
         Data::Bar(bar) => Py::new(py, bar).map(Py::into_any),
+        Data::BookDelta(delta) => Py::new(py, delta).map(Py::into_any),
+        Data::BookDeltas(deltas) => Py::new(py, (*deltas).clone()).map(Py::into_any),
+        Data::BookDepth(depth) => Py::new(py, *depth).map(Py::into_any),
         Data::MarkPrice(price) => Py::new(py, price).map(Py::into_any),
         Data::IndexPrice(price) => Py::new(py, price).map(Py::into_any),
         Data::FundingRate(funding) => Py::new(py, funding).map(Py::into_any),
@@ -142,7 +273,7 @@ pub fn data_to_pyobject(py: Python<'_>, data: Data) -> PyResult<Py<PyAny>> {
         Data::InstrumentClose(close) => Py::new(py, close).map(Py::into_any),
         Data::Custom(custom) => Py::new(py, custom).map(Py::into_any),
         #[cfg(feature = "defi")]
-        Data::Defi(defi) => (*defi).into_py_any(py),
+        Data::Defi(_) => Err(to_pytype_err("Unsupported DeFi data variant")),
     }
 }
 
@@ -498,8 +629,7 @@ fn py_decode_record_batch_to_custom_data(
 /// Use this when you prefer to pass the class instead of a sample instance.
 /// The class must have:
 /// - `type_name_static()` class method or `__name__` (used as type name in storage)
-/// - `from_json(data)` class method
-/// - `decode_record_batch_py(metadata, batch)` class method
+/// - `decode_record_batch_py(metadata, ipc_bytes)` class method
 /// - Instances must have `ts_event`, `ts_init`, and `encode_record_batch_py(items)`.
 ///
 /// # Arguments
@@ -513,35 +643,17 @@ fn py_decode_record_batch_to_custom_data(
 /// # Example
 ///
 /// ```python
-/// import json
-///
+/// from nautilus_trader.model.custom import customdataclass
 /// from nautilus_trader.model import register_custom_data_class
 ///
+/// @customdataclass()
 /// class MarketTickPython:
-///     ts_event = 0
-///     ts_init = 0
-///
-///     def to_json(self):
-///         return json.dumps(self.__dict__)
-///
-///     @classmethod
-///     def from_json(cls, data):
-///         instance = cls()
-///         instance.__dict__.update(data)
-///         return instance
-///
-///     def encode_record_batch_py(self, items):
-///         raise NotImplementedError("Arrow encoding is not configured")
-///
-///     @classmethod
-///     def decode_record_batch_py(cls, metadata, batch):
-///         raise NotImplementedError("Arrow decoding is not configured")
+///     symbol: str = ""
+///     price: float = 0.0
+///     volume: int = 0
 ///
 /// register_custom_data_class(MarketTickPython)
 /// ```
-///
-/// The Arrow methods may raise for a message-bus-only class, but must be implemented before catalog
-/// persistence is used.
 #[cfg(feature = "python")]
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
@@ -596,10 +708,14 @@ pub fn register_custom_data_class(data_class: &Bound<'_, PyAny>) -> PyResult<()>
     #[cfg(feature = "arrow")]
     {
         let data_class_for_decode = data_class.clone().unbind();
-        let pyarrow_schema = data_class
-            .getattr("_schema")
-            .ok()
-            .filter(|s| s.hasattr("_export_to_c").unwrap_or(false));
+        let pyarrow_schema = if let Ok(schema) = data_class.getattr("_schema") {
+            Some(schema)
+        } else if data_class.hasattr("arrow_schema_py")? {
+            Some(data_class.call_method0("arrow_schema_py")?)
+        } else {
+            None
+        }
+        .filter(|schema| schema.hasattr("_export_to_c").unwrap_or(false));
         let schema = if let Some(py_schema) = pyarrow_schema {
             Arc::new(pyarrow_schema_to_arrow_schema(&py_schema)?)
         } else if let Some(schema) = registry::get_arrow_schema(&type_name) {
@@ -607,6 +723,8 @@ pub fn register_custom_data_class(data_class: &Bound<'_, PyAny>) -> PyResult<()>
         } else {
             Arc::new(arrow::datatypes::Schema::empty())
         };
+        registry::validate_custom_arrow_schema(&type_name, &schema, false)
+            .map_err(|e| to_pyvalue_err(e.to_string()))?;
 
         let encoder = Box::new(
             move |items: &[Arc<dyn crate::data::CustomDataTrait>]| -> Result<
@@ -666,7 +784,7 @@ mod tests {
 
     use super::*;
     use crate::data::{
-        OrderBookDeltas, OrderBookDepth10,
+        OrderBookDeltas, OrderBookDepth,
         stubs::{
             quote_audusd, stub_bar, stub_delta, stub_deltas, stub_depth10, stub_trade_ethusdt_buy,
         },
@@ -693,7 +811,7 @@ mod tests {
             let py_deltas =
                 data_to_pyobject(py, Data::BookDeltas(Box::new(expected_deltas.clone()))).unwrap();
             let py_depth =
-                data_to_pyobject(py, Data::BookDepth10(Box::new(expected_depth))).unwrap();
+                data_to_pyobject(py, Data::BookDepth(Box::new(expected_depth.clone()))).unwrap();
             let py_quote = data_to_pyobject(py, Data::Quote(expected_quote)).unwrap();
             let py_trade = data_to_pyobject(py, Data::Trade(expected_trade)).unwrap();
             let py_bar = data_to_pyobject(py, Data::Bar(expected_bar)).unwrap();
@@ -705,11 +823,12 @@ mod tests {
                 .unwrap()
                 .borrow()
                 .clone();
-            let actual_depth = *py_depth
+            let actual_depth = py_depth
                 .bind(py)
-                .cast::<OrderBookDepth10>()
+                .cast::<OrderBookDepth>()
                 .unwrap()
-                .borrow();
+                .borrow()
+                .clone();
             let actual_quote = *py_quote.bind(py).cast::<QuoteTick>().unwrap().borrow();
             let actual_trade = *py_trade.bind(py).cast::<TradeTick>().unwrap().borrow();
             let actual_bar = *py_bar.bind(py).cast::<Bar>().unwrap().borrow();
@@ -730,7 +849,7 @@ mod tests {
 
     #[cfg(feature = "defi")]
     #[rstest]
-    fn data_to_pyobject_preserves_defi_variant() {
+    fn data_to_pyobject_rejects_defi_variant() {
         use nautilus_core::UnixNanos;
         use ustr::Ustr;
 
@@ -750,28 +869,13 @@ mod tests {
         );
 
         Python::attach(|py| {
-            let py_defi = data_to_pyobject(
+            let e = data_to_pyobject(
                 py,
                 Data::Defi(Box::new(crate::defi::data::DefiData::Block(block))),
             )
-            .unwrap();
-            let defi_type = py.get_type::<crate::defi::data::DefiData>();
-            let block_type = defi_type.getattr("Block").unwrap();
+            .unwrap_err();
 
-            assert!(py_defi.bind(py).is_instance(&block_type).unwrap());
-            let actual_block = py_defi
-                .bind(py)
-                .getattr("_0")
-                .unwrap()
-                .extract::<Block>()
-                .unwrap();
-            assert_eq!(actual_block.hash, "0x1234");
-            assert_eq!(actual_block.parent_hash, "0xabcd");
-            assert_eq!(actual_block.number, 42);
-            assert_eq!(actual_block.gas_limit, 100_000);
-            assert_eq!(actual_block.gas_used, 50_000);
-            assert_eq!(actual_block.timestamp, UnixNanos::from(1_700_000_000u64));
-            assert_eq!(actual_block.chain, Some(Blockchain::Ethereum));
+            assert_eq!(e.to_string(), "TypeError: Unsupported DeFi data variant");
         });
     }
 }

@@ -169,7 +169,7 @@ pub fn parse_book10_msg_vec(
             let instrument_id = instrument.id();
             let price_precision = instrument.price_precision();
             match parse_book10_msg(&msg, instrument, instrument_id, price_precision, ts_init) {
-                Ok(depth) => depths.push(Data::BookDepth10(Box::new(depth))),
+                Ok(depth) => depths.push(Data::BookDepth(Box::new(depth))),
                 Err(e) => {
                     log::error!("Failed to parse orderBook10 for symbol={}: {e}", msg.symbol);
                 }
@@ -1327,8 +1327,8 @@ mod tests {
         assert_eq!(depth10.asks[0].side, OrderSide::Sell.into());
 
         // Check counts (should be 1 for each populated level)
-        assert_eq!(depth10.bid_counts, [1; DEPTH10_LEN]);
-        assert_eq!(depth10.ask_counts, [1; DEPTH10_LEN]);
+        assert_eq!(depth10.bid_counts.as_slice(), &[1; DEPTH10_LEN]);
+        assert_eq!(depth10.ask_counts.as_slice(), &[1; DEPTH10_LEN]);
 
         // Check flags and timestamps
         assert_eq!(depth10.sequence, 0);

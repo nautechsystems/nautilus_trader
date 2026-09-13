@@ -1,0 +1,253 @@
+{
+  "quotes": [
+    {
+      "type": "QuoteTick",
+      "instrument_id": "AUD/USD.SIM",
+      "bid_price": "1.23456",
+      "ask_price": "1.23478",
+      "bid_size": "123.000001",
+      "ask_size": "456.000002",
+      "ts_event": 1700000000000000123,
+      "ts_init": 1700000000000000124
+    },
+    {
+      "type": "QuoteTick",
+      "instrument_id": "AUD/USD.SIM",
+      "bid_price": "1.34567",
+      "ask_price": "1.34589",
+      "bid_size": "789.000003",
+      "ask_size": "987.000004",
+      "ts_event": 1700000000000000125,
+      "ts_init": 1700000000000000126
+    }
+  ],
+  "trade": {
+    "type": "TradeTick",
+    "instrument_id": "ETHUSDT-PERP.BINANCE",
+    "price": "10000.0000",
+    "size": "1.00000000",
+    "aggressor_side": "BUY",
+    "trade_id": "123456789",
+    "ts_event": 1700000000000000133,
+    "ts_init": 1700000000000000134
+  },
+  "bar": {
+    "type": "Bar",
+    "bar_type": "AUD/USD.SIM-1-MINUTE-BID-EXTERNAL",
+    "open": "1.00002",
+    "high": "1.00004",
+    "low": "1.00001",
+    "close": "1.00003",
+    "volume": "100000",
+    "ts_event": 1700000000000000143,
+    "ts_init": 1700000000000000144
+  },
+  "depth": {
+    "instrument_id": "AAPL.XNAS",
+    "bids": [
+      {
+        "side": "BUY",
+        "price": "99.00",
+        "size": "100",
+        "order_id": 1
+      },
+      {
+        "side": "BUY",
+        "price": "98.00",
+        "size": "200",
+        "order_id": 2
+      },
+      {
+        "side": "BUY",
+        "price": "97.00",
+        "size": "300",
+        "order_id": 3
+      },
+      {
+        "side": "BUY",
+        "price": "96.00",
+        "size": "400",
+        "order_id": 4
+      },
+      {
+        "side": "BUY",
+        "price": "95.00",
+        "size": "500",
+        "order_id": 5
+      },
+      {
+        "side": "BUY",
+        "price": "94.00",
+        "size": "600",
+        "order_id": 6
+      },
+      {
+        "side": "BUY",
+        "price": "93.00",
+        "size": "700",
+        "order_id": 7
+      },
+      {
+        "side": "BUY",
+        "price": "92.00",
+        "size": "800",
+        "order_id": 8
+      },
+      {
+        "side": "BUY",
+        "price": "91.00",
+        "size": "900",
+        "order_id": 9
+      },
+      {
+        "side": "BUY",
+        "price": "90.00",
+        "size": "1000",
+        "order_id": 10
+      }
+    ],
+    "asks": [
+      {
+        "side": "SELL",
+        "price": "100.00",
+        "size": "100",
+        "order_id": 11
+      },
+      {
+        "side": "SELL",
+        "price": "101.00",
+        "size": "200",
+        "order_id": 12
+      },
+      {
+        "side": "SELL",
+        "price": "102.00",
+        "size": "300",
+        "order_id": 13
+      },
+      {
+        "side": "SELL",
+        "price": "103.00",
+        "size": "400",
+        "order_id": 14
+      },
+      {
+        "side": "SELL",
+        "price": "104.00",
+        "size": "500",
+        "order_id": 15
+      },
+      {
+        "side": "SELL",
+        "price": "105.00",
+        "size": "600",
+        "order_id": 16
+      },
+      {
+        "side": "SELL",
+        "price": "106.00",
+        "size": "700",
+        "order_id": 17
+      },
+      {
+        "side": "SELL",
+        "price": "107.00",
+        "size": "800",
+        "order_id": 18
+      },
+      {
+        "side": "SELL",
+        "price": "108.00",
+        "size": "900",
+        "order_id": 19
+      },
+      {
+        "side": "SELL",
+        "price": "109.00",
+        "size": "1000",
+        "order_id": 20
+      }
+    ],
+    "bid_counts": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "ask_counts": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "flags": 0,
+    "sequence": 0,
+    "ts_event": 1700000000000000153,
+    "ts_init": 1700000000000000154
+  },
+  "instrument": {
+    "CurrencyPair": {
+      "id": "AUD/USD.SIM",
+      "raw_symbol": "AUD/USD",
+      "base_currency": "AUD",
+      "quote_currency": "USD",
+      "price_precision": 5,
+      "size_precision": 0,
+      "price_increment": "0.00001",
+      "size_increment": "1",
+      "multiplier": "1",
+      "lot_size": "1000",
+      "margin_init": "0.03",
+      "margin_maint": "0.03",
+      "maker_fee": "0.00002",
+      "taker_fee": "0.00002",
+      "max_quantity": "1000000",
+      "min_quantity": "100",
+      "max_notional": null,
+      "min_notional": null,
+      "max_price": null,
+      "min_price": null,
+      "tick_scheme": "FOREX_5DECIMAL",
+      "info": null,
+      "ts_event": 1700000000000000173,
+      "ts_init": 1700000000000000174
+    }
+  },
+  "custom": {
+    "instrument_id": "AUD/USD.SIM",
+    "value": 1.25,
+    "flag": true,
+    "ts_event": 1700000000000000163,
+    "ts_init": 1700000000000000164
+  },
+  "account_state": {
+    "account_id": "SIM-001",
+    "account_type": "CASH",
+    "base_currency": "USD",
+    "balances": [
+      {
+        "currency": "USD",
+        "total": "1525000.00 USD",
+        "locked": "25000.00 USD",
+        "free": "1500000.00 USD"
+      }
+    ],
+    "margins": [],
+    "is_reported": true,
+    "event_id": "16578139-a945-4b65-b46c-bc131a15d8e7",
+    "ts_event": 1700000000000000183,
+    "ts_init": 1700000000000000184
+  }
+}

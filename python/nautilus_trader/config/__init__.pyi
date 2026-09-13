@@ -26,6 +26,7 @@ from nautilus_trader.live import PluginConfig as PluginConfig
 from nautilus_trader.live import QueueMonitorConfig as QueueMonitorConfig
 from nautilus_trader.live import RoutingConfig as RoutingConfig
 from nautilus_trader.persistence import DataCatalogConfig as DataCatalogConfig
+from nautilus_trader.persistence import RotationConfig as RotationConfig
 from nautilus_trader.persistence import StreamingConfig as StreamingConfig
 from nautilus_trader.portfolio import PortfolioConfig as PortfolioConfig
 from nautilus_trader.risk import RiskEngineConfig as RiskEngineConfig
@@ -67,6 +68,7 @@ __all__ = [
     "PortfolioConfig",
     "QueueMonitorConfig",
     "RiskEngineConfig",
+    "RotationConfig",
     "RoutingConfig",
     "StrategyConfig",
     "StreamingConfig",

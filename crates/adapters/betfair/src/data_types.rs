@@ -17,8 +17,8 @@
 //!
 //! These types carry Betfair domain data through the Nautilus data engine as
 //! [`CustomData`](nautilus_model::data::CustomData). Each type uses the
-//! `#[custom_data(pyo3)]` macro which generates `CustomDataTrait`, Arrow codec, and
-//! serialization implementations.
+//! `#[custom_data(pyo3)]` and `#[arrow_custom_data(pyo3)]` macros, which generate the model and
+//! Arrow persistence implementations respectively.
 //!
 //! Call [`register_betfair_custom_data`] once (e.g. during client `connect()`)
 //! to register all types for JSON and Arrow encoding.
@@ -26,8 +26,12 @@
 //! Absent optional race telemetry values use `f64::NAN` as the sentinel.
 
 use nautilus_core::UnixNanos;
-use nautilus_model::identifiers::InstrumentId;
-use nautilus_persistence_macros::custom_data;
+use nautilus_model::{
+    custom_data,
+    enums::{BookAction, OrderSide},
+    identifiers::InstrumentId,
+};
+use nautilus_serialization::arrow_custom_data;
 use rust_decimal::Decimal;
 
 /// Serde adapter for f64 fields that use NaN as a sentinel for absent values.
@@ -52,21 +56,18 @@ mod nan_as_null {
 ///
 /// Carries last traded price, traded volume, and starting price
 /// near/far values per runner.
+#[arrow_custom_data(pyo3)]
 #[custom_data(pyo3)]
 pub struct BetfairTicker {
     /// The instrument ID for this ticker.
     pub instrument_id: InstrumentId,
     /// Last traded price.
-    #[custom_data_field(serde)]
     pub last_traded_price: Option<Decimal>,
     /// Total traded volume.
-    #[custom_data_field(serde)]
     pub traded_volume: Option<Decimal>,
     /// Starting price near (projected BSP from matched portion).
-    #[custom_data_field(serde)]
     pub starting_price_near: Option<Decimal>,
     /// Starting price far (projected BSP from unmatched portion).
-    #[custom_data_field(serde)]
     pub starting_price_far: Option<Decimal>,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
@@ -77,12 +78,12 @@ pub struct BetfairTicker {
 /// Realized Betfair Starting Price (BSP) for a runner.
 ///
 /// Emitted from the market definition when a runner's BSP is determined.
+#[arrow_custom_data(pyo3)]
 #[custom_data(pyo3)]
 pub struct BetfairStartingPrice {
     /// The instrument ID for this starting price.
     pub instrument_id: InstrumentId,
     /// The realized best starting price value.
-    #[custom_data_field(serde)]
     pub bsp: Decimal,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
@@ -95,19 +96,20 @@ pub struct BetfairStartingPrice {
 /// Mirrors `OrderBookDelta` fields as a custom data type so strategies
 /// can subscribe specifically to BSP book updates (spb/spl) separately
 /// from the exchange order book (atb/atl).
+#[arrow_custom_data(pyo3)]
 #[custom_data(pyo3)]
 pub struct BetfairBspBookDelta {
     /// The instrument ID for this BSP delta.
     pub instrument_id: InstrumentId,
-    /// The book action (add/update/delete/clear) as `BookAction` u8.
-    pub action: u32,
-    /// The order side as `OrderSide` u8.
-    pub side: u32,
+    /// The book action (add/update/delete/clear).
+    #[custom_data_field(native_enum)]
+    pub action: BookAction,
+    /// The order side.
+    #[custom_data_field(native_enum)]
+    pub side: OrderSide,
     /// The price level.
-    #[custom_data_field(serde)]
     pub price: Decimal,
     /// The size at this price level.
-    #[custom_data_field(serde)]
     pub size: Decimal,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
@@ -119,6 +121,7 @@ pub struct BetfairBspBookDelta {
 ///
 /// Strategies can use this to know when a coherent set of market updates
 /// has been fully delivered.
+#[arrow_custom_data(pyo3)]
 #[custom_data(pyo3)]
 pub struct BetfairSequenceCompleted {
     /// UNIX timestamp (nanoseconds) when the data event occurred.
@@ -131,6 +134,7 @@ pub struct BetfairSequenceCompleted {
 ///
 /// Published when a matched bet is retroactively voided by Betfair, such as
 /// when a goal is disallowed following a VAR review.
+#[arrow_custom_data(pyo3)]
 #[custom_data(pyo3)]
 pub struct BetfairOrderVoided {
     /// The instrument ID for the voided order.
@@ -140,21 +144,16 @@ pub struct BetfairOrderVoided {
     /// The venue (Betfair) order ID (bet ID).
     pub venue_order_id: String,
     /// The size that was voided.
-    #[custom_data_field(serde)]
     pub size_voided: Decimal,
     /// The order price.
-    #[custom_data_field(serde)]
     pub price: Decimal,
     /// The original order size.
-    #[custom_data_field(serde)]
     pub size: Decimal,
     /// The order side ("BACK" or "LAY").
     pub side: String,
     /// The average price matched.
-    #[custom_data_field(serde)]
     pub avg_price_matched: Option<Decimal>,
     /// The total size matched.
-    #[custom_data_field(serde)]
     pub size_matched: Option<Decimal>,
     /// The void reason. Empty string if absent.
     pub reason: String,
@@ -168,6 +167,7 @@ pub struct BetfairOrderVoided {
 ///
 /// Betfair's Total Performance Data (TPD) provides real-time GPS positions,
 /// speed, and stride frequency for each runner in supported races.
+#[arrow_custom_data(pyo3)]
 #[custom_data(pyo3)]
 pub struct BetfairRaceRunnerData {
     /// Race identifier (e.g. "28587288.1650").
@@ -216,6 +216,7 @@ pub struct BetfairRaceRunnerData {
 ///
 /// Provides sectional timing, race order, and obstacle data for the
 /// overall race rather than individual runners.
+#[arrow_custom_data(pyo3)]
 #[custom_data(pyo3)]
 pub struct BetfairRaceProgress {
     /// Race identifier (e.g. "28587288.1650").
@@ -258,6 +259,7 @@ pub struct BetfairRaceProgress {
     pub ts_init: UnixNanos,
 }
 
+#[arrow_custom_data(pyo3)]
 #[custom_data(pyo3)]
 pub struct BetfairCricketMatch {
     /// Betfair event identifier.
@@ -337,6 +339,14 @@ mod tests {
         assert!(field_names.contains(&"size".to_string()));
         assert!(field_names.contains(&"ts_event".to_string()));
         assert!(field_names.contains(&"ts_init".to_string()));
+        assert_eq!(
+            schema.field_with_name("action").unwrap().data_type(),
+            &nautilus_serialization::arrow::enum_dictionary_data_type(),
+        );
+        assert_eq!(
+            schema.field_with_name("side").unwrap().data_type(),
+            &nautilus_serialization::arrow::enum_dictionary_data_type(),
+        );
     }
 
     #[rstest]
@@ -454,6 +464,53 @@ mod tests {
     }
 
     #[rstest]
+    fn test_betfair_ticker_optional_decimal_arrow_roundtrip() {
+        use arrow::{array::Array, datatypes::DataType};
+        use nautilus_model::data::Data;
+        use nautilus_serialization::arrow::{DecodeDataFromRecordBatch, EncodeToRecordBatch};
+
+        let original = BetfairTicker::new(
+            InstrumentId::from("1.234-56789-0.0.BETFAIR"),
+            Some(Decimal::new(15, 1)),
+            Some(Decimal::new(123_456_789_012_345_678, 16)),
+            None,
+            Some(Decimal::new(425, 2)),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(1_000_000_001),
+        );
+        let metadata = original.metadata();
+        let batch =
+            BetfairTicker::encode_batch(&metadata, std::slice::from_ref(&original)).unwrap();
+        let schema = batch.schema();
+
+        assert_eq!(
+            schema
+                .field_with_name("last_traded_price")
+                .unwrap()
+                .data_type(),
+            &DataType::Decimal128(38, 16),
+        );
+        assert!(
+            batch
+                .column_by_name("starting_price_near")
+                .unwrap()
+                .is_null(0)
+        );
+
+        let decoded = BetfairTicker::decode_data_batch(schema.metadata(), batch).unwrap();
+        let Data::Custom(custom) = &decoded[0] else {
+            panic!("expected custom data");
+        };
+        let decoded = custom
+            .data
+            .as_any()
+            .downcast_ref::<BetfairTicker>()
+            .unwrap();
+
+        assert_eq!(decoded, &original);
+    }
+
+    #[rstest]
     fn test_betfair_starting_price_decimal_json_roundtrip() {
         let starting_price = BetfairStartingPrice::new(
             InstrumentId::from("1.234-56789-0.0.BETFAIR"),
@@ -475,8 +532,8 @@ mod tests {
     fn test_betfair_bsp_book_delta_decimal_json_roundtrip() {
         let delta = BetfairBspBookDelta::new(
             InstrumentId::from("1.234-56789-0.0.BETFAIR"),
-            2,
-            1,
+            BookAction::Update,
+            OrderSide::Buy,
             Decimal::new(1000, 0),
             Decimal::new(3338, 2),
             UnixNanos::from(1_000_000_000u64),

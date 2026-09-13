@@ -31,7 +31,7 @@ use std::{fmt::Write, num::NonZeroUsize, sync::OnceLock};
 
 use ahash::AHashMap;
 use nautilus_model::{
-    data::{BarType, DataType},
+    data::{BarType, DataType, data_type::IDENTIFIER_TOPIC_SUFFIX},
     identifiers::{
         ClientId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId, StrategyId, Venue,
     },
@@ -777,6 +777,17 @@ pub fn get_signal_pattern(name: &str) -> MStr<Pattern> {
         .borrow_mut()
         .switchboard
         .signal_pattern(name)
+}
+
+/// Returns subscriptions for a custom data type and its optional identifier scope.
+#[must_use]
+pub fn get_custom_subscription_topics(data_type: &DataType) -> Vec<MStr<Pattern>> {
+    let topic = get_custom_topic(data_type);
+    let mut topics = vec![topic.into()];
+    if data_type.identifier().is_none() {
+        topics.push(MStr::pattern(format!("{topic}{IDENTIFIER_TOPIC_SUFFIX}*")));
+    }
+    topics
 }
 
 fn state_topic_component(value: &str) -> String {

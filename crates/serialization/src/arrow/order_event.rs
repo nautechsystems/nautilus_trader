@@ -13,13 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashMap;
+
+use arrow::{datatypes::Schema, error::ArrowError, record_batch::RecordBatch};
 use nautilus_model::events::{
     OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated, OrderExpired,
     OrderFillVoided, OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
     OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered, OrderUpdated,
 };
 
-use super::json::{JsonFieldSpec, impl_json_arrow};
+use super::{
+    ArrowSchemaProvider, DecodeTypedFromRecordBatch, EncodeToRecordBatch, EncodingError,
+    KEY_INSTRUMENT_ID,
+    json::{JsonFieldSpec, decode_batch, encode_batch, metadata_for_type, schema_for_type},
+};
 
 const ORDER_INITIALIZED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
@@ -35,15 +42,15 @@ const ORDER_INITIALIZED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::boolean("quote_quantity", false),
     JsonFieldSpec::boolean("reconciliation", false),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
     JsonFieldSpec::utf8("price", true),
     JsonFieldSpec::utf8("trigger_price", true),
     JsonFieldSpec::utf8("trigger_type", true),
     JsonFieldSpec::utf8("limit_offset", true),
     JsonFieldSpec::utf8("trailing_offset", true),
     JsonFieldSpec::utf8("trailing_offset_type", true),
-    JsonFieldSpec::u64("expire_time", true),
+    JsonFieldSpec::timestamp("expire_time", true),
     JsonFieldSpec::utf8("display_qty", true),
     JsonFieldSpec::utf8("emulation_trigger", true),
     JsonFieldSpec::utf8("trigger_instrument_id", true),
@@ -67,8 +74,8 @@ const ORDER_DENIED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("reason", false),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
 ];
 
 const ORDER_EMULATED_FIELDS: &[JsonFieldSpec] = &[
@@ -77,8 +84,8 @@ const ORDER_EMULATED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
 ];
 
 const ORDER_SUBMITTED_FIELDS: &[JsonFieldSpec] = &[
@@ -88,8 +95,8 @@ const ORDER_SUBMITTED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("account_id", false),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
 ];
 
 const ORDER_ACCEPTED_FIELDS: &[JsonFieldSpec] = &[
@@ -100,8 +107,8 @@ const ORDER_ACCEPTED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("venue_order_id", false),
     JsonFieldSpec::utf8("account_id", false),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
     JsonFieldSpec::boolean("reconciliation", false),
 ];
 
@@ -113,8 +120,8 @@ const ORDER_REJECTED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("account_id", false),
     JsonFieldSpec::utf8("reason", false),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
     JsonFieldSpec::boolean("reconciliation", false),
     JsonFieldSpec::boolean("due_post_only", false),
 ];
@@ -126,8 +133,8 @@ const ORDER_PENDING_CANCEL_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("account_id", true),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
     JsonFieldSpec::boolean("reconciliation", false),
     JsonFieldSpec::utf8("venue_order_id", true),
 ];
@@ -138,8 +145,8 @@ const ORDER_CANCELED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
     JsonFieldSpec::boolean("reconciliation", false),
     JsonFieldSpec::utf8("venue_order_id", true),
     JsonFieldSpec::utf8("account_id", true),
@@ -152,8 +159,8 @@ const ORDER_CANCEL_REJECTED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("reason", false),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
     JsonFieldSpec::boolean("reconciliation", false),
     JsonFieldSpec::utf8("venue_order_id", true),
     JsonFieldSpec::utf8("account_id", true),
@@ -165,8 +172,8 @@ const ORDER_EXPIRED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
     JsonFieldSpec::boolean("reconciliation", false),
     JsonFieldSpec::utf8("venue_order_id", true),
     JsonFieldSpec::utf8("account_id", true),
@@ -178,8 +185,8 @@ const ORDER_TRIGGERED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
     JsonFieldSpec::boolean("reconciliation", false),
     JsonFieldSpec::utf8("venue_order_id", true),
     JsonFieldSpec::utf8("account_id", true),
@@ -192,8 +199,8 @@ const ORDER_PENDING_UPDATE_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("account_id", true),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
     JsonFieldSpec::boolean("reconciliation", false),
     JsonFieldSpec::utf8("venue_order_id", true),
 ];
@@ -205,8 +212,8 @@ const ORDER_RELEASED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("released_price", false),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
 ];
 
 const ORDER_MODIFY_REJECTED_FIELDS: &[JsonFieldSpec] = &[
@@ -216,8 +223,8 @@ const ORDER_MODIFY_REJECTED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("client_order_id", false),
     JsonFieldSpec::utf8("reason", false),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
     JsonFieldSpec::boolean("reconciliation", false),
     JsonFieldSpec::utf8("venue_order_id", true),
     JsonFieldSpec::utf8("account_id", true),
@@ -236,8 +243,8 @@ const ORDER_UPDATED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("protection_price", true),
     JsonFieldSpec::boolean("is_quote_quantity", false),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
     JsonFieldSpec::boolean("reconciliation", false),
 ];
 
@@ -256,8 +263,8 @@ const ORDER_FILLED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("currency", false),
     JsonFieldSpec::utf8("liquidity_side", false),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
     JsonFieldSpec::boolean("reconciliation", false),
     JsonFieldSpec::utf8("position_id", true),
     JsonFieldSpec::utf8("commission", true),
@@ -284,45 +291,96 @@ const ORDER_FILL_VOIDED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("reason", true),
     JsonFieldSpec::utf8_json("info", true),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
     JsonFieldSpec::boolean("reconciliation", false),
     JsonFieldSpec::boolean("is_reopened", false),
     JsonFieldSpec::utf8("causation_id", true),
 ];
 
-impl_json_arrow!(instrument OrderInitialized,
+fn instrument_metadata(type_name: &'static str, instrument_id: &str) -> HashMap<String, String> {
+    let mut metadata = metadata_for_type(type_name);
+    metadata.insert(KEY_INSTRUMENT_ID.to_string(), instrument_id.to_string());
+    metadata
+}
+
+macro_rules! impl_order_event_arrow {
+    ($type:ty, $type_name:expr, $fields:expr) => {
+        impl ArrowSchemaProvider for $type {
+            fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
+                schema_for_type($type_name, metadata, $fields)
+            }
+        }
+
+        impl EncodeToRecordBatch for $type {
+            fn encode_batch<T>(
+                metadata: &HashMap<String, String>,
+                data: &[T],
+            ) -> Result<RecordBatch, ArrowError>
+            where
+                T: std::borrow::Borrow<Self>,
+            {
+                encode_batch(
+                    $type_name,
+                    metadata,
+                    data.iter().map(std::borrow::Borrow::borrow),
+                    $fields,
+                )
+            }
+
+            fn metadata(&self) -> HashMap<String, String> {
+                instrument_metadata($type_name, &self.instrument_id.to_string())
+            }
+        }
+
+        impl DecodeTypedFromRecordBatch for $type {
+            fn decode_typed_batch(
+                metadata: &HashMap<String, String>,
+                record_batch: RecordBatch,
+            ) -> Result<Vec<Self>, EncodingError> {
+                decode_batch(metadata, &record_batch, $fields, Some($type_name))
+            }
+        }
+    };
+}
+
+impl_order_event_arrow!(
+    OrderInitialized,
     "OrderInitialized",
     ORDER_INITIALIZED_FIELDS
 );
-impl_json_arrow!(instrument OrderDenied, "OrderDenied", ORDER_DENIED_FIELDS);
-impl_json_arrow!(instrument OrderEmulated, "OrderEmulated", ORDER_EMULATED_FIELDS);
-impl_json_arrow!(instrument OrderSubmitted, "OrderSubmitted", ORDER_SUBMITTED_FIELDS);
-impl_json_arrow!(instrument OrderAccepted, "OrderAccepted", ORDER_ACCEPTED_FIELDS);
-impl_json_arrow!(instrument OrderRejected, "OrderRejected", ORDER_REJECTED_FIELDS);
-impl_json_arrow!(instrument OrderPendingCancel,
+impl_order_event_arrow!(OrderDenied, "OrderDenied", ORDER_DENIED_FIELDS);
+impl_order_event_arrow!(OrderEmulated, "OrderEmulated", ORDER_EMULATED_FIELDS);
+impl_order_event_arrow!(OrderSubmitted, "OrderSubmitted", ORDER_SUBMITTED_FIELDS);
+impl_order_event_arrow!(OrderAccepted, "OrderAccepted", ORDER_ACCEPTED_FIELDS);
+impl_order_event_arrow!(OrderRejected, "OrderRejected", ORDER_REJECTED_FIELDS);
+impl_order_event_arrow!(
+    OrderPendingCancel,
     "OrderPendingCancel",
     ORDER_PENDING_CANCEL_FIELDS
 );
-impl_json_arrow!(instrument OrderCanceled, "OrderCanceled", ORDER_CANCELED_FIELDS);
-impl_json_arrow!(instrument OrderCancelRejected,
+impl_order_event_arrow!(OrderCanceled, "OrderCanceled", ORDER_CANCELED_FIELDS);
+impl_order_event_arrow!(
+    OrderCancelRejected,
     "OrderCancelRejected",
     ORDER_CANCEL_REJECTED_FIELDS
 );
-impl_json_arrow!(instrument OrderExpired, "OrderExpired", ORDER_EXPIRED_FIELDS);
-impl_json_arrow!(instrument OrderTriggered, "OrderTriggered", ORDER_TRIGGERED_FIELDS);
-impl_json_arrow!(instrument OrderPendingUpdate,
+impl_order_event_arrow!(OrderExpired, "OrderExpired", ORDER_EXPIRED_FIELDS);
+impl_order_event_arrow!(OrderTriggered, "OrderTriggered", ORDER_TRIGGERED_FIELDS);
+impl_order_event_arrow!(
+    OrderPendingUpdate,
     "OrderPendingUpdate",
     ORDER_PENDING_UPDATE_FIELDS
 );
-impl_json_arrow!(instrument OrderReleased, "OrderReleased", ORDER_RELEASED_FIELDS);
-impl_json_arrow!(instrument OrderModifyRejected,
+impl_order_event_arrow!(OrderReleased, "OrderReleased", ORDER_RELEASED_FIELDS);
+impl_order_event_arrow!(
+    OrderModifyRejected,
     "OrderModifyRejected",
     ORDER_MODIFY_REJECTED_FIELDS
 );
-impl_json_arrow!(instrument OrderUpdated, "OrderUpdated", ORDER_UPDATED_FIELDS);
-impl_json_arrow!(instrument OrderFilled, "OrderFilled", ORDER_FILLED_FIELDS);
-impl_json_arrow!(instrument OrderFillVoided, "OrderFillVoided", ORDER_FILL_VOIDED_FIELDS);
+impl_order_event_arrow!(OrderUpdated, "OrderUpdated", ORDER_UPDATED_FIELDS);
+impl_order_event_arrow!(OrderFilled, "OrderFilled", ORDER_FILLED_FIELDS);
+impl_order_event_arrow!(OrderFillVoided, "OrderFillVoided", ORDER_FILL_VOIDED_FIELDS);
 
 #[cfg(test)]
 mod tests {
@@ -349,7 +407,6 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
-    use crate::arrow::{ArrowSchemaProvider, DecodeTypedFromRecordBatch, EncodeToRecordBatch};
 
     #[rstest]
     fn test_order_initialized_round_trip(order_initialized_buy_limit: OrderInitialized) {

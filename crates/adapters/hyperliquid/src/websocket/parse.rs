@@ -968,11 +968,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_ws_order_book_depth10_pads_sparse_book() {
+    fn test_parse_ws_order_book_depth10_preserves_sparse_book() {
         let instrument = create_test_instrument();
-        let ts_init = UnixNanos::default();
+        let ts_init = UnixNanos::from(123);
 
-        // 3 bids, 2 asks - Depth10 must pad the remaining 7/8 slots with zero orders
         let book = WsBookData {
             coin: Ustr::from("BTC"),
             levels: [
@@ -1011,34 +1010,29 @@ mod tests {
 
         let depth = parse_ws_order_book_depth10(&book, &instrument, ts_init).unwrap();
 
+        let expected_bids = [("100.00", "1.000"), ("99.99", "2.000"), ("99.98", "3.000")];
+        let expected_asks = [("100.01", "1.500"), ("100.02", "2.500")];
+
         assert_eq!(depth.instrument_id, instrument.id());
-        assert_eq!(depth.bids.len(), 10);
-        assert_eq!(depth.asks.len(), 10);
-
-        assert_eq!(depth.bids[0].price.as_f64(), 100.00);
-        assert_eq!(depth.bids[0].side, OrderSide::Buy.into());
-        assert_eq!(depth.bid_counts[0], 2);
-        assert_eq!(depth.bids[2].price.as_f64(), 99.98);
-        assert_eq!(depth.bid_counts[2], 1);
-
-        // Padded bid slots
-        for i in 3..10 {
-            assert_eq!(depth.bids[i].side, OrderSide::Buy.into());
-            assert!(depth.bids[i].size.is_zero());
-            assert_eq!(depth.bid_counts[i], 0);
+        assert_eq!(depth.bids.len(), expected_bids.len());
+        assert_eq!(depth.asks.len(), expected_asks.len());
+        assert_eq!(depth.bid_counts.as_slice(), &[2, 3, 1]);
+        assert_eq!(depth.ask_counts.as_slice(), &[1, 4]);
+        for (order, (price, size)) in depth.bids.iter().zip(expected_bids) {
+            assert_eq!(order.side, Some(OrderSide::Buy));
+            assert_eq!(order.price, Price::from(price));
+            assert_eq!(order.size, Quantity::from(size));
+            assert_eq!(order.order_id, 0);
         }
 
-        assert_eq!(depth.asks[0].price.as_f64(), 100.01);
-        assert_eq!(depth.asks[0].side, OrderSide::Sell.into());
-        assert_eq!(depth.ask_counts[0], 1);
-        assert_eq!(depth.asks[1].price.as_f64(), 100.02);
-        assert_eq!(depth.ask_counts[1], 4);
-
-        for i in 2..10 {
-            assert_eq!(depth.asks[i].side, OrderSide::Sell.into());
-            assert!(depth.asks[i].size.is_zero());
-            assert_eq!(depth.ask_counts[i], 0);
+        for (order, (price, size)) in depth.asks.iter().zip(expected_asks) {
+            assert_eq!(order.side, Some(OrderSide::Sell));
+            assert_eq!(order.price, Price::from(price));
+            assert_eq!(order.size, Quantity::from(size));
+            assert_eq!(order.order_id, 0);
         }
+        assert_eq!(depth.sequence, 0);
+        assert_eq!(depth.ts_init, ts_init);
 
         // Snapshot flag set
         assert_eq!(depth.flags, RecordFlag::F_SNAPSHOT as u8);

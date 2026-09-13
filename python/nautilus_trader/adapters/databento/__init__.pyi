@@ -104,7 +104,7 @@ class DatabentoDataLoader:
         filepath: str | os.PathLike | pathlib.Path,
         instrument_id: model.InstrumentId | None = None,
         price_precision: int | None = None,
-    ) -> list[model.OrderBookDepth10]: ...
+    ) -> list[model.OrderBookDepth]: ...
     def load_quotes(
         self,
         filepath: str | os.PathLike | pathlib.Path,

@@ -1724,25 +1724,61 @@ fn test_decode_mbp10_msg_with_undefined_levels() {
     msg.levels[7].ask_px = i64::MAX;
     msg.levels[7].ask_sz = 0;
     msg.levels[7].ask_ct = 0;
+    msg.hd.ts_event = 1_609_160_400_000_700_000;
     msg.ts_recv = 1_609_160_400_000_704_060;
+    msg.sequence = 42;
+    msg.flags = dbn::FlagSet::empty().set_snapshot();
 
     let instrument_id = InstrumentId::from("TEST.VENUE");
     let depth = decode_mbp10_msg(&msg, instrument_id, 2, None).unwrap();
 
-    assert_eq!(depth.bids[5].side, None);
-    assert_eq!(depth.bids[5].price.raw(), 0);
-    assert_eq!(depth.bids[5].price.precision, 0);
-    assert_eq!(depth.bids[5].size.raw(), 0);
-    assert_eq!(depth.asks[7].side, None);
-    assert_eq!(depth.asks[7].price.raw(), 0);
-    assert_eq!(depth.asks[7].price.precision, 0);
-    assert_eq!(depth.asks[7].size.raw(), 0);
+    let expected_bids = [
+        ("100.00", 10),
+        ("99.99", 11),
+        ("99.98", 12),
+        ("99.97", 13),
+        ("99.96", 14),
+        ("99.94", 16),
+        ("99.93", 17),
+        ("99.92", 18),
+        ("99.91", 19),
+    ];
+    let expected_asks = [
+        ("100.01", 10),
+        ("100.02", 11),
+        ("100.03", 12),
+        ("100.04", 13),
+        ("100.05", 14),
+        ("100.06", 15),
+        ("100.07", 16),
+        ("100.09", 18),
+        ("100.10", 19),
+    ];
 
-    // Defined neighbors keep their normal side and instrument precision
-    assert_eq!(depth.bids[0].side, Some(OrderSide::Buy));
-    assert_eq!(depth.bids[0].price.precision, 2);
-    assert_eq!(depth.asks[0].side, Some(OrderSide::Sell));
-    assert_eq!(depth.asks[0].price.precision, 2);
+    assert_eq!(depth.instrument_id, instrument_id);
+    assert_eq!(depth.bids.len(), expected_bids.len());
+    assert_eq!(depth.asks.len(), expected_asks.len());
+    assert_eq!(depth.bid_counts.as_slice(), &[1, 2, 3, 4, 5, 7, 8, 9, 10]);
+    assert_eq!(depth.ask_counts.as_slice(), &[1, 2, 3, 4, 5, 6, 7, 9, 10]);
+    for (order, (price, size)) in depth.bids.iter().zip(expected_bids) {
+        assert_eq!(order.side, Some(OrderSide::Buy));
+        assert_eq!(order.price, Price::from(price));
+        assert_eq!(order.price.precision, 2);
+        assert_eq!(order.size, Quantity::from(size));
+        assert_eq!(order.order_id, 0);
+    }
+
+    for (order, (price, size)) in depth.asks.iter().zip(expected_asks) {
+        assert_eq!(order.side, Some(OrderSide::Sell));
+        assert_eq!(order.price, Price::from(price));
+        assert_eq!(order.price.precision, 2);
+        assert_eq!(order.size, Quantity::from(size));
+        assert_eq!(order.order_id, 0);
+    }
+    assert_eq!(depth.flags, msg.flags.raw());
+    assert_eq!(depth.sequence, u64::from(msg.sequence));
+    assert_eq!(depth.ts_event, UnixNanos::from(msg.ts_recv));
+    assert_eq!(depth.ts_init, UnixNanos::from(msg.ts_recv));
 }
 
 #[rstest]

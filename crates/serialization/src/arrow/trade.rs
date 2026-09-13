@@ -13,36 +13,39 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use arrow::{
-    array::{
-        FixedSizeBinaryArray, FixedSizeBinaryBuilder, StringArray, StringBuilder, StringViewArray,
-        UInt8Array, UInt64Array,
-    },
+    array::{Decimal128Array, StringArray, StringBuilder, StringViewArray, UInt64Array},
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
     record_batch::RecordBatch,
 };
-use nautilus_model::{
-    data::TradeTick, enums::AggressorSide, identifiers::TradeId, types::fixed::PRECISION_BYTES,
-};
+#[cfg(test)]
+use nautilus_model::identifiers::InstrumentId;
+use nautilus_model::{data::TradeTick, enums::AggressorSide, identifiers::TradeId};
 
 use super::{
-    DecodeDataFromRecordBatch, EncodingError, decode_price, decode_quantity, extract_column,
-    parse_price_size_metadata, validate_precision_bytes,
+    DecodeDataFromRecordBatch, EncodingError, KEY_IDENTIFIER, decode_required_decimal_price,
+    decode_required_decimal_quantity, decode_required_timestamp, enum_dictionary_array,
+    enum_dictionary_data_type, extract_column, extract_column_string, fixed_decimal_data_type,
+    identifier_array_from_display, parse_metadata, required_price_decimal_array,
+    required_quantity_decimal_array,
 };
+#[cfg(test)]
+use super::{KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION};
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for TradeTick {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
         let fields = vec![
-            Field::new("price", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("size", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("aggressor_side", DataType::UInt8, false),
+            Field::new("price", fixed_decimal_data_type(), true),
+            Field::new("size", fixed_decimal_data_type(), true),
+            Field::new("aggressor_side", enum_dictionary_data_type(), false),
             Field::new("trade_id", DataType::Utf8, false),
-            Field::new("ts_event", DataType::UInt64, false),
-            Field::new("ts_init", DataType::UInt64, false),
+            Field::new("ts_event", crate::arrow::timestamp_data_type(), false),
+            Field::new("ts_init", crate::arrow::timestamp_data_type(), false),
+            Field::new(KEY_IDENTIFIER, DataType::Utf8, true),
         ];
 
         match metadata {
@@ -53,39 +56,45 @@ impl ArrowSchemaProvider for TradeTick {
 }
 
 impl EncodeToRecordBatch for TradeTick {
-    fn encode_batch(
+    fn encode_batch<T>(
         metadata: &HashMap<String, String>,
-        data: &[Self],
-    ) -> Result<RecordBatch, ArrowError> {
-        let mut price_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
-        let mut size_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
-
-        let mut aggressor_side_builder = UInt8Array::builder(data.len());
+        data: &[T],
+    ) -> Result<RecordBatch, ArrowError>
+    where
+        T: std::borrow::Borrow<Self>,
+    {
         let mut trade_id_builder = StringBuilder::new();
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
 
-        for tick in data {
-            price_builder
-                .append_value(tick.price.raw().to_le_bytes())
-                .unwrap();
-            size_builder
-                .append_value(tick.size.raw().to_le_bytes())
-                .unwrap();
-            aggressor_side_builder.append_value(tick.aggressor_side as u8);
+        for tick in data.iter().map(std::borrow::Borrow::borrow) {
             trade_id_builder.append_value(tick.trade_id.to_string());
             ts_event_builder.append_value(tick.ts_event.as_u64());
             ts_init_builder.append_value(tick.ts_init.as_u64());
         }
 
-        let price_array = Arc::new(price_builder.finish());
-        let size_array = Arc::new(size_builder.finish());
-        let aggressor_side_array = Arc::new(aggressor_side_builder.finish());
+        let price_array = Arc::new(required_price_decimal_array(
+            data.iter()
+                .map(std::borrow::Borrow::borrow)
+                .map(|tick| tick.price.raw()),
+            "price",
+        )?);
+        let size_array = Arc::new(required_quantity_decimal_array(
+            data.iter()
+                .map(std::borrow::Borrow::borrow)
+                .map(|tick| tick.size.raw()),
+            "size",
+        )?);
+        let aggressor_side_array = Arc::new(enum_dictionary_array(
+            data.iter()
+                .map(std::borrow::Borrow::borrow)
+                .map(|tick| tick.aggressor_side),
+        )?);
         let trade_id_array = Arc::new(trade_id_builder.finish());
         let ts_event_array = Arc::new(ts_event_builder.finish());
         let ts_init_array = Arc::new(ts_init_builder.finish());
 
-        RecordBatch::try_new(
+        crate::arrow::record_batch_with_timestamps(
             Self::get_schema(Some(metadata.clone())).into(),
             vec![
                 price_array,
@@ -94,6 +103,11 @@ impl EncodeToRecordBatch for TradeTick {
                 trade_id_array,
                 ts_event_array,
                 ts_init_array,
+                Arc::new(identifier_array_from_display(
+                    data.iter()
+                        .map(std::borrow::Borrow::borrow)
+                        .map(|tick| tick.instrument_id),
+                )),
             ],
         )
     }
@@ -112,28 +126,18 @@ impl DecodeFromRecordBatch for TradeTick {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Result<Vec<Self>, EncodingError> {
-        let (instrument_id, price_precision, size_precision) = parse_price_size_metadata(metadata)?;
+        let (instrument_id, price_precision, size_precision) = parse_metadata(metadata)?;
+        let record_batch = crate::arrow::record_batch_with_u64_timestamps(&record_batch)?;
+        let record_batch = &record_batch;
         let cols = record_batch.columns();
 
-        let price_values = extract_column::<FixedSizeBinaryArray>(
-            cols,
-            "price",
-            0,
-            DataType::FixedSizeBinary(PRECISION_BYTES),
-        )?;
+        let price_values =
+            extract_column::<Decimal128Array>(cols, "price", 0, fixed_decimal_data_type())?;
 
-        let size_values = extract_column::<FixedSizeBinaryArray>(
-            cols,
-            "size",
-            1,
-            DataType::FixedSizeBinary(PRECISION_BYTES),
-        )?;
+        let size_values =
+            extract_column::<Decimal128Array>(cols, "size", 1, fixed_decimal_data_type())?;
 
-        validate_precision_bytes(price_values, "price")?;
-        validate_precision_bytes(size_values, "size")?;
-
-        let aggressor_side_values =
-            extract_column::<UInt8Array>(cols, "aggressor_side", 2, DataType::UInt8)?;
+        let aggressor_side_values = extract_column_string(cols, "aggressor_side", 2)?;
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 4, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 5, DataType::UInt64)?;
 
@@ -167,19 +171,18 @@ impl DecodeFromRecordBatch for TradeTick {
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|i| {
-                let price = decode_price(price_values.value(i), price_precision, "price", i)?;
-                let size = decode_quantity(size_values.value(i), size_precision, "size", i)?;
+                let price =
+                    decode_required_decimal_price(price_values, price_precision, "price", i)?;
+                let size =
+                    decode_required_decimal_quantity(size_values, size_precision, "size", i)?;
                 let aggressor_side_value = aggressor_side_values.value(i);
-                let aggressor_side = AggressorSide::from_repr(aggressor_side_value as usize)
-                    .ok_or_else(|| {
-                        EncodingError::ParseError(
-                            stringify!(AggressorSide),
-                            format!("Invalid enum value, was {aggressor_side_value}"),
-                        )
+                let aggressor_side =
+                    AggressorSide::from_str(aggressor_side_value).map_err(|e| {
+                        EncodingError::ParseError(stringify!(AggressorSide), e.to_string())
                     })?;
                 let trade_id = trade_id_values[i];
-                let ts_event = ts_event_values.value(i).into();
-                let ts_init = ts_init_values.value(i).into();
+                let ts_event = decode_required_timestamp(ts_event_values, "ts_event", i)?;
+                let ts_init = decode_required_timestamp(ts_init_values, "ts_init", i)?;
 
                 Ok(Self {
                     instrument_id,
@@ -211,20 +214,14 @@ impl DecodeDataFromRecordBatch for TradeTick {
 mod tests {
     use std::sync::Arc;
 
-    use arrow::{
-        array::{Array, UInt8Array, UInt64Array},
-        record_batch::RecordBatch,
-    };
-    use nautilus_model::{
-        identifiers::InstrumentId,
-        types::{Price, Quantity, fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw},
+    use arrow::array::{Array, Decimal128Array, TimestampNanosecondArray, UInt64Array};
+    use nautilus_model::types::{
+        Price, Quantity, fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw,
     };
     use rstest::rstest;
 
     use super::*;
-    use crate::arrow::{
-        KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION, fixed_size_binary, get_raw_price, get_raw_quantity,
-    };
+    use crate::arrow::{get_raw_price, get_raw_quantity};
 
     #[rstest]
     fn test_get_schema() {
@@ -232,20 +229,17 @@ mod tests {
         let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
         let schema = TradeTick::get_schema(Some(metadata.clone()));
 
-        let mut expected_fields = Vec::with_capacity(6);
+        let mut expected_fields = Vec::with_capacity(7);
 
-        expected_fields.push(Field::new(
-            "price",
-            DataType::FixedSizeBinary(PRECISION_BYTES),
-            false,
-        ));
+        expected_fields.push(Field::new("price", fixed_decimal_data_type(), true));
 
         expected_fields.extend(vec![
-            Field::new("size", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("aggressor_side", DataType::UInt8, false),
+            Field::new("size", fixed_decimal_data_type(), true),
+            Field::new("aggressor_side", enum_dictionary_data_type(), false),
             Field::new("trade_id", DataType::Utf8, false),
-            Field::new("ts_event", DataType::UInt64, false),
-            Field::new("ts_init", DataType::UInt64, false),
+            Field::new("ts_event", crate::arrow::timestamp_data_type(), false),
+            Field::new("ts_init", crate::arrow::timestamp_data_type(), false),
+            Field::new(KEY_IDENTIFIER, DataType::Utf8, true),
         ]);
 
         let expected_schema = Schema::new_with_metadata(expected_fields, metadata);
@@ -257,13 +251,23 @@ mod tests {
         let schema_map = TradeTick::get_schema_map();
         let mut expected_map = HashMap::new();
 
-        let precision_bytes = format!("FixedSizeBinary({PRECISION_BYTES})");
+        let precision_bytes = "Decimal128(38, 16)".to_string();
         expected_map.insert("price".to_string(), precision_bytes.clone());
         expected_map.insert("size".to_string(), precision_bytes);
-        expected_map.insert("aggressor_side".to_string(), "UInt8".to_string());
+        expected_map.insert(
+            "aggressor_side".to_string(),
+            "Dictionary(Int8, Utf8)".to_string(),
+        );
         expected_map.insert("trade_id".to_string(), "Utf8".to_string());
-        expected_map.insert("ts_event".to_string(), "UInt64".to_string());
-        expected_map.insert("ts_init".to_string(), "UInt64".to_string());
+        expected_map.insert(
+            "ts_event".to_string(),
+            "Timestamp(Nanosecond, Some(\"UTC\"))".to_string(),
+        );
+        expected_map.insert(
+            "ts_init".to_string(),
+            "Timestamp(Nanosecond, Some(\"UTC\"))".to_string(),
+        );
+        expected_map.insert(KEY_IDENTIFIER.to_string(), "Utf8".to_string());
         assert_eq!(schema_map, expected_map);
     }
 
@@ -298,7 +302,7 @@ mod tests {
 
         let price_values = columns[0]
             .as_any()
-            .downcast_ref::<FixedSizeBinaryArray>()
+            .downcast_ref::<Decimal128Array>()
             .unwrap();
         assert_eq!(
             get_raw_price(price_values.value(0)),
@@ -311,7 +315,7 @@ mod tests {
 
         let size_values = columns[1]
             .as_any()
-            .downcast_ref::<FixedSizeBinaryArray>()
+            .downcast_ref::<Decimal128Array>()
             .unwrap();
         assert_eq!(
             get_raw_quantity(size_values.value(0)),
@@ -322,12 +326,18 @@ mod tests {
             (500.0 * FIXED_SCALAR) as QuantityRaw
         );
 
-        let aggressor_side_values = columns[2].as_any().downcast_ref::<UInt8Array>().unwrap();
+        let aggressor_side_values = extract_column_string(columns, "aggressor_side", 2).unwrap();
         let trade_id_values = columns[3].as_any().downcast_ref::<StringArray>().unwrap();
-        let ts_event_values = columns[4].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ts_init_values = columns[5].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let ts_event_values = columns[4]
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .unwrap();
+        let ts_init_values = columns[5]
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .unwrap();
 
-        assert_eq!(columns.len(), 6);
+        assert_eq!(columns.len(), 7);
         assert_eq!(size_values.len(), 2);
         assert_eq!(
             get_raw_quantity(size_values.value(0)),
@@ -338,8 +348,8 @@ mod tests {
             (500.0 * FIXED_SCALAR) as QuantityRaw
         );
         assert_eq!(aggressor_side_values.len(), 2);
-        assert_eq!(aggressor_side_values.value(0), 1);
-        assert_eq!(aggressor_side_values.value(1), 2);
+        assert_eq!(aggressor_side_values.value(0), "BUY");
+        assert_eq!(aggressor_side_values.value(1), "SELL");
         assert_eq!(trade_id_values.len(), 2);
         assert_eq!(trade_id_values.value(0), "1");
         assert_eq!(trade_id_values.value(1), "2");
@@ -358,19 +368,26 @@ mod tests {
 
         let raw_price1 = (100.00 * FIXED_SCALAR) as PriceRaw;
         let raw_price2 = (101.00 * FIXED_SCALAR) as PriceRaw;
-        let price = fixed_size_binary(vec![&raw_price1.to_le_bytes(), &raw_price2.to_le_bytes()]);
+        let price = crate::arrow::test_support::decimal_array_from_bytes(vec![
+            &raw_price1.to_le_bytes(),
+            &raw_price2.to_le_bytes(),
+        ]);
 
-        let size = fixed_size_binary(vec![
+        let size = crate::arrow::test_support::decimal_array_from_bytes(vec![
             &((1000.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
             &((900.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
         ]);
-        let aggressor_side = UInt8Array::from(vec![0, 1]); // 0 for BUY, 1 for SELL
+        let aggressor_side =
+            enum_dictionary_array([AggressorSide::NoAggressor, AggressorSide::Buy]).unwrap();
         let trade_id = StringArray::from(vec!["1", "2"]);
         let ts_event = UInt64Array::from(vec![1, 2]);
         let ts_init = UInt64Array::from(vec![3, 4]);
 
-        let record_batch = RecordBatch::try_new(
-            TradeTick::get_schema(Some(metadata.clone())).into(),
+        let record_batch = crate::arrow::record_batch_with_timestamps(
+            crate::arrow::schema_without_identifier_column(&TradeTick::get_schema(Some(
+                metadata.clone(),
+            )))
+            .into(),
             vec![
                 Arc::new(price),
                 Arc::new(size),
@@ -396,11 +413,12 @@ mod tests {
         let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
 
         let raw_price = (100.00 * FIXED_SCALAR) as PriceRaw;
-        let price = fixed_size_binary(vec![&raw_price.to_le_bytes()]);
-        let size = fixed_size_binary(vec![
+        let price =
+            crate::arrow::test_support::decimal_array_from_bytes(vec![&raw_price.to_le_bytes()]);
+        let size = crate::arrow::test_support::decimal_array_from_bytes(vec![
             &((1000.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
         ]);
-        let aggressor_side = UInt8Array::from(vec![0]);
+        let aggressor_side = enum_dictionary_array([AggressorSide::NoAggressor]).unwrap();
 
         let trade_id: StringArray = vec![None::<&str>].into();
         let ts_event = UInt64Array::from(vec![1]);
@@ -408,16 +426,16 @@ mod tests {
 
         // Create schema with nullable trade_id to simulate external data source
         let fields = vec![
-            Field::new("price", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("size", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("aggressor_side", DataType::UInt8, false),
+            Field::new("price", fixed_decimal_data_type(), false),
+            Field::new("size", fixed_decimal_data_type(), false),
+            Field::new("aggressor_side", enum_dictionary_data_type(), false),
             Field::new("trade_id", DataType::Utf8, true), // nullable
-            Field::new("ts_event", DataType::UInt64, false),
-            Field::new("ts_init", DataType::UInt64, false),
+            Field::new("ts_event", crate::arrow::timestamp_data_type(), false),
+            Field::new("ts_init", crate::arrow::timestamp_data_type(), false),
         ];
         let schema = Schema::new_with_metadata(fields, metadata.clone());
 
-        let record_batch = RecordBatch::try_new(
+        let record_batch = crate::arrow::record_batch_with_timestamps(
             schema.into(),
             vec![
                 Arc::new(price),
@@ -445,17 +463,22 @@ mod tests {
         let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
 
         let invalid_price: PriceRaw = PriceRaw::MAX - 1000;
-        let price = fixed_size_binary(vec![&invalid_price.to_le_bytes()]);
-        let size = fixed_size_binary(vec![
+        let price = crate::arrow::test_support::decimal_array_from_bytes(vec![
+            &invalid_price.to_le_bytes(),
+        ]);
+        let size = crate::arrow::test_support::decimal_array_from_bytes(vec![
             &((1000.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
         ]);
-        let aggressor_side = UInt8Array::from(vec![0]);
+        let aggressor_side = enum_dictionary_array([AggressorSide::NoAggressor]).unwrap();
         let trade_id = StringArray::from(vec!["1"]);
         let ts_event = UInt64Array::from(vec![1]);
         let ts_init = UInt64Array::from(vec![2]);
 
-        let record_batch = RecordBatch::try_new(
-            TradeTick::get_schema(Some(metadata.clone())).into(),
+        let record_batch = crate::arrow::record_batch_with_timestamps(
+            crate::arrow::schema_without_identifier_column(&TradeTick::get_schema(Some(
+                metadata.clone(),
+            )))
+            .into(),
             vec![
                 Arc::new(price),
                 Arc::new(size),
@@ -486,17 +509,22 @@ mod tests {
         let metadata = TradeTick::get_metadata(&instrument_id, 2, FIXED_PRECISION);
 
         let raw_price = (100.00 * FIXED_SCALAR) as PriceRaw;
-        let price = fixed_size_binary(vec![&raw_price.to_le_bytes()]);
+        let price =
+            crate::arrow::test_support::decimal_array_from_bytes(vec![&raw_price.to_le_bytes()]);
 
         let invalid_size = QUANTITY_RAW_MAX + 1;
-        let size = fixed_size_binary(vec![&invalid_size.to_le_bytes()]);
-        let aggressor_side = UInt8Array::from(vec![0]);
+        let size =
+            crate::arrow::test_support::decimal_array_from_bytes(vec![&invalid_size.to_le_bytes()]);
+        let aggressor_side = enum_dictionary_array([AggressorSide::NoAggressor]).unwrap();
         let trade_id = StringArray::from(vec!["1"]);
         let ts_event = UInt64Array::from(vec![1]);
         let ts_init = UInt64Array::from(vec![2]);
 
-        let record_batch = RecordBatch::try_new(
-            TradeTick::get_schema(Some(metadata.clone())).into(),
+        let record_batch = crate::arrow::record_batch_with_timestamps(
+            crate::arrow::schema_without_identifier_column(&TradeTick::get_schema(Some(
+                metadata.clone(),
+            )))
+            .into(),
             vec![
                 Arc::new(price),
                 Arc::new(size),
@@ -523,18 +551,22 @@ mod tests {
         let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
 
         let raw_price = (100.00 * FIXED_SCALAR) as PriceRaw;
-        let price = fixed_size_binary(vec![&raw_price.to_le_bytes()]);
-        let size = fixed_size_binary(vec![
+        let price =
+            crate::arrow::test_support::decimal_array_from_bytes(vec![&raw_price.to_le_bytes()]);
+        let size = crate::arrow::test_support::decimal_array_from_bytes(vec![
             &((1000.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
         ]);
 
-        let aggressor_side = UInt8Array::from(vec![99]);
+        let aggressor_side = enum_dictionary_array(["INVALID"]).unwrap();
         let trade_id = StringArray::from(vec!["1"]);
         let ts_event = UInt64Array::from(vec![1]);
         let ts_init = UInt64Array::from(vec![2]);
 
-        let record_batch = RecordBatch::try_new(
-            TradeTick::get_schema(Some(metadata.clone())).into(),
+        let record_batch = crate::arrow::record_batch_with_timestamps(
+            crate::arrow::schema_without_identifier_column(&TradeTick::get_schema(Some(
+                metadata.clone(),
+            )))
+            .into(),
             vec![
                 Arc::new(price),
                 Arc::new(size),
@@ -562,17 +594,21 @@ mod tests {
         metadata.remove(KEY_INSTRUMENT_ID);
 
         let raw_price = (100.00 * FIXED_SCALAR) as PriceRaw;
-        let price = fixed_size_binary(vec![&raw_price.to_le_bytes()]);
-        let size = fixed_size_binary(vec![
+        let price =
+            crate::arrow::test_support::decimal_array_from_bytes(vec![&raw_price.to_le_bytes()]);
+        let size = crate::arrow::test_support::decimal_array_from_bytes(vec![
             &((1000.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
         ]);
-        let aggressor_side = UInt8Array::from(vec![0]);
+        let aggressor_side = enum_dictionary_array([AggressorSide::NoAggressor]).unwrap();
         let trade_id = StringArray::from(vec!["1"]);
         let ts_event = UInt64Array::from(vec![1]);
         let ts_init = UInt64Array::from(vec![2]);
 
-        let record_batch = RecordBatch::try_new(
-            TradeTick::get_schema(Some(metadata.clone())).into(),
+        let record_batch = crate::arrow::record_batch_with_timestamps(
+            crate::arrow::schema_without_identifier_column(&TradeTick::get_schema(Some(
+                metadata.clone(),
+            )))
+            .into(),
             vec![
                 Arc::new(price),
                 Arc::new(size),
@@ -600,17 +636,21 @@ mod tests {
         metadata.remove(KEY_PRICE_PRECISION);
 
         let raw_price = (100.00 * FIXED_SCALAR) as PriceRaw;
-        let price = fixed_size_binary(vec![&raw_price.to_le_bytes()]);
-        let size = fixed_size_binary(vec![
+        let price =
+            crate::arrow::test_support::decimal_array_from_bytes(vec![&raw_price.to_le_bytes()]);
+        let size = crate::arrow::test_support::decimal_array_from_bytes(vec![
             &((1000.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
         ]);
-        let aggressor_side = UInt8Array::from(vec![0]);
+        let aggressor_side = enum_dictionary_array([AggressorSide::NoAggressor]).unwrap();
         let trade_id = StringArray::from(vec!["1"]);
         let ts_event = UInt64Array::from(vec![1]);
         let ts_init = UInt64Array::from(vec![2]);
 
-        let record_batch = RecordBatch::try_new(
-            TradeTick::get_schema(Some(metadata.clone())).into(),
+        let record_batch = crate::arrow::record_batch_with_timestamps(
+            crate::arrow::schema_without_identifier_column(&TradeTick::get_schema(Some(
+                metadata.clone(),
+            )))
+            .into(),
             vec![
                 Arc::new(price),
                 Arc::new(size),

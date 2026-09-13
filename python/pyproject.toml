@@ -86,6 +86,7 @@ no-build-package = [
   "colorama",
   "coverage",
   "docutils",
+  "duckdb",
   "execnet",
   "furo",
   "h11",
@@ -111,7 +112,10 @@ no-build-package = [
   "platformdirs",
   "plotly",
   "pluggy",
+  "polars",
+  "polars-runtime-32",
   "psutil",
+  "pyarrow",
   "pygments",
   "pytest",
   "pytest-asyncio",
@@ -149,6 +153,9 @@ no-build-package = [
 [dependency-groups]
 dev = ["maturin==1.15.0", "ruff>=0.16.6", "ty>=0.0.78"]
 test = [
+  "pyarrow>=25.0.0",
+  "polars",
+  "duckdb",
   "pytest>=9.1.1",
   "pytest-asyncio>=1.4.0",
   "pytest-cov>=7.1.0",
@@ -208,6 +215,54 @@ unfixable = ["E4", "E501", "UP006", "UP035"]
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 [tool.ruff.lint.per-file-ignores]
+"python/nautilus_trader/model/custom.py" = [
+  "ANN001",
+  "ANN002",
+  "ANN003",
+  "ANN201",
+  "ANN202",
+  "ANN401",
+  "ARG001",
+  "D100",
+  "N807",
+  "PLC0415",
+  "PLR0915",
+]
+"nautilus_trader/model/custom.py" = [
+  "ANN001",
+  "ANN002",
+  "ANN003",
+  "ANN201",
+  "ANN202",
+  "ANN401",
+  "ARG001",
+  "D100",
+  "N807",
+  "PLC0415",
+  "PLR0915",
+]
+"python/nautilus_trader/persistence/catalog_to_df.py" = [
+  "ANN401",
+  "D101",
+  "D105",
+  "D107",
+  "FBT001",
+  "FBT002",
+  "PLC0415",
+  "PLR0913",
+  "PLR0917",
+]
+"nautilus_trader/persistence/catalog_to_df.py" = [
+  "ANN401",
+  "D101",
+  "D105",
+  "D107",
+  "FBT001",
+  "FBT002",
+  "PLC0415",
+  "PLR0913",
+  "PLR0917",
+]
 "nautilus_trader/**/*.pyi" = [
   "A002",
   "ANN401",

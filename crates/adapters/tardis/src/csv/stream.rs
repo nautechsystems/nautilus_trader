@@ -1780,10 +1780,7 @@ mod tests {
     use rstest::*;
 
     use super::*;
-    use crate::{
-        common::{parse::parse_price, testing::get_test_data_path},
-        csv::load::load_deltas,
-    };
+    use crate::{common::testing::get_test_data_path, csv::load::load_deltas};
 
     #[rstest]
     #[case(1)]
@@ -2445,14 +2442,53 @@ binance,BTCUSDT,1640995202000000,1640995202100000,50001.12,1.12,49999.12,1.62,50
         let chunk2 = chunks[1].as_ref().unwrap();
         assert_eq!(chunk2.len(), 1);
 
-        // Verify depth structure
         let first_depth = &chunk1[0];
-        assert_eq!(first_depth.bids.len(), 10); // Should have 10 levels
-        assert_eq!(first_depth.asks.len(), 10);
+        let expected_bids = [
+            ("49999.0", "1.5"),
+            ("49998.0", "2.5"),
+            ("49997.0", "3.5"),
+            ("49996.0", "4.5"),
+            ("49995.0", "5.5"),
+        ];
+        let expected_asks = [
+            ("50001.0", "1.0"),
+            ("50002.0", "2.0"),
+            ("50003.0", "3.0"),
+            ("50004.0", "4.0"),
+            ("50005.0", "5.0"),
+        ];
 
-        // Verify some specific prices
-        assert_eq!(first_depth.bids[0].price, parse_price(49999.0, 1));
-        assert_eq!(first_depth.asks[0].price, parse_price(50001.0, 1));
+        assert_eq!(
+            first_depth.instrument_id,
+            InstrumentId::from("BTCUSDT.BINANCE")
+        );
+        assert_eq!(first_depth.bids.len(), expected_bids.len());
+        assert_eq!(first_depth.asks.len(), expected_asks.len());
+        assert_eq!(first_depth.bid_counts.as_slice(), &[1; 5]);
+        assert_eq!(first_depth.ask_counts.as_slice(), &[1; 5]);
+        for (order, (price, size)) in first_depth.bids.iter().zip(expected_bids) {
+            assert_eq!(order.side, Some(OrderSide::Buy));
+            assert_eq!(order.price, Price::from(price));
+            assert_eq!(order.size, Quantity::from(size));
+            assert_eq!(order.order_id, 0);
+        }
+
+        for (order, (price, size)) in first_depth.asks.iter().zip(expected_asks) {
+            assert_eq!(order.side, Some(OrderSide::Sell));
+            assert_eq!(order.price, Price::from(price));
+            assert_eq!(order.size, Quantity::from(size));
+            assert_eq!(order.order_id, 0);
+        }
+        assert_eq!(first_depth.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(first_depth.sequence, 0);
+        assert_eq!(
+            first_depth.ts_event,
+            UnixNanos::from(1_640_995_200_000_000_000)
+        );
+        assert_eq!(
+            first_depth.ts_init,
+            UnixNanos::from(1_640_995_200_100_000_000)
+        );
 
         // Verify total count
         let total_depths: usize = chunks.iter().map(|c| c.as_ref().unwrap().len()).sum();
@@ -2464,95 +2500,74 @@ binance,BTCUSDT,1640995202000000,1640995202100000,50001.12,1.12,49999.12,1.62,50
 
     #[rstest]
     pub fn test_stream_depth10_from_snapshot25_chunked() {
-        // Create minimal snapshot25 CSV data (first 10 levels only for testing)
-        let mut header_parts = vec!["exchange", "symbol", "timestamp", "local_timestamp"];
-
-        // Add bid and ask levels (we'll only populate first few for testing)
-        let mut bid_headers = Vec::new();
-        let mut ask_headers = Vec::new();
-
-        for i in 0..25 {
-            bid_headers.push(format!("bids[{i}].price"));
-            bid_headers.push(format!("bids[{i}].amount"));
-        }
-
-        for i in 0..25 {
-            ask_headers.push(format!("asks[{i}].price"));
-            ask_headers.push(format!("asks[{i}].amount"));
-        }
-
-        for header in &bid_headers {
-            header_parts.push(header);
-        }
-
-        for header in &ask_headers {
-            header_parts.push(header);
-        }
-
-        let header = header_parts.join(",");
-
-        // Create a row with data for first 5 levels (rest will be empty)
-        let mut row1_parts = vec![
-            "binance".to_string(),
-            "BTCUSDT".to_string(),
-            "1640995200000000".to_string(),
-            "1640995200100000".to_string(),
+        let expected_bids = [
+            ("49999.00", "1.5"),
+            ("49998.99", "2.5"),
+            ("49998.98", "3.5"),
+            ("49998.97", "4.5"),
+            ("49998.96", "5.5"),
         ];
+        let expected_asks = [
+            ("50000.00", "1.0"),
+            ("50000.01", "2.0"),
+            ("50000.02", "3.0"),
+            ("50000.03", "4.0"),
+            ("50000.04", "5.0"),
+        ];
+        let mut headers = vec![
+            "exchange".to_string(),
+            "symbol".to_string(),
+            "timestamp".to_string(),
+            "local_timestamp".to_string(),
+        ];
+        let mut row = vec!["binance", "BTCUSDT", "1640995200000000", "1640995200100000"];
 
-        // Add bid levels (first 5 with data, rest empty)
+        // CSV records are decoded positionally in ask/bid order for each level
         for i in 0..25 {
-            if i < 5 {
-                let bid_price = f64::from(i).mul_add(-0.01, 49999.0);
-                let bid_amount = 1.0 + f64::from(i);
-                row1_parts.push(bid_price.to_string());
-                row1_parts.push(bid_amount.to_string());
-            } else {
-                row1_parts.push(String::new());
-                row1_parts.push(String::new());
-            }
+            headers.extend([
+                format!("asks[{i}].price"),
+                format!("asks[{i}].amount"),
+                format!("bids[{i}].price"),
+                format!("bids[{i}].amount"),
+            ]);
+            let (ask_price, ask_size) = expected_asks.get(i).copied().unwrap_or(("", ""));
+            let (bid_price, bid_size) = expected_bids.get(i).copied().unwrap_or(("", ""));
+            row.extend([ask_price, ask_size, bid_price, bid_size]);
         }
-
-        // Add ask levels (first 5 with data, rest empty)
-        for i in 0..25 {
-            if i < 5 {
-                let ask_price = f64::from(i).mul_add(0.01, 50000.0);
-                let ask_amount = 1.0 + f64::from(i);
-                row1_parts.push(ask_price.to_string());
-                row1_parts.push(ask_amount.to_string());
-            } else {
-                row1_parts.push(String::new());
-                row1_parts.push(String::new());
-            }
-        }
-
-        let csv_data = format!("{}\n{}", header, row1_parts.join(","));
-
-        // Write to temporary file
+        let csv_data = format!("{}\n{}", headers.join(","), row.join(","));
         let temp_file = std::env::temp_dir().join("test_stream_depth10_snapshot25.csv");
-        std::fs::write(&temp_file, &csv_data).unwrap();
+        std::fs::write(&temp_file, csv_data).unwrap();
 
-        // Stream with chunk size of 1
         let stream = stream_depth10_from_snapshot25(&temp_file, 1, None, None, None, None).unwrap();
         let chunks: Vec<_> = stream.collect();
 
-        // Should have 1 chunk with 1 item
         assert_eq!(chunks.len(), 1);
+        let chunk = chunks[0].as_ref().unwrap();
+        assert_eq!(chunk.len(), 1);
+        let depth = &chunk[0];
+        assert_eq!(depth.instrument_id, InstrumentId::from("BTCUSDT.BINANCE"));
+        assert_eq!(depth.bids.len(), expected_bids.len());
+        assert_eq!(depth.asks.len(), expected_asks.len());
+        assert_eq!(depth.bid_counts.as_slice(), &[1; 5]);
+        assert_eq!(depth.ask_counts.as_slice(), &[1; 5]);
+        for (order, (price, size)) in depth.bids.iter().zip(expected_bids) {
+            assert_eq!(order.side, Some(OrderSide::Buy));
+            assert_eq!(order.price, Price::from(price));
+            assert_eq!(order.size, Quantity::from(size));
+            assert_eq!(order.order_id, 0);
+        }
 
-        let chunk1 = chunks[0].as_ref().unwrap();
-        assert_eq!(chunk1.len(), 1);
+        for (order, (price, size)) in depth.asks.iter().zip(expected_asks) {
+            assert_eq!(order.side, Some(OrderSide::Sell));
+            assert_eq!(order.price, Price::from(price));
+            assert_eq!(order.size, Quantity::from(size));
+            assert_eq!(order.order_id, 0);
+        }
+        assert_eq!(depth.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(depth.sequence, 0);
+        assert_eq!(depth.ts_event, UnixNanos::from(1_640_995_200_000_000_000));
+        assert_eq!(depth.ts_init, UnixNanos::from(1_640_995_200_100_000_000));
 
-        // Verify depth structure
-        let depth = &chunk1[0];
-        assert_eq!(depth.bids.len(), 10); // Should have 10 levels
-        assert_eq!(depth.asks.len(), 10);
-
-        // Verify first level has data - check whatever we actually get
-        let actual_bid_price = depth.bids[0].price;
-        let actual_ask_price = depth.asks[0].price;
-        assert!(actual_bid_price.as_f64() > 0.0);
-        assert!(actual_ask_price.as_f64() > 0.0);
-
-        // Clean up
         std::fs::remove_file(&temp_file).ok();
     }
 

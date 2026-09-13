@@ -891,7 +891,7 @@ def test_depth10_str_and_repr(depth10: object) -> None:
     Test depth10 str and repr.
     """
     assert "AAPL.XNAS" in str(depth10)
-    assert "OrderBookDepth10" in repr(depth10)
+    assert "OrderBookDepth" in repr(depth10)
 
 
 def test_depth10_to_dict_and_from_dict_roundtrip(depth10: object) -> None:
@@ -911,7 +911,7 @@ def test_depth10_fully_qualified_name() -> None:
     """
     Test depth10 fully qualified name.
     """
-    assert OrderBookDepth10.fully_qualified_name() == "nautilus_trader.model:OrderBookDepth10"
+    assert OrderBookDepth10.fully_qualified_name() == "nautilus_trader.model:OrderBookDepth"
 
 
 def test_depth10_json_roundtrip(depth10: object) -> None:

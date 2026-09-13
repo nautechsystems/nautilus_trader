@@ -22,13 +22,13 @@ use nautilus_core::{UnixNanos, correctness::FAILED, serialization::Serializable}
 use serde::{Deserialize, Serialize};
 
 use super::{
-    HasTsInit,
+    ARROW_ENUM_DICTIONARY, ARROW_TIMESTAMP_NANOSECOND, HasTsInit,
     order::{BookOrder, NULL_ORDER},
 };
 use crate::{
     enums::{BookAction, RecordFlag},
     identifiers::InstrumentId,
-    types::{fixed::FIXED_SIZE_BINARY, quantity::check_positive_quantity},
+    types::{fixed::FIXED_DECIMAL, quantity::check_positive_quantity},
 };
 
 /// Represents a single change/delta in an order book.
@@ -185,15 +185,21 @@ impl OrderBookDelta {
     #[must_use]
     pub fn get_fields() -> IndexMap<String, String> {
         let mut metadata = IndexMap::new();
-        metadata.insert("action".to_string(), "UInt8".to_string());
-        metadata.insert("side".to_string(), "UInt8".to_string());
-        metadata.insert("price".to_string(), FIXED_SIZE_BINARY.to_string());
-        metadata.insert("size".to_string(), FIXED_SIZE_BINARY.to_string());
+        metadata.insert("action".to_string(), ARROW_ENUM_DICTIONARY.to_string());
+        metadata.insert("side".to_string(), ARROW_ENUM_DICTIONARY.to_string());
+        metadata.insert("price".to_string(), FIXED_DECIMAL.to_string());
+        metadata.insert("size".to_string(), FIXED_DECIMAL.to_string());
         metadata.insert("order_id".to_string(), "UInt64".to_string());
         metadata.insert("flags".to_string(), "UInt8".to_string());
         metadata.insert("sequence".to_string(), "UInt64".to_string());
-        metadata.insert("ts_event".to_string(), "UInt64".to_string());
-        metadata.insert("ts_init".to_string(), "UInt64".to_string());
+        metadata.insert(
+            "ts_event".to_string(),
+            ARROW_TIMESTAMP_NANOSECOND.to_string(),
+        );
+        metadata.insert(
+            "ts_init".to_string(),
+            ARROW_TIMESTAMP_NANOSECOND.to_string(),
+        );
         metadata
     }
 }
@@ -239,10 +245,13 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        data::{BookOrder, HasTsInit, OrderBookDelta, stubs::*},
+        data::{
+            ARROW_ENUM_DICTIONARY, ARROW_TIMESTAMP_NANOSECOND, BookOrder, HasTsInit,
+            OrderBookDelta, stubs::*,
+        },
         enums::{BookAction, OrderSide, RecordFlag},
         identifiers::InstrumentId,
-        types::{Price, Quantity},
+        types::{Price, Quantity, fixed::FIXED_DECIMAL},
     };
 
     fn create_test_delta() -> OrderBookDelta {
@@ -427,28 +436,27 @@ mod tests {
         let fields = OrderBookDelta::get_fields();
 
         assert_eq!(fields.len(), 9);
-        assert_eq!(fields.get("action"), Some(&"UInt8".to_string()));
-        assert_eq!(fields.get("side"), Some(&"UInt8".to_string()));
+        assert_eq!(
+            fields.get("action"),
+            Some(&ARROW_ENUM_DICTIONARY.to_string())
+        );
+        assert_eq!(fields.get("side"), Some(&ARROW_ENUM_DICTIONARY.to_string()));
 
-        #[cfg(feature = "high-precision")]
-        {
-            assert_eq!(
-                fields.get("price"),
-                Some(&"FixedSizeBinary(16)".to_string())
-            );
-            assert_eq!(fields.get("size"), Some(&"FixedSizeBinary(16)".to_string()));
-        }
-        #[cfg(not(feature = "high-precision"))]
-        {
-            assert_eq!(fields.get("price"), Some(&"FixedSizeBinary(8)".to_string()));
-            assert_eq!(fields.get("size"), Some(&"FixedSizeBinary(8)".to_string()));
-        }
+        assert_eq!(fields.get("price"), Some(&FIXED_DECIMAL.to_string()));
+        assert_eq!(fields.get("size"), Some(&FIXED_DECIMAL.to_string()));
 
         assert_eq!(fields.get("order_id"), Some(&"UInt64".to_string()));
         assert_eq!(fields.get("flags"), Some(&"UInt8".to_string()));
         assert_eq!(fields.get("sequence"), Some(&"UInt64".to_string()));
-        assert_eq!(fields.get("ts_event"), Some(&"UInt64".to_string()));
-        assert_eq!(fields.get("ts_init"), Some(&"UInt64".to_string()));
+        assert_eq!(
+            fields.get("ts_event"),
+            Some(&ARROW_TIMESTAMP_NANOSECOND.to_string())
+        );
+        assert_eq!(
+            fields.get("ts_init"),
+            Some(&ARROW_TIMESTAMP_NANOSECOND.to_string())
+        );
+        assert_eq!(fields.get("identifier"), None);
     }
 
     #[rstest]

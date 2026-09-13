@@ -8,6 +8,8 @@ Released on TBD (UTC).
 - Added a `channel` filter to actor `subscribe_queue_state`
 - Added `HttpClient::get_stream` and `HttpResponseStream` for HTTP bodies consumed without full buffering
 - Added `publish_message(...)`, `subscribe_topic(...)`, and `unsubscribe_topic(...)` for Python `DataActor`, `Strategy`, and `ExecutionAlgorithm`
+- Added Parquet catalog migration through `nautilus catalog migrate-parquet`
+- Added shared catalog and streaming writer factories for backtest and live nodes
 - Added `Cache` APIs and Redis/PostgreSQL persistence for `InstrumentClose` data
 - Added `avg_px` and report window fields to persisted execution reports
 - Added optional `BinaryOption.event_id` with Python and Arrow support
@@ -49,12 +51,15 @@ Released on TBD (UTC).
 - Removed Rust `Response` and `ReqwestError` exports from `nautilus_network::http`
 - Removed `InnerHttpClient::to_response` and `from_reqwest` error conversions; use `HttpClientError`
 - Added the required Rust `Instrument::info` method; custom implementations must return their metadata or `None`
+- Changed catalog depth display to nested bid and ask lists preserving all levels and order IDs; display requires current-format Arrow data
+
 - Removed Coinbase `CreateOrderRequest.reduce_only`; reduce-only orders are rejected before submission
 - Removed the dormant `PortfolioStatistic::calculate_from_orders` trait method; no analyzer supplied order data to statistics
 - Removed public Rust and Python `ForwardPrice` APIs; option chains now fetch reference prices internally
 - Replaced `RetryManager.execute_with_retry*` methods with `invocation(...).execute().await`
 - Replaced the Rust `DurationNanos` `u64` alias with a newtype; use constructors and accessors
 - Replaced `OKXHttpError::JsonError` and generic HTTP errors with typed transport and response failures
+- Replaced fixed-depth `OrderBookDepth10` with variable-depth `OrderBookDepth`, retaining a compatibility alias
 - Renamed `nautilus-serialization` Cargo feature `display` to `arrow-display`
 - Renamed blockchain log parsing modules to `hypersync::log` and `rpc::log`; update Rust imports
 - Renamed Cargo binary targets to kebab-case, including `to_json` to `to-json`, `to_parquet` to `to-parquet`, and `node_wallet` to `node-wallet`; update any `cargo run --bin` invocation to the new name
@@ -83,6 +88,8 @@ Released on TBD (UTC).
 - Changed Arrow instrument `asset_class` and `option_kind` columns to the canonical enum labels such as `EQUITY` and `CALL`; existing catalogs still decode, but earlier versions cannot read newly written files
 - Changed `OrderStatus::is_open()` to exclude the in-flight `SUBMITTED` state; use `OrderStatus::is_inflight()` when a pending venue request must also match
 - Changed Python-controlled allocation sizes to reject values above documented limits; reduce existing oversized configurations before upgrading
+- Changed Parquet prices, timestamps, enums, and JSON fields to the open Arrow catalog format; migrate existing catalogs
+- Changed custom data macros to separate model definitions from optional Arrow encoding
 
 ### Security
 

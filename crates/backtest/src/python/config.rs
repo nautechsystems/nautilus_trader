@@ -38,10 +38,12 @@ use nautilus_model::{
     identifiers::{ClientId, InstrumentId, TraderId},
     types::Currency,
 };
-use nautilus_persistence::config::DataCatalogConfig;
+use nautilus_persistence::{
+    config::DataCatalogConfig,
+    python::config::{PyCatalogBackend, PyStreamingConfig},
+};
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
-use nautilus_system::config::StreamingConfig;
 use nautilus_trading::ImportableControllerConfig;
 use pyo3::{Bound, IntoPyObjectExt, Py, PyAny, PyResult, Python, types::PyAnyMethods};
 use rust_decimal::Decimal;
@@ -109,7 +111,7 @@ impl BacktestEngineConfig {
         exec_engine: Option<ExecutionEngineConfig>,
         portfolio: Option<PortfolioConfig>,
         controller: Option<ImportableControllerConfig>,
-        streaming: Option<StreamingConfig>,
+        streaming: Option<PyStreamingConfig>,
         catalogs: Option<Vec<DataCatalogConfig>>,
     ) -> Self {
         let defaults = Self::default();
@@ -136,7 +138,7 @@ impl BacktestEngineConfig {
             exec_engine,
             portfolio,
             controller,
-            streaming,
+            streaming: streaming.map(Into::into),
             catalogs: catalogs.unwrap_or_default(),
         }
     }
@@ -269,8 +271,8 @@ impl BacktestEngineConfig {
 
     #[getter]
     #[pyo3(name = "streaming")]
-    fn py_streaming(&self) -> Option<StreamingConfig> {
-        self.streaming.clone()
+    fn py_streaming(&self) -> Option<PyStreamingConfig> {
+        self.streaming.clone().map(Into::into)
     }
 
     #[getter]
@@ -672,6 +674,7 @@ impl BacktestDataConfig {
         bar_spec = None,
         bar_types = None,
         optimize_file_loading = None,
+        catalog_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -698,6 +701,7 @@ impl BacktestDataConfig {
         bar_spec: Option<BarSpecification>,
         bar_types: Option<Vec<String>>,
         optimize_file_loading: Option<bool>,
+        catalog_backend: Option<pyo3::PyRef<'_, PyCatalogBackend>>,
     ) -> pyo3::PyResult<Self> {
         let data_type = data_type
             .parse::<NautilusDataType>()
@@ -707,6 +711,11 @@ impl BacktestDataConfig {
         Self::builder()
             .data_type(data_type)
             .catalog_path(catalog_path)
+            .catalog_backend(
+                catalog_backend
+                    .map(|backend| backend.inner())
+                    .unwrap_or_default(),
+            )
             .maybe_catalog_fs_protocol(catalog_fs_protocol)
             .maybe_catalog_fs_storage_options(
                 catalog_fs_storage_options.map(|m| m.into_iter().collect()),
@@ -726,6 +735,13 @@ impl BacktestDataConfig {
             .maybe_optimize_file_loading(optimize_file_loading)
             .build()
             .map_err(config_error_to_pyvalue_err)
+    }
+
+    /// Returns the configured catalog backend.
+    #[getter]
+    #[pyo3(name = "catalog_backend")]
+    fn py_catalog_backend(&self) -> PyCatalogBackend {
+        PyCatalogBackend::new(self.catalog_backend())
     }
 
     #[getter]

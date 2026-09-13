@@ -23,6 +23,15 @@ pub const MAX_GROUP_SIZE: u32 = 10_000;
 /// SBE encode error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SbeEncodeError {
+    /// Fixed-length group does not contain the required number of entries.
+    InvalidGroupSize {
+        /// Group name.
+        group: &'static str,
+        /// Actual entry count.
+        count: usize,
+        /// Required entry count.
+        expected: usize,
+    },
     /// String field exceeds the supported encoded length.
     StringTooLong {
         /// The field name.
@@ -56,6 +65,17 @@ pub enum SbeEncodeError {
 impl Display for SbeEncodeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::InvalidGroupSize {
+                group,
+                count,
+                expected,
+            } => {
+                write!(
+                    f,
+                    "Group `{group}` requires {expected} entries, found {count}"
+                )
+            }
+
             Self::StringTooLong { field, len, max } => {
                 write!(
                     f,

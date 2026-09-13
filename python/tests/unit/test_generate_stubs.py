@@ -3287,6 +3287,8 @@ def _collect_rust_config_source_blocks(config_names: object):  # noqa: C901
                 )
         for match in RUST_CONFIG_IMPL_RE.finditer(content):
             class_name = match.group(1)
+            if class_name == "PyStreamingConfig":
+                class_name = "StreamingConfig"
             if class_name in config_names:
                 impl_blocks.setdefault(class_name, []).append(
                     _rust_block_after_position(content, match.start()),
