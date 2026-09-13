@@ -58,7 +58,7 @@ use nautilus_common::{
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_hyperliquid::{
     common::{
-        consts::{HYPERLIQUID_CLIENT_ID, HYPERLIQUID_VENUE},
+        consts::{ASSET_INDEX_INFO_KEY, HYPERLIQUID_CLIENT_ID, HYPERLIQUID_VENUE},
         enums::HyperliquidEnvironment,
     },
     config::HyperliquidDataClientConfig,
@@ -100,6 +100,12 @@ struct TestServerState {
     // When set, the `recentTrades` info endpoint responds with HTTP 422 to
     // emulate a node without the Hyperliquid indexer.
     recent_trades_unavailable: Arc<tokio::sync::Mutex<bool>>,
+    // When set, the standard perp dex lists `NEWCOIN` after its fixture assets to
+    // emulate a market listed after the client connected.
+    new_perp_listed: Arc<tokio::sync::Mutex<bool>>,
+    // When set, `allPerpMetas` responds with HTTP 500 so the client falls back to
+    // the standard-dex-only `meta` endpoint.
+    all_perp_metas_unavailable: Arc<tokio::sync::Mutex<bool>>,
 }
 
 #[derive(Default)]
@@ -175,6 +181,19 @@ fn spot_meta_fixture() -> Value {
     })
 }
 
+async fn standard_perp_meta(state: &TestServerState) -> Value {
+    let mut meta = load_json("http_meta_perp_sample.json");
+
+    if *state.new_perp_listed.lock().await {
+        meta["universe"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"name": "NEWCOIN", "szDecimals": 2, "maxLeverage": 5}));
+    }
+
+    meta
+}
+
 async fn wait_for_server(addr: SocketAddr, path: &str) {
     let health_url = format!("http://{addr}{path}");
     let http_client = HttpClient::builder().build().unwrap();
@@ -210,12 +229,16 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
     *state.last_request_type.lock().await = Some(request_type.clone());
 
     match request_type.as_str() {
-        "meta" => {
-            let meta = load_json("http_meta_perp_sample.json");
-            Json(meta).into_response()
-        }
+        "meta" => Json(standard_perp_meta(&state).await).into_response(),
         "allPerpMetas" => {
-            let standard_meta = load_json("http_meta_perp_sample.json");
+            if *state.all_perp_metas_unavailable.lock().await {
+                return (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": "allPerpMetas unavailable"})),
+                )
+                    .into_response();
+            }
+            let standard_meta = standard_perp_meta(&state).await;
             let hip3_meta = json!({
                 "collateralToken": 360,
                 "universe": [
@@ -769,6 +792,55 @@ async fn drain_initial_events(rx: &mut tokio::sync::mpsc::UnboundedReceiver<Data
     .await;
 
     while rx.try_recv().is_ok() {}
+}
+
+async fn recv_until_response(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+) -> Vec<DataEvent> {
+    let mut events = Vec::new();
+
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("timeout waiting for response")
+            .expect("channel closed");
+        let is_response = matches!(event, DataEvent::Response(_));
+        events.push(event);
+
+        if is_response {
+            return events;
+        }
+    }
+}
+
+// A market listed after connect must be published before the response, so the
+// execution client holds its asset index by the time a strategy can act on it.
+fn assert_new_listing_published_before_response(events: &[DataEvent]) {
+    let (response, published) = events.split_last().unwrap();
+    assert!(
+        matches!(response, DataEvent::Response(_)),
+        "Expected response last, was: {response:?}"
+    );
+
+    let new_listing = published
+        .iter()
+        .find_map(|event| match event {
+            DataEvent::Instrument(instrument)
+                if instrument.id() == InstrumentId::from("NEWCOIN-USD-PERP.HYPERLIQUID") =>
+            {
+                Some(instrument)
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("NEWCOIN not published before response: {published:?}"));
+
+    // the standard dex lists NEWCOIN after its three fixture assets
+    assert_eq!(
+        new_listing
+            .info()
+            .and_then(|info| info.get_u64(ASSET_INDEX_INFO_KEY)),
+        Some(3),
+    );
 }
 
 async fn wait_for_open_interest_event(
@@ -1822,6 +1894,54 @@ async fn test_data_client_subscribe_all_dex_asset_ctxs_custom_data() {
 
 #[rstest]
 #[tokio::test]
+async fn test_data_client_partial_instrument_fetch_preserves_hip3_asset_ctxs_mapping() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+    drain_initial_events(&mut rx).await;
+
+    // the fetch now falls back to `meta`, which covers only the standard dex, and
+    // rebuilds the allDexsAssetCtxs mapping from that partial result
+    *state.all_perp_metas_unavailable.lock().await = true;
+
+    client
+        .request_instruments(RequestInstruments::new(
+            None,
+            None,
+            Some(*HYPERLIQUID_CLIENT_ID),
+            Some(*HYPERLIQUID_VENUE),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .unwrap();
+    recv_until_response(&mut rx).await;
+
+    client
+        .subscribe(SubscribeCustomData::new(
+            Some(*HYPERLIQUID_CLIENT_ID),
+            None,
+            DataType::new("HyperliquidAllDexsAssetCtxs", None, None),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    // requires both a standard-dex entry and an `xyz` HIP-3 entry
+    wait_for_all_dex_asset_ctxs_event(&mut rx).await;
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_data_client_subscribe_book_deltas() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
@@ -2220,7 +2340,7 @@ async fn test_data_client_reset_clears_state() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_data_client_request_instruments() {
     let state = TestServerState::default();
-    let addr = start_mock_server(state).await;
+    let addr = start_mock_server(state.clone()).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     set_data_event_sender(tx);
 
@@ -2232,6 +2352,8 @@ async fn test_data_client_request_instruments() {
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     while rx.try_recv().is_ok() {}
+
+    *state.new_perp_listed.lock().await = true;
 
     let request = RequestInstruments::new(
         None,
@@ -2244,15 +2366,17 @@ async fn test_data_client_request_instruments() {
     );
     client.request_instruments(request).unwrap();
 
-    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-        .await
-        .expect("timeout waiting for instruments response")
-        .expect("channel closed");
+    let events = recv_until_response(&mut rx).await;
 
     assert!(
-        matches!(event, DataEvent::Response(DataResponse::Instruments(_))),
-        "Expected Instruments response, was: {event:?}"
+        matches!(
+            events.last(),
+            Some(DataEvent::Response(DataResponse::Instruments(_)))
+        ),
+        "Expected Instruments response, was: {:?}",
+        events.last()
     );
+    assert_new_listing_published_before_response(&events);
 
     client.disconnect().await.unwrap();
 }
@@ -2261,7 +2385,7 @@ async fn test_data_client_request_instruments() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_data_client_request_instrument() {
     let state = TestServerState::default();
-    let addr = start_mock_server(state).await;
+    let addr = start_mock_server(state.clone()).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     set_data_event_sender(tx);
 
@@ -2273,6 +2397,10 @@ async fn test_data_client_request_instrument() {
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     while rx.try_recv().is_ok() {}
+
+    // requesting an already-known market still fetches the whole universe, so it
+    // is the path that can discover a new listing first
+    *state.new_perp_listed.lock().await = true;
 
     let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
     let request = RequestInstrument::new(
@@ -2286,15 +2414,17 @@ async fn test_data_client_request_instrument() {
     );
     client.request_instrument(request).unwrap();
 
-    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-        .await
-        .expect("timeout waiting for instrument response")
-        .expect("channel closed");
+    let events = recv_until_response(&mut rx).await;
 
     assert!(
-        matches!(event, DataEvent::Response(DataResponse::Instrument(_))),
-        "Expected Instrument response, was: {event:?}"
+        matches!(
+            events.last(),
+            Some(DataEvent::Response(DataResponse::Instrument(_)))
+        ),
+        "Expected Instrument response, was: {:?}",
+        events.last()
     );
+    assert_new_listing_published_before_response(&events);
 
     client.disconnect().await.unwrap();
 }
