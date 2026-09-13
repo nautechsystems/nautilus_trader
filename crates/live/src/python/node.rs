@@ -3625,18 +3625,53 @@ primary = KeyboardInterrupt("run failed")
             locals.set_item("builder", &builder).unwrap();
             py.run(
                 pyo3::ffi::c_str!(
-                    "class ReentrantDataClientFactory:\n    def __init__(self):\n        self.reprs = []\n        self.results = []\n\n    def name(self):\n        self.reprs.append(repr(builder))\n        try:\n            builder.with_save_state(True)\n        except RuntimeError as e:\n            self.results.append((type(e).__name__, str(e)))\n        return 'REENTRANT_DATA'\n\nclass ReentrantDataClientConfig:\n    pass\n\nfactory = ReentrantDataClientFactory()\nconfig = ReentrantDataClientConfig()"
+                    r#"
+import sys
+from types import ModuleType
+from unittest.mock import patch
+
+class ReentrantDataClientFactory:
+    def __init__(self):
+        self.reprs = []
+        self.results = []
+
+    def name(self):
+        self.reprs.append(repr(builder))
+        try:
+            builder.with_save_state(True)
+        except RuntimeError as e:
+            self.results.append((type(e).__name__, str(e)))
+        return "REENTRANT_DATA"
+
+class ReentrantDataClientConfig:
+    pass
+
+factory = ReentrantDataClientFactory()
+config = ReentrantDataClientConfig()
+package_module = ModuleType("nautilus_trader")
+config_module = ModuleType("nautilus_trader.live.config")
+config_module.resolve_client_registration = lambda factory, config: (factory, config)
+clients_module = ModuleType("nautilus_trader.live.clients")
+clients_module.DataClientFactory = type("DataClientFactory", (), {})
+
+def add_data_client():
+    # Exercise re-entry without importing an independently built extension
+    with patch.dict(sys.modules, {
+        package_module.__name__: package_module,
+        config_module.__name__: config_module,
+        clients_module.__name__: clients_module,
+    }):
+        return builder.add_data_client(None, factory, config)
+"#
                 ),
                 Some(&locals),
                 None,
             )
             .unwrap();
             let factory = locals.get_item("factory").unwrap();
-            let config = locals.get_item("config").unwrap();
+            let add_data_client = locals.get_item("add_data_client").unwrap();
 
-            builder
-                .call_method1(py, "add_data_client", (py.None(), &factory, &config))
-                .unwrap();
+            add_data_client.call0().unwrap();
 
             let results = factory
                 .getattr("results")
@@ -3673,9 +3708,7 @@ primary = KeyboardInterrupt("run failed")
             assert!(is_ready);
             drop(builder_ref);
 
-            let duplicate_error = builder
-                .call_method1(py, "add_data_client", (py.None(), factory, config))
-                .unwrap_err();
+            let duplicate_error = add_data_client.call0().unwrap_err();
 
             assert_eq!(
                 duplicate_error.to_string(),
