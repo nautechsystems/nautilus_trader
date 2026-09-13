@@ -10,6 +10,19 @@ guarantees of the existing synchronous dispatch paths.
 Support for synchronous message-bus reentry does not activate queued actor or strategy callbacks.
 :::
 
+## Implementation limits
+
+| Area                                                  | Implemented behavior                                                                        | Limit                                                                                                                                                                        |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Actor delivery                                        | Private primitives support ordered, owned callback delivery.                                | **Queued actor and strategy delivery is inactive.** Existing synchronous paths do not gain these guarantees.                                                                 |
+| [Root propagation](#synchronous-data-commands)        | Retained work and synchronous data commands preserve causal roots.                          | Trading commands, live channels, and locally emitted data and execution events do not have complete root propagation.                                                        |
+| [Drain safety](#draining-and-progress)                | Explicit drains respect slot budgets and checked access; a busy head blocks later delivery. | Callers must end enclosing mutable borrows. Automatic safe drains and detection of a head that cannot progress require runtime integration.                                  |
+| [Progress budgets](#callback-roots-and-budgets)       | Completed callbacks consume a per-root delivery budget.                                     | Commands do not consume that budget. Command-only loops and the duration of an individual callback are not bounded.                                                          |
+| [Memory accounting](#storage-limits)                  | Private limits cover retained units and known callback storage.                             | Command payloads, command-queue capacity, and the listed opaque storage are excluded. This is not a total-process memory cap; limits have no user configuration.             |
+| [Failure handling](#failure-cleanup)                  | Contexts restore on unwind; retained roots block premature teardown.                        | Fatal callback errors halt the dispatcher across roots. Command-handler panics propagate and discard the unprocessed collected batch; completed effects are not rolled back. |
+| [Access and backends](#backend-compatibility)         | Private allocation guards reject overlapping checked access.                                | Unchecked access and enclosing engine/cache borrows remain outside those guards. Native, Python, and dynamic-backend parity is not established.                              |
+| [Observable state](#maintenance-and-observable-state) | Event payloads describe their event; cache mutations and facade effects stay synchronous.   | Callbacks observe current cache state, not an event-time snapshot. Queued delivery does not defer or undo facade effects.                                                    |
+
 ## Ordering and reentrancy
 
 :::tip What is reentrancy?
@@ -62,8 +75,9 @@ Already completed effects are not rolled back by callback dispatch.
 ## Private dispatch primitives
 
 The actor module contains private access, admission, publication, invocation, and storage primitives.
-Production actor lookups, component access, and message-bus routes do not use them. Integrating them
-requires explicit native and Python runtime boundaries; the primitives alone do not establish
+The synchronous data-command queue preserves [callback roots](#callback-roots-and-budgets). Production actor
+lookups, component access, and message-bus routes do not use queued callback delivery. Activating that
+delivery requires explicit native and Python runtime boundaries; the primitives alone do not establish
 runtime ownership safety or native, direct, and dynamic callback parity.
 
 ### Publication and admission
@@ -97,7 +111,8 @@ A **root** owns the delivery budget for an incoming publication or reservation a
 it causes. Publication order does not depend on which root owns the work.
 
 - Nested publications and reservations inherit the active root.
-- A publication with no active root starts one on its first admission. An empty scope allocates none.
+- A publication with no active root starts one on its first callback admission or command send.
+  An empty scope allocates none.
 - Outside a publication scope, each admission starts a separate root unless a root is already active.
 
 Each completed delivery counts once against its root's budget. Busy attempts and cancelled slots do
@@ -124,13 +139,38 @@ The root and its storage charge release when the last owner drops. Cancellation,
 and explicit teardown use the same ownership cleanup as other retained storage. Retained work
 prevents teardown until released.
 
+### Synchronous data commands
+
+Commands capture any root active when they are sent, including during callback delivery and retained-work
+resumption. A send inside a publication or command-processing scope starts that scope's root if needed.
+A send with no active root outside those scopes carries no root; processing then creates an independent
+root when it first admits callback work or sends a nested command. Commands in
+the same drain batch do not share a root merely because they run together. Processing and destruction
+restore the enclosing root on return or unwind.
+
+A command drain processes the batch collected at entry, in order. Commands enqueued by its handlers
+remain queued for a subsequent drain. The queue borrow ends before handlers run. Command processing
+does not count as callback delivery and does not automatically drain callbacks.
+
+If a handler panics, the panic propagates. Unprocessed commands in the collected batch are destroyed
+under their own contexts; newly enqueued commands remain queued. Captured roots keep callback
+accounting alive and prevent explicit dispatcher teardown until those commands release them.
+
+Callback storage limits do not reject command sends. If a send needs a root and its allocation exceeds
+those limits, it latches callback overflow while the command is still queued. Command entries do not
+consume the callback retained-unit limit, and command payloads and queue capacity are excluded from
+known callback storage. Each root allocation is charged once. **This does not bound command-queue memory
+or loops that generate only commands.**
+
 ### Runtime integration
 
-The retained-continuation tests prove this accounting mechanism only. Before activation, runtime
-integration must:
+The [root propagation tests](../../crates/common/src/actor/dispatch.rs) cover retained continuations
+and the synchronous data-command queue only.
+Before queued callback activation, runtime integration must:
 
-- Carry roots through real commands and channels.
-- Preserve independent ingress boundaries when reusing long-lived storage.
+- Extend root propagation to trading commands, live channels, and locally emitted data and execution events.
+- Preserve independent ingress boundaries when reusing long-lived storage, so unrelated events do not
+  accumulate against one root's budget.
 - Provide safe drain boundaries.
 - Detect a busy head that cannot make progress.
 

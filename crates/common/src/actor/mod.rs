@@ -41,6 +41,7 @@ pub(crate) mod tests;
 
 // Re-exports
 pub use data_actor::{DataActor, DataActorConfig, DataActorCore, DataActorNative};
+pub(crate) use dispatch::ChainContext;
 
 pub use crate::component::Component;
 

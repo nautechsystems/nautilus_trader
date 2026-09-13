@@ -33,6 +33,7 @@ use std::{
 use ahash::AHashMap;
 
 use crate::{
+    actor::ChainContext,
     messages::{data::DataCommand, execution::TradingCommand},
     msgbus::{self, Endpoint, MStr, MessagingSwitchboard},
     timer::{TimeEvent, TimeEventCallback, TimeEventHandler},
@@ -406,19 +407,47 @@ pub struct SyncDataCommandSender;
 
 impl DataCommandSender for SyncDataCommandSender {
     fn execute(&self, command: DataCommand) {
+        let command = QueuedDataCommand {
+            command: Some(command),
+            context: ChainContext::capture(),
+        };
+
         DATA_CMD_QUEUE.with(|q| q.borrow_mut().push(command));
     }
 }
 
-/// Drain all buffered data commands, dispatching each to the data engine.
+/// Drains all buffered data commands, dispatching each to the data engine.
+///
+/// Commands enqueued by handlers stay queued for a subsequent drain.
+///
+/// # Panics
+///
+/// Panics if a command handler panics; remaining commands in the collected batch are then dropped.
 pub fn drain_data_cmd_queue() {
     DATA_CMD_QUEUE.with(|q| {
-        let commands: Vec<DataCommand> = q.borrow_mut().drain(..).collect();
+        let commands: Vec<QueuedDataCommand> = q.borrow_mut().drain(..).collect();
         let endpoint = MessagingSwitchboard::data_engine_execute();
-        for cmd in commands {
-            msgbus::send_data_command(endpoint, cmd);
+
+        for mut queued in commands {
+            let command = queued.command.take().expect("queued command is present");
+            queued
+                .context
+                .with_chain(|| msgbus::send_data_command(endpoint, command));
         }
     });
+}
+
+struct QueuedDataCommand {
+    command: Option<DataCommand>,
+    context: ChainContext,
+}
+
+impl Drop for QueuedDataCommand {
+    fn drop(&mut self) {
+        if self.command.is_some() {
+            self.context.with_chain(|| drop(self.command.take()));
+        }
+    }
 }
 
 /// Returns `true` if the data command queue is empty.
@@ -718,7 +747,7 @@ thread_local! {
     static TIME_EVENT_SENDER: RefCell<Option<Arc<dyn TimeEventSender>>> = const { RefCell::new(None) };
     static DATA_CMD_SENDER: RefCell<Option<Arc<dyn DataCommandSender>>> = const { RefCell::new(None) };
     static EXEC_CMD_SENDER: RefCell<Option<Arc<dyn TradingCommandSender>>> = const { RefCell::new(None) };
-    static DATA_CMD_QUEUE: RefCell<Vec<DataCommand>> = const { RefCell::new(Vec::new()) };
+    static DATA_CMD_QUEUE: RefCell<Vec<QueuedDataCommand>> = const { RefCell::new(Vec::new()) };
     static TRADING_CMD_QUEUE: RefCell<Vec<TradingCommandMessage>> = const { RefCell::new(Vec::new()) };
     static TRADING_CMD_DISPATCHES: RefCell<Vec<Vec<TradingCommandMessage>>> = const { RefCell::new(Vec::new()) };
 }
