@@ -89,6 +89,7 @@ Released on TBD (UTC).
 
 ### Security
 
+- Added a committed Cargo cooldown publication-date database for offline crate-age checks
 - Added zeroizing secret storage and consistent credential redaction across adapter configuration, signing, and transport paths
 - Fixed DeFi fixed-point arithmetic and comparison errors in model types, thanks for reporting @uziii2208
 
@@ -251,6 +252,7 @@ Released on TBD (UTC).
 
 ### Documentation Updates
 
+- Added Cargo cooldown publication-date database guidance to the environment setup guide
 - Added a troubleshooting section for import errors caused by installing the 1.x line
 - Added the NumPy and pandas prerequisites the wheel does not install
 - Added an environment report snippet to the bug report template

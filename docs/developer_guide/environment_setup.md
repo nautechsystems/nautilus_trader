@@ -323,15 +323,23 @@ parallel Make. Compilation uses the checked lockfile without resolving replaceme
 also checks early, and CI common setup checks before repository compilation begins.
 
 A version inside the cooldown window requires both an exact entry in
-`[workspace.metadata.cooldown.allow]` and a matching cargo-vet audit. Unavailable release metadata
-and unsupported registries fail the check. The diff-based pre-commit and dependency-update checks
-remain separate: a clean Git diff does not establish that resolved dependencies are old enough.
+`[workspace.metadata.cooldown.allow]` and a matching cargo-vet audit. Unsupported registries fail
+the check. Publication dates come from the committed database at
+`.supply-chain/crate-dates.json`. Recorded dates are trusted offline; versions missing from the
+database are looked up on crates.io and fail closed when the registry is unreachable. The
+diff-based pre-commit and dependency-update checks remain separate: a clean Git diff does not
+establish that resolved dependencies are old enough.
+
+`make cargo-update` records dates for every change it accepts. After a manual lockfile edit, run
+`bash scripts/check-cargo-cooldown.sh --update-db` to reconcile the database, which also prunes
+entries no tracked lock resolves. Entries added by the same change that bumps a lockfile are
+re-verified against crates.io, and a recorded date that disagrees with the registry fails the check.
 
 Successful full checks are cached as `.cargo-cooldown.json` in `CARGO_TARGET_DIR`, or the Make
 `TARGET_DIR` when no Cargo target directory is set. CI uses its configured Cargo target directory
 so persistent runners retain the cache between jobs. Changes to any checked lockfile,
-the policy, audits, or the check script invalidate the cache. Failed checks are not cached. Treat
-this file as local verification state; do not restore it from an untrusted source.
+the policy, audits, database, or the check script invalidate the cache. Failed checks are not
+cached. Treat this file as local verification state; do not restore it from an untrusted source.
 
 This gate reduces exposure to newly published malicious registry releases. It does not establish
 that older releases are safe, sandbox build scripts, or vet Git and local path dependencies.

@@ -459,6 +459,7 @@ repos:
         files: >-
           (?x)^(
             (?:.*/)?Cargo\.(lock|toml)|
+            \.supply-chain/crate-dates\.json|
             scripts/check-cargo-cooldown\.sh
           )$
         pass_filenames: false

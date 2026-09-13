@@ -9,10 +9,22 @@
 #     scripts/check-cargo-cooldown.sh --days 7
 #     scripts/check-cargo-cooldown.sh --base origin/main
 #     scripts/check-cargo-cooldown.sh --fix
+#     scripts/check-cargo-cooldown.sh --update-db
+#
+# Publication dates come from a committed JSON database of registry versions,
+# discovered at .supply-chain/crate-dates.json or supply-chain/crate-dates.json
+# and overridable with --db. Publication dates are immutable, so recorded
+# entries are trusted without network access. Entries the diff adds to the
+# database alongside a lockfile bump are still verified against crates.io and
+# fail closed when the dates disagree. Versions missing from the database are
+# looked up online and reported; record them with --update-db, which mirrors
+# every tracked lockfile's registry versions (or the selected --lock subset),
+# prunes entries no lock resolves in the full-scope case, and writes atomically.
+# update-cargo-dependencies.bash records dates inside its update transaction.
 #
 # --all checks every resolved registry version without a Git comparison base.
 # --cache stores a successful full check for identical locks, policy, audits,
-# and script content. Diff and repair modes do not use this cache.
+# database, and script content. Diff and repair modes do not use this cache.
 #
 # CI uses CHANGED_BASE_SHA when it resolves. New-branch sentinels and unreachable
 # force-push bases fall back to the live origin default branch. An unresolved CI
@@ -52,7 +64,11 @@ BASE=HEAD
 BASE_EXPLICIT=false
 ALL=false
 CACHE=""
+DB=""
+DB_EXPLICIT=false
+UPDATE_DB=false
 LOCKS=()
+LOCKS_EXPLICIT=false
 TIMEOUT=15
 CARGO_TOML=Cargo.toml
 AUDITS=""
@@ -98,7 +114,21 @@ while [[ $# -gt 0 ]]; do
         exit 2
       }
       LOCKS+=("$2")
+      LOCKS_EXPLICIT=true
       shift 2
+      ;;
+    --db)
+      (($# >= 2)) && [[ -n "$2" ]] || {
+        echo "--db requires a path" >&2
+        exit 2
+      }
+      DB=$2
+      DB_EXPLICIT=true
+      shift 2
+      ;;
+    --update-db)
+      UPDATE_DB=true
+      shift
       ;;
     --timeout)
       (($# >= 2)) || {
@@ -147,6 +177,13 @@ fi
 if [[ -n "$CACHE" && "$ALL" == false ]]; then
   echo "--cache requires --all" >&2
   exit 2
+fi
+if [[ "$UPDATE_DB" == true && ("$ALL" == true || "$BASE_EXPLICIT" == true || "$FIX" == true) ]]; then
+  echo "--update-db cannot be combined with --all, --base, or --fix" >&2
+  exit 2
+fi
+if [[ "$UPDATE_DB" == true ]]; then
+  ALL=true
 fi
 
 for tool in git curl jq awk date; do
@@ -285,6 +322,76 @@ has_audit() {
   ' "$AUDITS"
 }
 
+# An entry the diff itself added to the database is not yet trusted; the
+# registry must confirm its date before the gate passes.
+is_new_db_key() {
+  [[ -n "$new_db_keys" ]] || return 1
+  grep -Fxq -- "$1" <<< "$new_db_keys"
+}
+
+# Compare two publication timestamps by epoch so registry formatting changes
+# such as offsets or fractional seconds do not read as disagreements.
+dates_agree() {
+  local left_secs right_secs
+  left_secs=$(iso_to_epoch "$1") || left_secs=""
+  right_secs=$(iso_to_epoch "$2") || right_secs=""
+  [[ -n "$left_secs" && -n "$right_secs" && "$left_secs" == "$right_secs" ]]
+}
+
+# Fetch a version's publication date from crates.io. On failure, records the
+# diagnostic and returns nonzero; the caller must skip or fail the entry.
+fetch_published() {
+  local name=$1 version=$2
+
+  lookup_url="https://crates.io/api/v1/crates/${name}/${version}"
+  printf 'Looking up %s %s: %s\n' "$name" "$version" "$lookup_url" >&2
+  if lookup_json=$(curl -fsSL \
+    --retry 3 \
+    --retry-all-errors \
+    --retry-max-time 60 \
+    --max-time "$TIMEOUT" \
+    -A "nautilus-engineering-cargo-cooldown/1.0" \
+    "$lookup_url"); then
+    :
+  else
+    lookup_status=$?
+    printf '%-32s %-14s LOOKUP FAILED\n' "$name" "$version"
+    lookup_lines+=("${name} ${version}: registry request failed (curl exit ${lookup_status}, ${lookup_url})")
+    return 1
+  fi
+  lookup_published=$(printf '%s' "$lookup_json" | jq -r '.version.created_at // empty')
+  if [[ -z "$lookup_published" ]]; then
+    printf '%-32s %-14s NO DATE FIELD\n' "$name" "$version"
+    parse_lines+=("${name} ${version}: no created_at in response")
+    return 1
+  fi
+}
+
+# Verify database entries the diff added even when no lockfile bump selected
+# them as candidates; otherwise a database-only commit could plant an
+# unverified date that later diffs trust.
+verify_new_db_entries() {
+  local new_key new_name new_version recorded_date
+
+  [[ -n "$new_db_keys" ]] || return 0
+  while IFS= read -r new_key; do
+    [[ -n "$new_key" ]] || continue
+    new_name=${new_key%@*}
+    new_version=${new_key#*@}
+    if grep -Fxq -- "${new_name} ${new_version}" <<< "$candidates"; then
+      continue
+    fi
+    recorded_date=$(awk -F'\t' -v key="$new_key" \
+      '$1 == key { print $2; exit }' <<< "$recorded_new_entries")
+    if ! fetch_published "$new_name" "$new_version"; then
+      continue
+    fi
+    if ! dates_agree "$lookup_published" "$recorded_date"; then
+      mismatch_lines+=("${new_name} ${new_version}: crates.io ${lookup_published}, database ${recorded_date}")
+    fi
+  done <<< "$new_db_keys"
+}
+
 if [[ "$DAYS_EXPLICIT" == false ]]; then
   DAYS=$(read_metadata "workspace.metadata.cooldown" "days")
   if [[ -z "$DAYS" ]]; then
@@ -318,6 +425,21 @@ if [[ "$AUDITS_EXPLICIT" == false ]]; then
 elif [[ ! -f "$AUDITS" ]]; then
   echo "Cargo-vet audits file not found: $AUDITS" >&2
   exit 2
+fi
+
+if [[ "$DB_EXPLICIT" == false ]]; then
+  db_count=0
+  for candidate in .supply-chain/crate-dates.json supply-chain/crate-dates.json; do
+    if [[ -f "$candidate" ]]; then
+      DB=$candidate
+      db_count=$((db_count + 1))
+    fi
+  done
+  if ((db_count > 1)); then
+    echo "Both supported cooldown database paths exist; pass --db explicitly." >&2
+    exit 2
+  fi
+  DB=${DB:-.supply-chain/crate-dates.json}
 fi
 
 if ((${#LOCKS[@]} == 0)); then
@@ -375,6 +497,33 @@ for lock in "${LOCKS[@]}"; do
 done
 LOCKS=("${VALIDATED_LOCKS[@]}")
 
+validate_db_path() {
+  local component current=""
+
+  if [[ -z "$DB" || "$DB" == /* || "$DB" == *\\* || "$DB" == *$'\n'* ]]; then
+    echo "Cooldown database path must be a repository-relative POSIX path: $DB" >&2
+    return 1
+  fi
+  IFS='/' read -r -a components <<< "$DB"
+  for component in "${components[@]}"; do
+    if [[ -z "$component" || "$component" == "." || "$component" == ".." ]]; then
+      echo "Cooldown database path contains an unsafe component: $DB" >&2
+      return 1
+    fi
+    current=${current:+${current}/}${component}
+    if [[ -L "$current" ]]; then
+      echo "Cooldown database path must not traverse a symlink: $DB" >&2
+      return 1
+    fi
+  done
+  if [[ -e "$DB" && ! -f "$DB" ]]; then
+    echo "Cooldown database path is not a regular file: $DB" >&2
+    return 1
+  fi
+}
+
+validate_db_path || exit 2
+
 manifest_for_lock() {
   local lock=$1 lock_dir
   if [[ "$(basename "$lock")" != "Cargo.lock" ]]; then
@@ -417,6 +566,10 @@ if ! cutoff_iso=$(epoch_to_iso "$cutoff_secs"); then
   echo "Neither GNU nor BSD date could format a timestamp" >&2
   exit 2
 fi
+if ! now_iso=$(epoch_to_iso "$now_secs"); then
+  echo "Neither GNU nor BSD date could format a timestamp" >&2
+  exit 2
+fi
 
 cache_fingerprint=""
 if [[ -n "$CACHE" ]]; then
@@ -432,6 +585,9 @@ if [[ -n "$CACHE" ]]; then
   if [[ -f "$AUDITS" ]]; then
     cache_inputs+=("$AUDITS")
   fi
+  if [[ -f "$DB" ]]; then
+    cache_inputs+=("$DB")
+  fi
   cache_fingerprint=$(
     {
       printf '%s\n' "$DAYS"
@@ -443,7 +599,7 @@ if [[ -n "$CACHE" ]]; then
     .fingerprint == $fingerprint and
     (.checked_at | type == "number") and .checked_at <= $now
   ' "$CACHE" > /dev/null 2>&1; then
-    echo "Cargo cooldown full-check cache matches locks, policy, and audits"
+    echo "Cargo cooldown full-check cache matches locks, policy, audits, and database"
     exit 0
   fi
 fi
@@ -459,6 +615,76 @@ save_cache() (
     exit 2
   fi
   mv "$temporary" "$CACHE" || exit 2
+)
+
+# Rebuild the publication-date database from the dates this run resolved. A
+# selected --lock subset merges instead, so entries owned by other lockfiles
+# survive. Pruning runs only in the full-scope case.
+write_database() (
+  local previous_keys="" previous_entries="{}" resolved_entries final_entries
+  local previous_canonical final_canonical recorded_count pruned_count temporary
+
+  if [[ -f "$DB" ]]; then
+    previous_keys=$(jq -r '.entries // {} | keys[]?' "$DB" 2> /dev/null | LC_ALL=C sort || true)
+    previous_entries=$(jq '.entries // {}' "$DB" 2> /dev/null) || previous_entries="{}"
+  fi
+
+  resolved_entries=$(printf '%s' "$resolved_dates" | jq -Rn '
+    [inputs | select(length > 0)] |
+    map(split("|")) |
+    map({key: (.[0] + "@" + .[1]), value: {published: .[2], verified_at: .[3]}}) |
+    from_entries
+  ')
+
+  if [[ "$LOCKS_EXPLICIT" == true ]]; then
+    final_entries=$(jq -n \
+      --argjson previous "$previous_entries" \
+      --argjson resolved "$resolved_entries" \
+      '$previous * $resolved')
+  else
+    final_entries=$resolved_entries
+  fi
+
+  previous_canonical=$(jq -cS '{schema: 1, entries: .}' <<< "$previous_entries")
+  final_canonical=$(jq -cS '{schema: 1, entries: .}' <<< "$final_entries")
+
+  recorded_count=$(jq 'length' <<< "$final_entries")
+  if [[ "$LOCKS_EXPLICIT" == false && -n "$previous_keys" ]]; then
+    pruned_count=$(LC_ALL=C comm -23 \
+      <(printf '%s\n' "$previous_keys") \
+      <(jq -r 'keys[]?' <<< "$final_entries" | LC_ALL=C sort) |
+      awk 'NF { count++ } END { print count + 0 }')
+  else
+    pruned_count=0
+  fi
+
+  if [[ "$previous_canonical" == "$final_canonical" ]]; then
+    echo "Cooldown database already matches the resolved registry versions"
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$DB")" || {
+    echo "Could not create the cooldown database directory: $(dirname "$DB")" >&2
+    return 2
+  }
+  temporary=$(mktemp "${DB}.XXXXXX") || {
+    echo "Could not stage the cooldown database write: ${DB}" >&2
+    return 2
+  }
+  trap 'rm -f "$temporary"' EXIT
+  if ! jq -S '{schema: 1, entries: .}' <<< "$final_entries" > "$temporary"; then
+    echo "Could not render the cooldown database" >&2
+    exit 2
+  fi
+  mv "$temporary" "$DB" || {
+    echo "Could not replace the cooldown database: ${DB}" >&2
+    exit 2
+  }
+
+  printf 'Recorded %s publication date(s) in %s\n' "$recorded_count" "$DB"
+  if ((pruned_count > 0)); then
+    printf 'Pruned stale entries absent from every tracked lock: %s\n' "$pruned_count"
+  fi
 )
 
 candidates=""
@@ -575,6 +801,18 @@ done
 candidates=$(printf '%s' "$candidates" | awk 'NF' | sort -u)
 candidate_entries=$(printf '%s' "$candidate_entries" | awk 'NF' | sort -u)
 unsupported_registry=$(printf '%s' "$unsupported_registry" | awk 'NF' | sort -u)
+resolved_dates=""
+
+fresh_lines=()
+fresh_versions=()
+unaudited_lines=()
+lookup_lines=()
+parse_lines=()
+allowed_lines=()
+mismatch_lines=()
+unrecorded_lines=()
+database_date_count=0
+registry_date_count=0
 
 if [[ -n "$unsupported_registry" ]]; then
   unsupported_count=$(printf '%s\n' "$unsupported_registry" | wc -l | tr -d '[:space:]')
@@ -586,19 +824,78 @@ if [[ -n "$unsupported_registry" ]]; then
   exit 1
 fi
 
+db_valid=false
+if [[ -f "$DB" ]]; then
+  if jq -e 'type == "object" and ((.entries // {}) | type == "object")' "$DB" > /dev/null 2>&1; then
+    db_valid=true
+  else
+    echo "WARN: ${DB} is not a valid cooldown database; using registry lookups" >&2
+  fi
+fi
+
+recorded=""
+if [[ "$db_valid" == true && -n "$candidates" ]]; then
+  recorded=$(printf '%s\n' "$candidates" | jq -rRn --slurpfile db "$DB" '
+    ($db[0].entries // {}) as $entries |
+    [inputs | select(length > 0)] |
+    .[] |
+    split(" ") as $parts |
+    ($parts[0] + "@" + $parts[1]) as $key |
+    select($entries[$key].published | type == "string") |
+    $key + "\t" + $entries[$key].published + "\t" + ($entries[$key].verified_at // "")
+  ')
+fi
+
+# Entries present in the database but absent from its state at the comparison
+# base were introduced by this change and must be re-verified.
+new_db_keys=""
+if [[ "$db_valid" == true && "$ALL" == false ]]; then
+  db_keys_now=$(jq -r '.entries // {} | keys[]?' "$DB" | LC_ALL=C sort)
+  if [[ -n "$db_keys_now" ]]; then
+    db_keys_base=""
+    if db_keys_content=$(git show "${BASE}:${DB}" 2> /dev/null); then
+      db_keys_base=$(printf '%s' "$db_keys_content" |
+        jq -r '.entries // {} | keys[]?' 2> /dev/null | LC_ALL=C sort || true)
+    fi
+    if [[ -n "$db_keys_base" ]]; then
+      new_db_keys=$(LC_ALL=C comm -23 \
+        <(printf '%s\n' "$db_keys_now") \
+        <(printf '%s\n' "$db_keys_base"))
+    else
+      new_db_keys=$db_keys_now
+    fi
+  fi
+fi
+
+recorded_new_entries=""
+if [[ -n "$new_db_keys" ]]; then
+  recorded_new_entries=$(printf '%s\n' "$new_db_keys" | jq -rRn --slurpfile db "$DB" '
+    ($db[0].entries // {}) as $entries |
+    [inputs | select(length > 0)] |
+    .[] |
+    select($entries[.].published | type == "string") |
+    . + "\t" + $entries[.].published
+  ')
+fi
+
+verify_new_db_entries
+
 if [[ -z "$candidates" ]]; then
   if [[ "$ALL" == true ]]; then
     echo "No resolved registry crate versions"
+    if [[ "$UPDATE_DB" == true ]]; then
+      write_database
+    fi
     save_cache
-  else
+  elif ((${#lookup_lines[@]} == 0 && ${#parse_lines[@]} == 0 && ${#mismatch_lines[@]} == 0)); then
     echo "No new registry crate versions vs $BASE."
+    if [[ "$FIX" == true ]]; then
+      validate_lock_manifests
+      echo "No cooldown rollback required"
+      echo "Cargo cooldown repair complete"
+    fi
+    exit 0
   fi
-  if [[ "$FIX" == true ]]; then
-    validate_lock_manifests
-    echo "No cooldown rollback required"
-    echo "Cargo cooldown repair complete"
-  fi
-  exit 0
 fi
 
 count=$(printf '%s\n' "$candidates" | wc -l | tr -d '[:space:]')
@@ -614,36 +911,34 @@ printf '%-32s %-14s %-22s %s\n' "crate" "version" "published" "age"
 printf -- '-%.0s' {1..82}
 printf '\n'
 
-fresh_lines=()
-fresh_versions=()
-unaudited_lines=()
-lookup_lines=()
-parse_lines=()
-allowed_lines=()
-
 while IFS=' ' read -r name version; do
   [[ -z "$name" ]] && continue
-  url="https://crates.io/api/v1/crates/${name}/${version}"
-  printf 'Looking up %s %s: %s\n' "$name" "$version" "$url" >&2
-  if json=$(curl -fsSL \
-    --retry 3 \
-    --retry-all-errors \
-    --retry-max-time 60 \
-    --max-time "$TIMEOUT" \
-    -A "nautilus-engineering-cargo-cooldown/1.0" \
-    "$url"); then
-    :
-  else
-    status=$?
-    printf '%-32s %-14s LOOKUP FAILED\n' "$name" "$version"
-    lookup_lines+=("${name} ${version}: registry request failed (curl exit ${status}, ${url})")
-    continue
+  key="${name}@${version}"
+  recorded_pair=""
+  if [[ -n "$recorded" ]]; then
+    recorded_pair=$(awk -F'\t' -v key="$key" '$1 == key { print $2 "\t" $3; exit }' <<< "$recorded")
   fi
-  published=$(printf '%s' "$json" | jq -r '.version.created_at // empty')
-  if [[ -z "$published" ]]; then
-    printf '%-32s %-14s NO DATE FIELD\n' "$name" "$version"
-    parse_lines+=("${name} ${version}: no created_at in response")
-    continue
+  published=""
+  verified_at=""
+  if [[ -n "$recorded_pair" ]] && ! is_new_db_key "$key"; then
+    published=${recorded_pair%%$'\t'*}
+    verified_at=${recorded_pair#*$'\t'}
+    database_date_count=$((database_date_count + 1))
+  else
+    if ! fetch_published "$name" "$version"; then
+      continue
+    fi
+    published=$lookup_published
+    registry_date_count=$((registry_date_count + 1))
+    verified_at=$now_iso
+    if [[ -n "$recorded_pair" ]]; then
+      recorded_published=${recorded_pair%%$'\t'*}
+      if ! dates_agree "$published" "$recorded_published"; then
+        mismatch_lines+=("${name} ${version}: crates.io ${published}, database ${recorded_published}")
+      fi
+    else
+      unrecorded_lines+=("${name} ${version}")
+    fi
   fi
   if ! pub_secs=$(iso_to_epoch "$published"); then
     printf '%-32s %-14s UNPARSEABLE DATE\n' "$name" "$version"
@@ -668,9 +963,14 @@ while IFS=' ' read -r name version; do
     fi
   fi
   printf '%-32s %-14s %-22s %sd%s\n' "$name" "$version" "${published:0:19}" "$age_days" "$flag"
+  resolved_dates+="${name}|${version}|${published}|${verified_at}"$'\n'
 done <<< "$candidates"
 
 echo
+if ((database_date_count + registry_date_count > 0)); then
+  printf 'Publication dates: %s from the cooldown database, %s from crates.io\n' \
+    "$database_date_count" "$registry_date_count"
+fi
 
 exit_code=0
 
@@ -688,6 +988,15 @@ if ((${#parse_lines[@]} > 0)); then
   for line in "${parse_lines[@]}"; do
     echo "  - ${line}"
   done
+  exit_code=1
+fi
+
+if ((${#mismatch_lines[@]} > 0)); then
+  echo "FAIL: ${#mismatch_lines[@]} database date(s) disagree with crates.io:"
+  for line in "${mismatch_lines[@]}"; do
+    echo "  - ${line}"
+  done
+  echo "  Restore ${DB} from a trusted revision, or remove the disagreeing entries and rerun --update-db with the registry reachable to record them again."
   exit_code=1
 fi
 
@@ -723,6 +1032,15 @@ if [[ "$FIX" == false ]]; then
     done
   else
     echo "OK: all ${count} bumped crate(s) are at least ${DAYS} days old."
+  fi
+  if ((${#unrecorded_lines[@]} > 0)) && [[ "$UPDATE_DB" == false ]]; then
+    echo
+    echo "NOTE: ${#unrecorded_lines[@]} checked version(s) are not recorded in ${DB}."
+    echo "  Record them for offline checks with: bash ${SCRIPT_PATH} --update-db"
+    echo "  Commit the updated database so later checks trust it without network."
+  fi
+  if [[ "$UPDATE_DB" == true ]]; then
+    write_database
   fi
   save_cache
   exit 0
@@ -1060,7 +1378,7 @@ fi
 
 validate_lock_manifests
 
-verify_args=(--days "$DAYS" --base "$BASE" --timeout "$TIMEOUT")
+verify_args=(--days "$DAYS" --base "$BASE" --timeout "$TIMEOUT" --db "$DB")
 if [[ -f "$AUDITS" ]]; then
   verify_args+=(--audits "$AUDITS")
 fi

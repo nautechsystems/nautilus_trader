@@ -50,9 +50,75 @@ git -C "$fixture_repo" config commit.gpgsign false
 git -C "$fixture_repo" add -A
 git -C "$fixture_repo" commit --quiet -m baseline
 
+if [[ ! -f "$REPO_ROOT/.supply-chain/crate-dates.json" ]]; then
+  echo "Cooldown database is missing" >&2
+  exit 1
+fi
+if git -C "$REPO_ROOT" check-ignore -q .supply-chain/crate-dates.json; then
+  echo "Cooldown database is ignored" >&2
+  exit 1
+fi
+if ! grep -Fq 'crate-dates' "$REPO_ROOT/.pre-commit-config.yaml"; then
+  echo "cargo-cooldown hook does not watch the publication-date database" >&2
+  exit 1
+fi
+
+command -v python3 > /dev/null || {
+  echo "Required test command not on PATH: python3" >&2
+  exit 1
+}
+
+db_count=$(
+  python3 - "$REPO_ROOT" "${test_root}/actual-locks" << 'PY'
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+lock_list = pathlib.Path(sys.argv[2])
+db = json.loads((root / ".supply-chain/crate-dates.json").read_text())
+keys = set((db.get("entries") or {}).keys())
+lock_keys = set()
+for rel in lock_list.read_text().splitlines():
+    name = ver = src = None
+    for line in (root / rel).read_text().splitlines():
+        if line.startswith("[[package]]"):
+            if name and ver and src and "crates.io" in src:
+                lock_keys.add(f"{name}@{ver}")
+            name = ver = src = None
+            continue
+        if line.startswith('name = "') and line.endswith('"'):
+            name = line[len('name = "') : -1]
+        elif line.startswith('version = "') and line.endswith('"'):
+            ver = line[len('version = "') : -1]
+        elif line.startswith('source = "') and line.endswith('"'):
+            src = line[len('source = "') : -1]
+    if name and ver and src and "crates.io" in src:
+        lock_keys.add(f"{name}@{ver}")
+missing = sorted(lock_keys - keys)
+extra = sorted(keys - lock_keys)
+if missing or extra:
+    sys.stderr.write(
+        f"Cooldown database does not match tracked registry versions "
+        f"(missing {len(missing)}, extra {len(extra)})\n"
+    )
+    sys.exit(1)
+print(len(lock_keys))
+PY
+)
+
+status=0
+output=$(cd "$REPO_ROOT" &&
+  PATH="${fake_bin}:${PATH}" bash scripts/check-cargo-cooldown.sh --all) || status=$?
+if ((status != 0)) ||
+  [[ "$output" != *"Publication dates: ${db_count} from the cooldown database, 0 from crates.io"* ]]; then
+  printf 'Offline full cooldown check did not use the committed database: %s\n' "$output" >&2
+  exit 1
+fi
+
 output=$(cd "$fixture_repo" &&
   PATH="${fake_bin}:${PATH}" bash scripts/check-cargo-cooldown.sh --all)
-if [[ "$output" != "No resolved registry crate versions" ]]; then
+if [[ "$output" != "No resolved registry crate versions"* ]]; then
   printf 'Unexpected Cargo cooldown result: %s\n' "$output" >&2
   exit 1
 fi
