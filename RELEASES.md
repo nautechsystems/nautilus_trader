@@ -24,6 +24,7 @@ Released on TBD (UTC).
 - Added `UnixNanos::saturating_duration_since` for non-negative time differences
 - Added `BacktestEngine::add_data_batch` for typed data batches that replay without per-item `Data` values, thanks @faysou
 - Added Python enum surface (`from_str`, `name`, `value`, `variants`) to `BarIntervalType`
+- Added Python component direct messaging preserving objects across synchronous topic publication
 - Added Python `OrderBook.to_deltas(...)` and `OrderBook.get_all_crossed_levels(...)`
 - Added Python `OrderBook` pickle and deep-copy support and `BookLevel` comparisons
 - Added Python `OrderBookDelta.is_add`, `is_update`, `is_delete`, `is_clear`, and `OrderBookDeltas.is_snapshot`
@@ -31,6 +32,7 @@ Released on TBD (UTC).
 - Added Python `symbol` and `venue` properties to regular and synthetic instruments
 - Added Cap'n Proto serialization for all instrument types and `InstrumentAny`
 - Added Binance USD-M Futures RPI order support (#4927), thanks @AlphaTraderK
+- Added Binance USD-M weekly delivery contract support
 - Added Bybit self-match prevention, set with `smp_type` on the execution client config or per order
 - Added Hyperliquid definite rejection events for submit, modify, and cancel command paths
 - Added Hyperliquid local denial of over-decimal order prices when `normalize_prices` is disabled
@@ -103,7 +105,7 @@ Released on TBD (UTC).
 - Fixed `SortinoRatio` for single-day return samples (#4934), thanks @raunak2007
 - Fixed `ZScore` rounding for constant windows and handling of non-finite dispersion
 - Fixed `BollingerBands` quote and trade outputs to use actual price units
-- Fixed engine panic on startup when the PostgreSQL cache held an `OrderCanceled`, `OrderDenied`, `OrderEmulated`, `OrderExpired`, `OrderPendingCancel`, `OrderPendingUpdate`, `OrderRejected`, `OrderReleased`, `OrderTriggered`, or `OrderUpdated` event (#4917)
+- Fixed engine panic on startup when the PostgreSQL cache held an `OrderCanceled`, `OrderDenied`, `OrderEmulated`, `OrderExpired`, `OrderPendingCancel`, `OrderPendingUpdate`, `OrderRejected`, `OrderReleased`, `OrderTriggered`, or `OrderUpdated` event (#4917), thanks for reporting @luk911
 - Fixed PostgreSQL general cache writes failing on existing keys (#4935), thanks @raunak2007
 - Fixed PostgreSQL cache load failing on a persisted `OrderFillVoided` event
 - Fixed `reconciliation` being persisted as `false` for every order event that carries the flag, so reconciled orders no longer restore as though they were not reconciled
@@ -111,6 +113,7 @@ Released on TBD (UTC).
 - Fixed `released_price`, `due_post_only`, `protection_price`, `causation_id`, `correction_id`, `is_reopened`, and fill `info` being dropped when an order event was persisted to PostgreSQL
 - Fixed cancellation reasons being dropped from `OrderCanceled` events (#4903), thanks @folknor
 - Fixed partial fills after hedging position flips being rejected (#4908), thanks @folknor
+- Fixed position close averages carrying the prior episode's state across reversal fills (#4967), thanks @folknor
 - Fixed reconciliation races between terminal order reports and streamed fills
 - Fixed zero-sized fills panicking or affecting execution reconciliation (#4957), thanks for reporting @Karrenbelt
 - Fixed position commissions and realized PnL after fill-void replay
@@ -118,8 +121,10 @@ Released on TBD (UTC).
 - Fixed deferred order updates and fills using stale state in backtest and sandbox matching
 - Fixed backtest option expiry before same-timestamp index updates (#4966), thanks for reporting @davidsblom
 - Fixed canceled OCO orders filling and OTO orders activating before their parent fills
+- Fixed execution algorithm spawn reductions being lost when spawned children cancel or expire (#4968), thanks @folknor
 - Fixed market-to-limit remainder prices and maker classification
 - Fixed L2/L3 `LastPrice` stop triggers and maintenance when trade execution is disabled
+- Fixed backtest order queue positions being lost across order book snapshots (#4942), thanks @cuishuang
 - Fixed backtest reduce-only resizing and cancellation propagation to linked OUO orders
 - Fixed cash account locked balances after partial order fills
 - Fixed cash account backtests accepting futures contracts, thanks for reporting @folknor
@@ -142,6 +147,7 @@ Released on TBD (UTC).
 - Fixed Python `OrderBook` aggregation to raise `ValueError` for invalid precision and quantity overflow
 - Fixed Python `Price` and `Quantity` `from_mantissa_exponent` methods to raise `ValueError` on invalid inputs
 - Fixed Python `Money.zero` aborting for valid currencies with 17 or 18 decimal precision
+- Fixed Architect AX closed-order tracking cache retention and undocumented orders-WS heartbeat frames
 - Fixed Betfair fill report queries ignoring instrument and order filters
 - Fixed Betfair order status queries ignoring instrument filters and time bounds for closed orders
 - Fixed Binance Futures order books exceeding requested depths of 5, 10, or 20 levels, thanks for reporting @xsidorov
@@ -149,6 +155,10 @@ Released on TBD (UTC).
 - Fixed Binance Spot cancel report matching and failed cancel-replace recovery (#4930), thanks @abhijeetvichare76
 - Fixed Binance execution rejection classification and bounded HTTP read retries
 - Fixed Binance Spot `MIN_NOTIONAL` and `NOTIONAL` filters being omitted from instrument constraints
+- Fixed Binance Spot book subscriptions accepting depths outside 5, 10, or 20 levels
+- Fixed Binance Spot SBE order decoders misreading fields and timestamps (#4965), thanks @abhijeetvichare76
+- Fixed Binance Spot SBE new-order-full decoder accepting short blocks (#4972), thanks @abhijeetvichare76
+- Fixed Binance USD-M CN equity perpetuals being rejected from the instrument catalog (#4980), thanks @graceyangfan
 - Fixed Binance `taker_sell_base_volume` returning incorrectly scaled values
 - Fixed Bybit funding settlements being treated as fills (#4937), thanks for reporting @luk911
 - Fixed Bybit incorrect book quotes and zero sizes from deleted levels, thanks for reporting @xsidorov
@@ -157,7 +167,9 @@ Released on TBD (UTC).
 - Fixed Derive order queries without venue order IDs (#4958), thanks for reporting @Aviksaikat
 - Fixed Hyperliquid shared REST quotas and WebSocket rate and capacity limits
 - Fixed Hyperliquid WebSocket post deadlines across queueing, transport writes, and replies
+- Fixed Hyperliquid reconciliation to fail closed on undecodable mass-status rows
 - Fixed Kraken Futures silently returning partial catalogs when instrument precision is unsupported
+- Fixed Kraken Futures order-state convergence for unreported open orders and partial-fill cancels
 - Fixed Kraken Futures `iocWouldNotExecute` order outcomes staying ambiguous instead of rejecting
 - Fixed Kraken Spot available balances excluding funds held by the venue (#4922), thanks @zhaow-de
 - Fixed Kraken Spot instrument fees to use account rates when credentials are configured (#4890), thanks @matvt-cell
@@ -183,6 +195,7 @@ Released on TBD (UTC).
 - Added Cargo convention checks for redundant README keys, uninherited workspace fields, and binary target naming
 - Added experimental executable component bindings for plug-ins
 - Added acceptance tests running the documentation guides and resolving their documented imports
+- Added deterministic simulation testing (DST) transports for HTTP and WebSocket I/O
 - Replaced Reqwest HTTP execution with Hyper and removed direct Reqwest dependencies
 - Improved contingent order handling to respect venue receipt in backtest and sandbox execution
 - Improved Betfair execution client test synchronization (#4866), thanks @folknor
@@ -209,9 +222,9 @@ Released on TBD (UTC).
 - Upgraded Rust (MSRV) to 1.98.1
 - Upgraded `cargo-hawk` tool to v0.1.14
 - Upgraded `prek` tool to v0.5.2
-- Upgraded `uv` tool to v0.12.9
+- Upgraded `uv` tool to v0.12.12
 - Upgraded `typos` pre-commit hook to v1.50.1
-- Upgraded `zizmor` pre-commit hook to v1.30.0
+- Upgraded `zizmor` pre-commit hook to v1.30.1
 - Upgraded `alloy-primitives` crate to v1.7.2
 - Upgraded `flate2` crate to v1.1.10
 - Upgraded `indexmap` crate to v2.14.2
@@ -224,6 +237,9 @@ Released on TBD (UTC).
 - Upgraded `smallvec` crate to v1.16.0
 - Upgraded `tokio-rustls` crate to v0.26.5
 - Upgraded `toml` crate to v1.1.5
+- Upgraded `capnp` crate to v0.27.2
+- Upgraded `hypersync-client` crate to v1.4.1
+- Upgraded `rustls` crate to v0.23.44
 - Upgraded `kaleido` package to v1.4.0
 - Upgraded `linkify-it-py` package to v2.2.0
 - Upgraded `plotly` package to v7.0.0

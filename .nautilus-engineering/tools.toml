@@ -93,7 +93,7 @@ version = "0.10.2"
 releases = "crates:cargo-vet"
 
 [uv]
-version = "0.12.9"
+version = "0.12.12"
 releases = "pypi:uv"
 
 [pip-audit]
@@ -109,7 +109,7 @@ version = "1.5.0"
 releases = "github-tags:capnproto/capnproto"
 
 [zizmor]
-version = "1.30.0"
+version = "1.30.1"
 releases = "pypi:zizmor"
 pre-commit-repository = "https://github.com/zizmorcore/zizmor-pre-commit"
 pre-commit-revision = "v{version}"
