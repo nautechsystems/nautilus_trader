@@ -35,12 +35,12 @@ integration, scheduled checks, and publication.
 - [`codeql-analysis.yml`](workflows/codeql-analysis.yml): runs CodeQL analysis for Python and Rust.
 - [`docker.yml`](workflows/docker.yml): builds, publishes, signs, and attests the multi-platform
   `nautilus_trader` and `jupyterlab` images.
-- [`dst.yml`](workflows/dst.yml): runs deterministic simulation smoke tests.
 - [`nightly-merge.yml`](workflows/nightly-merge.yml): fast-forwards `nightly` to the latest
   successful `develop` commit.
 - [`nightly-tests.yml`](workflows/nightly-tests.yml): runs Rust doctests, Python memory leak tests,
-  standard-precision Clippy, extended network tests, Cargo publication checks, docs.rs builds,
-  crate feature combinations, example target checks, and Miri.
+  standard-precision Clippy, extended network tests, deterministic simulation (DST) smoke tests,
+  Cargo publication checks, docs.rs builds, crate feature combinations, example target checks, and
+  Miri.
 - [`openssf-scorecard.yml`](workflows/openssf-scorecard.yml): publishes OpenSSF Scorecard results
   and uploads SARIF.
 - [`performance.yml`](workflows/performance.yml): runs Rust tests and registered benchmarks on

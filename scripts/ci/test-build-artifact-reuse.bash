@@ -47,7 +47,7 @@ printf '%s\n' \
   '' \
   'set -euo pipefail' \
   '' \
-  'printf "%s\n" "$*" >> "${CARGO_LOG:?}"' > "$MOCK_BIN/cargo"
+  'printf "rustflags=%s args=%s\n" "${RUSTFLAGS:-}" "$*" >> "${CARGO_LOG:?}"' > "$MOCK_BIN/cargo"
 
 chmod +x "$MOCK_BIN/uv" "$MOCK_BIN/cargo"
 
@@ -159,26 +159,51 @@ nightly_doctest_job=$(awk '
   fail "Nightly Rust doctests do not preserve the CI feature set"
 
 : > "$CARGO_LOG"
+# The runner exports RUSTFLAGS="-D warnings" through setup-rust-toolchain, so the
+# lane must compose the madsim cfg on top of that value rather than lose the cfg
+# to the env override.
 PATH="$MOCK_BIN:$PATH" \
   CARGO_LOG="$CARGO_LOG" \
+  RUSTFLAGS='-D warnings' \
   "$MAKE_BIN" -C "$REPO_ROOT" --no-print-directory -o check-cargo-cooldown \
   CARGO_CI_PROFILE=nextest \
   NEXTEST_PROFILE=ci \
   cargo-test-sim > /dev/null
-[[ "$(grep -Fc 'nextest run ' "$CARGO_LOG")" -eq 3 ]] ||
+[[ "$(grep -Fc 'args=nextest run ' "$CARGO_LOG")" -eq 3 ]] ||
   fail "DST smoke tests did not use three feature-coherent nextest runs"
-if grep -Eq '^build ' "$CARGO_LOG"; then
+if grep -Eq 'args=build( |$)' "$CARGO_LOG"; then
   fail "DST smoke tests used a redundant Cargo build"
 fi
+[[ "$(grep -Ec '^rustflags=--cfg madsim( |$)' "$CARGO_LOG")" -eq "$(wc -l < "$CARGO_LOG")" ]] ||
+  fail "DST smoke tests did not prepend the madsim cfg to inherited RUSTFLAGS"
 grep -Fq \
-  'nextest run --locked --config target."cfg(all())".rustflags=["--cfg","madsim"] -p nautilus-common -p nautilus-core -p nautilus-event-store -p nautilus-network -p nautilus-execution -p nautilus-live --lib --tests --features simulation' \
+  'rustflags=--cfg madsim -D warnings args=nextest run --locked -p nautilus-common -p nautilus-core -p nautilus-event-store -p nautilus-network -p nautilus-execution -p nautilus-live --lib --tests --features simulation' \
   "$CARGO_LOG" || fail "Standard-precision DST tests did not compile the full package scope together"
 grep -Fq \
-  'nextest run --locked --config target."cfg(all())".rustflags=["--cfg","madsim"] -p nautilus-okx --test integration --no-default-features --features simulation' \
+  'rustflags=--cfg madsim -D warnings args=nextest run --locked -p nautilus-okx --test integration --no-default-features --features simulation' \
   "$CARGO_LOG" || fail "OKX DST tests did not use a standard-precision simulation build"
 grep -Fq \
-  'nextest run --locked --config target."cfg(all())".rustflags=["--cfg","madsim"] -p nautilus-common -p nautilus-execution --lib --tests --features simulation,high-precision' \
+  'rustflags=--cfg madsim -D warnings args=nextest run --locked -p nautilus-common -p nautilus-execution --lib --tests --features simulation,high-precision' \
   "$CARGO_LOG" || fail "High-precision DST tests did not share one feature-coherent build"
+
+# The clippy lane fails silently without the cfg: madsim-gated code compiles out
+# and clippy exits 0 on the remaining paths, so pin its rustflags the same way.
+: > "$CARGO_LOG"
+PATH="$MOCK_BIN:$PATH" \
+  CARGO_LOG="$CARGO_LOG" \
+  RUSTFLAGS='-D warnings' \
+  "$MAKE_BIN" -C "$REPO_ROOT" --no-print-directory -o check-cargo-cooldown \
+  check-code-sim > /dev/null
+[[ "$(grep -Fc 'args=clippy ' "$CARGO_LOG")" -eq 2 ]] ||
+  fail "DST clippy did not run both simulation legs"
+[[ "$(grep -Ec '^rustflags=--cfg madsim( |$)' "$CARGO_LOG")" -eq "$(wc -l < "$CARGO_LOG")" ]] ||
+  fail "DST clippy did not prepend the madsim cfg to inherited RUSTFLAGS"
+grep -Fq \
+  'rustflags=--cfg madsim -D warnings args=clippy --locked -p nautilus-common -p nautilus-core -p nautilus-event-store -p nautilus-network -p nautilus-execution -p nautilus-live --lib --tests --features simulation --profile nextest -- -D warnings' \
+  "$CARGO_LOG" || fail "Standard-precision DST clippy did not lint the full package scope together"
+grep -Fq \
+  'rustflags=--cfg madsim -D warnings args=clippy --locked -p nautilus-okx --lib --tests --no-default-features --features simulation --profile nextest -- -D warnings' \
+  "$CARGO_LOG" || fail "OKX DST clippy did not use a standard-precision simulation build"
 
 printf '%s\n' \
   '#!/usr/bin/env bash' \

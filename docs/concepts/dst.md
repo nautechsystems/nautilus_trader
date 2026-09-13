@@ -709,12 +709,12 @@ adapter runs across fresh processes.
 
 ### Simulation smoke gate
 
-The dedicated workflow and local pre-flight use the same DST targets:
+The nightly workflow and local pre-flight use the same DST targets:
 
-| Entry point                 | Relevant order                                            | Purpose                                                  |
-| --------------------------- | --------------------------------------------------------- | -------------------------------------------------------- |
-| `.github/workflows/dst.yml` | `check-code-sim` > `cargo-test-sim`                       | Runs the nightly and manually dispatched DST smoke gate. |
-| `make pre-flight`           | `check-code-sim` > `cargo-test-sim` > `cargo-test-extras` | Fails early on DST lint before the Rust test suites.     |
+| Entry point                           | Relevant order                                            | Purpose                                                  |
+| ------------------------------------- | --------------------------------------------------------- | -------------------------------------------------------- |
+| `.github/workflows/nightly-tests.yml` | `check-code-sim` > `cargo-test-sim`                       | Runs the nightly and manually dispatched DST smoke gate. |
+| `make pre-flight`                     | `check-code-sim` > `cargo-test-sim` > `cargo-test-extras` | Fails early on DST lint before the Rust test suites.     |
 
 `check-code-sim` runs pinned stable Clippy with `--features simulation` and `cfg(madsim)` across
 `nautilus-common`, `nautilus-core`, `nautilus-event-store`, `nautilus-network`,
@@ -776,9 +776,9 @@ reconnect, unsupported endpoint and Sockudo rejection, and jitter reset checks. 
 cancellation, redirect policy, and HTTPS/proxy rejection.
 
 `#[madsim::test]` uses a varying seed by default and reports it on failure. Set `MADSIM_TEST_SEED`
-to replay a schedule. The nightly gate in `.github/workflows/dst.yml` selects five consecutive
-seeds from `GITHUB_RUN_NUMBER * MADSIM_TEST_NUM`. The jitter runtime-reset test
-pins its own seed and complements the cross-seed network checks.
+to replay a schedule. The `dst smoke (cfg madsim)` job in `.github/workflows/nightly-tests.yml`
+selects five consecutive seeds from `GITHUB_RUN_NUMBER * MADSIM_TEST_NUM`. The jitter runtime-reset
+test pins its own seed and complements the cross-seed network checks.
 
 #### Execution tests
 
