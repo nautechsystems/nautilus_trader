@@ -122,8 +122,11 @@ fn parse_tradifi_asset_class(symbol: &BinanceFuturesUsdSymbol) -> anyhow::Result
         )
     })?;
 
+    // Binance uses CN_EQUITY for some China-listed TradFi perpetuals,
+    // including UNITREEUSDT. It has the same instrument semantics as the
+    // other equity underlying types supported here.
     match underlying_type {
-        "EQUITY" | "KR_EQUITY" | "HK_EQUITY" | "PREMARKET" => Ok(AssetClass::Equity),
+        "EQUITY" | "CN_EQUITY" | "KR_EQUITY" | "HK_EQUITY" | "PREMARKET" => Ok(AssetClass::Equity),
         "COMMODITY" => Ok(AssetClass::Commodity),
         _ => anyhow::bail!(
             "Unsupported underlying type '{underlying_type}' for TRADIFI_PERPETUAL symbol '{}'",
@@ -2101,6 +2104,7 @@ mod tests {
 
     #[rstest]
     #[case::equity("SNDKUSDT", "SNDK", "EQUITY", AssetClass::Equity)]
+    #[case::chinese_equity("UNITREEUSDT", "UNITREE", "CN_EQUITY", AssetClass::Equity)]
     #[case::korean_equity("005930USDT", "005930", "KR_EQUITY", AssetClass::Equity)]
     #[case::hong_kong_equity("0700USDT", "0700", "HK_EQUITY", AssetClass::Equity)]
     #[case::premarket("SPCXUSDT", "SPCX", "PREMARKET", AssetClass::Equity)]
