@@ -115,6 +115,8 @@ as a separate venue position.
 If a fill resolves to a cached position for a different instrument, the `ExecutionEngine` logs an
 error and drops the fill. The order remains non-terminal so a subsequent valid fill can be applied.
 
+For reductions of inherited inventory, see [Reducing external positions](reconciliation.md#reducing-external-positions).
+
 ### OMS configuration
 
 When a strategy omits `oms_type` or uses `UNSPECIFIED`, the `ExecutionEngine` follows the venue's

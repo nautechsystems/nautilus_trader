@@ -2909,6 +2909,17 @@ impl ExecutionEngine {
                 };
 
                 if validation.is_ok() {
+                    if apply_position
+                        && !self.validate_fill_for_external_position(
+                            &order_before_fill,
+                            &fill,
+                            oms_type,
+                            position_id,
+                        )
+                    {
+                        return;
+                    }
+
                     let event = OrderEventAny::Filled(fill.clone());
                     let Some(order) =
                         self.update_cached_order(client_order_id, &event, apply_position)
@@ -3118,8 +3129,8 @@ impl ExecutionEngine {
                 .orderless_hedging_leg_position_id(fill)
                 .or(fill.position_id)
                 .unwrap_or_else(|| self.pos_id_generator.generate(fill.strategy_id, false)),
-            OmsType::Netting => self.determine_netting_position_id(fill),
-            _ => self.determine_netting_position_id(fill),
+            OmsType::Netting => self.determine_netting_position_id(fill, None),
+            _ => self.determine_netting_position_id(fill, None),
         }
     }
 
@@ -3291,8 +3302,8 @@ impl ExecutionEngine {
         let position_id = match (oms_type, fill.position_id) {
             (OmsType::Hedging, Some(position_id)) => position_id,
             (OmsType::Hedging, None) => self.determine_hedging_position_id(fill, order),
-            (OmsType::Netting, _) => self.determine_netting_position_id(fill),
-            _ => self.determine_netting_position_id(fill),
+            (OmsType::Netting, _) => self.determine_netting_position_id(fill, order),
+            _ => self.determine_netting_position_id(fill, order),
         };
 
         if !self.validate_fill_for_position(position_id, fill) {
@@ -3370,6 +3381,40 @@ impl ExecutionEngine {
                 fill.trade_id,
                 position.instrument_id,
                 fill.instrument_id
+            );
+            return false;
+        }
+
+        true
+    }
+
+    fn validate_fill_for_external_position(
+        &self,
+        order: &OrderAny,
+        fill: &OrderFilled,
+        oms_type: OmsType,
+        position_id: PositionId,
+    ) -> bool {
+        if oms_type != OmsType::Netting || !order.is_reduce_only() {
+            return true;
+        }
+
+        let cache = self.cache.borrow();
+
+        let Some(position) = cache.position_ref(&position_id) else {
+            return true;
+        };
+
+        if position.strategy_id.is_external()
+            && position.strategy_id != fill.strategy_id
+            && (position.account_id != fill.account_id
+                || !position.is_opposite_side(fill.order_side)
+                || fill.last_qty > position.quantity)
+        {
+            log::error!(
+                "Cannot apply reduce-only fill {} to external NETTING position {position_id}: \
+                 account, side, or quantity does not match the open position",
+                fill.trade_id,
             );
             return false;
         }
@@ -3484,8 +3529,45 @@ impl ExecutionEngine {
         position_id
     }
 
-    fn determine_netting_position_id(&self, fill: &OrderFilled) -> PositionId {
-        PositionId::new(format!("{}-{}", fill.instrument_id, fill.strategy_id))
+    fn determine_netting_position_id(
+        &self,
+        fill: &OrderFilled,
+        order: Option<&OrderAny>,
+    ) -> PositionId {
+        let position_id = PositionId::new(format!("{}-{}", fill.instrument_id, fill.strategy_id));
+        let cache = self.cache.borrow();
+        if order.is_none_or(|order| !order.is_reduce_only())
+            || cache
+                .position_ref(&position_id)
+                .is_some_and(|position| position.is_open())
+        {
+            return position_id;
+        }
+
+        let mut candidates = cache
+            .positions_open(
+                None,
+                Some(&fill.instrument_id),
+                Some(&StrategyId::external()),
+                Some(&fill.account_id),
+                None,
+            )
+            .into_iter()
+            .filter(|position| {
+                position.is_opposite_side(fill.order_side)
+                    && cache.oms_type(&position.id) == Some(OmsType::Netting)
+            });
+
+        let candidate = candidates.next();
+
+        if let Some(position) = candidate
+            && candidates.next().is_none()
+            && fill.last_qty <= position.quantity
+        {
+            return position.id;
+        }
+
+        position_id
     }
 
     fn validate_fill_for_order(&self, order: &OrderAny, fill: &OrderFilled) -> anyhow::Result<()> {
@@ -3813,6 +3895,10 @@ impl ExecutionEngine {
             )
         };
 
+        if !position_events.is_empty() {
+            self.index_external_position_reduction(order, &fill, oms_type, position.as_ref());
+        }
+
         // Handle contingent orders for both spread and non-spread instruments
         // For spread instruments, contingent orders work without position linkage
         if matches!(order.contingency_type(), Some(ContingencyType::Oto)) {
@@ -3865,6 +3951,28 @@ impl ExecutionEngine {
         position_events
     }
 
+    fn index_external_position_reduction(
+        &self,
+        order: &OrderAny,
+        fill: &OrderFilled,
+        oms_type: OmsType,
+        position: Option<&Position>,
+    ) {
+        if oms_type == OmsType::Netting
+            && order.is_reduce_only()
+            && let Some(position) = position
+            && position.strategy_id.is_external()
+            && let Err(e) = self.cache.borrow_mut().add_position_id(
+                &position.id,
+                &fill.instrument_id.venue,
+                &fill.client_order_id,
+                &position.strategy_id,
+            )
+        {
+            log::error!("Failed to index external position for reducing order: {e}");
+        }
+    }
+
     fn prepare_order_fill_void_positions(
         &self,
         order: &OrderAny,
@@ -3883,11 +3991,22 @@ impl ExecutionEngine {
 
         let positions: Vec<Position> = {
             let cache = self.cache.borrow();
+
+            let strategy_id = event
+                .position_id
+                .and_then(|id| cache.position_ref(&id))
+                .filter(|position| {
+                    order.is_reduce_only()
+                        && position.strategy_id.is_external()
+                        && cache.oms_type(&position.id) == Some(OmsType::Netting)
+                })
+                .map_or(event.strategy_id, |position| position.strategy_id);
+
             cache
                 .positions(
                     None,
                     Some(&event.instrument_id),
-                    Some(&event.strategy_id),
+                    Some(&strategy_id),
                     Some(&event.account_id),
                     None,
                 )

@@ -144,6 +144,42 @@ Positions then update through the normal event pipeline.
 See [Claiming external orders](../strategies.md#claiming-external-orders) for strategy configuration
 and runtime updates.
 
+### Reducing external positions
+
+A strategy can use reduce-only fills to reduce inherited `EXTERNAL` inventory under NETTING.
+
+#### Position selection
+
+Existing cached position links remain authoritative. Without a cached link, a reduce-only fill
+uses the strategy's own open position when available. If that position is absent or closed, the
+engine looks for positions that meet all of these conditions:
+
+- Belong to `EXTERNAL` and use NETTING.
+- Are open on the opposite side of the fill.
+- Match the fill's instrument and account.
+
+The engine selects a fallback only when **exactly one** position matches. The fill quantity must
+not exceed that position's quantity, though the order's remaining quantity can be larger.
+If no safe fallback exists, an otherwise valid fill updates the order but neither opens nor
+updates a position.
+
+#### Ownership and events
+
+After a successful reduction, the engine links the order to the external position so subsequent
+fills use the same target. The position retains `EXTERNAL` ownership:
+
+- `OrderFilled` keeps the reducing strategy's ID and identifies the external position.
+- `PositionChanged` and `PositionClosed` use the `EXTERNAL` strategy's event topic.
+
+#### Linked reduction checks
+
+When applying position economics, each linked reduction must match the external position's account
+and reduce its open quantity without flipping or reopening it. If a fill violates these checks,
+the engine rejects it **before changing the order or position**.
+
+[Order-only fill projection](#order-only-fill-projection) bypasses these reduction checks because
+it repairs order history without changing the position.
+
 ## Reconciliation configuration
 
 Unless `reconciliation` is set to false, the execution engine reconciles state for each

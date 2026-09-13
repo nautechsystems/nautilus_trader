@@ -4912,6 +4912,9 @@ impl Cache {
 
     /// Indexes the `position_id` with the other given IDs.
     ///
+    /// A cached `EXTERNAL` position retains its ownership when an order from another strategy
+    /// is linked to it. Otherwise, the supplied `strategy_id` applies.
+    ///
     /// # Errors
     ///
     /// Returns an error if indexing position ID in the backing database fails. The complete index
@@ -4964,10 +4967,17 @@ impl Cache {
         venue: &Venue,
         strategy_id: &StrategyId,
     ) {
+        let strategy_id = self
+            .positions
+            .get(position_id)
+            .map(|position| position.borrow().strategy_id)
+            .filter(StrategyId::is_external)
+            .unwrap_or(*strategy_id);
+
         // Index: PositionId -> StrategyId
         self.index
             .position_strategy
-            .insert(*position_id, *strategy_id);
+            .insert(*position_id, strategy_id);
 
         // Every position has a reverse-order bucket, including orderless positions.
         self.index.position_orders.entry(*position_id).or_default();
@@ -4975,7 +4985,7 @@ impl Cache {
         // Index: StrategyId -> set[PositionId]
         self.index
             .strategy_positions
-            .entry(*strategy_id)
+            .entry(strategy_id)
             .or_default()
             .insert(*position_id);
 

@@ -1782,6 +1782,94 @@ fn test_cache_orders_filters_legacy_order_position_without_backing_order(audusd_
 }
 
 #[rstest]
+#[case::external_add_order(true, StrategyId::external(), StrategyId::external())]
+#[case::external_add_position_id(false, StrategyId::external(), StrategyId::external())]
+#[case::other_add_order(true, StrategyId::from("OTHER-001"), StrategyId::test_default())]
+#[case::other_add_position_id(false, StrategyId::from("OTHER-001"), StrategyId::test_default())]
+fn test_index_position_preserves_external_owner(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+    #[case] index_with_order: bool,
+    #[case] owner_strategy_id: StrategyId,
+    #[case] expected_strategy_id: StrategyId,
+) {
+    let instrument: InstrumentAny = audusd_sim.into();
+    let open_order = OrderTestBuilder::new(OrderType::Market)
+        .strategy_id(owner_strategy_id)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("POSITION-OPEN"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &open_order,
+        &instrument,
+        Some(TradeId::new("T-OPEN")),
+        Some(PositionId::new("P-EXISTING")),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+    cache.add_position(&position, OmsType::Netting).unwrap();
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("STRATEGY-REDUCE"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(25_000))
+        .reduce_only(true)
+        .build();
+
+    cache
+        .add_order(
+            order.clone(),
+            index_with_order.then_some(position.id),
+            None,
+            false,
+        )
+        .unwrap();
+
+    if !index_with_order {
+        cache
+            .add_position_id(
+                &position.id,
+                &instrument.id().venue,
+                &order.client_order_id(),
+                &order.strategy_id(),
+            )
+            .unwrap();
+    }
+
+    assert_eq!(
+        cache.position_id(&order.client_order_id()),
+        Some(&position.id)
+    );
+    assert_eq!(
+        cache.strategy_id_for_position(&position.id),
+        Some(&expected_strategy_id)
+    );
+    assert_eq!(
+        cache.position_ids(None, None, Some(&owner_strategy_id), None),
+        AHashSet::from_iter([position.id])
+    );
+    assert_eq!(
+        cache.position_ids(None, None, Some(&order.strategy_id()), None),
+        if expected_strategy_id == order.strategy_id() {
+            AHashSet::from_iter([position.id])
+        } else {
+            AHashSet::new()
+        }
+    );
+    assert_eq!(
+        serde_json::to_value(&*cache.position(&position.id).unwrap()).unwrap(),
+        serde_json::to_value(&position).unwrap()
+    );
+}
+
+#[rstest]
 fn test_assign_position_ids_to_contingencies_propagates_parent_to_children(
     mut cache: Cache,
     audusd_sim: CurrencyPair,
