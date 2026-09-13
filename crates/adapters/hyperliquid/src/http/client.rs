@@ -1323,6 +1323,9 @@ impl HyperliquidHttpClient {
             Some(asset_index) => self.asset_indices.rcu(|m| {
                 m.insert(full_symbol, asset_index);
             }),
+            // vault tokens are synthesized locally to value balances and are never
+            // submitted, so the venue assigns them no asset index to carry
+            None if coin.starts_with(VAULT_TOKEN_PREFIX) => {}
             // without an index we cannot address the asset on the wire, so a market we
             // have never indexed is untradable rather than merely stale
             None if self.asset_indices.get_cloned(&full_symbol).is_none() => log::warn!(
