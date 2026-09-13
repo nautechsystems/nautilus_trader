@@ -2017,12 +2017,20 @@ impl HyperliquidWebSocketClient {
     }
 
     /// Cache the ordered instrument IDs required to normalize `allDexsAssetCtxs`.
+    ///
+    /// Entries merge by dex: each dex in `mapping` replaces its cached entry and
+    /// dexes absent from `mapping` keep theirs. A mapping built from the
+    /// standard `meta` fallback covers only the standard dex, and replacing the
+    /// whole cache with it would drop every HIP-3 context until a later complete
+    /// build. A stale entry for a dex the venue no longer lists is harmless
+    /// because no contexts arrive for it.
     pub fn cache_all_dex_asset_ctxs_instrument_ids(
         &self,
         mapping: AHashMap<Ustr, Vec<Option<InstrumentId>>>,
     ) {
-        self.all_dex_asset_ctxs_instrument_ids
-            .store(mapping.clone());
+        self.all_dex_asset_ctxs_instrument_ids.rcu(|cached| {
+            cached.extend(mapping.iter().map(|(dex, ids)| (*dex, ids.clone())));
+        });
 
         if let Ok(cmd_tx) = self.cmd_tx.try_read()
             && let Err(e) = cmd_tx.send(HandlerCommand::CacheAllDexAssetCtxsInstrumentIds(mapping))
@@ -2518,6 +2526,35 @@ mod tests {
 
         assert!(debug.contains(REDACTED));
         assert!(!debug.contains(proxy_url));
+    }
+
+    #[rstest]
+    fn test_cache_all_dex_asset_ctxs_instrument_ids_keeps_dexes_absent_from_update() {
+        let client = HyperliquidWebSocketClient::new(
+            Some("wss://test".to_string()),
+            HyperliquidEnvironment::Testnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        let btc = Some(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"));
+        let eth = Some(InstrumentId::from("ETH-USD-PERP.HYPERLIQUID"));
+        let tsla = Some(InstrumentId::from("xyz:TSLA-USD-PERP.HYPERLIQUID"));
+
+        client.cache_all_dex_asset_ctxs_instrument_ids(AHashMap::from_iter([
+            (Ustr::from(""), vec![btc]),
+            (Ustr::from("xyz"), vec![tsla]),
+        ]));
+        // a `meta` fallback build covers only the default dex
+        client.cache_all_dex_asset_ctxs_instrument_ids(AHashMap::from_iter([(
+            Ustr::from(""),
+            vec![btc, eth],
+        )]));
+
+        let cached = client.all_dex_asset_ctxs_instrument_ids.load();
+        assert_eq!(cached.len(), 2);
+        assert_eq!(cached.get(&Ustr::from("")), Some(&vec![btc, eth]));
+        assert_eq!(cached.get(&Ustr::from("xyz")), Some(&vec![tsla]));
     }
 
     #[tokio::test]
