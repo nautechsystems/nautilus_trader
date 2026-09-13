@@ -612,7 +612,7 @@ and cross-outcome rotation.
 
 ## Instrument loading
 
-The data client loads the full Hyperliquid universe once at connect. One pass covers spot
+The data client loads the full Hyperliquid universe at connect. One pass covers spot
 markets, standard perpetuals, every HIP-3 builder-deployed perp dex, and HIP-4 outcome side
 tokens; the client config exposes no per-product or per-symbol filter. Strategies select the
 instruments they trade through their own `instrument_id` configuration.
@@ -622,11 +622,15 @@ pairs share a base token, it caches the canonical pair first so balances and fil
 asset by its base token resolve to the canonical Nautilus instrument. Any later definition whose
 Nautilus symbol collides with an earlier definition is dropped with a warning and cannot be traded.
 
-To pick up newly listed markets on the data side, issue a `RequestInstruments` or reconnect the
-data client; either refetches and recaches the whole universe. The execution client bootstraps
-its own asset-index map once on first connect and never refreshes it, so trading a market listed
-after that bootstrap requires a process restart. Submitting for a symbol the execution client
-never loaded is denied with `INSTRUMENT_NOT_FOUND`.
+The data client then refetches the universe every `update_instruments_interval_mins` minutes and
+publishes the definitions that are new or materially changed; unchanged definitions are not
+republished. The execution client receives those updates and registers each instrument's asset
+index, so a market listed after startup becomes tradable without a process restart. Set
+`update_instruments_interval_mins` to `0` to disable the periodic refresh; a `RequestInstruments`
+or a data client reconnect still refetches and recaches the whole universe on demand.
+
+Submitting for a symbol the execution client has never loaded is denied with
+`INSTRUMENT_NOT_FOUND`.
 
 Failures degrade per product rather than aborting the load: missing spot or perp metadata is
 logged as a warning and that product is skipped, and an absent `outcomeMeta` payload is skipped
@@ -1549,13 +1553,8 @@ separate weights and request limits therefore remain outside this adapter's limi
 | `stale_stream_recovery_enabled`          | `False`   | Enable automated recovery of stale market data streams (targeted resubscribe, then reconnect).                          |
 | `stale_stream_recovery_cooldown_secs`    | `120`     | Cooldown (seconds) between recovery actions for the same market data stream. Must be positive for recovery to run.      |
 | `stale_stream_max_targeted_resubscribes` | `3`       | Targeted resubscribe attempts for a stale stream before escalating to a full WebSocket reconnect.                       |
-| `update_instruments_interval_mins`       | `60`      | Interval (minutes) between instrument catalog refreshes. Accepted but not yet consumed.                                 |
+| `update_instruments_interval_mins`       | `60`      | Interval (minutes) between instrument catalog refreshes. Set to `0` to disable the refresh.                             |
 | `transport_backend`                      | `Sockudo` | WebSocket transport backend.                                                                                            |
-
-:::note
-The data client loads instruments once at connect, so `update_instruments_interval_mins` has no
-effect yet. See [Instrument loading](#instrument-loading) for how to refresh the universe.
-:::
 
 ### Execution client configuration options
 

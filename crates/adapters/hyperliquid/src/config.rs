@@ -88,6 +88,8 @@ pub struct HyperliquidDataClientConfig {
     #[builder(default = 3)]
     pub stale_stream_max_targeted_resubscribes: u32,
     /// Interval for refreshing instruments in minutes.
+    ///
+    /// Set to 0 to disable the periodic refresh.
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
     /// WebSocket transport backend (`Sockudo` by default; `Tungstenite` when
