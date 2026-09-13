@@ -99,6 +99,8 @@ pub struct HyperliquidDataClient {
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     coin_to_instrument_id: Arc<AtomicMap<Ustr, InstrumentId>>,
+    // serializes instrument fetch-and-apply passes, see `refresh_instruments`
+    instrument_update_lock: Arc<tokio::sync::Mutex<()>>,
     stream_health: Arc<Mutex<MarketDataStreamHealthMonitor>>,
 }
 
@@ -198,6 +200,7 @@ impl HyperliquidDataClient {
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
             coin_to_instrument_id: Arc::new(AtomicMap::new()),
+            instrument_update_lock: Arc::new(tokio::sync::Mutex::new(())),
             stream_health,
         })
     }
@@ -373,6 +376,9 @@ impl HyperliquidDataClient {
     }
 
     async fn bootstrap_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
+        // a pass that fetched before the bootstrap must not apply over its universe
+        let _update_guard = self.instrument_update_lock.lock().await;
+
         let instruments = self
             .http_client
             .request_instruments()
@@ -415,6 +421,7 @@ impl HyperliquidDataClient {
         let ws_client = self.ws_client.clone();
         let instruments = Arc::clone(&self.instruments);
         let coin_to_instrument_id = Arc::clone(&self.coin_to_instrument_id);
+        let instrument_update_lock = Arc::clone(&self.instrument_update_lock);
         let data_sender = self.data_sender.clone();
         let client_id = self.client_id;
 
@@ -438,6 +445,7 @@ impl HyperliquidDataClient {
                         break;
                     }
                     result = refresh_instruments(
+                        &instrument_update_lock,
                         &http_client,
                         &ws_client,
                         &instruments,
@@ -1178,6 +1186,7 @@ impl DataClient for HyperliquidDataClient {
         let sender = self.data_sender.clone();
         let instruments_cache = self.instruments.clone();
         let coin_map = self.coin_to_instrument_id.clone();
+        let update_lock = Arc::clone(&self.instrument_update_lock);
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let venue = self.venue();
@@ -1187,24 +1196,20 @@ impl DataClient for HyperliquidDataClient {
         let clock = self.clock;
 
         self.spawn_task("request_instruments", async move {
-            let instruments = http
-                .request_instruments()
-                .await
-                .context("failed to fetch instruments from Hyperliquid")?;
-
             // the fetched universe also feeds the cache the periodic refresh diffs
             // against, so it must be published like a refresh pass or a market first
             // seen here would never reach execution
-            reconcile_instruments(
-                &instruments,
+            let refresh = refresh_instruments(
+                &update_lock,
                 &http,
                 &ws,
                 &instruments_cache,
                 &coin_map,
                 &sender,
             )
-            .await
-            .log(client_id);
+            .await?;
+            refresh.log(client_id);
+            let instruments = refresh.fetched;
 
             let response = DataResponse::Instruments(InstrumentsResponse::new(
                 request_id,
@@ -1234,6 +1239,7 @@ impl DataClient for HyperliquidDataClient {
         let sender = self.data_sender.clone();
         let instruments_cache = self.instruments.clone();
         let coin_map = self.coin_to_instrument_id.clone();
+        let update_lock = Arc::clone(&self.instrument_update_lock);
         let instrument_id = request.instrument_id;
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
@@ -1243,23 +1249,19 @@ impl DataClient for HyperliquidDataClient {
         let clock = self.clock;
 
         self.spawn_task("request_instrument", async move {
-            let all_instruments = http
-                .request_instruments()
-                .await
-                .context("failed to fetch instruments from Hyperliquid")?;
-
             // the venue only serves the whole universe, so a single-instrument request
             // can discover other new markets and must publish them like a refresh pass
-            reconcile_instruments(
-                &all_instruments,
+            let refresh = refresh_instruments(
+                &update_lock,
                 &http,
                 &ws,
                 &instruments_cache,
                 &coin_map,
                 &sender,
             )
-            .await
-            .log(client_id);
+            .await?;
+            refresh.log(client_id);
+            let all_instruments = refresh.fetched;
 
             if let Some(instrument) = all_instruments
                 .into_iter()
@@ -1651,7 +1653,7 @@ async fn rebuild_all_dex_asset_ctxs_mapping(
 #[derive(Debug)]
 struct InstrumentRefresh {
     /// Instruments returned by the venue.
-    fetched: usize,
+    fetched: Vec<InstrumentAny>,
     /// Symbols of the definitions that were new to the cache.
     added: Vec<Ustr>,
     /// New or materially changed definitions published downstream.
@@ -1665,13 +1667,13 @@ impl InstrumentRefresh {
         if self.added.is_empty() {
             log::debug!(
                 "Hyperliquid instruments refreshed: client_id={client_id}, fetched={}, changed={}",
-                self.fetched,
+                self.fetched.len(),
                 self.changed,
             );
         } else {
             log::info!(
                 "Hyperliquid instruments refreshed: client_id={client_id}, fetched={}, changed={}, added={:?}",
-                self.fetched,
+                self.fetched.len(),
                 self.changed,
                 self.added,
             );
@@ -1679,21 +1681,30 @@ impl InstrumentRefresh {
     }
 }
 
-/// Fetches the instrument universe and reconciles it for a periodic refresh pass.
+/// Fetches the instrument universe and reconciles it against the caches.
+///
+/// Holds `update_lock` across the fetch and the reconcile so concurrent passes
+/// apply in the order they fetched. The diff only asks whether a definition
+/// differs from the cached one, not whether it is newer, so without the lock a
+/// pass that fetched before another but finished after it would republish the
+/// older definition.
 async fn refresh_instruments(
+    update_lock: &tokio::sync::Mutex<()>,
     http_client: &HyperliquidHttpClient,
     ws_client: &HyperliquidWebSocketClient,
     instruments_by_id: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     coin_to_instrument_id: &Arc<AtomicMap<Ustr, InstrumentId>>,
     data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
 ) -> anyhow::Result<InstrumentRefresh> {
+    let _update_guard = update_lock.lock().await;
+
     let fetched = http_client
         .request_instruments()
         .await
-        .context("failed to fetch instruments during refresh")?;
+        .context("failed to fetch Hyperliquid instruments")?;
 
     Ok(reconcile_instruments(
-        &fetched,
+        fetched,
         http_client,
         ws_client,
         instruments_by_id,
@@ -1711,18 +1722,19 @@ async fn refresh_instruments(
 /// open subscriptions.
 ///
 /// `instruments_by_id` is the baseline later passes diff against, so every path
-/// that writes fetched instruments into it must come through here. A market
-/// cached without being published would compare as unchanged on every later
-/// pass, and the execution client would never receive its asset index.
+/// that writes fetched instruments into it must come through here, under the
+/// update lock taken by [`refresh_instruments`]. A market cached without being
+/// published would compare as unchanged on every later pass, and the execution
+/// client would never receive its asset index.
 async fn reconcile_instruments(
-    fetched: &[InstrumentAny],
+    fetched: Vec<InstrumentAny>,
     http_client: &HyperliquidHttpClient,
     ws_client: &HyperliquidWebSocketClient,
     instruments_by_id: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     coin_to_instrument_id: &Arc<AtomicMap<Ustr, InstrumentId>>,
     data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
 ) -> InstrumentRefresh {
-    let changed = changed_definitions(fetched, instruments_by_id);
+    let changed = changed_definitions(&fetched, instruments_by_id);
     let added = added_symbols(&changed, instruments_by_id);
 
     cache_instruments(
@@ -1733,9 +1745,8 @@ async fn reconcile_instruments(
         ws_client,
     );
 
-    // publish before awaiting the mapping rebuild: once cached, a concurrent pass
-    // sees these definitions as unchanged and will not publish them, and a
-    // cancelled rebuild must not leave them cached but unpublished
+    // publish before awaiting the mapping rebuild, so a pass cancelled during the
+    // rebuild cannot leave these definitions cached but unpublished
     for instrument in &changed {
         if let Err(e) = data_sender.send(DataEvent::Instrument(instrument.clone())) {
             log::warn!("Failed to send instrument: {e}");
@@ -1745,9 +1756,9 @@ async fn reconcile_instruments(
     rebuild_all_dex_asset_ctxs_mapping(http_client, ws_client).await;
 
     InstrumentRefresh {
-        fetched: fetched.len(),
         added,
         changed: changed.len(),
+        fetched,
     }
 }
 
