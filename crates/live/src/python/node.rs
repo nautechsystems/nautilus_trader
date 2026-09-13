@@ -284,6 +284,7 @@ impl RunWakeState {
 
     fn resume(&self, py: Python<'_>, generation: u64) -> PyResult<()> {
         let mut pending = self.pending.lock();
+
         let Some(suspension) = pending.as_ref() else {
             return Ok(());
         };
@@ -394,6 +395,7 @@ impl HostWakePump {
         handle: LiveNodeHandle,
     ) -> PyResult<Self> {
         let (sender, receiver) = mpsc::channel();
+
         let control = Arc::new(HostWakeControl {
             sender,
             active: AtomicBool::new(true),
@@ -464,6 +466,7 @@ impl HostWakePump {
         let Some(thread) = self.thread.take() else {
             return;
         };
+
         let mut thread = Some(thread);
 
         let result = match py {
@@ -954,6 +957,7 @@ impl PyLiveNode {
                 })
                 .map_err(|e: PyErr| anyhow::anyhow!("Python stream processor failed: {e}"))
             });
+
         Ok(())
     }
 
@@ -1147,6 +1151,7 @@ impl PyLiveNode {
 
         // Set up a custom signal handler that uses our handle
         let handle_for_signal = handle;
+
         let signal_callback = new_sync_py_callback(
             py,
             move |_args: &pyo3::Bound<'_, PyTuple>,
@@ -1200,6 +1205,7 @@ impl PyLiveNode {
         }
 
         let mut node = self.node_mut()?;
+
         let stop_result = if node.is_running() {
             stop_live_node_detached(py, &mut node)
         } else {
@@ -1232,6 +1238,7 @@ impl PyLiveNode {
         log::debug!("`add_actor` with a constructed instance");
 
         let actor = actor.clone().unbind();
+
         let actor_id = Python::attach(|py| {
             let actor = actor.bind(py);
             let config = actor
@@ -1257,6 +1264,7 @@ impl PyLiveNode {
                 "actor_path must be in format 'module.path:ClassName'",
             ));
         }
+
         let (module_name, class_name) = (parts[0], parts[1]);
 
         log::info!("Importing actor from module: {module_name} class: {class_name}");
@@ -1386,6 +1394,7 @@ impl PyLiveNode {
                     "Failed to add strategy {strategy_id}: {commit_error}; failed to roll back external order claims: {rollback_error}"
                 )));
             }
+
             return Err(to_pyruntime_err(commit_error));
         }
 
@@ -1417,6 +1426,7 @@ impl PyLiveNode {
                 "strategy_path must be in format 'module.path:ClassName'",
             ));
         }
+
         let (module_name, class_name) = (parts[0], parts[1]);
 
         log::info!("Importing strategy from module: {module_name} class: {class_name}");
@@ -1514,6 +1524,7 @@ impl PyLiveNode {
                     "Failed to add strategy {strategy_id}: {commit_error}; failed to roll back external order claims: {rollback_error}"
                 )));
             }
+
             return Err(to_pyruntime_err(commit_error));
         }
 
@@ -1542,12 +1553,14 @@ impl PyLiveNode {
         log::debug!("`add_exec_algorithm` with a constructed instance");
 
         let exec_algorithm = exec_algorithm.clone().unbind();
+
         let py_exec_algorithm = Python::attach(|py| -> anyhow::Result<PyExecutionAlgorithm> {
             let bound = exec_algorithm.bind(py);
             let config = bound
                 .getattr("config")
                 .ok()
                 .filter(|config| !config.is_none());
+
             let mut py_exec_algorithm_ref = bound
                 .extract::<PyRefMut<PyExecutionAlgorithm>>()
                 .map_err(Into::<PyErr>::into)
@@ -1599,6 +1612,7 @@ impl PyLiveNode {
                 "exec_algorithm_path must be in format 'module.path:ClassName'",
             ));
         }
+
         let (module_name, class_name) = (parts[0], parts[1]);
 
         log::info!("Importing exec algorithm from module: {module_name} class: {class_name}");
@@ -1664,6 +1678,7 @@ impl PyLiveNode {
                         } else {
                             anyhow::bail!("Invalid `exec_algorithm_id`/`actor_id` type");
                         };
+
                         py_data_actor_ref.set_actor_id(actor_id_val);
                     }
 
@@ -1754,6 +1769,7 @@ impl PyLiveNode {
         let register = builtin_actor_register(type_name).ok_or_else(|| {
             to_pytype_err(format!("Unsupported built-in actor type: {type_name}"))
         })?;
+
         let mut node = self.node_mut()?;
         register(&mut node, config)
     }
@@ -1769,6 +1785,7 @@ impl PyLiveNode {
         let register = builtin_strategy_register(type_name).ok_or_else(|| {
             to_pytype_err(format!("Unsupported built-in strategy type: {type_name}"))
         })?;
+
         let mut node = self.node_mut()?;
         register(&mut node, config)
     }
@@ -1903,6 +1920,7 @@ fn create_config_instance<'py>(
     if config_parts.len() != 2 {
         anyhow::bail!("config_path must be in format 'module.path:ClassName', was {config_path}");
     }
+
     let (config_module_name, config_class_name) = (config_parts[0], config_parts[1]);
 
     log::debug!(
@@ -1938,6 +1956,7 @@ fn create_config_instance<'py>(
             match config_class.call0() {
                 Ok(instance) => {
                     log::debug!("Created default config instance, setting attributes");
+
                     for (key, value) in config {
                         let py_value = config_value_to_py(py, key, value)?;
 
@@ -2026,6 +2045,7 @@ fn extract_external_order_instrument_ids_config_attr(
     let claim_strings = claims
         .extract::<Vec<String>>()
         .map_err(|e| anyhow::anyhow!("Invalid `external_order_instrument_ids` type: {e}"))?;
+
     let claims = claim_strings
         .into_iter()
         .map(|claim| {
@@ -2309,22 +2329,10 @@ impl PyLiveNodeBuilder {
     ) -> PyResult<Self> {
         let mut operation = self.begin_operation()?;
         Python::attach(|py| -> PyResult<Self> {
-            let (factory, config): (Py<PyAny>, Py<PyAny>) = py
-                .import("nautilus_trader.live.config")?
-                .getattr("resolve_client_registration")?
-                .call1((factory, config))?
-                .extract()?;
+            let (factory, config) = resolve_registered_client_pair(py, factory, config)?;
             let registry = get_global_pyo3_registry();
-            let base = py
-                .import("nautilus_trader.live.clients")?
-                .getattr("DataClientFactory")?;
-
-            let is_custom = if let Ok(factory_type) = factory.bind(py).cast::<pyo3::types::PyType>()
-            {
-                factory_type.is_subclass(&base)?
-            } else {
-                factory.bind(py).is_instance(&base)?
-            };
+            let is_custom =
+                python_client_factory_is_custom(py, factory.bind(py), "DataClientFactory")?;
 
             if is_custom {
                 config.extract::<crate::config::DataClientConfig>(py)?;
@@ -2385,6 +2393,7 @@ impl PyLiveNodeBuilder {
             }
 
             let builder = operation.take_builder()?;
+
             let updated_builder = match routing {
                 Some(routing) => builder.add_data_client_with_routing(
                     Some(client_name),
@@ -2395,6 +2404,7 @@ impl PyLiveNodeBuilder {
                 None => builder.add_data_client(Some(client_name), boxed_factory, boxed_config),
             }
             .map_err(|e| to_pyruntime_err(format!("Failed to add data client: {e}")))?;
+
             operation.complete(updated_builder);
             Ok(self.shared())
         })
@@ -2410,22 +2420,10 @@ impl PyLiveNodeBuilder {
     ) -> PyResult<Self> {
         let mut operation = self.begin_operation()?;
         Python::attach(|py| -> PyResult<Self> {
-            let (factory, config): (Py<PyAny>, Py<PyAny>) = py
-                .import("nautilus_trader.live.config")?
-                .getattr("resolve_client_registration")?
-                .call1((factory, config))?
-                .extract()?;
+            let (factory, config) = resolve_registered_client_pair(py, factory, config)?;
             let registry = get_global_pyo3_registry();
-            let base = py
-                .import("nautilus_trader.live.clients")?
-                .getattr("ExecutionClientFactory")?;
-
-            let is_custom = if let Ok(factory_type) = factory.bind(py).cast::<pyo3::types::PyType>()
-            {
-                factory_type.is_subclass(&base)?
-            } else {
-                factory.bind(py).is_instance(&base)?
-            };
+            let is_custom =
+                python_client_factory_is_custom(py, factory.bind(py), "ExecutionClientFactory")?;
 
             if is_custom {
                 config.extract::<crate::config::ExecutionClientConfig>(py)?;
@@ -2486,6 +2484,7 @@ impl PyLiveNodeBuilder {
             }
 
             let builder = operation.take_builder()?;
+
             let updated_builder = match routing {
                 Some(routing) => builder.add_exec_client_with_routing(
                     Some(client_name),
@@ -2496,6 +2495,7 @@ impl PyLiveNodeBuilder {
                 None => builder.add_exec_client(Some(client_name), boxed_factory, boxed_config),
             }
             .map_err(|e| to_pyruntime_err(format!("Failed to add exec client: {e}")))?;
+
             operation.complete(updated_builder);
             Ok(self.shared())
         })
@@ -2520,11 +2520,13 @@ impl PyLiveNodeBuilder {
                 .extract::<String>(py)?;
             let client_name = name.unwrap_or(factory_name);
             let builder = operation.take_builder()?;
+
             let updated_builder = builder
                 .add_simulated_exec_client(Some(client_name), boxed_factory, boxed_config)
                 .map_err(|e| {
                     to_pyruntime_err(format!("Failed to add simulated exec client: {e}"))
                 })?;
+
             operation.complete(updated_builder);
             Ok(self.shared())
         })
@@ -2615,6 +2617,7 @@ impl Debug for PyLiveNodeBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Preserve the existing Python repr despite the internal state change
         let state = self.state.replace(PyLiveNodeBuilderState::InProgress);
+
         let result = match &state {
             PyLiveNodeBuilderState::Ready(builder) => write!(
                 f,
@@ -2627,6 +2630,7 @@ impl Debug for PyLiveNodeBuilder {
                 f.write_str("PyLiveNodeBuilder { inner: RefCell { value: None } }")
             }
         };
+
         self.state.set(state);
         result
     }
@@ -2650,6 +2654,43 @@ impl Drop for PyLiveNodeBuilderOperation<'_> {
             Some(builder) => PyLiveNodeBuilderState::Ready(Box::new(builder)),
             None => PyLiveNodeBuilderState::Consumed,
         });
+    }
+}
+
+fn resolve_registered_client_pair(
+    py: Python<'_>,
+    factory: Py<PyAny>,
+    config: Py<PyAny>,
+) -> PyResult<(Py<PyAny>, Py<PyAny>)> {
+    match py.import("nautilus_trader.live.config") {
+        Ok(module) => module
+            .getattr("resolve_client_registration")?
+            .call1((factory, config))?
+            .extract(),
+        Err(e) if e.is_instance_of::<pyo3::exceptions::PyModuleNotFoundError>(py) => {
+            Ok((factory, config))
+        }
+        Err(e) => Err(e),
+    }
+}
+
+fn python_client_factory_is_custom(
+    py: Python<'_>,
+    factory: &Bound<'_, PyAny>,
+    base_name: &str,
+) -> PyResult<bool> {
+    let base = match py.import("nautilus_trader.live.clients") {
+        Ok(module) => module.getattr(base_name)?,
+        Err(e) if e.is_instance_of::<pyo3::exceptions::PyModuleNotFoundError>(py) => {
+            return Ok(false);
+        }
+        Err(e) => return Err(e),
+    };
+
+    if let Ok(factory_type) = factory.cast::<pyo3::types::PyType>() {
+        factory_type.is_subclass(&base)
+    } else {
+        factory.is_instance(&base)
     }
 }
 
@@ -2922,6 +2963,7 @@ primary = KeyboardInterrupt("run failed")
 
         Python::attach(|py| {
             let factory = Py::new(py, TestMessageBusFactory).unwrap().into_any();
+
             let builder = PyLiveNode::py_builder(
                 "TEST".to_string(),
                 TraderId::from("TESTER-001"),
@@ -3757,6 +3799,7 @@ primary = KeyboardInterrupt("run failed")
             let sender = get_data_event_sender();
             let client_id = self.client_id;
             let response_sent_count = self.response_sent_count.clone();
+
             let response = BarsResponse::new(
                 request.request_id,
                 client_id,
@@ -4147,6 +4190,7 @@ class ClaimsStrategy(Strategy):
             while !stop_handle.is_running() && Instant::now() < deadline {
                 thread::sleep(Duration::from_millis(10));
             }
+
             stop_handle.stop();
         });
 
@@ -4190,6 +4234,7 @@ class ClaimsStrategy(Strategy):
             if gil_rx.recv_timeout(Duration::from_secs(1)).is_ok() {
                 acquired_before_stop_for_thread.store(true, Ordering::SeqCst);
             }
+
             handle.stop();
         });
 
@@ -4264,11 +4309,13 @@ class ClaimsStrategy(Strategy):
     ) {
         let (sender, receiver) = mpsc::channel();
         let handle = crate::node::LiveNodeHandle::new();
+
         let control = Arc::new(super::HostWakeControl {
             sender,
             active: AtomicBool::new(true),
             handle: handle.clone(),
         });
+
         let waker = Arc::new(super::HostLoopWaker {
             generation: 7,
             scheduled: AtomicBool::new(false),
@@ -4303,16 +4350,19 @@ class ClaimsStrategy(Strategy):
 
             (waker, wake_pump, event_loop)
         });
+
         let (start_tx, start_rx) = mpsc::channel();
         let (locked_tx, locked_rx) = mpsc::channel();
         let dependency_lock = Arc::new(Mutex::new(()));
         let dependency_lock_for_thread = dependency_lock.clone();
+
         let wake_thread = thread::spawn(move || {
             let _guard = dependency_lock_for_thread.lock();
             locked_tx.send(()).unwrap();
             start_rx.recv().unwrap();
             waker.wake_by_ref();
         });
+
         locked_rx
             .recv_timeout(Duration::from_secs(1))
             .expect("wake thread should hold the dependency lock");
@@ -4331,6 +4381,7 @@ class ClaimsStrategy(Strategy):
                 }
             }
         });
+
         wake_thread.join().unwrap();
         Python::attach(|py| {
             wake_pump.close();
@@ -4461,6 +4512,7 @@ class ClaimsStrategy(Strategy):
                 crate::node::NodeState::Stopped
             );
         });
+
         get_message_bus().borrow_mut().dispose();
     }
 
@@ -4795,6 +4847,7 @@ class ClaimsStrategy(Strategy):
             "external_order_instrument_ids".to_string(),
             serde_json::json!([instrument_id.to_string()]),
         );
+
         let importable = ImportableStrategyConfig {
             strategy_path: format!("{module_name}:ClaimsStrategy"),
             config_path: format!("{module_name}:ClaimsConfig"),
@@ -5206,6 +5259,7 @@ class ClaimsStrategy(Strategy):
         let request_count = Arc::new(AtomicUsize::new(0));
         let response_sent_count = Arc::new(AtomicUsize::new(0));
         let handler_visible_count = Arc::new(AtomicUsize::new(0));
+
         let factory = TestHistoricalBarsDataClientFactory::new(
             request_count.clone(),
             response_sent_count.clone(),
@@ -5252,8 +5306,10 @@ class ClaimsStrategy(Strategy):
                 {
                     break;
                 }
+
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
+
             tokio::time::sleep(Duration::from_millis(250)).await;
             stop_handle.stop();
         });
