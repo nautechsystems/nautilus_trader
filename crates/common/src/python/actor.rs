@@ -4036,7 +4036,9 @@ class CapturingActor:
         let command = system_rx
             .try_recv()
             .expect("reconnect command should be queued");
-        let SystemCommand::ReconnectSocket(command) = command;
+        let SystemCommand::ReconnectSocket(command) = command else {
+            panic!("expected reconnect socket command");
+        };
 
         assert_eq!(command.trader_id, trader_id);
         assert_eq!(command.client_id, ClientId::from("POLYMARKET"));
