@@ -3878,6 +3878,60 @@ fn test_process_order_event_publishes_instrument_order_event_topic(
     }
 }
 
+#[rstest]
+fn test_process_cancel_rejected_after_acceptance_publishes_event(
+    mut execution_engine: ExecutionEngine,
+) {
+    let account_id = AccountId::test_default();
+    let venue_order_id = VenueOrderId::from("V-001");
+    let (instrument, order) = prepare_initialized_market_order_with_account(
+        &execution_engine,
+        CashAccount::default().into(),
+    );
+    execution_engine.process(&TestOrderEventStubs::submitted(&order, account_id));
+    execution_engine.process(&OrderEventAny::PendingCancel(build_order_pending_cancel(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        order.client_order_id(),
+        account_id,
+        None,
+    )));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &order,
+        account_id,
+        venue_order_id,
+    ));
+
+    let order_topic = switchboard::get_event_order_topic(order.strategy_id());
+    let cancel_topic = switchboard::get_order_cancel_rejected_topic(instrument.id());
+    let received = Rc::new(RefCell::new(Vec::<OrderEventAny>::new()));
+    let handler = TypedHandler::from({
+        let received = received.clone();
+        move |event: &OrderEventAny| received.borrow_mut().push(event.clone())
+    });
+    msgbus::subscribe_order_events(order_topic.into(), handler.clone(), None);
+    msgbus::subscribe_order_events(cancel_topic.into(), handler.clone(), None);
+    let event = OrderEventAny::CancelRejected(build_order_cancel_rejected(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        order.client_order_id(),
+        account_id,
+        Some(venue_order_id),
+    ));
+
+    execution_engine.process(&event);
+    msgbus::unsubscribe_order_events(order_topic.into(), &handler);
+    msgbus::unsubscribe_order_events(cancel_topic.into(), &handler);
+
+    let cached = cached_order_or(&execution_engine, &order);
+    assert_eq!(cached.status(), OrderStatus::Accepted);
+    assert_eq!(cached.venue_order_id(), Some(venue_order_id));
+    assert_eq!(cached.last_event(), &event);
+    assert_eq!(received.borrow().as_slice(), &[event.clone(), event]);
+}
+
 fn prepare_accepted_order(execution_engine: &mut ExecutionEngine) -> (InstrumentAny, OrderAny) {
     prepare_accepted_order_with_account(execution_engine, CashAccount::default().into())
 }

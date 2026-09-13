@@ -91,6 +91,8 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed managed GTD expiry after cancel rejections (#4974), thanks @folknor
+- Fixed cancel rejections being dropped when order acceptance arrives first
 - Fixed Python `MessageBus.publish()` reentry from subscribers and listeners, and external serialization reentry
 - Fixed `Money` ordering panics for mixed currencies, thanks for reporting @folknor
 - Fixed sell-balance checks when order quantities and account balances use different fixed-point scales
@@ -246,6 +248,7 @@ Released on TBD (UTC).
 - Updated persistence catalog migration commands to kebab-case binary names
 - Updated migration guidance for order books and instrument inspection
 - Updated Makefile help output to match the startup log header
+- Updated managed GTD expiry guidance for cancel rejections, retries, and callback timing
 - Updated Hyperliquid guide for rejection events, price guard, and trigger-order resting
 - Restructured execution documentation around algorithms, policies, reconciliation, and live recovery
 - Standardized Rust documentation links and added offline link coverage

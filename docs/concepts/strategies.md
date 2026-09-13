@@ -918,6 +918,12 @@ Once the internal GTD time alert is reached, the order will be canceled (if not 
 On start, the strategy also reinstates alerts for its open GTD orders held in the cache, and cancels
 any whose expiry has already passed.
 
+When a cancel request is rejected, a running strategy restores a missing expiry alert for an open
+or inflight GTD order. If expiry has already passed, it immediately retries the cancel instead.
+Existing alerts are preserved. This runs before `on_order_cancel_rejected`, so an immediate retry
+can return the order to `PENDING_CANCEL` before the callback runs. A stopped strategy does not
+restore alerts or retry cancels on rejection.
+
 Some venues (such as Binance Futures) support the GTD time in force, so to avoid conflicts when using
 `manage_gtd_expiry` you should set `use_gtd=False` for your execution client config.
 
