@@ -385,8 +385,8 @@ impl HyperliquidDataClient {
             &self.coin_to_instrument_id,
             &self.http_client,
             &self.ws_client,
-        )
-        .await;
+        );
+        rebuild_all_dex_asset_ctxs_mapping(&self.http_client, &self.ws_client).await;
 
         log::debug!(
             "Bootstrapped {} instruments with {} coin mappings",
@@ -437,7 +437,7 @@ impl HyperliquidDataClient {
                         log::debug!("Hyperliquid instrument refresh cancelled");
                         break;
                     }
-                    result = reconcile_instruments(
+                    result = refresh_instruments(
                         &http_client,
                         &ws_client,
                         &instruments,
@@ -447,19 +447,7 @@ impl HyperliquidDataClient {
                 };
 
                 match result {
-                    // a quiet pass every interval would be noise, but a market becoming
-                    // tradable mid-session is the event an operator needs to see
-                    Ok(summary) if !summary.added.is_empty() => log::info!(
-                        "Hyperliquid instruments refreshed: client_id={client_id}, fetched={}, changed={}, added={:?}",
-                        summary.fetched,
-                        summary.changed,
-                        summary.added,
-                    ),
-                    Ok(summary) => log::debug!(
-                        "Hyperliquid instruments refreshed: client_id={client_id}, fetched={}, changed={}",
-                        summary.fetched,
-                        summary.changed,
-                    ),
+                    Ok(summary) => summary.log(client_id),
                     Err(e) => log::warn!(
                         "Failed to refresh Hyperliquid instruments: client_id={client_id}, error={e:?}"
                     ),
@@ -1186,10 +1174,10 @@ impl DataClient for HyperliquidDataClient {
         log::debug!("Requesting all instruments");
 
         let http = self.http_client.clone();
+        let ws = self.ws_client.clone();
         let sender = self.data_sender.clone();
         let instruments_cache = self.instruments.clone();
         let coin_map = self.coin_to_instrument_id.clone();
-        let ws_instruments = self.ws_client.instruments_cache();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let venue = self.venue();
@@ -1204,17 +1192,19 @@ impl DataClient for HyperliquidDataClient {
                 .await
                 .context("failed to fetch instruments from Hyperliquid")?;
 
-            instruments_cache.rcu(|instruments_map| {
-                coin_map.rcu(|coin_to_id| {
-                    for instrument in &instruments {
-                        let instrument_id = instrument.id();
-                        instruments_map.insert(instrument_id, instrument.clone());
-                        let coin = instrument.raw_symbol().inner();
-                        coin_to_id.insert(coin, instrument_id);
-                        ws_instruments.insert(coin, instrument.clone());
-                    }
-                });
-            });
+            // the fetched universe also feeds the cache the periodic refresh diffs
+            // against, so it must be published like a refresh pass or a market first
+            // seen here would never reach execution
+            reconcile_instruments(
+                &instruments,
+                &http,
+                &ws,
+                &instruments_cache,
+                &coin_map,
+                &sender,
+            )
+            .await
+            .log(client_id);
 
             let response = DataResponse::Instruments(InstrumentsResponse::new(
                 request_id,
@@ -1240,10 +1230,10 @@ impl DataClient for HyperliquidDataClient {
         log::debug!("Requesting instrument: {}", request.instrument_id);
 
         let http = self.http_client.clone();
+        let ws = self.ws_client.clone();
         let sender = self.data_sender.clone();
         let instruments_cache = self.instruments.clone();
         let coin_map = self.coin_to_instrument_id.clone();
-        let ws_instruments = self.ws_client.instruments_cache();
         let instrument_id = request.instrument_id;
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
@@ -1258,17 +1248,18 @@ impl DataClient for HyperliquidDataClient {
                 .await
                 .context("failed to fetch instruments from Hyperliquid")?;
 
-            instruments_cache.rcu(|instruments_map| {
-                coin_map.rcu(|coin_to_id| {
-                    for instrument in &all_instruments {
-                        let id = instrument.id();
-                        instruments_map.insert(id, instrument.clone());
-                        let coin = instrument.raw_symbol().inner();
-                        coin_to_id.insert(coin, id);
-                        ws_instruments.insert(coin, instrument.clone());
-                    }
-                });
-            });
+            // the venue only serves the whole universe, so a single-instrument request
+            // can discover other new markets and must publish them like a refresh pass
+            reconcile_instruments(
+                &all_instruments,
+                &http,
+                &ws,
+                &instruments_cache,
+                &coin_map,
+                &sender,
+            )
+            .await
+            .log(client_id);
 
             if let Some(instrument) = all_instruments
                 .into_iter()
@@ -1606,12 +1597,7 @@ impl DataClient for HyperliquidDataClient {
 }
 
 /// Applies fetched instruments to the client caches and both transports.
-///
-/// The `allDexsAssetCtxs` mapping is rebuilt on every call rather than only when
-/// a definition changed. That mapping is positional over each perp dex universe,
-/// so a listing or delisting shifts the entries of coins whose own definitions
-/// are unchanged, and a stale mapping would misattribute incoming `ctxs` arrays.
-async fn cache_instruments(
+fn cache_instruments(
     instruments: &[InstrumentAny],
     instruments_by_id: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     coin_to_instrument_id: &Arc<AtomicMap<Ustr, InstrumentId>>,
@@ -1634,7 +1620,19 @@ async fn cache_instruments(
         http_client.cache_instrument(instrument);
         ws_client.cache_instrument(instrument.clone());
     }
+}
 
+/// Rebuilds the `allDexsAssetCtxs` mapping from the HTTP client's cached instruments.
+///
+/// Callers rebuild on every pass rather than only when a definition changed. The
+/// mapping is positional over each perp dex universe, so a listing or delisting
+/// shifts the entries of coins whose own definitions are unchanged, and a stale
+/// mapping would misattribute incoming `ctxs` arrays. Rebuilding unconditionally
+/// also retries a build that failed or fell back on an earlier pass.
+async fn rebuild_all_dex_asset_ctxs_mapping(
+    http_client: &HyperliquidHttpClient,
+    ws_client: &HyperliquidWebSocketClient,
+) {
     match http_client.build_all_dex_asset_ctxs_instrument_ids().await {
         Ok(mapping) => {
             let mapping = mapping
@@ -1660,13 +1658,29 @@ struct InstrumentRefresh {
     changed: usize,
 }
 
-/// Reconciles the instrument caches against the venue metadata endpoints.
-///
-/// Refetches the universe, then caches and publishes new or materially changed
-/// definitions as [`DataEvent::Instrument`]. Unchanged definitions are not
-/// republished. Cached instruments absent from the response are retained because
-/// they may still back open subscriptions.
-async fn reconcile_instruments(
+impl InstrumentRefresh {
+    fn log(&self, client_id: ClientId) {
+        // a quiet pass every interval would be noise, but a market becoming
+        // tradable mid-session is the event an operator needs to see
+        if self.added.is_empty() {
+            log::debug!(
+                "Hyperliquid instruments refreshed: client_id={client_id}, fetched={}, changed={}",
+                self.fetched,
+                self.changed,
+            );
+        } else {
+            log::info!(
+                "Hyperliquid instruments refreshed: client_id={client_id}, fetched={}, changed={}, added={:?}",
+                self.fetched,
+                self.changed,
+                self.added,
+            );
+        }
+    }
+}
+
+/// Fetches the instrument universe and reconciles it for a periodic refresh pass.
+async fn refresh_instruments(
     http_client: &HyperliquidHttpClient,
     ws_client: &HyperliquidWebSocketClient,
     instruments_by_id: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
@@ -1678,7 +1692,37 @@ async fn reconcile_instruments(
         .await
         .context("failed to fetch instruments during refresh")?;
 
-    let changed = changed_definitions(&fetched, instruments_by_id);
+    Ok(reconcile_instruments(
+        &fetched,
+        http_client,
+        ws_client,
+        instruments_by_id,
+        coin_to_instrument_id,
+        data_sender,
+    )
+    .await)
+}
+
+/// Reconciles the instrument caches against a fetched instrument universe.
+///
+/// Caches and publishes new or materially changed definitions as
+/// [`DataEvent::Instrument`]. Unchanged definitions are not republished. Cached
+/// instruments absent from `fetched` are retained because they may still back
+/// open subscriptions.
+///
+/// `instruments_by_id` is the baseline later passes diff against, so every path
+/// that writes fetched instruments into it must come through here. A market
+/// cached without being published would compare as unchanged on every later
+/// pass, and the execution client would never receive its asset index.
+async fn reconcile_instruments(
+    fetched: &[InstrumentAny],
+    http_client: &HyperliquidHttpClient,
+    ws_client: &HyperliquidWebSocketClient,
+    instruments_by_id: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    coin_to_instrument_id: &Arc<AtomicMap<Ustr, InstrumentId>>,
+    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+) -> InstrumentRefresh {
+    let changed = changed_definitions(fetched, instruments_by_id);
     let added = added_symbols(&changed, instruments_by_id);
 
     cache_instruments(
@@ -1687,20 +1731,24 @@ async fn reconcile_instruments(
         coin_to_instrument_id,
         http_client,
         ws_client,
-    )
-    .await;
+    );
 
+    // publish before awaiting the mapping rebuild: once cached, a concurrent pass
+    // sees these definitions as unchanged and will not publish them, and a
+    // cancelled rebuild must not leave them cached but unpublished
     for instrument in &changed {
         if let Err(e) = data_sender.send(DataEvent::Instrument(instrument.clone())) {
             log::warn!("Failed to send instrument: {e}");
         }
     }
 
-    Ok(InstrumentRefresh {
+    rebuild_all_dex_asset_ctxs_mapping(http_client, ws_client).await;
+
+    InstrumentRefresh {
         fetched: fetched.len(),
         added,
         changed: changed.len(),
-    })
+    }
 }
 
 /// Returns the fetched instruments that are new or materially changed.
