@@ -106,6 +106,14 @@ struct TestServerState {
     // When set, `allPerpMetas` responds with HTTP 500 so the client falls back to
     // the standard-dex-only `meta` endpoint.
     all_perp_metas_unavailable: Arc<tokio::sync::Mutex<bool>>,
+    // When set, the standard perp dex lists BTC with a coarser size precision to
+    // emulate the venue changing a definition between two fetches.
+    btc_size_decimals_changed: Arc<tokio::sync::Mutex<bool>>,
+    // When set, the next `allPerpMetas` response is built, then held after
+    // notifying `all_perp_metas_held` until `all_perp_metas_release` fires.
+    hold_next_all_perp_metas: Arc<tokio::sync::Mutex<bool>>,
+    all_perp_metas_held: Arc<tokio::sync::Notify>,
+    all_perp_metas_release: Arc<tokio::sync::Notify>,
 }
 
 #[derive(Default)]
@@ -191,6 +199,10 @@ async fn standard_perp_meta(state: &TestServerState) -> Value {
             .push(json!({"name": "NEWCOIN", "szDecimals": 2, "maxLeverage": 5}));
     }
 
+    if *state.btc_size_decimals_changed.lock().await {
+        meta["universe"][0]["szDecimals"] = json!(4);
+    }
+
     meta
 }
 
@@ -209,8 +221,9 @@ async fn wait_for_server(addr: SocketAddr, path: &str) {
 }
 
 async fn handle_info(State(state): State<TestServerState>, body: axum::body::Bytes) -> Response {
-    let mut count = state.info_request_count.lock().await;
-    *count += 1;
+    // release the counter at once, a guard held for the whole handler would
+    // serialize concurrent requests and hide ordering races between them
+    *state.info_request_count.lock().await += 1;
 
     let Ok(request_body): Result<Value, _> = serde_json::from_slice(&body) else {
         return (
@@ -247,6 +260,13 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
                     {"name": "xyz:NVDA", "szDecimals": 3, "maxLeverage": 20}
                 ]
             });
+            // the body is built before holding, so a held response carries the
+            // definitions as they were when the request arrived
+            if std::mem::take(&mut *state.hold_next_all_perp_metas.lock().await) {
+                state.all_perp_metas_held.notify_one();
+                state.all_perp_metas_release.notified().await;
+            }
+
             Json(json!([standard_meta, hip3_meta])).into_response()
         }
         "perpDexs" => Json(json!([null, {"name": "xyz"}])).into_response(),
@@ -798,19 +818,39 @@ async fn recv_until_response(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
 ) -> Vec<DataEvent> {
     let mut events = Vec::new();
+    recv_until_responses(rx, &mut events, 1).await;
+    events
+}
 
-    loop {
+async fn recv_until_responses(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    events: &mut Vec<DataEvent>,
+    responses: usize,
+) {
+    while events
+        .iter()
+        .filter(|event| matches!(event, DataEvent::Response(_)))
+        .count()
+        < responses
+    {
         let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
             .await
             .expect("timeout waiting for response")
             .expect("channel closed");
-        let is_response = matches!(event, DataEvent::Response(_));
         events.push(event);
-
-        if is_response {
-            return events;
-        }
     }
+}
+
+fn btc_instrument_request() -> RequestInstrument {
+    RequestInstrument::new(
+        InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"),
+        None,
+        None,
+        Some(*HYPERLIQUID_CLIENT_ID),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    )
 }
 
 // A market listed after connect must be published before the response, so the
@@ -1936,6 +1976,57 @@ async fn test_data_client_partial_instrument_fetch_preserves_hip3_asset_ctxs_map
 
     // requires both a standard-dex entry and an `xyz` HIP-3 entry
     wait_for_all_dex_asset_ctxs_event(&mut rx).await;
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_concurrent_requests_publish_latest_definition_last() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+    drain_initial_events(&mut rx).await;
+
+    // the first request fetches the original BTC definition and is held there
+    *state.hold_next_all_perp_metas.lock().await = true;
+    client.request_instrument(btc_instrument_request()).unwrap();
+    tokio::time::timeout(Duration::from_secs(5), state.all_perp_metas_held.notified())
+        .await
+        .expect("timeout waiting for the first request to reach allPerpMetas");
+
+    // the venue then changes BTC and a second request fetches the new definition
+    *state.btc_size_decimals_changed.lock().await = true;
+    client.request_instrument(btc_instrument_request()).unwrap();
+
+    // give the second request time to finish first if nothing serializes the passes
+    let mut events = Vec::new();
+    let _ = tokio::time::timeout(
+        Duration::from_secs(1),
+        recv_until_responses(&mut rx, &mut events, 1),
+    )
+    .await;
+
+    state.all_perp_metas_release.notify_one();
+    recv_until_responses(&mut rx, &mut events, 2).await;
+
+    let btc = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    let last_btc_definition = events
+        .iter()
+        .rev()
+        .find_map(|event| match event {
+            DataEvent::Instrument(instrument) if instrument.id() == btc => Some(instrument),
+            _ => None,
+        })
+        .expect("changed BTC definition was never published");
+
+    // an older fetch applied last would republish the original size precision of 5
+    assert_eq!(last_btc_definition.size_precision(), 4);
 
     client.disconnect().await.unwrap();
 }
