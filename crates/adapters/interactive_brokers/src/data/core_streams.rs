@@ -1050,6 +1050,13 @@ pub(super) async fn handle_tick_by_tick_quote_subscription(
                                         return Ok(());
                                     }
                                 }
+                                Err(e) if crate::data::parse::is_unrepresentable_size(&e) => {
+                                    tracing::debug!(
+                                        "Dropping quote for {}: {}",
+                                        instrument_id,
+                                        e
+                                    );
+                                }
                                 Err(e) => tracing::warn!("Failed to parse quote tick: {:?}", e),
                             }
                         }
@@ -1269,6 +1276,9 @@ async fn process_trade_stream(
                                 if data_sender.send(DataEvent::Data(Data::Trade(trade_tick))).is_err() {
                                     return Ok(StreamAction::Stop);
                                 }
+                            }
+                            Err(e) if crate::data::parse::is_unrepresentable_size(&e) => {
+                                tracing::debug!("Dropping trade print for {}: {}", instrument_id, e);
                             }
                             Err(e) => tracing::warn!("Failed to parse trade tick: {:?}", e),
                         }

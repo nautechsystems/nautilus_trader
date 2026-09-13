@@ -36,7 +36,9 @@ fn checked_quantity(size: f64, precision: u8) -> Option<Quantity> {
 
     let tolerance = 10_f64.powi(-i32::from(precision)) * 1e-9;
     if (quantity.as_f64() - size).abs() > tolerance {
-        tracing::warn!(
+        // Expected on venues which report sub-increment sizes (FINRA odd lots, fractional
+        // fills), so this is not a decode failure; see `parse::UnrepresentableSize`.
+        tracing::debug!(
             "Ignoring unrepresentable IB quote size {} with precision {}",
             size,
             precision
