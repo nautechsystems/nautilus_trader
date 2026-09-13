@@ -1548,25 +1548,29 @@ impl LiveNode {
 
                     match result {
                         ReportTaskOutcome::Completed(result) => {
-                            let client_refs = self
-                                .exec_clients
-                                .iter()
-                                .map(|client| client as &dyn ExecutionClient)
-                                .collect::<Vec<_>>();
-                            let reconciliation = self.exec_manager.reconcile_open_order_reports(
-                                &result.check,
-                                result.reports,
-                                &result.queried_clients,
-                                &result.failed_clients,
-                                &client_refs,
-                            );
-                            self.process_reconciliation_events(&reconciliation.events);
-                            if !reconciliation.targeted_queries.is_empty() {
-                                targeted_order_report_task = Some(
-                                    self.start_targeted_order_report_check(
-                                        reconciliation.targeted_queries,
-                                    ),
+                            if is_shutting_down {
+                                self.cleanup_cancelled_report_tasks(&[]);
+                            } else {
+                                let client_refs = self
+                                    .exec_clients
+                                    .iter()
+                                    .map(|client| client as &dyn ExecutionClient)
+                                    .collect::<Vec<_>>();
+                                let reconciliation = self.exec_manager.reconcile_open_order_reports(
+                                    &result.check,
+                                    result.reports,
+                                    &result.queried_clients,
+                                    &result.failed_clients,
+                                    &client_refs,
                                 );
+                                self.process_reconciliation_events(&reconciliation.events);
+                                if !reconciliation.targeted_queries.is_empty() {
+                                    targeted_order_report_task = Some(
+                                        self.start_targeted_order_report_check(
+                                            reconciliation.targeted_queries,
+                                        ),
+                                    );
+                                }
                             }
                         }
                         ReportTaskOutcome::TimedOut => {
@@ -1595,15 +1599,19 @@ impl LiveNode {
 
                     match result {
                         ReportTaskOutcome::Completed(result) => {
-                            let client_refs = self
-                                .exec_clients
-                                .iter()
-                                .map(|client| client as &dyn ExecutionClient)
-                                .collect::<Vec<_>>();
-                            let events = self
-                                .exec_manager
-                                .reconcile_targeted_order_reports(result, &client_refs);
-                            self.process_reconciliation_events(&events);
+                            if is_shutting_down {
+                                self.cleanup_cancelled_report_tasks(&planned_client_order_ids);
+                            } else {
+                                let client_refs = self
+                                    .exec_clients
+                                    .iter()
+                                    .map(|client| client as &dyn ExecutionClient)
+                                    .collect::<Vec<_>>();
+                                let events = self
+                                    .exec_manager
+                                    .reconcile_targeted_order_reports(result, &client_refs);
+                                self.process_reconciliation_events(&events);
+                            }
                         }
                         ReportTaskOutcome::TimedOut => {
                             self.cleanup_cancelled_report_tasks(&planned_client_order_ids);
@@ -1627,10 +1635,18 @@ impl LiveNode {
 
                     match result {
                         ReportTaskOutcome::Completed(PositionReportTaskResult::Positions(result)) => {
-                            position_report_task = self.handle_position_report_result(result);
+                            if is_shutting_down {
+                                self.cleanup_cancelled_report_tasks(&[]);
+                            } else {
+                                position_report_task = self.handle_position_report_result(result);
+                            }
                         }
                         ReportTaskOutcome::Completed(PositionReportTaskResult::Fills(result)) => {
-                            self.handle_position_fill_report_result(result);
+                            if is_shutting_down {
+                                self.cleanup_cancelled_report_tasks(&[]);
+                            } else {
+                                self.handle_position_fill_report_result(result);
+                            }
                         }
                         ReportTaskOutcome::TimedOut => {
                             self.cleanup_cancelled_report_tasks(&[]);
