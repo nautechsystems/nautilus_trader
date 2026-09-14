@@ -115,7 +115,8 @@ request.
 
 Complete these requirements before opening or updating a pull request:
 
-- Run `make format`, then run `make pre-commit` locally and confirm it passes.
+- Run `make format`, then run `make pre-commit` in your local environment. Confirm it passes before
+  opening a pull request or pushing an update to one.
 - Run all tests relevant to the change locally. You may summarize relevant validation in the pull
   request when it helps reviewers, but exact commands and full output are not required.
 - If you changed PyO3 bindings or the Rust docs behind them, run `make py-stubs` and commit the

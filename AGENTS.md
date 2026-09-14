@@ -12,6 +12,9 @@ standard for correctness, reliability, testing, clarity, and maintainability.**
 - Read the affected code and search for existing patterns before proposing or making changes.
 - Keep each change focused on the requested outcome. Note unrelated issues instead of fixing them.
 - Match the existing style and use established functions, types, names, and dependencies.
+- Use the uv-managed Python project environment at its default location, `python/.venv`. Do not
+  create or use a root `.venv`; run direct uv project commands from `python/` or pass
+  `--project python` from the repository root.
 - Preserve exact arithmetic for prices, quantities, money, fees, and other discrete values. Use the
   project domain types or `Decimal`.
 - Do not add test-only behavior, branches, attributes, or interfaces to production code.
@@ -19,6 +22,8 @@ standard for correctness, reliability, testing, clarity, and maintainability.**
   result. Fix the underlying problem and preserve the behavior the tests are intended to protect.
   Change a test only when the task intentionally changes the required behavior or when you can
   independently verify that the test is wrong.
+- Do not let tests depend on adapter environment variables; `make pre-flight` runs with all of
+  them unset via `scripts/strip-adapter-env.bash`. Register new adapter environment variables there.
 - Expose the minimum public API and keep the patch focused. Avoid drive-by refactors, renames, and
   abstractions unrelated to the contribution.
 - Change generated artifacts through their source and generator. Never edit them by hand.
@@ -33,9 +38,14 @@ standard for correctness, reliability, testing, clarity, and maintainability.**
 
 **Prepare a complete, review-ready change before opening a pull request.**
 
-Run the smallest relevant test while developing. Before opening or updating a pull request, run
-`make format`, `make pre-commit`, and all tests relevant to the change locally. Follow
-`CONTRIBUTING.md` and the pull request template when preparing the pull request description.
+Run the smallest relevant test while developing. Before opening or updating a pull request,
+establish the development environment described in `CONTRIBUTING.md`. Run `make format`,
+`make pre-commit`, and all tests relevant to the change locally, and confirm they pass. If a
+required check cannot run, report the limitation and do not claim the change is ready. Follow the
+pull request template when preparing the pull request description.
+
+Treat validation as evidence for the exact tested change. After a later edit or rebase, rerun the
+affected checks.
 
 For higher assurance, run `make pre-flight`, which performs the project's broad local validation
 suite.

@@ -23,7 +23,7 @@
 //! - UUID generation and management.
 //! - Mathematical functions and interpolation utilities.
 //! - Correctness validation functions.
-//! - Serialization traits and helpers.
+//! - Serialization traits and codecs.
 //! - Cross-platform environment utilities.
 //! - Abstractions over common collections.
 //!
@@ -42,9 +42,12 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
+//! - `extension-module`: Builds as a Python extension module.
+//! - `ffi`: Enables the C foreign function interface (FFI) from
+//!   [cbindgen](https://crates.io/crates/cbindgen).
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-//! - `extension-module`: Builds the crate as a Python extension module.
+//! - `simulation`: Enables deterministic simulation testing with
+//!   [MadSim](https://crates.io/crates/madsim).
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]
@@ -102,7 +105,7 @@ compile_error!("Unsupported platform: Nautilus supports only Linux, macOS, Windo
 pub use crate::params::from_pydict;
 pub use crate::{
     collections::{AtomicMap, AtomicSet},
-    nanos::UnixNanos,
+    nanos::{DurationNanos, DurationNanosOutOfRangeError, UnixNanos},
     params::Params,
     shared::{SharedCell, WeakCell},
     string::stack_str::{STACKSTR_CAPACITY, StackStr},

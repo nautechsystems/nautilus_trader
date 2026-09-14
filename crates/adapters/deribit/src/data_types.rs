@@ -137,9 +137,9 @@ pub struct DeribitBookSummary {
     /// Quote currency.
     #[custom_data_field(serde)]
     pub quote_currency: Option<String>,
-    /// Instrument creation time (milliseconds since UNIX epoch).
+    /// Book summary snapshot time (milliseconds since UNIX epoch).
     pub creation_timestamp: i64,
-    /// UNIX timestamp (nanoseconds) when the snapshot was observed.
+    /// UNIX timestamp (nanoseconds) when the venue generated the summary.
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the instance was initialized.
     pub ts_init: UnixNanos,
@@ -148,8 +148,10 @@ pub struct DeribitBookSummary {
 impl DeribitBookSummary {
     /// Builds a domain book summary from a venue wire DTO.
     #[must_use]
-    pub fn from_raw(raw: DeribitBookSummaryRaw, ts: UnixNanos) -> Self {
+    pub fn from_raw(raw: DeribitBookSummaryRaw, ts_init: UnixNanos) -> Self {
         let instrument_id = InstrumentId::new(Symbol::new(&raw.instrument_name), *DERIBIT_VENUE);
+        let ts_event = UnixNanos::from_millis(raw.creation_timestamp as u64);
+
         Self {
             instrument_id,
             instrument_name: raw.instrument_name,
@@ -178,8 +180,8 @@ impl DeribitBookSummary {
             base_currency: raw.base_currency,
             quote_currency: raw.quote_currency,
             creation_timestamp: raw.creation_timestamp,
-            ts_event: ts,
-            ts_init: ts,
+            ts_event,
+            ts_init,
         }
     }
 }
@@ -254,7 +256,7 @@ mod tests {
         );
         assert_eq!(summary.mark_iv, Some(dec!(55.2)));
         assert_eq!(summary.open_interest, Some(dec!(123.5)));
-        assert_eq!(summary.ts_event, ts);
+        assert_eq!(summary.ts_event, UnixNanos::from_millis(1_710_000_000_000));
         assert_eq!(summary.ts_init, ts);
     }
 

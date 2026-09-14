@@ -116,6 +116,7 @@ from nautilus_trader.trading import fx_next_start
 from nautilus_trader.trading import fx_prev_end
 from nautilus_trader.trading import fx_prev_start
 from tests.providers import TestInstrumentProvider
+from tests.unit.common.actor import ConfiguredIdProbeStrategy
 from tests.unit.common.actor import OrderFactoryConfigProbeStrategy
 from tests.unit.common.actor import OrderFactoryProbeStrategy
 from tests.unit.common.actor import OrderListCacheProbeStrategy
@@ -248,7 +249,7 @@ class PlainStrategyConfig:
 
     def __init__(self, strategy_id: StrategyId = None, order_id_tag: object = None) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         self.strategy_id = strategy_id
         self.order_id_tag = order_id_tag
@@ -275,7 +276,7 @@ class NonForwardingStrategy(Strategy):
 
     def __init__(self, config: object = None) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         # Deliberately does not forward to `super().__init__()`
 
@@ -600,6 +601,67 @@ def test_strategy_order_factory_returns_registered_factory() -> None:
         assert OrderFactoryProbeStrategy.observed_next_client_order_id != order.client_order_id
         assert OrderFactoryProbeStrategy.observed_client_order_id_count == 3
         assert OrderFactoryProbeStrategy.observed_order_list_id_count == 0
+    finally:
+        engine.dispose()
+
+
+def test_importable_strategy_config_accepts_string_strategy_id() -> None:
+    """
+    Test importable strategy config accepts a string strategy ID.
+    """
+    ConfiguredIdProbeStrategy.reset()
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+
+    try:
+        engine.add_strategy_from_config(
+            ImportableStrategyConfig(
+                strategy_path="tests.unit.common.actor:ConfiguredIdProbeStrategy",
+                config_path="tests.unit.common.actor:CustomFieldStrategyConfig",
+                config={"strategy_id": "STRAT-001", "custom_field": "x"},
+            ),
+        )
+        engine.run()
+
+        assert ConfiguredIdProbeStrategy.config_strategy_id == StrategyId("STRAT-001")
+        assert ConfiguredIdProbeStrategy.started_strategy_id == StrategyId("STRAT-001")
+    finally:
+        engine.dispose()
+
+
+def test_importable_strategy_config_with_unsettable_field_raises() -> None:
+    """
+    Test importable strategy config raises when a field cannot be set.
+    """
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+
+    try:
+        with pytest.raises(RuntimeError, match="Failed to set attribute log_events"):
+            engine.add_strategy_from_config(
+                ImportableStrategyConfig(
+                    strategy_path="tests.unit.common.actor:ConfiguredIdProbeStrategy",
+                    config_path="nautilus_trader.trading:StrategyConfig",
+                    config={"log_events": "not_a_bool"},
+                ),
+            )
+    finally:
+        engine.dispose()
+
+
+def test_importable_strategy_config_with_invalid_strategy_id_raises() -> None:
+    """
+    Test importable strategy config raises for an invalid string strategy ID.
+    """
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+
+    try:
+        with pytest.raises(RuntimeError, match="did not contain '-'"):
+            engine.add_strategy_from_config(
+                ImportableStrategyConfig(
+                    strategy_path="tests.unit.common.actor:ConfiguredIdProbeStrategy",
+                    config_path="nautilus_trader.trading:StrategyConfig",
+                    config={"strategy_id": "NOHYPHEN"},
+                ),
+            )
     finally:
         engine.dispose()
 
@@ -1479,8 +1541,10 @@ PUBLISH_DATA_PARAMETERS = ("data_type", "data")
 PUBLISH_SIGNAL_PARAMETERS = ("name", "value", "ts_event")
 SIGNAL_SUBSCRIPTION_PARAMETERS = ("name", "priority")
 SIGNAL_UNSUBSCRIBE_PARAMETERS = ("name",)
-STATE_SUBSCRIPTION_PARAMETERS = ("priority",)
-STATE_UNSUBSCRIBE_PARAMETERS = ()
+QUEUE_STATE_SUBSCRIPTION_PARAMETERS = ("channel", "priority")
+SOCKET_STATE_SUBSCRIPTION_PARAMETERS = ("client_id", "endpoint", "priority")
+QUEUE_STATE_UNSUBSCRIBE_PARAMETERS = ("channel",)
+SOCKET_STATE_UNSUBSCRIBE_PARAMETERS = ("client_id", "endpoint")
 SYNTHETIC_PARAMETERS = ("synthetic",)
 DATA_SURFACE_SIGNATURES = [
     ("publish_data", PUBLISH_DATA_PARAMETERS),
@@ -1489,8 +1553,8 @@ DATA_SURFACE_SIGNATURES = [
     ("update_synthetic", SYNTHETIC_PARAMETERS),
     ("subscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
     ("subscribe_signal", SIGNAL_SUBSCRIPTION_PARAMETERS),
-    ("subscribe_queue_state", STATE_SUBSCRIPTION_PARAMETERS),
-    ("subscribe_socket_state", STATE_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_queue_state", QUEUE_STATE_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_socket_state", SOCKET_STATE_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_book_deltas", BOOK_DELTAS_SUBSCRIPTION_PARAMETERS),
@@ -1508,8 +1572,8 @@ DATA_SURFACE_SIGNATURES = [
     ("subscribe_option_chain", OPTION_CHAIN_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_signal", SIGNAL_UNSUBSCRIBE_PARAMETERS),
-    ("unsubscribe_queue_state", STATE_UNSUBSCRIBE_PARAMETERS),
-    ("unsubscribe_socket_state", STATE_UNSUBSCRIBE_PARAMETERS),
+    ("unsubscribe_queue_state", QUEUE_STATE_UNSUBSCRIBE_PARAMETERS),
+    ("unsubscribe_socket_state", SOCKET_STATE_UNSUBSCRIBE_PARAMETERS),
     ("unsubscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_book_deltas", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
@@ -1904,6 +1968,41 @@ def test_strategy_data_operations_succeed_when_registered() -> None:
         engine.dispose()
 
 
+def test_strategy_set_external_order_instrument_ids_updates_active_claims() -> None:
+    """
+    Test a strategy can replace its active external order claims.
+    """
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    first = Strategy(StrategyConfig(strategy_id=StrategyId("FIRST-001")))
+    second = Strategy(StrategyConfig(strategy_id=StrategyId("SECOND-002")))
+    instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+
+    try:
+        engine.add_strategy(first)
+        engine.add_strategy(second)
+
+        assert first.set_external_order_instrument_ids([instrument_id]) is None
+
+        with pytest.raises(RuntimeError) as exc_info:
+            second.set_external_order_instrument_ids([instrument_id])
+
+        assert str(exc_info.value) == (
+            "External order claim for AUD/USD.SIM already exists for FIRST-001"
+        )
+
+        assert first.set_external_order_instrument_ids([]) is None
+        assert second.set_external_order_instrument_ids([instrument_id]) is None
+
+        with pytest.raises(RuntimeError) as exc_info:
+            first.set_external_order_instrument_ids([instrument_id])
+
+        assert str(exc_info.value) == (
+            "External order claim for AUD/USD.SIM already exists for SECOND-002"
+        )
+    finally:
+        engine.dispose()
+
+
 def test_strategy_subscription_validation_precedes_registration() -> None:
     """
     Test strategy subscription validation precedes registration.
@@ -2020,7 +2119,7 @@ def test_strategy_config_defaults() -> None:
     assert config.strategy_id is None
     assert config.order_id_tag is None
     assert config.oms_type is None
-    assert config.external_order_claims is None
+    assert config.external_order_instrument_ids is None
     assert config.manage_contingent_orders is False
     assert config.manage_gtd_expiry is False
     assert config.manage_stop is False
@@ -2039,12 +2138,12 @@ def test_strategy_config_with_explicit_values() -> None:
     """
     Test strategy config with explicit values.
     """
-    external_order_claims = [InstrumentId.from_str("ETH/USDT.BINANCE")]
+    external_order_instrument_ids = [InstrumentId.from_str("ETH/USDT.BINANCE")]
     config = StrategyConfig(
         StrategyId("S-002"),
         "002",
         OmsType.HEDGING,
-        external_order_claims,
+        external_order_instrument_ids,
         True,
         True,
         True,
@@ -2062,7 +2161,7 @@ def test_strategy_config_with_explicit_values() -> None:
     assert config.strategy_id == StrategyId("S-002")
     assert config.order_id_tag == "002"
     assert config.oms_type == OmsType.HEDGING
-    assert config.external_order_claims == external_order_claims
+    assert config.external_order_instrument_ids == external_order_instrument_ids
     assert config.manage_contingent_orders is True
     assert config.manage_gtd_expiry is True
     assert config.manage_stop is True
@@ -2215,7 +2314,7 @@ POSITION_CALLBACKS = [
 def _make_recording_method(method_name: str) -> object:
     def method(self: object, *args: object) -> None:
         """
-        Run the helper method.
+        Run the method.
         """
         self.calls.append((method_name, args))
 

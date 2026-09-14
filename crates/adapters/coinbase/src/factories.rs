@@ -143,6 +143,7 @@ impl ExecutionClientFactory for CoinbaseExecutionClientFactory {
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
+        _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let coinbase_config = config
             .as_any()
@@ -282,8 +283,8 @@ mod tests {
 
     fn make_test_exec_config() -> CoinbaseExecutionClientConfig {
         CoinbaseExecutionClientConfig {
-            api_key: Some("organizations/test-org/apiKeys/test-key".to_string()),
-            api_secret: Some("test-pem-placeholder".to_string()),
+            api_key: Some("organizations/test-org/apiKeys/test-key".into()),
+            api_secret: Some("test-pem-placeholder".into()),
             ..CoinbaseExecutionClientConfig::default()
         }
     }
@@ -315,6 +316,7 @@ mod tests {
                 "COINBASE-TEST",
                 &config,
                 cache.into(),
+                Rc::new(RefCell::new(TestClock::new())),
             )
             .expect("factory should create exec client with valid config");
 
@@ -341,6 +343,7 @@ mod tests {
                 "COINBASE-DERIV",
                 &config,
                 cache.into(),
+                Rc::new(RefCell::new(TestClock::new())),
             )
             .expect("factory should create margin exec client when configured for derivatives");
 
@@ -367,6 +370,7 @@ mod tests {
                 "COINBASE-TEST",
                 &config,
                 cache.into(),
+                Rc::new(RefCell::new(TestClock::new())),
             )
             .err()
             .expect("unsupported account type must be rejected");
@@ -390,6 +394,7 @@ mod tests {
             "COINBASE-TEST",
             &wrong_config,
             cache.into(),
+            Rc::new(RefCell::new(TestClock::new())),
         );
         let err = match result {
             Ok(_) => panic!("wrong config type should be rejected"),

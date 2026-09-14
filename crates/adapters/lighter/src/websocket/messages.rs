@@ -15,11 +15,14 @@
 
 //! Wire frames and handler-output message types for Lighter streams.
 
-use std::fmt::Debug;
-
 use ahash::AHashMap;
-use nautilus_core::serialization::{
-    deserialize_decimal, deserialize_decimal_from_str, deserialize_optional_decimal,
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::{
+    serialization::{
+        deserialize_decimal, deserialize_decimal_from_str, deserialize_optional_decimal,
+    },
+    string::secret::SecretString,
 };
 use nautilus_model::{
     data::{
@@ -36,6 +39,7 @@ use serde::{
 };
 use serde_json::value::RawValue;
 use ustr::Ustr;
+use zeroize::Zeroize;
 
 use crate::{
     common::enums::LighterCandleResolution,
@@ -169,14 +173,14 @@ pub enum ExecutionReport {
     Fill(LighterTrade),
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum LighterWsRequest {
     #[serde(rename = "subscribe")]
     Subscribe {
         channel: String,
         #[serde(skip_serializing_if = "Option::is_none")]
-        auth: Option<String>,
+        auth: Option<SecretString>,
     },
     #[serde(rename = "unsubscribe")]
     Unsubscribe { channel: String },
@@ -184,26 +188,10 @@ pub enum LighterWsRequest {
     SendTx { data: LighterWsSendTx },
 }
 
-impl Debug for LighterWsRequest {
-    /// Custom `Debug` that redacts the `auth` field of `Subscribe`. The
-    /// serialized form of this enum is what hits the wire as a Lighter L2
-    /// bearer token; deriving `Debug` would otherwise leak it via any
-    /// `format!("{request:?}")` call in error or trace paths.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Subscribe { channel, auth } => f
-                .debug_struct(stringify!(Subscribe))
-                .field("channel", channel)
-                .field("authed", &auth.is_some())
-                .finish(),
-            Self::Unsubscribe { channel } => f
-                .debug_struct(stringify!(Unsubscribe))
-                .field("channel", channel)
-                .finish(),
-            Self::SendTx { data } => f
-                .debug_struct(stringify!(SendTx))
-                .field("data", data)
-                .finish(),
+impl Zeroize for LighterWsRequest {
+    fn zeroize(&mut self) {
+        if let Self::Subscribe { auth, .. } = self {
+            auth.zeroize();
         }
     }
 }
@@ -218,7 +206,7 @@ impl LighterWsRequest {
     }
 
     #[must_use]
-    pub fn subscribe_auth(channel: impl Into<String>, auth: impl Into<String>) -> Self {
+    pub fn subscribe_auth(channel: impl Into<String>, auth: impl Into<SecretString>) -> Self {
         Self::Subscribe {
             channel: channel.into(),
             auth: Some(auth.into()),
@@ -929,7 +917,7 @@ mod tests {
     #[rstest]
     fn test_subscribe_request_debug_redacts_auth_token() {
         let token = "schnorr-signature-bytes-do-not-leak";
-        let request = LighterWsRequest::subscribe_auth("account_all/123", token);
+        let mut request = LighterWsRequest::subscribe_auth("account_all/123", token);
 
         let dbg = format!("{request:?}");
 
@@ -937,7 +925,13 @@ mod tests {
             !dbg.contains(token),
             "Debug output must not contain the auth token, found: {dbg}",
         );
-        assert!(dbg.contains("authed"), "Debug should include authed flag");
+        assert!(dbg.contains(REDACTED));
+
+        request.zeroize();
+        assert!(matches!(
+            &request,
+            LighterWsRequest::Subscribe { auth: None, .. }
+        ));
     }
 
     #[rstest]

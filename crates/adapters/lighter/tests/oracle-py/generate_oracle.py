@@ -406,11 +406,11 @@ def build_auth_vectors(
     Each entry pins the inputs that drove the closed signer's `CreateAuthToken` plus the
     resulting token string. The Rust side recomputes the digest from `message` and
     verifies the embedded signature under the public key derived from `sk` to gate
-    behavioural equivalence.
+    behavioral equivalence.
 
     The closed signer requires a `CreateClient` call for every `(api_key_index,
     account_index)` pair before signing; the seeded key is reused for the other vectors
-    so the script does not need to re-initialise per case.
+    so the script does not need to re-initialize per case.
 
     """
     fixed_deadlines = [

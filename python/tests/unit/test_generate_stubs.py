@@ -125,13 +125,14 @@ def test_python_libdir_env_does_not_mutate_os_environ(monkeypatch: pytest.Monkey
     [
         (
             None,
-            ["cargo", "run", "--bin", "python-stub-gen", "--features", "arrow,python"],
+            ["cargo", "run", "--locked", "--bin", "python-stub-gen", "--features", "arrow,python"],
         ),
         (
             "nextest",
             [
                 "cargo",
                 "run",
+                "--locked",
                 "--bin",
                 "python-stub-gen",
                 "--profile",
@@ -179,13 +180,14 @@ __all__ = [
     "TearsheetConfig",
 ]
 """.lstrip(),
+        encoding="utf-8",
     )
 
     # Act
     generate_stubs.write_config_stub(tmp_path)
 
     # Assert
-    stub = runtime_path.with_suffix(".pyi").read_text()
+    stub = runtime_path.with_suffix(".pyi").read_text(encoding="utf-8")
     assert "from nautilus_trader.common import CacheConfig as CacheConfig" in stub
     assert "from nautilus_trader.analysis import TearsheetConfig as TearsheetConfig" in stub
     assert ast.literal_eval(
@@ -213,6 +215,7 @@ from nautilus_trader.common import CacheConfig
 
 __all__ = ["TearsheetConfig"]
 """.lstrip(),
+        encoding="utf-8",
     )
 
     # Act
@@ -265,6 +268,7 @@ impl Sample {
 
 identifier_for_python!(crate::identifiers::AccountId);
 """.strip(),
+        encoding="utf-8",
     )
 
     # Act
@@ -302,6 +306,7 @@ impl Currency {
     }
 }
 """.strip(),
+        encoding="utf-8",
     )
 
     # Act
@@ -330,6 +335,7 @@ impl ClientConfig {
     }
 }
 """.strip(),
+        encoding="utf-8",
     )
 
     # Act
@@ -364,6 +370,7 @@ impl PriceType {
     }
 }
 """.strip(),
+        encoding="utf-8",
     )
 
     # Act
@@ -372,6 +379,53 @@ impl PriceType {
     # Assert
     assert fixups["PriceType"].classmethods == {"variants", "from_str"}
     assert fixups["PriceType"].staticmethods == set()
+
+
+@pytest.mark.parametrize("receiver", ["slf", "this"])
+def test_bound_receiver_is_not_a_python_parameter(tmp_path: Path, receiver: str) -> None:
+    """
+    Test explicit bound receivers are omitted while ordinary arguments remain.
+    """
+    rust_file = tmp_path / "crates" / "common" / "src" / "python" / "sample.rs"
+    rust_file.parent.mkdir(parents=True)
+    rust_file.write_text(
+        """
+#[pymethods]
+impl Sample {
+    #[pyo3(name = "publish")]
+    fn py_publish(RECEIVER: &Bound<'_, Self>, topic: &str) {
+        todo!()
+    }
+
+    #[staticmethod]
+    fn consume(RECEIVER: &Bound<'_, Self>) {
+        todo!()
+    }
+
+    fn compare(&self, RECEIVER: &Bound<'_, Self>) {
+        todo!()
+    }
+}
+""".replace("RECEIVER", receiver),
+        encoding="utf-8",
+    )
+    source = (
+        "class Sample:\n"
+        f"    def publish(self, {receiver}: Sample, topic: str) -> None: ...\n"
+        f"    def consume(self, {receiver}: Sample) -> None: ...\n"
+        f"    def compare(self, {receiver}: Sample) -> None: ...\n"
+    )
+
+    fixups = generate_stubs.collect_rust_class_fixups(tmp_path)
+    updated = generate_stubs.apply_rust_class_fixups(source, fixups)
+
+    assert updated == (
+        "class Sample:\n"
+        "    def publish(self, topic: str) -> None: ...\n"
+        "    @staticmethod\n"
+        f"    def consume({receiver}: Sample) -> None: ...\n"
+        f"    def compare(self, {receiver}: Sample) -> None: ...\n"
+    )
 
 
 def test_signature_defaults_handle_lifetime_generic_methods(tmp_path: Path) -> None:
@@ -399,6 +453,7 @@ impl HyperliquidHttpClient {
     }
 }
 """.strip(),
+        encoding="utf-8",
     )
     content = """
 class HyperliquidHttpClient:
@@ -445,6 +500,7 @@ impl DataActorConfig {
     }
 }
 """.strip(),
+        encoding="utf-8",
     )
     content = """
 class DataActorConfig:
@@ -484,6 +540,7 @@ impl StrategyConfig {
     }
 }
 """.strip(),
+        encoding="utf-8",
     )
     content = """
 class StrategyConfig:
@@ -521,6 +578,7 @@ impl FixedRiskSizer {
     }
 }
 """.strip(),
+        encoding="utf-8",
     )
     content = """
 class FixedRiskSizer:
@@ -556,6 +614,7 @@ pub struct HyperliquidAllMids {
     pub ts_init: UnixNanos,
 }
 """.strip(),
+        encoding="utf-8",
     )
 
     # Act
@@ -591,6 +650,7 @@ pub struct HyperliquidAllMids {
     pub ts_init: UnixNanos,
 }
 """.strip(),
+        encoding="utf-8",
     )
 
     # Act
@@ -620,6 +680,7 @@ pub struct DeribitVolatilityIndex {
     pub ts_init: UnixNanos,
 }
 """.strip(),
+        encoding="utf-8",
     )
 
     # Act
@@ -653,6 +714,7 @@ impl AccountState {
     }
 }
 """.strip(),
+        encoding="utf-8",
     )
 
     # Act
@@ -684,6 +746,7 @@ impl UUID4 {
     }
 }
 """.strip(),
+        encoding="utf-8",
     )
 
     # Act
@@ -720,6 +783,7 @@ impl PyStrategy {
     }
 }
 """.strip(),
+        encoding="utf-8",
     )
 
     # Act
@@ -760,6 +824,7 @@ def test_collect_rust_class_fixups_detects_cfg_attr_subclass_pyclass(tmp_path: P
 )]
 pub struct StrategyConfig {}
 """.strip(),
+        encoding="utf-8",
     )
 
     # Act
@@ -790,6 +855,7 @@ def test_collect_rust_class_fixups_ignores_subclass_in_pyclass_string_values(
 )]
 pub struct RustConfig {}
 """.strip(),
+        encoding="utf-8",
     )
 
     # Act
@@ -1301,6 +1367,7 @@ pub struct NotAnEnum {
     field: u8,
 }
 """.strip(),
+        encoding="utf-8",
     )
 
     # Act
@@ -1329,6 +1396,7 @@ pub fn core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 """.strip(),
+        encoding="utf-8",
     )
 
     const_rs = tmp_path / "crates" / "core" / "src" / "consts.rs"
@@ -1338,6 +1406,7 @@ pub fn core(m: &Bound<'_, PyModule>) -> PyResult<()> {
 pub static MY_VERSION: &str = "1.0.0";
 pub const MY_CONSTANT: u64 = 42;
 """.strip(),
+        encoding="utf-8",
     )
 
     # Act
@@ -1369,6 +1438,7 @@ pub fn polymarket(m: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 """.strip(),
+        encoding="utf-8",
     )
 
     const_rs = tmp_path / "crates" / "adapters" / "polymarket" / "src" / "common" / "consts.rs"
@@ -1377,6 +1447,7 @@ pub fn polymarket(m: &Bound<'_, PyModule>) -> PyResult<()> {
         """
 pub const POLYMARKET: &str = "POLYMARKET";
 """.strip(),
+        encoding="utf-8",
     )
 
     # Act
@@ -1395,19 +1466,22 @@ def test_remove_stale_top_level_adapter_stubs_deletes_generated_aliases(tmp_path
     root = tmp_path / "nautilus_trader"
     adapters_dir = root / "adapters"
     (adapters_dir / "polymarket").mkdir(parents=True)
-    (adapters_dir / "polymarket" / "__init__.pyi").write_text("class Polymarket: ...\n")
+    (adapters_dir / "polymarket" / "__init__.pyi").write_text(
+        "class Polymarket: ...\n",
+        encoding="utf-8",
+    )
 
     stale_dir = root / "polymarket"
     stale_dir.mkdir()
     stale_init = stale_dir / "__init__.pyi"
-    stale_init.write_text("class Polymarket: ...\n")
+    stale_init.write_text("class Polymarket: ...\n", encoding="utf-8")
 
     (adapters_dir / "bybit").mkdir()
-    (adapters_dir / "bybit" / "__init__.pyi").write_text("class Bybit: ...\n")
+    (adapters_dir / "bybit" / "__init__.pyi").write_text("class Bybit: ...\n", encoding="utf-8")
     non_stale_dir = root / "bybit"
     non_stale_dir.mkdir()
-    (non_stale_dir / "__init__.pyi").write_text("class Bybit: ...\n")
-    (non_stale_dir / "extra.pyi").write_text("class Extra: ...\n")
+    (non_stale_dir / "__init__.pyi").write_text("class Bybit: ...\n", encoding="utf-8")
+    (non_stale_dir / "extra.pyi").write_text("class Extra: ...\n", encoding="utf-8")
 
     # Act
     generate_stubs.remove_stale_top_level_adapter_stubs(root)
@@ -1434,6 +1508,7 @@ __all__ = [
     "BybitDataClientConfig",
 ]
 """.lstrip(),
+        encoding="utf-8",
     )
     (adapter_dir / "__init__.pyi").write_text(
         """
@@ -1450,13 +1525,14 @@ class BybitHttpClient: ...
 class BybitWebSocketClient: ...
 BYBIT: str
 """.lstrip(),
+        encoding="utf-8",
     )
 
     # Act
     generate_stubs.sync_adapter_all_exports(root)
 
     # Assert
-    stub = (adapter_dir / "__init__.pyi").read_text()
+    stub = (adapter_dir / "__init__.pyi").read_text(encoding="utf-8")
     exported = ast.literal_eval(
         next(
             node.value
@@ -1484,6 +1560,7 @@ def test_sync_adapter_all_exports_rejects_runtime_name_absent_from_stub(tmp_path
         """
 __all__ = ["BINANCE", "MissingSymbol"]
 """.lstrip(),
+        encoding="utf-8",
     )
     (adapter_dir / "__init__.pyi").write_text(
         """
@@ -1491,6 +1568,7 @@ __all__ = ["BINANCE"]
 
 BINANCE: str
 """.lstrip(),
+        encoding="utf-8",
     )
 
     # Act / Assert
@@ -1504,7 +1582,7 @@ def test_read_runtime_all_rejects_non_static_or_duplicated_list(tmp_path: Path) 
     """
     # Arrange
     runtime_path = tmp_path / "__init__.py"
-    runtime_path.write_text("__all__ = ['A', 'A', 'B']\n")
+    runtime_path.write_text("__all__ = ['A', 'A', 'B']\n", encoding="utf-8")
 
     # Act / Assert
     with pytest.raises(ValueError, match=r"__all__ must not contain duplicates"):
@@ -1581,7 +1659,7 @@ def test_binance_stub_exposes_python_migration_surface() -> None:
     """
     Test binance stub exposes python migration surface.
     """
-    stub = (STUB_ROOT / "adapters" / "binance" / "__init__.pyi").read_text()
+    stub = (STUB_ROOT / "adapters" / "binance" / "__init__.pyi").read_text(encoding="utf-8")
     stub_module = ast.parse(stub)
     exported = next(
         ast.literal_eval(node.value)
@@ -1845,10 +1923,13 @@ ADAPTER_CONFIG_SECRET_FIELDS = {
     "api_secret",
     "api_passphrase",
     "app_key",
+    "http_rpc_url",
     "password",
     "passphrase",
     "private_key",
     "session_key",
+    "tardis_ws_url",
+    "wss_rpc_url",
 }
 ADAPTER_CONFIG_READBACK_REPLACEMENTS = {
     "proxy_url": "has_proxy_url",
@@ -1895,7 +1976,7 @@ def _parse_stub_enum_variants(stub_root: Path) -> dict[str, list[str]]:
     for pyi in sorted(stub_root.rglob("*.pyi")):
         current_enum: str | None = None
 
-        for line in pyi.read_text().splitlines():
+        for line in pyi.read_text(encoding="utf-8").splitlines():
             class_match = STUB_ENUM_CLASS_RE.match(line)
             if class_match:
                 current_enum = class_match.group(1)
@@ -1919,7 +2000,7 @@ def test_live_stub_exposes_native_live_node_config_signature() -> None:
     """
     Test live stub exposes native live node config signature.
     """
-    live_stub = (STUB_ROOT / "live" / "__init__.pyi").read_text()
+    live_stub = (STUB_ROOT / "live" / "__init__.pyi").read_text(encoding="utf-8")
 
     assert "@typing.final\nclass LiveNodeConfig:" in live_stub
     assert "@typing.final\nclass QueueMonitorConfig:" in live_stub
@@ -1938,7 +2019,7 @@ def test_live_stub_exposes_run_async_coroutine_signature() -> None:
     """
     Test live stub exposes run async coroutine signature.
     """
-    live_stub = (STUB_ROOT / "live" / "__init__.pyi").read_text()
+    live_stub = (STUB_ROOT / "live" / "__init__.pyi").read_text(encoding="utf-8")
 
     assert (
         "def run_async(self) -> collections.abc.Coroutine[typing.Any, typing.Any, None]: ..."
@@ -1950,7 +2031,7 @@ def test_live_stub_exposes_builder_engine_config_methods() -> None:
     """
     Test live stub exposes builder engine config methods.
     """
-    live_stub = (STUB_ROOT / "live" / "__init__.pyi").read_text()
+    live_stub = (STUB_ROOT / "live" / "__init__.pyi").read_text(encoding="utf-8")
 
     assert (
         "def with_cache_config(self, config: common.CacheConfig) -> LiveNodeBuilder: ..."
@@ -2000,7 +2081,7 @@ def test_stub_constructor_matches_runtime(module_name: object, class_name: objec
     """
     runtime_class = getattr(importlib.import_module(module_name), class_name)
     stub_path = STUB_ROOT.joinpath(*module_name.split(".")[1:], "__init__.pyi")
-    stub_module = ast.parse(stub_path.read_text())
+    stub_module = ast.parse(stub_path.read_text(encoding="utf-8"))
     stub_class = next(
         node
         for node in stub_module.body
@@ -2058,7 +2139,7 @@ def test_stub_members_match_runtime_names() -> None:  # noqa: C901
 
         module_name = _module_name_from_stub_path(relative_package)
         module = importlib.import_module(module_name)
-        stub_module = ast.parse(stub_path.read_text())
+        stub_module = ast.parse(stub_path.read_text(encoding="utf-8"))
         runtime_names = set(dir(module))
         stub_names = {
             node.name
@@ -2394,7 +2475,7 @@ def test_stub_signatures_match_runtime() -> None:
 
         module_name = _module_name_from_stub_path(relative_package)
         module = importlib.import_module(module_name)
-        stub_module = ast.parse(stub_path.read_text())
+        stub_module = ast.parse(stub_path.read_text(encoding="utf-8"))
         parameter_errors, default_errors = _module_signature_mismatches(
             module_name,
             stub_module,
@@ -2573,7 +2654,7 @@ def test_generated_config_stubs_include_signature_defaults() -> None:
     mismatches = []
 
     for stub_file in sorted(STUB_ROOT.rglob("*.pyi")):
-        content = stub_file.read_text()
+        content = stub_file.read_text(encoding="utf-8")
         config_fixups = _config_constructor_fixups_for_stub(content, rust_fixups)
         if not config_fixups:
             continue
@@ -2600,7 +2681,7 @@ def _iter_supported_stub_configs(adapter: object) -> object:
 
         for stub_class in (
             node
-            for node in ast.parse(stub_file.read_text()).body
+            for node in ast.parse(stub_file.read_text(encoding="utf-8")).body
             if isinstance(node, ast.ClassDef) and node.name.endswith("Config")
         ):
             if any(
@@ -2650,9 +2731,11 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path: Path) -> N
     """
     from nautilus_trader.adapters.architect_ax import AxDataClientConfig
     from nautilus_trader.adapters.betfair import BetfairDataClientConfig
+    from nautilus_trader.adapters.betfair import BetfairExecutionClientConfig
     from nautilus_trader.adapters.bitmex import BitmexExecutionClientConfig
     from nautilus_trader.adapters.bybit import BybitDataClientConfig
     from nautilus_trader.adapters.databento import DatabentoDataClientConfig
+    from nautilus_trader.adapters.interactive_brokers import DockerizedIBGatewayConfig
     from nautilus_trader.model import AccountId
 
     ax_config = AxDataClientConfig(
@@ -2668,6 +2751,7 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path: Path) -> N
         event_type_ids=[7, 9],
         stream_heartbeat_secs=43,
     )
+    betfair_exec_config = BetfairExecutionClientConfig(username="exec-readback-user")
     bitmex_config = BitmexExecutionClientConfig(
         account_id=AccountId("BITMEX-001"),
         submitter_proxy_urls=["http://submitter.example.test"],
@@ -2682,11 +2766,13 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path: Path) -> N
         bars_timestamp_on_close=False,
         venue_dataset_map={"XNAS": "XNAS.ITCH"},
     )
+    ib_gateway_config = DockerizedIBGatewayConfig(username="ib-readback-user")
 
     assert ax_config.base_url_http == "https://ax.example.test"
     assert ax_config.http_timeout_secs == 17
     assert ax_config.has_proxy_url is True
     assert betfair_config.username == "readback-user"
+    assert betfair_exec_config.username == "exec-readback-user"
     assert betfair_config.event_type_ids == ["7", "9"]
     assert betfair_config.stream_heartbeat_secs == 43
     assert betfair_config.has_proxy_url is True
@@ -2699,6 +2785,7 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path: Path) -> N
     assert databento_config.bars_timestamp_on_close is False
     assert databento_config.venue_dataset_map == {"XNAS": "XNAS.ITCH"}
     assert bitmex_config.account_id == AccountId("BITMEX-001")
+    assert ib_gateway_config.username == "ib-readback-user"
 
 
 def test_adapter_config_runtime_setter_policy(tmp_path: Path) -> None:
@@ -2741,13 +2828,34 @@ def test_adapter_config_secret_values_are_not_exposed(tmp_path: Path) -> None:
     """
     Test adapter config secret values are not exposed.
     """
+    from nautilus_trader.adapters.blockchain import BlockchainProviderIdentity
     from nautilus_trader.model import AccountId
+    from nautilus_trader.model import Blockchain
+    from nautilus_trader.model import Chain
+    from nautilus_trader.model import DexType
     from nautilus_trader.model import TraderId
 
+    provider_identity = BlockchainProviderIdentity(
+        provider_id="provider",
+        operator_id="operator",
+        failure_domain_ids=["failure-domain"],
+    )
     required_values = {
         "account_id": AccountId("VENUE-001"),
+        "base_fee_buffer_bps": 100,
+        "chain": Chain(Blockchain.ARBITRUM, 42161),
+        "client_id": AccountId("BLOCKCHAIN-001"),
+        "dex_ids": [DexType.UNISWAP_V3],
+        "gas_buffer_bps": 100,
+        "gas_limit": 1_000_000,
+        "identity": provider_identity,
+        "max_fee_per_gas_wei": 100_000_000_000,
         "publishers_filepath": tmp_path / "publishers.json",
+        "router_addresses": ["0x1111111111111111111111111111111111111111"],
+        "signer_private_key_env": "SIGNER_PRIVATE_KEY",
         "trader_id": TraderId("TRADER-001"),
+        "wallet_address": "0x2222222222222222222222222222222222222222",
+        "weth_address": "0x3333333333333333333333333333333333333333",
     }
     failures = []
 
@@ -2758,7 +2866,7 @@ def test_adapter_config_secret_values_are_not_exposed(tmp_path: Path) -> None:
 
         for stub_class in (
             node
-            for node in ast.parse(stub_file.read_text()).body
+            for node in ast.parse(stub_file.read_text(encoding="utf-8")).body
             if isinstance(node, ast.ClassDef) and node.name.endswith("Config")
         ):
             runtime_class = getattr(module, stub_class.name)
@@ -2802,16 +2910,21 @@ def test_adapter_config_sensitive_readback_values_are_not_represented() -> None:
     """
     Test adapter config sensitive readback values are not represented.
     """
+    from nautilus_trader.adapters.betfair import BetfairDataClientConfig
+    from nautilus_trader.adapters.betfair import BetfairExecutionClientConfig
     from nautilus_trader.adapters.bitmex import BitmexExecutionClientConfig
     from nautilus_trader.adapters.blockchain import BlockchainDataClientConfig
     from nautilus_trader.adapters.derive import DeriveDataClientConfig
     from nautilus_trader.adapters.dydx import DydxDataClientConfig
+    from nautilus_trader.adapters.interactive_brokers import DockerizedIBGatewayConfig
     from nautilus_trader.infrastructure import PostgresConnectOptions
     from nautilus_trader.model import Chain
     from nautilus_trader.model import DexType
 
     sentinel = "raw-sensitive-value"
     configs = [
+        BetfairDataClientConfig(username=sentinel),
+        BetfairExecutionClientConfig(username=sentinel),
         BitmexExecutionClientConfig(
             submitter_proxy_urls=[f"http://{sentinel}@submitter.example.test"],
             canceller_proxy_urls=[f"http://{sentinel}@canceller.example.test"],
@@ -2831,6 +2944,7 @@ def test_adapter_config_sensitive_readback_values_are_not_represented() -> None:
         ),
         DeriveDataClientConfig(proxy_url=f"http://{sentinel}@proxy.example.test"),
         DydxDataClientConfig(proxy_url=f"http://{sentinel}@proxy.example.test"),
+        DockerizedIBGatewayConfig(username=sentinel),
     ]
 
     assert all(sentinel not in repr(config) for config in configs)
@@ -3319,7 +3433,7 @@ def test_package_stub_exports_portfolio_module() -> None:
     """
     Test package stub exports portfolio module.
     """
-    package_stub = (STUB_ROOT / "__init__.pyi").read_text()
+    package_stub = (STUB_ROOT / "__init__.pyi").read_text(encoding="utf-8")
 
     assert "from . import portfolio" in package_stub
     assert '"portfolio"' in package_stub
@@ -3364,7 +3478,7 @@ def test_subclassable_pyclasses_are_not_final_in_stubs() -> None:
 
     # Act
     for pyi in sorted(STUB_ROOT.rglob("*.pyi")):
-        lines = pyi.read_text().splitlines()
+        lines = pyi.read_text(encoding="utf-8").splitlines()
         for index, line in enumerate(lines[:-1]):
             if line.strip() != "@typing.final":
                 continue

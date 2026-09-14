@@ -28,7 +28,7 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
-    common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE,
+    common::{consts::GAMMA_CONDITION_IDS_BATCH_SIZE, parse::parse_decimal_exact},
     config::PolymarketInstrumentProviderConfig,
     filters::InstrumentFilter,
     http::{
@@ -592,6 +592,20 @@ pub fn extract_condition_id(instrument_id: &InstrumentId) -> anyhow::Result<Stri
         })
 }
 
+/// Extracts the token ID from an instrument symbol.
+///
+/// Polymarket instrument symbols follow the pattern `{condition_id}-{token_id}`. This extracts the
+/// token_id by splitting at the last `-`.
+pub(crate) fn extract_token_id(instrument_id: &InstrumentId) -> anyhow::Result<String> {
+    let symbol = instrument_id.symbol.as_str();
+    symbol
+        .rsplit_once('-')
+        .map(|(_, token_id)| token_id.to_string())
+        .ok_or_else(|| {
+            anyhow::anyhow!("Cannot extract token_id from symbol '{symbol}': no '-' separator")
+        })
+}
+
 /// Builds validated market keyset parameters from string key/value filters.
 ///
 /// # Errors
@@ -975,8 +989,7 @@ fn parse_gamma_filter_u64(scope: &str, key: &str, value: &str) -> anyhow::Result
 }
 
 fn parse_gamma_filter_decimal(scope: &str, key: &str, value: &str) -> anyhow::Result<Decimal> {
-    value
-        .parse::<Decimal>()
+    parse_decimal_exact(value)
         .map_err(|e| anyhow::anyhow!("Gamma {scope} filter '{key}' must be a decimal number: {e}"))
 }
 
@@ -1137,5 +1150,24 @@ impl InstrumentProvider for PolymarketInstrumentProvider {
         } else {
             anyhow::bail!("Instrument {instrument_id} not found on Polymarket")
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case("0xcondition-0xtoken", Some("0xtoken"))]
+    #[case("0xcondition-with-dash-0xtoken", Some("0xtoken"))]
+    #[case("0xcondition", None)]
+    fn extracts_token_id_from_instrument_symbol(
+        #[case] symbol: &str,
+        #[case] expected: Option<&str>,
+    ) {
+        let instrument_id = InstrumentId::from(format!("{symbol}.POLYMARKET").as_str());
+        assert_eq!(extract_token_id(&instrument_id).ok().as_deref(), expected,);
     }
 }

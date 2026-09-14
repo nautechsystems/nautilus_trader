@@ -15,7 +15,7 @@
 
 //! DeFi-specific data client functionality.
 //!
-//! This module provides DeFi subscription and request helper methods
+//! This module provides DeFi subscription and request methods
 //! for the `DataClientAdapter`. All code in this module requires the `defi` feature flag.
 
 use nautilus_common::{
@@ -29,39 +29,109 @@ use nautilus_common::{
     },
 };
 
-use crate::client::DataClientAdapter;
+use crate::{
+    client::DataClientAdapter,
+    subscription::{DefiSubscriptionKey, SubscriptionRelease},
+};
 
 impl DataClientAdapter {
     #[inline]
     pub fn execute_defi_subscribe(&mut self, cmd: DefiSubscribeCommand) {
+        self.execute_defi_subscribe_with_retained(cmd, false);
+    }
+
+    pub(crate) fn execute_defi_subscribe_with_retained(
+        &mut self,
+        cmd: DefiSubscribeCommand,
+        retain_on_failure: bool,
+    ) {
+        #[rustfmt::skip]
+        let key = match &cmd {
+            DefiSubscribeCommand::Blocks(command) => DefiSubscriptionKey::Blocks(command.chain),
+            DefiSubscribeCommand::Pool(command) => DefiSubscriptionKey::Pool(command.instrument_id),
+            DefiSubscribeCommand::PoolSwaps(command) => DefiSubscriptionKey::PoolSwaps(command.instrument_id),
+            DefiSubscribeCommand::PoolLiquidityUpdates(command) => DefiSubscriptionKey::PoolLiquidityUpdates(command.instrument_id),
+            DefiSubscribeCommand::PoolFeeCollects(command) => DefiSubscriptionKey::PoolFeeCollects(command.instrument_id),
+            DefiSubscribeCommand::PoolFlashEvents(command) => DefiSubscriptionKey::PoolFlashEvents(command.instrument_id),
+        };
+        #[rustfmt::skip]
+        let active = match &key {
+            DefiSubscriptionKey::Blocks(chain) => self.subscriptions_blocks.contains(chain),
+            DefiSubscriptionKey::Pool(id) => self.subscriptions_pools.contains(id),
+            DefiSubscriptionKey::PoolSwaps(id) => self.subscriptions_pool_swaps.contains(id),
+            DefiSubscriptionKey::PoolLiquidityUpdates(id) => self.subscriptions_pool_liquidity_updates.contains(id),
+            DefiSubscriptionKey::PoolFeeCollects(id) => self.subscriptions_pool_fee_collects.contains(id),
+            DefiSubscriptionKey::PoolFlashEvents(id) => self.subscriptions_pool_flash.contains(id),
+        };
+
+        if active {
+            self.subscriptions_active_defi
+                .retain(key, cmd.command_id(), cmd);
+            return;
+        }
+
+        let retained = cmd.clone();
         let cmd_debug = format!("{cmd:?}");
-        if let Err(e) = match cmd {
+        #[rustfmt::skip]
+        let result = match cmd {
             DefiSubscribeCommand::Blocks(cmd) => self.subscribe_blocks(cmd),
             DefiSubscribeCommand::Pool(cmd) => self.subscribe_pool(cmd),
             DefiSubscribeCommand::PoolSwaps(cmd) => self.subscribe_pool_swaps(cmd),
-            DefiSubscribeCommand::PoolLiquidityUpdates(cmd) => {
-                self.subscribe_pool_liquidity_updates(cmd)
-            }
+            DefiSubscribeCommand::PoolLiquidityUpdates(cmd) => self.subscribe_pool_liquidity_updates(cmd),
             DefiSubscribeCommand::PoolFeeCollects(cmd) => self.subscribe_pool_fee_collects(cmd),
             DefiSubscribeCommand::PoolFlashEvents(cmd) => self.subscribe_pool_flash_events(cmd),
-        } {
+        };
+
+        if let Err(e) = result {
+            if retain_on_failure {
+                self.subscriptions_active_defi
+                    .retain(key, retained.command_id(), retained);
+            }
+
             log_command_error(&cmd_debug, &e);
+            return;
         }
+
+        if let Some(subscription) = self.subscriptions_active_defi.get_mut(&key) {
+            subscription.command = retained.clone();
+        }
+        self.subscriptions_active_defi
+            .retain(key, retained.command_id(), retained);
     }
 
     #[inline]
     pub fn execute_defi_unsubscribe(&mut self, cmd: &DefiUnsubscribeCommand) {
-        if let Err(e) = match cmd {
+        #[rustfmt::skip]
+        let key = match cmd {
+            DefiUnsubscribeCommand::Blocks(command) => DefiSubscriptionKey::Blocks(command.chain),
+            DefiUnsubscribeCommand::Pool(command) => DefiSubscriptionKey::Pool(command.instrument_id),
+            DefiUnsubscribeCommand::PoolSwaps(command) => DefiSubscriptionKey::PoolSwaps(command.instrument_id),
+            DefiUnsubscribeCommand::PoolLiquidityUpdates(command) => DefiSubscriptionKey::PoolLiquidityUpdates(command.instrument_id),
+            DefiUnsubscribeCommand::PoolFeeCollects(command) => DefiSubscriptionKey::PoolFeeCollects(command.instrument_id),
+            DefiUnsubscribeCommand::PoolFlashEvents(command) => DefiSubscriptionKey::PoolFlashEvents(command.instrument_id),
+        };
+        let command = match self.subscriptions_active_defi.release(&key) {
+            SubscriptionRelease::Retained => return,
+            SubscriptionRelease::Final(subscribe) => {
+                subscribe.into_unsubscribe(cmd.command_id(), cmd.ts_init())
+            }
+            SubscriptionRelease::Untracked => cmd.clone(),
+        };
+
+        #[rustfmt::skip]
+        let unsub_result = match &command {
             DefiUnsubscribeCommand::Blocks(cmd) => self.unsubscribe_blocks(cmd),
             DefiUnsubscribeCommand::Pool(cmd) => self.unsubscribe_pool(cmd),
             DefiUnsubscribeCommand::PoolSwaps(cmd) => self.unsubscribe_pool_swaps(cmd),
-            DefiUnsubscribeCommand::PoolLiquidityUpdates(cmd) => {
-                self.unsubscribe_pool_liquidity_updates(cmd)
-            }
+            DefiUnsubscribeCommand::PoolLiquidityUpdates(cmd) => self.unsubscribe_pool_liquidity_updates(cmd),
             DefiUnsubscribeCommand::PoolFeeCollects(cmd) => self.unsubscribe_pool_fee_collects(cmd),
             DefiUnsubscribeCommand::PoolFlashEvents(cmd) => self.unsubscribe_pool_flash_events(cmd),
-        } {
-            log_command_error(&cmd, &e);
+        };
+
+        if let Err(e) = unsub_result {
+            log_command_error(&command, &e);
+        } else {
+            self.subscriptions_active_defi.remove(&key);
         }
     }
 
@@ -83,10 +153,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_blocks(&mut self, cmd: SubscribeBlocks) -> anyhow::Result<()> {
-        if Self::track_subscribe(&mut self.subscriptions_blocks, cmd.chain, "blocks") {
-            self.client.subscribe_blocks(cmd)?;
-        }
-        Ok(())
+        Self::execute_tracked_subscribe(
+            self.client.as_mut(),
+            &mut self.subscriptions_blocks,
+            cmd.chain,
+            "blocks",
+            |client| client.subscribe_blocks(cmd),
+        )
     }
 
     /// Unsubscribes from block events for the specified blockchain.
@@ -95,10 +168,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_blocks(&mut self, cmd: &UnsubscribeBlocks) -> anyhow::Result<()> {
-        if Self::track_unsubscribe(&mut self.subscriptions_blocks, cmd.chain, "blocks") {
-            self.client.unsubscribe_blocks(cmd)?;
-        }
-        Ok(())
+        Self::execute_tracked_unsubscribe(
+            self.client.as_mut(),
+            &mut self.subscriptions_blocks,
+            &cmd.chain,
+            "blocks",
+            |client| client.unsubscribe_blocks(cmd),
+        )
     }
 
     /// Subscribes to pool definition updates for the specified AMM pool.
@@ -107,10 +183,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_pool(&mut self, cmd: SubscribePool) -> anyhow::Result<()> {
-        if Self::track_subscribe(&mut self.subscriptions_pools, cmd.instrument_id, "pool") {
-            self.client.subscribe_pool(cmd)?;
-        }
-        Ok(())
+        Self::execute_tracked_subscribe(
+            self.client.as_mut(),
+            &mut self.subscriptions_pools,
+            cmd.instrument_id,
+            "pool",
+            |client| client.subscribe_pool(cmd),
+        )
     }
 
     /// Subscribes to pool swap events for the specified AMM pool.
@@ -119,14 +198,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_pool_swaps(&mut self, cmd: SubscribePoolSwaps) -> anyhow::Result<()> {
-        if Self::track_subscribe(
+        Self::execute_tracked_subscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_pool_swaps,
             cmd.instrument_id,
             "pool swaps",
-        ) {
-            self.client.subscribe_pool_swaps(cmd)?;
-        }
-        Ok(())
+            |client| client.subscribe_pool_swaps(cmd),
+        )
     }
 
     /// Subscribes to pool liquidity update events for the specified AMM pool.
@@ -138,14 +216,13 @@ impl DataClientAdapter {
         &mut self,
         cmd: SubscribePoolLiquidityUpdates,
     ) -> anyhow::Result<()> {
-        if Self::track_subscribe(
+        Self::execute_tracked_subscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_pool_liquidity_updates,
             cmd.instrument_id,
             "pool liquidity updates",
-        ) {
-            self.client.subscribe_pool_liquidity_updates(cmd)?;
-        }
-        Ok(())
+            |client| client.subscribe_pool_liquidity_updates(cmd),
+        )
     }
 
     /// Subscribes to pool fee collect events for the specified AMM pool.
@@ -154,14 +231,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_pool_fee_collects(&mut self, cmd: SubscribePoolFeeCollects) -> anyhow::Result<()> {
-        if Self::track_subscribe(
+        Self::execute_tracked_subscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_pool_fee_collects,
             cmd.instrument_id,
             "pool fee collects",
-        ) {
-            self.client.subscribe_pool_fee_collects(cmd)?;
-        }
-        Ok(())
+            |client| client.subscribe_pool_fee_collects(cmd),
+        )
     }
 
     /// Subscribes to pool flash loan events for the specified AMM pool.
@@ -170,14 +246,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_pool_flash_events(&mut self, cmd: SubscribePoolFlashEvents) -> anyhow::Result<()> {
-        if Self::track_subscribe(
+        Self::execute_tracked_subscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_pool_flash,
             cmd.instrument_id,
             "pool flash events",
-        ) {
-            self.client.subscribe_pool_flash_events(cmd)?;
-        }
-        Ok(())
+            |client| client.subscribe_pool_flash_events(cmd),
+        )
     }
 
     /// Unsubscribes from pool definition updates for the specified AMM pool.
@@ -186,10 +261,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_pool(&mut self, cmd: &UnsubscribePool) -> anyhow::Result<()> {
-        if Self::track_unsubscribe(&mut self.subscriptions_pools, cmd.instrument_id, "pool") {
-            self.client.unsubscribe_pool(cmd)?;
-        }
-        Ok(())
+        Self::execute_tracked_unsubscribe(
+            self.client.as_mut(),
+            &mut self.subscriptions_pools,
+            &cmd.instrument_id,
+            "pool",
+            |client| client.unsubscribe_pool(cmd),
+        )
     }
 
     /// Unsubscribes from swap events for the specified AMM pool.
@@ -198,14 +276,13 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_pool_swaps(&mut self, cmd: &UnsubscribePoolSwaps) -> anyhow::Result<()> {
-        if Self::track_unsubscribe(
+        Self::execute_tracked_unsubscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_pool_swaps,
-            cmd.instrument_id,
+            &cmd.instrument_id,
             "pool swaps",
-        ) {
-            self.client.unsubscribe_pool_swaps(cmd)?;
-        }
-        Ok(())
+            |client| client.unsubscribe_pool_swaps(cmd),
+        )
     }
 
     /// Unsubscribes from pool liquidity update events for the specified AMM pool.
@@ -217,14 +294,13 @@ impl DataClientAdapter {
         &mut self,
         cmd: &UnsubscribePoolLiquidityUpdates,
     ) -> anyhow::Result<()> {
-        if Self::track_unsubscribe(
+        Self::execute_tracked_unsubscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_pool_liquidity_updates,
-            cmd.instrument_id,
+            &cmd.instrument_id,
             "pool liquidity updates",
-        ) {
-            self.client.unsubscribe_pool_liquidity_updates(cmd)?;
-        }
-        Ok(())
+            |client| client.unsubscribe_pool_liquidity_updates(cmd),
+        )
     }
 
     /// Unsubscribes from pool fee collect events for the specified AMM pool.
@@ -236,14 +312,13 @@ impl DataClientAdapter {
         &mut self,
         cmd: &UnsubscribePoolFeeCollects,
     ) -> anyhow::Result<()> {
-        if Self::track_unsubscribe(
+        Self::execute_tracked_unsubscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_pool_fee_collects,
-            cmd.instrument_id,
+            &cmd.instrument_id,
             "pool fee collects",
-        ) {
-            self.client.unsubscribe_pool_fee_collects(cmd)?;
-        }
-        Ok(())
+            |client| client.unsubscribe_pool_fee_collects(cmd),
+        )
     }
 
     /// Unsubscribes from pool flash loan events for the specified AMM pool.
@@ -255,14 +330,13 @@ impl DataClientAdapter {
         &mut self,
         cmd: &UnsubscribePoolFlashEvents,
     ) -> anyhow::Result<()> {
-        if Self::track_unsubscribe(
+        Self::execute_tracked_unsubscribe(
+            self.client.as_mut(),
             &mut self.subscriptions_pool_flash,
-            cmd.instrument_id,
+            &cmd.instrument_id,
             "pool flash events",
-        ) {
-            self.client.unsubscribe_pool_flash_events(cmd)?;
-        }
-        Ok(())
+            |client| client.unsubscribe_pool_flash_events(cmd),
+        )
     }
 
     /// Sends a pool snapshot request for a given AMM pool.

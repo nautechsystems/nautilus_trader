@@ -17,7 +17,7 @@
 
 use anyhow::Context;
 use nautilus_core::{
-    UnixNanos,
+    DurationNanos, UnixNanos,
     datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND},
 };
 use nautilus_model::{
@@ -320,7 +320,7 @@ fn build_trade_tick(
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<TradeTick> {
-    let instrument_id = format_instrument_id(trade.instrument_name.as_str());
+    let instrument_id = format_instrument_id(trade.instrument_name);
     let price = Price::from_decimal_dp(trade.trade_price, price_precision)
         .with_context(|| format!("invalid trade price for {}", trade.instrument_name))?;
     let size = Quantity::from_decimal_dp(trade.trade_amount, size_precision)
@@ -390,7 +390,7 @@ pub fn parse_ticker_quote_from_rest(
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<QuoteTick> {
-    let instrument_id = format_instrument_id(ticker.instrument_name.as_str());
+    let instrument_id = format_instrument_id(ticker.instrument_name);
     let instrument_name = ticker.instrument_name.as_str();
     let bid_price = Price::from_decimal_dp(ticker.best_bid_price, price_precision)
         .with_context(|| format!("invalid bid price for {instrument_name}"))?;
@@ -627,8 +627,7 @@ pub fn parse_candle_record(
     let timestamp =
         u64::try_from(record.timestamp_bucket).context("negative Derive candle timestamp")?;
     let bucket_start = timestamp_seconds_to_nanos(timestamp, "candle timestamp_bucket")?;
-    let interval_ns = bar_type.spec().timedelta().as_nanos();
-    let interval_ns = u64::try_from(interval_ns)
+    let interval_ns = DurationNanos::try_from(bar_type.spec().timedelta())
         .context("bar interval overflowed the u64 range for nanoseconds")?;
     let ts_event = bucket_start
         .checked_add(interval_ns)
@@ -851,7 +850,7 @@ mod tests {
             parse_orderbook_deltas(&msg, PRICE_PRECISION, SIZE_PRECISION, UnixNanos::from(123))
                 .unwrap();
 
-        assert_eq!(msg.channel.as_str(), "orderbook.ETH-PERP.1.10");
+        assert_eq!(msg.channel, "orderbook.ETH-PERP.1.10");
         assert_eq!(
             msg.data.instrument_id(),
             InstrumentId::from("ETH-PERP.DERIVE")
@@ -886,10 +885,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(msg.channel.as_str(), "trades.perp.ETH");
+        assert_eq!(msg.channel, "trades.perp.ETH");
         assert_eq!(msg.trades.len(), 1);
         assert_eq!(
-            format_instrument_id(msg.trades[0].instrument_name.as_str()),
+            format_instrument_id(msg.trades[0].instrument_name),
             InstrumentId::from("ETH-PERP.DERIVE")
         );
         assert_eq!(tick.instrument_id, InstrumentId::from("ETH-PERP.DERIVE"));
@@ -911,7 +910,7 @@ mod tests {
         let quote = parse_ticker_quote(&msg, PRICE_PRECISION, SIZE_PRECISION, UnixNanos::from(789))
             .unwrap();
 
-        assert_eq!(msg.channel.as_str(), "ticker_slim.ETH-PERP.1000");
+        assert_eq!(msg.channel, "ticker_slim.ETH-PERP.1000");
         assert_eq!(
             msg.data.instrument_id(),
             InstrumentId::from("ETH-PERP.DERIVE")
@@ -937,7 +936,7 @@ mod tests {
             parse_orderbook_deltas(&msg, PRICE_PRECISION, SIZE_PRECISION, UnixNanos::from(123))
                 .unwrap();
 
-        assert_eq!(msg.channel.as_str(), "orderbook.ETH-USDC.1.10");
+        assert_eq!(msg.channel, "orderbook.ETH-USDC.1.10");
         assert_eq!(
             msg.data.instrument_id(),
             InstrumentId::from("ETH-USDC.DERIVE")
@@ -971,7 +970,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(msg.channel.as_str(), "trades.erc20.ETH");
+        assert_eq!(msg.channel, "trades.erc20.ETH");
         assert_eq!(msg.trades.len(), 1);
         assert_eq!(tick.instrument_id, InstrumentId::from("ETH-USDC.DERIVE"));
         assert_eq!(tick.price, price("2050"));
@@ -994,7 +993,7 @@ mod tests {
         let quote = parse_ticker_quote(&msg, PRICE_PRECISION, SIZE_PRECISION, UnixNanos::from(789))
             .unwrap();
 
-        assert_eq!(msg.channel.as_str(), "ticker_slim.ETH-USDC.1000");
+        assert_eq!(msg.channel, "ticker_slim.ETH-USDC.1000");
         assert_eq!(
             msg.data.instrument_id(),
             InstrumentId::from("ETH-USDC.DERIVE")
@@ -1027,7 +1026,7 @@ mod tests {
         let quote = parse_ticker_quote(&msg, PRICE_PRECISION, SIZE_PRECISION, UnixNanos::from(790))
             .unwrap();
 
-        assert_eq!(msg.channel.as_str(), "ticker.ETH-PERP.1000");
+        assert_eq!(msg.channel, "ticker.ETH-PERP.1000");
         assert_eq!(msg.data.timestamp(), 1_700_000_000_011);
         assert_eq!(
             msg.data.instrument_id(),
@@ -1353,7 +1352,7 @@ mod tests {
 
         match parsed {
             DerivePublicWsData::Orderbook(msg) => {
-                assert_eq!(msg.channel.as_str(), "orderbook.ETH-PERP.1.10");
+                assert_eq!(msg.channel, "orderbook.ETH-PERP.1.10");
                 assert_eq!(
                     msg.data.instrument_id(),
                     InstrumentId::from("ETH-PERP.DERIVE")
@@ -1386,7 +1385,7 @@ mod tests {
 
         match parsed {
             DerivePublicWsData::Ticker(msg) => {
-                assert_eq!(msg.channel.as_str(), "ticker_slim.ETH-PERP.1000");
+                assert_eq!(msg.channel, "ticker_slim.ETH-PERP.1000");
                 assert_eq!(
                     msg.data.instrument_id(),
                     InstrumentId::from("ETH-PERP.DERIVE")

@@ -22,6 +22,8 @@ pub mod models;
 pub mod parse;
 pub mod types;
 
+pub(crate) mod rate_limits;
+
 #[cfg(test)]
 pub mod testing;
 

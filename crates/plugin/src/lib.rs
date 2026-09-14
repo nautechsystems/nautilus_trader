@@ -13,13 +13,21 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Plug-in artifact identity and boundary primitives for NautilusTrader.
+//! Plug-in artifact identity and boundary primitives for
+//! [NautilusTrader](https://nautilustrader.io).
 //!
 //! This crate provides the public contract that lets an independently compiled
 //! Rust cdylib identify itself to a Nautilus host. It defines versioned build
 //! metadata, allocator-safe boundary values, opaque host tokens, and the
 //! `nautilus_plugin!` macro for exporting the standard entry symbol and
 //! manifest.
+//!
+//! # Feature Flags
+//!
+//! This crate provides feature flags to control source code inclusion during compilation:
+//!
+//! - `component-binding`: Enables the experimental executable component contract.
+//! - `host`: Optional plug-in manifest compatibility flag.
 
 #![warn(clippy::pedantic)]
 #![allow(
@@ -41,6 +49,9 @@ pub const PLUGIN_BUILD_ID_VERSION: u32 = 1;
 pub const NAUTILUS_PLUGIN_INIT_SYMBOL: &[u8] = b"nautilus_plugin_init";
 
 pub mod boundary;
+#[cfg(feature = "component-binding")]
+#[doc(hidden)]
+pub mod component;
 pub mod host;
 pub mod manifest;
 pub mod panic;

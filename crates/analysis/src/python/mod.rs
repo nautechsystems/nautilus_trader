@@ -22,6 +22,7 @@
 
 pub mod analyzer;
 pub mod snapshot;
+pub mod statistic;
 pub mod statistics;
 
 use pyo3::{prelude::*, pymodule};

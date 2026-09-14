@@ -17,7 +17,9 @@
 
 use std::collections::VecDeque;
 
-use nautilus_core::correctness::{CorrectnessResultExt, FAILED, check_positive_usize};
+use nautilus_core::correctness::{CorrectnessResultExt, FAILED};
+
+use super::config::check_cache_data_capacity;
 
 /// A bounded deque that maintains at most `capacity` elements.
 ///
@@ -31,9 +33,13 @@ pub(super) struct BoundedVecDeque<T> {
 
 impl<T> BoundedVecDeque<T> {
     /// Creates a new [`BoundedVecDeque`] with the given maximum capacity.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `capacity` is outside `[1, 1_000_000]`.
     #[must_use]
     pub(super) fn new(capacity: usize) -> Self {
-        check_positive_usize(capacity, stringify!(capacity)).expect_display(FAILED);
+        check_cache_data_capacity(capacity, stringify!(capacity)).expect_display(FAILED);
 
         Self {
             inner: VecDeque::with_capacity(capacity),
@@ -79,6 +85,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::cache::config::MAX_CACHE_DATA_CAPACITY;
 
     #[rstest]
     fn test_new_deque_is_empty_with_correct_capacity() {
@@ -90,9 +97,22 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "invalid usize for 'capacity' not positive")]
+    #[should_panic(expected = "invalid usize for 'capacity' not in range")]
     fn test_new_rejects_zero_capacity() {
         let _deque: BoundedVecDeque<i32> = BoundedVecDeque::new(0);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "invalid usize for 'capacity' not in range")]
+    fn test_new_rejects_oversized_capacity() {
+        let _deque: BoundedVecDeque<i32> = BoundedVecDeque::new(MAX_CACHE_DATA_CAPACITY + 1);
+    }
+
+    #[rstest]
+    fn test_new_accepts_maximum_capacity() {
+        let deque: BoundedVecDeque<i32> = BoundedVecDeque::new(MAX_CACHE_DATA_CAPACITY);
+
+        assert!(deque.inner.capacity() >= MAX_CACHE_DATA_CAPACITY);
     }
 
     #[rstest]

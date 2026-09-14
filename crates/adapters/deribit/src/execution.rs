@@ -32,8 +32,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    Params, UnixNanos,
-    datetime::NANOSECONDS_IN_SECOND,
+    DurationNanos, Params, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -88,17 +87,29 @@ impl DeribitExecutionClient {
         core: ExecutionClientCore,
         config: DeribitExecutionClientConfig,
     ) -> anyhow::Result<Self> {
+        let api_key = config
+            .api_key
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let api_secret = config
+            .api_secret
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
         let http_client = if config.has_api_credentials() {
             DeribitHttpClient::new_with_env(
-                config.api_key.clone(),
-                config.api_secret.clone(),
+                api_key.clone(),
+                api_secret.clone(),
                 config.base_url_http.clone(),
                 config.environment,
                 config.http_timeout_secs,
                 config.max_retries,
                 config.retry_delay_initial_ms,
                 config.retry_delay_max_ms,
-                config.proxy_url.clone(),
+                proxy_url.clone(),
             )?
         } else {
             DeribitHttpClient::new(
@@ -108,19 +119,19 @@ impl DeribitExecutionClient {
                 config.max_retries,
                 config.retry_delay_initial_ms,
                 config.retry_delay_max_ms,
-                config.proxy_url.clone(),
+                proxy_url.clone(),
             )?
         };
 
         let mut ws_client = DeribitWebSocketClient::new(
             config.base_url_ws.clone(),
-            config.api_key.clone(),
-            config.api_secret.clone(),
+            api_key,
+            api_secret,
             DERIBIT_WS_HEARTBEAT_SECS,
             config.auth_timeout_secs,
             config.environment,
             config.transport_backend,
-            config.proxy_url.clone(),
+            proxy_url,
         )
         .context("failed to create WebSocket client for execution")?
         .with_socket_control(SocketControl::new(
@@ -708,12 +719,10 @@ impl ExecutionClient for DeribitExecutionClient {
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         log::info!("Generating ExecutionMassStatus (lookback_mins={lookback_mins:?})");
         let ts_now = self.clock.get_time_ns();
-        let start = lookback_mins.map(|mins| {
-            let lookback_ns = mins
-                .saturating_mul(60)
-                .saturating_mul(NANOSECONDS_IN_SECOND);
-            UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns))
-        });
+        let start = lookback_mins
+            .map(DurationNanos::try_from_mins)
+            .transpose()?
+            .map(|lookback| ts_now.saturating_sub(lookback));
 
         let order_cmd = GenerateOrderStatusReportsBuilder::default()
             .ts_init(ts_now)

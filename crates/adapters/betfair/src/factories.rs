@@ -94,7 +94,10 @@ impl DataClientFactory for BetfairDataClientFactory {
             None,
             None,
             None,
-            betfair_config.proxy_url.clone(),
+            betfair_config
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
             Some(betfair_config.request_rate_per_second),
             None,
         )?;
@@ -155,6 +158,7 @@ impl ExecutionClientFactory for BetfairExecutionClientFactory {
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
+        _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let betfair_config = config
             .as_any()
@@ -177,7 +181,10 @@ impl ExecutionClientFactory for BetfairExecutionClientFactory {
             None,
             None,
             None,
-            betfair_config.proxy_url.clone(),
+            betfair_config
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
             Some(betfair_config.request_rate_per_second),
             Some(betfair_config.order_request_rate_per_second),
         )?;
@@ -231,18 +238,18 @@ mod tests {
 
     fn data_config() -> BetfairDataClientConfig {
         BetfairDataClientConfig {
-            username: Some("testuser".to_string()),
-            password: Some("testpass".to_string()),
-            app_key: Some("testappkey".to_string()),
+            username: Some("testuser".into()),
+            password: Some("testpass".into()),
+            app_key: Some("testappkey".into()),
             ..Default::default()
         }
     }
 
     fn exec_config() -> BetfairExecutionClientConfig {
         BetfairExecutionClientConfig {
-            username: Some("testuser".to_string()),
-            password: Some("testpass".to_string()),
-            app_key: Some("testappkey".to_string()),
+            username: Some("testuser".into()),
+            password: Some("testpass".into()),
+            app_key: Some("testappkey".into()),
             ..Default::default()
         }
     }
@@ -303,7 +310,13 @@ mod tests {
         let config = exec_config();
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create(TraderId::from("TRADER-001"), BETFAIR, &config, cache.into());
+        let result = factory.create(
+            TraderId::from("TRADER-001"),
+            BETFAIR,
+            &config,
+            cache.into(),
+            Rc::new(RefCell::new(TestClock::new())),
+        );
         assert!(result.is_ok());
 
         let client = result.unwrap();
@@ -321,6 +334,7 @@ mod tests {
             BETFAIR,
             &wrong_config,
             cache.into(),
+            Rc::new(RefCell::new(TestClock::new())),
         );
         assert!(result.is_err());
         assert!(
@@ -336,7 +350,7 @@ mod tests {
     fn test_betfair_data_client_factory_rejects_missing_credentials() {
         let factory = BetfairDataClientFactory::new();
         let config = BetfairDataClientConfig {
-            username: Some("testuser".to_string()),
+            username: Some("testuser".into()),
             ..Default::default()
         };
         let cache = Rc::new(RefCell::new(Cache::default()));

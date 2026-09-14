@@ -52,7 +52,7 @@ impl Quantity {
 
     fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {
         let from_raw = py.get_type::<Self>().getattr("from_raw")?;
-        let args = (self.raw, self.precision).into_py_any(py)?;
+        let args = (self.raw(), self.precision).into_py_any(py)?;
         (from_raw, args).into_py_any(py)
     }
 
@@ -149,7 +149,7 @@ impl Quantity {
                 .into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
             check_raw_scales(self.precision, other_qty.precision)?;
-            if other_qty.raw > self.raw {
+            if other_qty > *self {
                 return Err(to_pyvalue_err(format!(
                     "Quantity subtraction would result in negative value: {self} - {other_qty}"
                 )));
@@ -178,7 +178,7 @@ impl Quantity {
                 .into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
             check_raw_scales(other_qty.precision, self.precision)?;
-            if self.raw > other_qty.raw {
+            if *self > other_qty {
                 return Err(to_pyvalue_err(format!(
                     "Quantity subtraction would result in negative value: {other_qty} - {self}"
                 )));
@@ -396,7 +396,7 @@ impl Quantity {
     fn __int__(&self) -> QuantityRaw {
         let scale = QuantityRaw::try_from(raw_scale(self.precision))
             .expect("effective raw scale should fit in QuantityRaw");
-        self.raw / scale
+        self.raw() / scale
     }
 
     fn __float__(&self) -> f64 {
@@ -417,9 +417,21 @@ impl Quantity {
         self.to_string()
     }
 
-    #[getter]
-    fn raw(&self) -> QuantityRaw {
-        self.raw
+    /// Returns the stored fixed-point integer without rescaling.
+    ///
+    /// Use this for serialization and explicit fixed-point conversions. Prefer domain
+    /// operations for calculations; the storage scale can differ from display precision.
+    ///
+    /// Direct field access is restricted to this crate:
+    ///
+    /// ```compile_fail
+    /// use nautilus_model::types::Quantity;
+    /// let value = Quantity::from("1");
+    /// let raw = value.raw;
+    /// ```
+    #[getter(raw)]
+    fn py_raw(&self) -> QuantityRaw {
+        self.raw()
     }
 
     #[getter]
@@ -495,8 +507,9 @@ impl Quantity {
     /// operations, making it ideal for exchange data that arrives as mantissa/exponent pairs.
     #[staticmethod]
     #[pyo3(name = "from_mantissa_exponent")]
-    fn py_from_mantissa_exponent(mantissa: u64, exponent: i8, precision: u8) -> Self {
-        Self::from_mantissa_exponent(mantissa, exponent, precision)
+    fn py_from_mantissa_exponent(mantissa: u64, exponent: i8, precision: u8) -> PyResult<Self> {
+        Self::from_mantissa_exponent_checked(mantissa, exponent, precision)
+            .map_err(correctness_error_to_pyvalue_err)
     }
 
     /// Returns `true` if the value of this instance is zero.
@@ -529,11 +542,15 @@ impl Quantity {
 
     /// Computes a saturating subtraction between two quantities, logging when clamped.
     ///
+    /// Operands must use the same effective fixed-point scale. The Python binding raises
+    /// `ValueError` for mismatched scales.
+    ///
     /// When `rhs` is greater than `self`, the result is clamped to zero and a warning is logged.
     /// Precision follows the `Sub` implementation: uses the maximum precision of both operands.
     #[pyo3(name = "saturating_sub")]
-    fn py_saturating_sub(&self, other: Self) -> Self {
-        self.saturating_sub(other)
+    fn py_saturating_sub(&self, other: Self) -> PyResult<Self> {
+        check_raw_scales(self.precision, other.precision)?;
+        Ok(self.saturating_sub(other))
     }
 
     /// Performs a checked addition, returning `None` on raw integer overflow, when the
@@ -565,6 +582,18 @@ mod tests {
 
     use super::*;
     use crate::types::{fixed::FIXED_PRECISION, quantity::QUANTITY_RAW_MAX};
+
+    #[rstest]
+    #[cfg(feature = "defi")]
+    fn test_saturating_sub_rejects_mixed_scales_without_panicking() {
+        Python::initialize();
+        Python::attach(|py| {
+            let lhs = Quantity::from_raw(10_u128.pow(18), 18);
+            let rhs = Quantity::from_raw(10_u128.pow(16), 16);
+            let error = lhs.py_saturating_sub(rhs).unwrap_err();
+            assert!(error.is_instance_of::<pyo3::exceptions::PyValueError>(py));
+        });
+    }
 
     #[rstest]
     #[case("0", 0)]
@@ -610,6 +639,43 @@ mod tests {
             assert_eq!(
                 error.to_string(),
                 format!("ValueError: raw value {raw} exceeds QUANTITY_RAW_MAX={QUANTITY_RAW_MAX}")
+            );
+        });
+    }
+
+    #[rstest]
+    fn test_py_from_mantissa_exponent_handles_precision_and_overflow() {
+        Python::initialize();
+        Python::attach(|_| {
+            #[cfg(feature = "defi")]
+            let max_precision = crate::defi::WEI_PRECISION;
+            #[cfg(not(feature = "defi"))]
+            let max_precision = FIXED_PRECISION;
+
+            let exponent = -i8::try_from(max_precision).unwrap();
+            let quantity = Quantity::py_from_mantissa_exponent(1, exponent, max_precision).unwrap();
+            let invalid_precision = max_precision + 1;
+            let precision_error =
+                Quantity::py_from_mantissa_exponent(1, 0, invalid_precision).unwrap_err();
+            let overflow_error = Quantity::py_from_mantissa_exponent(u64::MAX, 100, 0).unwrap_err();
+            let precision_name = if cfg!(feature = "defi") {
+                "WEI_PRECISION"
+            } else {
+                "FIXED_PRECISION"
+            };
+
+            assert_eq!(quantity.raw(), 1);
+            assert_eq!(quantity.precision, max_precision);
+            assert_eq!(
+                precision_error.to_string(),
+                format!(
+                    "ValueError: `precision` exceeded maximum `{precision_name}` ({max_precision}), was {invalid_precision}"
+                )
+            );
+            assert_eq!(
+                overflow_error.to_string(),
+                "ValueError: Overflow in Quantity::from_mantissa_exponent \
+                 (mantissa=18446744073709551615, exponent=100, precision=0)"
             );
         });
     }

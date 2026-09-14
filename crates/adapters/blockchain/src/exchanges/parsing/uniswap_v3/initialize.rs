@@ -19,8 +19,8 @@ use ustr::Ustr;
 
 use crate::{
     events::initialize::InitializeEvent,
-    hypersync::{HypersyncLog, helpers::validate_event_signature_hash},
-    rpc::helpers as rpc_helpers,
+    hypersync::{HypersyncLog, log::validate_event_signature_hash},
+    rpc::log as rpc_log,
 };
 
 const INITIALIZE_EVENT_SIGNATURE_HASH: &str =
@@ -90,9 +90,9 @@ pub fn parse_initialize_event_hypersync(
 ///
 /// Returns an error if the log parsing fails or if the event data is invalid.
 pub fn parse_initialize_event_rpc(dex: SharedDex, log: &RpcLog) -> anyhow::Result<InitializeEvent> {
-    rpc_helpers::validate_event_signature(log, INITIALIZE_EVENT_SIGNATURE_HASH, "Initialize")?;
+    rpc_log::validate_event_signature(log, INITIALIZE_EVENT_SIGNATURE_HASH, "Initialize")?;
 
-    let data_bytes = rpc_helpers::extract_data_bytes(log)?;
+    let data_bytes = rpc_log::extract_data_bytes(log)?;
 
     // Validate if data contains 2 parameters of 32 bytes each (sqrtPriceX96 and tick)
     if data_bytes.len() < 2 * 32 {
@@ -105,7 +105,7 @@ pub fn parse_initialize_event_rpc(dex: SharedDex, log: &RpcLog) -> anyhow::Resul
         Err(e) => anyhow::bail!("Failed to decode initialize event data: {e}"),
     };
 
-    let pool_address = rpc_helpers::extract_address(log)?;
+    let pool_address = rpc_log::extract_address(log)?;
     let pool_identifier = PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
     Ok(InitializeEvent::new(
         dex,

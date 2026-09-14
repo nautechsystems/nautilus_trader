@@ -25,10 +25,10 @@
 //!
 //! Read-only: no orders are placed.
 
-use std::error::Error as _;
+use std::borrow::Cow;
 
 use nautilus_common::logging::{init_logging, logger::LoggerConfig};
-use nautilus_core::{UUID4, string::secret::mask_api_key};
+use nautilus_core::{UUID4, string::secret::REDACTED};
 use nautilus_lighter::{
     common::{credential::Credential, enums::LighterEnvironment},
     http::{
@@ -40,6 +40,10 @@ use nautilus_lighter::{
     signing::auth_token::build_auth_token_for,
 };
 use nautilus_model::identifiers::TraderId;
+use nautilus_network::http::{HttpClient, Method};
+
+type RawQueryParam<'a> = (&'static str, Cow<'a, str>);
+type RawQueryProbe<'a> = (&'static str, Vec<RawQueryParam<'a>>);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -72,7 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = LighterHttpClient::from_raw_with_registry(raw, Default::default());
 
     let auth = build_auth_token_for(&credential)?;
-    println!("Auth token minted ({} chars)", auth.len());
+    println!("Auth token minted ({} chars)", auth.expose_secret().len());
 
     // Mirror production; probe `L` keeps the explicit negative case.
     let query = LighterTradesQuery {
@@ -111,10 +115,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!();
     println!("Probe #2: add market_id=0");
-    let query_with_market = LighterTradesQuery {
-        market_id: Some(0),
-        ..query.clone()
-    };
+    let mut query_with_market = query.clone();
+    query_with_market.market_id = Some(0);
 
     match client.get_trades(&query_with_market).await {
         Ok(response) => {
@@ -133,11 +135,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!();
     println!("Probe #3: drop account_index, market_id=0 only");
-    let market_only_query = LighterTradesQuery {
-        account_index: None,
-        market_id: Some(0),
-        ..query.clone()
-    };
+    let mut market_only_query = query.clone();
+    market_only_query.account_index = None;
+    market_only_query.market_id = Some(0);
 
     match client.get_trades(&market_only_query).await {
         Ok(response) => {
@@ -160,10 +160,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .duration_since(std::time::UNIX_EPOCH)?
         .as_millis() as i64;
     let one_day_ms = 24 * 60 * 60 * 1_000_i64;
-    let timestamped_query = LighterTradesQuery {
-        from_timestamp: Some(now_ms - one_day_ms),
-        ..query.clone()
-    };
+    let mut timestamped_query = query.clone();
+    timestamped_query.from_timestamp = Some(now_ms - one_day_ms);
 
     match client.get_trades(&timestamped_query).await {
         Ok(response) => {
@@ -182,14 +180,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!();
     println!("Probe #5: market_id=0, sort_by=trade_id (default), no auth, no account_index");
-    let public_query = LighterTradesQuery {
-        auth: None,
-        market_id: Some(0),
-        account_index: None,
-        sort_by: LighterTradeSortBy::TradeId,
-        sort_dir: None,
-        ..query.clone()
-    };
+    let mut public_query = query.clone();
+    public_query.auth = None;
+    public_query.market_id = Some(0);
+    public_query.account_index = None;
+    public_query.sort_by = LighterTradeSortBy::TradeId;
+    public_query.sort_dir = None;
 
     match client.get_trades(&public_query).await {
         Ok(response) => {
@@ -208,14 +204,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!();
     println!("Probe #6: market_id=0, sort_by=timestamp, no auth, no account_index");
-    let market_timestamp_query = LighterTradesQuery {
-        auth: None,
-        market_id: Some(0),
-        account_index: None,
-        sort_by: LighterTradeSortBy::Timestamp,
-        sort_dir: Some(LighterSortDirection::Desc),
-        ..query.clone()
-    };
+    let mut market_timestamp_query = query.clone();
+    market_timestamp_query.auth = None;
+    market_timestamp_query.market_id = Some(0);
+    market_timestamp_query.account_index = None;
+    market_timestamp_query.sort_by = LighterTradeSortBy::Timestamp;
+    market_timestamp_query.sort_dir = Some(LighterSortDirection::Desc);
 
     match client.get_trades(&market_timestamp_query).await {
         Ok(response) => {
@@ -234,11 +228,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!();
     println!("Probe #7: account_index + market_id + sort_by=trade_id + auth");
-    let scoped_default_sort = LighterTradesQuery {
-        sort_by: LighterTradeSortBy::TradeId,
-        market_id: Some(0),
-        ..query.clone()
-    };
+    let mut scoped_default_sort = query.clone();
+    scoped_default_sort.sort_by = LighterTradeSortBy::TradeId;
+    scoped_default_sort.market_id = Some(0);
 
     match client.get_trades(&scoped_default_sort).await {
         Ok(response) => {
@@ -257,10 +249,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!();
     println!("Probe #8: account_index only, sort_by=trade_id, auth");
-    let account_trade_id = LighterTradesQuery {
-        sort_by: LighterTradeSortBy::TradeId,
-        ..query.clone()
-    };
+    let mut account_trade_id = query.clone();
+    account_trade_id.sort_by = LighterTradeSortBy::TradeId;
 
     match client.get_trades(&account_trade_id).await {
         Ok(response) => {
@@ -316,20 +306,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         limit: LIGHTER_REST_PAGE_SIZE,
         aggregate: None,
     };
-    let serialized = reqwest::Client::new()
-        .get("https://x/api/v1/trades")
-        .query(&probe1)
-        .build()
-        .unwrap()
-        .url()
-        .to_string();
-    println!("  URL: {}", redact_auth(&serialized));
+    let mut serialized = url::Url::parse("https://x/api/v1/trades")?;
+    serialized.set_query(Some(&serde_urlencoded::to_string(&probe1)?));
+    println!("  URL: {}", redact_auth(serialized.as_str()));
 
     println!();
-    println!("=== Raw reqwest probes (bypass our query struct) ===");
-    let raw = reqwest::Client::new();
+    println!("=== Raw HTTP probes (bypass our query struct) ===");
+    let raw = HttpClient::builder().build()?;
     let base = "https://mainnet.zklighter.elliot.ai/api/v1/trades";
-    let url_variants: &[(&str, Vec<(&str, String)>)] = &[
+    let auth_param = auth.expose_secret();
+    let url_variants: &[RawQueryProbe<'_>] = &[
         (
             "A: bare market_id+limit, no sort_by",
             vec![("market_id", "0".into()), ("limit", "5".into())],
@@ -353,16 +339,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         (
             "D: account_index only with auth, no sort_by",
             vec![
-                ("account_index", credential.account_index().to_string()),
-                ("auth", auth.clone()),
+                (
+                    "account_index",
+                    credential.account_index().to_string().into(),
+                ),
+                ("auth", auth_param.into()),
                 ("limit", "5".into()),
             ],
         ),
         (
             "E: account_index+sort_by=timestamp+order_index=0",
             vec![
-                ("account_index", credential.account_index().to_string()),
-                ("auth", auth.clone()),
+                (
+                    "account_index",
+                    credential.account_index().to_string().into(),
+                ),
+                ("auth", auth_param.into()),
                 ("limit", "5".into()),
                 ("sort_by", "timestamp".into()),
                 ("order_index", "0".into()),
@@ -381,8 +373,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         (
             "G: account_index+auth+limit+sort_by=timestamp+sort_dir=desc (no order_index)",
             vec![
-                ("account_index", credential.account_index().to_string()),
-                ("auth", auth.clone()),
+                (
+                    "account_index",
+                    credential.account_index().to_string().into(),
+                ),
+                ("auth", auth_param.into()),
                 ("limit", "5".into()),
                 ("sort_by", "timestamp".into()),
                 ("sort_dir", "desc".into()),
@@ -391,8 +386,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         (
             "H: account_index+auth+limit+sort_by=timestamp (no order_index, no sort_dir)",
             vec![
-                ("account_index", credential.account_index().to_string()),
-                ("auth", auth.clone()),
+                (
+                    "account_index",
+                    credential.account_index().to_string().into(),
+                ),
+                ("auth", auth_param.into()),
                 ("limit", "5".into()),
                 ("sort_by", "timestamp".into()),
             ],
@@ -400,8 +398,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         (
             "I: account_index+auth+limit (no sort_by at all)",
             vec![
-                ("account_index", credential.account_index().to_string()),
-                ("auth", auth.clone()),
+                (
+                    "account_index",
+                    credential.account_index().to_string().into(),
+                ),
+                ("auth", auth_param.into()),
                 ("limit", "5".into()),
             ],
         ),
@@ -409,7 +410,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "J: market_id=0+auth+limit+sort_by=timestamp+order_index=0",
             vec![
                 ("market_id", "0".into()),
-                ("auth", auth.clone()),
+                ("auth", auth_param.into()),
                 ("limit", "5".into()),
                 ("sort_by", "timestamp".into()),
                 ("order_index", "0".into()),
@@ -418,8 +419,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         (
             "K: account_index+auth+limit+sort_by=timestamp+order_index=0+sort_dir=desc",
             vec![
-                ("account_index", credential.account_index().to_string()),
-                ("auth", auth.clone()),
+                (
+                    "account_index",
+                    credential.account_index().to_string().into(),
+                ),
+                ("auth", auth_param.into()),
                 ("limit", "5".into()),
                 ("sort_by", "timestamp".into()),
                 ("order_index", "0".into()),
@@ -429,8 +433,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         (
             "L: limit=200 (negative case: above LIGHTER_REST_PAGE_SIZE)",
             vec![
-                ("account_index", credential.account_index().to_string()),
-                ("auth", auth.clone()),
+                (
+                    "account_index",
+                    credential.account_index().to_string().into(),
+                ),
+                ("auth", auth_param.into()),
                 ("limit", "200".into()),
                 ("sort_by", "timestamp".into()),
                 ("sort_dir", "desc".into()),
@@ -439,8 +446,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         (
             "M: limit=100",
             vec![
-                ("account_index", credential.account_index().to_string()),
-                ("auth", auth.clone()),
+                (
+                    "account_index",
+                    credential.account_index().to_string().into(),
+                ),
+                ("auth", auth_param.into()),
                 ("limit", "100".into()),
                 ("sort_by", "timestamp".into()),
                 ("sort_dir", "desc".into()),
@@ -449,8 +459,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         (
             "N: limit=50",
             vec![
-                ("account_index", credential.account_index().to_string()),
-                ("auth", auth.clone()),
+                (
+                    "account_index",
+                    credential.account_index().to_string().into(),
+                ),
+                ("auth", auth_param.into()),
                 ("limit", "50".into()),
                 ("sort_by", "timestamp".into()),
                 ("sort_dir", "desc".into()),
@@ -459,12 +472,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     for (label, params) in url_variants {
-        let resp = raw.get(base).query(&params).send().await;
+        let mut url = url::Url::parse(base)?;
+        url.set_query(Some(&serde_urlencoded::to_string(params)?));
+        let resp = raw
+            .request_with_params_url_redacted(
+                Method::GET,
+                base.to_owned(),
+                Some(params),
+                None,
+                None,
+                None,
+                None,
+            )
+            .await;
+
         match resp {
             Ok(r) => {
-                let status = r.status();
-                let url = r.url().clone();
-                let body = r.text().await.unwrap_or_else(|_| "<bin>".into());
+                let status = r.status.as_u16();
+                let body = String::from_utf8_lossy(&r.body).into_owned();
                 let preview = if body.len() > 220 {
                     format!("{}...(+{} bytes)", &body[..220], body.len() - 220)
                 } else {
@@ -476,11 +501,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("  BODY: {preview}");
             }
             Err(e) => {
-                // `reqwest::Error`'s Display can include the offending
-                // URL (auth-bearing). Strip the URL and surface only the
-                // source chain.
-                let chained = e.source().map_or_else(|| e.to_string(), |s| s.to_string());
-                println!("Probe {label}: transport err: {chained}");
+                println!("Probe {label}: transport err: {e}");
             }
         }
     }
@@ -488,10 +509,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Replace the value of any `auth` query parameter with a masked form so
-/// printed URLs don't leak a live Lighter L2 bearer token. Uses
-/// [`mask_api_key`] for the substitution: keeps the leading/trailing 4
-/// chars when long enough so output is still useful for triage.
+/// Replace the value of any `auth` query parameter so printed URLs don't leak a live Lighter L2
+/// bearer token.
 fn redact_auth(url: &str) -> String {
     let Ok(parsed) = url::Url::parse(url) else {
         return url.to_string();
@@ -500,7 +519,7 @@ fn redact_auth(url: &str) -> String {
         .query_pairs()
         .map(|(k, v)| {
             let masked = if k == "auth" {
-                mask_api_key(&v)
+                REDACTED.to_owned()
             } else {
                 v.into_owned()
             };

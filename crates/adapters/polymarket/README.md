@@ -1,7 +1,7 @@
 # nautilus-polymarket
 
 [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
-[![Documentation](https://img.shields.io/docsrs/nautilus-polymarket)](https://docs.rs/nautilus-polymarket/latest/nautilus-polymarket/)
+[![Documentation](https://img.shields.io/docsrs/nautilus-polymarket)](https://docs.rs/nautilus-polymarket/latest/nautilus_polymarket/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-polymarket.svg)](https://crates.io/crates/nautilus-polymarket)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
@@ -23,14 +23,16 @@ event-driven architecture, providing research-to-live semantic parity.
 
 This crate provides feature flags to control source code inclusion during compilation:
 
-- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+- `examples`: Enables the crate's example binaries.
 - `extension-module`: Builds as a Python extension module.
-
-[High-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) (128-bit value types) is enabled by default.
+- `high-precision` (default): Enables
+  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
+  to use 128-bit value types.
+- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
 ## API endpoints
 
-The adapter communicates with four Polymarket API surfaces:
+The adapter communicates with these Polymarket API surfaces:
 
 | API            | Base URL                                        | Auth                   | Purpose                                     |
 | -------------- | ----------------------------------------------- | ---------------------- | ------------------------------------------- |
@@ -38,15 +40,19 @@ The adapter communicates with four Polymarket API surfaces:
 | CLOB WebSocket | `wss://ws-subscriptions-clob.polymarket.com/ws` | L2 HMAC (user channel) | Streaming orderbook, trades, order updates. |
 | Gamma          | `https://gamma-api.polymarket.com`              | None                   | Market and event discovery, tags, search.   |
 | Data           | `https://data-api.polymarket.com`               | None                   | Trade history and user positions.           |
+| Relayer        | `https://relayer-v2.polymarket.com`             | Relayer API key        | Deposit Wallet split, merge, and redeem.    |
 
 ## Authentication
 
-Polymarket uses two-tier authentication:
+The CLOB uses two-tier authentication:
 
 - **L1 (EIP-712)**: Wallet-level signing for API credential creation and order signing
   via the CTF Exchange contract. Uses `alloy` signer crates.
 - **L2 (HMAC-SHA256)**: API key + secret + passphrase for authenticated REST and
   WebSocket requests. Signatures expire after 30 seconds.
+
+Deposit Wallet position operations use a separate Relayer API key, sent in the `RELAYER_API_KEY`
+header with its signer address in `RELAYER_API_KEY_ADDRESS`.
 
 ## Documentation
 

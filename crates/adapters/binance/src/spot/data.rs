@@ -104,122 +104,11 @@ use crate::{
     },
 };
 
+const BOOK_DEPTHS_JSON: [usize; 3] = [5, 10, 20];
 const MAX_SNAPSHOT_RETRIES: u32 = 5;
 const MAX_BUFFERED_DEPTH_UPDATES: usize = 10_000;
 const SNAPSHOT_RETRY_BACKOFF_BASE_MS: u64 = 250;
 const SNAPSHOT_RETRY_BACKOFF_CAP_MS: u64 = 3_000;
-
-#[derive(Debug, Clone)]
-struct BufferedDepthUpdate {
-    deltas: OrderBookDeltas,
-    first_update_id: u64,
-    final_update_id: u64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum BookSyncStatus {
-    Buffering,
-    Failed,
-}
-
-#[derive(Debug, Clone)]
-struct BookBuffer {
-    updates: Vec<BufferedDepthUpdate>,
-    epoch: u64,
-    status: BookSyncStatus,
-}
-
-impl BookBuffer {
-    fn new(epoch: u64) -> Self {
-        Self {
-            updates: Vec::new(),
-            epoch,
-            status: BookSyncStatus::Buffering,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-enum SpotWsClient {
-    Sbe(BinanceSpotWebSocketClient),
-    JsonPublic(BinanceSpotPublicJsonWebSocketClient),
-}
-
-impl SpotWsClient {
-    fn has_credentials(&self) -> bool {
-        match self {
-            Self::Sbe(client) => client.has_credentials(),
-            Self::JsonPublic(_) => true, // Public JSON streams require no credentials
-        }
-    }
-
-    fn replace_instruments(&self, instruments: &[InstrumentAny]) {
-        match self {
-            Self::Sbe(client) => client.replace_instruments(instruments),
-            Self::JsonPublic(client) => client.replace_instruments(instruments),
-        }
-    }
-
-    async fn subscribe(&self, streams: Vec<String>) -> anyhow::Result<()> {
-        match self {
-            Self::Sbe(client) => client.subscribe(streams).await.map_err(Into::into),
-            Self::JsonPublic(client) => client.subscribe(streams).await,
-        }
-    }
-
-    async fn unsubscribe(&self, streams: Vec<String>) -> anyhow::Result<()> {
-        match self {
-            Self::Sbe(client) => client.unsubscribe(streams).await.map_err(Into::into),
-            Self::JsonPublic(client) => client.unsubscribe(streams).await,
-        }
-    }
-
-    async fn close(&mut self) -> anyhow::Result<()> {
-        match self {
-            Self::Sbe(client) => client.close().await.map_err(Into::into),
-            Self::JsonPublic(client) => client.close().await,
-        }
-    }
-
-    fn begin_shutdown(&self) {
-        match self {
-            Self::Sbe(client) => client.begin_shutdown(),
-            Self::JsonPublic(client) => client.begin_shutdown(),
-        }
-    }
-}
-
-fn looks_like_spot_sbe_ws_url(base_url: &str) -> bool {
-    let without_scheme = base_url
-        .split_once("://")
-        .map_or(base_url, |(_, rest)| rest);
-    let host = without_scheme
-        .split(['/', ':'])
-        .next()
-        .unwrap_or(without_scheme);
-    host.starts_with("stream-sbe") || host.starts_with("demo-stream-sbe")
-}
-
-fn resolve_spot_json_ws_url(
-    base_url_ws: Option<String>,
-    environment: BinanceEnvironment,
-    us: bool,
-) -> String {
-    let default_url =
-        get_ws_base_url_with_us(BinanceProductType::Spot, environment, us).to_string();
-
-    match base_url_ws {
-        Some(url) if looks_like_spot_sbe_ws_url(&url) => {
-            log::warn!(
-                "Spot JSON market-data mode received an SBE WebSocket URL override (`{url}`); \
-                 using Spot JSON WebSocket default for {environment:?}: {default_url}",
-            );
-            default_url
-        }
-        Some(url) => url,
-        None => default_url,
-    }
-}
 
 /// Binance Spot data client for SBE market data.
 #[derive(Debug)]
@@ -261,35 +150,43 @@ impl BinanceSpotDataClient {
                 get_http_base_url_with_us(config.product_type, config.environment, true).to_string()
             })
         });
+        let api_key = config
+            .api_key
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let api_secret = config
+            .api_secret
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
 
         let http_client = BinanceSpotHttpClient::new_with_json_responses(
             config.environment,
             clock,
-            config.api_key.clone(),
-            config.api_secret.clone(),
+            api_key.clone(),
+            api_secret.clone(),
             base_url_http,
             Some(config.recv_window_ms),
             None, // timeout_secs
-            config.proxy_url.clone(),
+            proxy_url.clone(),
             config.us,
-        )?;
+        )?
+        .with_retry_config(config.retry_config());
 
         let creds = if spot_market_data_mode == BinanceSpotMarketDataMode::Sbe {
-            resolve_credentials(
-                config.api_key.clone(),
-                config.api_secret.clone(),
-                config.environment,
-                config.product_type,
-            )
-            .inspect_err(|e| {
-                log::warn!(
-                    "Failed to resolve Binance API credentials ({e}). \
+            resolve_credentials(api_key, api_secret, config.environment, config.product_type)
+                .inspect_err(|e| {
+                    log::warn!(
+                        "Failed to resolve Binance API credentials ({e}). \
                      Spot SBE WebSocket streams require an Ed25519 API key. \
                      Set the appropriate env vars for your environment, \
                      or provide api_key/api_secret in the data client config"
-                );
-            })
-            .ok()
+                    );
+                })
+                .ok()
         } else {
             None
         };
@@ -305,7 +202,7 @@ impl BinanceSpotDataClient {
                     Some(BINANCE_WS_HEARTBEAT_SECS),
                     config.transport_backend,
                 )?
-                .with_proxy(config.proxy_url.clone())
+                .with_proxy(proxy_url)
                 .with_socket_control(socket_factory, "binance-spot-sbe-data-streams"),
             ),
             BinanceSpotMarketDataMode::Json => SpotWsClient::JsonPublic(
@@ -318,7 +215,7 @@ impl BinanceSpotDataClient {
                     Some(BINANCE_WS_HEARTBEAT_SECS),
                     config.transport_backend,
                 )
-                .with_proxy(config.proxy_url.clone())
+                .with_proxy(proxy_url)
                 .with_socket_control(socket_factory, "binance-spot-json-data-streams"),
             ),
         };
@@ -449,7 +346,7 @@ impl BinanceSpotDataClient {
     }
 
     #[expect(clippy::too_many_arguments)]
-    async fn refresh_instrument_catalogue(
+    async fn refresh_instrument_catalog(
         http: &BinanceSpotHttpClient,
         provider: &crate::config::BinanceInstrumentProviderConfig,
         us: bool,
@@ -545,7 +442,7 @@ impl BinanceSpotDataClient {
                 if let Some(instrument) = cache.get(&symbol)
                     && let Some(deltas) = parse_depth_snapshot(event, instrument, ts_init)
                 {
-                    Self::send_data(data_sender, Data::Deltas(Box::new(deltas)));
+                    Self::send_data(data_sender, Data::BookDeltas(Box::new(deltas)));
                 }
             }
             BinanceSpotWsMessage::DepthDiff(ref event) => {
@@ -646,7 +543,7 @@ impl BinanceSpotDataClient {
                 if let Some(instrument) = cache.get(&symbol)
                     && let Some(deltas) = parse_json_depth_snapshot(event, instrument, ts_init)
                 {
-                    Self::send_data(data_sender, Data::Deltas(Box::new(deltas)));
+                    Self::send_data(data_sender, Data::BookDeltas(Box::new(deltas)));
                 }
             }
             BinanceSpotPublicWsMessage::DepthDiff(ref event) => {
@@ -738,7 +635,7 @@ impl BinanceSpotDataClient {
         Self::send_data(data_sender, Data::Quote(quote));
         if l1_book_subscriptions.contains_key(&quote.instrument_id) {
             let deltas = quote_to_l1_deltas(quote, sequence);
-            Self::send_data(data_sender, Data::Deltas(Box::new(deltas)));
+            Self::send_data(data_sender, Data::BookDeltas(Box::new(deltas)));
         }
     }
 
@@ -775,7 +672,7 @@ impl BinanceSpotDataClient {
             }
         }
 
-        Self::send_data(data_sender, Data::Deltas(Box::new(deltas)));
+        Self::send_data(data_sender, Data::BookDeltas(Box::new(deltas)));
     }
 
     #[expect(
@@ -1143,14 +1040,14 @@ impl BinanceSpotDataClient {
                 };
 
                 if let Err(e) =
-                    sender.send(DataEvent::Data(Data::Deltas(Box::new(snapshot_deltas))))
+                    sender.send(DataEvent::Data(Data::BookDeltas(Box::new(snapshot_deltas))))
                 {
                     log::error!("Failed to send snapshot: {e}");
                 }
 
                 for update in replay_ready {
                     if let Err(e) =
-                        sender.send(DataEvent::Data(Data::Deltas(Box::new(update.deltas))))
+                        sender.send(DataEvent::Data(Data::BookDeltas(Box::new(update.deltas))))
                     {
                         log::error!("Failed to send replayed deltas: {e}");
                     }
@@ -1209,7 +1106,7 @@ impl BinanceSpotDataClient {
                         replayed += 1;
 
                         if let Err(e) =
-                            sender.send(DataEvent::Data(Data::Deltas(Box::new(update.deltas))))
+                            sender.send(DataEvent::Data(Data::BookDeltas(Box::new(update.deltas))))
                         {
                             log::error!("Failed to send replayed deltas: {e}");
                         }
@@ -1609,7 +1506,7 @@ impl DataClient for BinanceSpotDataClient {
                 ws_client.begin_shutdown();
             });
 
-        Self::refresh_instrument_catalogue(
+        Self::refresh_instrument_catalog(
             &self.http_client,
             &self.config.instrument_provider,
             self.config.us,
@@ -1810,7 +1707,7 @@ impl DataClient for BinanceSpotDataClient {
                     loop {
                         tokio::select! {
                             _ = interval.tick() => {
-                                if let Err(e) = Self::refresh_instrument_catalogue(
+                                if let Err(e) = Self::refresh_instrument_catalog(
                                     &http,
                                     &provider,
                                     us,
@@ -1961,14 +1858,21 @@ impl DataClient for BinanceSpotDataClient {
         let ws = self.ws_client.clone();
         let symbol_lower = instrument_id.symbol.as_str().to_lowercase();
 
-        if self.spot_market_data_mode == BinanceSpotMarketDataMode::Json && cmd.depth.is_some() {
+        if self.spot_market_data_mode == BinanceSpotMarketDataMode::Json
+            && let Some(depth) = cmd.depth
+        {
             // Explicit depth requests use partial-book streams. Full-depth JSON
             // subscriptions fall through to the REST snapshot + @depth diff path.
-            let depth_level = match cmd.depth.map(|d| d.get()) {
-                Some(1..=5) => 5,
-                Some(6..=10) => 10,
-                _ => 20,
-            };
+            let depth = depth.get();
+
+            if !BOOK_DEPTHS_JSON.contains(&depth) {
+                anyhow::bail!(
+                    "Invalid depth {depth} for Binance Spot JSON order book. \
+                    Valid values: {BOOK_DEPTHS_JSON:?}"
+                );
+            }
+
+            let depth_level = depth as u32;
             self.book_subscriptions.insert(instrument_id, depth_level);
 
             let stream = format!("{symbol_lower}@depth{depth_level}");
@@ -1986,11 +1890,11 @@ impl DataClient for BinanceSpotDataClient {
         match cmd.depth.map(|d| d.get()) {
             // Partial book streams are self-contained snapshots.
             Some(depth) => {
-                let depth_level = match depth {
-                    1..=5 => 5,
-                    6..=10 => 10,
-                    _ => 20,
-                };
+                anyhow::ensure!(
+                    depth == 20,
+                    "Binance Spot SBE partial books support depth 20 only; use JSON market data for other depths"
+                );
+                let depth_level = depth as u32;
                 self.book_subscriptions.insert(instrument_id, depth_level);
 
                 let stream = format!("{symbol_lower}@depth{depth_level}");
@@ -2614,6 +2518,118 @@ impl BinanceSpotDataClient {
             );
         }
     }
+}
+
+#[derive(Debug, Clone)]
+struct BufferedDepthUpdate {
+    deltas: OrderBookDeltas,
+    first_update_id: u64,
+    final_update_id: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BookSyncStatus {
+    Buffering,
+    Failed,
+}
+
+#[derive(Debug, Clone)]
+struct BookBuffer {
+    updates: Vec<BufferedDepthUpdate>,
+    epoch: u64,
+    status: BookSyncStatus,
+}
+
+impl BookBuffer {
+    fn new(epoch: u64) -> Self {
+        Self {
+            updates: Vec::new(),
+            epoch,
+            status: BookSyncStatus::Buffering,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum SpotWsClient {
+    Sbe(BinanceSpotWebSocketClient),
+    JsonPublic(BinanceSpotPublicJsonWebSocketClient),
+}
+
+impl SpotWsClient {
+    fn has_credentials(&self) -> bool {
+        match self {
+            Self::Sbe(client) => client.has_credentials(),
+            Self::JsonPublic(_) => true, // Public JSON streams require no credentials
+        }
+    }
+
+    fn replace_instruments(&self, instruments: &[InstrumentAny]) {
+        match self {
+            Self::Sbe(client) => client.replace_instruments(instruments),
+            Self::JsonPublic(client) => client.replace_instruments(instruments),
+        }
+    }
+
+    async fn subscribe(&self, streams: Vec<String>) -> anyhow::Result<()> {
+        match self {
+            Self::Sbe(client) => client.subscribe(streams).await.map_err(Into::into),
+            Self::JsonPublic(client) => client.subscribe(streams).await,
+        }
+    }
+
+    async fn unsubscribe(&self, streams: Vec<String>) -> anyhow::Result<()> {
+        match self {
+            Self::Sbe(client) => client.unsubscribe(streams).await.map_err(Into::into),
+            Self::JsonPublic(client) => client.unsubscribe(streams).await,
+        }
+    }
+
+    async fn close(&mut self) -> anyhow::Result<()> {
+        match self {
+            Self::Sbe(client) => client.close().await.map_err(Into::into),
+            Self::JsonPublic(client) => client.close().await,
+        }
+    }
+
+    fn begin_shutdown(&self) {
+        match self {
+            Self::Sbe(client) => client.begin_shutdown(),
+            Self::JsonPublic(client) => client.begin_shutdown(),
+        }
+    }
+}
+
+fn resolve_spot_json_ws_url(
+    base_url_ws: Option<String>,
+    environment: BinanceEnvironment,
+    us: bool,
+) -> String {
+    let default_url =
+        get_ws_base_url_with_us(BinanceProductType::Spot, environment, us).to_string();
+
+    match base_url_ws {
+        Some(url) if looks_like_spot_sbe_ws_url(&url) => {
+            log::warn!(
+                "Spot JSON market-data mode received an SBE WebSocket URL override (`{url}`); \
+                 using Spot JSON WebSocket default for {environment:?}: {default_url}",
+            );
+            default_url
+        }
+        Some(url) => url,
+        None => default_url,
+    }
+}
+
+fn looks_like_spot_sbe_ws_url(base_url: &str) -> bool {
+    let without_scheme = base_url
+        .split_once("://")
+        .map_or(base_url, |(_, rest)| rest);
+    let host = without_scheme
+        .split(['/', ':'])
+        .next()
+        .unwrap_or(without_scheme);
+    host.starts_with("stream-sbe") || host.starts_with("demo-stream-sbe")
 }
 
 #[cfg(test)]

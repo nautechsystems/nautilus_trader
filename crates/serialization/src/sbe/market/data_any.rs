@@ -29,15 +29,15 @@ impl MarketSbeMessage for DataAny {
 
     fn encode_body(&self, writer: &mut SbeWriter<'_>) -> Result<(), SbeEncodeError> {
         match self {
-            Self::OrderBookDelta(value) => {
+            Self::BookDelta(value) => {
                 writer.write_u16_le(data_any_variant::ORDER_BOOK_DELTA);
                 <OrderBookDelta as MarketSbeMessage>::encode_body(value, writer)
             }
-            Self::OrderBookDeltas(value) => {
+            Self::BookDeltas(value) => {
                 writer.write_u16_le(data_any_variant::ORDER_BOOK_DELTAS);
                 <OrderBookDeltas as MarketSbeMessage>::encode_body(value, writer)
             }
-            Self::OrderBookDepth10(value) => {
+            Self::BookDepth10(value) => {
                 writer.write_u16_le(data_any_variant::ORDER_BOOK_DEPTH10);
                 <OrderBookDepth10 as MarketSbeMessage>::encode_body(value, writer)
             }
@@ -84,13 +84,13 @@ impl MarketSbeMessage for DataAny {
         let variant = cursor.read_u16_le()?;
 
         match variant {
-            data_any_variant::ORDER_BOOK_DELTA => Ok(Self::OrderBookDelta(
+            data_any_variant::ORDER_BOOK_DELTA => Ok(Self::BookDelta(
                 <OrderBookDelta as MarketSbeMessage>::decode_body(cursor)?,
             )),
-            data_any_variant::ORDER_BOOK_DELTAS => Ok(Self::OrderBookDeltas(
+            data_any_variant::ORDER_BOOK_DELTAS => Ok(Self::BookDeltas(
                 <OrderBookDeltas as MarketSbeMessage>::decode_body(cursor)?,
             )),
-            data_any_variant::ORDER_BOOK_DEPTH10 => Ok(Self::OrderBookDepth10(
+            data_any_variant::ORDER_BOOK_DEPTH10 => Ok(Self::BookDepth10(
                 <OrderBookDepth10 as MarketSbeMessage>::decode_body(cursor)?,
             )),
             data_any_variant::QUOTE => Ok(Self::Quote(
@@ -128,9 +128,9 @@ impl MarketSbeMessage for DataAny {
     fn encoded_body_size(&self) -> usize {
         usize::from(Self::BLOCK_LENGTH)
             + match self {
-                Self::OrderBookDelta(value) => value.encoded_body_size(),
-                Self::OrderBookDeltas(value) => value.encoded_body_size(),
-                Self::OrderBookDepth10(value) => value.encoded_body_size(),
+                Self::BookDelta(value) => value.encoded_body_size(),
+                Self::BookDeltas(value) => value.encoded_body_size(),
+                Self::BookDepth10(value) => value.encoded_body_size(),
                 Self::Quote(value) => value.encoded_body_size(),
                 Self::Trade(value) => value.encoded_body_size(),
                 Self::Bar(value) => value.encoded_body_size(),
@@ -146,19 +146,19 @@ impl MarketSbeMessage for DataAny {
 
 impl From<OrderBookDelta> for DataAny {
     fn from(value: OrderBookDelta) -> Self {
-        Self::OrderBookDelta(value)
+        Self::BookDelta(value)
     }
 }
 
 impl From<OrderBookDeltas> for DataAny {
     fn from(value: OrderBookDeltas) -> Self {
-        Self::OrderBookDeltas(value)
+        Self::BookDeltas(value)
     }
 }
 
 impl From<OrderBookDepth10> for DataAny {
     fn from(value: OrderBookDepth10) -> Self {
-        Self::OrderBookDepth10(value)
+        Self::BookDepth10(value)
     }
 }
 

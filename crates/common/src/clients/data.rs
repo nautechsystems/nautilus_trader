@@ -21,7 +21,7 @@ use nautilus_model::identifiers::{ClientId, Venue};
 use super::log_not_implemented;
 use crate::messages::data::{
     RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot, RequestCustomData,
-    RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
+    RequestFundingRates, RequestInstrument, RequestInstruments, RequestOptionChainReferencePrice,
     RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
     SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
     SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
@@ -614,14 +614,17 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Requests forward/underlying prices for derivatives instruments.
+    /// Requests a reference price for an option-chain bootstrap.
     ///
     /// # Errors
     ///
-    /// Returns an error if the forward prices request fails.
-    fn request_forward_prices(&self, request: RequestForwardPrices) -> anyhow::Result<()> {
+    /// Returns an error if the option-chain reference price request fails.
+    fn request_option_chain_reference_price(
+        &self,
+        request: RequestOptionChainReferencePrice,
+    ) -> anyhow::Result<()> {
         log_not_implemented(&request);
-        Ok(())
+        anyhow::bail!("option-chain reference price requests are not supported")
     }
 
     /// Requests historical or streaming bar data for a specified instrument and bar type.

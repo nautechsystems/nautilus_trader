@@ -24,7 +24,12 @@ pathway.
 Other `TriggerType` values describe trigger methods that some venues support, but the local
 `OrderEmulator` does not accept them as `emulation_trigger` values.
 
-The choice of trigger type determines how the order emulation will behave:
+:::warning
+The emulator cancels an order submitted with any other `emulation_trigger` value, and logs the
+unsupported trigger type as an error.
+:::
+
+The choice of trigger type determines how emulation behaves:
 
 - For stop orders, the emulator compares the trigger price with the selected market data.
 - For trailing-stop orders, it updates the trailing trigger from that market data.

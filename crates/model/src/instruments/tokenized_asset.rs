@@ -136,7 +136,7 @@ impl TokenizedAsset {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> CorrectnessResult<Self> {
-        check_valid_string_ascii_optional(isin.map(|u| u.as_str()), stringify!(isin))?;
+        check_valid_string_ascii_optional(isin, stringify!(isin))?;
         check_equal_u8(
             price_precision,
             price_increment.precision,
@@ -274,9 +274,6 @@ impl Hash for TokenizedAsset {
 }
 
 impl Instrument for TokenizedAsset {
-    fn tick_scheme(&self) -> Option<Ustr> {
-        self.tick_scheme
-    }
     fn into_any(self) -> InstrumentAny {
         InstrumentAny::TokenizedAsset(self)
     }
@@ -359,6 +356,14 @@ impl Instrument for TokenizedAsset {
 
     fn min_price(&self) -> Option<Price> {
         self.min_price
+    }
+
+    fn tick_scheme(&self) -> Option<Ustr> {
+        self.tick_scheme
+    }
+
+    fn info(&self) -> Option<&Params> {
+        self.info.as_ref()
     }
 
     fn ts_event(&self) -> UnixNanos {

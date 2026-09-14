@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use arrow::{
     array::{
@@ -29,14 +29,12 @@ use nautilus_model::{
         order::BookOrder,
     },
     enums::OrderSide,
-    identifiers::InstrumentId,
     types::{PRICE_UNDEF, QUANTITY_UNDEF, fixed::PRECISION_BYTES},
 };
 
 use super::{
-    DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
-    KEY_SIZE_PRECISION, decode_price, decode_quantity, extract_column, get_raw_price,
-    get_raw_quantity, validate_precision_bytes,
+    DecodeDataFromRecordBatch, EncodingError, decode_price, decode_quantity, extract_column,
+    get_raw_price, get_raw_quantity, parse_price_size_metadata, validate_precision_bytes,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -74,30 +72,6 @@ impl ArrowSchemaProvider for OrderBookDepth10 {
             None => Schema::new(fields),
         }
     }
-}
-
-fn parse_metadata(
-    metadata: &HashMap<String, String>,
-) -> Result<(InstrumentId, u8, u8), EncodingError> {
-    let instrument_id_str = metadata
-        .get(KEY_INSTRUMENT_ID)
-        .ok_or_else(|| EncodingError::MissingMetadata(KEY_INSTRUMENT_ID))?;
-    let instrument_id = InstrumentId::from_str(instrument_id_str)
-        .map_err(|e| EncodingError::ParseError(KEY_INSTRUMENT_ID, e.to_string()))?;
-
-    let price_precision = metadata
-        .get(KEY_PRICE_PRECISION)
-        .ok_or_else(|| EncodingError::MissingMetadata(KEY_PRICE_PRECISION))?
-        .parse::<u8>()
-        .map_err(|e| EncodingError::ParseError(KEY_PRICE_PRECISION, e.to_string()))?;
-
-    let size_precision = metadata
-        .get(KEY_SIZE_PRECISION)
-        .ok_or_else(|| EncodingError::MissingMetadata(KEY_SIZE_PRECISION))?
-        .parse::<u8>()
-        .map_err(|e| EncodingError::ParseError(KEY_SIZE_PRECISION, e.to_string()))?;
-
-    Ok((instrument_id, price_precision, size_precision))
 }
 
 impl EncodeToRecordBatch for OrderBookDepth10 {
@@ -141,16 +115,16 @@ impl EncodeToRecordBatch for OrderBookDepth10 {
         for depth in data {
             for i in 0..DEPTH10_LEN {
                 bid_price_builders[i]
-                    .append_value(depth.bids[i].price.raw.to_le_bytes())
+                    .append_value(depth.bids[i].price.raw().to_le_bytes())
                     .unwrap();
                 ask_price_builders[i]
-                    .append_value(depth.asks[i].price.raw.to_le_bytes())
+                    .append_value(depth.asks[i].price.raw().to_le_bytes())
                     .unwrap();
                 bid_size_builders[i]
-                    .append_value(depth.bids[i].size.raw.to_le_bytes())
+                    .append_value(depth.bids[i].size.raw().to_le_bytes())
                     .unwrap();
                 ask_size_builders[i]
-                    .append_value(depth.asks[i].size.raw.to_le_bytes())
+                    .append_value(depth.asks[i].size.raw().to_le_bytes())
                     .unwrap();
                 bid_count_builders[i].append_value(depth.bid_counts[i]);
                 ask_count_builders[i].append_value(depth.ask_counts[i]);
@@ -221,7 +195,7 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Result<Vec<Self>, EncodingError> {
-        let (instrument_id, price_precision, size_precision) = parse_metadata(metadata)?;
+        let (instrument_id, price_precision, size_precision) = parse_price_size_metadata(metadata)?;
         let cols = record_batch.columns();
 
         let mut bid_prices = Vec::with_capacity(DEPTH10_LEN);
@@ -375,13 +349,14 @@ mod tests {
     use nautilus_model::{
         data::stubs::stub_depth10,
         enums::OrderSide,
+        identifiers::InstrumentId,
         types::{Price, Quantity, fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw},
     };
     use pretty_assertions::assert_eq;
     use rstest::rstest;
 
     use super::*;
-    use crate::arrow::{get_raw_price, get_raw_quantity};
+    use crate::arrow::{KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION, get_raw_price, get_raw_quantity};
 
     #[rstest]
     fn test_get_schema() {
@@ -759,15 +734,15 @@ mod tests {
         let expect_null = price_undef || size_undef;
         if expect_null {
             assert_eq!(decoded.bids[5].side, None);
-            assert_eq!(decoded.bids[5].price.raw, 0);
+            assert_eq!(decoded.bids[5].price.raw(), 0);
             assert_eq!(decoded.bids[5].price.precision, 0);
-            assert_eq!(decoded.bids[5].size.raw, 0);
+            assert_eq!(decoded.bids[5].size.raw(), 0);
             assert_eq!(decoded.bids[5].size.precision, 0);
 
             assert_eq!(decoded.asks[7].side, None);
-            assert_eq!(decoded.asks[7].price.raw, 0);
+            assert_eq!(decoded.asks[7].price.raw(), 0);
             assert_eq!(decoded.asks[7].price.precision, 0);
-            assert_eq!(decoded.asks[7].size.raw, 0);
+            assert_eq!(decoded.asks[7].size.raw(), 0);
             assert_eq!(decoded.asks[7].size.precision, 0);
         } else {
             assert_eq!(decoded.bids[5].side, Some(OrderSide::Buy));

@@ -20,8 +20,22 @@ use std::{
     time::{Duration, Instant},
 };
 
+use nautilus_common::enums::LogLevel;
 use nautilus_live::{ExecutionClientCore, task::TaskGroup};
 use nautilus_model::identifiers::AccountId;
+
+pub(crate) fn log_report_receipt(count: usize, report_type: &str, level: LogLevel) {
+    let level = match level {
+        LogLevel::Off => return,
+        LogLevel::Trace => log::Level::Trace,
+        LogLevel::Debug => log::Level::Debug,
+        LogLevel::Info => log::Level::Info,
+        LogLevel::Warning => log::Level::Warn,
+        LogLevel::Error => log::Level::Error,
+    };
+    let plural = if count == 1 { "" } else { "s" };
+    log::log!(level, "Received {count} {report_type}{plural}");
+}
 
 /// Spawns an async task and tracks its handle in `pending_tasks`.
 pub fn spawn_task<F>(pending_tasks: &TaskGroup, description: &'static str, fut: F)

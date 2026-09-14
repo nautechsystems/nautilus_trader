@@ -49,7 +49,7 @@ pub(crate) const BYBIT_OPTION_SUBSCRIPTION_LIMIT: usize = 2_000;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct TransportScope {
     host: String,
-    proxy_url: Option<String>,
+    proxy_url_digest: Option<[u8; 32]>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -528,20 +528,22 @@ fn shared_session_generation(scope: &TransportScope) -> Arc<AtomicU64> {
 fn transport_scope(url: &str, proxy_url: Option<&str>) -> TransportScope {
     TransportScope {
         host: host(url),
-        proxy_url: proxy_url.map(ToOwned::to_owned),
+        proxy_url_digest: proxy_url.map(sha256),
     }
 }
 
 fn account_scope(url: &str, api_key: &str) -> AccountScope {
-    let digest = digest::digest(&digest::SHA256, api_key.as_bytes());
-    let api_key_digest = digest
-        .as_ref()
-        .try_into()
-        .expect("SHA-256 digest must contain 32 bytes");
     AccountScope {
         environment: environment_scope(url),
-        api_key_digest,
+        api_key_digest: sha256(api_key),
     }
+}
+
+fn sha256(value: &str) -> [u8; 32] {
+    digest::digest(&digest::SHA256, value.as_bytes())
+        .as_ref()
+        .try_into()
+        .expect("SHA-256 digest must contain 32 bytes")
 }
 
 fn host(url: &str) -> String {
@@ -609,10 +611,29 @@ fn account_limit(endpoint: &str, category: Option<BybitProductType>) -> (String,
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
     fn test_key(name: &str) -> LimitKey {
         LimitKey::Test(name.to_string())
+    }
+
+    #[rstest]
+    fn transport_scope_does_not_retain_proxy_url() {
+        let proxy_url = "http://user:password@proxy.example:8080";
+        let scope = transport_scope("https://api.bybit.com", Some(proxy_url));
+        let matching = transport_scope("https://api.bybit.com", Some(proxy_url));
+        let different = transport_scope(
+            "https://api.bybit.com",
+            Some("http://other:password@proxy.example:8080"),
+        );
+
+        let debug = format!("{scope:?}");
+
+        assert!(!debug.contains(proxy_url));
+        assert_eq!(scope, matching);
+        assert_ne!(scope, different);
     }
 
     #[tokio::test(start_paused = true)]

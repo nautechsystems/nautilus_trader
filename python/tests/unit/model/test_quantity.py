@@ -957,3 +957,37 @@ def test_from_mantissa_exponent() -> None:
 
     q2 = Quantity.from_mantissa_exponent(100, 0, 0)
     assert str(q2) == "100"
+
+    q3 = Quantity.from_mantissa_exponent(1, -18, 18)
+    assert q3.raw == 1
+    assert q3.precision == 18
+    assert q3.as_decimal() == Decimal("0.000000000000000001")
+
+
+def test_from_mantissa_exponent_rejects_invalid_precision() -> None:
+    """
+    Test from mantissa exponent rejects invalid precision.
+    """
+    with pytest.raises(
+        ValueError,
+        match=r"`precision` exceeded maximum `WEI_PRECISION` \(18\), was 19",
+    ) as exc_info:
+        Quantity.from_mantissa_exponent(1, 0, 19)
+
+    assert str(exc_info.value) == "`precision` exceeded maximum `WEI_PRECISION` (18), was 19"
+
+
+def test_from_mantissa_exponent_rejects_overflow() -> None:
+    """
+    Test from mantissa exponent rejects overflow.
+    """
+    with pytest.raises(
+        ValueError,
+        match="Overflow in Quantity::from_mantissa_exponent",
+    ) as exc_info:
+        Quantity.from_mantissa_exponent(18_446_744_073_709_551_615, 100, 0)
+
+    assert str(exc_info.value) == (
+        "Overflow in Quantity::from_mantissa_exponent "
+        "(mantissa=18446744073709551615, exponent=100, precision=0)"
+    )

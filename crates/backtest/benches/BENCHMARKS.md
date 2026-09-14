@@ -28,6 +28,13 @@ services, and one simulated venue.
 | Passive limit orders    |        64 |        0 |      0 |       64 |         0 |        1 |
 | Bar EMA cross           |       450 |        0 |    450 |        0 |       225 |        1 |
 
+Each scenario runs under two input modes. The legacy mode submits one interleaved `Vec<Data>`
+through `BacktestEngine::add_data`. The typed mode submits the same rows as a quote batch followed
+by a bar batch through `BacktestEngine::add_data_batch`, so equal-timestamp order matches the legacy
+stream. Typed cases append `_typed` to the scenario name, such as `replay_only_typed`; legacy cases
+keep the bare scenario name so earlier baselines stay comparable. The correctness test requires both
+modes to produce identical canonical results.
+
 Before timing, the benchmark checks these counts, all 20,000 processed data events, execution
 event counts, the canonical account digest, and the complete `CanonicalBacktestResult` digest.
 The correctness test also requires the preloaded and freshly loaded paths to produce identical
@@ -102,6 +109,7 @@ done
 ```
 
 Criterion's `median.point_estimate` from each named baseline supplies the three per-row values.
+The typed cases use the same commands with `_typed` appended to each scenario name.
 
 For policy and the general noise-reduction recipe, see
 [`BENCHMARKING.md`](../../../BENCHMARKING.md) at the repository root.
@@ -182,6 +190,7 @@ artifact identity. A profile share selects a target; it never establishes an ela
 | 2026-08-30 | Shared-host measurement controls        |     50% spread reduction | Neither candidate protocol qualified   | Existing controls kept |
 | 2026-08-30 | Pending queue snapshot                  |                   3.790% | 10.302% median reduction               | Retained               |
 | 2026-08-30 | Current-HEAD target search              |            10.872622191% | No eligible target                     | No candidate           |
+| 2026-09-04 | Typed batch input                       |    Per-row baseline band | Typed within legacy round bands        | Retained               |
 
 ### 2026-08-29: L1 replacement
 
@@ -712,6 +721,101 @@ The 178.234 us median and 174.181-183.288 us range give a 5.109% full spread. Tw
 within practical repeatability noise and does not establish a one-order regression. It also does not
 prove that a smaller effect is absent. The 32-order and 256-order scaling results remain explanatory;
 the retained canonical end-to-end comparison remains the adoption evidence.
+
+### 2026-09-04: Typed batch input
+
+The baseline was the `Stream backtest data lazily across multiple data configs` commit. The
+candidate adds `BacktestEngine::add_data_batch`, which stores a homogeneous `DataBatch` in the
+replay iterator without constructing per-item `Data` values, and routes `add_data` through the same
+validation and bookkeeping. This record establishes the first typed rows of the canonical matrix;
+the earlier dated records predate them.
+
+| Item                 | Baseline                                                           | Candidate                                                          |
+| -------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| Repository revision  | `ec1894d6fab4fb3768caadbcd6ab6956e0568f13`                         | Baseline revision plus the measured patch                          |
+| Measured source tree | `c4870b8b94356ab080c23f8b64e0cb75f53c85e0`                         | `1635c1b51a7dac1ae93810bce550273bb8b938fd`                         |
+| Executable SHA-256   | `f4607a58bb7966167bb163e0de3bd1b78f22e4ad817f5acd31c9a401b13435f5` | `b1f2e5dc7cea1b562c599ac3e6abbc8f1c3cb77b585fe00a80761e50848291a1` |
+| ELF build ID         | `9dc0cb2b64f08a95cbe0568cddcd4270f9719747`                         | `45fee22becea1c54db8108afce7301eddfeac069`                         |
+
+Documentation edits after the build do not alter the measured candidate executable. Three rounds
+followed the rotated scenario order from the reproduce loop. Within each scenario, the baseline
+legacy case, the candidate legacy case, and the candidate typed case ran back to back, each with a
+3-second warm-up, a 5-second measurement target, 50 samples, and an isolated Criterion home. Each
+row reports the median of the three round medians, and a band is the range of those medians. No
+Cargo work ran during the session.
+
+The first comparison checks the legacy `add_data` path after its bookkeeping moved into a shared
+function. Every candidate median falls inside or below its baseline band except bar EMA cross under
+the full boundary, where the candidate rounds overlap the baseline rounds. The path did not regress.
+
+| Scenario                | Boundary            | Baseline median | Baseline band, spread  | Candidate median | Change |
+| ----------------------- | ------------------- | --------------: | ---------------------- | ---------------: | -----: |
+| Replay only             | Preloaded `run()`   |       14.761 ms | 14.664-15.214 ms, 3.7% |        14.631 ms | -0.88% |
+| Scheduled market orders | Preloaded `run()`   |       16.362 ms | 15.553-16.899 ms, 8.2% |        16.111 ms | -1.53% |
+| Passive limit orders    | Preloaded `run()`   |       22.097 ms | 21.913-22.437 ms, 2.4% |        22.127 ms | +0.14% |
+| Bar EMA cross           | Preloaded `run()`   |       21.956 ms | 21.857-22.378 ms, 2.4% |        22.040 ms | +0.38% |
+| Replay only             | Full load/setup/run |       21.333 ms | 21.099-21.851 ms, 3.5% |        21.166 ms | -0.78% |
+| Scheduled market orders | Full load/setup/run |       23.195 ms | 22.501-23.748 ms, 5.4% |        22.893 ms | -1.30% |
+| Passive limit orders    | Full load/setup/run |       29.054 ms | 28.567-29.078 ms, 1.8% |        28.470 ms | -2.01% |
+| Bar EMA cross           | Full load/setup/run |       29.117 ms | 28.845-29.188 ms, 1.2% |        29.282 ms | +0.57% |
+
+The second comparison runs typed and legacy input on the candidate executable. Both modes matched
+every exact canonical fingerprint, and the correctness test found no divergence between their
+canonical results. Every typed row's round medians overlap the legacy row's round medians. The typed
+mode carries a small structural cost on this fixture: it merges a quote stream and a bar stream
+through the replay heap, while the legacy mode replays one mixed stream on the single-stream path.
+
+| Scenario                | Boundary            | Legacy median | Typed median | Typed band, spread      | Change |
+| ----------------------- | ------------------- | ------------: | -----------: | ----------------------- | -----: |
+| Replay only             | Preloaded `run()`   |     14.631 ms |    15.061 ms | 14.875-15.440 ms, 3.8%  | +2.94% |
+| Scheduled market orders | Preloaded `run()`   |     16.111 ms |    16.072 ms | 16.000-16.521 ms, 3.2%  | -0.24% |
+| Passive limit orders    | Preloaded `run()`   |     22.127 ms |    21.962 ms | 21.959-22.537 ms, 2.6%  | -0.74% |
+| Bar EMA cross           | Preloaded `run()`   |     22.040 ms |    22.344 ms | 22.242-22.853 ms, 2.7%  | +1.38% |
+| Replay only             | Full load/setup/run |     21.166 ms |    21.406 ms | 21.386-21.777 ms, 1.8%  | +1.13% |
+| Scheduled market orders | Full load/setup/run |     22.893 ms |    23.838 ms | 22.705-25.178 ms, 10.4% | +4.13% |
+| Passive limit orders    | Full load/setup/run |     28.470 ms |    29.310 ms | 28.354-29.526 ms, 4.0%  | +2.95% |
+| Bar EMA cross           | Full load/setup/run |     29.282 ms |    29.033 ms | 29.032-29.579 ms, 1.9%  | -0.85% |
+
+The typed path was retained. Its benefit on this fixture is loaded-data memory rather than replay
+time: the canonical workload holds 20,000 items, so the representation difference is small against
+the run itself.
+
+#### Representation size and loaded-data memory
+
+`Data` stores every item at the size of its largest inline variant, while a typed batch stores each
+item at its own size. The sizes below are `size_of` results for the standard-precision build on this
+host.
+
+| Type                | Bytes | Storage in `Data` |
+| ------------------- | ----: | ----------------- |
+| `Data`              |   168 | Enum              |
+| `DataRef`           |    16 | Borrowed view     |
+| `QuoteTick`         |    96 | Inline            |
+| `TradeTick`         |   112 | Inline            |
+| `Bar`               |   160 | Inline            |
+| `OrderBookDelta`    |    96 | Inline            |
+| `OrderBookDeltas`   |    72 | Boxed             |
+| `OrderBookDepth10`  | 1,088 | Boxed             |
+| `MarkPriceUpdate`   |    48 | Inline            |
+| `IndexPriceUpdate`  |    48 | Inline            |
+| `FundingRateUpdate` |    72 | Inline            |
+| `OptionGreeks`      |   160 | Inline            |
+| `InstrumentStatus`  |    64 | Inline            |
+| `InstrumentClose`   |    56 | Inline            |
+
+Loaded-data memory was measured with a temporary program that built the same items as a
+`Vec<Data>` and as a `BatchView<T>` in separate processes, then read the process high-water mark
+(`VmHWM`) before and after construction. GNU `time` maximum resident set sizes agreed within 1.4%.
+Each row is the median of three runs.
+
+| Payload            |     Items | `Vec<Data>` | `BatchView<T>` | Bytes per item | Reduction |
+| ------------------ | --------: | ----------: | -------------: | -------------- | --------: |
+| `QuoteTick`        | 1,000,000 |   166.0 MiB |       97.4 MiB | 174 to 102     |     41.4% |
+| `OrderBookDepth10` |   200,000 |   248.4 MiB |      213.3 MiB | 1,303 to 1,119 |     14.1% |
+
+The quote reduction matches the 72-byte difference between `Data` and `QuoteTick`. The depth
+reduction matches the 168-byte enum plus the allocator header that `Data::BookDepth10` spends on
+each boxed snapshot.
 
 ## v1.231.0 and v2 comparison
 

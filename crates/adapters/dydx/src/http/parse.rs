@@ -307,7 +307,7 @@ pub fn parse_instrument_any(
     let instrument_id = parse_instrument_id(definition.ticker);
     let raw_symbol = Symbol::from(definition.ticker.as_str());
 
-    // Parse currencies from ticker using helper function
+    // Parse base and quote currencies from the ticker
     let (base_str, quote_str) = parse_ticker_currencies(&definition.ticker)
         .context(format!("Failed to parse ticker '{}'", definition.ticker))?;
 
@@ -398,7 +398,7 @@ pub fn parse_instrument_any(
     Ok(InstrumentAny::CryptoPerpetual(instrument))
 }
 
-/// Serde helper for fields encoded as a string of a `Display`/`FromStr` value.
+/// Serde adapter for fields encoded as a string of a `Display`/`FromStr` value.
 pub(super) mod display_fromstr {
     use std::{fmt::Display, str::FromStr};
 
@@ -423,7 +423,7 @@ pub(super) mod display_fromstr {
     }
 }
 
-/// Serde helper for `Option<T>` fields encoded as a string (or null/missing) of a
+/// Serde adapter for `Option<T>` fields encoded as a string (or null/missing) of a
 /// `Display`/`FromStr` value. Pair with `#[serde(default)]` so missing fields parse as `None`.
 pub(super) mod display_fromstr_opt {
     use std::{fmt::Display, str::FromStr};
@@ -527,8 +527,8 @@ mod tests {
         let instrument = result.unwrap();
         if let InstrumentAny::CryptoPerpetual(perp) = instrument {
             assert_eq!(perp.id.symbol.as_str(), "BTC-USD-PERP");
-            assert_eq!(perp.base_currency.code.as_str(), "BTC");
-            assert_eq!(perp.quote_currency.code.as_str(), "USD");
+            assert_eq!(perp.base_currency.code, "BTC");
+            assert_eq!(perp.quote_currency.code, "USD");
             assert!(!perp.is_inverse);
             assert_eq!(perp.price_increment.to_string(), "1");
             assert_eq!(perp.size_increment.to_string(), "0.001");
@@ -2515,7 +2515,7 @@ mod reconciliation_tests {
 
         assert_eq!(state.balances.len(), 1);
         let balance = &state.balances[0];
-        assert_eq!(balance.currency.code.as_str(), "USDC");
+        assert_eq!(balance.currency.code, "USDC");
         assert_eq!(balance.total.as_decimal(), dec!(15000));
         assert_eq!(balance.free.as_decimal(), dec!(12500));
         assert_eq!(balance.locked.as_decimal(), dec!(2500));
@@ -2557,7 +2557,7 @@ mod reconciliation_tests {
 
         assert_eq!(state.balances.len(), 1);
         let balance = &state.balances[0];
-        assert_eq!(balance.currency.code.as_str(), "USDC");
+        assert_eq!(balance.currency.code, "USDC");
         assert_eq!(balance.total.as_decimal(), dec!(15000));
         assert_eq!(balance.free.as_decimal(), dec!(12500));
         assert_eq!(balance.locked.as_decimal(), dec!(2500));

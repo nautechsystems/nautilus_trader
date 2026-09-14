@@ -20,7 +20,7 @@
 //! `include_str!` from `test_data/`. Neither form reads the filesystem at runtime.
 //!
 //! Each criterion bench is a separate compilation unit that pulls in this
-//! module, but uses only a subset of the helpers and fixtures. Without the
+//! module, but uses only a subset of the benchmark routines and fixtures. Without the
 //! module-level `allow`, the unused subset in any given bench triggers
 //! per-crate dead-code warnings.
 
@@ -40,7 +40,7 @@ use ustr::Ustr;
 pub(crate) const ACCOUNT_ID: &str = "POLYMARKET-001";
 
 /// Production owner field shape (the L2 API key, a UUID4 string). Matches the
-/// value `PolymarketClobHttpClient::post_order` injects via `credential.api_key()`,
+/// value `PolymarketClobHttpClient::post_order` injects via `credential.api_key_str()`,
 /// not the maker wallet address.
 pub(crate) const API_KEY: &str = "00000000-0000-0000-0000-000000000001";
 pub(crate) const API_SECRET_B64: &str = "dGVzdC1zZWNyZXQtMzItYnl0ZXMtbG9uZy12YWx1ZS0wMQ==";
@@ -48,7 +48,7 @@ pub(crate) const PASSPHRASE: &str = "test-passphrase";
 
 #[must_use]
 pub(crate) fn bench_credential() -> Credential {
-    Credential::new(API_KEY, API_SECRET_B64, PASSPHRASE.to_string()).unwrap()
+    Credential::new(API_KEY.into(), API_SECRET_B64.into(), PASSPHRASE.into()).unwrap()
 }
 
 /// Token (asset) id used across every WS fixture below.

@@ -293,9 +293,6 @@ class DeribitHttpClient:
         self, account_id: model.AccountId, instrument_id: model.InstrumentId | None = None
     ) -> typing.Any: ...
     def request_book_summaries(self, currency: str, kind: str | None = None) -> typing.Any: ...
-    def request_forward_prices(
-        self, currency: str, instrument_id: model.InstrumentId | None = None
-    ) -> typing.Any: ...
 
 @typing.final
 class DeribitVolatilityIndex:

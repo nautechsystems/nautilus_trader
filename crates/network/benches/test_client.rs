@@ -14,8 +14,8 @@
 // -------------------------------------------------------------------------------------------------
 
 use futures_util::future::join_all;
+use http::Method;
 use nautilus_network::http::InnerHttpClient;
-use reqwest::Method;
 
 const CONCURRENCY: usize = 256;
 const TOTAL: usize = 1_000_000;

@@ -43,10 +43,10 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-//! - `redis`: Enables the Redis cache database and message bus backing implementations.
+//! - `extension-module`: Builds as a Python extension module.
 //! - `postgres`: Enables the PostgreSQL SQLx models and cache database backend.
-//! - `extension-module`: Builds the crate as a Python extension module.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `redis` (default): Enables the Redis cache database and message bus backing implementations.
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]

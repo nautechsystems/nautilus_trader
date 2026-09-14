@@ -15,13 +15,12 @@
 
 use std::collections::HashMap;
 
-use arrow::{datatypes::Schema, error::ArrowError, record_batch::RecordBatch};
+use arrow::record_batch::RecordBatch;
 use nautilus_model::data::{Data, InstrumentStatus};
 
 use super::{
-    ArrowSchemaProvider, DecodeDataFromRecordBatch, DecodeTypedFromRecordBatch,
-    EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
-    json::{JsonFieldSpec, decode_batch, encode_batch, metadata_for_type, schema_for_type},
+    DecodeDataFromRecordBatch, DecodeTypedFromRecordBatch, EncodingError,
+    json::{JsonFieldSpec, impl_json_arrow},
 };
 
 const INSTRUMENT_STATUS_FIELDS: &[JsonFieldSpec] = &[
@@ -36,43 +35,7 @@ const INSTRUMENT_STATUS_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::boolean("is_short_sell_restricted", true),
 ];
 
-impl ArrowSchemaProvider for InstrumentStatus {
-    fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
-        schema_for_type("InstrumentStatus", metadata, INSTRUMENT_STATUS_FIELDS)
-    }
-}
-
-impl EncodeToRecordBatch for InstrumentStatus {
-    fn encode_batch(
-        metadata: &HashMap<String, String>,
-        data: &[Self],
-    ) -> Result<RecordBatch, ArrowError> {
-        encode_batch("InstrumentStatus", metadata, data, INSTRUMENT_STATUS_FIELDS)
-    }
-
-    fn metadata(&self) -> HashMap<String, String> {
-        let mut metadata = metadata_for_type("InstrumentStatus");
-        metadata.insert(
-            KEY_INSTRUMENT_ID.to_string(),
-            self.instrument_id.to_string(),
-        );
-        metadata
-    }
-}
-
-impl DecodeTypedFromRecordBatch for InstrumentStatus {
-    fn decode_typed_batch(
-        metadata: &HashMap<String, String>,
-        record_batch: RecordBatch,
-    ) -> Result<Vec<Self>, EncodingError> {
-        decode_batch(
-            metadata,
-            &record_batch,
-            INSTRUMENT_STATUS_FIELDS,
-            Some("InstrumentStatus"),
-        )
-    }
-}
+impl_json_arrow!(instrument InstrumentStatus, "InstrumentStatus", INSTRUMENT_STATUS_FIELDS);
 
 impl DecodeDataFromRecordBatch for InstrumentStatus {
     fn decode_data_batch(
@@ -91,6 +54,7 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
+    use crate::arrow::{EncodeToRecordBatch, KEY_INSTRUMENT_ID};
 
     #[rstest]
     fn test_encode_decode_round_trip() {

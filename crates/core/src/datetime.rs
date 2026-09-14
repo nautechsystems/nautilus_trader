@@ -125,7 +125,7 @@ struct DateTimeParts {
 
 #[expect(
     clippy::cast_possible_truncation,
-    reason = "digit helpers only receive values in 0..=9"
+    reason = "digit writers only receive values in 0..=9"
 )]
 fn push_digit(out: &mut String, digit: u32) {
     out.push(char::from(b'0' + digit as u8));
@@ -291,22 +291,6 @@ pub const fn mins_to_secs(mins: u64) -> u64 {
 #[must_use]
 pub const fn checked_mins_to_secs(mins: u64) -> Option<u64> {
     mins.checked_mul(SECONDS_IN_MINUTE)
-}
-
-/// Converts minutes to nanoseconds.
-///
-/// # Panics
-///
-/// Panics if the result cannot be represented as `u64` nanoseconds.
-#[must_use]
-pub const fn mins_to_nanos(mins: u64) -> u64 {
-    checked_mins_to_nanos(mins).expect("minutes to nanoseconds conversion overflow")
-}
-
-/// Converts minutes to nanoseconds, returning `None` on overflow.
-#[must_use]
-pub const fn checked_mins_to_nanos(mins: u64) -> Option<u64> {
-    mins.checked_mul(NANOSECONDS_IN_MINUTE)
 }
 
 /// Converts milliseconds (ms) to nanoseconds (ns).
@@ -782,21 +766,11 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0, 0)]
-    #[case(1, 60_000_000_000)]
-    #[case(5, 300_000_000_000)]
-    #[case(60, 3_600_000_000_000)]
-    fn test_mins_to_nanos(#[case] mins: u64, #[case] expected: u64) {
-        assert_eq!(mins_to_nanos(mins), expected);
-    }
-
-    #[rstest]
     #[case(
         checked_mins_to_secs,
         307_445_734_561_825_860,
         18_446_744_073_709_551_600
     )]
-    #[case(checked_mins_to_nanos, 307_445_734, 18_446_744_040_000_000_000)]
     fn test_checked_minutes_conversion_boundary(
         #[case] convert: fn(u64) -> Option<u64>,
         #[case] max: u64,
@@ -810,12 +784,6 @@ mod tests {
     #[should_panic(expected = "minutes to seconds conversion overflow")]
     fn test_mins_to_secs_overflow_panics() {
         let _ = mins_to_secs(307_445_734_561_825_861);
-    }
-
-    #[rstest]
-    #[should_panic(expected = "minutes to nanoseconds conversion overflow")]
-    fn test_mins_to_nanos_overflow_panics() {
-        let _ = mins_to_nanos(307_445_735);
     }
 
     #[rstest]
@@ -1304,7 +1272,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_nanos_helpers_support_values_above_i64_max() {
+    fn test_month_and_year_arithmetic_support_values_above_i64_max() {
         let large = UnixNanos::from(u64::MAX);
         assert!(subtract_n_months_nanos(large, 1).is_ok());
         assert!(add_n_months_nanos(large, 1).is_err());

@@ -19,12 +19,12 @@ use std::sync::LazyLock;
 
 use ahash::AHashSet;
 use nautilus_model::{
-    enums::{OrderType, TimeInForce},
+    enums::{OrderSide, OrderType, PositionSide, TimeInForce},
     identifiers::{ClientId, Venue},
 };
 use ustr::Ustr;
 
-use super::enums::{OKXBookChannel, OKXInstrumentType, OKXVipLevel};
+use super::enums::{OKXBookChannel, OKXInstrumentType, OKXTradeMode, OKXVipLevel};
 
 /// Venue identifier string.
 pub const OKX: &str = "OKX";
@@ -115,14 +115,57 @@ pub fn validate_okx_client_order_id(cl_ord_id: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Resolves the OKX wire representation for a Nautilus reduce-only instruction.
+///
+/// A closing `side` and `posSide` pair enforces the same intent in OKX long/short mode, where the
+/// literal `reduceOnly` field is not applicable.
+///
+/// # Errors
+///
+/// Returns an error when OKX cannot enforce reduce-only for the selected product or when a
+/// long/short-mode order would increase the selected position side.
+pub(crate) fn okx_reduce_only_wire_value(
+    instrument_type: OKXInstrumentType,
+    td_mode: OKXTradeMode,
+    order_side: OrderSide,
+    position_side: Option<PositionSide>,
+    reduce_only: Option<bool>,
+) -> Result<Option<bool>, String> {
+    if reduce_only != Some(true) {
+        return Ok(None);
+    }
+
+    match instrument_type {
+        OKXInstrumentType::Spot | OKXInstrumentType::Margin => {
+            if td_mode == OKXTradeMode::Cash {
+                Err("OKX cash orders do not support reduce-only instructions".to_string())
+            } else {
+                Ok(Some(true))
+            }
+        }
+        OKXInstrumentType::Swap | OKXInstrumentType::Futures => match position_side {
+            None => Ok(Some(true)),
+            Some(PositionSide::Long) if order_side == OrderSide::Sell => Ok(None),
+            Some(PositionSide::Short) if order_side == OrderSide::Buy => Ok(None),
+            Some(position_side) => Err(format!(
+                "OKX {order_side} orders on the {position_side} side do not enforce reduce-only"
+            )),
+        },
+        OKXInstrumentType::Option | OKXInstrumentType::Events => Err(format!(
+            "OKX {instrument_type} orders do not support reduce-only instructions"
+        )),
+        OKXInstrumentType::Any => Ok(Some(true)),
+    }
+}
+
 /// OKX supported order time in force.
 ///
 /// # Notes
 ///
 /// - OKX implements IOC and FOK as order types rather than separate time-in-force parameters.
 /// - FOK is only supported with Limit orders (Market + FOK is not supported).
-/// - IOC with Market orders uses OptimalLimitIoc, with Limit orders uses Ioc.
-/// - GTD is supported via expire_time parameter.
+/// - IOC with Market orders uses `OptimalLimitIoc`, with Limit orders uses Ioc.
+/// - GTD is supported via `expire_time` parameter.
 pub const OKX_SUPPORTED_TIME_IN_FORCE: &[TimeInForce] = &[
     TimeInForce::Gtc, // Good Till Cancel (default)
     TimeInForce::Ioc, // Immediate or Cancel (mapped to OKXOrderType::Ioc or OptimalLimitIoc)
@@ -133,7 +176,7 @@ pub const OKX_SUPPORTED_TIME_IN_FORCE: &[TimeInForce] = &[
 ///
 /// # Notes
 ///
-/// - PostOnly is supported as a flag on limit orders.
+/// - `PostOnly` is supported as a flag on limit orders.
 /// - Conditional orders (stop/trigger) are supported via algo orders.
 pub const OKX_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
     OrderType::Market,
@@ -183,7 +226,6 @@ pub static OKX_RETRY_ERROR_CODES: LazyLock<AHashSet<&'static str>> = LazyLock::n
 
     // Rate limit errors (temporary)
     codes.insert("50011"); // Request too frequent
-    codes.insert("50113"); // API requests exceed the limit
 
     // WebSocket connection issues (temporary)
     codes.insert("60001"); // OK not received in time
@@ -234,6 +276,53 @@ pub const OKX_TARGET_CCY_BASE: &str = "base_ccy";
 /// Target currency literal for quote currency.
 pub const OKX_TARGET_CCY_QUOTE: &str = "quote_ccy";
 
+/// `feature` value for `POST /api/v5/account/activate-feature` USDC order book trading.
+pub const OKX_FEATURE_USDC_ORDER_BOOK: &str = "1";
+
+/// Resolves the optional `tradeQuoteCcy` wire value for a SPOT order.
+///
+/// Non-spot orders omit the field. When `configured` is unset or blank, the venue
+/// default (the quote currency in `instId`) is used. When set, `available` must be
+/// non-empty and contain the value.
+///
+/// # Errors
+///
+/// Returns an error when `configured` is set and `available` is empty, or when
+/// `configured` is not present in `available`.
+pub fn spot_trade_quote_ccy_wire_value(
+    instrument_type: OKXInstrumentType,
+    configured: Option<&str>,
+    available: &[Ustr],
+) -> Result<Option<Ustr>, String> {
+    if instrument_type != OKXInstrumentType::Spot {
+        return Ok(None);
+    }
+
+    let Some(ccy) = configured.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let ccy = Ustr::from(ccy);
+
+    if available.is_empty() {
+        return Err(format!(
+            "tradeQuoteCcyList is unknown for this instrument; cannot validate tradeQuoteCcy '{ccy}'"
+        ));
+    }
+
+    if !available.contains(&ccy) {
+        let listed = available
+            .iter()
+            .map(Ustr::as_str)
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!(
+            "tradeQuoteCcy '{ccy}' is not in tradeQuoteCcyList for this instrument, was [{listed}]"
+        ));
+    }
+
+    Ok(Some(ccy))
+}
+
 /// Resolves instrument families for a given instrument type.
 ///
 /// Returns `Some(families)` when the type supports family filtering, or `None`
@@ -275,7 +364,7 @@ pub fn resolve_book_depth(raw_depth: usize) -> usize {
 pub(crate) fn select_book_channel(depth: usize, vip: OKXVipLevel) -> OKXBookChannel {
     match depth {
         50 if vip >= OKXVipLevel::Vip4 => OKXBookChannel::Books50L2Tbt,
-        0 | 400 if vip >= OKXVipLevel::Vip5 => OKXBookChannel::BookL2Tbt,
+        0 | 400 if vip >= OKXVipLevel::Vip4 => OKXBookChannel::BookL2Tbt,
         0 | 50 | 400 => OKXBookChannel::Book,
         _ => unreachable!("book depth must be resolved before channel selection"),
     }
@@ -289,11 +378,13 @@ mod tests {
 
     #[rstest]
     #[case::auto_default(0, OKXVipLevel::Vip0, OKXBookChannel::Book)]
-    #[case::auto_vip4(0, OKXVipLevel::Vip4, OKXBookChannel::Book)]
+    #[case::auto_vip3(0, OKXVipLevel::Vip3, OKXBookChannel::Book)]
+    #[case::auto_vip4(0, OKXVipLevel::Vip4, OKXBookChannel::BookL2Tbt)]
     #[case::auto_vip5(0, OKXVipLevel::Vip5, OKXBookChannel::BookL2Tbt)]
     #[case::depth_50_vip3(50, OKXVipLevel::Vip3, OKXBookChannel::Book)]
     #[case::depth_50_vip4(50, OKXVipLevel::Vip4, OKXBookChannel::Books50L2Tbt)]
-    #[case::depth_400_vip4(400, OKXVipLevel::Vip4, OKXBookChannel::Book)]
+    #[case::depth_400_vip3(400, OKXVipLevel::Vip3, OKXBookChannel::Book)]
+    #[case::depth_400_vip4(400, OKXVipLevel::Vip4, OKXBookChannel::BookL2Tbt)]
     #[case::depth_400_vip5(400, OKXVipLevel::Vip5, OKXBookChannel::BookL2Tbt)]
     fn test_select_book_channel(
         #[case] depth: usize,
@@ -314,8 +405,10 @@ mod tests {
 
     #[rstest]
     #[case("50001", true)]
+    #[case("50011", true)]
     #[case("60005", true)]
     #[case(OKX_SERVICE_UPGRADE_RECONNECT_CODE, true)]
+    #[case("50113", false)]
     #[case("60012", false)]
     fn test_should_retry_error_code(#[case] code: &str, #[case] expected: bool) {
         assert_eq!(should_retry_error_code(code), expected);
@@ -341,5 +434,131 @@ mod tests {
         assert!(err.contains("at most 32"));
         assert!(err.contains("was 35"));
         assert!(err.contains("use_uuid_client_order_ids"));
+    }
+
+    #[rstest]
+    #[case::cash(
+        OKXInstrumentType::Spot,
+        OKXTradeMode::Cash,
+        OrderSide::Sell,
+        None,
+        Err("OKX cash orders do not support reduce-only instructions".to_string()),
+    )]
+    #[case::margin(
+        OKXInstrumentType::Spot,
+        OKXTradeMode::Cross,
+        OrderSide::Sell,
+        None,
+        Ok(Some(true))
+    )]
+    #[case::net(
+        OKXInstrumentType::Swap,
+        OKXTradeMode::Cross,
+        OrderSide::Sell,
+        None,
+        Ok(Some(true))
+    )]
+    #[case::close_long(
+        OKXInstrumentType::Swap,
+        OKXTradeMode::Cross,
+        OrderSide::Sell,
+        Some(PositionSide::Long),
+        Ok(None)
+    )]
+    #[case::close_short(
+        OKXInstrumentType::Futures,
+        OKXTradeMode::Isolated,
+        OrderSide::Buy,
+        Some(PositionSide::Short),
+        Ok(None)
+    )]
+    #[case::increase_long(
+        OKXInstrumentType::Swap,
+        OKXTradeMode::Cross,
+        OrderSide::Buy,
+        Some(PositionSide::Long),
+        Err("OKX BUY orders on the LONG side do not enforce reduce-only".to_string()),
+    )]
+    #[case::option(
+        OKXInstrumentType::Option,
+        OKXTradeMode::Cross,
+        OrderSide::Sell,
+        None,
+        Err("OKX Option orders do not support reduce-only instructions".to_string()),
+    )]
+    fn test_okx_reduce_only_wire_value(
+        #[case] instrument_type: OKXInstrumentType,
+        #[case] td_mode: OKXTradeMode,
+        #[case] order_side: OrderSide,
+        #[case] position_side: Option<PositionSide>,
+        #[case] expected: Result<Option<bool>, String>,
+    ) {
+        assert_eq!(
+            okx_reduce_only_wire_value(
+                instrument_type,
+                td_mode,
+                order_side,
+                position_side,
+                Some(true),
+            ),
+            expected
+        );
+    }
+
+    #[rstest]
+    fn test_spot_trade_quote_ccy_wire_value_omits_non_spot() {
+        assert_eq!(
+            spot_trade_quote_ccy_wire_value(
+                OKXInstrumentType::Swap,
+                Some("USD"),
+                &[Ustr::from("USD")],
+            ),
+            Ok(None)
+        );
+    }
+
+    #[rstest]
+    fn test_spot_trade_quote_ccy_wire_value_omits_when_unset() {
+        assert_eq!(
+            spot_trade_quote_ccy_wire_value(OKXInstrumentType::Spot, None, &[Ustr::from("USD")]),
+            Ok(None)
+        );
+        assert_eq!(
+            spot_trade_quote_ccy_wire_value(OKXInstrumentType::Spot, Some("  "), &[]),
+            Ok(None)
+        );
+    }
+
+    #[rstest]
+    fn test_spot_trade_quote_ccy_wire_value_sends_usd_when_listed() {
+        assert_eq!(
+            spot_trade_quote_ccy_wire_value(
+                OKXInstrumentType::Spot,
+                Some("USD"),
+                &[Ustr::from("USD"), Ustr::from("USDC")],
+            ),
+            Ok(Some(Ustr::from("USD")))
+        );
+    }
+
+    #[rstest]
+    fn test_spot_trade_quote_ccy_wire_value_rejects_when_list_unknown() {
+        let err =
+            spot_trade_quote_ccy_wire_value(OKXInstrumentType::Spot, Some("USD"), &[]).unwrap_err();
+        assert!(err.contains("tradeQuoteCcyList is unknown"));
+        assert!(err.contains("tradeQuoteCcy 'USD'"));
+    }
+
+    #[rstest]
+    fn test_spot_trade_quote_ccy_wire_value_rejects_unlisted() {
+        let err = spot_trade_quote_ccy_wire_value(
+            OKXInstrumentType::Spot,
+            Some("USD"),
+            &[Ustr::from("USDC")],
+        )
+        .unwrap_err();
+        assert!(err.contains("tradeQuoteCcy 'USD'"));
+        assert!(err.contains("was [USDC]"));
+        assert!(!err.contains(&format!(", {}", "got")));
     }
 }

@@ -19,6 +19,7 @@ contracts on Binance Futures at a limit price of 30,100 USDT once the market rea
 The order expires one hour after creation:
 
 ```rust tab="Rust"
+use nautilus_core::DurationNanos;
 use nautilus_model::{
     enums::{OrderSide, TimeInForce, TriggerType},
     identifiers::InstrumentId,
@@ -26,7 +27,7 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-let expire_time = self.clock().timestamp_ns() + 3_600_000_000_000_u64;
+let expire_time = self.clock().timestamp_ns() + DurationNanos::from_mins(60);
 let order = self.order().limit_if_touched(
     InstrumentId::from("BTCUSDT-PERP.BINANCE"),
     OrderSide::Buy,
@@ -81,4 +82,4 @@ for further details.
 
 - [Orders](index.md#trigger-type) - Trigger types and other execution instructions.
 - [Emulated orders](emulated.md) - Emulating conditional orders on venues without native support.
-- [Execution](../execution.md) - How orders reach the venue and fills are handled.
+- [Execution](../execution/) - How orders reach the venue and fills are handled.

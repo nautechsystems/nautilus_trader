@@ -34,7 +34,7 @@ def _generated_module_classes() -> list[tuple[str, tuple[str, ...]]]:
     parameters = []
 
     for stub_path in sorted(PACKAGE_ROOT.rglob("__init__.pyi")):
-        source = stub_path.read_text()
+        source = stub_path.read_text(encoding="utf-8")
         if not source.startswith(GENERATED_HEADER):
             continue
 

@@ -157,7 +157,7 @@ fn bench_submit_market(c: &mut Criterion) {
                 dec!(50),
                 result.crossing_price,
                 dec!(0.03),
-                2.0,
+                dec!(2),
                 dec!(0),
             )
             .unwrap();

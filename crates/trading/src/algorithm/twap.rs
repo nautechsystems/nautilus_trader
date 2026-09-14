@@ -389,9 +389,9 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
     }
 
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
-        log::info!("Received time event: {event:?}");
+        log::info!("Received time event: {event}");
 
-        let primary_id = ClientOrderId::new(event.name.as_str());
+        let primary_id = ClientOrderId::new(event.name);
 
         let primary = {
             let cache = ExecutionAlgorithmNative::exec_algorithm_core(self).cache_ref();
@@ -518,7 +518,7 @@ mod tests {
         messages::execution::{ModifyOrder, SubmitOrder, TradingCommand},
         msgbus::{self, MessagingSwitchboard, TypedHandler},
     };
-    use nautilus_core::{Params, UUID4, UnixNanos};
+    use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos};
     use nautilus_model::{
         enums::{OrderSide, OrderStatus, TimeInForce},
         events::{OrderDeniedReason, OrderEventAny, order::spec::OrderCanceledSpec},
@@ -640,7 +640,7 @@ mod tests {
         assert!(matches!(
             &events[0],
             OrderEventAny::Denied(event)
-                if event.reason.as_str() == expected_reason
+                if event.reason == expected_reason
                     && event.strategy_id == strategy_id
                     && event.client_order_id == order.client_order_id()
         ));
@@ -1033,7 +1033,7 @@ mod tests {
 
         for quantity in remaining {
             assert_eq!(quantity.precision, instrument.size_precision());
-            assert_eq!(quantity.raw % instrument.size_increment().raw, 0);
+            assert_eq!(quantity.raw() % instrument.size_increment().raw(), 0);
         }
 
         let first = algo
@@ -1360,7 +1360,7 @@ mod tests {
         assert_eq!(algo.clock().timer_count(), 1);
         assert_eq!(
             algo.clock().next_time_ns(primary_id.as_str()),
-            Some(resume_time + 20_000_000_000)
+            Some(resume_time + DurationNanos::from_secs(20))
         );
         assert_eq!(algo.scheduled_orders[&primary_id].remaining_sizes.len(), 3);
         assert_eq!(

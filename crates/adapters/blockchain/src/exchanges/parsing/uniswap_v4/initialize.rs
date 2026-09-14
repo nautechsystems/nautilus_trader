@@ -22,9 +22,9 @@ use crate::{
     events::pool_created::PoolCreatedEvent,
     hypersync::{
         HypersyncLog,
-        helpers::{extract_block_number, validate_event_signature_hash},
+        log::{extract_block_number, validate_event_signature_hash},
     },
-    rpc::helpers as rpc_helpers,
+    rpc::log as rpc_log,
 };
 
 const INITIALIZE_EVENT_SIGNATURE_HASH: &str =
@@ -159,12 +159,12 @@ pub fn parse_initialize_event_hypersync(log: HypersyncLog) -> anyhow::Result<Poo
 ///
 /// Returns an error if the log parsing fails or if the event data is invalid.
 pub fn parse_initialize_event_rpc(log: &RpcLog) -> anyhow::Result<PoolCreatedEvent> {
-    rpc_helpers::validate_event_signature(log, INITIALIZE_EVENT_SIGNATURE_HASH, "InitializeEvent")?;
+    rpc_log::validate_event_signature(log, INITIALIZE_EVENT_SIGNATURE_HASH, "InitializeEvent")?;
 
-    let block_number = rpc_helpers::extract_block_number(log)?;
+    let block_number = rpc_log::extract_block_number(log)?;
 
     // Pool address is the PoolManager contract (event emitter)
-    let pool_manager_bytes = rpc_helpers::decode_hex(&log.address)?;
+    let pool_manager_bytes = rpc_log::decode_hex(&log.address)?;
     let pool_manager_address = Address::from_slice(&pool_manager_bytes);
 
     // Extract currency0 and currency1 from topics
@@ -180,17 +180,17 @@ pub fn parse_initialize_event_rpc(log: &RpcLog) -> anyhow::Result<PoolCreatedEve
     }
 
     // Extract Pool ID from topics[1] - this is the unique identifier for V4 pools
-    let pool_id_bytes = rpc_helpers::decode_hex(&log.topics[1])?;
+    let pool_id_bytes = rpc_log::decode_hex(&log.topics[1])?;
     let pool_identifier = Ustr::from(&hex::encode_prefixed(pool_id_bytes));
 
-    let currency0_bytes = rpc_helpers::decode_hex(&log.topics[2])?;
+    let currency0_bytes = rpc_log::decode_hex(&log.topics[2])?;
     let currency0 = Address::from_slice(&currency0_bytes[12..32]);
 
-    let currency1_bytes = rpc_helpers::decode_hex(&log.topics[3])?;
+    let currency1_bytes = rpc_log::decode_hex(&log.topics[3])?;
     let currency1 = Address::from_slice(&currency1_bytes[12..32]);
 
     // Extract and decode event data
-    let data_bytes = rpc_helpers::extract_data_bytes(log)?;
+    let data_bytes = rpc_log::extract_data_bytes(log)?;
 
     // Validate minimum data length (5 fields × 32 bytes = 160 bytes)
     if data_bytes.len() < 160 {

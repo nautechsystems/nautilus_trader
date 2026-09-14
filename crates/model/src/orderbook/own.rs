@@ -26,7 +26,7 @@ use std::{
 
 use ahash::AHashSet;
 use indexmap::IndexMap;
-use nautilus_core::UnixNanos;
+use nautilus_core::{DurationNanos, UnixNanos};
 use rust_decimal::Decimal;
 
 use super::{BookViewError, OwnBookError, display::pprint_own_book};
@@ -619,7 +619,7 @@ fn filter_orders<'a>(
                     ts_now.is_none_or(|ts_now| {
                         order
                             .ts_accepted
-                            .checked_add(accepted_buffer_ns)
+                            .checked_add(DurationNanos::new(accepted_buffer_ns))
                             .is_some_and(|eligible_at| eligible_at.as_u64() <= ts_now)
                     })
                 })

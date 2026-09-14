@@ -574,7 +574,7 @@ fn order_type_requires_trigger_type(order_type: OrderType) -> bool {
 /// involves the supplied account.
 ///
 /// Returns `Ok(None)` if `account_index` is neither the bid nor ask account on
-/// the trade. The handler routes account-stream trades through this helper, so
+/// the trade. The handler routes account-stream trades through this parser, so
 /// crossed pairs the user is not part of (e.g. when sharing a market with
 /// other participants) are skipped silently rather than misattributed.
 ///
@@ -931,6 +931,7 @@ pub(crate) fn parse_lighter_order_event(
                 false,
                 Some(venue_order_id),
                 Some(account_id),
+                order.status.as_cancel_reason().map(Ustr::from),
             );
             Ok(Some(ParsedOrderEvent::Canceled(canceled)))
         }
@@ -1094,7 +1095,7 @@ pub fn parse_ws_position_status_report(
 /// Returns an error if `AccountBalance::from_total_and_locked` rejects
 /// the computed values.
 pub fn account_balance_from_lighter_asset(asset: &LighterAsset) -> anyhow::Result<AccountBalance> {
-    let currency = Currency::get_or_create_crypto(asset.symbol.as_str());
+    let currency = Currency::get_or_create_crypto(asset.symbol);
     let total = asset.balance + asset.margin_balance;
     let locked = asset.locked_balance;
     AccountBalance::from_total_and_locked(total, locked, currency)
@@ -1237,11 +1238,9 @@ fn nautilus_time_in_force(
 ) -> (TimeInForce, Option<UnixNanos>) {
     match tif {
         LighterOrderTimeInForce::ImmediateOrCancel => (TimeInForce::Ioc, None),
-        // Lighter has no Nautilus PostOnly TIF; Nautilus models it as Gtc + post_only flag.
-        LighterOrderTimeInForce::PostOnly => (TimeInForce::Gtc, None),
-        LighterOrderTimeInForce::GoodTillTime => {
-            // Lighter overloads `good-till-time` for both true GTD (positive
-            // expiry timestamp) and venue-default GTC (`order_expiry == -1`).
+        LighterOrderTimeInForce::PostOnly | LighterOrderTimeInForce::GoodTillTime => {
+            // Lighter uses positive expiry for GTD and nonpositive expiry for GTC;
+            // PostOnly uses the same expiry field plus an independent report flag.
             if order_expiry > 0 {
                 match parse_millis_to_nanos(order_expiry as u64) {
                     Ok(expiry) => (TimeInForce::Gtd, Some(expiry)),
@@ -2020,41 +2019,56 @@ mod tests {
         assert_eq!(report.trigger_type, Some(TriggerType::Default));
     }
 
-    // Lighter overloads `good-till-time` for both true GTD (positive expiry)
-    // and venue-default GTC (`order_expiry <= 0`). PostOnly maps to Gtc plus
-    // the post_only flag because Nautilus has no PostOnly TIF. This matrix
-    // pins each combination so silent regressions in nautilus_time_in_force
-    // surface immediately.
     #[rstest]
     #[case::ioc(
         LighterOrderTimeInForce::ImmediateOrCancel,
         0,
         TimeInForce::Ioc,
-        false,
+        None,
         false
     )]
-    #[case::post_only(LighterOrderTimeInForce::PostOnly, 0, TimeInForce::Gtc, false, true)]
-    #[case::gtt_negative_expiry(LighterOrderTimeInForce::GoodTillTime, -1, TimeInForce::Gtc, false, false)]
+    #[case::post_only_negative_expiry(
+        LighterOrderTimeInForce::PostOnly,
+        -1,
+        TimeInForce::Gtc,
+        None,
+        true
+    )]
+    #[case::post_only_zero_expiry(
+        LighterOrderTimeInForce::PostOnly,
+        0,
+        TimeInForce::Gtc,
+        None,
+        true
+    )]
+    #[case::post_only_positive_expiry(
+        LighterOrderTimeInForce::PostOnly,
+        1_780_000_000_000,
+        TimeInForce::Gtd,
+        Some(UnixNanos::from(1_780_000_000_000_000_000_u64)),
+        true
+    )]
+    #[case::gtt_negative_expiry(LighterOrderTimeInForce::GoodTillTime, -1, TimeInForce::Gtc, None, false)]
     #[case::gtt_zero_expiry(
         LighterOrderTimeInForce::GoodTillTime,
         0,
         TimeInForce::Gtc,
-        false,
+        None,
         false
     )]
     #[case::gtt_positive_expiry(
         LighterOrderTimeInForce::GoodTillTime,
         1_780_000_000_000,
         TimeInForce::Gtd,
-        true,
+        Some(UnixNanos::from(1_780_000_000_000_000_000_u64)),
         false
     )]
-    #[case::unknown(LighterOrderTimeInForce::Unknown, 0, TimeInForce::Gtc, false, false)]
+    #[case::unknown(LighterOrderTimeInForce::Unknown, 0, TimeInForce::Gtc, None, false)]
     fn test_parse_ws_order_status_report_time_in_force_matrix(
         #[case] tif: LighterOrderTimeInForce,
         #[case] order_expiry: i64,
         #[case] expected_tif: TimeInForce,
-        #[case] expects_expire_time: bool,
+        #[case] expected_expire_time: Option<UnixNanos>,
         #[case] expected_post_only: bool,
     ) {
         let instrument = create_test_instrument();
@@ -2067,8 +2081,34 @@ mod tests {
                 .unwrap();
 
         assert_eq!(report.time_in_force, expected_tif);
-        assert_eq!(report.expire_time.is_some(), expects_expire_time);
+        assert_eq!(report.expire_time, expected_expire_time);
         assert_eq!(report.post_only, expected_post_only);
+    }
+
+    #[rstest]
+    #[case::active(LighterOrderStatus::Open, OrderStatus::Accepted)]
+    #[case::terminal(LighterOrderStatus::Canceled, OrderStatus::Canceled)]
+    fn test_parse_ws_post_only_expiry_is_consistent_across_statuses(
+        #[case] status: LighterOrderStatus,
+        #[case] expected_status: OrderStatus,
+    ) {
+        let instrument = create_test_instrument();
+        let mut order = stub_order(status);
+        order.time_in_force = LighterOrderTimeInForce::PostOnly;
+        order.order_expiry = 1_780_000_000_000;
+        order.filled_base_amount = Decimal::ZERO;
+
+        let report =
+            parse_ws_order_status_report(&order, &instrument, account_id(), UnixNanos::from(1))
+                .unwrap();
+
+        assert_eq!(report.order_status, expected_status);
+        assert_eq!(report.time_in_force, TimeInForce::Gtd);
+        assert_eq!(
+            report.expire_time,
+            Some(UnixNanos::from(1_780_000_000_000_000_000_u64))
+        );
+        assert!(report.post_only);
     }
 
     #[rstest]
@@ -2965,7 +3005,7 @@ mod tests {
         match event {
             ParsedOrderEvent::Rejected(e) => {
                 assert!(e.due_post_only);
-                assert_eq!(e.reason.as_str(), "post-only");
+                assert_eq!(e.reason, "post-only");
             }
             other => panic!("expected Rejected, was {other:?}"),
         }
@@ -3000,12 +3040,13 @@ mod tests {
     }
 
     #[rstest]
-    #[case::canceled(LighterOrderStatus::Canceled)]
-    #[case::reduce_only(LighterOrderStatus::CanceledReduceOnly)]
-    #[case::self_trade(LighterOrderStatus::CanceledSelfTrade)]
-    #[case::liquidation(LighterOrderStatus::CanceledLiquidation)]
+    #[case::canceled(LighterOrderStatus::Canceled, None)]
+    #[case::reduce_only(LighterOrderStatus::CanceledReduceOnly, Some("reduce-only"))]
+    #[case::self_trade(LighterOrderStatus::CanceledSelfTrade, Some("self-trade"))]
+    #[case::liquidation(LighterOrderStatus::CanceledLiquidation, Some("liquidation"))]
     fn parse_lighter_order_event_emits_canceled_for_other_cancel_variants(
         #[case] status: LighterOrderStatus,
+        #[case] expected_reason: Option<&str>,
     ) {
         let instrument = create_test_instrument();
         let order = stub_order(status);
@@ -3028,7 +3069,12 @@ mod tests {
         .expect("cancel variant emits Canceled");
 
         match event {
-            ParsedOrderEvent::Canceled(_) => {}
+            ParsedOrderEvent::Canceled(canceled) => {
+                assert_eq!(
+                    canceled.reason.map(|reason| reason.as_str()),
+                    expected_reason
+                );
+            }
             other => panic!("expected Canceled, was {other:?}"),
         }
     }

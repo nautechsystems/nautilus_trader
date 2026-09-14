@@ -44,7 +44,7 @@ use std::{fmt::Display, str::FromStr};
 
 use enum_dispatch::enum_dispatch;
 use nautilus_core::{
-    UnixNanos,
+    Params, UnixNanos,
     correctness::{
         CorrectnessError, CorrectnessResult, check_equal_u8, check_positive_decimal,
         check_predicate_true,
@@ -85,7 +85,7 @@ use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol, Venue},
     types::{
-        Currency, ERROR_PRICE, Money, PRICE_ERROR, Price, Quantity,
+        Currency, ERROR_PRICE, Money, Price, Quantity,
         fixed::{FIXED_PRECISION, raw_scales_match},
         money::check_positive_money,
         price::{PriceRaw, check_positive_price},
@@ -172,7 +172,7 @@ pub fn validate_instrument_common(
     }
 
     if let (Some(min), Some(max)) = (min_price, max_price) {
-        check_predicate_true(min.raw <= max.raw, "min_price exceeds max_price")?;
+        check_predicate_true(min <= max, "min_price exceeds max_price")?;
     }
 
     Ok(())
@@ -299,6 +299,9 @@ pub trait Instrument: 'static + Send {
         dec!(0)
     }
 
+    /// Returns additional instrument metadata, when provided.
+    fn info(&self) -> Option<&Params>;
+
     fn ts_event(&self) -> UnixNanos;
     fn ts_init(&self) -> UnixNanos;
 
@@ -363,7 +366,7 @@ pub trait Instrument: 'static + Send {
             });
         }
 
-        if price.raw == PRICE_ERROR {
+        if price.is_error() {
             return Err(CorrectnessError::InvalidValue {
                 param: "price".to_string(),
                 value: "PRICE_ERROR".to_string(),
@@ -403,7 +406,7 @@ pub trait Instrument: 'static + Send {
         let precision_diff = FIXED_PRECISION.saturating_sub(precision);
         let scale = PriceRaw::pow(10, u32::from(precision_diff));
 
-        if price.raw % scale != 0 {
+        if price.raw() % scale != 0 {
             return Err(CorrectnessError::PredicateViolation {
                 message: format!(
                     "`price` requires rounding to instrument price precision {precision}, was {price}"
@@ -411,8 +414,8 @@ pub trait Instrument: 'static + Send {
             });
         }
 
-        let increment_raw = increment.raw.abs();
-        if increment_raw != 0 && price.raw % increment_raw != 0 {
+        let increment_raw = increment.raw().abs();
+        if increment_raw != 0 && price.raw() % increment_raw != 0 {
             return Err(CorrectnessError::PredicateViolation {
                 message: format!(
                     "`price` is not aligned to price increment {increment}, was {price}"
@@ -420,7 +423,7 @@ pub trait Instrument: 'static + Send {
             });
         }
 
-        Price::from_raw_checked(price.raw, precision)
+        Price::from_raw_checked(price.raw(), precision)
     }
 
     /// # Errors
@@ -512,7 +515,7 @@ pub trait Instrument: 'static + Send {
         let precision_diff = FIXED_PRECISION.saturating_sub(precision);
         let scale = QuantityRaw::pow(10, u32::from(precision_diff));
 
-        if !quantity.raw.is_multiple_of(scale) {
+        if !quantity.raw().is_multiple_of(scale) {
             return Err(CorrectnessError::PredicateViolation {
                 message: format!(
                     "`quantity` requires rounding to instrument size precision {precision}, was {quantity}"
@@ -520,7 +523,7 @@ pub trait Instrument: 'static + Send {
             });
         }
 
-        if increment.raw != 0 && !quantity.raw.is_multiple_of(increment.raw) {
+        if increment.non_zero() && !quantity.raw().is_multiple_of(increment.raw()) {
             return Err(CorrectnessError::PredicateViolation {
                 message: format!(
                     "`quantity` is not aligned to size increment {increment}, was {quantity}"
@@ -528,7 +531,7 @@ pub trait Instrument: 'static + Send {
             });
         }
 
-        Quantity::from_raw_checked(quantity.raw, precision)
+        Quantity::from_raw_checked(quantity.raw(), precision)
     }
 
     /// # Errors
@@ -893,7 +896,7 @@ mod tests {
     ) {
         let normalized = currency_pair_btcusdt.try_normalize_price(input).unwrap();
 
-        assert_eq!(normalized.raw, input.raw);
+        assert_eq!(normalized.raw(), input.raw());
         assert_eq!(
             normalized.precision,
             currency_pair_btcusdt.price_precision()
@@ -995,7 +998,7 @@ mod tests {
     ) {
         let normalized = currency_pair_btcusdt.try_normalize_qty(input).unwrap();
 
-        assert_eq!(normalized.raw, input.raw);
+        assert_eq!(normalized.raw(), input.raw());
         assert_eq!(normalized.precision, currency_pair_btcusdt.size_precision());
         assert_eq!(normalized, Quantity::from(expected));
     }

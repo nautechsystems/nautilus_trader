@@ -23,8 +23,8 @@ use nautilus_model::{
         TrailingOffsetType,
     },
     events::{
-        OrderAccepted, OrderEventAny, OrderFilled, OrderPendingCancel, OrderPendingUpdate,
-        OrderSubmitted,
+        OrderAccepted, OrderEvent, OrderEventAny, OrderFilled, OrderPendingCancel,
+        OrderPendingUpdate, OrderSubmitted,
         order::spec::{
             OrderAcceptedSpec, OrderFilledSpec, OrderPendingCancelSpec, OrderPendingUpdateSpec,
             OrderSubmittedSpec, OrderUpdatedSpec,
@@ -1518,6 +1518,38 @@ fn test_external_order_status_event_generation(
 }
 
 #[rstest]
+fn test_external_canceled_order_preserves_cancel_reason() {
+    let instrument = crypto_perpetual_ethusdt();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.0"))
+        .price(Price::from("100.00"))
+        .build();
+    let mut report = make_test_report(
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Canceled,
+        "0",
+        false,
+    );
+    report.cancel_reason = Some("not-enough-liquidity".to_string());
+
+    let events = generate_external_order_status_events(
+        &order,
+        &report,
+        &AccountId::from("TEST-001"),
+        &InstrumentAny::CryptoPerpetual(instrument),
+        UnixNanos::from(2_000_000),
+    );
+
+    let OrderEventAny::Canceled(canceled) = events.last().unwrap() else {
+        panic!("Expected Canceled event");
+    };
+    assert_eq!(canceled.reason(), Some("not-enough-liquidity".into()));
+}
+
+#[rstest]
 fn test_external_voided_order_projects_fill_before_terminal_remainder() {
     let instrument = crypto_perpetual_ethusdt();
     let order = OrderTestBuilder::new(OrderType::Limit)
@@ -2358,7 +2390,7 @@ fn test_incremental_fill_price_keeps_negative_back_solve_when_instrument_allows_
 
 #[rstest]
 fn test_synthetic_partial_window_reports_clamp_out_of_range_price() {
-    // Partial-window reconciliation can synthesise an opening fill whose price is
+    // Partial-window reconciliation can synthesize an opening fill whose price is
     // value/dust-qty (30.41 observed live). The synthetic order and fill reports
     // must be capped at the instrument's max price.
     let instrument = bounded_binary_option();
@@ -3124,7 +3156,7 @@ fn test_reconcile_order_report_generates_canceled(instrument: InstrumentAny) {
     );
     order.apply(OrderEventAny::Accepted(accepted)).unwrap();
 
-    let report = create_test_order_status_report(
+    let mut report = create_test_order_status_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -3133,10 +3165,13 @@ fn test_reconcile_order_report_generates_canceled(instrument: InstrumentAny) {
         Quantity::from(100),
         Quantity::from(0),
     );
+    report.cancel_reason = Some("not-enough-liquidity".to_string());
 
     let result = reconcile_order_report(&order, &report, Some(&instrument), UnixNanos::default());
-    assert!(result.is_some());
-    assert!(matches!(result.unwrap(), OrderEventAny::Canceled(_)));
+    let OrderEventAny::Canceled(canceled) = result.unwrap() else {
+        panic!("Expected Canceled event");
+    };
+    assert_eq!(canceled.reason(), Some("not-enough-liquidity".into()));
 }
 
 #[rstest]
@@ -3723,7 +3758,7 @@ fn test_reconcile_order_report_generates_rejected(instrument: InstrumentAny) {
     let result = reconcile_order_report(&order, &report, Some(&instrument), UnixNanos::default());
     assert!(result.is_some());
     if let OrderEventAny::Rejected(rejected) = result.unwrap() {
-        assert_eq!(rejected.reason.as_str(), "INSUFFICIENT_MARGIN");
+        assert_eq!(rejected.reason, "INSUFFICIENT_MARGIN");
         assert!(rejected.reconciliation);
     } else {
         panic!("Expected Rejected event");
@@ -3871,7 +3906,7 @@ fn test_create_reconciliation_rejected_with_reason() {
         create_reconciliation_rejected(&order, Some("MARGIN_CALL"), UnixNanos::from(1_000));
     assert!(result.is_some());
     if let OrderEventAny::Rejected(rejected) = result.unwrap() {
-        assert_eq!(rejected.reason.as_str(), "MARGIN_CALL");
+        assert_eq!(rejected.reason, "MARGIN_CALL");
         assert!(rejected.reconciliation);
         assert!(!rejected.due_post_only);
     } else {
@@ -3907,7 +3942,7 @@ fn test_create_reconciliation_rejected_due_post_only() {
     let result = create_reconciliation_rejected(&order, Some("post-only"), UnixNanos::from(1_000));
     assert!(result.is_some());
     if let OrderEventAny::Rejected(rejected) = result.unwrap() {
-        assert_eq!(rejected.reason.as_str(), "post-only");
+        assert_eq!(rejected.reason, "post-only");
         assert!(rejected.reconciliation);
         assert!(rejected.due_post_only);
     } else {
@@ -3943,7 +3978,7 @@ fn test_create_reconciliation_rejected_without_reason() {
     let result = create_reconciliation_rejected(&order, None, UnixNanos::from(1_000));
     assert!(result.is_some());
     if let OrderEventAny::Rejected(rejected) = result.unwrap() {
-        assert_eq!(rejected.reason.as_str(), "UNKNOWN");
+        assert_eq!(rejected.reason, "UNKNOWN");
     } else {
         panic!("Expected Rejected event");
     }
@@ -7106,4 +7141,80 @@ fn test_incremental_inferred_fill_price_and_liquidity_matches_emitted_fill() {
     assert_eq!(last_px, Price::from("33.33"));
     assert_eq!(filled.last_px, last_px);
     assert_eq!(filled.liquidity_side, liquidity_side);
+}
+
+#[rstest]
+fn test_reconcile_fill_report_rejects_zero_quantity(instrument: InstrumentAny) {
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("100"))
+        .build();
+    let report = create_test_fill_report(
+        instrument.id(),
+        VenueOrderId::from("V-ZERO"),
+        TradeId::from("T-ZERO"),
+        Quantity::zero(0),
+        Price::from("1.00000"),
+    );
+
+    let event = reconcile_fill_report(
+        &order,
+        &report,
+        &instrument,
+        UnixNanos::from(2_000_000),
+        false,
+    );
+
+    assert_eq!(event, None);
+}
+
+#[rstest]
+#[case::without_position(false)]
+#[case::with_position(true)]
+fn test_process_mass_status_rejects_zero_quantity(
+    instrument: InstrumentAny,
+    #[case] with_position: bool,
+) {
+    let account_id = AccountId::from("TEST-001");
+    let venue_order_id = VenueOrderId::from("V-ZERO");
+    let mut valid = create_test_fill_report(
+        instrument.id(),
+        venue_order_id,
+        TradeId::from("T-ZERO"),
+        Quantity::from("50"),
+        Price::from("1.00000"),
+    );
+    valid.account_id = account_id;
+    let mut zero = valid.clone();
+    zero.last_qty = Quantity::zero(0);
+    zero.commission = Money::from("123.45 USD");
+
+    let mut mass_status = ExecutionMassStatus::new(
+        ClientId::from("TEST"),
+        account_id,
+        instrument.id().venue,
+        UnixNanos::default(),
+        None,
+    );
+    mass_status.add_fill_reports(vec![zero, valid.clone()]);
+    if with_position {
+        mass_status.add_position_reports(vec![PositionStatusReport::new(
+            account_id,
+            instrument.id(),
+            PositionSide::Long,
+            Quantity::from("50"),
+            UnixNanos::from(2_000_000),
+            UnixNanos::from(2_000_000),
+            None,
+            None,
+            Some(dec!(1)),
+        )]);
+    }
+
+    let result = process_mass_status_for_reconciliation(&mass_status, &instrument, None).unwrap();
+
+    assert!(result.orders.is_empty());
+    assert_eq!(result.fills.len(), 1);
+    assert_eq!(result.fills[&venue_order_id], vec![valid]);
 }

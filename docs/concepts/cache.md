@@ -14,7 +14,7 @@ The cache:
 ## How caching works
 
 The engines add built-in data to the `Cache` as events flow through the system. Live adapters feed
-events to the engine asynchronously, so the cache changes when the engine processes an event, not
+events to the engine asynchronously, so the cache changes **when the engine processes an event**, not
 when the adapter first receives it.
 
 For quotes, trades, and bars, the `DataEngine` attempts to write to the `Cache` before publishing to
@@ -88,8 +88,9 @@ node_config = LiveNodeConfig(
 
 :::tip
 By default, the `Cache` keeps up to 10,000 values in each per-instrument tick sequence and 10,000
-bars for each bar type. These are separate limits, not combined totals. Increase them when a
-strategy needs a longer in-memory lookback and the additional memory use is acceptable.
+bars for each bar type. These are separate limits, not combined totals. Set each capacity to a value
+in `[1, 1_000_000]`. Increase them when a strategy needs a longer in-memory lookback and the
+additional memory use is acceptable.
 :::
 
 ### Configuration options
@@ -124,8 +125,12 @@ When `bar_capacity` is reached, the `Cache` automatically removes the oldest dat
 ### Database configuration
 
 Configure a database backing to recover successfully persisted, supported cache records after a
-restart. Restorable records include general data, currencies, instruments, accounts, orders, and
-positions. Startup does not restore bounded market-data histories or the running process.
+restart. Restorable records include general data, currencies, instruments, instrument closes,
+accounts, orders, and positions. Startup does not restore bounded market-data histories or the
+running process.
+
+Instrument closes persist whenever a backing database is configured. `save_market_data` does not
+gate them because they are recovery snapshots rather than bounded market-data history.
 
 `CacheConfig` controls cache behavior. Connection settings belong to the concrete backing config,
 such as `RedisCacheConfig` or `PostgresCacheConfig`.
@@ -176,9 +181,11 @@ node.set_cache_database(cache_database)?;
 node.run().await?;
 ```
 
+:::warning
 With the default `LiveExecutionEngineConfig.load_cache = true`, the node restores persisted cache state
 and rebuilds derived indexes before connecting clients or reconciling execution state. Setting
 `CacheConfig.flush_on_start = true` clears the backing instead.
+:::
 
 Python passes the same database config to `LiveNodeBuilder.with_cache_database_factory`. The node
 constructs and owns the adapter when it starts, so the connection opens only when the node runs:
@@ -215,7 +222,7 @@ buffer when `CacheConfig.buffer_interval_ms` is set. Returning straight from `ru
 ### Accessing market data
 
 The `Cache` provides access to order books, quotes, trades, bars, and other market data. Bounded
-market-data sequences use reverse indexing, so the most recent entry sits at index 0.
+market-data sequences use reverse indexing, so the **most recent entry sits at index 0**.
 
 #### Bar access
 
@@ -514,12 +521,11 @@ Use these to drop a single entity. Each refuses to purge while the entity is sti
   Skips open orders.
 - `cache.purge_position(position_id)`: removes the position, its snapshots, and position-keyed
   index entries. Skips open positions.
-- `cache.purge_instrument(instrument_id)`: removes the instrument and every per-instrument
-  map (order book, quotes, trades, mark/index/funding prices, instrument status, greeks,
-  and bars referencing the instrument). Skips while any associated order is non-terminal
-  (anything that has not reached a closed state, including initialized, submitted,
-  accepted, emulated, released, and inflight orders) or any associated position is
-  non-closed.
+- `cache.purge_instrument(instrument_id)`: removes the instrument and its transient per-instrument
+  maps (order book, quotes, trades, mark/index/funding prices, instrument status and close, greeks,
+  and bars referencing the instrument). Skips while any associated order is non-terminal (anything
+  that has not reached a closed state, including initialized, submitted, accepted, emulated,
+  released, and inflight orders) or any associated position is non-closed.
 
 :::warning
 `purge_instrument` is intended for actors and strategies with their own lifecycle logic

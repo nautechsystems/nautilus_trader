@@ -16,7 +16,7 @@
 //! Market data WebSocket client for Ax.
 
 use std::{
-    fmt::Debug,
+    fmt::{Debug, Display},
     num::NonZeroU32,
     sync::{
         Arc,
@@ -27,7 +27,7 @@ use std::{
 
 use ahash::AHashSet;
 use arc_swap::ArcSwap;
-use nautilus_core::{AtomicMap, consts::NAUTILUS_USER_AGENT};
+use nautilus_core::{AtomicMap, consts::NAUTILUS_USER_AGENT, string::secret::SecretString};
 use nautilus_live::{
     SocketControl,
     task::{SharedTaskSlot, TaskJoinOutcome},
@@ -68,7 +68,7 @@ pub enum AxWsClientError {
     ChannelError(String),
 }
 
-impl core::fmt::Display for AxWsClientError {
+impl Display for AxWsClientError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Transport(msg) => write!(f, "Transport error: {msg}"),
@@ -134,7 +134,7 @@ impl SymbolDataTypes {
 pub struct AxMdWebSocketClient {
     url: String,
     heartbeat: Option<u64>,
-    auth_token: Arc<Mutex<Option<String>>>,
+    auth_token: Arc<Mutex<Option<SecretString>>>,
     reconnect_headers: Arc<Mutex<Option<ReconnectHeaders>>>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
@@ -149,7 +149,7 @@ pub struct AxMdWebSocketClient {
     symbol_data_types: Arc<AtomicMap<String, SymbolDataTypes>>,
     status_invalidations: Arc<Mutex<AHashSet<Ustr>>>,
     transport_backend: TransportBackend,
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
     socket_control: Option<SocketControl>,
 }
 
@@ -206,7 +206,7 @@ impl AxMdWebSocketClient {
     #[must_use]
     pub fn new(
         url: String,
-        auth_token: String,
+        auth_token: impl Into<SecretString>,
         heartbeat: u64,
         transport_backend: TransportBackend,
         proxy_url: Option<String>,
@@ -219,7 +219,7 @@ impl AxMdWebSocketClient {
         Self {
             url,
             heartbeat: Some(heartbeat),
-            auth_token: Arc::new(Mutex::new(Some(auth_token))),
+            auth_token: Arc::new(Mutex::new(Some(auth_token.into()))),
             reconnect_headers: Arc::new(Mutex::new(None)),
             connection_mode,
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
@@ -234,7 +234,7 @@ impl AxMdWebSocketClient {
             symbol_data_types: Arc::new(AtomicMap::new()),
             status_invalidations: Arc::new(Mutex::new(AHashSet::new())),
             transport_backend,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             socket_control: None,
         }
     }
@@ -272,7 +272,7 @@ impl AxMdWebSocketClient {
             symbol_data_types: Arc::new(AtomicMap::new()),
             status_invalidations: Arc::new(Mutex::new(AHashSet::new())),
             transport_backend,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             socket_control: None,
         }
     }
@@ -293,8 +293,8 @@ impl AxMdWebSocketClient {
     /// Sets the authentication token for subsequent connections.
     ///
     /// This should be called before `connect()` if authentication is required.
-    pub fn set_auth_token(&self, token: String) {
-        *self.auth_token.lock() = Some(token);
+    pub fn set_auth_token(&self, token: impl Into<SecretString>) {
+        *self.auth_token.lock() = Some(token.into());
     }
 
     /// Updates the token used by future automatic reconnect attempts.
@@ -304,8 +304,8 @@ impl AxMdWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the reconnect header cannot be updated.
-    pub fn update_auth_token(&self, token: String) -> AxWsResult<()> {
-        let value = format!("Bearer {token}");
+    pub fn update_auth_token(&self, token: SecretString) -> AxWsResult<()> {
+        let value = format!("Bearer {}", token.expose_secret());
 
         if let Some(headers) = self.reconnect_headers.lock().as_ref() {
             headers
@@ -415,7 +415,10 @@ impl AxMdWebSocketClient {
         let auth_token = self.auth_token.lock().clone();
 
         if let Some(token) = auth_token {
-            headers.push(("Authorization".to_string(), format!("Bearer {token}")));
+            headers.push((
+                "Authorization".to_string(),
+                format!("Bearer {}", token.expose_secret()),
+            ));
         }
 
         let config = WebSocketConfig {
@@ -432,7 +435,10 @@ impl AxMdWebSocketClient {
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|url| url.expose_secret().to_owned()),
         };
 
         let client = WebSocketClient::builder()
@@ -1105,6 +1111,25 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_auth_token_uses_secret_string_owner() {
+        let client = AxMdWebSocketClient::new(
+            "ws://localhost:9999/md/ws".to_string(),
+            "initial-token".to_string(),
+            30,
+            TransportBackend::default(),
+            None,
+        );
+
+        client.set_auth_token("replacement-token".to_string());
+
+        let token = client.auth_token.lock();
+        assert_eq!(
+            token.as_ref().map(SecretString::expose_secret),
+            Some("replacement-token")
+        );
+    }
 
     #[tokio::test]
     async fn test_drop_aborts_handler_task() {

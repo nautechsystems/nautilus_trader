@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Enforces deterministic simulation testing (DST) path bans in the in-scope crates.
 #
-# Rules (all applied to production code in the 17 in-scope crates):
+# Rules (production paths are selected separately for each rule):
 #   1. No direct std::time::Instant::now(), std::time::SystemTime::now(),
 #      jiff::Timestamp::now(), or jiff::Zoned::now() reads
 #   2. No raw RNG entries (rand::thread_rng, rand::rng(), fastrand::,
@@ -42,6 +42,19 @@ IN_SCOPE_CRATES=(
   "risk" "serialization" "system" "trading"
 )
 
+# Audited OKX DST-path production files. Static coverage alone does not
+# establish runtime eligibility for every capability those files serve.
+ADAPTER_PATHS=(
+  "crates/adapters/okx/src/book_sync.rs"
+  "crates/adapters/okx/src/common/task.rs"
+  "crates/adapters/okx/src/data.rs"
+  "crates/adapters/okx/src/execution.rs"
+  "crates/adapters/okx/src/http/client.rs"
+  "crates/adapters/okx/src/websocket/client.rs"
+  "crates/adapters/okx/src/websocket/dispatch.rs"
+  "crates/adapters/okx/src/websocket/handler.rs"
+)
+
 # Rule-1 L-dispositioned sites from the codebase audit: log timing, progress
 # reporting, and audit-only uses that do not affect DST-path state.
 # Logging files appear here because timestamp generation for log records is
@@ -58,6 +71,31 @@ GLOBS=()
 for c in "${IN_SCOPE_CRATES[@]}"; do
   GLOBS+=(--glob "crates/$c/src/**/*.rs")
 done
+for path in "${ADAPTER_PATHS[@]}"; do
+  GLOBS+=(--glob "$path")
+done
+
+NL='
+'
+
+# Per-file import facts resolve in one ripgrep pass each; scanning at the call
+# sites instead cost one ripgrep process per candidate line. Sets are plain
+# strings rather than associative arrays because macOS ships bash 3, padded
+# with newlines on both sides so a membership test anchors to a whole path.
+# The padding is applied at the call site because command substitution strips
+# trailing newlines.
+scan_matching_files() {
+  rg -lU "$1" "${GLOBS[@]}" --type rust crates 2> /dev/null || true
+}
+
+FILES_IMPORTING_STD_INSTANT="$NL$(scan_matching_files \
+  'use\s+std::[^;]*\btime::(Instant\b|\{[^}]*\bInstant\b)')$NL"
+FILES_IMPORTING_STD_SYSTEM_TIME="$NL$(scan_matching_files \
+  'use\s+std::[^;]*\btime::(SystemTime\b|\{[^}]*\bSystemTime\b)')$NL"
+FILES_IMPORTING_JIFF_TIMESTAMP="$NL$(scan_matching_files \
+  'use\s+jiff::(Timestamp\b|\{[^}]*\bTimestamp\b)')$NL"
+FILES_IMPORTING_JIFF_ZONED="$NL$(scan_matching_files \
+  'use\s+jiff::(Zoned\b|\{[^}]*\bZoned\b)')$NL"
 
 # Normalize Windows backslash paths to POSIX so path matching works under
 # Git Bash / MSYS2. Callers must pass results through this before matching.
@@ -91,16 +129,26 @@ is_doc_comment() {
 # Return 0 if the given line number falls after an inline `#[cfg(test)]`
 # attribute in the same file. Inline test modules live at the bottom of many
 # Rust source files; violations beyond that boundary are test-only.
+#
+# Matches arrive grouped by file, so the last scan is cached. A precomputed
+# repo-wide map is not the answer here: bash pattern matching over a string
+# that large is quadratic whenever a lookup misses.
+CFG_TEST_SCANNED_FILE=""
+CFG_TEST_FIRST_LINE=""
+
 is_in_test_module() {
   local file="$1"
   local line_num="$2"
 
-  local cfg_test_line
-  cfg_test_line=$(rg -n '^\s*#\[cfg\(test\)\]' "$file" 2> /dev/null |
-    head -1 | cut -d: -f1)
+  if [[ "$file" != "$CFG_TEST_SCANNED_FILE" ]]; then
+    local first_hit
+    first_hit=$(rg -n -m1 '^\s*#\[cfg\(test\)\]' "$file" 2> /dev/null || true)
+    CFG_TEST_SCANNED_FILE="$file"
+    CFG_TEST_FIRST_LINE="${first_hit%%:*}"
+  fi
 
-  [[ -z "$cfg_test_line" ]] && return 1
-  [[ "$line_num" -ge "$cfg_test_line" ]] && return 0
+  [[ -z "$CFG_TEST_FIRST_LINE" ]] && return 1
+  [[ "$line_num" -ge "$CFG_TEST_FIRST_LINE" ]] && return 0
   return 1
 }
 
@@ -126,13 +174,11 @@ is_in_rule1_allowlist() {
 # The multi-line flag (-U) handles use statements that wrap onto multiple
 # lines, which several in-scope crates do.
 file_imports_std_instant() {
-  rg -qU 'use\s+std::[^;]*\btime::(Instant\b|\{[^}]*\bInstant\b)' \
-    "$1" 2> /dev/null
+  [[ "$FILES_IMPORTING_STD_INSTANT" == *"$NL$1$NL"* ]]
 }
 
 file_imports_std_system_time() {
-  rg -qU 'use\s+std::[^;]*\btime::(SystemTime\b|\{[^}]*\bSystemTime\b)' \
-    "$1" 2> /dev/null
+  [[ "$FILES_IMPORTING_STD_SYSTEM_TIME" == *"$NL$1$NL"* ]]
 }
 
 # Detect whether a file imports `Timestamp` from Jiff so bare
@@ -142,13 +188,11 @@ file_imports_std_system_time() {
 #   - `use jiff::{..., Timestamp, ...};`
 #   - `use jiff::Timestamp as _;`
 file_imports_jiff_timestamp() {
-  rg -qU 'use\s+jiff::(Timestamp\b|\{[^}]*\bTimestamp\b)' \
-    "$1" 2> /dev/null
+  [[ "$FILES_IMPORTING_JIFF_TIMESTAMP" == *"$NL$1$NL"* ]]
 }
 
 file_imports_jiff_zoned() {
-  rg -qU 'use\s+jiff::(Zoned\b|\{[^}]*\bZoned\b)' \
-    "$1" 2> /dev/null
+  [[ "$FILES_IMPORTING_JIFF_ZONED" == *"$NL$1$NL"* ]]
 }
 
 # Extract aliases such as `use jiff::{Timestamp as Ts, Zoned as Z};` so renamed
@@ -270,14 +314,16 @@ done < <(rg -n --no-heading \
   "${GLOBS[@]}" --type rust crates 2> /dev/null || true)
 
 # Renamed Timestamp/Zoned imports must not bypass the bare-call checks above.
+# ripgrep omits the path when it searches one explicit file
 while IFS= read -r file; do
   while IFS= read -r alias; do
     [[ -z "$alias" ]] && continue
-    while IFS=: read -r hit_file line_num content; do
-      check_rule1_hit "$hit_file" "$line_num" "$content"
+    while IFS=: read -r line_num content; do
+      check_rule1_hit "$file" "$line_num" "$content"
     done < <(rg -n --no-heading "\\b${alias}::now\\(\\)" "$file" 2> /dev/null || true)
   done < <(jiff_clock_aliases "$file")
-done < <(rg --files "${GLOBS[@]}" --type rust crates 2> /dev/null || true)
+done < <(rg -lU 'use\s+jiff::[^;]*\b(Timestamp|Zoned)[[:space:]]+as[[:space:]]' \
+  "${GLOBS[@]}" --type rust crates 2> /dev/null || true)
 
 ################################################################################
 # Rule 2: raw RNG imports
@@ -367,12 +413,13 @@ for rule5_file in "${RULE5_FILES[@]}"; do
     continue
   fi
 
-  while IFS=: read -r file line_num content; do
-    [[ -z "$file" ]] && continue
+  # ripgrep omits the path when it searches one explicit file
+  while IFS=: read -r line_num content; do
+    [[ -z "$line_num" ]] && continue
     is_doc_comment "$content" && continue
     [[ "$content" =~ $ALLOW_MARKER ]] && continue
 
-    report "rule5" "$file" "$line_num" "$content" \
+    report "rule5" "$rule5_file" "$line_num" "$content" \
       "Use IndexMap / IndexSet for deterministic iteration order"
   done < <(rg -n --no-heading '\bAHash(Map|Set)\b' "$rule5_file" 2> /dev/null || true)
 done
@@ -458,15 +505,17 @@ done < <(rg -n --no-heading \
 
 echo "Checking raw Tokio facade bypasses..."
 
-# Only these crates participate in the madsim build path that imports
-# `nautilus_common::live::dst`. Network and persistence own separate runtime
-# and transport seams, so the four-module facade does not apply to them.
+# These crates use the common madsim facade. Selected adapter paths and the
+# network WebSocket client use their corresponding facades and join this scan below.
 RULE7_CRATES=(
   "common" "core" "data" "execution" "live" "portfolio" "risk" "system" "trading"
 )
 RULE7_GLOBS=()
 for c in "${RULE7_CRATES[@]}"; do
   RULE7_GLOBS+=(--glob "crates/$c/src/**/*.rs")
+done
+for path in "${ADAPTER_PATHS[@]}" "crates/network/src/websocket/client.rs"; do
+  RULE7_GLOBS+=(--glob "$path")
 done
 
 # The facade and the process-wide real Tokio runtime define the seam and are
@@ -540,22 +589,20 @@ done < <(rg -n --no-heading \
   'tokio::(time|task|runtime|signal)::|\btokio::spawn\s*\(' \
   "${RULE7_GLOBS[@]}" --type rust crates 2> /dev/null || true)
 
-for c in "${RULE7_CRATES[@]}"; do
-  while IFS= read -r file; do
-    while IFS=: read -r line_num content; do
-      [[ -z "$line_num" ]] && continue
-      is_test_path "$file" && continue
-      is_in_test_module "$file" "$line_num" && continue
-      [[ "$content" =~ $ALLOW_MARKER ]] && continue
-      is_in_rule7_allowlist "$file" && continue
+while IFS= read -r file; do
+  while IFS=: read -r line_num content; do
+    [[ -z "$line_num" ]] && continue
+    is_test_path "$file" && continue
+    is_in_test_module "$file" "$line_num" && continue
+    [[ "$content" =~ $ALLOW_MARKER ]] && continue
+    is_in_rule7_allowlist "$file" && continue
 
-      has_preceding_dst_cfg "$file" "$line_num" && continue
+    has_preceding_dst_cfg "$file" "$line_num" && continue
 
-      report "rule7" "$file" "$line_num" "$content" \
-        "Import time, task, runtime, and signal through nautilus_common::live::dst or cfg-gate the site"
-    done < <(find_raw_tokio_facade_imports "$file")
-  done < <(rg --files --type rust "crates/$c/src")
-done
+    report "rule7" "$file" "$line_num" "$content" \
+      "Import time, task, runtime, and signal through nautilus_common::live::dst or cfg-gate the site"
+  done < <(find_raw_tokio_facade_imports "$file")
+done < <(rg --files "${RULE7_GLOBS[@]}" --type rust crates)
 
 ################################################################################
 # Summary

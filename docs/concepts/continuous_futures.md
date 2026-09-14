@@ -1,6 +1,6 @@
 # Continuous Futures
 
-A continuous future is a derived series that splices consecutive futures contracts into one
+A **continuous future** is a derived series that splices consecutive futures contracts into one
 adjusted price stream. Each underlying contract expires, so the continuous series rolls to the
 next contract at a transition point. Each segment is adjusted into a common price frame so contract
 changes do not introduce artificial price jumps.
@@ -193,9 +193,11 @@ sequenceDiagram
     Engine->>User: completion response
 ```
 
+:::info
 Adjusted bars are written to the cache as each child response is processed. The completion response
 signals that the request has finished and reports the source record count; it does not contain a
 combined vector of adjusted bars.
+:::
 
 ### Chain aggregators
 

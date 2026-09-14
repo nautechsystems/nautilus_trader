@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! URL helpers and endpoint metadata for OKX services.
+//! URL resolution and endpoint metadata for OKX services.
 
 use crate::common::enums::{OKXEnvironment, OKXRegion};
 

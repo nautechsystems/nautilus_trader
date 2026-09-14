@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A rate limiter implementation heavily inspired by [governor](https://github.com/antifuchs/governor).
+//! A rate limiter implementation heavily inspired by [governor](https://github.com/boinkor-net/governor).
 //!
-//! The governor does not support different quota for different key. It is an open [issue](https://github.com/antifuchs/governor/issues/193).
+//! The governor does not support different quota for different key. It is an open [issue](https://github.com/boinkor-net/governor/issues/193).
 pub mod clock;
 pub mod quota;
 

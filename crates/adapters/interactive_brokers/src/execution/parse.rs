@@ -439,7 +439,7 @@ fn localize_with_zone(dt: DateTime, tz_str: &str, time_str: &str) -> anyhow::Res
 
     let zone = get_timezone(tz_name).map_err(|_| {
         anyhow::anyhow!(
-            "Unrecognised execution timezone '{tz_str}' in '{time_str}'. Configure TWS / IB Gateway to emit a standard timezone (e.g. UTC)"
+            "Unrecognized execution timezone '{tz_str}' in '{time_str}'. Configure TWS / IB Gateway to emit a standard timezone (e.g. UTC)"
         )
     })?;
     let ambiguous = zone.to_ambiguous_timestamp(dt);
@@ -568,7 +568,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_execution_time_with_unrecognised_timezone_errors() {
+    fn test_parse_execution_time_with_unrecognized_timezone_errors() {
         let time_str = "20230223 00:43:36 Mars/Olympus";
         let result = parse_execution_time(time_str);
         assert!(result.is_err());

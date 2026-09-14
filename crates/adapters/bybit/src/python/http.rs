@@ -15,17 +15,12 @@
 
 //! Python bindings for the Bybit HTTP client.
 
-use std::collections::HashSet;
-
 use jiff::Timestamp;
-use nautilus_core::{
-    UnixNanos,
-    python::{to_pyruntime_err, to_pyvalue_err},
-};
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
-    data::{BarType, forward::ForwardPrice},
+    data::BarType,
     enums::{OrderSide, OrderType, TimeInForce},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     types::{Price, Quantity},
 };
@@ -42,7 +37,7 @@ use crate::{
             BybitMarginMode, BybitOpenOnly, BybitOrderFilter, BybitPositionIdx, BybitPositionMode,
             BybitProductType,
         },
-        parse::{extract_raw_symbol, parse_bbo_level, parse_bbo_side_type},
+        parse::{parse_bbo_level, parse_bbo_side_type, parse_smp_type},
     },
     http::{
         client::{BybitHttpClient, BybitRawHttpClient},
@@ -680,6 +675,7 @@ impl BybitHttpClient {
         position_idx = None,
         bbo_side_type = None,
         bbo_level = None,
+        smp_type = None,
         native_tp_sl = None,
     ))]
     #[expect(clippy::too_many_arguments)]
@@ -703,6 +699,7 @@ impl BybitHttpClient {
         position_idx: Option<BybitPositionIdx>,
         bbo_side_type: Option<String>,
         bbo_level: Option<String>,
+        smp_type: Option<String>,
         native_tp_sl: Option<BybitNativeTpSlParams>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -719,6 +716,11 @@ impl BybitHttpClient {
                 "'bbo_side_type' and 'bbo_level' must be provided together"
             )));
         }
+
+        let smp_type = smp_type
+            .map(|value| parse_smp_type(&value))
+            .transpose()
+            .map_err(to_pyvalue_err)?;
 
         let native_tp_sl: Option<RustNativeTpSlParams> = native_tp_sl
             .map(RustNativeTpSlParams::try_from)
@@ -745,6 +747,7 @@ impl BybitHttpClient {
                     position_idx,
                     bbo_side_type,
                     bbo_level,
+                    smp_type,
                     native_tp_sl.as_ref(),
                 )
                 .await
@@ -1297,93 +1300,6 @@ impl BybitHttpClient {
                     .map(|report| report.into_py_any(py))
                     .collect();
                 let pylist = PyList::new(py, py_reports?)?.into_any().unbind();
-                Ok(pylist)
-            })
-        })
-    }
-
-    /// Request forward prices for option chain ATM determination.
-    ///
-    /// Single-instrument path (1 HTTP call) if `instrument_id` is provided,
-    /// otherwise bulk path via option tickers.
-    #[pyo3(name = "request_forward_prices")]
-    #[pyo3(signature = (base_coin, instrument_id=None))]
-    fn py_request_forward_prices<'py>(
-        &self,
-        py: Python<'py>,
-        base_coin: String,
-        instrument_id: Option<InstrumentId>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let forward_prices: Vec<ForwardPrice> = if let Some(inst_id) = instrument_id {
-                // Single-instrument path: fetch ticker for one symbol
-                let raw_symbol = extract_raw_symbol(inst_id.symbol.as_str()).to_string();
-                let params = crate::http::query::BybitTickersParams {
-                    category: BybitProductType::Option,
-                    symbol: Some(raw_symbol),
-                    base_coin: None,
-                    exp_date: None,
-                };
-                let tickers = client
-                    .request_option_tickers_raw_with_params(&params)
-                    .await
-                    .map_err(to_pyvalue_err)?;
-
-                let ts = UnixNanos::default();
-                tickers
-                    .into_iter()
-                    .filter_map(|t| {
-                        let up: rust_decimal::Decimal = t.underlying_price.parse().ok()?;
-                        if up.is_zero() {
-                            return None;
-                        }
-                        Some(ForwardPrice::new(inst_id, up, None, ts, ts))
-                    })
-                    .collect()
-            } else {
-                // Bulk path: fetch all option tickers for base coin
-                let tickers = client
-                    .request_option_tickers_raw(&base_coin)
-                    .await
-                    .map_err(to_pyvalue_err)?;
-
-                let ts = nautilus_core::UnixNanos::default();
-                let mut seen_expiries = HashSet::new();
-                tickers
-                    .into_iter()
-                    .filter_map(|t| {
-                        let up: rust_decimal::Decimal = t.underlying_price.parse().ok()?;
-                        if up.is_zero() {
-                            return None;
-                        }
-                        let parts: Vec<&str> = t.symbol.splitn(3, '-').collect();
-                        let expiry_key = if parts.len() >= 2 {
-                            format!("{}-{}", parts[0], parts[1])
-                        } else {
-                            t.symbol.to_string()
-                        };
-
-                        if !seen_expiries.insert(expiry_key) {
-                            return None;
-                        }
-                        let symbol_str = format!("{}-OPTION", t.symbol);
-                        let inst_id = InstrumentId::new(
-                            Symbol::new(&symbol_str),
-                            *crate::common::consts::BYBIT_VENUE,
-                        );
-                        Some(ForwardPrice::new(inst_id, up, None, ts, ts))
-                    })
-                    .collect()
-            };
-
-            Python::attach(|py| {
-                let py_prices: PyResult<Vec<_>> = forward_prices
-                    .into_iter()
-                    .map(|fp| Py::new(py, fp))
-                    .collect();
-                let pylist = PyList::new(py, py_prices?)?.into_any().unbind();
                 Ok(pylist)
             })
         })

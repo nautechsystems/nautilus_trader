@@ -29,6 +29,7 @@ use arc_swap::ArcSwap;
 use dashmap::{DashMap, mapref::entry::Entry};
 #[cfg(test)]
 use nautilus_common::live::get_runtime;
+use nautilus_core::string::secret::{SecretString, redact_option};
 use nautilus_live::{
     SocketControl,
     task::{SharedTaskSlot, TaskJoinOutcome, TaskSlot, finish_task},
@@ -71,7 +72,7 @@ const RECONNECT_BACKOFF_FACTOR: f64 = 2.0;
 #[derive(Clone)]
 struct SubscriptionArgs {
     channel: LighterWsChannel,
-    auth: Option<String>,
+    auth: Option<SecretString>,
     generation: u64,
 }
 
@@ -106,7 +107,7 @@ pub struct LighterWebSocketClient {
     task_handle: TaskSlot<()>,
     transport_backend: TransportBackend,
     ws_timeout_secs: u64,
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
     socket_sink: Option<SocketStateSink>,
     socket_control: Option<SocketControl>,
 }
@@ -205,7 +206,7 @@ impl Debug for LighterWebSocketClient {
             .field("instruments_len", &self.instruments.len())
             .field("transport_backend", &self.transport_backend)
             .field("ws_timeout_secs", &self.ws_timeout_secs)
-            .field("proxy_url", &self.proxy_url)
+            .field("proxy_url", &redact_option(self.proxy_url.as_ref()))
             .finish_non_exhaustive()
     }
 }
@@ -286,7 +287,7 @@ impl LighterWebSocketClient {
             task_handle: TaskSlot::new(),
             transport_backend,
             ws_timeout_secs,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             socket_sink: None,
             socket_control: None,
         }
@@ -462,7 +463,10 @@ impl LighterWebSocketClient {
             heartbeat_timeout_secs: Some(HEARTBEAT_TIMEOUT.as_secs()),
             idle_timeout_ms: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         };
         let connect = WebSocketClient::epoch_builder()
             .config(cfg)
@@ -1032,7 +1036,7 @@ impl LighterWebSocketClient {
     pub async fn subscribe_account(
         &self,
         channel: LighterWsChannel,
-        auth_token: String,
+        auth_token: SecretString,
     ) -> Result<(), LighterWsError> {
         self.send_subscribe(channel, Some(auth_token)).await
     }
@@ -1106,7 +1110,7 @@ impl LighterWebSocketClient {
     async fn send_subscribe(
         &self,
         channel: LighterWsChannel,
-        auth: Option<String>,
+        auth: Option<SecretString>,
     ) -> Result<(), LighterWsError> {
         let topic = channel.topic_key();
         let generation = self
@@ -1259,7 +1263,7 @@ impl Drop for LighterWebSocketClient {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{UnixNanos, string::secret::REDACTED};
     use nautilus_model::{
         identifiers::Symbol,
         instruments::CryptoPerpetual,
@@ -1281,6 +1285,32 @@ mod tests {
         let registry = Arc::new(MarketRegistry::new());
         registry.insert(market_index, symbol, product);
         registry
+    }
+
+    #[rstest]
+    fn debug_redacts_retained_auth_and_proxy_url() {
+        let client = LighterWebSocketClient::new(
+            Some("wss://example/test".to_string()),
+            LighterEnvironment::Testnet,
+            Arc::new(MarketRegistry::new()),
+            TransportBackend::default(),
+            30,
+            Some("http://user:proxy-secret@localhost".to_string()),
+        );
+        client.subscription_args.insert(
+            "account_all:7".to_string(),
+            SubscriptionArgs {
+                channel: LighterWsChannel::AccountAll(7),
+                auth: Some(SecretString::from("auth-token")),
+                generation: 1,
+            },
+        );
+
+        let debug = format!("{client:?}");
+
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains("proxy-secret"));
+        assert!(!debug.contains("auth-token"));
     }
 
     #[rstest]

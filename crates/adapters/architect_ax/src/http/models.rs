@@ -17,10 +17,12 @@
 
 use ahash::AHashMap;
 use jiff::{Timestamp, civil::Date};
+use nautilus_core::string::secret::SecretString;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display};
 use ustr::Ustr;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::common::{
     enums::{
@@ -44,7 +46,7 @@ fn default_instrument_state() -> AxInstrumentState {
 /// Fee rates and close-only state are per account rather than per user.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/user-management/whoami>
+/// - <https://docs.architect.exchange/api-reference/user-management/get-whoami>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxWhoAmIAccount {
@@ -75,7 +77,7 @@ pub struct AxWhoAmIAccount {
 /// Response payload returned by `GET /whoami`.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/user-management/whoami>
+/// - <https://docs.architect.exchange/api-reference/user-management/get-whoami>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxWhoAmI {
@@ -381,12 +383,20 @@ pub struct AxTickerResponse {
 /// Response payload returned by `POST /authenticate`.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/user-management/get-user-token>
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// - <https://docs.architect.exchange/api-reference/user-management/authenticate>
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 #[serde(rename_all = "snake_case")]
 pub struct AxAuthenticateResponse {
     /// Session token for authenticated requests.
-    pub token: String,
+    pub token: SecretString,
+}
+
+impl AxAuthenticateResponse {
+    /// Consumes the response and returns the session token.
+    #[must_use]
+    pub fn into_token(mut self) -> SecretString {
+        std::mem::take(&mut self.token)
+    }
 }
 
 /// Response payload returned by `POST /place-order`.
@@ -412,7 +422,7 @@ pub struct AxCancelOrderResponse {
 /// Individual trade entry from the REST API.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/market-data/get-trades>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-trades>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxRestTrade {
     /// Timestamp (Unix epoch seconds).
@@ -433,7 +443,7 @@ pub struct AxRestTrade {
 /// Response payload returned by `GET /trades`.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/market-data/get-trades>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-trades>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxTradesResponse {
     /// List of trades.
@@ -443,7 +453,7 @@ pub struct AxTradesResponse {
 /// Individual price level in the order book.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/market-data/get-book>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-book>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxBookLevel {
     /// Price (decimal string).
@@ -459,7 +469,7 @@ pub struct AxBookLevel {
 /// Order book snapshot.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/market-data/get-book>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-book>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxBook {
     /// Timestamp (Unix epoch seconds).
@@ -477,7 +487,7 @@ pub struct AxBook {
 /// Response payload returned by `GET /book`.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/market-data/get-book>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-book>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxBookResponse {
     /// The order book snapshot.
@@ -623,7 +633,7 @@ pub struct AxOrdersResponse {
 /// Response payload returned by `POST /initial-margin-requirement`.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/portfolio-management/post-initial-margin-requirement>
+/// - <https://docs.architect.exchange/api-reference/order-management/calculate-initial-margin-requirement>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxInitialMarginRequirementResponse {
     /// Initial margin requirement.
@@ -851,7 +861,7 @@ pub struct AxFundingRatesResponse {
 /// One funding slot of a trading day, as returned by `GET /funding-slots`.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/marketdata/get-funding-slots>
+/// - <https://docs.architect.exchange/api-reference>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxFundingSlot {
@@ -886,7 +896,7 @@ pub struct AxFundingSlot {
 /// symbols report a single slot.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/marketdata/get-funding-slots>
+/// - <https://docs.architect.exchange/api-reference>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxFundingSlotsResponse {
@@ -1053,14 +1063,14 @@ pub struct AxTransactionsResponse {
 /// Request body for `POST /authenticate` using API key and secret.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/user-management/get-user-token>
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// - <https://docs.architect.exchange/api-reference/user-management/authenticate>
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize)]
 #[serde(rename_all = "snake_case")]
 pub struct AuthenticateApiKeyRequest {
     /// API key.
-    pub api_key: String,
+    pub api_key: SecretString,
     /// API secret.
-    pub api_secret: String,
+    pub api_secret: SecretString,
     /// Token expiration in seconds.
     pub expiration_seconds: i32,
 }
@@ -1069,8 +1079,8 @@ impl AuthenticateApiKeyRequest {
     /// Creates a new [`AuthenticateApiKeyRequest`].
     #[must_use]
     pub fn new(
-        api_key: impl Into<String>,
-        api_secret: impl Into<String>,
+        api_key: impl Into<SecretString>,
+        api_secret: impl Into<SecretString>,
         expiration_seconds: i32,
     ) -> Self {
         Self {
@@ -1318,11 +1328,13 @@ mod tests {
 
     use super::*;
 
+    fn assert_zeroize_on_drop<T: ZeroizeOnDrop>() {}
+
     #[rstest]
     fn test_deserialize_authenticate_response() {
         let json = include_str!("../../test_data/http_authenticate.json");
         let response: AxAuthenticateResponse = serde_json::from_str(json).unwrap();
-        assert!(response.token.starts_with("test-token"));
+        assert!(response.token.expose_secret().starts_with("test-token"));
     }
 
     #[rstest]
@@ -1762,5 +1774,37 @@ mod tests {
         assert_eq!(json["oid"], "O-TEST");
         assert!(json.get("p").is_none());
         assert!(json.get("q").is_none());
+    }
+
+    #[rstest]
+    fn test_authenticate_request_serializes_and_redacts_debug() {
+        let request = AuthenticateApiKeyRequest::new("api-key-token", "api-secret-value", 3600);
+
+        let json = serde_json::to_value(&request).unwrap();
+        let formatted = format!("{request:?}");
+
+        assert_eq!(json["api_key"], "api-key-token");
+        assert_eq!(json["api_secret"], "api-secret-value");
+        assert_eq!(json["expiration_seconds"], 3600);
+        assert_eq!(
+            formatted,
+            "AuthenticateApiKeyRequest { api_key: <redacted>, api_secret: <redacted>, expiration_seconds: 3600 }",
+        );
+        assert!(!formatted.contains("api-key-token"));
+        assert!(!formatted.contains("api-secret-value"));
+    }
+
+    #[rstest]
+    fn test_authenticate_response_redacts_debug() {
+        assert_zeroize_on_drop::<AxAuthenticateResponse>();
+
+        let response = AxAuthenticateResponse {
+            token: SecretString::from("session-token-value"),
+        };
+
+        let formatted = format!("{response:?}");
+
+        assert_eq!(formatted, "AxAuthenticateResponse { token: <redacted> }");
+        assert!(!formatted.contains("session-token-value"));
     }
 }

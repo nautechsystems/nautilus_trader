@@ -15,7 +15,7 @@
 
 //! Python bindings for Kraken configuration.
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::{python::to_pyvalue_err, string::secret::SecretString};
 use nautilus_model::{enums::AccountType, identifiers::AccountId};
 use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
@@ -67,8 +67,8 @@ impl KrakenDataClientConfig {
     ) -> Self {
         let defaults = Self::default();
         Self {
-            api_key,
-            api_secret,
+            api_key: api_key.map(SecretString::from),
+            api_secret: api_secret.map(SecretString::from),
             product_type: product_type.unwrap_or(defaults.product_type),
             environment: environment.unwrap_or(defaults.environment),
             base_url,
@@ -76,7 +76,7 @@ impl KrakenDataClientConfig {
             ws_private_url,
             ws_l3_url,
             validate_l3_checksum: validate_l3_checksum.unwrap_or(defaults.validate_l3_checksum),
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             timeout_secs: timeout_secs.unwrap_or(defaults.timeout_secs),
             heartbeat_interval_secs: heartbeat_interval_secs
                 .unwrap_or(defaults.heartbeat_interval_secs),
@@ -132,6 +132,7 @@ impl KrakenExecutionClientConfig {
         heartbeat_interval_secs = None,
         auth_timeout_secs = None,
         max_requests_per_second = None,
+        max_retries = None,
         spot_account_type = None,
         default_leverage = None,
         use_spot_position_reports = None,
@@ -155,6 +156,7 @@ impl KrakenExecutionClientConfig {
         heartbeat_interval_secs: Option<u64>,
         auth_timeout_secs: Option<u64>,
         max_requests_per_second: Option<u32>,
+        max_retries: Option<u32>,
         spot_account_type: Option<AccountType>,
         default_leverage: Option<u16>,
         use_spot_position_reports: Option<bool>,
@@ -173,18 +175,19 @@ impl KrakenExecutionClientConfig {
         }
         Ok(Self {
             account_id,
-            api_key,
-            api_secret,
+            api_key: api_key.into(),
+            api_secret: api_secret.into(),
             product_type: product_type.unwrap_or(defaults.product_type),
             environment: environment.unwrap_or(defaults.environment),
             base_url,
             ws_url,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             timeout_secs: timeout_secs.unwrap_or(defaults.timeout_secs),
             heartbeat_interval_secs: heartbeat_interval_secs
                 .unwrap_or(defaults.heartbeat_interval_secs),
             auth_timeout_secs,
             max_requests_per_second,
+            max_retries: max_retries.unwrap_or(defaults.max_retries),
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
             spot_account_type,
             default_leverage,

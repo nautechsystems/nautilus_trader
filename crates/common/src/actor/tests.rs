@@ -27,7 +27,7 @@ use ahash::AHashSet;
 use bytes::Bytes;
 use indexmap::IndexMap;
 use log::LevelFilter;
-use nautilus_core::{Params, UUID4, UnixNanos};
+use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
     data::{
@@ -795,7 +795,7 @@ fn test_data_actor_clock_api(
         .clock()
         .set_timer_ns(
             "TEST-TIMER-NS",
-            2_000_000_000,
+            DurationNanos::from_secs(2),
             None,
             None,
             None,
@@ -1658,7 +1658,7 @@ fn test_data_actor_cache_api_surface_returns_owned_values(
     );
 }
 
-/// Helper to register a dummy actor and return its Rc.
+/// Registers a dummy actor and returns its `Rc`.
 fn register_dummy(name: &str) -> Rc<UnsafeCell<dyn Actor>> {
     let actor = DummyActor::new(name);
     register_actor(actor)
@@ -1743,42 +1743,50 @@ fn test_subscription_facade_sends_exact_command_matrix(
     let snapshot_interval_ms = Some(1_003);
     let mut params = Params::new();
     params.insert("matrix".to_string(), serde_json::json!(23));
+    let caller_client_id = ClientId::from("CALLER-MATRIX-CLIENT");
+    let mut caller_params = Params::new();
+    caller_params.insert("matrix".to_string(), serde_json::json!(29));
 
-    actor.subscribe_data(data_type.clone(), Some(client_id), Some(params.clone()));
-    actor.subscribe_instrument(instrument_id, Some(client_id), Some(params.clone()));
-    actor.subscribe_instruments(venue, Some(client_id), Some(params.clone()));
-    actor.subscribe_book_deltas(
-        instrument_id,
-        BookType::L3_MBO,
-        depth,
-        Some(client_id),
-        true,
-        Some(params.clone()),
-    );
-    actor.subscribe_book_depth10(
-        instrument_id,
-        BookType::L2_MBP,
-        Some(client_id),
-        false,
-        Some(params.clone()),
-    );
-    actor.subscribe_book_at_interval(
-        instrument_id,
-        BookType::L1_MBP,
-        depth,
-        interval_ms,
-        Some(client_id),
-        Some(params.clone()),
-    );
-    actor.subscribe_quotes(instrument_id, Some(client_id), Some(params.clone()));
-    actor.subscribe_trades(instrument_id, Some(client_id), Some(params.clone()));
-    actor.subscribe_bars(bar_type, Some(client_id), Some(params.clone()));
-    actor.subscribe_mark_prices(instrument_id, Some(client_id), Some(params.clone()));
-    actor.subscribe_index_prices(instrument_id, Some(client_id), Some(params.clone()));
-    actor.subscribe_funding_rates(instrument_id, Some(client_id), Some(params.clone()));
-    actor.subscribe_instrument_status(instrument_id, Some(client_id), Some(params.clone()));
-    actor.subscribe_instrument_close(instrument_id, Some(client_id), Some(params.clone()));
-    actor.subscribe_option_greeks(instrument_id, Some(client_id), Some(params.clone()));
+    for (client_id, params) in [
+        (client_id, params.clone()),
+        (caller_client_id, caller_params.clone()),
+    ] {
+        actor.subscribe_data(data_type.clone(), Some(client_id), Some(params.clone()));
+        actor.subscribe_instrument(instrument_id, Some(client_id), Some(params.clone()));
+        actor.subscribe_instruments(venue, Some(client_id), Some(params.clone()));
+        actor.subscribe_book_deltas(
+            instrument_id,
+            BookType::L3_MBO,
+            depth,
+            Some(client_id),
+            true,
+            Some(params.clone()),
+        );
+        actor.subscribe_book_depth10(
+            instrument_id,
+            BookType::L2_MBP,
+            Some(client_id),
+            false,
+            Some(params.clone()),
+        );
+        actor.subscribe_book_at_interval(
+            instrument_id,
+            BookType::L1_MBP,
+            depth,
+            interval_ms,
+            Some(client_id),
+            Some(params.clone()),
+        );
+        actor.subscribe_quotes(instrument_id, Some(client_id), Some(params.clone()));
+        actor.subscribe_trades(instrument_id, Some(client_id), Some(params.clone()));
+        actor.subscribe_bars(bar_type, Some(client_id), Some(params.clone()));
+        actor.subscribe_mark_prices(instrument_id, Some(client_id), Some(params.clone()));
+        actor.subscribe_index_prices(instrument_id, Some(client_id), Some(params.clone()));
+        actor.subscribe_funding_rates(instrument_id, Some(client_id), Some(params.clone()));
+        actor.subscribe_instrument_status(instrument_id, Some(client_id), Some(params.clone()));
+        actor.subscribe_instrument_close(instrument_id, Some(client_id), Some(params.clone()));
+        actor.subscribe_option_greeks(instrument_id, Some(client_id), Some(params.clone()));
+    }
     actor.subscribe_option_chain(
         series_id,
         strike_range.clone(),
@@ -1787,27 +1795,75 @@ fn test_subscription_facade_sends_exact_command_matrix(
         Some(params.clone()),
     );
 
-    actor.unsubscribe_data(data_type.clone(), Some(client_id), Some(params.clone()));
-    actor.unsubscribe_instrument(instrument_id, Some(client_id), Some(params.clone()));
-    actor.unsubscribe_instruments(venue, Some(client_id), Some(params.clone()));
-    actor.unsubscribe_book_deltas(instrument_id, Some(client_id), Some(params.clone()));
-    actor.unsubscribe_book_depth10(instrument_id, Some(client_id), Some(params.clone()));
+    actor.unsubscribe_data(
+        data_type.clone(),
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
+    actor.unsubscribe_instrument(
+        instrument_id,
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
+    actor.unsubscribe_instruments(venue, Some(caller_client_id), Some(caller_params.clone()));
+    actor.unsubscribe_book_deltas(
+        instrument_id,
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
+    actor.unsubscribe_book_depth10(
+        instrument_id,
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
     actor.unsubscribe_book_at_interval(
         instrument_id,
         interval_ms,
-        Some(client_id),
-        Some(params.clone()),
+        Some(caller_client_id),
+        Some(caller_params.clone()),
     );
-    actor.unsubscribe_quotes(instrument_id, Some(client_id), Some(params.clone()));
-    actor.unsubscribe_trades(instrument_id, Some(client_id), Some(params.clone()));
-    actor.unsubscribe_bars(bar_type, Some(client_id), Some(params.clone()));
-    actor.unsubscribe_mark_prices(instrument_id, Some(client_id), Some(params.clone()));
-    actor.unsubscribe_index_prices(instrument_id, Some(client_id), Some(params.clone()));
-    actor.unsubscribe_funding_rates(instrument_id, Some(client_id), Some(params.clone()));
-    actor.unsubscribe_instrument_status(instrument_id, Some(client_id), Some(params.clone()));
-    actor.unsubscribe_instrument_close(instrument_id, Some(client_id), Some(params.clone()));
-    actor.unsubscribe_option_greeks(instrument_id, Some(client_id), Some(params.clone()));
-    actor.unsubscribe_option_chain(series_id, Some(client_id));
+    actor.unsubscribe_quotes(
+        instrument_id,
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
+    actor.unsubscribe_trades(
+        instrument_id,
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
+    actor.unsubscribe_bars(
+        bar_type,
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
+    actor.unsubscribe_mark_prices(
+        instrument_id,
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
+    actor.unsubscribe_index_prices(
+        instrument_id,
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
+    actor.unsubscribe_funding_rates(
+        instrument_id,
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
+    actor.unsubscribe_instrument_status(
+        instrument_id,
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
+    actor.unsubscribe_instrument_close(
+        instrument_id,
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
+    actor.unsubscribe_option_greeks(instrument_id, Some(caller_client_id), Some(caller_params));
+    actor.unsubscribe_option_chain(series_id, Some(caller_client_id));
 
     let commands = saver.get_messages();
     let (subscribe_commands, unsubscribe_commands) = commands.split_at(16);
@@ -2022,8 +2078,607 @@ fn test_subscription_facade_sends_exact_command_matrix(
             unsub_status.params.as_ref(),
             unsub_close.params.as_ref(),
             unsub_greeks.params.as_ref(),
+            unsub_chain.params.as_ref(),
         ],
-        [Some(&params); 15]
+        [Some(&params); 16]
+    );
+}
+
+#[rstest]
+fn test_release_subscriptions_emits_retained_unsubscribe_commands(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let subscribe_ns = UnixNanos::from(1_700_000_000_123_456_789);
+    let release_ns = UnixNanos::from(1_700_000_001_987_654_321);
+    clock.borrow_mut().set_time(subscribe_ns);
+    let actor_id = register_data_actor(clock.clone(), cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+
+    let instrument_id = audusd_sim.id;
+    let data_type = DataType::new("RetainedData", None, None);
+    let data_client_id = ClientId::from("RETAINED-DATA-CLIENT");
+    let book_client_id = ClientId::from("RETAINED-BOOK-CLIENT");
+    let bar_client_id = ClientId::from("RETAINED-BAR-CLIENT");
+    let chain_client_id = ClientId::from("RETAINED-CHAIN-CLIENT");
+    let remaining_client_id = ClientId::from("RETAINED-REMAINING-CLIENT");
+    let interval_ms = NonZeroUsize::new(347).unwrap();
+    let bar_type = BarType::from_str(&format!("{instrument_id}-3-MINUTE-LAST-EXTERNAL")).unwrap();
+    let series_id = OptionSeriesId::new(
+        Venue::from("OPRA"),
+        Ustr::from("MSFT"),
+        Ustr::from("USD"),
+        UnixNanos::from(1_721_174_400_000_000_000),
+    );
+    let mut data_params = Params::new();
+    data_params.insert("data-route".to_string(), serde_json::json!(31));
+    let mut book_params = Params::new();
+    book_params.insert("book-route".to_string(), serde_json::json!(37));
+    let mut bar_params = Params::new();
+    bar_params.insert("bar-route".to_string(), serde_json::json!(41));
+    let mut chain_params = Params::new();
+    chain_params.insert("chain-route".to_string(), serde_json::json!(43));
+    let mut remaining_params = Params::new();
+    remaining_params.insert("remaining-route".to_string(), serde_json::json!(47));
+
+    actor.subscribe_data(
+        data_type.clone(),
+        Some(data_client_id),
+        Some(data_params.clone()),
+    );
+    actor.subscribe_book_at_interval(
+        instrument_id,
+        BookType::L3_MBO,
+        NonZeroUsize::new(29),
+        interval_ms,
+        Some(book_client_id),
+        Some(book_params.clone()),
+    );
+    actor.subscribe_bars(bar_type, Some(bar_client_id), Some(bar_params.clone()));
+    actor.subscribe_option_chain(
+        series_id,
+        StrikeRange::AtmRelative {
+            strikes_above: 13,
+            strikes_below: 17,
+        },
+        Some(1_009),
+        Some(chain_client_id),
+        Some(chain_params),
+    );
+    actor.subscribe_instrument(
+        instrument_id,
+        Some(remaining_client_id),
+        Some(remaining_params.clone()),
+    );
+    actor.subscribe_instruments(
+        instrument_id.venue,
+        Some(remaining_client_id),
+        Some(remaining_params.clone()),
+    );
+    actor.subscribe_book_deltas(
+        instrument_id,
+        BookType::L2_MBP,
+        NonZeroUsize::new(23),
+        Some(remaining_client_id),
+        false,
+        Some(remaining_params.clone()),
+    );
+    actor.subscribe_book_depth10(
+        instrument_id,
+        BookType::L2_MBP,
+        Some(remaining_client_id),
+        false,
+        Some(remaining_params.clone()),
+    );
+    actor.subscribe_quotes(
+        instrument_id,
+        Some(remaining_client_id),
+        Some(remaining_params.clone()),
+    );
+    actor.subscribe_trades(
+        instrument_id,
+        Some(remaining_client_id),
+        Some(remaining_params.clone()),
+    );
+    actor.subscribe_mark_prices(
+        instrument_id,
+        Some(remaining_client_id),
+        Some(remaining_params.clone()),
+    );
+    actor.subscribe_index_prices(
+        instrument_id,
+        Some(remaining_client_id),
+        Some(remaining_params.clone()),
+    );
+    actor.subscribe_funding_rates(
+        instrument_id,
+        Some(remaining_client_id),
+        Some(remaining_params.clone()),
+    );
+    actor.subscribe_instrument_status(
+        instrument_id,
+        Some(remaining_client_id),
+        Some(remaining_params.clone()),
+    );
+    actor.subscribe_instrument_close(
+        instrument_id,
+        Some(remaining_client_id),
+        Some(remaining_params.clone()),
+    );
+    actor.subscribe_option_greeks(
+        instrument_id,
+        Some(remaining_client_id),
+        Some(remaining_params.clone()),
+    );
+
+    let subscribe_ids = saver
+        .get_messages()
+        .iter()
+        .filter_map(|command| match command {
+            DataCommand::Subscribe(command) => Some(command.command_id()),
+            _ => None,
+        })
+        .collect::<AHashSet<_>>();
+    assert_eq!(subscribe_ids.len(), 16);
+    saver.clear();
+    clock.borrow_mut().set_time(release_ns);
+
+    actor.release_subscriptions();
+    actor.release_subscriptions();
+
+    let commands = saver.get_messages();
+    assert_eq!(commands.len(), 16);
+    let command_ids = commands
+        .iter()
+        .map(|command| match command {
+            DataCommand::Unsubscribe(command) => command.command_id(),
+            other => panic!("expected unsubscribe command, was {other:?}"),
+        })
+        .collect::<AHashSet<_>>();
+    assert_eq!(command_ids.len(), 16);
+    assert!(command_ids.is_disjoint(&subscribe_ids));
+
+    let assert_remaining_identity = |client_id, params: Option<&Params>| {
+        assert_eq!(client_id, Some(remaining_client_id));
+        assert_eq!(params, Some(&remaining_params));
+    };
+    let mut released = commands
+        .iter()
+        .map(|command| match command {
+            DataCommand::Unsubscribe(UnsubscribeCommand::Data(_)) => "data",
+            DataCommand::Unsubscribe(UnsubscribeCommand::Instrument(command)) => {
+                assert_remaining_identity(command.client_id, command.params.as_ref());
+                "instrument"
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::Instruments(command)) => {
+                assert_remaining_identity(command.client_id, command.params.as_ref());
+                "instruments"
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(command)) => {
+                assert_remaining_identity(command.client_id, command.params.as_ref());
+                "book_deltas"
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::BookDepth10(command)) => {
+                assert_remaining_identity(command.client_id, command.params.as_ref());
+                "book_depth10"
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::BookSnapshots(_)) => "book_snapshots",
+            DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command)) => {
+                assert_remaining_identity(command.client_id, command.params.as_ref());
+                "quotes"
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::Trades(command)) => {
+                assert_remaining_identity(command.client_id, command.params.as_ref());
+                "trades"
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::Bars(_)) => "bars",
+            DataCommand::Unsubscribe(UnsubscribeCommand::MarkPrices(command)) => {
+                assert_remaining_identity(command.client_id, command.params.as_ref());
+                "mark_prices"
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::IndexPrices(command)) => {
+                assert_remaining_identity(command.client_id, command.params.as_ref());
+                "index_prices"
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::FundingRates(command)) => {
+                assert_remaining_identity(command.client_id, command.params.as_ref());
+                "funding_rates"
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::InstrumentStatus(command)) => {
+                assert_remaining_identity(command.client_id, command.params.as_ref());
+                "instrument_status"
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::InstrumentClose(command)) => {
+                assert_remaining_identity(command.client_id, command.params.as_ref());
+                "instrument_close"
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::OptionGreeks(command)) => {
+                assert_remaining_identity(command.client_id, command.params.as_ref());
+                "option_greeks"
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::OptionChain(_)) => "option_chain",
+            other => panic!("expected standard unsubscribe command, was {other:?}"),
+        })
+        .collect::<Vec<_>>();
+    released.sort_unstable();
+    assert_eq!(
+        released,
+        [
+            "bars",
+            "book_deltas",
+            "book_depth10",
+            "book_snapshots",
+            "data",
+            "funding_rates",
+            "index_prices",
+            "instrument",
+            "instrument_close",
+            "instrument_status",
+            "instruments",
+            "mark_prices",
+            "option_chain",
+            "option_greeks",
+            "quotes",
+            "trades",
+        ]
+    );
+
+    let data = commands.iter().find_map(|command| match command {
+        DataCommand::Unsubscribe(UnsubscribeCommand::Data(command)) => Some(command),
+        _ => None,
+    });
+    let snapshots = commands.iter().find_map(|command| match command {
+        DataCommand::Unsubscribe(UnsubscribeCommand::BookSnapshots(command)) => Some(command),
+        _ => None,
+    });
+    let bars = commands.iter().find_map(|command| match command {
+        DataCommand::Unsubscribe(UnsubscribeCommand::Bars(command)) => Some(command),
+        _ => None,
+    });
+    let chain = commands.iter().find_map(|command| match command {
+        DataCommand::Unsubscribe(UnsubscribeCommand::OptionChain(command)) => Some(command),
+        _ => None,
+    });
+
+    assert_eq!(
+        data.map(|command| (
+            &command.data_type,
+            command.client_id,
+            command.venue,
+            command.ts_init,
+            command.correlation_id,
+            command.params.as_ref(),
+        )),
+        Some((
+            &data_type,
+            Some(data_client_id),
+            None,
+            release_ns,
+            None,
+            Some(&data_params),
+        ))
+    );
+    assert_eq!(
+        snapshots.map(|command| (
+            command.instrument_id,
+            command.interval_ms,
+            command.client_id,
+            command.venue,
+            command.ts_init,
+            command.correlation_id,
+            command.params.as_ref(),
+        )),
+        Some((
+            instrument_id,
+            interval_ms,
+            Some(book_client_id),
+            Some(instrument_id.venue),
+            release_ns,
+            None,
+            Some(&book_params),
+        ))
+    );
+    assert_eq!(
+        bars.map(|command| (
+            command.bar_type,
+            command.client_id,
+            command.venue,
+            command.ts_init,
+            command.correlation_id,
+            command.params.as_ref(),
+        )),
+        Some((
+            bar_type,
+            Some(bar_client_id),
+            Some(instrument_id.venue),
+            release_ns,
+            None,
+            Some(&bar_params),
+        ))
+    );
+    assert_eq!(
+        chain.map(|command| (
+            command.series_id,
+            command.client_id,
+            command.venue,
+            command.ts_init,
+        )),
+        Some((
+            series_id,
+            Some(chain_client_id),
+            Some(series_id.venue),
+            release_ns,
+        ))
+    );
+}
+
+#[rstest]
+fn test_release_subscriptions_emits_commands_in_topic_order(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+    let instrument_ids = [
+        InstrumentId::from("AUD/USD.SIM"),
+        InstrumentId::from("CAD/USD.SIM"),
+        InstrumentId::from("CHF/USD.SIM"),
+        InstrumentId::from("EUR/USD.SIM"),
+        InstrumentId::from("GBP/USD.SIM"),
+        InstrumentId::from("JPY/USD.SIM"),
+        InstrumentId::from("NZD/USD.SIM"),
+        InstrumentId::from("SGD/USD.SIM"),
+    ];
+
+    for instrument_id in instrument_ids.iter().rev() {
+        actor.subscribe_quotes(*instrument_id, None, None);
+    }
+    saver.clear();
+
+    actor.release_subscriptions();
+
+    let released = saver
+        .get_messages()
+        .iter()
+        .map(|command| match command {
+            DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command)) => command.instrument_id,
+            other => panic!("expected quotes unsubscribe command, was {other:?}"),
+        })
+        .collect::<Vec<_>>();
+    let mut expected = instrument_ids;
+    expected.sort_unstable_by(|left, right| {
+        get_quotes_topic(*left)
+            .as_ref()
+            .cmp(get_quotes_topic(*right).as_ref())
+    });
+
+    assert_eq!(released, expected);
+}
+
+#[rstest]
+fn test_duplicate_subscription_keeps_first_identity(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+    let first_client_id = ClientId::from("FIRST-QUOTE-CLIENT");
+    let second_client_id = ClientId::from("SECOND-QUOTE-CLIENT");
+    let mut first_params = Params::new();
+    first_params.insert("route".to_string(), serde_json::json!(53));
+    let mut second_params = Params::new();
+    second_params.insert("route".to_string(), serde_json::json!(59));
+
+    actor.subscribe_quotes(
+        audusd_sim.id,
+        Some(first_client_id),
+        Some(first_params.clone()),
+    );
+    actor.subscribe_quotes(
+        audusd_sim.id,
+        Some(second_client_id),
+        Some(second_params.clone()),
+    );
+
+    assert_eq!(saver.get_messages().len(), 1);
+    saver.clear();
+    actor.unsubscribe_quotes(audusd_sim.id, Some(second_client_id), Some(second_params));
+
+    let commands = saver.get_messages();
+    let [DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command))] = commands.as_slice()
+    else {
+        panic!("expected one retained quotes unsubscribe, was {commands:?}");
+    };
+    assert_eq!(command.instrument_id, audusd_sim.id);
+    assert_eq!(command.client_id, Some(first_client_id));
+    assert_eq!(command.venue, Some(audusd_sim.id.venue));
+    assert_eq!(command.params.as_ref(), Some(&first_params));
+}
+
+#[rstest]
+fn test_repeated_unsubscribe_does_not_emit_fallback_command(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+    let client_id = ClientId::from("QUOTE-CLIENT");
+
+    actor.subscribe_quotes(audusd_sim.id, Some(client_id), None);
+    saver.clear();
+
+    actor.unsubscribe_quotes(audusd_sim.id, Some(client_id), None);
+    actor.unsubscribe_quotes(audusd_sim.id, Some(client_id), None);
+
+    let commands = saver.get_messages();
+    let [DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command))] = commands.as_slice()
+    else {
+        panic!("expected one retained quotes unsubscribe, was {commands:?}");
+    };
+    assert_eq!(command.instrument_id, audusd_sim.id);
+    assert_eq!(command.client_id, Some(client_id));
+}
+
+#[rstest]
+fn test_reset_releases_subscription_before_restart(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+    let bar_type = BarType::from_str(&format!("{}-1-MINUTE-LAST-INTERNAL", audusd_sim.id)).unwrap();
+
+    actor.start().unwrap();
+    actor.subscribe_bars(bar_type, None, None);
+    assert_eq!(actor.core.bar_handler_count(), 1);
+    saver.clear();
+
+    actor.stop().unwrap();
+    actor.reset().unwrap();
+
+    let commands = saver.get_messages();
+    let [DataCommand::Unsubscribe(UnsubscribeCommand::Bars(command))] = commands.as_slice() else {
+        panic!("expected one bars unsubscribe on reset, was {commands:?}");
+    };
+    assert_eq!(command.bar_type, bar_type);
+    assert_eq!(actor.core.bar_handler_count(), 0);
+    saver.clear();
+
+    actor.start().unwrap();
+    actor.subscribe_bars(bar_type, None, None);
+
+    let commands = saver.get_messages();
+    let [DataCommand::Subscribe(SubscribeCommand::Bars(command))] = commands.as_slice() else {
+        panic!("expected one bars subscribe after restart, was {commands:?}");
+    };
+    assert_eq!(command.bar_type, bar_type);
+    assert_eq!(actor.core.bar_handler_count(), 1);
+}
+
+#[rstest]
+fn test_option_chain_resubscription_sends_edit_and_retains_latest_identity(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+    let series_id = OptionSeriesId::new(
+        Venue::from("OPRA"),
+        Ustr::from("AAPL"),
+        Ustr::from("USD"),
+        UnixNanos::from(1_711_036_800_000_000_000),
+    );
+    let first_client_id = ClientId::from("FIRST-CHAIN-CLIENT");
+    let second_client_id = ClientId::from("SECOND-CHAIN-CLIENT");
+    let fallback_client_id = ClientId::from("FALLBACK-CHAIN-CLIENT");
+    let first_range = StrikeRange::AtmRelative {
+        strikes_above: 3,
+        strikes_below: 5,
+    };
+    let second_range = StrikeRange::AtmRelative {
+        strikes_above: 7,
+        strikes_below: 11,
+    };
+
+    actor.subscribe_option_chain(
+        series_id,
+        first_range.clone(),
+        Some(1_000),
+        Some(first_client_id),
+        None,
+    );
+    actor.subscribe_option_chain(
+        series_id,
+        second_range.clone(),
+        Some(2_000),
+        Some(second_client_id),
+        None,
+    );
+
+    assert_eq!(
+        get_message_bus()
+            .borrow()
+            .router_option_chain
+            .subscription_count(),
+        1,
+    );
+
+    let commands = saver.get_messages();
+    let [
+        DataCommand::Subscribe(SubscribeCommand::OptionChain(first)),
+        DataCommand::Subscribe(SubscribeCommand::OptionChain(second)),
+    ] = commands.as_slice()
+    else {
+        panic!("expected two option chain subscribe commands, was {commands:?}");
+    };
+    assert_eq!(first.series_id, series_id);
+    assert_eq!(first.strike_range, first_range);
+    assert_eq!(first.snapshot_interval_ms, Some(1_000));
+    assert_eq!(first.client_id, Some(first_client_id));
+    assert_eq!(first.correlation_id, None);
+    assert_eq!(second.series_id, series_id);
+    assert_eq!(second.strike_range, second_range);
+    assert_eq!(second.snapshot_interval_ms, Some(2_000));
+    assert_eq!(second.client_id, Some(second_client_id));
+    assert_ne!(second.command_id, first.command_id);
+    assert_eq!(second.correlation_id, Some(first.command_id));
+
+    saver.clear();
+    actor.unsubscribe_option_chain(series_id, Some(fallback_client_id));
+
+    let commands = saver.get_messages();
+    let [DataCommand::Unsubscribe(UnsubscribeCommand::OptionChain(command))] = commands.as_slice()
+    else {
+        panic!("expected one option chain unsubscribe command, was {commands:?}");
+    };
+    assert_eq!(command.series_id, series_id);
+    assert_eq!(command.client_id, Some(second_client_id));
+    assert_eq!(
+        get_message_bus()
+            .borrow()
+            .router_option_chain
+            .subscription_count(),
+        0,
     );
 }
 
@@ -2047,6 +2702,54 @@ fn test_subscribe_and_receive_custom_data(
     msgbus::publish_any(topic, &data);
 
     assert_eq!(actor.received_data.len(), 2);
+}
+
+#[rstest]
+fn test_local_custom_subscription_upgrades_to_client_backed(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+    let data_type = DataType::new(TestActorCustomData::type_name_static(), None, None);
+    let topic = get_custom_topic(&data_type);
+    let client_id = ClientId::new("CUSTOM-DATA-CLIENT");
+    let mut params = Params::new();
+    params.insert("source".to_string(), serde_json::json!("remote"));
+
+    actor.subscribe_data(data_type.clone(), None, None);
+    assert!(saver.get_messages().is_empty());
+    assert_eq!(msgbus::subscriptions_count_any(topic).unwrap(), 1);
+
+    actor.subscribe_data(data_type.clone(), Some(client_id), Some(params.clone()));
+
+    let commands = saver.get_messages();
+    let [DataCommand::Subscribe(SubscribeCommand::Data(subscribe))] = commands.as_slice() else {
+        panic!("expected one custom-data subscribe, was {commands:?}");
+    };
+    assert_eq!(subscribe.data_type, data_type);
+    assert_eq!(subscribe.client_id, Some(client_id));
+    assert_eq!(subscribe.params.as_ref(), Some(&params));
+    assert_eq!(msgbus::subscriptions_count_any(topic).unwrap(), 1);
+    saver.clear();
+
+    actor.unsubscribe_data(data_type.clone(), None, None);
+
+    let commands = saver.get_messages();
+    let [DataCommand::Unsubscribe(UnsubscribeCommand::Data(unsubscribe))] = commands.as_slice()
+    else {
+        panic!("expected one custom-data unsubscribe, was {commands:?}");
+    };
+    assert_eq!(unsubscribe.data_type, data_type);
+    assert_eq!(unsubscribe.client_id, Some(client_id));
+    assert_eq!(unsubscribe.params.as_ref(), Some(&params));
+    assert_eq!(msgbus::subscriptions_count_any(topic).unwrap(), 0);
 }
 
 #[rstest]
@@ -4270,12 +4973,24 @@ fn test_defi_subscription_facade_sends_exact_command_matrix(
     let mut params = Params::new();
     params.insert("matrix".to_string(), serde_json::json!(29));
 
-    actor.subscribe_blocks(chain, Some(client_id), Some(params.clone()));
-    actor.subscribe_pool(instrument_id, Some(client_id), Some(params.clone()));
-    actor.subscribe_pool_swaps(instrument_id, Some(client_id), Some(params.clone()));
-    actor.subscribe_pool_liquidity_updates(instrument_id, Some(client_id), Some(params.clone()));
-    actor.subscribe_pool_fee_collects(instrument_id, Some(client_id), Some(params.clone()));
-    actor.subscribe_pool_flash_events(instrument_id, Some(client_id), Some(params.clone()));
+    let mut duplicate_params = Params::new();
+    duplicate_params.insert("matrix".to_string(), serde_json::json!(31));
+
+    for (client_id, params) in [
+        (client_id, params.clone()),
+        (ClientId::from("DUPLICATE-DEFI-CLIENT"), duplicate_params),
+    ] {
+        actor.subscribe_blocks(chain, Some(client_id), Some(params.clone()));
+        actor.subscribe_pool(instrument_id, Some(client_id), Some(params.clone()));
+        actor.subscribe_pool_swaps(instrument_id, Some(client_id), Some(params.clone()));
+        actor.subscribe_pool_liquidity_updates(
+            instrument_id,
+            Some(client_id),
+            Some(params.clone()),
+        );
+        actor.subscribe_pool_fee_collects(instrument_id, Some(client_id), Some(params.clone()));
+        actor.subscribe_pool_flash_events(instrument_id, Some(client_id), Some(params.clone()));
+    }
     actor.unsubscribe_blocks(chain, Some(client_id), Some(params.clone()));
     actor.unsubscribe_pool(instrument_id, Some(client_id), Some(params.clone()));
     actor.unsubscribe_pool_swaps(instrument_id, Some(client_id), Some(params.clone()));
@@ -4412,6 +5127,102 @@ fn test_defi_subscription_facade_sends_exact_command_matrix(
             unsub_flashes.params.as_ref(),
         ],
         [Some(&params); 12]
+    );
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_release_subscriptions_emits_every_defi_unsubscribe_shape(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let release_ns = UnixNanos::from(1_700_000_009_123_456_789);
+    let actor_id = register_data_actor(clock.clone(), cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+    let (_, _, instrument_id, _) = defi_event_context();
+    let chain = Blockchain::Arbitrum;
+    let client_id = ClientId::from("RETAINED-DEFI-CLIENT");
+    let mut params = Params::new();
+    params.insert("defi-route".to_string(), serde_json::json!(47));
+
+    actor.subscribe_blocks(chain, Some(client_id), Some(params.clone()));
+    actor.subscribe_pool(instrument_id, Some(client_id), Some(params.clone()));
+    actor.subscribe_pool_swaps(instrument_id, Some(client_id), Some(params.clone()));
+    actor.subscribe_pool_liquidity_updates(instrument_id, Some(client_id), Some(params.clone()));
+    actor.subscribe_pool_fee_collects(instrument_id, Some(client_id), Some(params.clone()));
+    actor.subscribe_pool_flash_events(instrument_id, Some(client_id), Some(params.clone()));
+    saver.clear();
+    clock.borrow_mut().set_time(release_ns);
+
+    actor.release_subscriptions();
+
+    let mut released = saver
+        .get_messages()
+        .iter()
+        .map(|command| match command {
+            DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::Blocks(command)) => {
+                assert_eq!(command.chain, chain);
+                assert_eq!(command.client_id, Some(client_id));
+                assert_eq!(command.ts_init, release_ns);
+                assert_eq!(command.params.as_ref(), Some(&params));
+                "blocks"
+            }
+            DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::Pool(command)) => {
+                assert_eq!(command.instrument_id, instrument_id);
+                assert_eq!(command.client_id, Some(client_id));
+                assert_eq!(command.ts_init, release_ns);
+                assert_eq!(command.params.as_ref(), Some(&params));
+                "pool"
+            }
+            DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::PoolSwaps(command)) => {
+                assert_eq!(command.instrument_id, instrument_id);
+                assert_eq!(command.client_id, Some(client_id));
+                assert_eq!(command.ts_init, release_ns);
+                assert_eq!(command.params.as_ref(), Some(&params));
+                "swaps"
+            }
+            DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::PoolLiquidityUpdates(command)) => {
+                assert_eq!(command.instrument_id, instrument_id);
+                assert_eq!(command.client_id, Some(client_id));
+                assert_eq!(command.ts_init, release_ns);
+                assert_eq!(command.params.as_ref(), Some(&params));
+                "liquidity"
+            }
+            DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::PoolFeeCollects(command)) => {
+                assert_eq!(command.instrument_id, instrument_id);
+                assert_eq!(command.client_id, Some(client_id));
+                assert_eq!(command.ts_init, release_ns);
+                assert_eq!(command.params.as_ref(), Some(&params));
+                "collects"
+            }
+            DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::PoolFlashEvents(command)) => {
+                assert_eq!(command.instrument_id, instrument_id);
+                assert_eq!(command.client_id, Some(client_id));
+                assert_eq!(command.ts_init, release_ns);
+                assert_eq!(command.params.as_ref(), Some(&params));
+                "flashes"
+            }
+            other => panic!("expected DeFi unsubscribe command, was {other:?}"),
+        })
+        .collect::<Vec<_>>();
+    released.sort_unstable();
+
+    assert_eq!(
+        released,
+        [
+            "blocks",
+            "collects",
+            "flashes",
+            "liquidity",
+            "pool",
+            "swaps"
+        ]
     );
 }
 
@@ -4796,6 +5607,10 @@ struct FailingRetirementActor {
 nautilus_actor!(FailingRetirementActor);
 
 impl DataActor for FailingRetirementActor {
+    fn on_reset(&mut self) -> anyhow::Result<()> {
+        anyhow::bail!("reset failed");
+    }
+
     fn on_fault(&mut self) -> anyhow::Result<()> {
         anyhow::bail!("fault failed");
     }
@@ -4805,6 +5620,36 @@ impl DataActor for FailingRetirementActor {
     }
 }
 
+#[rstest]
+fn test_failed_reset_retains_subscriptions(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    set_data_cmd_sender(Arc::new(SyncDataCommandSender));
+    *get_message_bus().borrow_mut() = MessageBus::default();
+    let mut actor = FailingRetirementActor {
+        core: DataActorCore::new(DataActorConfig::default()),
+    };
+    actor.register(trader_id, clock, cache).unwrap();
+    let actor_id = actor.actor_id().inner();
+    register_actor(actor);
+
+    let mut actor = get_actor_unchecked::<FailingRetirementActor>(&actor_id);
+    actor.subscribe_quotes(audusd_sim.id, None, None);
+    let error = actor.reset().unwrap_err();
+
+    assert_eq!(error.to_string(), "reset failed");
+    assert_eq!(
+        get_message_bus()
+            .borrow()
+            .router_quotes
+            .subscription_count(),
+        1
+    );
+}
+
 #[derive(Clone, Copy, Debug)]
 enum Retirement {
     Fault,
@@ -4812,15 +5657,16 @@ enum Retirement {
 }
 
 #[rstest]
-#[case::fault(Retirement::Fault, "fault failed")]
-#[case::dispose(Retirement::Dispose, "dispose failed")]
-fn test_failed_retirement_releases_subscriptions(
+#[case::fault(Retirement::Fault, "fault failed", 0)]
+#[case::dispose(Retirement::Dispose, "dispose failed", 1)]
+fn test_failed_retirement_subscription_release(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
     #[case] retirement: Retirement,
     #[case] expected_error: &str,
+    #[case] expected_subscriptions: usize,
 ) {
     set_data_cmd_sender(Arc::new(SyncDataCommandSender));
     *get_message_bus().borrow_mut() = MessageBus::default();
@@ -4855,7 +5701,7 @@ fn test_failed_retirement_releases_subscriptions(
             .borrow()
             .router_quotes
             .subscription_count(),
-        0
+        expected_subscriptions
     );
 }
 
@@ -5293,28 +6139,28 @@ fn test_unsubscribe_signal_panics_when_unregistered() {
 #[should_panic(expected = "Actor has not been registered")]
 fn test_subscribe_queue_state_panics_when_unregistered() {
     let mut actor = TestDataActor::new(DataActorConfig::default());
-    actor.subscribe_queue_state(None);
+    actor.subscribe_queue_state(None, None);
 }
 
 #[rstest]
 #[should_panic(expected = "Actor has not been registered")]
 fn test_unsubscribe_queue_state_panics_when_unregistered() {
     let mut actor = TestDataActor::new(DataActorConfig::default());
-    actor.unsubscribe_queue_state();
+    actor.unsubscribe_queue_state(None);
 }
 
 #[rstest]
 #[should_panic(expected = "Actor has not been registered")]
 fn test_subscribe_socket_state_panics_when_unregistered() {
     let mut actor = TestDataActor::new(DataActorConfig::default());
-    actor.subscribe_socket_state(None);
+    actor.subscribe_socket_state(None, None, None);
 }
 
 #[rstest]
 #[should_panic(expected = "Actor has not been registered")]
 fn test_unsubscribe_socket_state_panics_when_unregistered() {
     let mut actor = TestDataActor::new(DataActorConfig::default());
-    actor.unsubscribe_socket_state();
+    actor.unsubscribe_socket_state(None, None);
 }
 
 #[rstest]
@@ -5393,7 +6239,7 @@ fn test_subscribe_signal_multi_word_name_matches_published_topic(
 
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     assert_eq!(actor.received_signals.len(), 1);
-    assert_eq!(actor.received_signals[0].name.as_str(), "hello world");
+    assert_eq!(actor.received_signals[0].name, "hello world");
     assert_eq!(actor.received_signals[0].value, "ok");
 }
 
@@ -5422,11 +6268,168 @@ fn test_publish_signal_reaches_subscriber(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     assert_eq!(actor.received_signals.len(), 1);
     let signal = &actor.received_signals[0];
-    assert_eq!(signal.name.as_str(), name);
+    assert_eq!(signal.name, name);
     assert_eq!(signal.value, value);
     if ts_event != 0 {
         assert_eq!(signal.ts_event, UnixNanos::from(ts_event));
     }
+}
+
+#[rstest]
+#[case(None, None, vec![0, 1, 2, 3])]
+#[case(Some("BINANCE"), None, vec![0, 1])]
+#[case(None, Some("market"), vec![0, 2])]
+#[case(Some("BINANCE"), Some("market"), vec![0])]
+#[case(Some("MISSING"), None, vec![])]
+fn test_socket_state_filters_route_matching_events(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    #[case] client_id: Option<&str>,
+    #[case] endpoint: Option<&str>,
+    #[case] expected: Vec<usize>,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    actor.subscribe_socket_state(client_id.map(ClientId::from), endpoint, Some(50));
+    drop(actor);
+
+    let mut events = Vec::new();
+
+    for (client, endpoint) in [
+        ("BINANCE", "market"),
+        ("BINANCE", "orders"),
+        ("BYBIT", "market"),
+        ("BYBIT", "orders"),
+    ] {
+        let mut event = make_socket_state_changed(SocketState::Connected);
+        event.client_id = ClientId::from(client);
+        event.endpoint = Ustr::from(endpoint);
+        msgbus::publish_any(
+            MessagingSwitchboard::socket_state_changed_topic(event.client_id, endpoint),
+            &event,
+        );
+        events.push(event);
+    }
+
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(
+        actor.received_socket_state_changes,
+        expected
+            .into_iter()
+            .map(|i| events[i].clone())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[rstest]
+#[case(None, vec![0, 1, 2, 3, 4])]
+#[case(Some(SystemChannel::ExecCommands), vec![2])]
+#[case(Some(SystemChannel::DataEvents), vec![3])]
+fn test_queue_state_filters_route_matching_events(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    #[case] channel: Option<SystemChannel>,
+    #[case] expected: Vec<usize>,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    actor.subscribe_queue_state(channel, Some(50));
+    drop(actor);
+
+    let mut events = Vec::new();
+
+    for channel in [
+        SystemChannel::TimeEvents,
+        SystemChannel::ExecEvents,
+        SystemChannel::ExecCommands,
+        SystemChannel::DataEvents,
+        SystemChannel::DataCommands,
+    ] {
+        let mut event = make_queue_state_changed(QueueState::Triggered, 71);
+        event.channel = channel;
+        msgbus::publish_any(
+            MessagingSwitchboard::queue_state_changed_topic(channel),
+            &event,
+        );
+        events.push(event);
+    }
+
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(
+        actor.received_queue_state_changes,
+        expected
+            .into_iter()
+            .map(|i| events[i].clone())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[rstest]
+fn test_socket_state_unsubscribe_preserves_other_filters(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    let client_id = ClientId::from("BINANCE");
+    actor.subscribe_socket_state(Some(client_id), Some("market"), None);
+    actor.subscribe_socket_state(Some(client_id), Some("orders"), None);
+    actor.subscribe_socket_state(None, None, None);
+    actor.unsubscribe_socket_state(None, None);
+    actor.unsubscribe_socket_state(Some(client_id), Some("market"));
+    drop(actor);
+
+    let mut event = make_socket_state_changed(SocketState::Connected);
+    event.endpoint = Ustr::from("market");
+    msgbus::publish_any(
+        MessagingSwitchboard::socket_state_changed_topic(client_id, "market"),
+        &event,
+    );
+    event.endpoint = Ustr::from("orders");
+    msgbus::publish_any(
+        MessagingSwitchboard::socket_state_changed_topic(client_id, "orders"),
+        &event,
+    );
+
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(actor.received_socket_state_changes, vec![event]);
+}
+
+#[rstest]
+fn test_queue_state_unsubscribe_preserves_other_filters(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    actor.subscribe_queue_state(Some(SystemChannel::ExecCommands), None);
+    actor.subscribe_queue_state(Some(SystemChannel::DataEvents), None);
+    actor.subscribe_queue_state(None, None);
+    actor.unsubscribe_queue_state(None);
+    actor.unsubscribe_queue_state(Some(SystemChannel::ExecCommands));
+    drop(actor);
+
+    let mut event = make_queue_state_changed(QueueState::Triggered, 71);
+    msgbus::publish_any(
+        MessagingSwitchboard::queue_state_changed_topic(event.channel),
+        &event,
+    );
+    event.channel = SystemChannel::DataEvents;
+    msgbus::publish_any(
+        MessagingSwitchboard::queue_state_changed_topic(event.channel),
+        &event,
+    );
+
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(actor.received_queue_state_changes, vec![event]);
 }
 
 #[rstest]
@@ -5438,11 +6441,14 @@ fn test_queue_state_changed_reaches_typed_subscriber(
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
-    actor.subscribe_queue_state(None);
+    actor.subscribe_queue_state(None, None);
     drop(actor);
 
     let event = make_queue_state_changed(QueueState::Triggered, 71);
-    msgbus::publish_any(MessagingSwitchboard::queue_state_changed_topic(), &event);
+    msgbus::publish_any(
+        MessagingSwitchboard::queue_state_changed_topic(SystemChannel::ExecCommands),
+        &event,
+    );
 
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     assert_eq!(actor.received_queue_state_changes, vec![event]);
@@ -5457,11 +6463,17 @@ fn test_socket_state_changed_reaches_typed_subscriber(
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
-    actor.subscribe_socket_state(None);
+    actor.subscribe_socket_state(None, None, None);
     drop(actor);
 
     let event = make_socket_state_changed(SocketState::Connected);
-    msgbus::publish_any(MessagingSwitchboard::socket_state_changed_topic(), &event);
+    msgbus::publish_any(
+        MessagingSwitchboard::socket_state_changed_topic(
+            ClientId::from("BINANCE"),
+            "binance-futures-market-streams",
+        ),
+        &event,
+    );
 
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     assert_eq!(actor.received_socket_state_changes, vec![event]);
@@ -5489,7 +6501,7 @@ fn test_reconnect_socket_enqueues_typed_command(
 
     assert_eq!(command.trader_id, trader_id);
     assert_eq!(command.client_id, ClientId::from("POLYMARKET"));
-    assert_eq!(command.endpoint.as_str(), "polymarket-market-streams");
+    assert_eq!(command.endpoint, "polymarket-market-streams");
     assert_eq!(command.ts_init, UnixNanos::default());
 }
 
@@ -5501,11 +6513,17 @@ fn test_socket_state_changed_skips_delivery_when_not_running(
 ) {
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
-    actor.subscribe_socket_state(None);
+    actor.subscribe_socket_state(None, None, None);
     drop(actor);
 
     let event = make_socket_state_changed(SocketState::Connected);
-    msgbus::publish_any(MessagingSwitchboard::socket_state_changed_topic(), &event);
+    msgbus::publish_any(
+        MessagingSwitchboard::socket_state_changed_topic(
+            ClientId::from("BINANCE"),
+            "binance-futures-market-streams",
+        ),
+        &event,
+    );
 
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     assert_eq!(actor.received_socket_state_changes, Vec::new());
@@ -5520,22 +6538,28 @@ fn test_unsubscribe_socket_state_stops_delivery(
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
-    actor.subscribe_socket_state(None);
+    actor.subscribe_socket_state(None, None, None);
     drop(actor);
 
     let connected = make_socket_state_changed(SocketState::Connected);
     msgbus::publish_any(
-        MessagingSwitchboard::socket_state_changed_topic(),
+        MessagingSwitchboard::socket_state_changed_topic(
+            ClientId::from("BINANCE"),
+            "binance-futures-market-streams",
+        ),
         &connected,
     );
 
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
-    actor.unsubscribe_socket_state();
+    actor.unsubscribe_socket_state(None, None);
     drop(actor);
 
     let disconnected = make_socket_state_changed(SocketState::Disconnected);
     msgbus::publish_any(
-        MessagingSwitchboard::socket_state_changed_topic(),
+        MessagingSwitchboard::socket_state_changed_topic(
+            ClientId::from("BINANCE"),
+            "binance-futures-market-streams",
+        ),
         &disconnected,
     );
 
@@ -5572,15 +6596,18 @@ fn test_subscribe_socket_state_dispatches_in_priority_order(
 
     let mut high = get_actor_unchecked::<TestDataActor>(&high_id);
     high.start().unwrap();
-    high.subscribe_socket_state(Some(100));
+    high.subscribe_socket_state(None, None, Some(100));
     drop(high);
 
     let mut low = get_actor_unchecked::<TestDataActor>(&low_id);
     low.start().unwrap();
-    low.subscribe_socket_state(Some(10));
+    low.subscribe_socket_state(None, None, Some(10));
     drop(low);
 
-    let topic = MessagingSwitchboard::socket_state_changed_topic();
+    let topic = MessagingSwitchboard::socket_state_changed_topic(
+        ClientId::from("BINANCE"),
+        "binance-futures-market-streams",
+    );
     let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
     assert_eq!(subscriptions.len(), 2);
     assert_eq!(subscriptions[0].priority, 100);
@@ -5604,11 +6631,14 @@ fn test_subscribe_socket_state_resubscribe_does_not_update_priority(
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
-    actor.subscribe_socket_state(Some(10));
-    actor.subscribe_socket_state(Some(100));
+    actor.subscribe_socket_state(None, None, Some(10));
+    actor.subscribe_socket_state(None, None, Some(100));
     drop(actor);
 
-    let topic = MessagingSwitchboard::socket_state_changed_topic();
+    let topic = MessagingSwitchboard::socket_state_changed_topic(
+        ClientId::from("BINANCE"),
+        "binance-futures-market-streams",
+    );
     let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
     assert_eq!(subscriptions.len(), 1);
     assert_eq!(subscriptions[0].priority, 10);
@@ -5622,11 +6652,14 @@ fn test_queue_state_changed_skips_delivery_when_not_running(
 ) {
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
-    actor.subscribe_queue_state(None);
+    actor.subscribe_queue_state(None, None);
     drop(actor);
 
     let event = make_queue_state_changed(QueueState::Triggered, 73);
-    msgbus::publish_any(MessagingSwitchboard::queue_state_changed_topic(), &event);
+    msgbus::publish_any(
+        MessagingSwitchboard::queue_state_changed_topic(SystemChannel::ExecCommands),
+        &event,
+    );
 
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     assert_eq!(actor.received_queue_state_changes, Vec::new());
@@ -5641,21 +6674,24 @@ fn test_unsubscribe_queue_state_stops_delivery(
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
-    actor.subscribe_queue_state(None);
+    actor.subscribe_queue_state(None, None);
     drop(actor);
 
     let triggered = make_queue_state_changed(QueueState::Triggered, 79);
     msgbus::publish_any(
-        MessagingSwitchboard::queue_state_changed_topic(),
+        MessagingSwitchboard::queue_state_changed_topic(SystemChannel::ExecCommands),
         &triggered,
     );
 
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
-    actor.unsubscribe_queue_state();
+    actor.unsubscribe_queue_state(None);
     drop(actor);
 
     let cleared = make_queue_state_changed(QueueState::Cleared, 83);
-    msgbus::publish_any(MessagingSwitchboard::queue_state_changed_topic(), &cleared);
+    msgbus::publish_any(
+        MessagingSwitchboard::queue_state_changed_topic(SystemChannel::ExecCommands),
+        &cleared,
+    );
 
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     assert_eq!(actor.received_queue_state_changes, vec![triggered]);
@@ -5690,15 +6726,15 @@ fn test_subscribe_queue_state_dispatches_in_priority_order(
 
     let mut high = get_actor_unchecked::<TestDataActor>(&high_id);
     high.start().unwrap();
-    high.subscribe_queue_state(Some(100));
+    high.subscribe_queue_state(None, Some(100));
     drop(high);
 
     let mut low = get_actor_unchecked::<TestDataActor>(&low_id);
     low.start().unwrap();
-    low.subscribe_queue_state(Some(10));
+    low.subscribe_queue_state(None, Some(10));
     drop(low);
 
-    let topic = MessagingSwitchboard::queue_state_changed_topic();
+    let topic = MessagingSwitchboard::queue_state_changed_topic(SystemChannel::ExecCommands);
     let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
     assert_eq!(subscriptions.len(), 2);
     assert_eq!(subscriptions[0].priority, 100);
@@ -5722,11 +6758,11 @@ fn test_subscribe_queue_state_resubscribe_does_not_update_priority(
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
-    actor.subscribe_queue_state(Some(10));
-    actor.subscribe_queue_state(Some(100));
+    actor.subscribe_queue_state(None, Some(10));
+    actor.subscribe_queue_state(None, Some(100));
     drop(actor);
 
-    let topic = MessagingSwitchboard::queue_state_changed_topic();
+    let topic = MessagingSwitchboard::queue_state_changed_topic(SystemChannel::ExecCommands);
     let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
     assert_eq!(subscriptions.len(), 1);
     assert_eq!(subscriptions[0].priority, 10);
@@ -5753,8 +6789,8 @@ fn test_subscribe_signal_wildcard_matches_all_names(
 
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     assert_eq!(actor.received_signals.len(), 2);
-    assert_eq!(actor.received_signals[0].name.as_str(), "alpha");
-    assert_eq!(actor.received_signals[1].name.as_str(), "beta");
+    assert_eq!(actor.received_signals[0].name, "alpha");
+    assert_eq!(actor.received_signals[1].name, "beta");
 }
 
 #[rstest]

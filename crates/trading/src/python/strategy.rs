@@ -45,8 +45,9 @@ use nautilus_common::{
         indicators::{registered_python_indicators, wrap_python_indicator},
         logging::PyLogger,
         order_factory::PyOrderFactory,
-        wrappers::retain_python_wrapper,
+        wrappers::{get_python_message_bus, retain_python_wrapper},
     },
+    runner::SystemChannel,
     signal::Signal,
     timer::{TimeEvent, TimeEventCallback},
 };
@@ -107,7 +108,7 @@ impl StrategyConfig {
         strategy_id=None,
         order_id_tag=None,
         oms_type=None,
-        external_order_claims=None,
+        external_order_instrument_ids=None,
         manage_contingent_orders=false,
         manage_gtd_expiry=false,
         manage_stop=false,
@@ -131,7 +132,7 @@ impl StrategyConfig {
         strategy_id: Option<StrategyId>,
         order_id_tag: Option<String>,
         oms_type: Option<OmsType>,
-        external_order_claims: Option<Vec<InstrumentId>>,
+        external_order_instrument_ids: Option<Vec<InstrumentId>>,
         manage_contingent_orders: bool,
         manage_gtd_expiry: bool,
         manage_stop: bool,
@@ -152,7 +153,7 @@ impl StrategyConfig {
             use_uuid_client_order_ids,
             use_hyphens_in_client_order_ids,
             oms_type,
-            external_order_claims,
+            external_order_instrument_ids,
             manage_contingent_orders,
             manage_gtd_expiry,
             manage_stop,
@@ -184,8 +185,8 @@ impl StrategyConfig {
     }
 
     #[getter]
-    fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
-        self.external_order_claims.clone()
+    fn external_order_instrument_ids(&self) -> Option<Vec<InstrumentId>> {
+        self.external_order_instrument_ids.clone()
     }
 
     #[getter]
@@ -953,8 +954,8 @@ impl StrategyNative for PyStrategyInner {
 }
 
 impl Strategy for PyStrategyInner {
-    fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
-        self.core.config.external_order_claims.clone()
+    fn external_order_instrument_ids(&self) -> Option<Vec<InstrumentId>> {
+        self.core.config.external_order_instrument_ids.clone()
     }
 
     fn on_market_exit(&mut self) {
@@ -1380,15 +1381,18 @@ impl PyStrategy {
         self.inner_mut().config = config;
     }
 
-    /// Updates configured external order claim instrument IDs before registration.
-    pub fn set_external_order_claims(&mut self, external_order_claims: Option<Vec<InstrumentId>>) {
-        self.inner_mut().core.config.external_order_claims = external_order_claims;
+    /// Updates the configured external order instrument IDs before registration.
+    pub fn set_external_order_instrument_ids(
+        &mut self,
+        external_order_instrument_ids: Option<Vec<InstrumentId>>,
+    ) {
+        self.inner_mut().core.config.external_order_instrument_ids = external_order_instrument_ids;
     }
 
-    /// Returns the configured external order claim instrument IDs.
+    /// Returns the configured external order instrument IDs.
     #[must_use]
-    pub fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
-        self.inner().external_order_claims()
+    pub fn external_order_instrument_ids(&self) -> Option<Vec<InstrumentId>> {
+        self.inner().external_order_instrument_ids()
     }
 
     /// Updates the runtime component identity used until a strategy ID is assigned.
@@ -1447,7 +1451,7 @@ impl PyStrategy {
     /// class-derived ID with the unassigned tag, such as `MyStrategy-None`.
     #[must_use]
     pub fn strategy_id(&self) -> StrategyId {
-        StrategyId::from(self.inner().core.actor.actor_id.inner().as_str())
+        StrategyId::new(self.inner().core.actor.actor_id.inner())
     }
 
     /// Returns the strategy ID once configured or assigned, otherwise `None`.
@@ -1529,7 +1533,7 @@ impl PyStrategy {
         let actor_trait_ref: Rc<UnsafeCell<dyn Actor>> = inner_ref;
         with_actor_registry(|registry| registry.insert(actor_id, actor_trait_ref));
 
-        retain_python_wrapper(component_id, wrapper);
+        retain_python_wrapper(component_id, wrapper, inner.core.actor.message_bus());
 
         Ok(())
     }
@@ -1635,6 +1639,24 @@ impl PyStrategy {
                 "Strategy must be registered with a trader before accessing cache",
             ))
         }
+    }
+
+    /// Replaces this strategy's active external order claims with `instrument_ids`.
+    ///
+    /// Passing an empty list releases every claim owned by the strategy. Existing cached orders
+    /// keep their assigned strategy ID. The original Python config object is not changed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the strategy is not registered, the cache is already borrowed, an
+    /// instrument is repeated, or an instrument is claimed by another strategy.
+    #[pyo3(name = "set_external_order_instrument_ids")]
+    fn py_set_external_order_instrument_ids(
+        &mut self,
+        instrument_ids: Vec<InstrumentId>,
+    ) -> PyResult<()> {
+        Strategy::set_external_order_instrument_ids(self.inner_mut(), instrument_ids)
+            .map_err(to_pyruntime_err)
     }
 
     #[getter]
@@ -2431,18 +2453,27 @@ impl PyStrategy {
     }
 
     #[pyo3(name = "subscribe_queue_state")]
-    #[pyo3(signature = (priority=None))]
-    fn py_subscribe_queue_state(&mut self, priority: Option<u32>) -> PyResult<()> {
+    #[pyo3(signature = (channel=None, priority=None))]
+    fn py_subscribe_queue_state(
+        &mut self,
+        channel: Option<SystemChannel>,
+        priority: Option<u32>,
+    ) -> PyResult<()> {
         self.ensure_registered()?;
-        DataActor::subscribe_queue_state(self.inner_mut(), priority);
+        DataActor::subscribe_queue_state(self.inner_mut(), channel, priority);
         Ok(())
     }
 
     #[pyo3(name = "subscribe_socket_state")]
-    #[pyo3(signature = (priority=None))]
-    fn py_subscribe_socket_state(&mut self, priority: Option<u32>) -> PyResult<()> {
+    #[pyo3(signature = (client_id=None, endpoint=None, priority=None))]
+    fn py_subscribe_socket_state(
+        &mut self,
+        client_id: Option<ClientId>,
+        endpoint: Option<&str>,
+        priority: Option<u32>,
+    ) -> PyResult<()> {
         self.ensure_registered()?;
-        DataActor::subscribe_socket_state(self.inner_mut(), priority);
+        DataActor::subscribe_socket_state(self.inner_mut(), client_id, endpoint, priority);
         Ok(())
     }
 
@@ -2812,16 +2843,22 @@ impl PyStrategy {
     }
 
     #[pyo3(name = "unsubscribe_queue_state")]
-    fn py_unsubscribe_queue_state(&mut self) -> PyResult<()> {
+    #[pyo3(signature = (channel=None))]
+    fn py_unsubscribe_queue_state(&mut self, channel: Option<SystemChannel>) -> PyResult<()> {
         self.ensure_registered()?;
-        DataActor::unsubscribe_queue_state(self.inner_mut());
+        DataActor::unsubscribe_queue_state(self.inner_mut(), channel);
         Ok(())
     }
 
     #[pyo3(name = "unsubscribe_socket_state")]
-    fn py_unsubscribe_socket_state(&mut self) -> PyResult<()> {
+    #[pyo3(signature = (client_id=None, endpoint=None))]
+    fn py_unsubscribe_socket_state(
+        &mut self,
+        client_id: Option<ClientId>,
+        endpoint: Option<&str>,
+    ) -> PyResult<()> {
         self.ensure_registered()?;
-        DataActor::unsubscribe_socket_state(self.inner_mut());
+        DataActor::unsubscribe_socket_state(self.inner_mut(), client_id, endpoint);
         Ok(())
     }
 
@@ -3455,6 +3492,44 @@ impl PyStrategy {
     }
 }
 
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pyo3::pymethods]
+impl PyStrategy {
+    #[pyo3(name = "publish_message", signature = (topic, message))]
+    fn py_publish_message(
+        slf: &Bound<'_, Self>,
+        topic: &str,
+        #[gen_stub(override_type(type_repr = "object"))] message: Py<PyAny>,
+    ) -> PyResult<()> {
+        let messages = get_python_message_bus(slf.as_any())?;
+        messages.publish_message(topic, message)
+    }
+
+    #[pyo3(name = "subscribe_topic")]
+    #[pyo3(signature = (topic, handler, priority=0))]
+    fn py_subscribe_topic(
+        slf: &Bound<'_, Self>,
+        topic: &str,
+        #[gen_stub(override_type(type_repr = "collections.abc.Callable[[object], None]", imports = ("collections.abc",)))]
+        handler: Py<PyAny>,
+        priority: u32,
+    ) -> PyResult<()> {
+        let messages = get_python_message_bus(slf.as_any())?;
+        messages.subscribe_topic(slf.py(), topic, handler, priority)
+    }
+
+    #[pyo3(name = "unsubscribe_topic", signature = (topic, handler))]
+    fn py_unsubscribe_topic(
+        slf: &Bound<'_, Self>,
+        topic: &str,
+        #[gen_stub(override_type(type_repr = "collections.abc.Callable[[object], None]", imports = ("collections.abc",)))]
+        handler: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
+        let messages = get_python_message_bus(slf.as_any())?;
+        messages.unsubscribe_topic(topic, handler)
+    }
+}
+
 impl PyStrategy {
     fn ensure_registered_for_data(&self) -> PyResult<()> {
         if self.inner().core.actor.is_registered() {
@@ -3563,7 +3638,7 @@ mod tests {
         signal::Signal,
         timer::TimeEvent,
     };
-    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_core::{DurationNanos, UUID4, UnixNanos};
     use nautilus_model::{
         data::{
             Bar, BarType, CustomData, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
@@ -4110,7 +4185,7 @@ class IndicatorEventStrategy:
             realized_return: 0.1,
             realized_pnl: Some(Money::new(0.1, Currency::USD())),
             unrealized_pnl: Money::new(0.0, Currency::USD()),
-            duration: 1,
+            duration: DurationNanos::new(1),
             event_id: UUID4::new(),
             ts_opened: UnixNanos::default(),
             ts_closed: Some(UnixNanos::default()),
@@ -4334,17 +4409,17 @@ class IndicatorEventStrategy:
     }
 
     #[rstest::rstest]
-    fn test_external_order_claims_returns_configured_instruments() {
+    fn test_external_order_instrument_ids_returns_configured_instruments() {
         let claims = vec![
             InstrumentId::from("AUDUSD.SIM"),
             InstrumentId::from("BTCUSDT.BINANCE"),
         ];
         let strategy = PyStrategy::new(Some(StrategyConfig {
-            external_order_claims: Some(claims.clone()),
+            external_order_instrument_ids: Some(claims.clone()),
             ..Default::default()
         }));
 
-        assert_eq!(strategy.external_order_claims(), Some(claims));
+        assert_eq!(strategy.external_order_instrument_ids(), Some(claims));
     }
 
     #[rstest::rstest]
@@ -4805,7 +4880,7 @@ class IndicatorEventStrategy:
 
             let received_signals = received_signals.borrow();
             assert_eq!(received_signals.len(), 1);
-            assert_eq!(received_signals[0].name.as_str(), "risk");
+            assert_eq!(received_signals[0].name, "risk");
             assert_eq!(received_signals[0].value, "2.0");
             assert_eq!(
                 received_signals[0].ts_event,
@@ -4887,7 +4962,11 @@ class IndicatorEventStrategy:
     }
 
     #[rstest::rstest]
-    fn test_python_subscribe_and_unsubscribe_queue_state_update_msgbus() {
+    #[case(None)]
+    #[case(Some(SystemChannel::ExecCommands))]
+    fn test_python_subscribe_and_unsubscribe_queue_state_update_msgbus(
+        #[case] channel: Option<SystemChannel>,
+    ) {
         use nautilus_common::msgbus::{MessageBus, MessagingSwitchboard, get_message_bus};
 
         *get_message_bus().borrow_mut() = MessageBus::default();
@@ -4896,14 +4975,26 @@ class IndicatorEventStrategy:
         Python::attach(|py| {
             let (_, mut rust_strategy) = create_registered_tracking_strategy(py);
 
-            rust_strategy.py_subscribe_queue_state(Some(50)).unwrap();
+            rust_strategy
+                .py_subscribe_queue_state(channel, Some(50))
+                .unwrap();
 
-            let topic = MessagingSwitchboard::queue_state_changed_topic();
+            let topic =
+                MessagingSwitchboard::queue_state_changed_topic(SystemChannel::ExecCommands);
             let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
             assert_eq!(subscriptions.len(), 1);
             assert_eq!(subscriptions[0].priority, 50);
+            let unrelated =
+                MessagingSwitchboard::queue_state_changed_topic(SystemChannel::DataEvents);
+            assert_eq!(
+                get_message_bus()
+                    .borrow_mut()
+                    .matching_subscriptions(unrelated)
+                    .len(),
+                usize::from(channel.is_none())
+            );
 
-            rust_strategy.py_unsubscribe_queue_state().unwrap();
+            rust_strategy.py_unsubscribe_queue_state(channel).unwrap();
 
             let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
             assert!(subscriptions.is_empty());
@@ -4911,7 +5002,17 @@ class IndicatorEventStrategy:
     }
 
     #[rstest::rstest]
-    fn test_python_subscribe_and_unsubscribe_socket_state_update_msgbus() {
+    #[case(None, None)]
+    #[case(Some(ClientId::from("BINANCE")), None)]
+    #[case(None, Some("binance-futures-market-streams"))]
+    #[case(
+        Some(ClientId::from("BINANCE")),
+        Some("binance-futures-market-streams")
+    )]
+    fn test_python_subscribe_and_unsubscribe_socket_state_update_msgbus(
+        #[case] client_id: Option<ClientId>,
+        #[case] endpoint: Option<&str>,
+    ) {
         use nautilus_common::msgbus::{MessageBus, MessagingSwitchboard, get_message_bus};
 
         *get_message_bus().borrow_mut() = MessageBus::default();
@@ -4920,14 +5021,30 @@ class IndicatorEventStrategy:
         Python::attach(|py| {
             let (_, mut rust_strategy) = create_registered_tracking_strategy(py);
 
-            rust_strategy.py_subscribe_socket_state(Some(50)).unwrap();
+            rust_strategy
+                .py_subscribe_socket_state(client_id, endpoint, Some(50))
+                .unwrap();
 
-            let topic = MessagingSwitchboard::socket_state_changed_topic();
+            let topic = MessagingSwitchboard::socket_state_changed_topic(
+                ClientId::from("BINANCE"),
+                "binance-futures-market-streams",
+            );
             let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
             assert_eq!(subscriptions.len(), 1);
             assert_eq!(subscriptions[0].priority, 50);
+            let unrelated =
+                MessagingSwitchboard::socket_state_changed_topic(ClientId::from("BYBIT"), "orders");
+            assert_eq!(
+                get_message_bus()
+                    .borrow_mut()
+                    .matching_subscriptions(unrelated)
+                    .len(),
+                usize::from(client_id.is_none() && endpoint.is_none())
+            );
 
-            rust_strategy.py_unsubscribe_socket_state().unwrap();
+            rust_strategy
+                .py_unsubscribe_socket_state(client_id, endpoint)
+                .unwrap();
 
             let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
             assert!(subscriptions.is_empty());
@@ -4952,7 +5069,7 @@ class IndicatorEventStrategy:
 
             assert_eq!(command.trader_id, TraderId::from("TRADER-001"));
             assert_eq!(command.client_id, ClientId::from("POLYMARKET"));
-            assert_eq!(command.endpoint.as_str(), "polymarket-market-streams");
+            assert_eq!(command.endpoint, "polymarket-market-streams");
             assert_eq!(command.ts_init, UnixNanos::default());
         });
     }

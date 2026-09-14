@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
+//! C foreign function interface (FFI) from [cbindgen](https://crates.io/crates/cbindgen).
 
 #![allow(unsafe_code)]
 

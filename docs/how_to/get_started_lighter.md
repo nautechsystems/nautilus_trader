@@ -113,7 +113,7 @@ checkout, or build the package from source before running these examples. See
 From the repository root with Python installed:
 
 ```bash
-.venv/bin/python examples/live/lighter/data_tester.py
+uv run --project python --no-sync python examples/live/lighter/data_tester.py
 ```
 
 The script connects to Lighter Testnet immediately and starts streaming. The deployment,
@@ -139,7 +139,7 @@ builder = LiveNode.builder(
 Use the execution tester only after the data tester works:
 
 ```bash
-.venv/bin/python examples/live/lighter/exec_tester.py
+uv run --project python --no-sync python examples/live/lighter/exec_tester.py
 ```
 
 The execution tester also connects immediately, and it places real orders by default
@@ -166,11 +166,10 @@ before you run.
 :::
 
 For emergency cleanup, `cargo run --bin lighter-flatten -p nautilus-lighter` cancels open orders
-and closes positions for the selected deployment account. Review it before use because it scans the
-account, can take several minutes under the standard 60 req/min quota, and affects more than one
-strategy or market when the account has broader exposure. Set `LIGHTER_DEPLOYMENT` to `lighter` or
-`robinhood` and `LIGHTER_ENVIRONMENT` to `mainnet` or `testnet`; omitted selectors default to
-Lighter Mainnet and select the matching credential namespace.
+and closes positions for the selected deployment account. Stop other account writers and review
+[Emergency account cleanup](../integrations/lighter.md#emergency-account-cleanup) before use. The
+tool submits one account-wide cancellation and one position-close pass. It does not reconcile until
+the account is flat.
 
 [lighter-rwa-composite-mm]: ../tutorials/lighter_rwa_composite_mm.md
 [python-install]: ../getting_started/installation.md#development-wheels

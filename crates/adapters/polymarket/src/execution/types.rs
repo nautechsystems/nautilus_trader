@@ -23,7 +23,6 @@ use nautilus_model::{
     orders::OrderAny,
     types::{Price, Quantity},
 };
-use rust_decimal::Decimal;
 
 use crate::{
     common::{consts::CANCEL_ALREADY_DONE, enums::PolymarketOrderType},
@@ -63,11 +62,13 @@ pub(crate) struct LimitOrderSubmitRequest {
     pub(crate) side: OrderSide,
     pub(crate) price: Price,
     pub(crate) quantity: Quantity,
+    pub(crate) quote_quantity: bool,
     pub(crate) time_in_force: TimeInForce,
     pub(crate) post_only: bool,
     pub(crate) neg_risk: bool,
     pub(crate) expire_time: Option<UnixNanos>,
     pub(crate) tick_decimals: u32,
+    pub(crate) size_precision: u8,
 }
 
 #[derive(Clone, Debug)]
@@ -76,14 +77,13 @@ pub(crate) struct SignedLimitOrderSubmission {
     pub(crate) order_type: PolymarketOrderType,
     pub(crate) post_only: bool,
     pub(crate) expected_venue_order_id: VenueOrderId,
-    pub(crate) expected_base_qty: Decimal,
+    pub(crate) expected_base_qty: Quantity,
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct BatchLimitOrderContext {
     pub(crate) order: OrderAny,
     pub(crate) request: LimitOrderSubmitRequest,
-    pub(crate) size_precision: u8,
     pub(crate) price_precision: u8,
 }
 

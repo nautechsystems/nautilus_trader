@@ -127,6 +127,7 @@ impl ExecutionClientFactory for LighterExecutionClientFactory {
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
+        _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let lighter_config = config
             .as_any()
@@ -194,7 +195,7 @@ mod tests {
             .account_id(AccountId::from("LIGHTER-001"))
             .account_index(12_345)
             .api_key_index(5)
-            .private_key(PRIVATE_KEY_HEX.to_string())
+            .private_key(PRIVATE_KEY_HEX.into())
             .build()
     }
 
@@ -235,6 +236,7 @@ mod tests {
             "LIGHTER-TEST",
             &wrong_config,
             cache.into(),
+            Rc::new(RefCell::new(TestClock::new())),
         );
         assert!(result.is_err());
         assert!(
@@ -258,6 +260,7 @@ mod tests {
                 "LIGHTER-TEST",
                 &config,
                 cache.into(),
+                Rc::new(RefCell::new(TestClock::new())),
             )
             .expect("expected client to construct");
 
@@ -293,6 +296,7 @@ mod tests {
                 "RH-EXEC",
                 &exec_config,
                 cache.into(),
+                Rc::new(RefCell::new(TestClock::new())),
             )
             .expect("expected execution client to construct");
 
@@ -320,7 +324,7 @@ mod tests {
             .account_id(AccountId::from("LIGHTER_ROBINHOOD-001"))
             .account_index(12_345)
             .api_key_index(5)
-            .private_key(PRIVATE_KEY_HEX.to_string())
+            .private_key(PRIVATE_KEY_HEX.into())
             .deployment(LighterDeployment::Robinhood)
             .build();
 
@@ -352,6 +356,7 @@ mod tests {
                 LIGHTER_CLIENT_ID.as_str(),
                 &lighter_exec_config,
                 cache.clone().into(),
+                Rc::new(RefCell::new(TestClock::new())),
             )
             .expect("expected Lighter execution client to construct");
 
@@ -361,6 +366,7 @@ mod tests {
                 LIGHTER_ROBINHOOD_CLIENT_ID.as_str(),
                 &robinhood_exec_config,
                 cache.into(),
+                Rc::new(RefCell::new(TestClock::new())),
             )
             .expect("expected Robinhood execution client to construct");
 
@@ -392,6 +398,7 @@ mod tests {
             "RH-EXEC",
             &config,
             cache.into(),
+            Rc::new(RefCell::new(TestClock::new())),
         );
 
         let error = match result {

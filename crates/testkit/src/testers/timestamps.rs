@@ -22,8 +22,8 @@ use nautilus_core::UnixNanos;
 // seconds, milliseconds, or microseconds fall below this bound.
 const MIN_PLAUSIBLE_UNIX_NANOS: u64 = 10_000_000_000_000_000;
 
-const fn unix_nanos_scale_is_plausible(ts: UnixNanos) -> bool {
-    ts.as_u64() >= MIN_PLAUSIBLE_UNIX_NANOS
+const fn unix_nanos_scale_is_plausible(timestamp: UnixNanos) -> bool {
+    timestamp.as_u64() >= MIN_PLAUSIBLE_UNIX_NANOS
 }
 
 /// Logs a warning when `ts_event` or `ts_init` is not a plausible Unix-nanosecond value.
@@ -33,16 +33,16 @@ pub(super) fn warn_if_implausible_unix_nanos(kind: &str, ts_event: UnixNanos, ts
 }
 
 /// Logs a warning when an optional timestamp is present and not nanosecond-scale.
-pub(super) fn warn_if_implausible_optional(kind: &str, field: &str, ts: Option<UnixNanos>) {
-    if let Some(ts) = ts {
-        warn_if_implausible_named(kind, field, ts);
+pub(super) fn warn_if_implausible_optional(kind: &str, field: &str, timestamp: Option<UnixNanos>) {
+    if let Some(timestamp) = timestamp {
+        warn_if_implausible_named(kind, field, timestamp);
     }
 }
 
-fn warn_if_implausible_named(kind: &str, field: &str, ts: UnixNanos) {
-    if !unix_nanos_scale_is_plausible(ts) {
+fn warn_if_implausible_named(kind: &str, field: &str, timestamp: UnixNanos) {
+    if !unix_nanos_scale_is_plausible(timestamp) {
         log_warn!(
-            "Implausible Unix-nanosecond scale for {kind} {field}={ts}; value looks like leftover seconds, milliseconds, or microseconds"
+            "Implausible Unix-nanosecond scale for {kind} {field}={timestamp}; value looks like leftover seconds, milliseconds, or microseconds"
         );
     }
 }

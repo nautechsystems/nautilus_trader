@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::{python::to_pyvalue_err, string::secret::SecretString};
 use nautilus_model::{data::BarSpecification, identifiers::InstrumentId};
 use pyo3::prelude::*;
 use ustr::Ustr;
@@ -115,9 +115,9 @@ impl TardisDataClientConfig {
     ) -> Self {
         let defaults = Self::default();
         Self {
-            api_key,
-            tardis_ws_url,
-            proxy_url,
+            api_key: api_key.map(SecretString::from),
+            tardis_ws_url: tardis_ws_url.map(SecretString::from),
+            proxy_url: proxy_url.map(SecretString::from),
             normalize_symbols: normalize_symbols.unwrap_or(defaults.normalize_symbols),
             book_snapshot_output: defaults.book_snapshot_output,
             extract_bbo_as_quotes: extract_bbo_as_quotes.unwrap_or(defaults.extract_bbo_as_quotes),

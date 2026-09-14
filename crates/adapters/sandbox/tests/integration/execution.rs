@@ -1,0 +1,6903 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
+//! Tests for sandbox execution client.
+
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+    sync::Arc,
+};
+
+use nautilus_common::{
+    cache::Cache,
+    clients::ExecutionClient,
+    clock::{Clock, TestClock},
+    live::set_exec_event_sender,
+    messages::{
+        ExecutionEvent,
+        execution::{
+            BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
+            SubmitOrder, SubmitOrderList, TradingCommand,
+        },
+    },
+    msgbus::{
+        self, MessageBus, MessagingSwitchboard, TypedHandler,
+        stubs::get_typed_into_message_saving_handler, typed_handler::TypedIntoHandler,
+    },
+    runner::{SyncTradingCommandSender, drain_trading_cmd_queue, replace_exec_cmd_sender},
+};
+use nautilus_core::{DurationNanos, UUID4, UnixNanos};
+use nautilus_data::engine::DataEngine;
+#[cfg(feature = "python")]
+use nautilus_execution::python::fee::PythonFeeModel;
+use nautilus_execution::{
+    client::core::ExecutionClientCore,
+    engine::ExecutionEngine,
+    models::{
+        fee::{FeeModelAny, ProbabilityPriceFeeModel},
+        fill::{DefaultFillModel, FillModel, FillModelAny, FillModelHandle},
+        latency::{LatencyModelAny, StaticLatencyModel},
+    },
+};
+use nautilus_model::{
+    accounts::{AccountAny, MarginAccount},
+    data::{Bar, BarType, Data, InstrumentClose, InstrumentStatus, QuoteTick, TradeTick},
+    enums::{
+        AccountType, AggressorSide, BookType, ContingencyType, InstrumentCloseType,
+        MarketStatusAction, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+    },
+    events::{
+        AccountState, OrderDenied, OrderEventAny, OrderFilled, OrderPendingCancel,
+        OrderPendingUpdate, PositionClosed, PositionEvent, account::stubs::margin_account_state,
+    },
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
+        TradeId, TraderId, Venue,
+    },
+    instruments::{
+        CryptoPerpetual, Instrument, InstrumentAny,
+        stubs::{binary_option, crypto_perpetual_ethusdt},
+    },
+    orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
+    position::Position,
+    types::{Currency, Money, Price, Quantity},
+};
+use nautilus_sandbox::{SandboxExecutionClient, SandboxExecutionClientConfig};
+#[cfg(feature = "python")]
+use pyo3::{IntoPyObjectExt, Python, ffi::c_str, types::PyAnyMethods};
+use rstest::{fixture, rstest};
+use rust_decimal::Decimal;
+use ustr::Ustr;
+
+#[fixture]
+fn trader_id() -> TraderId {
+    TraderId::from("SANDBOX-001")
+}
+
+#[fixture]
+fn account_id() -> AccountId {
+    AccountId::from("SANDBOX-001")
+}
+
+#[fixture]
+fn venue() -> Venue {
+    Venue::new("SIM")
+}
+
+#[fixture]
+fn client_id() -> ClientId {
+    ClientId::new("SANDBOX")
+}
+
+#[fixture]
+fn instrument(crypto_perpetual_ethusdt: CryptoPerpetual) -> InstrumentAny {
+    InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt)
+}
+
+fn create_config(
+    _trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+) -> SandboxExecutionClientConfig {
+    let usd = Currency::USD();
+    SandboxExecutionClientConfig {
+        account_id,
+        venue,
+        starting_balances: vec![Money::new(100_000.0, usd)],
+        base_currency: Some(usd),
+        oms_type: OmsType::Netting,
+        account_type: AccountType::Margin,
+        default_leverage: Decimal::ONE,
+        leverages: ahash::AHashMap::new(),
+        book_type: BookType::L1_MBP,
+        fee_model: None,
+        fill_model: None,
+        latency_model: None,
+        frozen_account: false,
+        bar_execution: false,
+        trade_execution: false,
+        reject_stop_orders: true,
+        support_gtd_orders: true,
+        support_contingent_orders: true,
+        use_position_ids: true,
+        use_random_ids: false,
+        use_reduce_only: true,
+        queue_position: false,
+        liquidity_consumption: false,
+        bar_adaptive_high_low_ordering: false,
+        use_market_order_acks: false,
+        oto_full_trigger: false,
+        price_protection_points: 0,
+    }
+}
+
+#[fixture]
+fn config(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+) -> SandboxExecutionClientConfig {
+    create_config(trader_id, account_id, venue)
+}
+
+/// Test context bundling execution client with shared cache for tests that need both
+struct TestContext {
+    client: SandboxExecutionClient,
+    cache: Rc<RefCell<Cache>>,
+    /// The clock the client was built on, retained so a test can advance it and fire its alerts.
+    test_clock: Rc<RefCell<TestClock>>,
+}
+
+fn create_test_context(trader_id: TraderId, account_id: AccountId, venue: Venue) -> TestContext {
+    create_test_context_with(trader_id, account_id, venue, |_| {})
+}
+
+fn create_test_context_with_trade_execution(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+) -> TestContext {
+    create_test_context_with(trader_id, account_id, venue, |config| {
+        config.trade_execution = true;
+    })
+}
+
+fn create_test_context_with(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    customize: impl FnOnce(&mut SandboxExecutionClientConfig),
+) -> TestContext {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let test_clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
+    let mut config = create_config(trader_id, account_id, venue);
+    customize(&mut config);
+
+    let core = ExecutionClientCore::new(
+        trader_id,
+        ClientId::new("SANDBOX"),
+        config.venue,
+        config.oms_type,
+        config.account_id,
+        config.account_type,
+        config.base_currency,
+        cache.clone(),
+    );
+
+    let client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+    TestContext {
+        client,
+        cache,
+        test_clock,
+    }
+}
+
+/// Builds a started client-only context under `latency_model`, with `instrument` cached and the
+/// exec event sender installed, so every event the client emits takes the execution channel.
+fn setup_channel_context(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: &InstrumentAny,
+    latency_model: Option<LatencyModelAny>,
+) -> (
+    TestContext,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let mut context = create_test_context_with(trader_id, account_id, venue, |config| {
+        config.latency_model = latency_model;
+    });
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    nautilus_common::live::runner::replace_exec_event_sender(tx);
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    context.client.start().unwrap();
+    (context, rx)
+}
+
+/// Builds a buy limit far from any market, so it accepts rather than fills.
+fn resting_limit(
+    instrument: &InstrumentAny,
+    client_order_id: &str,
+    price: &str,
+    ts: UnixNanos,
+) -> OrderAny {
+    OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from(price))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id.into())
+        .ts_init(ts)
+        .build()
+}
+
+/// Builds a resting buy limit linked OCO to `sibling`, as a strategy's contingent pair would be.
+fn oco_limit(
+    instrument: &InstrumentAny,
+    client_order_id: ClientOrderId,
+    sibling: ClientOrderId,
+    price: &str,
+    ts: UnixNanos,
+) -> OrderAny {
+    OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from(price))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .contingency_type(ContingencyType::Oco)
+        .linked_order_ids(vec![sibling])
+        .ts_init(ts)
+        .build()
+}
+
+/// Caches `order` and submits it straight to the client, for the tests of its public methods.
+fn submit_to_client(context: &TestContext, trader_id: TraderId, order: &OrderAny) {
+    // Not `.submit(true)` on the builder: that stub stamps `ACCOUNT-001`, while
+    // `process_cancel_all` filters the cache by the client's own account.
+    context
+        .cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    context
+        .client
+        .submit_order(SubmitOrder::from_order(
+            order,
+            trader_id,
+            Some(context.client.client_id()),
+            None,
+            UUID4::new(),
+            order.ts_init(),
+        ))
+        .unwrap();
+}
+
+#[fixture]
+fn test_context(trader_id: TraderId, account_id: AccountId, venue: Venue) -> TestContext {
+    create_test_context(trader_id, account_id, venue)
+}
+
+#[fixture]
+fn execution_client(test_context: TestContext) -> SandboxExecutionClient {
+    test_context.client
+}
+
+fn create_quote_tick_with_price_precision(
+    instrument_id: InstrumentId,
+    bid: f64,
+    ask: f64,
+    price_precision: u8,
+) -> QuoteTick {
+    QuoteTick::new(
+        instrument_id,
+        Price::new(bid, price_precision),
+        Price::new(ask, price_precision),
+        Quantity::new(100.0, 3),
+        Quantity::new(100.0, 3),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+}
+
+fn create_quote_tick(instrument_id: InstrumentId, bid: f64, ask: f64) -> QuoteTick {
+    // Use price precision 2 to match crypto_perpetual_ethusdt fixture.
+    create_quote_tick_with_price_precision(instrument_id, bid, ask, 2)
+}
+
+fn create_mismatched_quote_tick(instrument_id: InstrumentId, bid: f64, ask: f64) -> QuoteTick {
+    // Uses price precision 3 (instrument fixture uses 2), should be rejected by sandbox guard.
+    create_quote_tick_with_price_precision(instrument_id, bid, ask, 3)
+}
+
+fn create_trade_tick_with_precision(
+    instrument_id: InstrumentId,
+    price: f64,
+    size: f64,
+    price_precision: u8,
+    size_precision: u8,
+) -> TradeTick {
+    TradeTick::new(
+        instrument_id,
+        Price::new(price, price_precision),
+        Quantity::new(size, size_precision),
+        AggressorSide::Buy,
+        TradeId::new("1"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+}
+
+fn create_mismatched_trade_tick(instrument_id: InstrumentId) -> TradeTick {
+    // Uses price precision 3 (instrument fixture uses 2), should be rejected by sandbox guard.
+    create_trade_tick_with_precision(instrument_id, 1000.0, 1.0, 3, 3)
+}
+
+fn make_binary_option_instrument(
+    condition_id: &str,
+    token_id: &str,
+    outcome: &str,
+    expiration_ns: u64,
+) -> InstrumentAny {
+    let mut binary = binary_option();
+    let raw_symbol = format!("{condition_id}-{token_id}");
+    binary.raw_symbol = raw_symbol.as_str().into();
+    binary.id = InstrumentId::from(format!("{raw_symbol}.POLYMARKET").as_str());
+    binary.activation_ns = UnixNanos::from(1);
+    binary.expiration_ns = UnixNanos::from(expiration_ns);
+    binary.outcome = Some(Ustr::from(outcome));
+    InstrumentAny::BinaryOption(binary)
+}
+
+fn create_binary_option_quote(instrument_id: InstrumentId) -> QuoteTick {
+    QuoteTick::new(
+        instrument_id,
+        Price::new(0.40, 3),
+        Price::new(0.41, 3),
+        Quantity::new(100.0, 2),
+        Quantity::new(100.0, 2),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+}
+
+fn submit_open_position_and_seed_cache(
+    client: &SandboxExecutionClient,
+    cache: &Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    instrument: &InstrumentAny,
+    client_order_id: &str,
+    position_id: &str,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+) -> Position {
+    submit_market_open_order(client, cache, trader_id, instrument, client_order_id, 10);
+
+    let mut filled = None;
+
+    for event in std::iter::from_fn(|| rx.try_recv().ok()) {
+        let ExecutionEvent::Order(OrderEventAny::Filled(fill)) = event else {
+            continue;
+        };
+
+        if fill.client_order_id.as_str() == client_order_id {
+            filled = Some(fill);
+            break;
+        }
+    }
+
+    let fill_event =
+        OrderEventAny::Filled(filled.expect("expected opening fill from sandbox market order"));
+    cache.borrow_mut().update_order(&fill_event).unwrap();
+
+    let OrderEventAny::Filled(mut filled) = fill_event else {
+        unreachable!("constructed filled order event");
+    };
+    filled.position_id = Some(PositionId::new(position_id));
+    Position::new(instrument, filled)
+}
+
+fn position_closed_event(position: &Position, account_id: AccountId) -> PositionEvent {
+    PositionEvent::PositionClosed(PositionClosed {
+        trader_id: position.trader_id,
+        strategy_id: position.strategy_id,
+        instrument_id: position.instrument_id,
+        position_id: position.id,
+        account_id,
+        opening_order_id: position.opening_order_id,
+        closing_order_id: position.closing_order_id,
+        entry: position.entry,
+        side: PositionSide::Flat,
+        signed_qty: 0.0,
+        quantity: Quantity::zero(position.size_precision),
+        peak_quantity: position.peak_qty,
+        last_qty: Quantity::zero(position.size_precision),
+        last_px: Price::zero(position.price_precision),
+        currency: position.quote_currency,
+        avg_px_open: position.avg_px_open,
+        avg_px_close: position.avg_px_close,
+        realized_return: position.realized_return,
+        realized_pnl: position.realized_pnl,
+        unrealized_pnl: Money::zero(position.quote_currency),
+        duration: DurationNanos::new(1),
+        event_id: UUID4::new(),
+        ts_opened: position.ts_opened,
+        ts_closed: position.ts_closed.or(Some(position.ts_last)),
+        ts_event: position.ts_last,
+        ts_init: position.ts_last,
+    })
+}
+
+fn settle_position_from_expiration_fill(
+    cache: &Rc<RefCell<Cache>>,
+    position: &Position,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+) -> Position {
+    let mut expiration_fill = None;
+
+    for event in std::iter::from_fn(|| rx.try_recv().ok()) {
+        let ExecutionEvent::Order(OrderEventAny::Filled(fill)) = event else {
+            continue;
+        };
+
+        if fill.client_order_id.as_str().starts_with("EXPIRATION-") {
+            expiration_fill = Some(fill);
+            break;
+        }
+    }
+
+    let expiration_fill = expiration_fill.expect("expected expiration fill after InstrumentClose");
+
+    let mut closed = position.clone();
+    closed.apply(&expiration_fill);
+    cache.borrow_mut().update_position(&closed).unwrap();
+    closed
+}
+
+fn apply_order_events_from_channel(
+    cache: &Rc<RefCell<Cache>>,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+) -> Vec<OrderEventAny> {
+    let mut order_events = Vec::new();
+
+    for event in std::iter::from_fn(|| rx.try_recv().ok()) {
+        let ExecutionEvent::Order(order_event) = event else {
+            continue;
+        };
+
+        let _ = cache.borrow_mut().update_order(&order_event);
+        order_events.push(order_event);
+    }
+
+    order_events
+}
+
+fn create_submit_order_list(
+    trader_id: TraderId,
+    client_id: ClientId,
+    instrument_id: InstrumentId,
+    orders: &[OrderAny],
+) -> SubmitOrderList {
+    let strategy_id = orders
+        .first()
+        .expect("expected non-empty order list")
+        .strategy_id();
+    let order_list = OrderList::new(
+        OrderListId::from("OL-SANDBOX-001"),
+        instrument_id,
+        strategy_id,
+        orders.iter().map(OrderAny::client_order_id).collect(),
+        UnixNanos::default(),
+    );
+
+    SubmitOrderList {
+        trader_id,
+        client_id: Some(client_id),
+        strategy_id,
+        instrument_id,
+        order_list,
+        order_inits: orders
+            .iter()
+            .map(|order| order.init_event().clone())
+            .collect(),
+        exec_algorithm_id: None,
+        position_id: None,
+        params: None,
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        correlation_id: None,
+        causation_id: None,
+    }
+}
+
+fn seed_binary_option_position_from_fill(
+    cache: &Rc<RefCell<Cache>>,
+    instrument: &InstrumentAny,
+    fill: OrderFilled,
+    position_id: &str,
+) {
+    let mut fill = fill;
+    fill.position_id = Some(PositionId::new(position_id));
+    let position = Position::new(instrument, fill);
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+}
+
+fn submit_market_open_order(
+    client: &SandboxExecutionClient,
+    cache: &Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    instrument: &InstrumentAny,
+    client_order_id: &str,
+    ts_init: u64,
+) {
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.00"))
+        .client_order_id(client_order_id.into())
+        .ts_init(UnixNanos::from(ts_init))
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    client
+        .submit_order(SubmitOrder::from_order(
+            &order,
+            trader_id,
+            Some(client.client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::from(ts_init),
+        ))
+        .unwrap();
+}
+
+struct BinaryOptionLifecycleHarness {
+    client: SandboxExecutionClient,
+    cache: Rc<RefCell<Cache>>,
+    test_clock: Rc<RefCell<TestClock>>,
+    instrument: InstrumentAny,
+    rx: tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+}
+
+fn setup_binary_option_lifecycle_harness(
+    trader_id: TraderId,
+    account_id: AccountId,
+    condition_id: &str,
+    token_id: &str,
+    outcome: &str,
+    expiration_ns: u64,
+) -> BinaryOptionLifecycleHarness {
+    let instrument = make_binary_option_instrument(condition_id, token_id, outcome, expiration_ns);
+    let venue = instrument.id().venue;
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let test_clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
+    let config = create_config(trader_id, account_id, venue);
+    let core = ExecutionClientCore::new(
+        trader_id,
+        ClientId::new("SANDBOX"),
+        config.venue,
+        config.oms_type,
+        config.account_id,
+        config.account_type,
+        config.base_currency,
+        cache.clone(),
+    );
+    let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+
+    set_exec_event_sender(tx);
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    client.start().unwrap();
+    client
+        .process_quote_tick(&create_binary_option_quote(instrument.id()))
+        .unwrap();
+
+    BinaryOptionLifecycleHarness {
+        client,
+        cache,
+        test_clock,
+        instrument,
+        rx,
+    }
+}
+
+fn publish_expired_close(
+    test_clock: &Rc<RefCell<TestClock>>,
+    instrument: &InstrumentAny,
+    close_price: Price,
+    ts_ns: u64,
+) {
+    let _ = test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(ts_ns), true);
+
+    let close = InstrumentClose::new(
+        instrument.id(),
+        close_price,
+        InstrumentCloseType::ContractExpired,
+        UnixNanos::from(ts_ns),
+        UnixNanos::from(ts_ns),
+    );
+    msgbus::publish_any(
+        nautilus_common::msgbus::switchboard::get_instrument_close_topic(instrument.id()),
+        &close,
+    );
+}
+
+struct PendingResolutionHarness {
+    context: TestContext,
+    instrument: InstrumentAny,
+    clock: Rc<RefCell<dyn Clock>>,
+    rx: tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+}
+
+fn setup_pending_resolution_harness(
+    trader_id: TraderId,
+    account_id: AccountId,
+    client_order_suffix: &str,
+) -> PendingResolutionHarness {
+    let mut binary = binary_option();
+    binary.activation_ns = UnixNanos::from(1);
+    binary.expiration_ns = UnixNanos::from(100);
+    let instrument = InstrumentAny::BinaryOption(binary);
+    let venue = instrument.id().venue;
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let test_clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
+
+    let mut config = create_config(trader_id, account_id, venue);
+    config.base_currency = Some(Currency::USDC());
+    config.starting_balances = vec![Money::new(100_000.0, Currency::USDC())];
+    let core = ExecutionClientCore::new(
+        trader_id,
+        ClientId::new("SANDBOX"),
+        config.venue,
+        config.oms_type,
+        config.account_id,
+        config.account_type,
+        config.base_currency,
+        cache.clone(),
+    );
+    let mut client = SandboxExecutionClient::new(core, config, clock.clone(), cache.clone());
+
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let _ = test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(50), true);
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    nautilus_common::live::runner::replace_exec_event_sender(tx);
+    client.start().unwrap();
+
+    let quote = QuoteTick::new(
+        instrument.id(),
+        Price::new(0.40, 3),
+        Price::new(0.41, 3),
+        Quantity::new(100.0, 2),
+        Quantity::new(100.0, 2),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    client.process_quote_tick(&quote).unwrap();
+
+    let position = submit_open_position_and_seed_cache(
+        &client,
+        &cache,
+        trader_id,
+        &instrument,
+        &format!("OPEN-{client_order_suffix}"),
+        &format!("P-{client_order_suffix}"),
+        &mut rx,
+    );
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    let resting_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("0.050"))
+        .quantity(Quantity::from("1.00"))
+        .client_order_id(format!("REST-{client_order_suffix}").into())
+        .ts_init(UnixNanos::from(20))
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(resting_order.clone(), None, None, false)
+        .unwrap();
+    client
+        .submit_order(SubmitOrder::from_order(
+            &resting_order,
+            trader_id,
+            Some(client.client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::from(20),
+        ))
+        .unwrap();
+
+    let _ = test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(200), true);
+
+    let probe_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("0.050"))
+        .quantity(Quantity::from("1.00"))
+        .client_order_id(format!("PROBE-{client_order_suffix}").into())
+        .ts_init(UnixNanos::from(200))
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(probe_order.clone(), None, None, false)
+        .unwrap();
+    client
+        .submit_order(SubmitOrder::from_order(
+            &probe_order,
+            trader_id,
+            Some(client.client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::from(200),
+        ))
+        .unwrap();
+
+    PendingResolutionHarness {
+        context: TestContext {
+            client,
+            cache,
+            test_clock,
+        },
+        instrument,
+        clock,
+        rx,
+    }
+}
+
+fn assert_pending_resolution_transition(
+    harness: &mut PendingResolutionHarness,
+    resting_order_id: &str,
+    probe_order_id: &str,
+) {
+    let mut seen_resting_canceled = false;
+    let mut seen_probe_rejected = false;
+
+    for event in std::iter::from_fn(|| harness.rx.try_recv().ok()) {
+        if let ExecutionEvent::Order(order_event) = event {
+            match order_event {
+                OrderEventAny::Canceled(c) if c.client_order_id.as_str() == resting_order_id => {
+                    seen_resting_canceled = true;
+                }
+                OrderEventAny::Rejected(r) if r.client_order_id.as_str() == probe_order_id => {
+                    seen_probe_rejected = r.reason.contains("pending resolution");
+                }
+                _ => {}
+            }
+        }
+    }
+
+    assert!(
+        seen_resting_canceled,
+        "expected resting order cancellation at pending_resolution boundary"
+    );
+    assert!(
+        seen_probe_rejected,
+        "expected probe order rejection with pending resolution reason"
+    );
+}
+
+fn updated_instrument_with_price_precision_3(instrument: InstrumentAny) -> InstrumentAny {
+    match instrument {
+        InstrumentAny::CryptoPerpetual(mut crypto_perp) => {
+            crypto_perp.price_precision = 3;
+            crypto_perp.price_increment = Price::from("0.001");
+            InstrumentAny::CryptoPerpetual(crypto_perp)
+        }
+        _ => panic!("Test fixture expected CryptoPerpetual instrument"),
+    }
+}
+
+fn setup_order_event_handler() {
+    let (handler, _saving_handler) = get_typed_into_message_saving_handler::<OrderEventAny>(Some(
+        Ustr::from("ExecEngine.process"),
+    ));
+    msgbus::register_order_event_endpoint(MessagingSwitchboard::exec_engine_process(), handler);
+}
+
+fn setup_account_state_handler(cache: Rc<RefCell<Cache>>) {
+    let handler = TypedHandler::from(move |state: &AccountState| {
+        cache.borrow_mut().update_account_state(state).unwrap();
+    });
+    msgbus::register_account_state_endpoint(
+        MessagingSwitchboard::portfolio_update_account(),
+        handler,
+    );
+}
+
+/// Short name for an order event, for assertion messages.
+fn order_event_kind(event: &OrderEventAny) -> &'static str {
+    match event {
+        OrderEventAny::Initialized(_) => "initialized",
+        OrderEventAny::Submitted(_) => "submitted",
+        OrderEventAny::Accepted(_) => "accepted",
+        OrderEventAny::Rejected(_) => "rejected",
+        OrderEventAny::Canceled(_) => "canceled",
+        OrderEventAny::Expired(_) => "expired",
+        OrderEventAny::Triggered(_) => "triggered",
+        OrderEventAny::PendingUpdate(_) => "pending_update",
+        OrderEventAny::PendingCancel(_) => "pending_cancel",
+        OrderEventAny::ModifyRejected(_) => "modify_rejected",
+        OrderEventAny::CancelRejected(_) => "cancel_rejected",
+        OrderEventAny::Updated(_) => "updated",
+        OrderEventAny::Filled(_) => "filled",
+        _ => "other",
+    }
+}
+
+/// A `StaticLatencyModel` with a zero base and the given per-leg latencies (nanoseconds).
+fn static_latency_model(insert_ns: u64, update_ns: u64, delete_ns: u64) -> LatencyModelAny {
+    LatencyModelAny::Static(StaticLatencyModel::new(
+        DurationNanos::ZERO,
+        DurationNanos::new(insert_ns),
+        DurationNanos::new(update_ns),
+        DurationNanos::new(delete_ns),
+    ))
+}
+
+/// Advances the test clock to `to`, running any inbound-drain alerts that fire exactly as the live
+/// runner would (`advance_time` -> `match_handlers` -> `handler.run()`), and returns the number of
+/// alert handlers that ran.
+fn advance_and_fire(test_clock: &Rc<RefCell<TestClock>>, to: UnixNanos) -> usize {
+    let events = test_clock.borrow_mut().advance_time(to, true);
+    let handlers = test_clock.borrow().match_handlers(events);
+    let count = handlers.len();
+    for handler in handlers {
+        handler.run();
+    }
+    count
+}
+
+/// Drains all currently-queued order events from the exec channel without mutating the cached order
+/// state (so a deferred drain re-reads the order exactly as it was submitted).
+fn drain_order_events(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+) -> Vec<OrderEventAny> {
+    std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            ExecutionEvent::Order(order_event) => Some(order_event),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Applies an `OrderPendingCancel` event to `order` in the cache, mirroring the state
+/// `Strategy::cancel_order` / `cancel_orders` establish before their cancel command reaches the
+/// execution client, so a synthesized `CancelRejected` later has a valid FSM transition.
+fn mark_pending_cancel(
+    cache: &Rc<RefCell<Cache>>,
+    order: &OrderAny,
+    trader_id: TraderId,
+    ts: UnixNanos,
+) {
+    let event = OrderEventAny::PendingCancel(OrderPendingCancel::new(
+        trader_id,
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        order.account_id(),
+        UUID4::new(),
+        ts,
+        ts,
+        false,
+        order.venue_order_id(),
+    ));
+    cache.borrow_mut().update_order(&event).unwrap();
+}
+
+/// Applies an `OrderPendingUpdate` event to `order` in the cache, mirroring the state
+/// `Strategy::modify_order` establishes before its modify command reaches the execution client, so
+/// a synthesized `ModifyRejected` later has a valid FSM transition.
+fn mark_pending_update(
+    cache: &Rc<RefCell<Cache>>,
+    order: &OrderAny,
+    trader_id: TraderId,
+    ts: UnixNanos,
+) {
+    let event = OrderEventAny::PendingUpdate(OrderPendingUpdate::new(
+        trader_id,
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        order.account_id(),
+        UUID4::new(),
+        ts,
+        ts,
+        false,
+        order.venue_order_id(),
+    ));
+    cache.borrow_mut().update_order(&event).unwrap();
+}
+
+/// The commands deferred by a leg other than the insert leg. `Cancel`, `Modify`, `BatchCancel` and
+/// `BatchModify` additionally share the no-engine guard in `apply_trading_command`; `CancelAll` does
+/// not, since it names no order the venue could reject.
+#[derive(Debug, Clone, Copy)]
+enum DeferredCommand {
+    Cancel,
+    Modify,
+    BatchCancel,
+    BatchModify,
+    CancelAll,
+}
+
+impl DeferredCommand {
+    /// A latency model routing this command's own leg to `leg_ns` and the insert leg to
+    /// `insert_ns`, so a submit can be held in flight behind it.
+    fn latency_model(self, insert_ns: u64, leg_ns: u64) -> LatencyModelAny {
+        match self {
+            Self::Cancel | Self::BatchCancel | Self::CancelAll => {
+                static_latency_model(insert_ns, 0, leg_ns)
+            }
+            Self::Modify | Self::BatchModify => static_latency_model(insert_ns, leg_ns, 0),
+        }
+    }
+
+    /// How many orders the command targets: one for the single variants, both for the batches and
+    /// for `CancelAll`, which takes every open order on the instrument.
+    fn target_count(self) -> usize {
+        match self {
+            Self::Cancel | Self::Modify => 1,
+            Self::BatchCancel | Self::BatchModify | Self::CancelAll => 2,
+        }
+    }
+
+    /// The status a target must hold once the venue has applied this command, so the test asserts a
+    /// valid FSM transition rather than a merely emitted event.
+    fn applied_status(self) -> OrderStatus {
+        match self {
+            Self::Cancel | Self::BatchCancel | Self::CancelAll => OrderStatus::Canceled,
+            Self::Modify | Self::BatchModify => OrderStatus::Accepted,
+        }
+    }
+
+    /// Marks each target with the pending status the `Strategy` establishes before sending this
+    /// command, so a synthesized rejection has a valid FSM transition to make.
+    fn mark_pending(
+        self,
+        cache: &Rc<RefCell<Cache>>,
+        order: &OrderAny,
+        trader: TraderId,
+        ts: UnixNanos,
+    ) {
+        match self {
+            Self::Cancel | Self::BatchCancel => mark_pending_cancel(cache, order, trader, ts),
+            Self::Modify | Self::BatchModify => mark_pending_update(cache, order, trader, ts),
+            // `Strategy::cancel_all_orders` marks no target pending
+            Self::CancelAll => {}
+        }
+    }
+
+    /// Whether `events` carries the venue's response to this command for `client_order_id`.
+    fn applied_to(self, events: &[OrderEventAny], client_order_id: ClientOrderId) -> bool {
+        events.iter().any(|event| match (self, event) {
+            (
+                Self::Cancel | Self::BatchCancel | Self::CancelAll,
+                OrderEventAny::Canceled(canceled),
+            ) => canceled.client_order_id == client_order_id,
+            (Self::Modify | Self::BatchModify, OrderEventAny::Updated(updated)) => {
+                updated.client_order_id == client_order_id
+            }
+            _ => false,
+        })
+    }
+
+    /// Client order IDs this command's rejection event names, in dispatch order.
+    fn rejected_ids(self, events: &[OrderEventAny]) -> Vec<ClientOrderId> {
+        events
+            .iter()
+            .filter_map(|event| match (self, event) {
+                (
+                    Self::Cancel | Self::BatchCancel | Self::CancelAll,
+                    OrderEventAny::CancelRejected(rejected),
+                ) => Some(rejected.client_order_id),
+                (Self::Modify | Self::BatchModify, OrderEventAny::ModifyRejected(rejected)) => {
+                    Some(rejected.client_order_id)
+                }
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+/// Bundles a real `ExecutionEngine` with a registered sandbox client and the runner's execution
+/// channel, for every test that enters through the message bus.
+struct EngineHarness {
+    engine: Rc<RefCell<ExecutionEngine>>,
+    cache: Rc<RefCell<Cache>>,
+    test_clock: Rc<RefCell<TestClock>>,
+    rx: tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    /// Every order event the engine published, in the order it processed them.
+    published: Rc<RefCell<Vec<OrderEventAny>>>,
+    client_id: ClientId,
+}
+
+impl EngineHarness {
+    /// Processes everything on the execution channel into the engine in arrival order, as the
+    /// runner does between turns, and returns those order events. An event a callback appends
+    /// while this runs is processed in the same pass, behind everything already queued.
+    fn settle(&mut self) -> Vec<OrderEventAny> {
+        let mut settled = Vec::new();
+
+        while let Ok(event) = self.rx.try_recv() {
+            if let ExecutionEvent::Order(event) = event {
+                self.engine.borrow_mut().process(&event);
+                settled.push(event);
+            }
+        }
+
+        settled
+    }
+}
+
+fn setup_engine_harness(
+    trader_id: TraderId,
+    instrument: &InstrumentAny,
+    latency_model: Option<LatencyModelAny>,
+) -> EngineHarness {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let venue = instrument.id().venue;
+    let client_id = ClientId::new("SANDBOX");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let test_clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let engine = Rc::new(RefCell::new(ExecutionEngine::new(
+        clock.clone(),
+        cache.clone(),
+        None,
+    )));
+    ExecutionEngine::register_msgbus_handlers(&engine);
+
+    let published: Rc<RefCell<Vec<OrderEventAny>>> = Rc::new(RefCell::new(Vec::new()));
+    {
+        let published = published.clone();
+        msgbus::subscribe_order_events(
+            "events.order.*".into(),
+            TypedHandler::from(move |event: &OrderEventAny| {
+                published.borrow_mut().push(event.clone());
+            }),
+            None,
+        );
+    }
+
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    nautilus_common::live::runner::replace_exec_event_sender(tx);
+
+    let account_id = AccountId::from(format!("{venue}-001").as_str());
+    let mut config = create_config(trader_id, account_id, venue);
+    config.latency_model = latency_model;
+    let core = ExecutionClientCore::new(
+        trader_id,
+        client_id,
+        venue,
+        config.oms_type,
+        config.account_id,
+        config.account_type,
+        config.base_currency,
+        cache.clone(),
+    );
+    let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+    client.start().unwrap();
+    engine
+        .borrow_mut()
+        .register_client(Box::new(client))
+        .unwrap();
+
+    EngineHarness {
+        engine,
+        cache,
+        test_clock,
+        rx,
+        published,
+        client_id,
+    }
+}
+
+/// Submits a resting buy limit for `instrument` through `ExecEngine.execute`, the borrow every
+/// production command arrives under, and returns the built order.
+fn submit_through_engine(
+    harness: &EngineHarness,
+    trader_id: TraderId,
+    instrument: &InstrumentAny,
+    client_order_id: &str,
+    price: &str,
+) -> OrderAny {
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from(price))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id.into())
+        .ts_init(harness.test_clock.borrow().timestamp_ns())
+        .build();
+    send_through_engine(harness, trader_id, order)
+}
+
+/// Caches `order` and submits it through `ExecEngine.execute`, returning it.
+fn send_through_engine(harness: &EngineHarness, trader_id: TraderId, order: OrderAny) -> OrderAny {
+    cache_order(harness, &order);
+    submit_cached_through_engine(harness, trader_id, &order);
+    order
+}
+
+/// Caches `order` under the client, as the strategy does when it creates it ahead of any submit.
+fn cache_order(harness: &EngineHarness, order: &OrderAny) {
+    harness
+        .cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(harness.client_id), false)
+        .unwrap();
+}
+
+/// Submits an already-cached `order` through `ExecEngine.execute`.
+fn submit_cached_through_engine(harness: &EngineHarness, trader_id: TraderId, order: &OrderAny) {
+    msgbus::send_trading_command(
+        MessagingSwitchboard::exec_engine_execute(),
+        TradingCommand::SubmitOrder(SubmitOrder::from_order(
+            order,
+            trader_id,
+            Some(harness.client_id),
+            None,
+            UUID4::new(),
+            order.ts_init(),
+        )),
+    );
+}
+
+/// Submits a buy limit order list for `instrument` through `ExecEngine.execute`, caching each leg
+/// as the strategy would, and returns the legs in list order.
+fn submit_list_through_engine(
+    harness: &EngineHarness,
+    trader_id: TraderId,
+    instrument: &InstrumentAny,
+    legs: &[(&str, &str)],
+) -> Vec<OrderAny> {
+    let ts_init = harness.test_clock.borrow().timestamp_ns();
+    let orders: Vec<OrderAny> = legs
+        .iter()
+        .map(|(client_order_id, price)| {
+            let order = OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(instrument.id())
+                .side(OrderSide::Buy)
+                .price(Price::from(*price))
+                .quantity(Quantity::from("1.000"))
+                .client_order_id((*client_order_id).into())
+                .ts_init(ts_init)
+                .build();
+            harness
+                .cache
+                .borrow_mut()
+                .add_order(order.clone(), None, Some(harness.client_id), false)
+                .unwrap();
+            order
+        })
+        .collect();
+
+    msgbus::send_trading_command(
+        MessagingSwitchboard::exec_engine_execute(),
+        TradingCommand::SubmitOrderList(create_submit_order_list(
+            trader_id,
+            harness.client_id,
+            instrument.id(),
+            &orders,
+        )),
+    );
+    orders
+}
+
+/// Submits a resting buy limit through `ExecEngine.execute`, releases it at the insert leg, and
+/// returns the order once the engine holds it `Accepted`.
+fn accept_through_engine(
+    harness: &mut EngineHarness,
+    trader_id: TraderId,
+    instrument: &InstrumentAny,
+    client_order_id: &str,
+    price: &str,
+    insert_latency_ns: u64,
+) -> OrderAny {
+    let order = submit_through_engine(harness, trader_id, instrument, client_order_id, price);
+    let _ = harness.settle();
+    assert_eq!(
+        cached_status(&harness.cache, &order),
+        OrderStatus::Submitted
+    );
+
+    let due = UnixNanos::from(*order.ts_init() + insert_latency_ns);
+    assert_eq!(advance_and_fire(&harness.test_clock, due), 1);
+    let _ = harness.settle();
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Accepted);
+    order
+}
+
+/// Builds a `ModifyOrder` amending `order` to a fixed price, as `Strategy::modify_order` would.
+fn modify_command(
+    client_id: ClientId,
+    trader_id: TraderId,
+    order: &OrderAny,
+    ts: UnixNanos,
+) -> ModifyOrder {
+    ModifyOrder::new(
+        trader_id,
+        Some(client_id),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        None,
+        None,
+        Some(Price::from("99.00")),
+        None,
+        UUID4::new(),
+        ts,
+        None,
+        None,
+    )
+}
+
+/// Builds a `CancelOrder` for `order`, as `Strategy::cancel_order` would.
+fn cancel_command(
+    client_id: ClientId,
+    trader_id: TraderId,
+    order: &OrderAny,
+    ts: UnixNanos,
+) -> CancelOrder {
+    CancelOrder::new(
+        trader_id,
+        Some(client_id),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        None,
+        UUID4::new(),
+        ts,
+        None,
+        None,
+    )
+}
+
+/// Sends `kind` through `ExecEngine.execute` as one command targeting every order in `targets`.
+fn send_command_through_engine(
+    harness: &EngineHarness,
+    trader_id: TraderId,
+    kind: DeferredCommand,
+    targets: &[OrderAny],
+    ts: UnixNanos,
+) {
+    let instrument_id = targets[0].instrument_id();
+    let strategy_id = targets[0].strategy_id();
+    let client_id = harness.client_id;
+
+    let command = match kind {
+        DeferredCommand::Cancel => {
+            TradingCommand::CancelOrder(cancel_command(client_id, trader_id, &targets[0], ts))
+        }
+        DeferredCommand::Modify => {
+            TradingCommand::ModifyOrder(modify_command(client_id, trader_id, &targets[0], ts))
+        }
+        DeferredCommand::BatchCancel => TradingCommand::CancelOrders(BatchCancelOrders::new(
+            trader_id,
+            Some(client_id),
+            strategy_id,
+            instrument_id,
+            targets
+                .iter()
+                .map(|order| cancel_command(client_id, trader_id, order, ts))
+                .collect(),
+            UUID4::new(),
+            ts,
+            None,
+            None,
+        )),
+        DeferredCommand::BatchModify => TradingCommand::ModifyOrders(BatchModifyOrders::new(
+            trader_id,
+            Some(client_id),
+            strategy_id,
+            instrument_id,
+            targets
+                .iter()
+                .map(|order| modify_command(client_id, trader_id, order, ts))
+                .collect(),
+            UUID4::new(),
+            ts,
+            None,
+            None,
+        )),
+        DeferredCommand::CancelAll => TradingCommand::CancelAllOrders(CancelAllOrders::new(
+            trader_id,
+            Some(client_id),
+            strategy_id,
+            instrument_id,
+            None,
+            UUID4::new(),
+            ts,
+            None,
+            None,
+        )),
+    };
+
+    msgbus::send_trading_command(MessagingSwitchboard::exec_engine_execute(), command);
+}
+
+/// Builds a submitted buy limit whose instrument is deliberately absent from the cache, adds it
+/// to the cache under `client_id`, and returns it, for the deferred no-engine rejection tests.
+fn uncached_instrument_order(
+    cache: &Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    client_order_id: &str,
+    ts: UnixNanos,
+) -> OrderAny {
+    let uncached_instrument_id = InstrumentId::from("UNKNOWN-PERP.BINANCE");
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(uncached_instrument_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("100.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id.into())
+        .ts_init(ts)
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id), false)
+        .unwrap();
+    order
+}
+
+fn cached_status(cache: &Rc<RefCell<Cache>>, order: &OrderAny) -> OrderStatus {
+    cache
+        .borrow()
+        .order(&order.client_order_id())
+        .unwrap()
+        .status()
+}
+
+#[rstest]
+fn test_config_default() {
+    let config = SandboxExecutionClientConfig::default();
+
+    assert_eq!(config.account_id, AccountId::from("SANDBOX-001"));
+    assert_eq!(config.venue, Venue::new("SANDBOX"));
+    assert!(config.starting_balances.is_empty());
+    assert!(config.base_currency.is_none());
+    assert_eq!(config.oms_type, OmsType::Netting);
+    assert_eq!(config.account_type, AccountType::Margin);
+    assert_eq!(config.default_leverage, Decimal::ONE);
+    assert_eq!(config.book_type, BookType::L1_MBP);
+    assert!(config.fee_model.is_none());
+    assert!(config.fill_model.is_none());
+    assert!(!config.frozen_account);
+    assert!(config.bar_execution);
+    assert!(config.trade_execution);
+    assert!(config.reject_stop_orders);
+    assert!(config.support_gtd_orders);
+    assert!(config.support_contingent_orders);
+    assert!(config.use_position_ids);
+    assert!(!config.use_random_ids);
+    assert!(config.use_reduce_only);
+    assert!(!config.queue_position);
+    assert!(!config.liquidity_consumption);
+    assert!(!config.bar_adaptive_high_low_ordering);
+    assert!(!config.use_market_order_acks);
+    assert!(!config.oto_full_trigger);
+    assert_eq!(config.price_protection_points, 0);
+}
+
+#[rstest]
+#[case::sports_p50("0.03", "0.500", "0.00750")]
+#[case::sports_p30("0.03", "0.300", "0.00630")]
+#[case::crypto_p97("0.072", "0.970", "0.00210")]
+fn test_probability_price_fee_model_config_drives_sandbox_commission(
+    #[case] taker_fee: &str,
+    #[case] price: &str,
+    #[case] expected: &str,
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    assert_fee_model_config_drives_sandbox_commission(
+        FeeModelAny::ProbabilityPrice(ProbabilityPriceFeeModel),
+        taker_fee,
+        price,
+        expected,
+        trader_id,
+        account_id,
+    );
+}
+
+#[cfg(feature = "python")]
+#[rstest]
+fn test_python_fee_model_config_drives_sandbox_commission(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    Python::initialize();
+
+    let expected = "1.234567";
+    let fee_model = Python::attach(|py| {
+        let model = py
+            .eval(
+                c_str!(
+                    "type('CustomFeeModel', (), {\
+                        'get_commission': \
+                            lambda self, order, fill_quantity, fill_px, instrument: self.commission\
+                    })()"
+                ),
+                None,
+                None,
+            )
+            .unwrap();
+        model
+            .setattr(
+                "commission",
+                Money::from(format!("{expected} USDC").as_str())
+                    .into_py_any(py)
+                    .unwrap(),
+            )
+            .unwrap();
+
+        FeeModelAny::Python(PythonFeeModel::new(model.unbind()))
+    });
+
+    assert_fee_model_config_drives_sandbox_commission(
+        fee_model, "0.03", "0.500", expected, trader_id, account_id,
+    );
+}
+
+fn assert_fee_model_config_drives_sandbox_commission(
+    fee_model: FeeModelAny,
+    taker_fee: &str,
+    price: &str,
+    expected: &str,
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    setup_order_event_handler();
+
+    let mut binary = binary_option();
+    binary.taker_fee = Decimal::from_str_exact(taker_fee).unwrap();
+    let instrument = InstrumentAny::BinaryOption(binary);
+    let venue = instrument.id().venue;
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+
+    let mut config = create_config(trader_id, account_id, venue);
+    config.base_currency = Some(Currency::USDC());
+    config.starting_balances = vec![Money::new(100_000.0, Currency::USDC())];
+    config.fee_model = Some(fee_model);
+
+    let core = ExecutionClientCore::new(
+        trader_id,
+        ClientId::new("SANDBOX"),
+        config.venue,
+        config.oms_type,
+        config.account_id,
+        config.account_type,
+        config.base_currency,
+        cache.clone(),
+    );
+    let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    client.start().unwrap();
+
+    let quote = QuoteTick::new(
+        instrument.id(),
+        Price::from(price),
+        Price::from(price),
+        Quantity::new(100.0, 2),
+        Quantity::new(100.0, 2),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    client.process_quote_tick(&quote).unwrap();
+
+    submit_market_open_order(&client, &cache, trader_id, &instrument, "OPEN-FEE", 10);
+
+    let mut fill_commission = None;
+
+    for event in std::iter::from_fn(|| rx.try_recv().ok()) {
+        let ExecutionEvent::Order(OrderEventAny::Filled(fill)) = event else {
+            continue;
+        };
+
+        if fill.client_order_id.as_str() == "OPEN-FEE" {
+            fill_commission = fill.commission;
+        }
+    }
+
+    assert_eq!(
+        fill_commission,
+        Some(Money::from(format!("{expected} USDC").as_str()))
+    );
+}
+
+#[rstest]
+fn test_config_builder(account_id: AccountId, venue: Venue) {
+    let usd = Currency::USD();
+    let starting_balances = vec![Money::new(50_000.0, usd)];
+
+    let config = SandboxExecutionClientConfig::builder()
+        .account_id(account_id)
+        .venue(venue)
+        .starting_balances(starting_balances)
+        .build();
+
+    assert_eq!(config.account_id, account_id);
+    assert_eq!(config.venue, venue);
+    assert_eq!(config.starting_balances.len(), 1);
+    assert_eq!(config.starting_balances[0].as_f64(), 50_000.0);
+}
+
+#[rstest]
+fn test_config_builder_with_overrides(account_id: AccountId, venue: Venue) {
+    let usd = Currency::USD();
+    let starting_balances = vec![Money::new(50_000.0, usd)];
+
+    let config = SandboxExecutionClientConfig::builder()
+        .account_id(account_id)
+        .venue(venue)
+        .starting_balances(starting_balances)
+        .base_currency(usd)
+        .oms_type(OmsType::Hedging)
+        .account_type(AccountType::Cash)
+        .default_leverage(Decimal::new(10, 0))
+        .book_type(BookType::L2_MBP)
+        .frozen_account(true)
+        .bar_execution(false)
+        .trade_execution(true)
+        .build();
+
+    assert_eq!(config.base_currency, Some(usd));
+    assert_eq!(config.oms_type, OmsType::Hedging);
+    assert_eq!(config.account_type, AccountType::Cash);
+    assert_eq!(config.default_leverage, Decimal::new(10, 0));
+    assert_eq!(config.book_type, BookType::L2_MBP);
+    assert!(config.frozen_account);
+    assert!(!config.bar_execution);
+    assert!(config.trade_execution);
+}
+
+#[rstest]
+fn test_config_to_matching_engine_config(config: SandboxExecutionClientConfig) {
+    let engine_config = config.to_matching_engine_config();
+
+    assert!(!engine_config.bar_execution);
+    assert!(!engine_config.trade_execution);
+    assert!(engine_config.reject_stop_orders);
+    assert!(engine_config.support_gtd_orders);
+    assert!(engine_config.support_contingent_orders);
+    assert!(engine_config.use_position_ids);
+    assert!(!engine_config.use_random_ids);
+    assert!(engine_config.use_reduce_only);
+    assert!(!engine_config.queue_position);
+    assert!(!engine_config.liquidity_consumption);
+    assert!(!engine_config.bar_adaptive_high_low_ordering);
+    assert!(!engine_config.use_market_order_acks);
+    assert!(!engine_config.oto_full_trigger);
+    assert_eq!(engine_config.price_protection_points, None);
+}
+
+#[rstest]
+#[case::queue_on(true, false)]
+#[case::queue_off(false, true)]
+fn test_queue_position_gates_trade_driven_limit_fill(
+    #[case] queue_position: bool,
+    #[case] expect_fill: bool,
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    setup_order_event_handler();
+
+    let venue = instrument.id().venue;
+    let mut test_context = create_test_context_with(trader_id, account_id, venue, |config| {
+        config.trade_execution = true;
+        config.queue_position = queue_position;
+    });
+    let cache = test_context.cache.clone();
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    test_context.client.start().unwrap();
+
+    let quote = create_quote_tick(instrument.id(), 1000.0, 1001.0);
+    test_context.client.process_quote_tick(&quote).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("QUEUE-LIMIT-001"))
+        .side(OrderSide::Buy)
+        .price(Price::from("1000.00"))
+        .quantity(Quantity::from("1.000"))
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::new("SANDBOX")), false)
+        .unwrap();
+    test_context
+        .client
+        .submit_order(SubmitOrder::from_order(
+            &order,
+            trader_id,
+            Some(test_context.client.client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        ))
+        .unwrap();
+
+    let accepted_events = apply_order_events_from_channel(&cache, &mut rx);
+    assert!(
+        accepted_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Accepted(_))),
+        "expected limit order acceptance before the queue-reducing trade",
+    );
+    assert!(
+        accepted_events
+            .iter()
+            .all(|event| !matches!(event, OrderEventAny::Filled(_))),
+        "limit order must rest behind displayed bid size",
+    );
+
+    let trade = TradeTick::new(
+        instrument.id(),
+        Price::from("1000.00"),
+        Quantity::from("10.000"),
+        AggressorSide::Sell,
+        TradeId::new("T-QUEUE-1"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    test_context.client.process_trade_tick(&trade).unwrap();
+
+    let trade_events = apply_order_events_from_channel(&cache, &mut rx);
+    let filled = trade_events
+        .iter()
+        .any(|event| matches!(event, OrderEventAny::Filled(_)));
+
+    assert_eq!(
+        filled, expect_fill,
+        "queue_position={queue_position}: a 10-unit sell into 100 displayed bid units \
+         must fill the resting 1-unit buy only when queue tracking is off",
+    );
+}
+
+#[rstest]
+#[case::consumption_on(true, 1)]
+#[case::consumption_off(false, 2)]
+fn test_liquidity_consumption_shares_trade_size_across_limits(
+    #[case] liquidity_consumption: bool,
+    #[case] expected_fills: usize,
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    setup_order_event_handler();
+
+    let venue = instrument.id().venue;
+    let mut test_context = create_test_context_with(trader_id, account_id, venue, |config| {
+        config.trade_execution = true;
+        config.liquidity_consumption = liquidity_consumption;
+    });
+    let cache = test_context.cache.clone();
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    test_context.client.start().unwrap();
+
+    let quote = create_quote_tick(instrument.id(), 1000.0, 1001.0);
+    test_context.client.process_quote_tick(&quote).unwrap();
+
+    for (idx, client_order_id) in ["CONS-LIMIT-001", "CONS-LIMIT-002"].iter().enumerate() {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(trader_id)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from(*client_order_id))
+            .side(OrderSide::Buy)
+            .price(Price::from("1000.00"))
+            .quantity(Quantity::from("1.000"))
+            .submit(true)
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(ClientId::new("SANDBOX")), false)
+            .unwrap();
+        test_context
+            .client
+            .submit_order(SubmitOrder::from_order(
+                &order,
+                trader_id,
+                Some(test_context.client.client_id()),
+                None,
+                UUID4::new(),
+                UnixNanos::from(idx as u64),
+            ))
+            .unwrap();
+    }
+
+    let accepted_events = apply_order_events_from_channel(&cache, &mut rx);
+    assert_eq!(
+        accepted_events
+            .iter()
+            .filter(|event| matches!(event, OrderEventAny::Accepted(_)))
+            .count(),
+        2,
+        "expected both limit orders to rest before the shared trade",
+    );
+
+    let trade = TradeTick::new(
+        instrument.id(),
+        Price::from("1000.00"),
+        Quantity::from("1.000"),
+        AggressorSide::Sell,
+        TradeId::new("T-CONS-1"),
+        UnixNanos::from(10),
+        UnixNanos::from(10),
+    );
+    test_context.client.process_trade_tick(&trade).unwrap();
+
+    let fill_count = apply_order_events_from_channel(&cache, &mut rx)
+        .iter()
+        .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+        .count();
+
+    assert_eq!(
+        fill_count, expected_fills,
+        "liquidity_consumption={liquidity_consumption}: a 1-unit sell must fill \
+         one resting 1-unit buy when consumption is on, and both when it is off",
+    );
+}
+
+#[rstest]
+fn test_fill_model_can_block_limit_touch_fills(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    setup_order_event_handler();
+
+    let venue = instrument.id().venue;
+    let mut test_context = create_test_context_with(trader_id, account_id, venue, |config| {
+        config.trade_execution = true;
+        config.fill_model = Some(FillModelAny::Default(
+            DefaultFillModel::new(0.0, 0.0, Some(1)).unwrap(),
+        ));
+    });
+    let cache = test_context.cache.clone();
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    test_context.client.start().unwrap();
+
+    let quote = create_quote_tick(instrument.id(), 1000.0, 1001.0);
+    test_context.client.process_quote_tick(&quote).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("FILL-MODEL-LIMIT-001"))
+        .side(OrderSide::Buy)
+        .price(Price::from("1000.00"))
+        .quantity(Quantity::from("1.000"))
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::new("SANDBOX")), false)
+        .unwrap();
+    test_context
+        .client
+        .submit_order(SubmitOrder::from_order(
+            &order,
+            trader_id,
+            Some(test_context.client.client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        ))
+        .unwrap();
+    let _ = apply_order_events_from_channel(&cache, &mut rx);
+
+    let trade = TradeTick::new(
+        instrument.id(),
+        Price::from("1000.00"),
+        Quantity::from("1.000"),
+        AggressorSide::Sell,
+        TradeId::new("T-FILL-MODEL-1"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    test_context.client.process_trade_tick(&trade).unwrap();
+
+    let trade_events = apply_order_events_from_channel(&cache, &mut rx);
+    assert!(
+        trade_events
+            .iter()
+            .all(|event| !matches!(event, OrderEventAny::Filled(_))),
+        "prob_fill_on_limit=0 must not fill a limit order on touch",
+    );
+}
+
+fn first_two_shared_limit_fills(seed: u64) -> [bool; 2] {
+    let mut handle = FillModelHandle::from(FillModelAny::Default(
+        DefaultFillModel::new(0.5, 0.0, Some(seed)).unwrap(),
+    ));
+
+    [
+        handle.is_limit_filled().unwrap(),
+        handle.is_limit_filled().unwrap(),
+    ]
+}
+
+fn first_fills_from_independent_handles(seed: u64) -> [bool; 2] {
+    let model = DefaultFillModel::new(0.5, 0.0, Some(seed)).unwrap();
+    let mut first = FillModelHandle::from(FillModelAny::Default(model.clone()));
+    let mut second = FillModelHandle::from(FillModelAny::Default(model));
+
+    [
+        first.is_limit_filled().unwrap(),
+        second.is_limit_filled().unwrap(),
+    ]
+}
+
+fn process_limit_touch_fill(
+    test_context: &TestContext,
+    trader_id: TraderId,
+    instrument: &InstrumentAny,
+    client_order_id: &str,
+    trade_id: &str,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+) -> bool {
+    let cache = test_context.cache.clone();
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let quote = create_quote_tick(instrument.id(), 1000.0, 1001.0);
+    test_context.client.process_quote_tick(&quote).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from(client_order_id))
+        .side(OrderSide::Buy)
+        .price(Price::from("1000.00"))
+        .quantity(Quantity::from("1.000"))
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::new("SANDBOX")), false)
+        .unwrap();
+    test_context
+        .client
+        .submit_order(SubmitOrder::from_order(
+            &order,
+            trader_id,
+            Some(test_context.client.client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        ))
+        .unwrap();
+    let _ = apply_order_events_from_channel(&cache, rx);
+
+    let trade = TradeTick::new(
+        instrument.id(),
+        Price::from("1000.00"),
+        Quantity::from("1.000"),
+        AggressorSide::Sell,
+        TradeId::new(trade_id),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    test_context.client.process_trade_tick(&trade).unwrap();
+
+    apply_order_events_from_channel(&cache, rx)
+        .iter()
+        .any(|event| matches!(event, OrderEventAny::Filled(_)))
+}
+
+#[rstest]
+fn test_seeded_fill_model_is_shared_across_instruments(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    setup_order_event_handler();
+
+    // Seed 42's first two draws match; pick a seed where shared vs cloned From() diverge.
+    let seed = (0u64..64)
+        .find(|&seed| {
+            first_two_shared_limit_fills(seed) != first_fills_from_independent_handles(seed)
+        })
+        .expect("a seed in 0..64 must discriminate shared vs cloned From() draws");
+    let expected_shared = first_two_shared_limit_fills(seed);
+    let expected_independent = first_fills_from_independent_handles(seed);
+
+    assert_ne!(expected_shared, expected_independent);
+
+    let venue = instrument.id().venue;
+    let other = match instrument.clone() {
+        InstrumentAny::CryptoPerpetual(mut perp) => {
+            perp.id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+            InstrumentAny::CryptoPerpetual(perp)
+        }
+        other => panic!("expected crypto perpetual fixture, was {other:?}"),
+    };
+
+    let mut test_context = create_test_context_with(trader_id, account_id, venue, |config| {
+        config.trade_execution = true;
+        config.fill_model = Some(FillModelAny::Default(
+            DefaultFillModel::new(0.5, 0.0, Some(seed)).unwrap(),
+        ));
+    });
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    test_context.client.start().unwrap();
+
+    let first_filled = process_limit_touch_fill(
+        &test_context,
+        trader_id,
+        &instrument,
+        "SHARED-FILL-ETH-001",
+        "T-SHARED-ETH-1",
+        &mut rx,
+    );
+    let second_filled = process_limit_touch_fill(
+        &test_context,
+        trader_id,
+        &other,
+        "SHARED-FILL-BTC-001",
+        "T-SHARED-BTC-1",
+        &mut rx,
+    );
+    let observed = [first_filled, second_filled];
+
+    assert_eq!(test_context.client.matching_engine_count(), 2);
+    assert_eq!(observed, expected_shared);
+    assert_ne!(observed, expected_independent);
+}
+
+#[rstest]
+fn test_client_initial_state(execution_client: SandboxExecutionClient, venue: Venue) {
+    assert!(!execution_client.is_connected());
+    assert_eq!(execution_client.venue(), venue);
+    assert_eq!(execution_client.oms_type(), OmsType::Netting);
+    assert_eq!(execution_client.matching_engine_count(), 0);
+}
+
+#[rstest]
+fn test_client_start(mut execution_client: SandboxExecutionClient) {
+    setup_order_event_handler();
+
+    let result = execution_client.start();
+
+    assert!(result.is_ok());
+    assert!(!execution_client.is_connected());
+}
+
+#[rstest]
+fn test_client_start_idempotent(mut execution_client: SandboxExecutionClient) {
+    setup_order_event_handler();
+
+    execution_client.start().unwrap();
+    let result = execution_client.start();
+
+    assert!(result.is_ok());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_client_connect(mut execution_client: SandboxExecutionClient) {
+    setup_order_event_handler();
+
+    let result = execution_client.connect().await;
+
+    assert!(result.is_ok());
+    assert!(execution_client.is_connected());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_client_connect_syncs_cached_margin_account_config(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let leverage = Decimal::from(5);
+    let instrument_id = instrument.id();
+    let context = create_test_context_with(trader_id, account_id, venue, |config| {
+        config.default_leverage = leverage;
+        config.leverages.insert(instrument_id, leverage);
+    });
+    setup_account_state_handler(context.cache.clone());
+
+    let mut execution_client = context.client;
+    execution_client.connect().await.unwrap();
+
+    let cache = context.cache.borrow();
+    let account = cache
+        .account(&account_id)
+        .expect("expected cached account after initial AccountState");
+
+    let AccountAny::Margin(margin) = &*account else {
+        panic!("expected margin account");
+    };
+
+    assert!(margin.base.calculate_account_state);
+    assert_eq!(margin.default_leverage, leverage);
+    assert_eq!(margin.get_leverage(&instrument_id), leverage);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_client_connect_respects_frozen_account_config(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let context = create_test_context_with(trader_id, account_id, venue, |config| {
+        config.frozen_account = true;
+    });
+    setup_account_state_handler(context.cache.clone());
+
+    let mut execution_client = context.client;
+    execution_client.connect().await.unwrap();
+
+    let cache = context.cache.borrow();
+    let account = cache
+        .account(&account_id)
+        .expect("expected cached account after initial AccountState");
+
+    let AccountAny::Margin(margin) = &*account else {
+        panic!("expected margin account");
+    };
+
+    assert!(!margin.base.calculate_account_state);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_client_connect_idempotent(mut execution_client: SandboxExecutionClient) {
+    setup_order_event_handler();
+
+    execution_client.connect().await.unwrap();
+    let result = execution_client.connect().await;
+
+    assert!(result.is_ok());
+    assert!(execution_client.is_connected());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_client_disconnect(mut execution_client: SandboxExecutionClient) {
+    setup_order_event_handler();
+
+    execution_client.connect().await.unwrap();
+    let result = execution_client.disconnect().await;
+
+    assert!(result.is_ok());
+    assert!(!execution_client.is_connected());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_client_disconnect_when_not_connected(mut execution_client: SandboxExecutionClient) {
+    setup_order_event_handler();
+
+    let result = execution_client.disconnect().await;
+
+    assert!(result.is_ok());
+    assert!(!execution_client.is_connected());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_client_stop(mut execution_client: SandboxExecutionClient) {
+    setup_order_event_handler();
+
+    execution_client.start().unwrap();
+    execution_client.connect().await.unwrap();
+    let result = execution_client.stop();
+
+    assert!(result.is_ok());
+    assert!(!execution_client.is_connected());
+}
+
+#[rstest]
+fn test_client_stop_when_not_started(mut execution_client: SandboxExecutionClient) {
+    setup_order_event_handler();
+
+    let result = execution_client.stop();
+
+    assert!(result.is_ok());
+}
+
+#[rstest]
+fn test_paper_binary_option_pending_resolution_then_close_settlement(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    let mut harness = setup_pending_resolution_harness(trader_id, account_id, "BO-PAPER");
+    assert_pending_resolution_transition(&mut harness, "REST-BO-PAPER", "PROBE-BO-PAPER");
+
+    let close = InstrumentClose::new(
+        harness.instrument.id(),
+        Price::from("1.000"),
+        InstrumentCloseType::ContractExpired,
+        UnixNanos::from(300),
+        UnixNanos::from(300),
+    );
+    msgbus::publish_any(
+        nautilus_common::msgbus::switchboard::get_instrument_close_topic(harness.instrument.id()),
+        &close,
+    );
+
+    let mut seen_expiration_fill = false;
+
+    for event in std::iter::from_fn(|| harness.rx.try_recv().ok()) {
+        if let ExecutionEvent::Order(OrderEventAny::Filled(fill)) = event
+            && fill.client_order_id.as_str().starts_with("EXPIRATION-")
+            && fill.last_px == Price::from("1.000")
+        {
+            seen_expiration_fill = true;
+        }
+    }
+    assert!(
+        seen_expiration_fill,
+        "expected EXPIRATION fill after publishing InstrumentClose to sandbox paper lane"
+    );
+}
+
+#[rstest]
+fn test_paper_binary_option_pending_resolution_then_close_settlement_via_data_engine(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    let mut harness = setup_pending_resolution_harness(trader_id, account_id, "BO-DE");
+    let cache = harness.context.cache.clone();
+    let data_engine = Rc::new(RefCell::new(DataEngine::new(
+        harness.clock.clone(),
+        cache,
+        None,
+    )));
+    DataEngine::register_msgbus_handlers(&data_engine);
+    assert_pending_resolution_transition(&mut harness, "REST-BO-DE", "PROBE-BO-DE");
+
+    let close = InstrumentClose::new(
+        harness.instrument.id(),
+        Price::from("1.000"),
+        InstrumentCloseType::ContractExpired,
+        UnixNanos::from(300),
+        UnixNanos::from(300),
+    );
+    msgbus::send_data(
+        MessagingSwitchboard::data_engine_process_data(),
+        Data::InstrumentClose(close),
+    );
+
+    let mut seen_expiration_fill = false;
+
+    for event in std::iter::from_fn(|| harness.rx.try_recv().ok()) {
+        if let ExecutionEvent::Order(OrderEventAny::Filled(fill)) = event
+            && fill.client_order_id.as_str().starts_with("EXPIRATION-")
+            && fill.last_px == Price::from("1.000")
+        {
+            seen_expiration_fill = true;
+        }
+    }
+    assert!(
+        seen_expiration_fill,
+        "expected EXPIRATION fill after sending InstrumentClose through DataEngine endpoint"
+    );
+}
+
+#[rstest]
+fn test_instrument_status_lazy_creates_but_close_requires_existing_engine(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    setup_order_event_handler();
+
+    let instrument = make_binary_option_instrument("0xCOND", "0xYES", "Yes", 100);
+    let mut test_context = create_test_context(trader_id, account_id, instrument.id().venue);
+    test_context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    test_context.client.start().unwrap();
+
+    let status = InstrumentStatus::new(
+        instrument.id(),
+        MarketStatusAction::Trading,
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+        None,
+        None,
+        Some(true),
+        Some(true),
+        None,
+    );
+    msgbus::publish_any(
+        nautilus_common::msgbus::switchboard::get_instrument_status_topic(instrument.id()),
+        &status,
+    );
+    assert_eq!(test_context.client.matching_engine_count(), 1);
+
+    let second_instrument = make_binary_option_instrument("0xCOND2", "0xYES2", "Yes", 100);
+    test_context
+        .cache
+        .borrow_mut()
+        .add_instrument(second_instrument.clone())
+        .unwrap();
+
+    let close = InstrumentClose::new(
+        second_instrument.id(),
+        Price::from("1.000"),
+        InstrumentCloseType::ContractExpired,
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    msgbus::publish_any(
+        nautilus_common::msgbus::switchboard::get_instrument_close_topic(second_instrument.id()),
+        &close,
+    );
+
+    assert_eq!(
+        test_context.client.matching_engine_count(),
+        1,
+        "InstrumentClose should not lazy-create a matching engine from cache",
+    );
+}
+
+#[rstest]
+fn test_instrument_close_finalizes_expired_engine_without_open_state(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    setup_order_event_handler();
+
+    let mut harness = setup_binary_option_lifecycle_harness(
+        trader_id,
+        account_id,
+        "0xFINALIZE",
+        "0xYES",
+        "Yes",
+        100,
+    );
+    assert_eq!(harness.client.matching_engine_count(), 1);
+
+    publish_expired_close(
+        &harness.test_clock,
+        &harness.instrument,
+        Price::from("1.000"),
+        200,
+    );
+
+    assert_eq!(harness.client.matching_engine_count(), 0);
+    assert!(
+        harness
+            .cache
+            .borrow()
+            .instrument(&harness.instrument.id())
+            .is_none()
+    );
+
+    harness.client.stop().unwrap();
+}
+
+#[rstest]
+fn test_periodic_sweep_retires_expired_quote_only_engine(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    setup_order_event_handler();
+
+    // Quote-only lifecycle: the matching engine is lazily created from a quote, with no order,
+    // position, or InstrumentClose to drive the event-driven cleanup paths.
+    let mut harness = setup_binary_option_lifecycle_harness(
+        trader_id, account_id, "0xSWEEP", "0xYES", "Yes", 100,
+    );
+    assert_eq!(harness.client.matching_engine_count(), 1);
+    assert!(
+        harness
+            .cache
+            .borrow()
+            .instrument(&harness.instrument.id())
+            .is_some()
+    );
+
+    // Expiry alone, before the sweep interval elapses, does not release the engine.
+    let pre_sweep = harness
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(200), true);
+    assert!(
+        pre_sweep.is_empty(),
+        "sweep timer must not fire before its interval",
+    );
+    assert_eq!(harness.client.matching_engine_count(), 1);
+    assert!(
+        harness
+            .cache
+            .borrow()
+            .instrument(&harness.instrument.id())
+            .is_some()
+    );
+
+    // Advance past one sweep interval and fire the timer (60s matches
+    // EXPIRED_ENGINE_SWEEP_INTERVAL in `execution.rs`).
+    let events = harness
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(60_000_000_001), true);
+    let handlers = harness.test_clock.borrow().match_handlers(events);
+    for handler in handlers {
+        handler.run();
+    }
+
+    assert_eq!(
+        harness.client.matching_engine_count(),
+        0,
+        "periodic sweep should retire the expired quote-only matching engine",
+    );
+    assert!(
+        harness
+            .cache
+            .borrow()
+            .instrument(&harness.instrument.id())
+            .is_none(),
+        "periodic sweep should purge the expired instrument from the cache",
+    );
+
+    harness.client.stop().unwrap();
+}
+
+#[rstest]
+fn test_periodic_sweep_retains_expired_engine_with_open_position(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    setup_order_event_handler();
+
+    let mut harness = setup_binary_option_lifecycle_harness(
+        trader_id,
+        account_id,
+        "0xSWEEPOPEN",
+        "0xYES",
+        "Yes",
+        100,
+    );
+
+    let position = submit_open_position_and_seed_cache(
+        &harness.client,
+        &harness.cache,
+        trader_id,
+        &harness.instrument,
+        "OPEN-SWEEP",
+        "P-OPEN-SWEEP",
+        &mut harness.rx,
+    );
+    let venue = harness.instrument.id().venue;
+    harness
+        .cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    // Isolate any event produced by the sweep from the opening fill emitted during setup.
+    while harness.rx.try_recv().is_ok() {}
+
+    // Fire the sweep past expiry: settlement safety must retain the engine while a position is open.
+    let events = harness
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(60_000_000_001), true);
+    let handlers = harness.test_clock.borrow().match_handlers(events);
+    for handler in handlers {
+        handler.run();
+    }
+
+    // The sweep performs no settlement: no fill or position-close event, and the position stays open.
+    let sweep_events: Vec<ExecutionEvent> =
+        std::iter::from_fn(|| harness.rx.try_recv().ok()).collect();
+    assert!(
+        sweep_events.is_empty(),
+        "periodic sweep must not emit execution events for an open position, was {sweep_events:?}",
+    );
+    assert!(
+        harness.cache.borrow().has_positions_open(
+            Some(&venue),
+            Some(&harness.instrument.id()),
+            None,
+            None,
+            None,
+        ),
+        "periodic sweep must leave the open position open",
+    );
+    assert_eq!(
+        harness.client.matching_engine_count(),
+        1,
+        "periodic sweep must not retire an expired engine with an open position",
+    );
+    assert!(
+        harness
+            .cache
+            .borrow()
+            .instrument(&harness.instrument.id())
+            .is_some(),
+        "periodic sweep must not purge an instrument with an open position",
+    );
+
+    harness.client.stop().unwrap();
+}
+
+#[rstest]
+fn test_periodic_sweep_retains_expired_engine_with_open_order(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    setup_order_event_handler();
+
+    let mut harness = setup_binary_option_lifecycle_harness(
+        trader_id,
+        account_id,
+        "0xSWEEPORDER",
+        "0xYES",
+        "Yes",
+        100,
+    );
+
+    // A limit order well below the bid rests unfilled, so the instrument expires carrying a
+    // non-terminal order and no position.
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(harness.instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::new(0.10, 3))
+        .quantity(Quantity::from("1.00"))
+        .client_order_id("RESTING-SWEEP".into())
+        .ts_init(UnixNanos::from(10))
+        .submit(true)
+        .build();
+    harness
+        .cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    harness
+        .client
+        .submit_order(SubmitOrder::from_order(
+            &order,
+            trader_id,
+            Some(harness.client.client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::from(10),
+        ))
+        .unwrap();
+
+    // Apply the acceptance so the order registers in the cache open-order index.
+    let accepted = std::iter::from_fn(|| harness.rx.try_recv().ok())
+        .find_map(|event| match event {
+            ExecutionEvent::Order(order_event @ OrderEventAny::Accepted(_)) => Some(order_event),
+            _ => None,
+        })
+        .expect("expected acceptance for the resting limit order");
+    harness.cache.borrow_mut().update_order(&accepted).unwrap();
+
+    let venue = harness.instrument.id().venue;
+    let instrument_id = harness.instrument.id();
+    assert!(
+        harness.cache.borrow().has_orders_open(
+            Some(&venue),
+            Some(&instrument_id),
+            None,
+            None,
+            None,
+        ),
+        "resting limit order should be open before the sweep",
+    );
+    assert!(
+        !harness.cache.borrow().has_positions_open(
+            Some(&venue),
+            Some(&instrument_id),
+            None,
+            None,
+            None,
+        ),
+        "resting limit order should not have opened a position",
+    );
+
+    let events = harness
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(60_000_000_001), true);
+    let handlers = harness.test_clock.borrow().match_handlers(events);
+    for handler in handlers {
+        handler.run();
+    }
+
+    // `purge_instrument_skip_order_guard` requires callers to have already terminalized order
+    // state, which this sweep has not done, so engine and instrument must both be retained.
+    assert_eq!(
+        harness.client.matching_engine_count(),
+        1,
+        "periodic sweep must not retire an expired engine with an open order",
+    );
+    assert!(
+        harness.cache.borrow().instrument(&instrument_id).is_some(),
+        "periodic sweep must not purge an instrument with an open order",
+    );
+    assert!(
+        harness.cache.borrow().has_orders_open(
+            Some(&venue),
+            Some(&instrument_id),
+            None,
+            None,
+            None,
+        ),
+        "periodic sweep must leave the resting order open and reachable",
+    );
+
+    harness.client.stop().unwrap();
+}
+
+#[rstest]
+fn test_instrument_close_keeps_engine_until_position_closed(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    setup_order_event_handler();
+
+    let mut harness = setup_binary_option_lifecycle_harness(
+        trader_id, account_id, "0xSETTLE", "0xYES", "Yes", 100,
+    );
+    let venue = harness.instrument.id().venue;
+    assert_eq!(harness.client.matching_engine_count(), 1);
+
+    let position = submit_open_position_and_seed_cache(
+        &harness.client,
+        &harness.cache,
+        trader_id,
+        &harness.instrument,
+        "OPEN-POSITION",
+        "P-OPEN-POSITION",
+        &mut harness.rx,
+    );
+    harness
+        .cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    publish_expired_close(
+        &harness.test_clock,
+        &harness.instrument,
+        Price::from("1.000"),
+        200,
+    );
+
+    assert_eq!(harness.client.matching_engine_count(), 1);
+    assert!(
+        harness
+            .cache
+            .borrow()
+            .instrument(&harness.instrument.id())
+            .is_some()
+    );
+
+    let closed = settle_position_from_expiration_fill(&harness.cache, &position, &mut harness.rx);
+    assert!(!harness.cache.borrow().has_orders_open(
+        Some(&venue),
+        Some(&harness.instrument.id()),
+        None,
+        None,
+        None,
+    ));
+    assert!(!harness.cache.borrow().has_positions_open(
+        Some(&venue),
+        Some(&harness.instrument.id()),
+        None,
+        None,
+        None,
+    ));
+    msgbus::publish_position_event(
+        "events.position.TEST".into(),
+        &position_closed_event(&closed, account_id),
+    );
+
+    assert_eq!(harness.client.matching_engine_count(), 0);
+
+    harness.client.stop().unwrap();
+}
+
+#[rstest]
+fn test_position_closed_finalize_ignores_other_account(trader_id: TraderId, account_id: AccountId) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    setup_order_event_handler();
+
+    let mut harness = setup_binary_option_lifecycle_harness(
+        trader_id,
+        account_id,
+        "0xACCOUNT",
+        "0xYES",
+        "Yes",
+        100,
+    );
+
+    let position = submit_open_position_and_seed_cache(
+        &harness.client,
+        &harness.cache,
+        trader_id,
+        &harness.instrument,
+        "OPEN-ACCOUNT",
+        "P-OPEN-ACCOUNT",
+        &mut harness.rx,
+    );
+    harness
+        .cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    publish_expired_close(
+        &harness.test_clock,
+        &harness.instrument,
+        Price::from("1.000"),
+        200,
+    );
+
+    let closed = settle_position_from_expiration_fill(&harness.cache, &position, &mut harness.rx);
+    msgbus::publish_position_event(
+        "events.position.TEST".into(),
+        &position_closed_event(&closed, AccountId::from("OTHER-001")),
+    );
+
+    assert_eq!(harness.client.matching_engine_count(), 1);
+    assert!(
+        harness
+            .cache
+            .borrow()
+            .instrument(&harness.instrument.id())
+            .is_some()
+    );
+
+    harness.client.stop().unwrap();
+}
+
+#[rstest]
+fn test_position_closed_does_not_purge_non_expired_instrument(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    setup_order_event_handler();
+
+    let mut harness = setup_binary_option_lifecycle_harness(
+        trader_id, account_id, "0xACTIVE", "0xYES", "Yes", 1_000,
+    );
+
+    let position = submit_open_position_and_seed_cache(
+        &harness.client,
+        &harness.cache,
+        trader_id,
+        &harness.instrument,
+        "OPEN-ACTIVE",
+        "P-ACTIVE",
+        &mut harness.rx,
+    );
+    harness
+        .cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    let mut closed = position;
+    closed.side = PositionSide::Flat;
+    closed.ts_closed = Some(closed.ts_last);
+    harness.cache.borrow_mut().update_position(&closed).unwrap();
+
+    msgbus::publish_position_event(
+        "events.position.TEST".into(),
+        &position_closed_event(&closed, account_id),
+    );
+
+    assert_eq!(
+        harness.client.matching_engine_count(),
+        1,
+        "non-expired position close should not release sandbox matching engines",
+    );
+    assert!(
+        harness
+            .cache
+            .borrow()
+            .instrument(&harness.instrument.id())
+            .is_some()
+    );
+
+    harness.client.stop().unwrap();
+}
+
+#[rstest]
+fn test_instrument_close_removes_resting_order_only_engine_before_cancel_event_applies(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    setup_order_event_handler();
+
+    let mut harness = setup_binary_option_lifecycle_harness(
+        trader_id,
+        account_id,
+        "0xRESTING",
+        "0xYES",
+        "Yes",
+        100,
+    );
+    let venue = harness.instrument.id().venue;
+    assert_eq!(harness.client.matching_engine_count(), 1);
+
+    let resting_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(harness.instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("0.050"))
+        .quantity(Quantity::from("1.00"))
+        .client_order_id("REST-CLOSE-ONLY".into())
+        .ts_init(UnixNanos::from(20))
+        .submit(true)
+        .build();
+    harness
+        .cache
+        .borrow_mut()
+        .add_order(resting_order.clone(), None, None, false)
+        .unwrap();
+    harness
+        .client
+        .submit_order(SubmitOrder::from_order(
+            &resting_order,
+            trader_id,
+            Some(harness.client.client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::from(20),
+        ))
+        .unwrap();
+
+    let order_events = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    assert!(
+        order_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Accepted(accepted)
+                if accepted.client_order_id.as_str() == "REST-CLOSE-ONLY")),
+        "expected resting order acceptance before expiration",
+    );
+    assert!(harness.cache.borrow().has_orders_open(
+        Some(&venue),
+        Some(&harness.instrument.id()),
+        None,
+        None,
+        None,
+    ));
+
+    publish_expired_close(
+        &harness.test_clock,
+        &harness.instrument,
+        Price::from("1.000"),
+        200,
+    );
+
+    assert_eq!(
+        harness.client.matching_engine_count(),
+        0,
+        "order-only expired instruments should release their matching engine immediately",
+    );
+    assert!(
+        harness
+            .cache
+            .borrow()
+            .instrument(&harness.instrument.id())
+            .is_none()
+    );
+
+    let order_events = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    assert!(
+        order_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Canceled(canceled)
+                if canceled.client_order_id.as_str() == "REST-CLOSE-ONLY")),
+        "expected expiration to cancel the resting order",
+    );
+    assert!(!harness.cache.borrow().has_orders_open(
+        Some(&venue),
+        Some(&harness.instrument.id()),
+        None,
+        None,
+        None,
+    ));
+    assert_eq!(
+        harness.client.matching_engine_count(),
+        0,
+        "cancellation replay should not recreate engine retention after close",
+    );
+    assert!(
+        harness
+            .cache
+            .borrow()
+            .instrument(&harness.instrument.id())
+            .is_none()
+    );
+
+    harness.client.stop().unwrap();
+}
+
+#[rstest]
+fn test_submit_order_list_keeps_processing_all_expired_legs_before_cleanup(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let mut harness = setup_binary_option_lifecycle_harness(
+        trader_id,
+        account_id,
+        "0xORDER-LIST",
+        "0xYES",
+        "Yes",
+        100,
+    );
+    let client_id = harness.client.client_id();
+
+    let _ = harness
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(200), true);
+
+    let first = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(harness.instrument.id())
+        .client_order_id(ClientOrderId::from("O-EXPIRED-LIST-001"))
+        .side(OrderSide::Buy)
+        .price(Price::from("0.400"))
+        .quantity(Quantity::from("1"))
+        .build();
+    let second = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(harness.instrument.id())
+        .client_order_id(ClientOrderId::from("O-EXPIRED-LIST-002"))
+        .side(OrderSide::Buy)
+        .price(Price::from("0.450"))
+        .quantity(Quantity::from("1"))
+        .build();
+    let orders = vec![first, second];
+
+    for order in &orders {
+        harness
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(client_id), false)
+            .unwrap();
+    }
+
+    harness
+        .client
+        .submit_order_list(create_submit_order_list(
+            trader_id,
+            client_id,
+            harness.instrument.id(),
+            &orders,
+        ))
+        .unwrap();
+
+    let order_events = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+
+    for order in &orders {
+        assert!(
+            order_events.iter().any(|event| {
+                event.client_order_id() == order.client_order_id()
+                    && matches!(event, OrderEventAny::Rejected(_))
+            }),
+            "expired order-list leg should emit a terminal rejection, not stay SUBMITTED",
+        );
+    }
+
+    assert_eq!(harness.client.matching_engine_count(), 0);
+    assert!(
+        harness
+            .cache
+            .borrow()
+            .instrument(&harness.instrument.id())
+            .is_none()
+    );
+
+    harness.client.stop().unwrap();
+}
+
+#[rstest]
+fn test_instrument_close_sync_cleanup_handles_synchronous_position_closed_reentry(
+    trader_id: TraderId,
+) {
+    std::thread::spawn(move || {
+        *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+        let venue = Venue::new("BINANCE");
+        let account_id = AccountId::from("BINANCE-001");
+        let client_id = ClientId::new("SANDBOX");
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let test_clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
+
+        let mut binary = binary_option();
+        binary.id = InstrumentId::from("YES.BINANCE");
+        binary.raw_symbol = "YES".into();
+        binary.activation_ns = UnixNanos::from(1);
+        binary.expiration_ns = UnixNanos::from(100);
+        let instrument = InstrumentAny::BinaryOption(binary);
+
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_quote(create_binary_option_quote(instrument.id()))
+            .unwrap();
+
+        let cache_for_handler = cache.clone();
+        let order_events = Rc::new(RefCell::new(Vec::<OrderEventAny>::new()));
+        let order_events_for_handler = order_events.clone();
+        let opening_fill = Rc::new(RefCell::new(None::<OrderFilled>));
+        let opening_fill_for_handler = opening_fill.clone();
+        let instrument_for_position = instrument.clone();
+        let instrument_for_handler = instrument.clone();
+        let order_handler = TypedIntoHandler::from(move |event: OrderEventAny| {
+            order_events_for_handler.borrow_mut().push(event.clone());
+            let _ = cache_for_handler.borrow_mut().update_order(&event);
+
+            let OrderEventAny::Filled(mut fill) = event else {
+                return;
+            };
+
+            if fill.client_order_id.as_str().starts_with("EXPIRATION-") {
+                let position = cache_for_handler
+                    .borrow()
+                    .positions_open(
+                        Some(&venue),
+                        Some(&instrument_for_handler.id()),
+                        None,
+                        Some(&account_id),
+                        None,
+                    )
+                    .into_iter()
+                    .next()
+                    .expect("expected open position before expiration fill")
+                    .clone();
+                fill.position_id = Some(position.id);
+
+                let mut closed = position;
+                closed.apply(&fill);
+                cache_for_handler
+                    .borrow_mut()
+                    .update_position(&closed)
+                    .unwrap();
+
+                let position_closed =
+                    PositionClosed::create(&closed, &fill, UUID4::new(), fill.ts_event);
+                msgbus::publish_position_event(
+                    "events.position.TEST".into(),
+                    &PositionEvent::PositionClosed(position_closed),
+                );
+            } else {
+                *opening_fill_for_handler.borrow_mut() = Some(fill);
+            }
+        });
+        msgbus::register_order_event_endpoint(
+            MessagingSwitchboard::exec_engine_process(),
+            order_handler,
+        );
+
+        let usd = Currency::USD();
+        let config = SandboxExecutionClientConfig {
+            account_id,
+            venue,
+            starting_balances: vec![Money::new(100_000.0, usd)],
+            base_currency: Some(usd),
+            oms_type: OmsType::Netting,
+            account_type: AccountType::Margin,
+            default_leverage: Decimal::ONE,
+            leverages: ahash::AHashMap::new(),
+            book_type: BookType::L1_MBP,
+            fee_model: None,
+            fill_model: None,
+            latency_model: None,
+            frozen_account: false,
+            bar_execution: false,
+            trade_execution: false,
+            reject_stop_orders: true,
+            support_gtd_orders: true,
+            support_contingent_orders: true,
+            use_position_ids: true,
+            use_random_ids: false,
+            use_reduce_only: true,
+            queue_position: false,
+            liquidity_consumption: false,
+            bar_adaptive_high_low_ordering: false,
+            use_market_order_acks: false,
+            oto_full_trigger: false,
+            price_protection_points: 0,
+        };
+        let core = ExecutionClientCore::new(
+            trader_id,
+            client_id,
+            venue,
+            config.oms_type,
+            config.account_id,
+            config.account_type,
+            config.base_currency,
+            cache.clone(),
+        );
+        let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+        client.start().unwrap();
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(trader_id)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-SYNC-REENTRY-001"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.00"))
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(client_id), false)
+            .unwrap();
+
+        let ts = test_clock.borrow().timestamp_ns();
+        client
+            .submit_order(SubmitOrder::from_order(
+                &order,
+                trader_id,
+                Some(client_id),
+                None,
+                UUID4::new(),
+                ts,
+            ))
+            .unwrap();
+
+        assert!(
+            order_events
+                .borrow()
+                .iter()
+                .any(|event| matches!(event, OrderEventAny::Filled(_))),
+            "expected opening fill event, found {:?}",
+            order_events.borrow(),
+        );
+
+        let mut opening_fill = opening_fill
+            .borrow_mut()
+            .take()
+            .expect("expected opening fill before expiration");
+        opening_fill.position_id = Some(PositionId::new("P-SYNC-REENTRY"));
+        let position = Position::new(&instrument_for_position, opening_fill);
+        cache
+            .borrow_mut()
+            .add_position(&position, OmsType::Netting)
+            .unwrap();
+
+        assert!(cache.borrow().has_positions_open(
+            Some(&venue),
+            Some(&instrument.id()),
+            None,
+            Some(&account_id),
+            None,
+        ));
+
+        publish_expired_close(&test_clock, &instrument, Price::from("1.000"), 200);
+
+        assert_eq!(client.matching_engine_count(), 0);
+        assert!(cache.borrow().instrument(&instrument.id()).is_none());
+        client.stop().unwrap();
+    })
+    .join()
+    .unwrap();
+}
+
+#[rstest]
+fn test_local_expiry_removes_resting_order_only_engine_before_cancel_event_applies(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    setup_order_event_handler();
+
+    let mut harness = setup_binary_option_lifecycle_harness(
+        trader_id,
+        account_id,
+        "0xLOCAL-REST",
+        "0xYES",
+        "Yes",
+        100,
+    );
+    let venue = harness.instrument.id().venue;
+    assert_eq!(harness.client.matching_engine_count(), 1);
+
+    let resting_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(harness.instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("0.050"))
+        .quantity(Quantity::from("1.00"))
+        .client_order_id("REST-LOCAL-ONLY".into())
+        .ts_init(UnixNanos::from(20))
+        .submit(true)
+        .build();
+    harness
+        .cache
+        .borrow_mut()
+        .add_order(resting_order.clone(), None, None, false)
+        .unwrap();
+    harness
+        .client
+        .submit_order(SubmitOrder::from_order(
+            &resting_order,
+            trader_id,
+            Some(harness.client.client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::from(20),
+        ))
+        .unwrap();
+
+    let order_events = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    assert!(
+        order_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Accepted(accepted)
+                if accepted.client_order_id.as_str() == "REST-LOCAL-ONLY")),
+        "expected resting order acceptance before local expiry",
+    );
+    assert!(harness.cache.borrow().has_orders_open(
+        Some(&venue),
+        Some(&harness.instrument.id()),
+        None,
+        None,
+        None,
+    ));
+
+    let _ = harness
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(200), true);
+
+    let probe_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(harness.instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("0.050"))
+        .quantity(Quantity::from("1.00"))
+        .client_order_id("PROBE-LOCAL-ONLY".into())
+        .ts_init(UnixNanos::from(200))
+        .submit(true)
+        .build();
+    harness
+        .cache
+        .borrow_mut()
+        .add_order(probe_order.clone(), None, None, false)
+        .unwrap();
+    harness
+        .client
+        .submit_order(SubmitOrder::from_order(
+            &probe_order,
+            trader_id,
+            Some(harness.client.client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::from(200),
+        ))
+        .unwrap();
+
+    assert_eq!(
+        harness.client.matching_engine_count(),
+        0,
+        "local expiry should release the engine before cancel/reject events apply",
+    );
+    assert!(
+        harness
+            .cache
+            .borrow()
+            .instrument(&harness.instrument.id())
+            .is_none()
+    );
+
+    let order_events = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    assert!(
+        order_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Canceled(canceled)
+                if canceled.client_order_id.as_str() == "REST-LOCAL-ONLY")),
+        "expected local expiry to cancel the resting order",
+    );
+    assert!(
+        order_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Rejected(rejected)
+                if rejected.client_order_id.as_str() == "PROBE-LOCAL-ONLY"
+                    && rejected.reason.contains("pending resolution"))),
+        "expected local expiry to reject new orders while pending resolution",
+    );
+    assert!(!harness.cache.borrow().has_orders_open(
+        Some(&venue),
+        Some(&harness.instrument.id()),
+        None,
+        None,
+        None,
+    ));
+    assert_eq!(harness.client.matching_engine_count(), 0);
+
+    harness.client.stop().unwrap();
+}
+
+#[rstest]
+fn test_paper_binary_option_multiple_instruments_close_settlement_via_data_engine(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    let instruments = vec![
+        (
+            make_binary_option_instrument("0xCOND-BTC", "0xBTC-YES", "Yes", 100),
+            Price::from("1.000"),
+            "OPEN-BTC-YES",
+            "P-BTC-YES",
+        ),
+        (
+            make_binary_option_instrument("0xCOND-BTC", "0xBTC-NO", "No", 100),
+            Price::from("0.000"),
+            "OPEN-BTC-NO",
+            "P-BTC-NO",
+        ),
+        (
+            make_binary_option_instrument("0xCOND-ETH", "0xETH-YES", "Yes", 100),
+            Price::from("0.000"),
+            "OPEN-ETH-YES",
+            "P-ETH-YES",
+        ),
+        (
+            make_binary_option_instrument("0xCOND-ETH", "0xETH-NO", "No", 100),
+            Price::from("1.000"),
+            "OPEN-ETH-NO",
+            "P-ETH-NO",
+        ),
+    ];
+    let venue = instruments[0].0.id().venue;
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let test_clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
+
+    let mut config = create_config(trader_id, account_id, venue);
+    config.base_currency = Some(Currency::USDC());
+    config.starting_balances = vec![Money::new(100_000.0, Currency::USDC())];
+    let core = ExecutionClientCore::new(
+        trader_id,
+        ClientId::new("SANDBOX"),
+        config.venue,
+        config.oms_type,
+        config.account_id,
+        config.account_type,
+        config.base_currency,
+        cache.clone(),
+    );
+    let mut client = SandboxExecutionClient::new(core, config, clock.clone(), cache.clone());
+
+    let data_engine = Rc::new(RefCell::new(DataEngine::new(clock, cache.clone(), None)));
+    DataEngine::register_msgbus_handlers(&data_engine);
+
+    for (instrument, _, _, _) in &instruments {
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+    }
+    let _ = test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(50), true);
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    nautilus_common::live::runner::replace_exec_event_sender(tx);
+    client.start().unwrap();
+
+    for (instrument, _, _, _) in &instruments {
+        let quote = QuoteTick::new(
+            instrument.id(),
+            Price::new(0.40, 3),
+            Price::new(0.41, 3),
+            Quantity::new(100.0, 2),
+            Quantity::new(100.0, 2),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        client.process_quote_tick(&quote).unwrap();
+    }
+
+    for (idx, (instrument, _, client_order_id, _)) in instruments.iter().enumerate() {
+        submit_market_open_order(
+            &client,
+            &cache,
+            trader_id,
+            instrument,
+            client_order_id,
+            10 + idx as u64,
+        );
+    }
+
+    let mut seeded_positions = ahash::AHashSet::new();
+
+    for event in std::iter::from_fn(|| rx.try_recv().ok()) {
+        let ExecutionEvent::Order(OrderEventAny::Filled(fill)) = event else {
+            continue;
+        };
+
+        if let Some((instrument, _, client_order_id, position_id)) =
+            instruments
+                .iter()
+                .find(|(_, _, expected_client_order_id, _)| {
+                    fill.client_order_id.as_str() == *expected_client_order_id
+                })
+        {
+            seed_binary_option_position_from_fill(&cache, instrument, fill, position_id);
+            seeded_positions.insert(*client_order_id);
+        }
+    }
+
+    assert_eq!(
+        seeded_positions.len(),
+        instruments.len(),
+        "expected one opened position per instrument before settlement"
+    );
+
+    let _ = test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(200), true);
+
+    for (idx, (instrument, close_price, _, _)) in instruments.iter().enumerate() {
+        let close = InstrumentClose::new(
+            instrument.id(),
+            *close_price,
+            InstrumentCloseType::ContractExpired,
+            UnixNanos::from(300 + idx as u64),
+            UnixNanos::from(300 + idx as u64),
+        );
+        msgbus::send_data(
+            MessagingSwitchboard::data_engine_process_data(),
+            Data::InstrumentClose(close),
+        );
+    }
+
+    let mut expiration_fills = ahash::AHashMap::new();
+
+    for event in std::iter::from_fn(|| rx.try_recv().ok()) {
+        let ExecutionEvent::Order(OrderEventAny::Filled(fill)) = event else {
+            continue;
+        };
+
+        if fill.client_order_id.as_str().starts_with("EXPIRATION-") {
+            expiration_fills.insert(fill.instrument_id, fill.last_px);
+        }
+    }
+
+    assert_eq!(
+        expiration_fills.len(),
+        instruments.len(),
+        "expected one settlement fill per open instrument"
+    );
+
+    for (instrument, close_price, _, _) in &instruments {
+        assert_eq!(
+            expiration_fills.get(&instrument.id()),
+            Some(close_price),
+            "expected settlement price to match InstrumentClose for {}",
+            instrument.id()
+        );
+    }
+}
+
+#[rstest]
+fn test_process_quote_tick_creates_matching_engine(
+    test_context: TestContext,
+    instrument: InstrumentAny,
+) {
+    setup_order_event_handler();
+
+    test_context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let quote = create_quote_tick(instrument.id(), 1000.0, 1001.0);
+    let result = test_context.client.process_quote_tick(&quote);
+
+    assert!(result.is_ok());
+    assert_eq!(test_context.client.matching_engine_count(), 1);
+}
+
+#[rstest]
+fn test_process_quote_tick_reuses_matching_engine(
+    test_context: TestContext,
+    instrument: InstrumentAny,
+) {
+    setup_order_event_handler();
+
+    test_context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let quote1 = create_quote_tick(instrument.id(), 1000.0, 1001.0);
+    let quote2 = create_quote_tick(instrument.id(), 1002.0, 1003.0);
+
+    test_context.client.process_quote_tick(&quote1).unwrap();
+    test_context.client.process_quote_tick(&quote2).unwrap();
+
+    assert_eq!(test_context.client.matching_engine_count(), 1);
+}
+
+#[rstest]
+fn test_process_quote_tick_drops_precision_mismatch(
+    test_context: TestContext,
+    instrument: InstrumentAny,
+) {
+    setup_order_event_handler();
+
+    test_context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let quote = create_mismatched_quote_tick(instrument.id(), 1000.0, 1001.0);
+    let result = test_context.client.process_quote_tick(&quote);
+
+    assert!(result.is_ok());
+    assert_eq!(test_context.client.matching_engine_count(), 0);
+}
+
+#[rstest]
+fn test_on_instrument_updates_engine_precision(
+    mut test_context: TestContext,
+    instrument: InstrumentAny,
+) {
+    setup_order_event_handler();
+
+    test_context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let quote_before = create_quote_tick(instrument.id(), 1000.0, 1001.0);
+    test_context
+        .client
+        .process_quote_tick(&quote_before)
+        .unwrap();
+    assert_eq!(test_context.client.matching_engine_count(), 1);
+
+    let updated_instrument = updated_instrument_with_price_precision_3(instrument);
+    test_context
+        .cache
+        .borrow_mut()
+        .add_instrument(updated_instrument.clone())
+        .unwrap();
+    test_context
+        .client
+        .on_instrument(updated_instrument.clone());
+
+    let stale_quote = create_quote_tick(updated_instrument.id(), 1000.0, 1001.0);
+    let stale_result = test_context.client.process_quote_tick(&stale_quote);
+    assert!(stale_result.is_ok());
+
+    let updated_quote =
+        create_quote_tick_with_price_precision(updated_instrument.id(), 1000.0, 1001.0, 3);
+    let updated_result = test_context.client.process_quote_tick(&updated_quote);
+    assert!(updated_result.is_ok());
+    assert_eq!(test_context.client.matching_engine_count(), 1);
+}
+
+#[rstest]
+fn test_process_quote_tick_instrument_not_found(execution_client: SandboxExecutionClient) {
+    setup_order_event_handler();
+
+    let quote = create_quote_tick(InstrumentId::from("UNKNOWN.SIM"), 1000.0, 1001.0);
+    let result = execution_client.process_quote_tick(&quote);
+
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("not found"));
+}
+
+#[rstest]
+fn test_process_trade_tick_disabled(test_context: TestContext, instrument: InstrumentAny) {
+    setup_order_event_handler();
+
+    test_context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    // Config has trade_execution = false, so this should be a no-op
+    let trade = TradeTick::new(
+        instrument.id(),
+        Price::from("1000.0"),
+        Quantity::from("1.0"),
+        AggressorSide::Buy,
+        TradeId::new("1"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let result = test_context.client.process_trade_tick(&trade);
+
+    assert!(result.is_ok());
+    // No matching engine created because trade_execution is disabled
+    assert_eq!(test_context.client.matching_engine_count(), 0);
+}
+
+#[rstest]
+fn test_process_trade_tick_drops_precision_mismatch(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    setup_order_event_handler();
+
+    let venue = instrument.id().venue;
+    let mut test_context = create_test_context_with_trade_execution(trader_id, account_id, venue);
+    test_context.client.start().unwrap();
+    test_context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let trade = create_mismatched_trade_tick(instrument.id());
+    let result = test_context.client.process_trade_tick(&trade);
+
+    assert!(result.is_ok());
+    assert_eq!(test_context.client.matching_engine_count(), 0);
+}
+
+#[rstest]
+fn test_message_handler_drops_precision_mismatched_trade(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    setup_order_event_handler();
+
+    let venue = instrument.id().venue;
+    let mut test_context = create_test_context_with_trade_execution(trader_id, account_id, venue);
+    test_context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    test_context.client.start().unwrap();
+
+    let trade = create_mismatched_trade_tick(instrument.id());
+    msgbus::publish_trade(
+        format!("data.trades.{}.{}", instrument.id().venue, instrument.id()).into(),
+        &trade,
+    );
+
+    assert_eq!(test_context.client.matching_engine_count(), 0);
+    test_context.client.stop().unwrap();
+}
+
+#[rstest]
+fn test_process_bar_disabled(test_context: TestContext, instrument: InstrumentAny) {
+    use nautilus_model::data::{Bar, BarType};
+
+    setup_order_event_handler();
+
+    test_context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    // Config has bar_execution = false, so this should be a no-op
+    let bar_type = BarType::from(format!("{}-1-MINUTE-LAST-INTERNAL", instrument.id()));
+    let bar = Bar::new(
+        bar_type,
+        Price::from("1000.0"),
+        Price::from("1001.0"),
+        Price::from("999.0"),
+        Price::from("1000.5"),
+        Quantity::from("100.0"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let result = test_context.client.process_bar(&bar);
+
+    assert!(result.is_ok());
+    // No matching engine created because bar_execution is disabled
+    assert_eq!(test_context.client.matching_engine_count(), 0);
+}
+
+#[rstest]
+fn test_process_bar_drops_precision_mismatch(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    setup_order_event_handler();
+
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let mut config = create_config(trader_id, account_id, venue);
+    config.bar_execution = true;
+
+    let core = ExecutionClientCore::new(
+        trader_id,
+        ClientId::new("SANDBOX"),
+        config.venue,
+        config.oms_type,
+        config.account_id,
+        config.account_type,
+        config.base_currency,
+        cache.clone(),
+    );
+    let client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let bar_type = BarType::from(format!("{}-1-MINUTE-LAST-EXTERNAL", instrument.id()));
+    let bar = Bar::new(
+        bar_type,
+        Price::new(1000.0, 3),
+        Price::new(1001.0, 3),
+        Price::new(999.0, 3),
+        Price::new(1000.5, 3),
+        Quantity::new(100.0, 3),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let result = client.process_bar(&bar);
+
+    assert!(result.is_ok());
+    assert_eq!(client.matching_engine_count(), 0);
+}
+
+#[rstest]
+fn test_message_handler_drops_precision_mismatched_bar(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    setup_order_event_handler();
+
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let mut config = create_config(trader_id, account_id, instrument.id().venue);
+    config.bar_execution = true;
+
+    let core = ExecutionClientCore::new(
+        trader_id,
+        ClientId::new("SANDBOX"),
+        config.venue,
+        config.oms_type,
+        config.account_id,
+        config.account_type,
+        config.base_currency,
+        cache.clone(),
+    );
+    let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    client.start().unwrap();
+
+    let bar_type = BarType::from(format!("{}-1-MINUTE-LAST-EXTERNAL", instrument.id()));
+    let bar = Bar::new(
+        bar_type,
+        Price::new(1000.0, 3),
+        Price::new(1001.0, 3),
+        Price::new(999.0, 3),
+        Price::new(1000.5, 3),
+        Quantity::new(100.0, 3),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    msgbus::publish_bar(format!("data.bars.{bar_type}").into(), &bar);
+
+    assert_eq!(client.matching_engine_count(), 0);
+    client.stop().unwrap();
+}
+
+#[rstest]
+fn test_reset_with_no_engines(execution_client: SandboxExecutionClient) {
+    setup_order_event_handler();
+
+    assert_eq!(execution_client.matching_engine_count(), 0);
+
+    // Reset should work even with no engines
+    execution_client.reset();
+
+    assert_eq!(execution_client.matching_engine_count(), 0);
+}
+
+#[rstest]
+fn test_client_id(execution_client: SandboxExecutionClient, client_id: ClientId) {
+    assert_eq!(execution_client.client_id(), client_id);
+}
+
+#[rstest]
+fn test_account_id(execution_client: SandboxExecutionClient, account_id: AccountId) {
+    assert_eq!(execution_client.account_id(), account_id);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_returns_empty_report(
+    execution_client: SandboxExecutionClient,
+    client_id: ClientId,
+    account_id: AccountId,
+    venue: Venue,
+) {
+    let mass_status = execution_client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(mass_status.client_id, client_id);
+    assert_eq!(mass_status.account_id, account_id);
+    assert_eq!(mass_status.venue, venue);
+    assert!(mass_status.order_reports().is_empty());
+    assert!(mass_status.fill_reports().is_empty());
+    assert!(mass_status.position_reports().is_empty());
+}
+
+#[rstest]
+fn test_config_accessor(execution_client: SandboxExecutionClient, venue: Venue) {
+    let config = execution_client.config();
+
+    assert_eq!(config.venue, venue);
+    assert_eq!(config.oms_type, OmsType::Netting);
+    assert_eq!(config.account_type, AccountType::Margin);
+}
+
+#[rstest]
+fn test_get_account_when_none(execution_client: SandboxExecutionClient) {
+    // No account in cache yet
+    assert!(execution_client.get_account().is_none());
+}
+
+#[rstest]
+fn test_initialized_ioc_market_order_cancels_remainder_through_live_runner(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let instrument_id = instrument.id();
+    let mut context = create_test_context(trader_id, account_id, instrument_id.venue);
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument)
+        .unwrap();
+
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from("1000.00"),
+        Price::from("1010.00"),
+        Quantity::from("0.500"),
+        Quantity::from("0.500"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    context.cache.borrow_mut().add_quote(quote).unwrap();
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    context.client.start().unwrap();
+    context.client.process_quote_tick(&quote).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.500"))
+        .time_in_force(TimeInForce::Ioc)
+        .client_order_id(ClientOrderId::from("O-IOC-INITIALIZED"))
+        .build();
+    assert_eq!(order.status(), OrderStatus::Initialized);
+    context
+        .cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(context.client.client_id()), false)
+        .unwrap();
+
+    context
+        .client
+        .submit_order(SubmitOrder::from_order(
+            &order,
+            trader_id,
+            Some(context.client.client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        ))
+        .unwrap();
+
+    let events: Vec<OrderEventAny> = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            ExecutionEvent::Order(order_event) => Some(order_event),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(events.len(), 3);
+    let OrderEventAny::Submitted(submitted) = &events[0] else {
+        panic!("Expected OrderSubmitted, was {:?}", events[0]);
+    };
+    assert_eq!(submitted.client_order_id, order.client_order_id());
+    let OrderEventAny::Filled(fill) = &events[1] else {
+        panic!("Expected OrderFilled, was {:?}", events[1]);
+    };
+    assert_eq!(fill.client_order_id, order.client_order_id());
+    assert_eq!(fill.last_px, Price::from("1010.00"));
+    assert_eq!(fill.last_qty, Quantity::from("0.500"));
+    let OrderEventAny::Canceled(canceled) = &events[2] else {
+        panic!("Expected OrderCanceled, was {:?}", events[2]);
+    };
+    assert_eq!(canceled.client_order_id, order.client_order_id());
+
+    for event in &events {
+        context.cache.borrow_mut().update_order(event).unwrap();
+    }
+
+    let cached_order = context
+        .cache
+        .borrow()
+        .order(&order.client_order_id())
+        .unwrap()
+        .clone();
+    assert_eq!(cached_order.status(), OrderStatus::Canceled);
+    assert_eq!(cached_order.filled_qty(), Quantity::from("0.500"));
+    assert_eq!(cached_order.leaves_qty(), Quantity::from("1.000"));
+
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+#[case(None, None)]
+#[case(Some("SANDBOX-A"), Some(OrderSide::Buy))]
+#[case(Some("SANDBOX-B"), Some(OrderSide::Sell))]
+fn test_cancel_all_orders_routes_by_client_account_and_side(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] selected_client: Option<&str>,
+    #[case] selected_side: Option<OrderSide>,
+) {
+    struct SeededOrder {
+        client_order_id: ClientOrderId,
+        client_id: ClientId,
+        account_id: AccountId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        side: OrderSide,
+        status: OrderStatus,
+    }
+
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let InstrumentAny::CryptoPerpetual(mut other) = instrument.clone() else {
+        panic!("Expected crypto perpetual fixture");
+    };
+    other.id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    other.raw_symbol = "BTCUSDT".into();
+    let other = InstrumentAny::CryptoPerpetual(other);
+    let instrument_id = instrument.id();
+    let other_instrument_id = other.id();
+    let venue = instrument_id.venue;
+    let client_a_id = ClientId::new("SANDBOX-A");
+    let client_b_id = ClientId::new("SANDBOX-B");
+    let account_a_id = AccountId::from("BINANCE-001");
+    let account_b_id = AccountId::from("BINANCE-002");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+
+    {
+        let mut cache = cache.borrow_mut();
+        cache.add_instrument(instrument).unwrap();
+        cache.add_instrument(other).unwrap();
+        cache
+            .add_quote(create_quote_tick(instrument_id, 1000.0, 1001.0))
+            .unwrap();
+        cache
+            .add_quote(create_quote_tick(other_instrument_id, 2000.0, 2001.0))
+            .unwrap();
+    }
+
+    let create_client = |client_id: ClientId, account_id: AccountId| {
+        let config = create_config(trader_id, account_id, venue);
+        let core = ExecutionClientCore::new(
+            trader_id,
+            client_id,
+            venue,
+            config.oms_type,
+            config.account_id,
+            config.account_type,
+            config.base_currency,
+            cache.clone(),
+        );
+        SandboxExecutionClient::new(core, config, clock.clone(), cache.clone())
+    };
+    let mut client_a = create_client(client_a_id, account_a_id);
+    let mut client_b = create_client(client_b_id, account_b_id);
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    client_a.start().unwrap();
+    client_b.start().unwrap();
+
+    let mut orders = Vec::new();
+    let resting_orders = [
+        (
+            &client_a,
+            client_a_id,
+            account_a_id,
+            StrategyId::from("STRATEGY-A-001"),
+            instrument_id,
+            OrderSide::Buy,
+            ClientOrderId::from("O-A-BUY-ACCEPTED"),
+        ),
+        (
+            &client_a,
+            client_a_id,
+            account_a_id,
+            StrategyId::from("STRATEGY-A-002"),
+            instrument_id,
+            OrderSide::Sell,
+            ClientOrderId::from("O-A-SELL-ACCEPTED"),
+        ),
+        (
+            &client_a,
+            client_a_id,
+            account_a_id,
+            StrategyId::from("STRATEGY-A-001"),
+            other_instrument_id,
+            OrderSide::Buy,
+            ClientOrderId::from("O-A-OTHER-BUY-ACCEPTED"),
+        ),
+        (
+            &client_b,
+            client_b_id,
+            account_b_id,
+            StrategyId::from("STRATEGY-B-001"),
+            instrument_id,
+            OrderSide::Buy,
+            ClientOrderId::from("O-B-BUY-ACCEPTED"),
+        ),
+        (
+            &client_b,
+            client_b_id,
+            account_b_id,
+            StrategyId::from("STRATEGY-B-002"),
+            instrument_id,
+            OrderSide::Sell,
+            ClientOrderId::from("O-B-SELL-ACCEPTED"),
+        ),
+    ];
+
+    for (client, client_id, account_id, strategy_id, order_instrument_id, side, order_id) in
+        resting_orders
+    {
+        let price = match side {
+            OrderSide::Buy => Price::from("900.00"),
+            OrderSide::Sell => Price::from("1100.00"),
+        };
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(order_instrument_id)
+            .client_order_id(order_id)
+            .side(side)
+            .price(price)
+            .quantity(Quantity::from("1.000"))
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(client_id), false)
+            .unwrap();
+        client
+            .submit_order(SubmitOrder::from_order(
+                &order,
+                trader_id,
+                Some(client_id),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+            ))
+            .unwrap();
+        let events = apply_order_events_from_channel(&cache, &mut rx);
+        assert_eq!(events.len(), 2);
+        assert!(matches!(events[0], OrderEventAny::Submitted(_)));
+        assert!(matches!(events[1], OrderEventAny::Accepted(_)));
+        orders.push(SeededOrder {
+            client_order_id: order_id,
+            client_id,
+            account_id,
+            strategy_id,
+            instrument_id: order_instrument_id,
+            side,
+            status: OrderStatus::Accepted,
+        });
+    }
+
+    for (client_id, account_id, strategy_id, side, order_id) in [
+        (
+            client_a_id,
+            account_a_id,
+            StrategyId::from("STRATEGY-A-002"),
+            OrderSide::Buy,
+            ClientOrderId::from("O-A-BUY-SUBMITTED"),
+        ),
+        (
+            client_b_id,
+            account_b_id,
+            StrategyId::from("STRATEGY-B-001"),
+            OrderSide::Sell,
+            ClientOrderId::from("O-B-SELL-SUBMITTED"),
+        ),
+    ] {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(order_id)
+            .side(side)
+            .price(Price::from("950.00"))
+            .quantity(Quantity::from("2.000"))
+            .build();
+        let submitted = TestOrderEventStubs::submitted(&order, account_id);
+        let mut cache = cache.borrow_mut();
+        cache
+            .add_order(order, None, Some(client_id), false)
+            .unwrap();
+        cache.update_order(&submitted).unwrap();
+        orders.push(SeededOrder {
+            client_order_id: order_id,
+            client_id,
+            account_id,
+            strategy_id,
+            instrument_id,
+            side,
+            status: OrderStatus::Submitted,
+        });
+    }
+
+    let mut engine = ExecutionEngine::new(clock, cache.clone(), None);
+    engine.register_client(Box::new(client_a)).unwrap();
+    engine.register_default_client(Box::new(client_b));
+    let command_client = selected_client.map(ClientId::new);
+    let routed_client = command_client.unwrap_or(client_a_id);
+    let routed_account = if routed_client == client_a_id {
+        account_a_id
+    } else {
+        account_b_id
+    };
+    let command = CancelAllOrders::new(
+        trader_id,
+        command_client,
+        StrategyId::from("CANCEL-CALLER-001"),
+        instrument_id,
+        selected_side,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    engine.execute(TradingCommand::CancelAllOrders(command));
+
+    let events = apply_order_events_from_channel(&cache, &mut rx);
+    let canceled: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Canceled(canceled) => Some(canceled),
+            _ => None,
+        })
+        .collect();
+    let expected_ids: ahash::AHashSet<_> = orders
+        .iter()
+        .filter(|order| {
+            order.client_id == routed_client
+                && order.account_id == routed_account
+                && order.instrument_id == instrument_id
+                && selected_side.is_none_or(|side| order.side == side)
+        })
+        .map(|order| order.client_order_id)
+        .collect();
+    let actual_ids: ahash::AHashSet<_> =
+        canceled.iter().map(|event| event.client_order_id).collect();
+
+    assert_eq!(actual_ids, expected_ids);
+
+    for event in canceled {
+        let order = orders
+            .iter()
+            .find(|order| order.client_order_id == event.client_order_id)
+            .unwrap();
+        assert_eq!(event.strategy_id, order.strategy_id);
+        assert_eq!(event.account_id, Some(routed_account));
+    }
+    let cache = cache.borrow();
+    for order in &orders {
+        let cached = cache.order(&order.client_order_id).unwrap();
+        let expected_status = if expected_ids.contains(&order.client_order_id) {
+            OrderStatus::Canceled
+        } else {
+            order.status
+        };
+        assert_eq!(cached.status(), expected_status);
+        assert_eq!(cached.strategy_id(), order.strategy_id);
+        assert_eq!(cached.account_id(), Some(order.account_id));
+        assert_eq!(
+            cache.client_id(&order.client_order_id),
+            Some(&order.client_id)
+        );
+    }
+    drop(cache);
+    engine.stop();
+}
+
+/// Submitting through `ExecEngine.execute`, the borrow every production command arrives under,
+/// never re-enters the engine: the sandbox's events take the execution channel whether a command
+/// is applied at once, deferred, or queued behind a command already due (regression of #3732).
+#[rstest]
+#[case::no_latency_model(None, false)]
+#[case::zero_leg(Some(static_latency_model(0, 0, 0)), false)]
+#[case::deferred_leg(Some(static_latency_model(1_000_000_000, 0, 0)), true)]
+fn test_submit_order_through_exec_engine_no_reentrant_panic(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] latency_model: Option<LatencyModelAny>,
+    #[case] deferred: bool,
+) {
+    const INSERT_LATENCY_NS: u64 = 1_000_000_000;
+
+    let venue = Venue::new("BINANCE");
+    let account_id = AccountId::from("BINANCE-001");
+    let client_id = ClientId::new("SANDBOX");
+
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let test_clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
+
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let instrument_id = instrument.id();
+    let quote = create_quote_tick(instrument_id, 1000.0, 1001.0);
+    cache.borrow_mut().add_quote(quote).unwrap();
+
+    // Wire up exec engine with registered msgbus handlers
+    let engine = Rc::new(RefCell::new(ExecutionEngine::new(
+        clock.clone(),
+        cache.clone(),
+        None,
+    )));
+    ExecutionEngine::register_msgbus_handlers(&engine);
+
+    // Initialize the exec event sender (simulates the async runner)
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    nautilus_common::live::runner::replace_exec_event_sender(tx);
+
+    // Create and register the sandbox client (venue must match the instrument)
+    let usd = Currency::USD();
+    let config = SandboxExecutionClientConfig {
+        account_id,
+        venue,
+        starting_balances: vec![Money::new(100_000.0, usd)],
+        base_currency: Some(usd),
+        oms_type: OmsType::Netting,
+        account_type: AccountType::Margin,
+        default_leverage: Decimal::ONE,
+        leverages: ahash::AHashMap::new(),
+        book_type: BookType::L1_MBP,
+        fee_model: None,
+        fill_model: None,
+        latency_model,
+        frozen_account: false,
+        bar_execution: false,
+        trade_execution: false,
+        reject_stop_orders: true,
+        support_gtd_orders: true,
+        support_contingent_orders: true,
+        use_position_ids: true,
+        use_random_ids: false,
+        use_reduce_only: true,
+        queue_position: false,
+        liquidity_consumption: false,
+        bar_adaptive_high_low_ordering: false,
+        use_market_order_acks: false,
+        oto_full_trigger: false,
+        price_protection_points: 0,
+    };
+    let core = ExecutionClientCore::new(
+        trader_id,
+        client_id,
+        venue,
+        config.oms_type,
+        config.account_id,
+        config.account_type,
+        config.base_currency,
+        cache.clone(),
+    );
+    let mut sandbox_client =
+        SandboxExecutionClient::new(core, config, clock.clone(), cache.clone());
+    sandbox_client.start().unwrap();
+    engine
+        .borrow_mut()
+        .register_client(Box::new(sandbox_client))
+        .unwrap();
+
+    // Builds and caches a market order, then submits it through the exec engine endpoint (this
+    // panicked before the fix for #3732)
+    let submit_market = |client_order_id: &str| {
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("0.001"))
+            .client_order_id(client_order_id.into())
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(client_id), false)
+            .unwrap();
+
+        let ts = test_clock.borrow().timestamp_ns();
+        let submit =
+            SubmitOrder::from_order(&order, trader_id, Some(client_id), None, UUID4::new(), ts);
+        msgbus::send_trading_command(
+            MessagingSwitchboard::exec_engine_execute(),
+            TradingCommand::SubmitOrder(submit),
+        );
+        order
+    };
+
+    let submit_time = test_clock.borrow().timestamp_ns();
+    let due = UnixNanos::from(*submit_time + INSERT_LATENCY_NS);
+    let first = submit_market("O-ENGINE-1");
+    if deferred {
+        // The first submit is due but unreleased when the second arrives under the engine's
+        // borrow, so the second is issued against a due queue and joins it behind the first
+        test_clock.borrow_mut().set_time(due);
+    }
+    let second = submit_market("O-ENGINE-2");
+    assert_eq!(
+        advance_and_fire(&test_clock, due),
+        usize::from(deferred),
+        "only a deferred command leaves anything for the inbound alert to release",
+    );
+
+    if deferred {
+        // The second submit's own leg runs from its arrival at `due`, so one more alert releases it
+        assert_eq!(
+            advance_and_fire(&test_clock, UnixNanos::from(*due + INSERT_LATENCY_NS)),
+            1,
+        );
+    }
+
+    // Verify events arrived through the channel instead of re-entering the engine
+    let kinds: Vec<(&str, ClientOrderId)> = drain_order_events(&mut rx)
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    let expected = if deferred {
+        vec![
+            ("submitted", first.client_order_id()),
+            ("submitted", second.client_order_id()),
+            ("filled", first.client_order_id()),
+            ("filled", second.client_order_id()),
+        ]
+    } else {
+        vec![
+            ("submitted", first.client_order_id()),
+            ("filled", first.client_order_id()),
+            ("submitted", second.client_order_id()),
+            ("filled", second.client_order_id()),
+        ]
+    };
+    assert_eq!(
+        kinds, expected,
+        "expected every order event through the exec event channel, in emission order: {kinds:?}",
+    );
+}
+
+/// A fill emitted by market data before the inbound alert fires and the acceptance the alert
+/// releases share one FIFO channel, so the runner processes them in emission order, the fill
+/// first, however it prioritizes time events over the execution channel.
+#[rstest]
+fn test_command_response_cannot_overtake_a_fill_through_exec_engine(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 1_000_000_000;
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(INSERT_LATENCY_NS, 0, 0)),
+    );
+
+    let resting = accept_through_engine(
+        &mut harness,
+        trader_id,
+        &instrument,
+        "O-RESTING-1",
+        "100.00",
+        INSERT_LATENCY_NS,
+    );
+
+    // In flight while the market moves through the resting order
+    let next = submit_through_engine(&harness, trader_id, &instrument, "O-NEXT-1", "99.00");
+    let due = UnixNanos::from(*next.ts_init() + INSERT_LATENCY_NS);
+    harness.published.borrow_mut().clear();
+
+    let quote = create_quote_tick(instrument.id(), 99.00, 99.50);
+    msgbus::publish_quote(
+        format!("data.quotes.{}.{}", instrument.id().venue, instrument.id()).into(),
+        &quote,
+    );
+
+    assert_eq!(advance_and_fire(&harness.test_clock, due), 1);
+
+    // The channel held the fill before the alert released the acceptance
+    let settled: Vec<(&str, ClientOrderId)> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        settled,
+        vec![
+            ("submitted", next.client_order_id()),
+            ("filled", resting.client_order_id()),
+            ("accepted", next.client_order_id()),
+        ],
+        "the channel must hold events in emission order: {settled:?}",
+    );
+
+    let processed: Vec<(&str, ClientOrderId)> = harness
+        .published
+        .borrow()
+        .iter()
+        .filter(|event| matches!(event, OrderEventAny::Filled(_) | OrderEventAny::Accepted(_)))
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        processed,
+        vec![
+            ("filled", resting.client_order_id()),
+            ("accepted", next.client_order_id()),
+        ],
+        "the fill was emitted first and must be processed first",
+    );
+    assert_eq!(cached_status(&harness.cache, &resting), OrderStatus::Filled);
+    assert_eq!(cached_status(&harness.cache, &next), OrderStatus::Accepted);
+}
+
+/// Commands sharing one due time apply in arrival order: the monotonic `inbound_seq` tie-break
+/// stops a later command overtaking an earlier one, and the matching engine reads the modify
+/// against the acceptance still on the channel ahead of it (`order_snapshot`).
+#[rstest]
+fn test_inbound_latency_commands_sharing_a_due_time_apply_in_arrival_order(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    const LEG_LATENCY_NS: u64 = 1_000_000_000; // Every leg, so one shared due time
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(
+            LEG_LATENCY_NS,
+            LEG_LATENCY_NS,
+            LEG_LATENCY_NS,
+        )),
+    );
+
+    let order = submit_through_engine(&harness, trader_id, &instrument, "O-SEQ-1", "100.00");
+    let _ = harness.settle(); // SUBMITTED before the commands issued behind it
+    let ts = order.ts_init();
+
+    msgbus::send_trading_command(
+        MessagingSwitchboard::exec_engine_execute(),
+        TradingCommand::ModifyOrder(modify_command(harness.client_id, trader_id, &order, ts)),
+    );
+    msgbus::send_trading_command(
+        MessagingSwitchboard::exec_engine_execute(),
+        TradingCommand::CancelOrder(cancel_command(harness.client_id, trader_id, &order, ts)),
+    );
+    assert!(
+        harness.settle().is_empty(),
+        "nothing may be applied before the shared due time",
+    );
+
+    let due = UnixNanos::from(*ts + LEG_LATENCY_NS);
+    assert_eq!(
+        advance_and_fire(&harness.test_clock, due),
+        1,
+        "commands sharing a due time must arm exactly one inbound alert",
+    );
+
+    let kinds: Vec<&str> = harness.settle().iter().map(order_event_kind).collect();
+    assert_eq!(
+        kinds,
+        vec!["accepted", "updated", "canceled"],
+        "commands sharing a due time must apply in arrival order: {kinds:?}",
+    );
+
+    let cache = harness.cache.borrow();
+    let cached = cache.order(&order.client_order_id()).unwrap();
+    assert_eq!(
+        cached.price(),
+        Some(Price::from("99.00")),
+        "the cache must carry every command's effects",
+    );
+    assert_eq!(cached.status(), OrderStatus::Canceled);
+}
+
+/// `ExecutionEngine::stop` holds the engine mutably while it stops its clients; the rejections a
+/// sandbox client raises for commands still in flight take the execution channel, so nothing
+/// re-enters that borrow, and the runner processes them once the engines have stopped.
+#[rstest]
+fn test_exec_engine_stop_rejects_in_flight_commands_without_reentering(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 1_000_000_000;
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(INSERT_LATENCY_NS, 0, 0)),
+    );
+
+    let order = submit_through_engine(&harness, trader_id, &instrument, "O-STOP-1", "100.00");
+    let _ = harness.settle();
+    assert_eq!(
+        cached_status(&harness.cache, &order),
+        OrderStatus::Submitted
+    );
+
+    harness.engine.borrow_mut().stop();
+
+    let kinds: Vec<(&str, ClientOrderId)> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        kinds,
+        vec![("rejected", order.client_order_id())],
+        "a submit still in flight at stop must be rejected through the channel: {kinds:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &order),
+        OrderStatus::Rejected,
+        "the rejection must be applied once the runner processes the channel",
+    );
+    assert!(
+        harness
+            .published
+            .borrow()
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Rejected(rejected)
+            if rejected.client_order_id == order.client_order_id())),
+        "the engine must publish the rejection it processed",
+    );
+}
+
+/// With no latency model configured every command runs inline with no deferral and no alert, the
+/// sender is installed and events take the channel, and a cancel that finds no engine stays the
+/// silent no-op it was: zero behavior change for the default `latency_model = None`.
+#[rstest]
+fn test_no_latency_model_keeps_the_immediate_path_unchanged(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    let (mut context, mut rx) =
+        setup_channel_context(trader_id, account_id, venue, &instrument, None);
+
+    let ts = context.test_clock.borrow().timestamp_ns();
+    let unknown = resting_limit(&instrument, "O-NO-ENGINE-1", "100.00", ts);
+    context
+        .cache
+        .borrow_mut()
+        .add_order(unknown.clone(), None, None, false)
+        .unwrap();
+    context
+        .client
+        .cancel_order(cancel_command(
+            context.client.client_id(),
+            trader_id,
+            &unknown,
+            ts,
+        ))
+        .unwrap();
+    assert!(
+        drain_order_events(&mut rx).is_empty(),
+        "a cancel that finds no engine must keep its pre-feature silent no-op",
+    );
+
+    let order = resting_limit(&instrument, "O-NO-LATENCY-1", "100.00", ts);
+    submit_to_client(&context, trader_id, &order);
+    let kinds: Vec<&str> = apply_order_events_from_channel(&context.cache, &mut rx)
+        .iter()
+        .map(order_event_kind)
+        .collect();
+    assert_eq!(
+        kinds,
+        vec!["submitted", "accepted"],
+        "with no latency model the order is accepted at once, through the channel: {kinds:?}",
+    );
+    assert_eq!(cached_status(&context.cache, &order), OrderStatus::Accepted);
+
+    let fired = advance_and_fire(&context.test_clock, UnixNanos::from(*ts + 10_000_000_000));
+    assert_eq!(
+        fired, 0,
+        "no inbound alert should be armed without a latency model",
+    );
+
+    context.client.stop().unwrap();
+}
+
+/// `ExecutionEngine::reset` reaches the client through the trait's `reset`, which must clear the
+/// inbound queue and cancel its alert without emitting an order event, so a command in flight at
+/// the reset is never applied against the freshly reset engine (mirrors backtest
+/// `SimulatedExchange::reset`).
+#[rstest]
+fn test_reset_through_exec_engine_clears_inbound_queue_and_cancels_alert(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 1_000_000_000;
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(INSERT_LATENCY_NS, 0, 0)),
+    );
+    let alert_name = format!("{}-sandbox-inbound-alert", harness.client_id);
+
+    let stranded = submit_through_engine(&harness, trader_id, &instrument, "O-RESET-1", "100.00");
+    let due = UnixNanos::from(*stranded.ts_init() + INSERT_LATENCY_NS);
+    let _ = harness.settle();
+    assert_eq!(
+        cached_status(&harness.cache, &stranded),
+        OrderStatus::Submitted
+    );
+    assert_eq!(
+        harness.test_clock.borrow().next_time_ns(&alert_name),
+        Some(due),
+        "the submit must be in flight, or reset has nothing to clear",
+    );
+
+    harness.engine.borrow_mut().reset();
+
+    assert_eq!(
+        harness.test_clock.borrow().next_time_ns(&alert_name),
+        None,
+        "reset must cancel the inbound alert",
+    );
+    assert!(
+        drain_order_events(&mut harness.rx).is_empty(),
+        "reset discards the queue without rejecting anything: no order event may be emitted",
+    );
+
+    // Cleared, not merely disarmed: the next command released must be the only one applied
+    let published_before = harness.published.borrow().len();
+    harness
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let fresh = submit_through_engine(&harness, trader_id, &instrument, "O-RESET-2", "100.00");
+    let _ = harness.settle();
+    assert_eq!(advance_and_fire(&harness.test_clock, due), 1);
+    let _ = harness.settle();
+
+    let after_reset: Vec<(&str, ClientOrderId)> = harness.published.borrow()[published_before..]
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        after_reset,
+        vec![
+            ("submitted", fresh.client_order_id()),
+            ("accepted", fresh.client_order_id()),
+        ],
+        "a command discarded by reset must never be applied: {after_reset:?}",
+    );
+}
+
+/// Each deferred command is held by its own leg of the model, distinct from the insert leg its
+/// submit used: advancing only by the (shorter) insert leg must not release it. Every target the
+/// command names must then reach the venue in the one pass.
+#[rstest]
+#[case::cancel_uses_delete_leg(DeferredCommand::Cancel)]
+#[case::modify_uses_update_leg(DeferredCommand::Modify)]
+#[case::cancel_all_uses_delete_leg(DeferredCommand::CancelAll)]
+fn test_inbound_latency_command_is_deferred_by_its_own_leg(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] kind: DeferredCommand,
+) {
+    const INSERT_LATENCY_NS: u64 = 1_000_000_000;
+    const LEG_LATENCY_NS: u64 = 3_000_000_000; // Longer than the insert leg
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(kind.latency_model(INSERT_LATENCY_NS, LEG_LATENCY_NS)),
+    );
+
+    let orders: Vec<OrderAny> = (0..kind.target_count())
+        .map(|i| {
+            submit_through_engine(
+                &harness,
+                trader_id,
+                &instrument,
+                &format!("O-LEG-{i}"),
+                &format!("{}.00", 100 - i),
+            )
+        })
+        .collect();
+    let submit_time = orders[0].ts_init();
+
+    // In flight behind the insert leg: submitted immediately, not yet accepted
+    let before: Vec<&str> = harness.settle().iter().map(order_event_kind).collect();
+    assert_eq!(
+        before,
+        vec!["submitted"; orders.len()],
+        "expected an immediate OrderSubmitted per order and nothing else: {before:?}",
+    );
+
+    let accept_due = UnixNanos::from(*submit_time + INSERT_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, accept_due), 1);
+    let accepted = harness.settle();
+    assert_eq!(
+        accepted
+            .iter()
+            .filter(|event| matches!(event, OrderEventAny::Accepted(_)))
+            .count(),
+        orders.len(),
+        "expected OrderAccepted per order at t0 + insert latency",
+    );
+
+    // Issued at the current clock (accept_due), so it falls due at accept_due + its own leg
+    send_command_through_engine(&harness, trader_id, kind, &orders, accept_due);
+
+    // Advancing only by the insert leg must not release it, since its own leg is longer
+    assert_eq!(
+        advance_and_fire(
+            &harness.test_clock,
+            UnixNanos::from(*accept_due + INSERT_LATENCY_NS),
+        ),
+        0,
+        "the command must be deferred by its own leg, not the (shorter) insert leg",
+    );
+    let mid = harness.settle();
+
+    for order in &orders {
+        assert!(
+            !kind.applied_to(&mid, order.client_order_id()),
+            "the command must not be applied before its own leg elapses",
+        );
+    }
+
+    let due = UnixNanos::from(*accept_due + LEG_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, due), 1);
+    let after = harness.settle();
+
+    for order in &orders {
+        assert!(
+            kind.applied_to(&after, order.client_order_id()),
+            "the command must be applied for {} at the time it was issued plus its own leg",
+            order.client_order_id(),
+        );
+        assert_eq!(
+            cached_status(&harness.cache, order),
+            kind.applied_status(),
+            "the venue's event must be a valid FSM transition, not merely emitted",
+        );
+    }
+}
+
+/// Inbound latency lets an order-targeting command reach the venue before the submit that would
+/// have created its matching engine. With the instrument cached the engine is built on demand and
+/// raises the rejection itself; without it the client synthesizes one. Either way no target is left
+/// pending.
+#[rstest]
+#[case::cancel(DeferredCommand::Cancel)]
+#[case::modify(DeferredCommand::Modify)]
+#[case::batch_cancel(DeferredCommand::BatchCancel)]
+#[case::batch_modify(DeferredCommand::BatchModify)]
+fn test_inbound_latency_deferred_command_without_an_engine_is_rejected(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] kind: DeferredCommand,
+    #[values(true, false)] instrument_cached: bool,
+) {
+    const INSERT_LATENCY_NS: u64 = 3_000_000_000;
+    const LEG_LATENCY_NS: u64 = 1_000_000_000; // Shorter, so the command overtakes its submit
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(kind.latency_model(INSERT_LATENCY_NS, LEG_LATENCY_NS)),
+    );
+
+    let ts = harness.test_clock.borrow().timestamp_ns();
+    let orders: Vec<OrderAny> = ["O-NO-ENGINE-1", "O-NO-ENGINE-2"]
+        .iter()
+        .map(|client_order_id| {
+            if instrument_cached {
+                submit_through_engine(&harness, trader_id, &instrument, client_order_id, "100.00")
+            } else {
+                uncached_instrument_order(&harness.cache, harness.client_id, client_order_id, ts)
+            }
+        })
+        .collect();
+    let _ = harness.settle(); // the cached submits are SUBMITTED; the uncached orders already are
+    for order in &orders {
+        kind.mark_pending(&harness.cache, order, trader_id, ts);
+    }
+    let targets = &orders[..kind.target_count()];
+
+    send_command_through_engine(&harness, trader_id, kind, targets, ts);
+
+    // The command drains at t0 + its own leg, before any submit's t0 + insert
+    let due = UnixNanos::from(*ts + LEG_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, due), 1);
+
+    let events = harness.settle();
+    let expected: Vec<ClientOrderId> = targets
+        .iter()
+        .map(|order| order.client_order_id())
+        .collect();
+    assert_eq!(
+        kind.rejected_ids(&events),
+        expected,
+        "every target of a command that finds no engine must be rejected, not dropped",
+    );
+    // The real engine only logs an event the FSM refuses: one it published is one it applied
+    {
+        let published = harness.published.borrow();
+
+        for event in &events {
+            assert!(
+                published.contains(event),
+                "every rejection must be a transition the FSM accepts: {event:?}",
+            );
+        }
+    }
+
+    for order in targets {
+        let cache = harness.cache.borrow();
+        let cached = cache.order(&order.client_order_id()).unwrap();
+        assert!(
+            !cached.is_pending_cancel() && !cached.is_pending_update(),
+            "no target may be left pending once its command is rejected",
+        );
+    }
+}
+
+/// Market data fed through the public processing API drains commands that have fallen due before
+/// matching, exactly as the registered message handlers do: the due submit is accepted, then
+/// filled by the very tick that drained it.
+#[rstest]
+fn test_inbound_latency_public_quote_processing_drains_due_commands(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 1_000_000_000;
+
+    let (mut context, mut rx) = setup_channel_context(
+        trader_id,
+        account_id,
+        venue,
+        &instrument,
+        Some(static_latency_model(INSERT_LATENCY_NS, 0, 0)),
+    );
+
+    let submit_time = context.test_clock.borrow().timestamp_ns();
+    let order = resting_limit(&instrument, "O-DRAIN-ON-DATA-1", "3000.00", submit_time);
+    submit_to_client(&context, trader_id, &order);
+    let kinds: Vec<&str> = apply_order_events_from_channel(&context.cache, &mut rx)
+        .iter()
+        .map(order_event_kind)
+        .collect();
+    assert_eq!(
+        kinds,
+        vec!["submitted"],
+        "the submit is in flight behind the insert leg: {kinds:?}",
+    );
+
+    // Reach the due time without delivering the drain alert, as jitter can
+    let _ = context
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(*submit_time + INSERT_LATENCY_NS), true);
+
+    let quote = create_quote_tick(instrument.id(), 2000.00, 2010.00);
+    context.client.process_quote_tick(&quote).unwrap();
+
+    let kinds: Vec<(&str, ClientOrderId)> =
+        apply_order_events_from_channel(&context.cache, &mut rx)
+            .iter()
+            .map(|event| (order_event_kind(event), event.client_order_id()))
+            .collect();
+    assert_eq!(
+        kinds,
+        vec![
+            ("accepted", order.client_order_id()),
+            ("filled", order.client_order_id()),
+        ],
+        "the due submit must reach the venue before the quote is matched, then fill against \
+         that quote: {kinds:?}",
+    );
+    assert_eq!(cached_status(&context.cache, &order), OrderStatus::Filled);
+
+    context.client.stop().unwrap();
+}
+
+/// Commands discarded by `stop()` never reached the venue, so their orders are terminalized
+/// through the channel: the sandbox emits no status reports to resolve them later.
+#[rstest]
+fn test_stop_terminalizes_commands_still_in_flight(trader_id: TraderId, instrument: InstrumentAny) {
+    const INSERT_LATENCY_NS: u64 = 1_000_000_000;
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(
+            INSERT_LATENCY_NS,
+            0,
+            INSERT_LATENCY_NS,
+        )),
+    );
+
+    let resting = accept_through_engine(
+        &mut harness,
+        trader_id,
+        &instrument,
+        "O-STOP-CANCEL-1",
+        "99.00",
+        INSERT_LATENCY_NS,
+    );
+
+    // Both of these are still in flight when the engine stops
+    let stranded_submit = submit_through_engine(
+        &harness,
+        trader_id,
+        &instrument,
+        "O-STOP-SUBMIT-1",
+        "100.00",
+    );
+    let cancel_time = harness.test_clock.borrow().timestamp_ns();
+    mark_pending_cancel(&harness.cache, &resting, trader_id, cancel_time);
+    send_command_through_engine(
+        &harness,
+        trader_id,
+        DeferredCommand::Cancel,
+        std::slice::from_ref(&resting),
+        cancel_time,
+    );
+    let _ = harness.settle();
+    assert_eq!(
+        cached_status(&harness.cache, &stranded_submit),
+        OrderStatus::Submitted
+    );
+
+    harness.engine.borrow_mut().stop();
+
+    // Every event emitted at stop must be applicable to the cached order, not merely emitted
+    let events = harness.settle();
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Rejected(rejected)
+            if rejected.client_order_id == stranded_submit.client_order_id())),
+        "a submit discarded at stop must reject the order it never delivered",
+    );
+    assert!(
+        events.iter().any(
+            |event| matches!(event, OrderEventAny::CancelRejected(rejected)
+            if rejected.client_order_id == resting.client_order_id())
+        ),
+        "a cancel discarded at stop must release the order from PENDING_CANCEL",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &stranded_submit),
+        OrderStatus::Rejected,
+        "the FSM must accept the synthesized rejection for the never-delivered submit",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &resting),
+        OrderStatus::Accepted,
+        "the FSM must accept the synthesized cancel-rejected, restoring the pre-cancel status",
+    );
+
+    // Discarded means gone, not merely rejected: a restart must not resurrect the queue and apply
+    // the stranded commands later, on the first enqueue that re-arms the drain.
+    harness.engine.borrow_mut().start();
+    let fresh = submit_through_engine(&harness, trader_id, &instrument, "O-FRESH-1", "100.00");
+    let _ = harness.settle();
+    assert_eq!(
+        advance_and_fire(
+            &harness.test_clock,
+            UnixNanos::from(*fresh.ts_init() + INSERT_LATENCY_NS),
+        ),
+        1,
+    );
+    let accepted: Vec<ClientOrderId> = harness
+        .settle()
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Accepted(accepted) => Some(accepted.client_order_id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        accepted,
+        vec![fresh.client_order_id()],
+        "a command stranded by stop() must be discarded, not applied after restart",
+    );
+
+    harness.engine.borrow_mut().stop();
+}
+
+/// Unlike `cancel_order` / `cancel_orders`, the strategy marks no target `PENDING_CANCEL` for a
+/// cancel-all, so discarding one at stop must be a no-op: the FSM has no rejection to fall back on.
+#[rstest]
+fn test_stop_terminalizes_cancel_all_without_invalid_transitions(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 1_000_000_000;
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(
+            INSERT_LATENCY_NS,
+            0,
+            INSERT_LATENCY_NS,
+        )),
+    );
+
+    let resting = accept_through_engine(
+        &mut harness,
+        trader_id,
+        &instrument,
+        "O-CANCEL-ALL-1",
+        "99.00",
+        INSERT_LATENCY_NS,
+    );
+
+    // Still in flight when the engine stops: the strategy marks no order pending-cancel for a
+    // cancel-all, so `resting` stays `Accepted` in the cache throughout.
+    let cancel_time = harness.test_clock.borrow().timestamp_ns();
+    send_command_through_engine(
+        &harness,
+        trader_id,
+        DeferredCommand::CancelAll,
+        std::slice::from_ref(&resting),
+        cancel_time,
+    );
+    assert!(harness.settle().is_empty());
+
+    harness.engine.borrow_mut().stop();
+
+    // A silently-dropped invalid transition would leave `resting` looking untouched too, so assert
+    // on the emitted events themselves rather than only on the post-apply status.
+    let events = harness.settle();
+    assert!(
+        events.is_empty(),
+        "a discarded CancelAllOrders must emit nothing: the strategy marked no order pending \
+         cancel, so there is nothing for the FSM to release: {events:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &resting),
+        OrderStatus::Accepted,
+        "a discarded CancelAllOrders must not perturb an order the strategy never marked \
+         pending cancel",
+    );
+}
+
+/// A leg already closed when `submit_order_list` first ran never received an `OrderSubmitted`, so
+/// discarding the still-deferred list at stop must reject only the legs still in flight, each
+/// under the instrument of its own order. Client-only: `ExecutionEngine::validate_submission`
+/// denies a list carrying a closed leg before any client sees it.
+#[rstest]
+fn test_stop_terminalizes_only_in_flight_legs_of_a_submit_order_list(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 1_000_000_000;
+
+    let (mut context, mut rx) = setup_channel_context(
+        trader_id,
+        account_id,
+        venue,
+        &instrument,
+        Some(static_latency_model(INSERT_LATENCY_NS, 0, 0)),
+    );
+
+    let ts = context.test_clock.borrow().timestamp_ns();
+    let open_leg = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("99.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id("O-LIST-OPEN-1".into())
+        .ts_init(ts)
+        .build();
+    // On another instrument than the list's representative one, which must not be what its
+    // rejection is keyed on
+    let other_leg = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(InstrumentId::from("OTHER-PERP.SIM"))
+        .side(OrderSide::Buy)
+        .price(Price::from("99.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id("O-LIST-OTHER-1".into())
+        .ts_init(ts)
+        .build();
+    let closed_leg = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("98.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id("O-LIST-CLOSED-1".into())
+        .ts_init(ts)
+        .build();
+
+    for leg in [&open_leg, &other_leg, &closed_leg] {
+        context
+            .cache
+            .borrow_mut()
+            .add_order(leg.clone(), None, None, false)
+            .unwrap();
+    }
+
+    // Already closed before the list is even submitted, e.g. denied by a pre-trade risk check
+    let denied = OrderEventAny::Denied(OrderDenied::new(
+        closed_leg.trader_id(),
+        closed_leg.strategy_id(),
+        closed_leg.instrument_id(),
+        closed_leg.client_order_id(),
+        Ustr::from("test denial"),
+        UUID4::new(),
+        ts,
+        ts,
+    ));
+    context.cache.borrow_mut().update_order(&denied).unwrap();
+
+    context
+        .client
+        .submit_order_list(create_submit_order_list(
+            trader_id,
+            context.client.client_id(),
+            instrument.id(),
+            &[open_leg.clone(), other_leg.clone(), closed_leg.clone()],
+        ))
+        .unwrap();
+
+    context.client.stop().unwrap();
+
+    let events = apply_order_events_from_channel(&context.cache, &mut rx);
+    let submitted: Vec<ClientOrderId> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Submitted(submitted) => Some(submitted.client_order_id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        submitted,
+        vec![open_leg.client_order_id(), other_leg.client_order_id()],
+        "only the open legs are recorded as submitted",
+    );
+    let rejected: Vec<(ClientOrderId, InstrumentId)> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Rejected(rejected) => {
+                Some((rejected.client_order_id, rejected.instrument_id))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        rejected,
+        vec![
+            (open_leg.client_order_id(), open_leg.instrument_id()),
+            (other_leg.client_order_id(), other_leg.instrument_id()),
+        ],
+        "only the legs still in flight are rejected when the list is discarded at stop, each \
+         under its own instrument",
+    );
+
+    for leg in [&open_leg, &other_leg] {
+        assert_eq!(
+            cached_status(&context.cache, leg),
+            OrderStatus::Rejected,
+            "the FSM must accept the synthesized rejection for the in-flight leg",
+        );
+    }
+    assert_eq!(
+        cached_status(&context.cache, &closed_leg),
+        OrderStatus::Denied,
+        "an already-closed leg must be left untouched, the FSM has no transition to re-reject it",
+    );
+}
+
+/// A deferred submit whose order is no longer in the cache when its latency elapses cannot be
+/// applied; since `OrderSubmitted` already went out, the failure must terminalize the order.
+#[rstest]
+fn test_inbound_latency_deferred_submit_rejects_when_it_cannot_be_applied(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 1_000_000_000;
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(INSERT_LATENCY_NS, 0, 0)),
+    );
+
+    let order = submit_through_engine(&harness, trader_id, &instrument, "O-GONE-1", "100.00");
+    let _ = harness.settle();
+
+    harness
+        .cache
+        .borrow_mut()
+        .purge_order(order.client_order_id());
+
+    assert_eq!(
+        advance_and_fire(
+            &harness.test_clock,
+            UnixNanos::from(*order.ts_init() + INSERT_LATENCY_NS),
+        ),
+        1,
+    );
+
+    let kinds: Vec<(&str, ClientOrderId)> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        kinds,
+        vec![("rejected", order.client_order_id())],
+        "a deferred submit that cannot be applied must reject its order: {kinds:?}",
+    );
+}
+
+/// Stop unwinds several pending commands on one order last-issued-first, without emitting an event
+/// the FSM refuses: the unwind keys on enqueue order, never on due time.
+#[rstest]
+// Every leg 1s, so all three due times tie and only `inbound_seq` can order the unwind
+#[case::equal_legs(
+    static_latency_model(1_000_000_000, 1_000_000_000, 1_000_000_000),
+    false
+)]
+// Due times run submit, cancel, modify: neither due order matches the required unwind
+#[case::staggered_legs(static_latency_model(250_000_000, 2_000_000_000, 500_000_000), false)]
+// Two modifies in flight: the FSM accepts a repeated pending update, but only one rejection may
+// restore the order
+#[case::repeated_modify(
+    static_latency_model(1_000_000_000, 1_000_000_000, 1_000_000_000),
+    true
+)]
+fn test_stop_unwinds_stacked_pending_commands_without_refused_events(
+    #[case] latency_model: LatencyModelAny,
+    #[case] second_is_modify: bool,
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    let mut harness = setup_engine_harness(trader_id, &instrument, Some(latency_model));
+
+    let order = submit_through_engine(&harness, trader_id, &instrument, "O-STACKED-1", "100.00");
+    let _ = harness.settle(); // the order is SUBMITTED
+    let ts = order.ts_init();
+
+    // `Strategy::modify_order` / `cancel_order` establish these before their commands arrive
+    mark_pending_update(&harness.cache, &order, trader_id, ts);
+    send_command_through_engine(
+        &harness,
+        trader_id,
+        DeferredCommand::Modify,
+        std::slice::from_ref(&order),
+        ts,
+    );
+    let last_rejection = if second_is_modify {
+        mark_pending_update(&harness.cache, &order, trader_id, ts);
+        send_command_through_engine(
+            &harness,
+            trader_id,
+            DeferredCommand::Modify,
+            std::slice::from_ref(&order),
+            ts,
+        );
+        "modify_rejected"
+    } else {
+        mark_pending_cancel(&harness.cache, &order, trader_id, ts);
+        send_command_through_engine(
+            &harness,
+            trader_id,
+            DeferredCommand::Cancel,
+            std::slice::from_ref(&order),
+            ts,
+        );
+        "cancel_rejected"
+    };
+
+    // The clock has not advanced, so all three commands are still in flight
+    harness.engine.borrow_mut().stop();
+
+    let settled = harness.settle();
+    let kinds: Vec<&str> = settled
+        .iter()
+        .filter(|event| event.client_order_id() == order.client_order_id())
+        .map(order_event_kind)
+        .collect();
+    assert_eq!(
+        kinds,
+        vec![last_rejection, "rejected"],
+        "the pending state is released once, by the last command issued, before the submit is \
+         rejected: {kinds:?}",
+    );
+    // The real engine only logs an event the FSM refuses: one it published is one it applied
+    {
+        let published = harness.published.borrow();
+
+        for event in &settled {
+            assert!(
+                published.contains(event),
+                "every event emitted at stop must be applicable by the FSM: {event:?}",
+            );
+        }
+    }
+
+    let cache = harness.cache.borrow();
+    let cached = cache.order(&order.client_order_id()).unwrap();
+    assert_eq!(cached.status(), OrderStatus::Rejected);
+    assert!(!cached.is_pending_update() && !cached.is_pending_cancel());
+}
+
+/// A command a strategy issues from a callback the engine runs while processing an event reaches
+/// the client on a later runner turn through the queued execute endpoint, outside any engine
+/// borrow: its `OrderSubmitted` takes the channel ahead of its venue events, and `enqueue` arms
+/// the alert that releases it.
+#[rstest]
+fn test_inbound_latency_command_from_an_engine_dispatch_settles_its_record_and_arms(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 1_000_000_000;
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(INSERT_LATENCY_NS, 0, 0)),
+    );
+    let alert_name = format!("{}-sandbox-inbound-alert", harness.client_id);
+    // Strategies send through the queued endpoint; the backtest runner's sender holds those
+    // commands for `drain_trading_cmd_queue`, as the live runner's channel does for its next turn
+    replace_exec_cmd_sender(Arc::new(SyncTradingCommandSender));
+
+    let resting = accept_through_engine(
+        &mut harness,
+        trader_id,
+        &instrument,
+        "O-ENGINE-SEAM-1",
+        "100.00",
+        INSERT_LATENCY_NS,
+    );
+
+    // The commonest strategy pattern there is: submit from `on_order_filled`
+    let from_engine = ClientOrderId::from("O-FROM-ENGINE-1");
+    let fired = Rc::new(Cell::new(false));
+    {
+        let fired = fired.clone();
+        let cache = harness.cache.clone();
+        let client_id = harness.client_id;
+        let instrument = instrument.clone();
+        msgbus::subscribe_order_events(
+            "events.order.*".into(),
+            TypedHandler::from(move |event: &OrderEventAny| {
+                if matches!(event, OrderEventAny::Filled(_)) && !fired.replace(true) {
+                    let next =
+                        resting_limit(&instrument, "O-FROM-ENGINE-1", "99.00", event.ts_event());
+                    cache
+                        .borrow_mut()
+                        .add_order(next.clone(), None, Some(client_id), false)
+                        .unwrap();
+                    msgbus::send_trading_command(
+                        MessagingSwitchboard::exec_engine_queue_execute(),
+                        TradingCommand::SubmitOrder(SubmitOrder::from_order(
+                            &next,
+                            trader_id,
+                            Some(client_id),
+                            None,
+                            UUID4::new(),
+                            next.ts_init(),
+                        )),
+                    );
+                }
+            }),
+            None,
+        );
+    }
+
+    // The runner delivers a fill into the engine: an engine frame with no sandbox drain below it
+    msgbus::publish_quote(
+        format!("data.quotes.{}.{}", instrument.id().venue, instrument.id()).into(),
+        &create_quote_tick(instrument.id(), 99.00, 99.50),
+    );
+    let _ = harness.settle();
+    assert!(
+        fired.get(),
+        "the callback must have run, or this test proves nothing",
+    );
+    assert_eq!(cached_status(&harness.cache, &resting), OrderStatus::Filled);
+    assert_eq!(
+        harness.cache.borrow().order(&from_engine).unwrap().status(),
+        OrderStatus::Initialized,
+        "the callback's command waits for the next runner turn; nothing applied it inside the \
+         engine's borrow",
+    );
+
+    // The next runner turn: the queued command reaches the client outside any engine borrow
+    let issued_at = harness.test_clock.borrow().timestamp_ns();
+    drain_trading_cmd_queue();
+    let due = UnixNanos::from(*issued_at + INSERT_LATENCY_NS);
+    assert_eq!(
+        harness.test_clock.borrow().next_time_ns(&alert_name),
+        Some(due),
+        "a command queued from a callback must arm its own inbound alert; the leg runs from \
+         arrival, not from the command's ts_init",
+    );
+    let kinds: Vec<(&str, ClientOrderId)> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        kinds,
+        vec![("submitted", from_engine)],
+        "the record is on the channel before the venue's response: {kinds:?}",
+    );
+
+    assert_eq!(advance_and_fire(&harness.test_clock, due), 1);
+    let _ = harness.settle();
+    assert_eq!(
+        harness.cache.borrow().order(&from_engine).unwrap().status(),
+        OrderStatus::Accepted,
+        "the command must reach the venue once its leg elapsed",
+    );
+    let for_next: Vec<&str> = harness
+        .published
+        .borrow()
+        .iter()
+        .filter(|event| event.client_order_id() == from_engine)
+        .map(order_event_kind)
+        .collect();
+    assert_eq!(
+        for_next,
+        vec!["submitted", "accepted"],
+        "the record precedes the venue's response: {for_next:?}",
+    );
+}
+
+/// Market data published from a strategy callback keeps channel order: a quote fills resting A
+/// and B, a subscriber publishes another quote while the engine is processing A's fill, that
+/// quote fills C, and C's fill is appended behind B's rather than processed between them.
+#[rstest]
+fn test_callback_published_quote_keeps_channel_order(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 1_000_000_000;
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(INSERT_LATENCY_NS, 0, 0)),
+    );
+
+    // Price-time priority: A fills before B on one quote; C rests until the callback's quote
+    let order_a = accept_through_engine(
+        &mut harness,
+        trader_id,
+        &instrument,
+        "O-FILL-A",
+        "100.00",
+        INSERT_LATENCY_NS,
+    );
+    let order_b = accept_through_engine(
+        &mut harness,
+        trader_id,
+        &instrument,
+        "O-FILL-B",
+        "99.80",
+        INSERT_LATENCY_NS,
+    );
+    let order_c = accept_through_engine(
+        &mut harness,
+        trader_id,
+        &instrument,
+        "O-FILL-C",
+        "99.00",
+        INSERT_LATENCY_NS,
+    );
+
+    let published_once = Rc::new(Cell::new(false));
+    {
+        let published_once = published_once.clone();
+        let instrument_id = instrument.id();
+        msgbus::subscribe_order_events(
+            "events.order.*".into(),
+            TypedHandler::from(move |event: &OrderEventAny| {
+                // What a strategy's `on_order_filled` might do: react with data for the same
+                // instrument, reaching the sandbox's subscription inside the engine's publish
+                if matches!(event, OrderEventAny::Filled(_)) && !published_once.replace(true) {
+                    msgbus::publish_quote(
+                        format!("data.quotes.{}.{}", instrument_id.venue, instrument_id).into(),
+                        &create_quote_tick(instrument_id, 98.80, 98.90),
+                    );
+                }
+            }),
+            None,
+        );
+    }
+    harness.published.borrow_mut().clear();
+
+    msgbus::publish_quote(
+        format!("data.quotes.{}.{}", instrument.id().venue, instrument.id()).into(),
+        &create_quote_tick(instrument.id(), 99.60, 99.70),
+    );
+
+    let settled: Vec<ClientOrderId> = harness
+        .settle()
+        .iter()
+        .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+        .map(OrderEventAny::client_order_id)
+        .collect();
+    assert!(
+        published_once.get(),
+        "the callback must have published, or this test proves nothing",
+    );
+    assert_eq!(
+        settled,
+        vec![
+            order_a.client_order_id(),
+            order_b.client_order_id(),
+            order_c.client_order_id(),
+        ],
+        "the callback's fill is appended behind the events already on the channel: {settled:?}",
+    );
+
+    let processed: Vec<ClientOrderId> = harness
+        .published
+        .borrow()
+        .iter()
+        .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+        .map(OrderEventAny::client_order_id)
+        .collect();
+    assert_eq!(
+        processed, settled,
+        "the engine processes fills in channel order: {processed:?}",
+    );
+
+    for order in [&order_a, &order_b, &order_c] {
+        assert_eq!(cached_status(&harness.cache, order), OrderStatus::Filled);
+    }
+}
+
+/// A `SubmitOrderList` leg whose instrument is not cached: the deferred path rejects it (it has an
+/// `OrderSubmitted` out that nothing else would resolve) under the leg's own instrument, not the
+/// list's representative one; the immediate path skips it as it always has. The sibling that did
+/// reach the venue is left alone either way. Client-only: `ExecutionEngine::handle_submit_order`
+/// refuses an order whose instrument the cache does not hold.
+#[rstest]
+#[case::deferred(Some(static_latency_model(1_000_000_000, 0, 0)), OrderStatus::Rejected)]
+#[case::immediate(None, OrderStatus::Submitted)]
+fn test_submit_order_list_leg_with_uncached_instrument(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+    #[case] latency_model: Option<LatencyModelAny>,
+    #[case] expected_status: OrderStatus,
+) {
+    let deferred = latency_model.is_some();
+    let (context, mut rx) =
+        setup_channel_context(trader_id, account_id, venue, &instrument, latency_model);
+
+    // The second leg names an instrument the cache never learned, as a list spanning a venue whose
+    // definitions have not arrived would
+    let uncached_id = InstrumentId::from("NOT-IN-CACHE.SIM");
+    let submit_time = context.test_clock.borrow().timestamp_ns();
+    let orders: Vec<OrderAny> = [
+        ("O-LIST-OK-1", instrument.id()),
+        ("O-LIST-MISSING-1", uncached_id),
+    ]
+    .iter()
+    .map(|(client_order_id, instrument_id)| {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(*instrument_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("100.00"))
+            .quantity(Quantity::from("1.000"))
+            .client_order_id((*client_order_id).into())
+            .ts_init(submit_time)
+            .build();
+        context
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        order
+    })
+    .collect();
+
+    context
+        .client
+        .submit_order_list(create_submit_order_list(
+            trader_id,
+            context.client.client_id(),
+            instrument.id(),
+            &orders,
+        ))
+        .unwrap();
+
+    let due = UnixNanos::from(*submit_time + 1_000_000_000);
+    assert_eq!(
+        advance_and_fire(&context.test_clock, due),
+        usize::from(deferred),
+    );
+    let events = apply_order_events_from_channel(&context.cache, &mut rx);
+
+    assert_eq!(
+        cached_status(&context.cache, &orders[0]),
+        OrderStatus::Accepted,
+        "the leg the venue could accept must be untouched by its sibling",
+    );
+    assert_eq!(cached_status(&context.cache, &orders[1]), expected_status);
+
+    let rejected_under: Vec<InstrumentId> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Rejected(rejected) => Some(rejected.instrument_id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        rejected_under.len(),
+        usize::from(deferred),
+        "the immediate path must not reject a leg it used to skip: {rejected_under:?}",
+    );
+    assert!(
+        rejected_under.iter().all(|id| *id == uncached_id),
+        "a rejection must carry the rejected leg's own instrument, not the list's: \
+         {rejected_under:?}",
+    );
+}
+
+/// A zero-leg command is due on arrival, so it is applied inline ahead of a command still in
+/// flight and arms nothing; behind a command already due but not yet released it joins the queue,
+/// so the two apply in `(due_ns, seq)` order and the alert is never re-armed at a time the clock
+/// has passed.
+#[rstest]
+fn test_inbound_latency_zero_leg_command_orders_against_in_flight_commands(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 1_000_000_000; // Update and delete legs are zero
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(INSERT_LATENCY_NS, 0, 0)),
+    );
+    let alert_name = format!("{}-sandbox-inbound-alert", harness.client_id);
+
+    let resting = accept_through_engine(
+        &mut harness,
+        trader_id,
+        &instrument,
+        "O-ZERO-ORDER-1",
+        "100.00",
+        INSERT_LATENCY_NS,
+    );
+
+    let in_flight =
+        submit_through_engine(&harness, trader_id, &instrument, "O-ZERO-ORDER-2", "100.00");
+    let _ = harness.settle();
+    let in_flight_due = UnixNanos::from(*in_flight.ts_init() + INSERT_LATENCY_NS);
+    assert_eq!(
+        harness.test_clock.borrow().next_time_ns(&alert_name),
+        Some(in_flight_due),
+        "a non-zero leg arms the alert for exactly its due time",
+    );
+
+    // Due now, so ahead of the submit still in flight
+    let now = harness.test_clock.borrow().timestamp_ns();
+    send_command_through_engine(
+        &harness,
+        trader_id,
+        DeferredCommand::Modify,
+        std::slice::from_ref(&resting),
+        now,
+    );
+    assert!(
+        harness
+            .settle()
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Updated(updated)
+            if updated.client_order_id == resting.client_order_id())),
+        "a zero-leg command ahead of every queued command must be applied inline",
+    );
+    assert_eq!(
+        harness.test_clock.borrow().next_time_ns(&alert_name),
+        Some(in_flight_due),
+        "a zero-leg command applied inline must leave the alert on the command in flight",
+    );
+
+    // The submit is due, but its alert has not been processed yet
+    harness.test_clock.borrow_mut().set_time(in_flight_due);
+    send_command_through_engine(
+        &harness,
+        trader_id,
+        DeferredCommand::Cancel,
+        std::slice::from_ref(&resting),
+        in_flight_due,
+    );
+    assert!(
+        !harness
+            .settle()
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Canceled(_))),
+        "behind a command already due, a zero-leg command must join the queue",
+    );
+    assert_eq!(
+        harness.test_clock.borrow().next_time_ns(&alert_name),
+        Some(in_flight_due),
+        "no alert may be armed at a time the clock has already reached",
+    );
+
+    assert_eq!(advance_and_fire(&harness.test_clock, in_flight_due), 1);
+    let kinds: Vec<&str> = harness.settle().iter().map(order_event_kind).collect();
+    assert_eq!(
+        kinds,
+        vec!["accepted", "canceled"],
+        "one pass must release both, in arrival order: {kinds:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &in_flight),
+        OrderStatus::Accepted
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &resting),
+        OrderStatus::Canceled
+    );
+
+    // Nothing left in flight: a zero-leg command is applied inline and arms nothing
+    assert_eq!(harness.test_clock.borrow().next_time_ns(&alert_name), None);
+    send_command_through_engine(
+        &harness,
+        trader_id,
+        DeferredCommand::Cancel,
+        std::slice::from_ref(&in_flight),
+        in_flight_due,
+    );
+    assert!(
+        harness
+            .settle()
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Canceled(canceled)
+            if canceled.client_order_id == in_flight.client_order_id())),
+        "with the queue empty a zero-leg command must be applied inline",
+    );
+    assert_eq!(
+        harness.test_clock.borrow().next_time_ns(&alert_name),
+        None,
+        "a zero-leg command must not arm an alert for a time already passed",
+    );
+}
+
+/// Develop's channel-driven reduce-only scenario, unchanged in outcome when every command is
+/// deferred by a latency model: the matching engine sizes the second reduce-only fill against
+/// the first fill still on the channel (`pending_fills`), whichever route released the commands.
+#[rstest]
+#[case::immediate(None)]
+#[case::deferred(Some(static_latency_model(1_000_000_000, 1_000_000_000, 1_000_000_000)))]
+fn test_batch_reduce_only_modifies_share_pending_position_quantity(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    mut margin_account_state: AccountState,
+    #[case] latency_model: Option<LatencyModelAny>,
+    #[values(false, true)] first_reduce_only: bool,
+) {
+    const LEG_LATENCY_NS: u64 = 1_000_000_000;
+
+    let venue = instrument.id().venue;
+    let account_id = AccountId::from("BINANCE-001");
+    let client_id = ClientId::from("SANDBOX");
+    let TestContext {
+        mut client,
+        cache,
+        test_clock,
+    } = create_test_context_with(trader_id, account_id, venue, |config| {
+        config.latency_model = latency_model;
+    });
+    margin_account_state.account_id = account_id;
+    cache
+        .borrow_mut()
+        .add_account(AccountAny::Margin(MarginAccount::new(
+            margin_account_state,
+            true,
+        )))
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_quote(create_quote_tick(instrument.id(), 1000.0, 1001.0))
+        .unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    nautilus_common::live::runner::replace_exec_event_sender(tx);
+    client.start().unwrap();
+    let mut engine =
+        ExecutionEngine::new(Rc::new(RefCell::new(TestClock::new())), cache.clone(), None);
+    engine.register_client(Box::new(client)).unwrap();
+
+    // Releases whatever the client holds in flight, then processes the channel in arrival order,
+    // as the live runner does between turns
+    let settle = |engine: &mut ExecutionEngine,
+                  rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>|
+     -> Vec<OrderEventAny> {
+        let now = test_clock.borrow().timestamp_ns();
+        advance_and_fire(&test_clock, UnixNanos::from(*now + LEG_LATENCY_NS));
+
+        let mut settled = Vec::new();
+
+        while let Ok(event) = rx.try_recv() {
+            if let ExecutionEvent::Order(event) = event {
+                engine.process(&event);
+                settled.push(event);
+            }
+        }
+        settled
+    };
+
+    let opening = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("OPEN-SHORT"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("0.500"))
+        .build();
+    let closing = [("CLOSE-FIRST", "0.400"), ("CLOSE-SECOND", "0.300")].map(|(id, qty)| {
+        OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(trader_id)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from(id))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(qty))
+            .price(Price::from("999.00"))
+            .reduce_only(id != "CLOSE-FIRST" || first_reduce_only)
+            .build()
+    });
+
+    for order in [&opening, &closing[0], &closing[1]] {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(client_id), false)
+            .unwrap();
+        engine.execute(TradingCommand::SubmitOrder(SubmitOrder::from_order(
+            order,
+            trader_id,
+            Some(client_id),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        )));
+        let _ = settle(&mut engine, &mut rx);
+    }
+    {
+        let cache = cache.borrow();
+        let position = cache
+            .position_for_order(&opening.client_order_id())
+            .unwrap();
+        assert_eq!(
+            (position.side, position.quantity),
+            (PositionSide::Short, Quantity::from("0.500"))
+        );
+
+        for order in &closing {
+            assert_eq!(
+                cache.order(&order.client_order_id()).unwrap().status(),
+                OrderStatus::Accepted
+            );
+        }
+    }
+    let modifies = closing
+        .iter()
+        .map(|order| {
+            ModifyOrder::new(
+                trader_id,
+                Some(client_id),
+                order.strategy_id(),
+                instrument.id(),
+                order.client_order_id(),
+                None,
+                None,
+                Some(Price::from("1002.00")),
+                None,
+                UUID4::new(),
+                UnixNanos::from(1),
+                None,
+                None,
+            )
+        })
+        .collect();
+    engine.execute(TradingCommand::ModifyOrders(BatchModifyOrders::new(
+        trader_id,
+        Some(client_id),
+        opening.strategy_id(),
+        instrument.id(),
+        modifies,
+        UUID4::new(),
+        UnixNanos::from(1),
+        None,
+        None,
+    )));
+    let fills: Vec<(ClientOrderId, Quantity)> = settle(&mut engine, &mut rx)
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some((fill.client_order_id, fill.last_qty)),
+            _ => None,
+        })
+        .collect();
+
+    let cache = cache.borrow();
+    let position = cache
+        .position_for_order(&opening.client_order_id())
+        .unwrap();
+    assert_eq!(
+        fills,
+        vec![
+            (closing[0].client_order_id(), Quantity::from("0.400")),
+            (closing[1].client_order_id(), Quantity::from("0.100")),
+        ]
+    );
+    assert_eq!(
+        (position.side, position.quantity),
+        (PositionSide::Flat, Quantity::from("0.000"))
+    );
+
+    for order in &closing {
+        assert_eq!(
+            cache.order(&order.client_order_id()).unwrap().status(),
+            OrderStatus::Filled
+        );
+    }
+    drop(position);
+    drop(cache);
+    engine.stop();
+}
+
+/// A cancel-all released ahead of a submit still in transit (delete leg shorter than the insert
+/// leg) cancels only the orders the venue has received; the in-transit order rests once it
+/// arrives. The resting order accepted first gives the instrument its matching engine.
+#[rstest]
+fn test_inbound_latency_cancel_all_leaves_in_transit_submit_unaffected(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 3_000_000_000;
+    const DELETE_LATENCY_NS: u64 = 1_000_000_000;
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(
+            INSERT_LATENCY_NS,
+            0,
+            DELETE_LATENCY_NS,
+        )),
+    );
+
+    let resting = accept_through_engine(
+        &mut harness,
+        trader_id,
+        &instrument,
+        "O-RESTING",
+        "100.00",
+        INSERT_LATENCY_NS,
+    );
+
+    let in_transit =
+        submit_through_engine(&harness, trader_id, &instrument, "O-IN-TRANSIT", "99.00");
+    let t0 = in_transit.ts_init();
+    send_command_through_engine(
+        &harness,
+        trader_id,
+        DeferredCommand::CancelAll,
+        std::slice::from_ref(&resting),
+        t0,
+    );
+    let at_arrival: Vec<&str> = harness.settle().iter().map(order_event_kind).collect();
+    assert_eq!(
+        at_arrival,
+        vec!["submitted"],
+        "expected only the in-transit order's OrderSubmitted at arrival: {at_arrival:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &in_transit),
+        OrderStatus::Submitted
+    );
+
+    let cancel_due = UnixNanos::from(*t0 + DELETE_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, cancel_due), 1);
+    let at_cancel: Vec<(&str, ClientOrderId)> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        at_cancel,
+        vec![("canceled", resting.client_order_id())],
+        "the cancel-all must cancel only the order the venue has received: {at_cancel:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &resting),
+        OrderStatus::Canceled
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &in_transit),
+        OrderStatus::Submitted,
+        "an order whose submit is still in transit must not be canceled",
+    );
+
+    let submit_due = UnixNanos::from(*t0 + INSERT_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, submit_due), 1);
+    let at_submit: Vec<(&str, ClientOrderId)> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        at_submit,
+        vec![("accepted", in_transit.client_order_id())],
+        "the in-transit order must be accepted once its submit arrives: {at_submit:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &in_transit),
+        OrderStatus::Accepted
+    );
+}
+
+/// The same release ahead of a `SubmitOrderList` in transit leaves every leg of the list alone.
+#[rstest]
+fn test_inbound_latency_cancel_all_leaves_in_transit_submit_list_unaffected(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 3_000_000_000;
+    const DELETE_LATENCY_NS: u64 = 1_000_000_000;
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(
+            INSERT_LATENCY_NS,
+            0,
+            DELETE_LATENCY_NS,
+        )),
+    );
+
+    let resting = accept_through_engine(
+        &mut harness,
+        trader_id,
+        &instrument,
+        "O-RESTING",
+        "100.00",
+        INSERT_LATENCY_NS,
+    );
+
+    let legs = submit_list_through_engine(
+        &harness,
+        trader_id,
+        &instrument,
+        &[("O-LIST-LEG-1", "98.00"), ("O-LIST-LEG-2", "97.00")],
+    );
+    let t0 = legs[0].ts_init();
+    send_command_through_engine(
+        &harness,
+        trader_id,
+        DeferredCommand::CancelAll,
+        std::slice::from_ref(&resting),
+        t0,
+    );
+    let at_arrival: Vec<(&str, ClientOrderId)> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        at_arrival,
+        vec![
+            ("submitted", legs[0].client_order_id()),
+            ("submitted", legs[1].client_order_id()),
+        ],
+        "expected one OrderSubmitted per in-transit leg at arrival: {at_arrival:?}",
+    );
+
+    let cancel_due = UnixNanos::from(*t0 + DELETE_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, cancel_due), 1);
+    let at_cancel: Vec<(&str, ClientOrderId)> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        at_cancel,
+        vec![("canceled", resting.client_order_id())],
+        "the cancel-all must cancel only the order the venue has received: {at_cancel:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &resting),
+        OrderStatus::Canceled
+    );
+
+    for leg in &legs {
+        assert_eq!(
+            cached_status(&harness.cache, leg),
+            OrderStatus::Submitted,
+            "a leg whose list is still in transit must not be canceled: {}",
+            leg.client_order_id(),
+        );
+    }
+
+    let submit_due = UnixNanos::from(*t0 + INSERT_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, submit_due), 1);
+    let at_submit: Vec<(&str, ClientOrderId)> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        at_submit,
+        vec![
+            ("accepted", legs[0].client_order_id()),
+            ("accepted", legs[1].client_order_id()),
+        ],
+        "every leg must be accepted once the list arrives: {at_submit:?}",
+    );
+
+    for leg in &legs {
+        assert_eq!(
+            cached_status(&harness.cache, leg),
+            OrderStatus::Accepted,
+            "leg {} must rest once its list arrives",
+            leg.client_order_id(),
+        );
+    }
+}
+
+/// A cancel-all and a submit due at the same time apply in arrival order: the drain pops each
+/// command before applying it, so a cancel-all that arrived first spares the still-queued submit.
+#[rstest]
+#[case::cancel_all_first(true, OrderStatus::Accepted)]
+#[case::submit_first(false, OrderStatus::Canceled)]
+fn test_inbound_latency_cancel_all_at_equal_due_time_follows_arrival_order(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] cancel_all_first: bool,
+    #[case] expected_status: OrderStatus,
+) {
+    const LEG_LATENCY_NS: u64 = 1_000_000_000; // The insert and delete legs are equal
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(LEG_LATENCY_NS, 0, LEG_LATENCY_NS)),
+    );
+
+    let resting = accept_through_engine(
+        &mut harness,
+        trader_id,
+        &instrument,
+        "O-RESTING",
+        "100.00",
+        LEG_LATENCY_NS,
+    );
+
+    let t0 = harness.test_clock.borrow().timestamp_ns();
+    let cancel_all = |harness: &EngineHarness| {
+        send_command_through_engine(
+            harness,
+            trader_id,
+            DeferredCommand::CancelAll,
+            std::slice::from_ref(&resting),
+            t0,
+        );
+    };
+    let order = if cancel_all_first {
+        cancel_all(&harness);
+        submit_through_engine(&harness, trader_id, &instrument, "O-SUBMIT", "99.00")
+    } else {
+        let order = submit_through_engine(&harness, trader_id, &instrument, "O-SUBMIT", "99.00");
+        cancel_all(&harness);
+        order
+    };
+    let at_arrival: Vec<&str> = harness.settle().iter().map(order_event_kind).collect();
+    assert_eq!(
+        at_arrival,
+        vec!["submitted"],
+        "expected only the submitted order's OrderSubmitted at arrival: {at_arrival:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &order),
+        OrderStatus::Submitted
+    );
+
+    // One alert releases both; the drain applies them in `(due_ns, seq)` order
+    let due = UnixNanos::from(*t0 + LEG_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, due), 1);
+    let at_due: Vec<(&str, ClientOrderId)> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    let expected_at_due = if cancel_all_first {
+        vec![
+            ("canceled", resting.client_order_id()),
+            ("accepted", order.client_order_id()),
+        ]
+    } else {
+        // The cancel-all cancels in sorted client order ID order
+        vec![
+            ("accepted", order.client_order_id()),
+            ("canceled", resting.client_order_id()),
+            ("canceled", order.client_order_id()),
+        ]
+    };
+    assert_eq!(
+        at_due, expected_at_due,
+        "a cancel-all popped ahead of a submit must leave that submit alone: {at_due:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &resting),
+        OrderStatus::Canceled,
+        "the order the venue already held must be canceled either way",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &order),
+        expected_status,
+        "the submitted order's fate must follow which command reached the venue first",
+    );
+}
+
+/// A zero-leg cancel-all is applied inline on arrival, ahead of a submit still queued behind its
+/// insert leg, and follows the same rule: the queued order is left alone and rests once it arrives.
+#[rstest]
+fn test_inbound_latency_inline_cancel_all_leaves_queued_submit_unaffected(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 3_000_000_000; // The delete leg is zero
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(INSERT_LATENCY_NS, 0, 0)),
+    );
+
+    let resting = accept_through_engine(
+        &mut harness,
+        trader_id,
+        &instrument,
+        "O-RESTING",
+        "100.00",
+        INSERT_LATENCY_NS,
+    );
+
+    // The queue head is not due, so the zero-leg cancel-all is applied inline on arrival
+    let queued = submit_through_engine(&harness, trader_id, &instrument, "O-QUEUED", "99.00");
+    let t0 = queued.ts_init();
+    let at_arrival: Vec<&str> = harness.settle().iter().map(order_event_kind).collect();
+    assert_eq!(
+        at_arrival,
+        vec!["submitted"],
+        "expected only the queued order's OrderSubmitted at arrival: {at_arrival:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &queued),
+        OrderStatus::Submitted
+    );
+
+    send_command_through_engine(
+        &harness,
+        trader_id,
+        DeferredCommand::CancelAll,
+        std::slice::from_ref(&resting),
+        t0,
+    );
+    let inline: Vec<(&str, ClientOrderId)> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        inline,
+        vec![("canceled", resting.client_order_id())],
+        "an inline cancel-all must cancel only the order the venue has received: {inline:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &resting),
+        OrderStatus::Canceled
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &queued),
+        OrderStatus::Submitted,
+        "an order whose submit is still queued must not be canceled",
+    );
+
+    let submit_due = UnixNanos::from(*t0 + INSERT_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, submit_due), 1);
+    let at_submit: Vec<(&str, ClientOrderId)> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        at_submit,
+        vec![("accepted", queued.client_order_id())],
+        "the queued order must be accepted once its submit arrives: {at_submit:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &queued),
+        OrderStatus::Accepted
+    );
+}
+
+// A contingent sibling stays submitted until the venue receives and rejects its late submit
+#[rstest]
+#[case::cancel_all(DeferredCommand::CancelAll)]
+#[case::cancel(DeferredCommand::Cancel)]
+#[case::batch_cancel(DeferredCommand::BatchCancel)]
+fn test_inbound_latency_cancel_leaves_in_transit_contingent_unaffected(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] kind: DeferredCommand,
+) {
+    const INSERT_LATENCY_NS: u64 = 3_000_000_000;
+    const DELETE_LATENCY_NS: u64 = 1_000_000_000;
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(
+            INSERT_LATENCY_NS,
+            0,
+            DELETE_LATENCY_NS,
+        )),
+    );
+
+    let received_id = ClientOrderId::from("O-RECEIVED");
+    let in_transit_id = ClientOrderId::from("O-IN-TRANSIT");
+
+    // The pair is created and cached together: the venue rejects an order whose linked order it
+    // cannot resolve, so both exist before either is submitted
+    let ts_created = harness.test_clock.borrow().timestamp_ns();
+    let received = oco_limit(
+        &instrument,
+        received_id,
+        in_transit_id,
+        "100.00",
+        ts_created,
+    );
+    let in_transit = oco_limit(&instrument, in_transit_id, received_id, "99.00", ts_created);
+    cache_order(&harness, &received);
+    cache_order(&harness, &in_transit);
+
+    // Submitted first and released at its insert leg, so the venue holds it
+    submit_cached_through_engine(&harness, trader_id, &received);
+    let _ = harness.settle();
+    let received_due = UnixNanos::from(*ts_created + INSERT_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, received_due), 1);
+    let _ = harness.settle();
+    assert_eq!(
+        cached_status(&harness.cache, &received),
+        OrderStatus::Accepted
+    );
+
+    // Submitted on a separate command, so the cancellation overtakes its insert leg
+    let t0 = harness.test_clock.borrow().timestamp_ns();
+    submit_cached_through_engine(&harness, trader_id, &in_transit);
+    send_command_through_engine(
+        &harness,
+        trader_id,
+        kind,
+        std::slice::from_ref(&received),
+        t0,
+    );
+    let at_arrival: Vec<&str> = harness.settle().iter().map(order_event_kind).collect();
+    assert_eq!(
+        at_arrival,
+        vec!["submitted"],
+        "expected only the in-transit order's OrderSubmitted at arrival: {at_arrival:?}",
+    );
+
+    let cancel_due = UnixNanos::from(*t0 + DELETE_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, cancel_due), 1);
+    let at_cancel: Vec<(&str, ClientOrderId)> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        at_cancel,
+        vec![("canceled", received_id)],
+        "the contingent cascade must not reach the in-transit sibling: {at_cancel:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &received),
+        OrderStatus::Canceled
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &in_transit),
+        OrderStatus::Submitted,
+        "an order whose submit is still in transit must not be canceled",
+    );
+
+    // The submit is delivered rather than swallowed: the venue sees it and answers for itself,
+    // rejecting an order whose OCO sibling closed while it was in flight
+    let submit_due = UnixNanos::from(*t0 + INSERT_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, submit_due), 1);
+    let at_submit = harness.settle();
+    let kinds: Vec<(&str, ClientOrderId)> = at_submit
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        kinds,
+        vec![("rejected", in_transit_id)],
+        "the venue must answer the in-transit submit once it arrives: {kinds:?}",
+    );
+    let OrderEventAny::Rejected(rejected) = &at_submit[0] else {
+        panic!("Expected OrderRejected, was {:?}", at_submit[0]);
+    };
+    assert_eq!(
+        rejected.reason.as_str(),
+        format!("Contingent order {received_id} already closed"),
+        "the rejection must be the venue's own contingency rule",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &in_transit),
+        OrderStatus::Rejected
+    );
+}
+
+/// A modify or cancel still in flight at `stop()` whose order closed meanwhile raises no
+/// rejection: the fill already resolved the pending status the rejection would release, and the
+/// FSM has no transition from `FILLED`.
+#[rstest]
+#[case::cancel(DeferredCommand::Cancel)]
+#[case::modify(DeferredCommand::Modify)]
+fn test_stop_raises_no_rejection_for_an_order_closed_in_flight(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] kind: DeferredCommand,
+) {
+    const INSERT_LATENCY_NS: u64 = 1_000_000_000;
+    const COMMAND_LATENCY_NS: u64 = 5_000_000_000;
+
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(kind.latency_model(INSERT_LATENCY_NS, COMMAND_LATENCY_NS)),
+    );
+
+    let order = accept_through_engine(
+        &mut harness,
+        trader_id,
+        &instrument,
+        "O-CLOSED-IN-FLIGHT",
+        "100.00",
+        INSERT_LATENCY_NS,
+    );
+
+    let ts = harness.test_clock.borrow().timestamp_ns();
+    kind.mark_pending(&harness.cache, &order, trader_id, ts);
+    send_command_through_engine(&harness, trader_id, kind, std::slice::from_ref(&order), ts);
+    let _ = harness.settle();
+
+    // The market moves through the resting order while the command is still in flight
+    let quote = create_quote_tick(instrument.id(), 99.00, 99.50);
+    msgbus::publish_quote(
+        format!("data.quotes.{}.{}", instrument.id().venue, instrument.id()).into(),
+        &quote,
+    );
+    let at_fill: Vec<&str> = harness.settle().iter().map(order_event_kind).collect();
+    assert_eq!(
+        at_fill,
+        vec!["filled"],
+        "expected the resting order to fill through the quote: {at_fill:?}",
+    );
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Filled);
+
+    harness.engine.borrow_mut().stop();
+
+    let at_stop: Vec<(&str, ClientOrderId)> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert!(
+        at_stop.is_empty(),
+        "a command discarded at stop must raise no rejection for a closed order: {at_stop:?}",
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &order),
+        OrderStatus::Filled,
+        "the order must keep the status its fill established",
+    );
+}
+
+#[rstest]
+#[case::oco(ContingencyType::Oco, false)]
+#[case::ouo(ContingencyType::Ouo, false)]
+#[case::oto_in_transit(ContingencyType::Oto, false)]
+#[case::oto_received(ContingencyType::Oto, true)]
+fn test_inbound_latency_contingent_fill_respects_receipt(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    mut margin_account_state: AccountState,
+    #[case] contingency: ContingencyType,
+    #[case] child_received: bool,
+) {
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(3_000_000_000, 0, 0)),
+    );
+    margin_account_state.account_id =
+        AccountId::from(format!("{}-001", instrument.id().venue).as_str());
+    harness
+        .cache
+        .borrow_mut()
+        .add_account(AccountAny::Margin(MarginAccount::new(
+            margin_account_state,
+            true,
+        )))
+        .unwrap();
+    let parent_id = ClientOrderId::from("O-PARENT");
+    let child_id = ClientOrderId::from("O-CHILD");
+    let ts = harness.test_clock.borrow().timestamp_ns();
+    let mut parent = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("100.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(parent_id)
+        .contingency_type(contingency)
+        .linked_order_ids(vec![child_id])
+        .ts_init(ts)
+        .build();
+    let parent_position_id =
+        PositionId::from(format!("{}-{}", instrument.id(), parent.strategy_id()).as_str());
+    parent.set_position_id(Some(parent_position_id));
+    let mut child_builder = OrderTestBuilder::new(OrderType::Limit);
+    child_builder
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("98.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(child_id)
+        .ts_init(ts);
+
+    if contingency == ContingencyType::Oto {
+        child_builder.parent_order_id(parent_id);
+    } else {
+        child_builder
+            .contingency_type(contingency)
+            .linked_order_ids(vec![parent_id]);
+    }
+
+    let child = child_builder.build();
+    cache_order(&harness, &parent);
+    cache_order(&harness, &child);
+    msgbus::send_trading_command(
+        MessagingSwitchboard::exec_engine_execute(),
+        TradingCommand::SubmitOrder(SubmitOrder::from_order(
+            &parent,
+            trader_id,
+            Some(harness.client_id),
+            Some(parent_position_id),
+            UUID4::new(),
+            ts,
+        )),
+    );
+
+    if child_received {
+        submit_cached_through_engine(&harness, trader_id, &child);
+    }
+
+    let _ = harness.settle();
+    advance_and_fire(&harness.test_clock, UnixNanos::from(*ts + 3_000_000_000));
+    let _ = harness.settle();
+    assert_eq!(
+        cached_status(&harness.cache, &parent),
+        OrderStatus::Accepted
+    );
+
+    if !child_received {
+        submit_cached_through_engine(&harness, trader_id, &child);
+        let _ = harness.settle();
+    }
+
+    assert_eq!(
+        cached_status(&harness.cache, &child),
+        OrderStatus::Submitted
+    );
+
+    let quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("99.00"),
+        Price::from("99.50"),
+        Quantity::from("0.500"),
+        Quantity::from("0.500"),
+        UnixNanos::from(*ts + 4_000_000_000),
+        UnixNanos::from(*ts + 4_000_000_000),
+    );
+    msgbus::publish_quote(
+        format!("data.quotes.{}.{}", instrument.id().venue, instrument.id()).into(),
+        &quote,
+    );
+
+    if !child_received {
+        assert_eq!(harness.cache.borrow().position_id(&child_id), None);
+    }
+
+    let events: Vec<_> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+
+    let expected = if child_received {
+        vec![("filled", parent_id), ("accepted", child_id)]
+    } else {
+        vec![("filled", parent_id)]
+    };
+
+    assert_eq!(events, expected);
+    assert_eq!(
+        cached_status(&harness.cache, &parent),
+        OrderStatus::PartiallyFilled
+    );
+    {
+        let cache = harness.cache.borrow();
+        let cached_child = cache.order(&child_id).unwrap();
+        assert_eq!(cached_child.quantity(), Quantity::from("1.000"));
+        assert_eq!(
+            cached_child.status(),
+            if child_received {
+                OrderStatus::Accepted
+            } else {
+                OrderStatus::Submitted
+            }
+        );
+        let parent_position_id = cache.position_id(&parent_id).unwrap();
+        let position = cache.position(parent_position_id).unwrap();
+        assert_eq!(position.quantity, Quantity::from("0.500"));
+
+        if contingency == ContingencyType::Oto {
+            assert_eq!(cache.position_id(&child_id), Some(parent_position_id));
+        } else {
+            assert_eq!(cache.position_id(&child_id), None);
+        }
+    }
+
+    if !child_received {
+        advance_and_fire(&harness.test_clock, UnixNanos::from(*ts + 6_000_000_000));
+        let events: Vec<_> = harness
+            .settle()
+            .iter()
+            .map(|event| (order_event_kind(event), event.client_order_id()))
+            .collect();
+        assert_eq!(events, vec![("accepted", child_id)]);
+        assert_eq!(cached_status(&harness.cache, &child), OrderStatus::Accepted);
+    }
+}
+
+#[rstest]
+#[case::modify(false)]
+#[case::expire(true)]
+fn test_inbound_latency_contingent_change_preserves_in_transit_order(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] expiry: bool,
+) {
+    let mut harness = setup_engine_harness(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(3_000_000_000, 0, 0)),
+    );
+    let ts = harness.test_clock.borrow().timestamp_ns();
+    let parent_id = ClientOrderId::from("O-PARENT");
+    let child_id = ClientOrderId::from("O-CHILD");
+
+    let contingency = if expiry {
+        ContingencyType::Oco
+    } else {
+        ContingencyType::Ouo
+    };
+
+    let mut parent_builder = OrderTestBuilder::new(OrderType::Limit);
+    parent_builder
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("100.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(parent_id)
+        .contingency_type(contingency)
+        .linked_order_ids(vec![child_id])
+        .ts_init(ts);
+
+    if expiry {
+        parent_builder
+            .time_in_force(TimeInForce::Gtd)
+            .expire_time(UnixNanos::from(*ts + 4_000_000_000));
+    }
+
+    let parent = parent_builder.build();
+    let child = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("98.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(child_id)
+        .contingency_type(contingency)
+        .linked_order_ids(vec![parent_id])
+        .ts_init(ts)
+        .build();
+    cache_order(&harness, &parent);
+    cache_order(&harness, &child);
+    submit_cached_through_engine(&harness, trader_id, &parent);
+    let _ = harness.settle();
+    advance_and_fire(&harness.test_clock, UnixNanos::from(*ts + 3_000_000_000));
+    let _ = harness.settle();
+    submit_cached_through_engine(&harness, trader_id, &child);
+    let _ = harness.settle();
+
+    if expiry {
+        advance_and_fire(&harness.test_clock, UnixNanos::from(*ts + 4_000_000_000));
+
+        let quote = QuoteTick::new(
+            instrument.id(),
+            Price::from("101.00"),
+            Price::from("102.00"),
+            Quantity::from("1.000"),
+            Quantity::from("1.000"),
+            UnixNanos::from(*ts + 4_000_000_000),
+            UnixNanos::from(*ts + 4_000_000_000),
+        );
+        msgbus::publish_quote(
+            format!("data.quotes.{}.{}", instrument.id().venue, instrument.id()).into(),
+            &quote,
+        );
+    } else {
+        let mut command = modify_command(
+            harness.client_id,
+            trader_id,
+            &parent,
+            UnixNanos::from(*ts + 3_000_000_000),
+        );
+        command.quantity = Some(Quantity::from("0.500"));
+        msgbus::send_trading_command(
+            MessagingSwitchboard::exec_engine_execute(),
+            TradingCommand::ModifyOrder(command),
+        );
+    }
+
+    let events: Vec<_> = harness
+        .settle()
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        events,
+        vec![(if expiry { "expired" } else { "updated" }, parent_id)]
+    );
+    let cache = harness.cache.borrow();
+    let child = cache.order(&child_id).unwrap();
+    assert_eq!(child.status(), OrderStatus::Submitted);
+    assert_eq!(child.quantity(), Quantity::from("1.000"));
+    assert_eq!(child.price(), Some(Price::from("98.00")));
+}
+
+#[rstest]
+fn test_cancel_all_after_first_duplicate_submit_receipt(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    let (context, mut rx) = setup_channel_context(
+        trader_id,
+        account_id,
+        venue,
+        &instrument,
+        Some(static_latency_model(3_000_000_000, 0, 0)),
+    );
+    let ts = context.test_clock.borrow().timestamp_ns();
+    let order = resting_limit(&instrument, "O-DUPLICATE", "100.00", ts);
+    submit_to_client(&context, trader_id, &order);
+    let submitted = drain_order_events(&mut rx);
+    context
+        .cache
+        .borrow_mut()
+        .update_order(&submitted[0])
+        .unwrap();
+    advance_and_fire(&context.test_clock, UnixNanos::from(*ts + 1_000_000_000));
+    context
+        .client
+        .submit_order(SubmitOrder::from_order(
+            &order,
+            trader_id,
+            Some(context.client.client_id()),
+            None,
+            UUID4::new(),
+            ts,
+        ))
+        .unwrap();
+    let _ = drain_order_events(&mut rx);
+    advance_and_fire(&context.test_clock, UnixNanos::from(*ts + 3_000_000_000));
+    let accepted = drain_order_events(&mut rx);
+    assert_eq!(accepted.len(), 1);
+    context
+        .cache
+        .borrow_mut()
+        .update_order(&accepted[0])
+        .unwrap();
+
+    context
+        .client
+        .cancel_all_orders(CancelAllOrders::new(
+            trader_id,
+            Some(context.client.client_id()),
+            order.strategy_id(),
+            instrument.id(),
+            None,
+            UUID4::new(),
+            UnixNanos::from(*ts + 3_000_000_000),
+            None,
+            None,
+        ))
+        .unwrap();
+    let events: Vec<_> = drain_order_events(&mut rx)
+        .iter()
+        .map(|event| (order_event_kind(event), event.client_order_id()))
+        .collect();
+    assert_eq!(events, vec![("canceled", order.client_order_id())]);
+}

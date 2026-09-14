@@ -140,7 +140,8 @@ runs:
         sudo rm -rf /var/lib/apt/lists/*
 
     - name: Install Cap'n Proto
-      uses: ./.github/actions/install-capnp
+      # Depot Windows/ARM runners need ./ until they support runner >=2.336.0
+      uses: ./.github/actions/install-capnp # zizmor: ignore[self-repository]
       with:
         cache-enabled: ${{ inputs.capnp-cache-enabled }}
 
@@ -258,7 +259,7 @@ runs:
 
     - name: Install uv
       # https://github.com/astral-sh/setup-uv
-      uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       with:
         version: ${{ steps.uv-version.outputs.version }}
         enable-cache: >-
@@ -273,7 +274,8 @@ runs:
       if: inputs.build-type == 'pre-commit'
       shell: bash
       run: >-
-        VIRTUAL_ENV="" uv sync
+        VIRTUAL_ENV=""
+        uv sync
         --project python
         --group dev
         --extra visualization

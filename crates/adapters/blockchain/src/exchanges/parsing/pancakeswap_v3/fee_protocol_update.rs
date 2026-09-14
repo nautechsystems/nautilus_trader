@@ -21,12 +21,12 @@ use crate::{
     events::fee_protocol_update::FeeProtocolUpdateEvent,
     hypersync::{
         HypersyncLog,
-        helpers::{
+        log::{
             extract_block_number, extract_log_index, extract_transaction_hash,
             extract_transaction_index, validate_event_signature_hash,
         },
     },
-    rpc::helpers as rpc_helpers,
+    rpc::log as rpc_log,
 };
 
 const FEE_PROTOCOL_UPDATE_EVENT_SIGNATURE_HASH: &str =
@@ -104,13 +104,13 @@ pub fn parse_fee_protocol_update_event_rpc(
     dex: SharedDex,
     log: &RpcLog,
 ) -> anyhow::Result<FeeProtocolUpdateEvent> {
-    rpc_helpers::validate_event_signature(
+    rpc_log::validate_event_signature(
         log,
         FEE_PROTOCOL_UPDATE_EVENT_SIGNATURE_HASH,
         "SetFeeProtocol",
     )?;
 
-    let data_bytes = rpc_helpers::extract_data_bytes(log)?;
+    let data_bytes = rpc_log::extract_data_bytes(log)?;
 
     if data_bytes.len() < 4 * 32 {
         anyhow::bail!("SetFeeProtocol event data is too short");
@@ -121,15 +121,15 @@ pub fn parse_fee_protocol_update_event_rpc(
         Err(e) => anyhow::bail!("Failed to decode SetFeeProtocol event data: {e}"),
     };
 
-    let pool_address = rpc_helpers::extract_address(log)?;
+    let pool_address = rpc_log::extract_address(log)?;
     let pool_identifier = PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
     Ok(FeeProtocolUpdateEvent::new(
         dex,
         pool_identifier,
-        rpc_helpers::extract_block_number(log)?,
-        rpc_helpers::extract_transaction_hash(log)?,
-        rpc_helpers::extract_transaction_index(log)?,
-        rpc_helpers::extract_log_index(log)?,
+        rpc_log::extract_block_number(log)?,
+        rpc_log::extract_transaction_hash(log)?,
+        rpc_log::extract_transaction_index(log)?,
+        rpc_log::extract_log_index(log)?,
         decoded.fee_protocol0_new,
         decoded.fee_protocol1_new,
     ))

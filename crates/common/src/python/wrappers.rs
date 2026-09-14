@@ -21,21 +21,35 @@
 //! `Rc<UnsafeCell<..>>` and cannot leave their thread, so a wrapper registry with wider visibility
 //! would desync from the registrations it shadows.
 
-use std::cell::RefCell;
+use std::{cell::RefCell, rc::Rc};
 
 use ahash::AHashMap;
+use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::identifiers::ComponentId;
 use pyo3::prelude::*;
 
+use super::msgbus::PyMessageBusScope;
+
 thread_local! {
-    static PYTHON_WRAPPERS: RefCell<AHashMap<ComponentId, Py<PyAny>>> =
+    static PYTHON_WRAPPERS: RefCell<AHashMap<ComponentId, RegisteredWrapper>> =
         RefCell::new(AHashMap::new());
 }
 
 /// Retains the strong reference which keeps the Python wrapper for `component_id` alive.
-pub fn retain_python_wrapper(component_id: ComponentId, wrapper: Py<PyAny>) {
-    let displaced =
-        PYTHON_WRAPPERS.with_borrow_mut(|wrappers| wrappers.insert(component_id, wrapper));
+pub fn retain_python_wrapper(
+    component_id: ComponentId,
+    wrapper: Py<PyAny>,
+    message_bus: Rc<PyMessageBusScope>,
+) {
+    let displaced = PYTHON_WRAPPERS.with_borrow_mut(|wrappers| {
+        wrappers.insert(
+            component_id,
+            RegisteredWrapper {
+                wrapper,
+                message_bus,
+            },
+        )
+    });
 
     if displaced.is_some() {
         log::warn!("Replaced the retained Python wrapper for {component_id}");
@@ -60,9 +74,34 @@ pub fn get_python_wrapper(component_id: ComponentId) -> Option<Py<PyAny>> {
         PYTHON_WRAPPERS.with_borrow(|wrappers| {
             wrappers
                 .get(&component_id)
-                .map(|wrapper| wrapper.clone_ref(py))
+                .map(|registered| registered.wrapper.clone_ref(py))
         })
     })
+}
+
+/// Returns message state owned by the receiver's registered runtime thread.
+///
+/// Inspect the unborrowed Python receiver: PyO3's unsendable borrow check panics on a foreign thread.
+/// The state is shared separately so lifecycle callbacks do not re-borrow their component.
+///
+/// # Errors
+///
+/// Returns a runtime error when this thread does not retain the wrapper.
+pub fn get_python_message_bus(wrapper: &Bound<'_, PyAny>) -> PyResult<Rc<PyMessageBusScope>> {
+    PYTHON_WRAPPERS.with_borrow(|wrappers| {
+        wrappers
+            .values()
+            .find(|registered| registered.wrapper.as_ptr() == wrapper.as_ptr())
+            .map(|registered| Rc::clone(&registered.message_bus))
+            .ok_or_else(|| {
+                to_pyruntime_err("Component must be registered on the calling runtime thread")
+            })
+    })
+}
+
+struct RegisteredWrapper {
+    wrapper: Py<PyAny>,
+    message_bus: Rc<PyMessageBusScope>,
 }
 
 #[cfg(test)]
@@ -103,11 +142,19 @@ class Finalizing:
             let finalizing = module.getattr("Finalizing").unwrap();
             let component_id = ComponentId::from("Finalizing-Component");
 
-            retain_python_wrapper(component_id, finalizing.call0().unwrap().unbind());
+            retain_python_wrapper(
+                component_id,
+                finalizing.call0().unwrap().unbind(),
+                Rc::default(),
+            );
 
             // The registry holds the only reference to each wrapper, so both the displaced wrapper
             // and the released one run `__del__` while being dropped
-            retain_python_wrapper(component_id, finalizing.call0().unwrap().unbind());
+            retain_python_wrapper(
+                component_id,
+                finalizing.call0().unwrap().unbind(),
+                Rc::default(),
+            );
             release_python_wrapper(component_id);
 
             let observed = module

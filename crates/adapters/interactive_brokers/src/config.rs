@@ -15,8 +15,12 @@
 
 //! Configuration types for the Interactive Brokers adapter.
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+};
 
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::identifiers::InstrumentId;
 use serde::{Deserialize, Serialize};
 
@@ -312,9 +316,9 @@ pub enum TradingMode {
 )]
 pub struct DockerizedIBGatewayConfig {
     /// Username for IB account (falls back to `TWS_USERNAME` env var via [`Default`]).
-    pub username: Option<String>,
+    pub username: Option<SecretString>,
     /// Password for IB account (falls back to `TWS_PASSWORD` env var via [`Default`]).
-    pub password: Option<String>,
+    pub password: Option<SecretString>,
     /// Trading mode (paper or live).
     #[builder(default)]
     pub trading_mode: TradingMode,
@@ -373,8 +377,30 @@ impl DockerizedIBGatewayConfig {
 impl Default for DockerizedIBGatewayConfig {
     fn default() -> Self {
         Self::builder()
-            .maybe_username(std::env::var("TWS_USERNAME").ok())
-            .maybe_password(std::env::var("TWS_PASSWORD").ok())
+            .maybe_username(std::env::var("TWS_USERNAME").ok().map(SecretString::from))
+            .maybe_password(std::env::var("TWS_PASSWORD").ok().map(SecretString::from))
             .build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn dockerized_gateway_config_debug_redacts_credentials() {
+        let config = DockerizedIBGatewayConfig::builder()
+            .username("test-user".into())
+            .password("test-password".into())
+            .build();
+
+        let formatted = format!("{config:?}");
+
+        assert!(formatted.contains("username: Some(<redacted>)"));
+        assert!(formatted.contains("password: Some(<redacted>)"));
+        assert!(!formatted.contains("test-user"));
+        assert!(!formatted.contains("test-password"));
     }
 }

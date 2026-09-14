@@ -43,9 +43,18 @@ use crate::{
 #[builder(setter(into, strip_option))]
 #[serde(rename_all = "camelCase")]
 pub struct SetPositionModeParams {
-    /// Position mode: "net_mode" or "long_short_mode".
+    /// Position mode: "`net_mode`" or "`long_short_mode`".
     #[serde(rename = "posMode")]
     pub pos_mode: OKXPositionMode,
+}
+
+/// Parameters for the POST /api/v5/account/activate-feature endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct ActivateFeatureParams {
+    /// Feature to activate. `1` enables USDC order book trading.
+    pub feature: String,
 }
 
 /// Parameters for the GET /api/v5/public/position-tiers endpoint.
@@ -320,7 +329,7 @@ pub struct GetCandlesticksParams {
     pub limit: Option<u32>,
 }
 
-/// Builder for GetCandlesticksParams with validation.
+/// Builder for `GetCandlesticksParams` with validation.
 #[derive(Debug, Default)]
 pub struct GetCandlesticksParamsBuilder {
     inst_id: Option<String>,
@@ -535,7 +544,7 @@ pub struct GetOrderHistoryParams {
     /// Instrument ID, e.g. "BTC-USD-SWAP" (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub inst_id: Option<String>,
-    /// Order type: limit, market, post_only, fok, ioc (optional).
+    /// Order type: limit, market, `post_only`, fok, ioc (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ord_type: Option<OKXOrderType>,
     /// Order state: live, filled, canceled (optional).
@@ -801,8 +810,8 @@ mod tests {
         builder.bar("1m");
         // OKX backwards semantics: before=lower bound, after=upper bound
         // This creates invalid range where before >= after
-        builder.after_ms(1725307200000);
-        builder.before_ms(1725393600000);
+        builder.after_ms(1_725_307_200_000);
+        builder.before_ms(1_725_393_600_000);
 
         let result = builder.build();
         assert!(result.is_err());
@@ -823,9 +832,9 @@ mod tests {
     }
 
     #[rstest]
-    #[case(1725307200000, "after=1725307200000")] // 13 digits = milliseconds
-    #[case(1725307200, "after=1725307200")] // 10 digits = seconds
-    #[case(1725307, "after=1725307")] // 7 digits = also valid
+    #[case(1_725_307_200_000, "after=1725307200000")] // 13 digits = milliseconds
+    #[case(1_725_307_200, "after=1725307200")] // 10 digits = seconds
+    #[case(1_725_307, "after=1725307")] // 7 digits = also valid
     fn test_valid_millisecond_cursor_passes(#[case] timestamp: i64, #[case] expected: &str) {
         let mut builder = GetCandlesticksParamsBuilder::default();
         builder.inst_id("BTC-USDT-SWAP");

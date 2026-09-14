@@ -41,10 +41,13 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    Params, UnixNanos,
+    DurationNanos, Params, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControl};
+use nautilus_live::{
+    ExecutionClientCore, ExecutionEventEmitter, SocketControl,
+    execution::reports::retain_order_status_reports,
+};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderType, TrailingOffsetType},
@@ -114,11 +117,14 @@ impl BitmexExecutionClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if either the HTTP or WebSocket client fail to construct.
+    /// Returns an error if the broadcaster pool sizes are invalid, API credentials are unavailable,
+    /// or either the HTTP or WebSocket client fails to construct.
     pub fn new(
         mut core: ExecutionClientCore,
         config: BitmexExecutionClientConfig,
     ) -> anyhow::Result<Self> {
+        config.validate_broadcaster_pool_sizes()?;
+
         if !config.has_api_credentials() {
             anyhow::bail!("BitMEX execution client requires API key and secret");
         }
@@ -132,10 +138,22 @@ impl BitmexExecutionClient {
         let clock = get_atomic_clock_realtime();
         let emitter =
             ExecutionEventEmitter::new(clock, trader_id, account_id, AccountType::Margin, None);
+        let api_key = config
+            .api_key
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let api_secret = config
+            .api_secret
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
         let http_client = BitmexHttpClient::new(
             Some(config.http_base_url()),
-            config.api_key.clone(),
-            config.api_secret.clone(),
+            api_key.clone(),
+            api_secret.clone(),
             config.environment,
             config.http_timeout_secs,
             config.max_retries,
@@ -144,19 +162,19 @@ impl BitmexExecutionClient {
             config.recv_window_ms,
             config.max_requests_per_second,
             config.max_requests_per_minute,
-            config.proxy_url.clone(),
+            proxy_url.clone(),
         )
         .context("failed to construct BitMEX HTTP client")?;
         let ws_client = BitmexWebSocketClient::new_with_env(
             Some(config.ws_url()),
-            config.api_key.clone(),
-            config.api_secret.clone(),
+            api_key,
+            api_secret,
             Some(account_id),
             config.heartbeat_interval_secs,
             config.auth_timeout_secs,
             config.environment,
             config.transport_backend,
-            config.proxy_url.clone(),
+            proxy_url,
         )
         .context("failed to construct BitMEX execution websocket client")?
         .with_socket_control(SocketControl::new(
@@ -784,13 +802,7 @@ impl ExecutionClient for BitmexExecutionClient {
             .await
             .context("failed to request BitMEX order status reports")?;
 
-        if let Some(start) = cmd.start {
-            reports.retain(|report| report.ts_last >= start);
-        }
-
-        if let Some(end) = cmd.end {
-            reports.retain(|report| report.ts_last <= end);
-        }
+        retain_order_status_reports(&mut reports, cmd);
 
         Self::log_report_receipt(reports.len(), "OrderStatusReport", cmd.log_receipt_level);
 
@@ -861,10 +873,10 @@ impl ExecutionClient for BitmexExecutionClient {
         log::info!("Generating ExecutionMassStatus (lookback_mins={lookback_mins:?})");
 
         let ts_now = self.clock.get_time_ns();
-        let start = lookback_mins.map(|mins| {
-            let lookback_ns = mins.saturating_mul(60).saturating_mul(1_000_000_000);
-            UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns))
-        });
+        let start = lookback_mins
+            .map(DurationNanos::try_from_mins)
+            .transpose()?
+            .map(|lookback| ts_now.saturating_sub(lookback));
 
         let order_cmd = GenerateOrderStatusReportsBuilder::default()
             .ts_init(ts_now)
@@ -1409,8 +1421,8 @@ mod tests {
             cache.clone(),
         );
         let config = BitmexExecutionClientConfig {
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
             base_url_http: Some("http://127.0.0.1:9/api/v1".to_string()),
             base_url_ws: Some("ws://127.0.0.1:9/realtime".to_string()),
             ..Default::default()
@@ -1565,8 +1577,8 @@ mod tests {
             cache,
         );
         let config = BitmexExecutionClientConfig {
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
             account_id: Some(AccountId::from("BITMEX-319111")),
             base_url_http: Some("http://127.0.0.1:9/api/v1".to_string()),
             base_url_ws: Some("ws://127.0.0.1:9/realtime".to_string()),
@@ -1576,6 +1588,31 @@ mod tests {
         let client = BitmexExecutionClient::new(core, config).unwrap();
 
         assert_eq!(client.account_id(), AccountId::from("BITMEX-319111"));
+    }
+
+    #[rstest]
+    fn test_invalid_combined_pool_size_is_rejected_before_credentials() {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let core = ExecutionClientCore::new(
+            TraderId::from("TESTER-001"),
+            *BITMEX_CLIENT_ID,
+            *BITMEX_VENUE,
+            OmsType::Netting,
+            AccountId::from("BITMEX-001"),
+            AccountType::Margin,
+            None,
+            cache,
+        );
+        let config = BitmexExecutionClientConfig {
+            submitter_pool_size: Some(crate::config::MAX_BROADCASTER_POOL_SIZE),
+            canceller_pool_size: Some(1),
+            ..Default::default()
+        };
+
+        let result = BitmexExecutionClient::new(core, config);
+        let err = result.expect_err("combined pool size must be rejected");
+
+        assert!(err.to_string().contains("combined_pool_size"));
     }
 
     #[rstest]

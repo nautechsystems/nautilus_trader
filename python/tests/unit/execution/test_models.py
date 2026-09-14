@@ -319,7 +319,7 @@ def test_fee_model_subclass_with_init_args() -> None:
 
         def __init__(self, rate: object) -> None:
             """
-            Initialize the helper.
+            Initialize the instance.
             """
             self.rate = rate
 
@@ -338,7 +338,7 @@ def test_fee_model_subclass_get_commission_dispatches_to_override() -> None:
 
         def __init__(self, commission: object) -> None:
             """
-            Initialize the helper.
+            Initialize the instance.
             """
             self.commission = commission
 
@@ -514,9 +514,9 @@ def test_static_latency_model_defaults() -> None:
     model = StaticLatencyModel()
 
     assert repr(model) == (
-        "StaticLatencyModel { base_latency_nanos: UnixNanos(0), "
-        "insert_latency_nanos: UnixNanos(0), update_latency_nanos: UnixNanos(0), "
-        "delete_latency_nanos: UnixNanos(0) }"
+        "StaticLatencyModel { base_latency_nanos: DurationNanos(0), "
+        "insert_latency_nanos: DurationNanos(0), update_latency_nanos: DurationNanos(0), "
+        "delete_latency_nanos: DurationNanos(0) }"
     )
 
 
@@ -532,8 +532,8 @@ def test_static_latency_model_with_params() -> None:
     )
 
     assert repr(model) == (
-        "StaticLatencyModel { base_latency_nanos: UnixNanos(1000000), "
-        "insert_latency_nanos: UnixNanos(3000000), "
-        "update_latency_nanos: UnixNanos(2500000), "
-        "delete_latency_nanos: UnixNanos(1500000) }"
+        "StaticLatencyModel { base_latency_nanos: DurationNanos(1000000), "
+        "insert_latency_nanos: DurationNanos(3000000), "
+        "update_latency_nanos: DurationNanos(2500000), "
+        "delete_latency_nanos: DurationNanos(1500000) }"
     )

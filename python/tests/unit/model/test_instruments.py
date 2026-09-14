@@ -16,6 +16,7 @@
 Test instruments behavior.
 """
 
+import datetime as dt
 import inspect
 from decimal import Decimal
 
@@ -73,6 +74,18 @@ GENERIC_INSTRUMENT_TYPES = (
     TokenizedAsset,
 )
 
+EXPIRING_INSTRUMENT_TYPES = (
+    BinaryOption,
+    CryptoFuture,
+    CryptoFuturesSpread,
+    CryptoOption,
+    CryptoOptionSpread,
+    FuturesContract,
+    FuturesSpread,
+    OptionContract,
+    OptionSpread,
+)
+
 GENERIC_INSTRUMENT_PROPERTIES = (
     "asset_class",
     "instrument_class",
@@ -91,8 +104,10 @@ GENERIC_INSTRUMENT_PROPERTIES = (
     "min_quantity",
     "multiplier",
     "quote_currency",
+    "symbol",
     "taker_fee",
     "tick_scheme",
+    "venue",
 )
 
 
@@ -107,6 +122,17 @@ def test_generic_instrument_inspection_contract(instrument_type: object) -> None
         assert not callable(descriptor)
 
 
+@pytest.mark.parametrize("instrument_type", EXPIRING_INSTRUMENT_TYPES)
+def test_expiring_instrument_utc_inspection_contract(instrument_type: object) -> None:
+    """
+    Test expiring instrument UTC inspection contract.
+    """
+    for property_name in ("activation_utc", "expiration_utc"):
+        descriptor = inspect.getattr_static(instrument_type, property_name)
+
+        assert not callable(descriptor)
+
+
 def test_audusd_sim_construction() -> None:
     """
     Test audusd sim construction.
@@ -114,6 +140,8 @@ def test_audusd_sim_construction() -> None:
     audusd = TestInstrumentProvider.audusd_sim()
 
     assert audusd.id == InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+    assert audusd.symbol == audusd.id.symbol == Symbol("AUD/USD")
+    assert audusd.venue == audusd.id.venue == Venue("SIM")
     assert audusd.base_currency == Currency.from_str("AUD")
     assert audusd.quote_currency == Currency.from_str("USD")
     assert audusd.price_precision == 5
@@ -356,8 +384,8 @@ def test_futures_contract_construction() -> None:
         price_increment=Price.from_str("0.25"),
         multiplier=Quantity.from_int(50),
         lot_size=Quantity.from_int(1),
-        activation_ns=1640390400000000000,
-        expiration_ns=1703116800000000000,
+        activation_ns=1_640_390_400_123_456_789,
+        expiration_ns=1_703_116_800_987_654_321,
         ts_event=0,
         ts_init=0,
     )
@@ -365,6 +393,18 @@ def test_futures_contract_construction() -> None:
     assert fc.id == InstrumentId(Symbol("ESZ23"), Venue("XCME"))
     assert fc.type_name == "FuturesContract"
     assert fc.price_precision == 2
+    assert fc.activation_ns == 1_640_390_400_123_456_789
+    assert fc.expiration_ns == 1_703_116_800_987_654_321
+    assert type(fc.activation_utc) is dt.datetime
+    assert type(fc.expiration_utc) is dt.datetime
+    assert fc.activation_utc == dt.datetime(2021, 12, 25, 0, 0, 0, 123456, tzinfo=dt.UTC)
+    assert fc.expiration_utc == dt.datetime(2023, 12, 21, 0, 0, 0, 987654, tzinfo=dt.UTC)
+
+    with pytest.raises(AttributeError, match=r"attribute 'activation_utc'.*not writable"):
+        fc.activation_utc = dt.datetime(2000, 1, 1, tzinfo=dt.UTC)
+
+    with pytest.raises(AttributeError, match=r"attribute 'expiration_utc'.*not writable"):
+        fc.expiration_utc = dt.datetime(2000, 1, 1, tzinfo=dt.UTC)
 
 
 def test_futures_contract_to_dict_and_from_dict_roundtrip() -> None:
@@ -1287,6 +1327,8 @@ def test_synthetic_instrument_construction() -> None:
     )
 
     assert synth.id == InstrumentId(Symbol("BTC-ETH"), Venue("SYNTH"))
+    assert synth.symbol == synth.id.symbol == Symbol("BTC-ETH")
+    assert synth.venue == synth.id.venue == Venue("SYNTH")
     assert synth.price_precision == 8
     assert len(synth.components) == 2
     assert synth.formula == "(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2"

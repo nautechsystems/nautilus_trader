@@ -28,7 +28,7 @@ use std::{
 };
 
 use nautilus_core::{
-    UUID4, UnixNanos,
+    DurationNanos, UUID4, UnixNanos,
     correctness::{FAILED, check_valid_string_utf8},
 };
 #[cfg(feature = "python")]
@@ -37,8 +37,8 @@ use ustr::Ustr;
 
 /// Returns a positive nanosecond interval, coercing zero to one nanosecond.
 #[must_use]
-pub fn create_valid_interval(interval_ns: u64) -> NonZeroU64 {
-    NonZeroU64::new(interval_ns).unwrap_or(NonZeroU64::MIN)
+pub fn create_valid_interval(interval_ns: DurationNanos) -> NonZeroU64 {
+    NonZeroU64::new(interval_ns.as_u64()).unwrap_or(NonZeroU64::MIN)
 }
 
 #[repr(C)]
@@ -384,7 +384,7 @@ impl TestTimer {
         let next_time_ns = if fire_immediately {
             start_time_ns
         } else {
-            start_time_ns + interval_ns.get()
+            start_time_ns + DurationNanos::new(interval_ns.get())
         };
 
         Self {
@@ -417,11 +417,11 @@ impl TestTimer {
     pub fn advance(&mut self, to_time_ns: UnixNanos) -> impl Iterator<Item = TimeEvent> + '_ {
         // Calculate how many events should fire up to and including to_time_ns
         let advances = if self.next_time_ns <= to_time_ns {
-            ((to_time_ns.as_u64() - self.next_time_ns.as_u64()) / self.interval_ns.get())
-                .saturating_add(1)
+            ((to_time_ns - self.next_time_ns).as_u64() / self.interval_ns.get()).saturating_add(1)
         } else {
             0
         };
+
         self.take(advances as usize).map(|(event, _)| event)
     }
 
@@ -469,7 +469,9 @@ impl Iterator for TestTimer {
             event_time_ns,
         );
 
-        if let Some(following_time_ns) = event_time_ns.checked_add(self.interval_ns.get()) {
+        if let Some(following_time_ns) =
+            event_time_ns.checked_add(DurationNanos::new(self.interval_ns.get()))
+        {
             self.next_time_ns = following_time_ns;
         } else {
             self.is_expired = true;
@@ -487,7 +489,7 @@ impl Iterator for TestTimer {
 mod tests {
     use std::{cell::RefCell, collections::BinaryHeap, num::NonZeroU64, rc::Rc};
 
-    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_core::{DurationNanos, UUID4, UnixNanos};
     #[cfg(feature = "python")]
     use pyo3::{
         Bound, PyResult, Python,
@@ -512,7 +514,10 @@ mod tests {
     #[case(1, 1)]
     #[case(25, 25)]
     fn test_create_valid_interval(#[case] interval_ns: u64, #[case] expected: u64) {
-        assert_eq!(create_valid_interval(interval_ns).get(), expected);
+        assert_eq!(
+            create_valid_interval(DurationNanos::new(interval_ns)).get(),
+            expected
+        );
     }
 
     #[rstest]
@@ -795,6 +800,7 @@ mod tests {
         Python::attach(|py| {
             let seen = PyList::empty(py);
             let seen_obj = seen.clone().unbind().into_any();
+
             let callback = new_sync_py_callback(
                 py,
                 move |args: &Bound<'_, PyTuple>,
@@ -876,6 +882,7 @@ mod tests {
         let callback_expected_topic = expected_topic.clone();
         let callback_tap = Rc::clone(&tap);
         let callback_seen_ref = Rc::clone(&callback_seen);
+
         let callback: Rc<dyn Fn(TimeEvent)> = Rc::new(move |callback_event| {
             assert_eq!(
                 callback_tap.time_events(),
@@ -956,11 +963,13 @@ mod tests {
         );
 
         let mut current_time = start_time_ns;
+
         let mut expected_next = if fire_immediately {
             start_time_ns
         } else {
             start_time_ns + interval_ns
         };
+
         let mut expected_expired = false;
 
         for operation in operations {
@@ -1039,10 +1048,12 @@ mod tests {
 
             let event_time = *next_time;
             events.push(event_time);
+
             let Some(following_time) = event_time.checked_add(interval_ns) else {
                 *is_expired = true;
                 break;
             };
+
             *next_time = following_time;
 
             if Some(event_time) == stop_time_ns {

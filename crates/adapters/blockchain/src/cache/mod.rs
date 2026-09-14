@@ -2211,7 +2211,7 @@ mod tests {
         let config = BlockchainDataClientConfig::builder()
             .chain(chain.clone())
             .dex_ids(vec![DexType::UniswapV3])
-            .http_rpc_url("http://127.0.0.1:9".to_string())
+            .http_rpc_url("http://127.0.0.1:9".into())
             .use_hypersync_for_live_data(true)
             .build();
         let mut core = BlockchainDataClientCore::new(config, None, None, CancellationToken::new());

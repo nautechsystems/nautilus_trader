@@ -882,7 +882,7 @@ fn with_dates_for_pipeline(
             params: cmd.params.clone(),
         }),
         // `Join` and the non-date-range variants should never reach this path; the dispatcher
-        // gates on `is_date_range_variant` first. Cloning preserves behaviour if a caller
+        // gates on `is_date_range_variant` first. Cloning preserves behavior if a caller
         // reaches this arm.
         _ => req.clone(),
     }

@@ -234,7 +234,7 @@ impl Position {
     #[getter]
     #[pyo3(name = "duration_ns")]
     fn py_duration_ns(&self) -> u64 {
-        self.duration_ns
+        self.duration_ns.as_u64()
     }
 
     #[getter]
@@ -480,7 +480,7 @@ impl Position {
             Some(ts_closed) => dict.set_item("ts_closed", ts_closed.as_u64())?,
             None => dict.set_item("ts_closed", py.None())?,
         }
-        dict.set_item("duration_ns", self.duration_ns.to_u64())?;
+        dict.set_item("duration_ns", self.duration_ns.as_u64())?;
         dict.set_item("avg_px_open", self.avg_px_open)?;
         match self.avg_px_close {
             Some(avg_px_close) => dict.set_item("avg_px_close", avg_px_close)?,

@@ -196,7 +196,7 @@ impl OrderMarketParams {
 /// Two main classes of orders in dYdX from persistence perspective are
 /// [short-term and long-term (stateful) orders](https://docs.dydx.xyz/concepts/trading/orders#short-term-vs-long-term).
 ///
-/// For different types of orders see also [Stop-Limit Versus Stop-Loss](https://dydx.exchange/crypto-learning/stop-limit-versus-stop-loss)
+/// For different types of orders see also [Stop-Limit Versus Stop-Loss](https://www.dydx.xyz/crypto-learning/stop-limit-versus-stop-loss)
 /// and [dYdX order types](https://docs.dydx.xyz/concepts/trading/orders).
 #[derive(Clone, Debug)]
 pub struct OrderBuilder {

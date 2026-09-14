@@ -27,7 +27,9 @@ use super::user_data::{
     BinanceSpotAccountPositionMsg, BinanceSpotBalanceUpdateMsg, BinanceSpotExecutionReport,
 };
 use crate::spot::http::{
-    models::{BinanceCancelOrderResponse, BinanceNewOrderResponse},
+    models::{
+        BinanceCancelOpenOrdersResponse, BinanceCancelOrderResponse, BinanceNewOrderResponse,
+    },
     query::{CancelOrderParams, CancelReplaceOrderParams, NewOrderParams},
 };
 
@@ -104,6 +106,8 @@ pub enum BinanceSpotWsTradingMessage {
     OrderRejected {
         /// Request ID for correlation.
         request_id: String,
+        /// Venue response status.
+        status: u16,
         /// Error code from venue.
         code: i32,
         /// Error message from venue.
@@ -120,6 +124,8 @@ pub enum BinanceSpotWsTradingMessage {
     CancelRejected {
         /// Request ID for correlation.
         request_id: String,
+        /// Venue response status.
+        status: u16,
         /// Error code from venue.
         code: i32,
         /// Error message from venue.
@@ -138,6 +144,8 @@ pub enum BinanceSpotWsTradingMessage {
     CancelReplaceRejected {
         /// Request ID for correlation.
         request_id: String,
+        /// Venue response status.
+        status: u16,
         /// Error code from venue.
         code: i32,
         /// Error message from venue.
@@ -155,7 +163,7 @@ pub enum BinanceSpotWsTradingMessage {
         /// Request ID for correlation.
         request_id: String,
         /// Canceled order responses.
-        responses: Vec<BinanceCancelOrderResponse>,
+        responses: Vec<BinanceCancelOpenOrdersResponse>,
     },
     /// User data stream subscribed.
     UserDataSubscribed {

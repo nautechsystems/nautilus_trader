@@ -35,7 +35,7 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MarginAccount {
-    /// Creates a new `MarginAccount` instance.
+    /// Represents a margin account that can hold leveraged positions.
     #[new]
     fn py_new(event: AccountState, calculate_account_state: bool) -> Self {
         Self::new(event, calculate_account_state)
@@ -172,7 +172,7 @@ impl MarginAccount {
     #[pyo3(name = "calculate_balance_locked")]
     #[pyo3(signature = (instrument, side, quantity, price, use_quote_for_inverse=None))]
     fn py_calculate_balance_locked(
-        &mut self,
+        &self,
         instrument: Py<PyAny>,
         side: OrderSide,
         quantity: Quantity,
@@ -384,7 +384,7 @@ impl MarginAccount {
     /// Returns an error if leverage is not positive, or if the result cannot be represented
     /// as `Money`.
     pub fn py_calculate_initial_margin(
-        &mut self,
+        &self,
         instrument: Py<PyAny>,
         quantity: Quantity,
         price: Price,
@@ -460,7 +460,7 @@ impl MarginAccount {
     #[pyo3(name = "calculate_maintenance_margin")]
     #[pyo3(signature = (instrument, quantity, price, use_quote_for_inverse=None))]
     pub fn py_calculate_maintenance_margin(
-        &mut self,
+        &self,
         instrument: Py<PyAny>,
         quantity: Quantity,
         price: Price,

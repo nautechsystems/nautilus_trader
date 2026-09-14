@@ -15,6 +15,7 @@
 
 //! Error types produced by the OKX WebSocket client implementation.
 
+use nautilus_network::error::SendError;
 use thiserror::Error;
 use tokio_tungstenite::tungstenite;
 
@@ -35,13 +36,17 @@ pub enum OKXWsError {
     NoActiveClient,
     #[error("Handler not available: {0}")]
     HandlerUnavailable(String),
+    /// A typed failure from the shared WebSocket send boundary.
+    #[error("WebSocket send error: {0}")]
+    TransportSend(#[from] SendError),
+    /// A send failure whose delivery outcome is unknown.
     #[error("Send failed: {0}")]
     SendFailed(String),
     #[error("Operation timed out after {timeout_ms}ms")]
     OperationTimeout { timeout_ms: u64 },
     #[error("Authentication error: {0}")]
     AuthenticationError(String),
-    /// Wrapping the underlying HttpClientError from the network crate.
+    /// Wrapping the underlying `HttpClientError` from the network crate.
     // #[error("Network error: {0}")]
     // WebSocketClientError(WebSocketClientError),  // TODO: Implement Debug
     /// WebSocket transport error.

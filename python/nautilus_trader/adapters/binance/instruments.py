@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Instrument catalogue loading for the Binance adapter.
+Instrument catalog loading for the Binance adapter.
 """
 
 import asyncio
@@ -24,7 +24,7 @@ from nautilus_trader._libnautilus.binance import _load_binance_instruments
 
 async def load_binance_instruments(config: BinanceDataClientConfig) -> list[object]:
     """
-    Load the configured Binance instrument catalogue.
+    Load the configured Binance instrument catalog.
 
     This is the Python v2 replacement for constructing a cached low-level HTTP client
     and a product-specific v1 instrument provider. The embedded ``instrument_provider``

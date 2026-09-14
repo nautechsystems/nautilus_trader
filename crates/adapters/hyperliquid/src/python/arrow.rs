@@ -7,7 +7,7 @@
 //  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
 // -------------------------------------------------------------------------------------------------
 
-//! Arrow helpers for Python-defined Hyperliquid custom data streams.
+//! Arrow encoding for Python-defined Hyperliquid custom data streams.
 
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_serialization::{

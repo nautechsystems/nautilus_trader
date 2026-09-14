@@ -17,7 +17,7 @@ use std::{io::Read, path::Path};
 
 use ahash::AHashMap;
 use csv::{Reader, StringRecord};
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, correctness::check_in_range_inclusive_usize};
 #[cfg(feature = "python")]
 use nautilus_model::{data::OrderBookDeltas, python::data::data_to_pyobject};
 use nautilus_model::{
@@ -43,6 +43,19 @@ use crate::{
         },
     },
 };
+
+const MAX_STREAM_CHUNK_SIZE: usize = 1_000_000;
+
+fn validate_stream_chunk_size(chunk_size: usize) -> anyhow::Result<()> {
+    check_in_range_inclusive_usize(chunk_size, 1, MAX_STREAM_CHUNK_SIZE, stringify!(chunk_size))?;
+    Ok(())
+}
+
+fn options_chain_buffer_capacity(chunk_size: usize) -> anyhow::Result<usize> {
+    chunk_size
+        .checked_mul(2)
+        .ok_or_else(|| anyhow::anyhow!("options chain buffer capacity overflow"))
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // OrderBookDelta Streaming
@@ -312,7 +325,8 @@ impl DeltaStreamIterator {
 ///
 /// # Errors
 ///
-/// Returns an error if the file cannot be opened, read, or parsed as CSV.
+/// Returns an error if `chunk_size` is outside `[1, 1_000_000]`, or if the file cannot be opened,
+/// read, or parsed as CSV.
 pub fn stream_deltas<P: AsRef<Path>>(
     filepath: P,
     chunk_size: usize,
@@ -321,6 +335,7 @@ pub fn stream_deltas<P: AsRef<Path>>(
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Vec<OrderBookDelta>>>> {
+    validate_stream_chunk_size(chunk_size)?;
     DeltaStreamIterator::new(
         filepath,
         chunk_size,
@@ -561,7 +576,7 @@ impl Iterator for BatchedDeltasStreamIterator {
                     .map(|batch| {
                         let deltas = OrderBookDeltas::new(self.instrument_id, batch);
                         let deltas = Box::new(deltas);
-                        data_to_pyobject(py, Data::Deltas(deltas))
+                        data_to_pyobject(py, Data::BookDeltas(deltas))
                     })
                     .collect::<PyResult<Vec<_>>>()
             })
@@ -577,7 +592,8 @@ impl Iterator for BatchedDeltasStreamIterator {
 ///
 /// # Errors
 ///
-/// Returns an error if the file cannot be opened, read, or parsed as CSV.
+/// Returns an error if `chunk_size` is outside `[1, 1_000_000]`, or if the file cannot be opened,
+/// read, or parsed as CSV.
 pub fn stream_batched_deltas<P: AsRef<Path>>(
     filepath: P,
     chunk_size: usize,
@@ -586,6 +602,7 @@ pub fn stream_batched_deltas<P: AsRef<Path>>(
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Vec<Py<PyAny>>>>> {
+    validate_stream_chunk_size(chunk_size)?;
     BatchedDeltasStreamIterator::new(
         filepath,
         chunk_size,
@@ -771,7 +788,8 @@ impl Iterator for QuoteStreamIterator {
 ///
 /// # Errors
 ///
-/// Returns an error if the file cannot be opened, read, or parsed as CSV.
+/// Returns an error if `chunk_size` is outside `[1, 1_000_000]`, or if the file cannot be opened,
+/// read, or parsed as CSV.
 pub fn stream_quotes<P: AsRef<Path>>(
     filepath: P,
     chunk_size: usize,
@@ -780,6 +798,7 @@ pub fn stream_quotes<P: AsRef<Path>>(
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Vec<QuoteTick>>>> {
+    validate_stream_chunk_size(chunk_size)?;
     QuoteStreamIterator::new(
         filepath,
         chunk_size,
@@ -812,6 +831,7 @@ impl OptionsChainStreamIterator {
         size_precision: Option<u8>,
         limit: Option<usize>,
     ) -> anyhow::Result<Self> {
+        let buffer_capacity = options_chain_buffer_capacity(chunk_size)?;
         let underlyings = normalize_underlying_filters(underlyings);
         let mut precision_by_instrument = AHashMap::new();
 
@@ -834,7 +854,7 @@ impl OptionsChainStreamIterator {
         Ok(Self {
             reader,
             record: StringRecord::new(),
-            buffer: Vec::with_capacity(chunk_size * 2),
+            buffer: Vec::with_capacity(buffer_capacity),
             chunk_size,
             underlyings,
             price_precision,
@@ -983,7 +1003,8 @@ impl Iterator for OptionsChainStreamIterator {
 ///
 /// # Errors
 ///
-/// Returns an error if the file cannot be opened, read, or parsed as CSV.
+/// Returns an error if `chunk_size` is outside `[1, 1_000_000]`, or if the file cannot be opened,
+/// read, or parsed as CSV.
 pub fn stream_options_chain<P: AsRef<Path>>(
     filepath: P,
     chunk_size: usize,
@@ -992,6 +1013,7 @@ pub fn stream_options_chain<P: AsRef<Path>>(
     size_precision: Option<u8>,
     limit: Option<usize>,
 ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Vec<Data>>>> {
+    validate_stream_chunk_size(chunk_size)?;
     OptionsChainStreamIterator::new(
         filepath,
         chunk_size,
@@ -1166,7 +1188,8 @@ impl Iterator for TradeStreamIterator {
 ///
 /// # Errors
 ///
-/// Returns an error if the file cannot be opened, read, or parsed as CSV.
+/// Returns an error if `chunk_size` is outside `[1, 1_000_000]`, or if the file cannot be opened,
+/// read, or parsed as CSV.
 pub fn stream_trades<P: AsRef<Path>>(
     filepath: P,
     chunk_size: usize,
@@ -1175,6 +1198,7 @@ pub fn stream_trades<P: AsRef<Path>>(
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Vec<TradeTick>>>> {
+    validate_stream_chunk_size(chunk_size)?;
     TradeStreamIterator::new(
         filepath,
         chunk_size,
@@ -1554,7 +1578,8 @@ impl Iterator for Depth10StreamIterator {
 ///
 /// # Errors
 ///
-/// Returns an error if the file cannot be opened, read, or parsed as CSV.
+/// Returns an error if `chunk_size` is outside `[1, 1_000_000]`, or if the file cannot be opened,
+/// read, or parsed as CSV.
 pub fn stream_depth10_from_snapshot5<P: AsRef<Path>>(
     filepath: P,
     chunk_size: usize,
@@ -1563,6 +1588,7 @@ pub fn stream_depth10_from_snapshot5<P: AsRef<Path>>(
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Vec<OrderBookDepth10>>>> {
+    validate_stream_chunk_size(chunk_size)?;
     Depth10StreamIterator::new(
         filepath,
         chunk_size,
@@ -1587,7 +1613,8 @@ pub fn stream_depth10_from_snapshot5<P: AsRef<Path>>(
 ///
 /// # Errors
 ///
-/// Returns an error if the file cannot be opened, read, or parsed as CSV.
+/// Returns an error if `chunk_size` is outside `[1, 1_000_000]`, or if the file cannot be opened,
+/// read, or parsed as CSV.
 pub fn stream_depth10_from_snapshot25<P: AsRef<Path>>(
     filepath: P,
     chunk_size: usize,
@@ -1596,6 +1623,7 @@ pub fn stream_depth10_from_snapshot25<P: AsRef<Path>>(
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Vec<OrderBookDepth10>>>> {
+    validate_stream_chunk_size(chunk_size)?;
     Depth10StreamIterator::new(
         filepath,
         chunk_size,
@@ -1730,13 +1758,15 @@ impl Iterator for FundingRateStreamIterator {
 ///
 /// # Errors
 ///
-/// Returns an error if the file cannot be opened, read, or parsed as CSV.
+/// Returns an error if `chunk_size` is outside `[1, 1_000_000]`, or if the file cannot be opened,
+/// read, or parsed as CSV.
 pub fn stream_funding_rates<P: AsRef<Path>>(
     filepath: P,
     chunk_size: usize,
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Vec<FundingRateUpdate>>>> {
+    validate_stream_chunk_size(chunk_size)?;
     FundingRateStreamIterator::new(filepath, chunk_size, instrument_id, limit)
 }
 
@@ -1754,6 +1784,51 @@ mod tests {
         common::{parse::parse_price, testing::get_test_data_path},
         csv::load::load_deltas,
     };
+
+    #[rstest]
+    #[case(1)]
+    #[case(100_000)]
+    #[case(MAX_STREAM_CHUNK_SIZE)]
+    fn test_validate_stream_chunk_size_accepts_supported_values(#[case] chunk_size: usize) {
+        assert!(validate_stream_chunk_size(chunk_size).is_ok());
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(MAX_STREAM_CHUNK_SIZE + 1)]
+    #[case(usize::MAX)]
+    fn test_validate_stream_chunk_size_rejects_invalid_values(#[case] chunk_size: usize) {
+        assert!(validate_stream_chunk_size(chunk_size).is_err());
+    }
+
+    #[rstest]
+    fn test_options_chain_buffer_capacity_is_checked() {
+        assert_eq!(
+            options_chain_buffer_capacity(MAX_STREAM_CHUNK_SIZE).unwrap(),
+            MAX_STREAM_CHUNK_SIZE * 2,
+        );
+        assert!(options_chain_buffer_capacity(usize::MAX).is_err());
+    }
+
+    #[rstest]
+    fn test_quote_stream_allocates_maximum_supported_chunk() {
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,ask_amount,ask_price,bid_price,bid_amount\n\
+             binance,BTCUSDT,1640995200000000,1640995200100000,1.0,50000.0,49999.0,1.5";
+        let temp_file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(temp_file.path(), csv_data).unwrap();
+
+        let stream = QuoteStreamIterator::new(
+            temp_file.path(),
+            MAX_STREAM_CHUNK_SIZE,
+            Some(1),
+            Some(1),
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert!(stream.buffer.capacity() >= MAX_STREAM_CHUNK_SIZE);
+    }
 
     #[rstest]
     #[case(0.0, 0)]

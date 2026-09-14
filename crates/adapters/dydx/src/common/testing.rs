@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Testing helpers shared across dYdX adapter tests.
+//! Shared fixture loading for dYdX adapter tests.
 
 use std::path::PathBuf;
 
@@ -38,7 +38,7 @@ pub(crate) fn load_json_fixture(filename: &str) -> Value {
 
 /// Loads a JSON fixture and returns the `result` field when present.
 ///
-/// Many dYdX HTTP endpoints wrap payloads in a `result` envelope. This helper
+/// Many dYdX HTTP endpoints wrap payloads in a `result` envelope. This loader
 /// returns the inner payload if it exists, otherwise the root JSON value.
 ///
 /// # Panics

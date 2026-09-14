@@ -15,10 +15,10 @@
 
 //! Core execution client implementation for Interactive Brokers.
 
-#[path = "core_helpers.rs"]
-mod core_helpers;
 #[path = "core_orders.rs"]
 mod core_orders;
+#[path = "core_tracking.rs"]
+mod core_tracking;
 #[path = "core_updates.rs"]
 mod core_updates;
 #[cfg(test)]
@@ -67,7 +67,7 @@ use nautilus_common::{
     msgbus::{send_account_state, switchboard::MessagingSwitchboard},
 };
 use nautilus_core::{
-    Params, UUID4, UnixNanos,
+    DurationNanos, Params, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -83,8 +83,8 @@ use nautilus_model::{
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
-        OrderEventAny, OrderFilled, OrderModifyRejected, OrderPendingCancel, OrderRejected,
-        OrderSubmitted, OrderUpdated,
+        OrderDeniedReason, OrderEventAny, OrderFilled, OrderModifyRejected, OrderPendingCancel,
+        OrderRejected, OrderSubmitted, OrderUpdated,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, Venue,
@@ -540,6 +540,19 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
     }
 
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
+        let order = self.core.get_order(&cmd.client_order_id)?;
+        if let Err(reason) = validate_order(&order) {
+            let reason = reason.to_string();
+            Self::send_order_denied(
+                cmd.order_init.trader_id,
+                cmd.strategy_id,
+                cmd.instrument_id,
+                cmd.order_init.client_order_id,
+                &reason,
+            )?;
+            return Ok(());
+        }
+
         if let Err(reason) = self.ensure_client_ready_for_order_request("submit order") {
             self.deny_submit_order_not_ready(&cmd, &reason)?;
             return Ok(());
@@ -1279,10 +1292,10 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         let ts_now = get_atomic_clock_realtime().get_time_ns();
-        let start = lookback_mins.map(|mins| {
-            let lookback_ns = mins * 60 * 1_000_000_000;
-            UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns))
-        });
+        let start = lookback_mins
+            .map(DurationNanos::try_from_mins)
+            .transpose()?
+            .map(|lookback| ts_now.saturating_sub(lookback));
 
         let order_cmd = GenerateOrderStatusReportsBuilder::default()
             .ts_init(ts_now)
@@ -1507,6 +1520,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                     false,
                     Some(target_order.venue_order_id()),
                     Some(account_id),
+                    None,
                 );
 
                 if exec_sender
@@ -1538,12 +1552,17 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
     }
 
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
+        let orders = self.core.get_orders_for_list(&cmd.order_list)?;
+        if let Some(reason) = orders.iter().find_map(|order| validate_order(order).err()) {
+            self.deny_submit_order_list_not_ready(&cmd, &reason.to_string())?;
+            return Ok(());
+        }
+
         if let Err(reason) = self.ensure_client_ready_for_order_request("submit order list") {
             self.deny_submit_order_list_not_ready(&cmd, &reason)?;
             return Ok(());
         }
 
-        let orders = self.core.get_orders_for_list(&cmd.order_list)?;
         self.submit_order_list_with_orders(cmd, orders)
     }
 
@@ -1818,6 +1837,14 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         }
         Ok(())
     }
+}
+
+fn validate_order(order: &impl Order) -> Result<(), OrderDeniedReason> {
+    if order.is_reduce_only() {
+        return Err(OrderDeniedReason::UnsupportedReduceOnly);
+    }
+
+    Ok(())
 }
 
 impl InteractiveBrokersExecutionClient {

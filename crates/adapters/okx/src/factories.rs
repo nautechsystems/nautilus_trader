@@ -17,6 +17,8 @@
 
 use std::{any::Any, cell::RefCell, rc::Rc};
 
+#[cfg(test)]
+use nautilus_common::clock::TestClock;
 use nautilus_common::{
     cache::CacheView,
     clients::{DataClient, ExecutionClient},
@@ -142,6 +144,7 @@ impl ExecutionClientFactory for OKXExecutionClientFactory {
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
+        _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let okx_config = config
             .as_any()
@@ -247,9 +250,9 @@ mod tests {
         let config = OKXExecutionClientConfig {
             account_id: AccountId::from("OKX-001"),
             instrument_types: vec![OKXInstrumentType::Spot],
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            api_passphrase: Some("test_pass".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
+            api_passphrase: Some("test_pass".into()),
             ..Default::default()
         };
 
@@ -260,6 +263,7 @@ mod tests {
             "OKX-TEST",
             &config,
             cache.into(),
+            Rc::new(RefCell::new(TestClock::new())),
         );
         assert!(result.is_ok());
 
@@ -273,9 +277,9 @@ mod tests {
         let config = OKXExecutionClientConfig {
             account_id: AccountId::from("OKX-001"),
             instrument_types: vec![OKXInstrumentType::Swap, OKXInstrumentType::Futures],
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            api_passphrase: Some("test_pass".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
+            api_passphrase: Some("test_pass".into()),
             ..Default::default()
         };
 
@@ -286,6 +290,7 @@ mod tests {
             "OKX-DERIV",
             &config,
             cache.into(),
+            Rc::new(RefCell::new(TestClock::new())),
         );
         result.unwrap();
     }
@@ -302,6 +307,7 @@ mod tests {
             "OKX-TEST",
             &wrong_config,
             cache.into(),
+            Rc::new(RefCell::new(TestClock::new())),
         );
         assert!(result.is_err());
         assert!(

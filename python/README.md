@@ -35,7 +35,7 @@ python/
 From the repository root:
 
 ```bash
-make build-debug  # Compile and install into .venv (debug mode)
+make build-debug  # Compile and install into python/.venv (debug mode)
 make py-stubs     # Regenerate type stubs and docstrings
 make pytest       # Run Python tests
 ```
@@ -56,8 +56,8 @@ From the repository root:
 make build-debug
 ```
 
-This compiles the Rust extension and installs it into the project venv (`.venv`). Run it again
-after Rust changes.
+This compiles the Rust extension and installs it into the project environment (`python/.venv`). Run
+it again after Rust changes.
 
 ## How it works
 

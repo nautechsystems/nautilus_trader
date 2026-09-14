@@ -20,9 +20,9 @@
 //!
 //! # API Documentation
 //!
-//! - Indexer HTTP API: <https://docs.dydx.xyz/api_integration-indexer/indexer_api>
-//! - Markets: <https://docs.dydx.xyz/api_integration-indexer/indexer_api#markets>
-//! - Accounts: <https://docs.dydx.xyz/api_integration-indexer/indexer_api#accounts>
+//! - Indexer HTTP API: <https://docs.dydx.xyz/indexer-client/http>
+//! - Markets: <https://docs.dydx.xyz/indexer-client/http/markets>
+//! - Accounts: <https://docs.dydx.xyz/indexer-client/http/accounts>
 
 use std::collections::HashMap;
 

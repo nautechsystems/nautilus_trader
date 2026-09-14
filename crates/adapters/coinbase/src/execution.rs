@@ -34,10 +34,11 @@ use nautilus_common::{
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
         GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
         GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
+        SubmitOrderList,
     },
 };
 use nautilus_core::{
-    Params, UnixNanos,
+    DurationNanos, Params, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -47,6 +48,7 @@ use nautilus_live::{
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, LiquiditySide, OmsType, OrderStatus, OrderType, TriggerType},
+    events::OrderDeniedReason,
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, Venue,
         VenueOrderId,
@@ -99,177 +101,6 @@ const CUMULATIVE_STATE_CAPACITY: usize = 10_000;
 // the engine registers it asynchronously; wait up to 30s for that to happen.
 const ACCOUNT_REGISTERED_TIMEOUT_SECS: f64 = 30.0;
 
-#[derive(Debug)]
-struct FillDedup {
-    seen: AHashMap<(String, String), ()>,
-    order: VecDeque<(String, String)>,
-    capacity: usize,
-}
-
-impl FillDedup {
-    fn new(capacity: usize) -> Self {
-        Self {
-            seen: AHashMap::with_capacity(capacity),
-            order: VecDeque::with_capacity(capacity),
-            capacity,
-        }
-    }
-
-    // Returns true if the key is new (and inserts it); false when already seen.
-    fn insert(&mut self, key: (String, String)) -> bool {
-        if self.seen.contains_key(&key) {
-            return false;
-        }
-
-        if self.order.len() >= self.capacity
-            && let Some(oldest) = self.order.pop_front()
-        {
-            self.seen.remove(&oldest);
-        }
-        self.order.push_back(key.clone());
-        self.seen.insert(key, ());
-        true
-    }
-}
-
-// Per-order cumulative state tracked across WS reconnects so that delta-based
-// fill synthesis remains correct even when the feed handler is recreated.
-// `avg_price` is Coinbase's cumulative weighted-average fill price; the exec
-// client derives the per-fill price from the notional delta between successive
-// cumulative states.
-//
-// `quantity` records the largest `cumulative_quantity + leaves_quantity` ever
-// observed for the order. Coinbase zeroes `leaves_quantity` on terminal updates
-// (REJECTED / CANCELLED / EXPIRED), so the OSR's quantity computed from
-// cum+leaves on those events would collapse to filled_qty (or zero). Holding
-// the max-observed total lets us restore the original order quantity before
-// emitting the terminal report.
-#[derive(Debug, Default, Clone)]
-struct OrderCumulativeState {
-    filled_qty: Option<Quantity>,
-    total_fees: Decimal,
-    avg_price: Decimal,
-    quantity: Option<Quantity>,
-}
-
-// Captures the limit / trigger metadata of a submitted order, keyed by
-// `client_order_id` so it survives the venue-id-keyed cumulative state being
-// dropped on terminal user-channel events. Coinbase's user channel does not
-// echo `price`, `stop_price`, or `trigger_type`, so without these locally
-// cached values the engine reconciler would clear the local price the moment
-// a post-fill or cancel update lands.
-#[derive(Debug, Default, Clone)]
-struct OrderContext {
-    price: Option<Price>,
-    trigger_price: Option<Price>,
-    trigger_type: Option<TriggerType>,
-    // `post_only` order fills are guaranteed `Maker` (the venue rejects an
-    // immediate match outright). The Coinbase user channel does not echo
-    // this flag, so we cache it at submit time and pass it through to the
-    // synthesized FillReport's `liquidity_side`.
-    post_only: bool,
-    // The `product_id` the order was submitted with. Coinbase rewrites
-    // aliased products to the canonical id on the user channel, so
-    // `update.product_id` always reads as the canonical (e.g. `BTC-USD`)
-    // even for an order placed on the alias side (`BTC-USDC`). Looking the
-    // submitted id up by `client_order_id` lets us re-key user-channel
-    // echoes back to the caller's id without rewriting *every* canonical
-    // event globally.
-    submitted_product_id: Option<Ustr>,
-}
-
-// Bounded map for per-order cumulative tracking. Insertions track LRU order;
-// when the live entry count reaches `capacity`, the oldest non-stale entry is
-// evicted. Terminal events call `remove()` which clears the map entry; the
-// matching deque slot becomes stale and is reclaimed during the next eviction
-// pass (the deque is also trimmed if it grows beyond `2 * capacity`).
-#[derive(Debug)]
-struct CumulativeStateMap {
-    map: AHashMap<String, OrderCumulativeState>,
-    order: VecDeque<String>,
-    capacity: usize,
-}
-
-impl CumulativeStateMap {
-    fn with_capacity(capacity: usize) -> Self {
-        Self {
-            map: AHashMap::with_capacity(capacity),
-            order: VecDeque::with_capacity(capacity),
-            capacity,
-        }
-    }
-
-    fn entry_or_default(&mut self, key: &str) -> &mut OrderCumulativeState {
-        if self.map.contains_key(key) {
-            // Hit: refresh recency so a long-lived order receiving updates
-            // is not evicted by churn on other orders. O(n) lookup and
-            // shift; tolerated because user-channel update volume is small
-            // relative to capacity
-            if let Some(pos) = self.order.iter().position(|k| k == key) {
-                self.order.remove(pos);
-            }
-            self.order.push_back(key.to_string());
-        } else {
-            self.evict_until_capacity_or_empty();
-            self.order.push_back(key.to_string());
-            self.map
-                .insert(key.to_string(), OrderCumulativeState::default());
-        }
-        self.map
-            .get_mut(key)
-            .expect("key was just inserted or confirmed present")
-    }
-
-    fn remove(&mut self, key: &str) {
-        if self.map.remove(key).is_some() {
-            // Drop the matching deque slot too. Without this, a later
-            // re-insert of the same key would leave a stale slot ahead of
-            // the new live one, and the eviction loop would pop the stale
-            // slot and remove the live entry from the map
-            self.order.retain(|k| k != key);
-        }
-    }
-
-    fn evict_until_capacity_or_empty(&mut self) {
-        // Evict the oldest live entries until we're under capacity. Stale
-        // deque entries (already removed from the map) are skipped naturally
-        // because removing a missing key is a no-op
-        while self.map.len() >= self.capacity {
-            match self.order.pop_front() {
-                Some(oldest) => {
-                    self.map.remove(&oldest);
-                }
-                None => break,
-            }
-        }
-
-        // When the deque accumulates many stale entries (e.g. a long-lived
-        // order at the front while later orders churn through terminal
-        // events), compact in place: keep live entries in their original
-        // order and drop the rest. Bounds memory without ever evicting live
-        // state
-        if self.order.len() > 2 * self.capacity {
-            self.order.retain(|key| self.map.contains_key(key));
-        }
-    }
-
-    #[cfg(test)]
-    fn len(&self) -> usize {
-        self.map.len()
-    }
-
-    #[cfg(test)]
-    fn get(&self, key: &str) -> Option<&OrderCumulativeState> {
-        self.map.get(key)
-    }
-
-    #[cfg(test)]
-    fn clear(&mut self) {
-        self.map.clear();
-        self.order.clear();
-    }
-}
-
 /// Live execution client for Coinbase Advanced Trade.
 #[derive(Debug)]
 pub struct CoinbaseExecutionClient {
@@ -306,13 +137,22 @@ impl CoinbaseExecutionClient {
         core: ExecutionClientCore,
         config: CoinbaseExecutionClientConfig,
     ) -> anyhow::Result<Self> {
-        let credential =
-            CoinbaseCredential::resolve(config.api_key.as_deref(), config.api_secret.as_deref())
-                .ok_or_else(|| {
+        let credential = CoinbaseCredential::resolve(
+            config.api_key.as_ref().map(|value| value.expose_secret()),
+            config
+                .api_secret
+                .as_ref()
+                .map(|value| value.expose_secret()),
+        )
+        .ok_or_else(|| {
                     anyhow::anyhow!(
                         "Coinbase credentials not available; set COINBASE_API_KEY and COINBASE_API_SECRET or pass them in the config"
                     )
                 })?;
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
 
         let retry_config = RetryConfig {
             max_retries: config.max_retries,
@@ -329,7 +169,7 @@ impl CoinbaseExecutionClient {
             credential.clone(),
             config.environment,
             config.http_timeout_secs,
-            config.proxy_url.clone(),
+            proxy_url.clone(),
             Some(retry_config),
         )
         .map_err(|e| anyhow::anyhow!("Failed to create Coinbase HTTP client: {e}"))?;
@@ -343,7 +183,7 @@ impl CoinbaseExecutionClient {
             &ws_url,
             credential,
             config.transport_backend,
-            config.proxy_url.clone(),
+            proxy_url,
         )
         .with_socket_control(SocketControl::new(
             core.client_id,
@@ -464,7 +304,6 @@ impl CoinbaseExecutionClient {
             .contains_key(instrument_id.symbol.as_str())
     }
 
-    // Polls the cache until the account is registered or the timeout is hit.
     async fn await_account_registered(&self, timeout_secs: f64) -> anyhow::Result<()> {
         let account_id = self.core.account_id;
 
@@ -492,11 +331,6 @@ impl CoinbaseExecutionClient {
             }
         }
     }
-}
-
-// Converts UnixNanos to a UTC Jiff timestamp.
-fn unix_nanos_to_utc(ts: UnixNanos) -> jiff::Timestamp {
-    ts.to_datetime_utc()
 }
 
 #[async_trait(?Send)]
@@ -568,15 +402,24 @@ impl ExecutionClient for CoinbaseExecutionClient {
                 .await
                 .context("failed to close stale Coinbase user WebSocket")?;
             let credential = CoinbaseCredential::resolve(
-                self.config.api_key.as_deref(),
-                self.config.api_secret.as_deref(),
+                self.config
+                    .api_key
+                    .as_ref()
+                    .map(|value| value.expose_secret()),
+                self.config
+                    .api_secret
+                    .as_ref()
+                    .map(|value| value.expose_secret()),
             )
             .ok_or_else(|| anyhow::anyhow!("Coinbase credentials unavailable for WS reset"))?;
             self.ws_user = CoinbaseWebSocketClient::with_credential(
                 &self.config.ws_url(),
                 credential,
                 self.config.transport_backend,
-                self.config.proxy_url.clone(),
+                self.config
+                    .proxy_url
+                    .as_ref()
+                    .map(|value| value.expose_secret().to_owned()),
             );
         }
 
@@ -877,8 +720,8 @@ impl ExecutionClient for CoinbaseExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        let start = cmd.start.map(unix_nanos_to_utc);
-        let end = cmd.end.map(unix_nanos_to_utc);
+        let start = cmd.start.map(|ts| ts.to_datetime_utc());
+        let end = cmd.end.map(|ts| ts.to_datetime_utc());
 
         let mut reports = self
             .http_client
@@ -909,8 +752,8 @@ impl ExecutionClient for CoinbaseExecutionClient {
         &self,
         cmd: GenerateFillReports,
     ) -> anyhow::Result<Vec<FillReport>> {
-        let start = cmd.start.map(unix_nanos_to_utc);
-        let end = cmd.end.map(unix_nanos_to_utc);
+        let start = cmd.start.map(|ts| ts.to_datetime_utc());
+        let end = cmd.end.map(|ts| ts.to_datetime_utc());
 
         let mut reports = self
             .http_client
@@ -972,10 +815,10 @@ impl ExecutionClient for CoinbaseExecutionClient {
         log::info!("Generating ExecutionMassStatus (lookback_mins={lookback_mins:?})");
 
         let ts_now = self.clock.get_time_ns();
-        let start = lookback_mins.map(|mins| {
-            let lookback_ns = mins * 60 * 1_000_000_000;
-            UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns))
-        });
+        let start = lookback_mins
+            .map(DurationNanos::try_from_mins)
+            .transpose()?
+            .map(|lookback| ts_now.saturating_sub(lookback));
 
         let order_cmd = GenerateOrderStatusReportsBuilder::default()
             .ts_init(ts_now)
@@ -1025,28 +868,12 @@ impl ExecutionClient for CoinbaseExecutionClient {
             return Ok(());
         }
 
-        // The connect-time bootstrap caches only the product family this
-        // client was configured for (Cash -> spot, Margin -> futures). An
-        // instrument outside that family is either not loaded yet or lives on
-        // the other venue scope, so deny instead of forwarding to the venue
-        // where the account type cannot reconcile the order's state.
-        let instrument_id = order.instrument_id();
-        let symbol_key = instrument_id.symbol.as_str();
-        if !self.instruments_cache.contains_key(symbol_key) {
-            let scope = if self.is_margin() {
-                "a Coinbase futures / perpetual product"
-            } else {
-                "a Coinbase spot product"
-            };
-            self.emitter.emit_order_denied(
-                &order,
-                &format!(
-                    "Instrument {} is not {scope} in this client's bootstrap cache",
-                    order.instrument_id()
-                ),
-            );
+        if let Err(reason) = validate_order(&order, &self.instruments_cache) {
+            self.emitter.emit_order_denied(&order, &reason.to_string());
             return Ok(());
         }
+
+        let instrument_id = order.instrument_id();
 
         // The user channel does not need a product-wide alias registration:
         // `order_contexts` (keyed by `client_order_id`) records the
@@ -1189,6 +1016,20 @@ impl ExecutionClient for CoinbaseExecutionClient {
             }
             Ok(())
         });
+
+        Ok(())
+    }
+
+    fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
+        let orders = self.core.get_orders_for_list(&cmd.order_list)?;
+        let denied = OrderDeniedReason::UnsupportedOrderList {
+            detail: "order lists are not supported by Coinbase Advanced Trade".to_string(),
+        }
+        .to_string();
+
+        for order in &orders {
+            self.emitter.emit_order_denied(order, &denied);
+        }
 
         Ok(())
     }
@@ -1553,6 +1394,22 @@ impl ExecutionClient for CoinbaseExecutionClient {
 
         Ok(())
     }
+}
+
+fn validate_order(
+    order: &impl Order,
+    instruments_cache: &AHashMap<String, InstrumentAny>,
+) -> Result<(), OrderDeniedReason> {
+    if order.is_reduce_only() {
+        return Err(OrderDeniedReason::UnsupportedReduceOnly);
+    }
+
+    let instrument_id = order.instrument_id();
+    if !instruments_cache.contains_key(instrument_id.symbol.as_str()) {
+        return Err(OrderDeniedReason::InstrumentNotFound { instrument_id });
+    }
+
+    Ok(())
 }
 
 fn handle_coinbase_submit_failure(
@@ -2093,6 +1950,177 @@ async fn resolve_order_context(
     }
 }
 
+#[derive(Debug)]
+struct FillDedup {
+    seen: AHashMap<(String, String), ()>,
+    order: VecDeque<(String, String)>,
+    capacity: usize,
+}
+
+impl FillDedup {
+    fn new(capacity: usize) -> Self {
+        Self {
+            seen: AHashMap::with_capacity(capacity),
+            order: VecDeque::with_capacity(capacity),
+            capacity,
+        }
+    }
+
+    // Returns true if the key is new (and inserts it); false when already seen.
+    fn insert(&mut self, key: (String, String)) -> bool {
+        if self.seen.contains_key(&key) {
+            return false;
+        }
+
+        if self.order.len() >= self.capacity
+            && let Some(oldest) = self.order.pop_front()
+        {
+            self.seen.remove(&oldest);
+        }
+        self.order.push_back(key.clone());
+        self.seen.insert(key, ());
+        true
+    }
+}
+
+// Per-order cumulative state tracked across WS reconnects so that delta-based
+// fill synthesis remains correct even when the feed handler is recreated.
+// `avg_price` is Coinbase's cumulative weighted-average fill price; the exec
+// client derives the per-fill price from the notional delta between successive
+// cumulative states.
+//
+// `quantity` records the largest `cumulative_quantity + leaves_quantity` ever
+// observed for the order. Coinbase zeroes `leaves_quantity` on terminal updates
+// (REJECTED / CANCELLED / EXPIRED), so the OSR's quantity computed from
+// cum+leaves on those events would collapse to filled_qty (or zero). Holding
+// the max-observed total lets us restore the original order quantity before
+// emitting the terminal report.
+#[derive(Debug, Default, Clone)]
+struct OrderCumulativeState {
+    filled_qty: Option<Quantity>,
+    total_fees: Decimal,
+    avg_price: Decimal,
+    quantity: Option<Quantity>,
+}
+
+// Captures the limit / trigger metadata of a submitted order, keyed by
+// `client_order_id` so it survives the venue-id-keyed cumulative state being
+// dropped on terminal user-channel events. Coinbase's user channel does not
+// echo `price`, `stop_price`, or `trigger_type`, so without these locally
+// cached values the engine reconciler would clear the local price the moment
+// a post-fill or cancel update lands.
+#[derive(Debug, Default, Clone)]
+struct OrderContext {
+    price: Option<Price>,
+    trigger_price: Option<Price>,
+    trigger_type: Option<TriggerType>,
+    // `post_only` order fills are guaranteed `Maker` (the venue rejects an
+    // immediate match outright). The Coinbase user channel does not echo
+    // this flag, so we cache it at submit time and pass it through to the
+    // synthesized FillReport's `liquidity_side`.
+    post_only: bool,
+    // The `product_id` the order was submitted with. Coinbase rewrites
+    // aliased products to the canonical id on the user channel, so
+    // `update.product_id` always reads as the canonical (e.g. `BTC-USD`)
+    // even for an order placed on the alias side (`BTC-USDC`). Looking the
+    // submitted id up by `client_order_id` lets us re-key user-channel
+    // echoes back to the caller's id without rewriting *every* canonical
+    // event globally.
+    submitted_product_id: Option<Ustr>,
+}
+
+// Bounded map for per-order cumulative tracking. Insertions track LRU order;
+// when the live entry count reaches `capacity`, the oldest non-stale entry is
+// evicted. Terminal events call `remove()` which clears the map entry; the
+// matching deque slot becomes stale and is reclaimed during the next eviction
+// pass (the deque is also trimmed if it grows beyond `2 * capacity`).
+#[derive(Debug)]
+struct CumulativeStateMap {
+    map: AHashMap<String, OrderCumulativeState>,
+    order: VecDeque<String>,
+    capacity: usize,
+}
+
+impl CumulativeStateMap {
+    fn with_capacity(capacity: usize) -> Self {
+        Self {
+            map: AHashMap::with_capacity(capacity),
+            order: VecDeque::with_capacity(capacity),
+            capacity,
+        }
+    }
+
+    fn entry_or_default(&mut self, key: &str) -> &mut OrderCumulativeState {
+        if self.map.contains_key(key) {
+            // Hit: refresh recency so a long-lived order receiving updates
+            // is not evicted by churn on other orders. O(n) lookup and
+            // shift; tolerated because user-channel update volume is small
+            // relative to capacity
+            if let Some(pos) = self.order.iter().position(|k| k == key) {
+                self.order.remove(pos);
+            }
+            self.order.push_back(key.to_string());
+        } else {
+            self.evict_until_capacity_or_empty();
+            self.order.push_back(key.to_string());
+            self.map
+                .insert(key.to_string(), OrderCumulativeState::default());
+        }
+        self.map
+            .get_mut(key)
+            .expect("key was just inserted or confirmed present")
+    }
+
+    fn remove(&mut self, key: &str) {
+        if self.map.remove(key).is_some() {
+            // Drop the matching deque slot too. Without this, a later
+            // re-insert of the same key would leave a stale slot ahead of
+            // the new live one, and the eviction loop would pop the stale
+            // slot and remove the live entry from the map
+            self.order.retain(|k| k != key);
+        }
+    }
+
+    fn evict_until_capacity_or_empty(&mut self) {
+        // Evict the oldest live entries until we're under capacity. Stale
+        // deque entries (already removed from the map) are skipped naturally
+        // because removing a missing key is a no-op
+        while self.map.len() >= self.capacity {
+            match self.order.pop_front() {
+                Some(oldest) => {
+                    self.map.remove(&oldest);
+                }
+                None => break,
+            }
+        }
+
+        // When the deque accumulates many stale entries (e.g. a long-lived
+        // order at the front while later orders churn through terminal
+        // events), compact in place: keep live entries in their original
+        // order and drop the rest. Bounds memory without ever evicting live
+        // state
+        if self.order.len() > 2 * self.capacity {
+            self.order.retain(|key| self.map.contains_key(key));
+        }
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.map.len()
+    }
+
+    #[cfg(test)]
+    fn get(&self, key: &str) -> Option<&OrderCumulativeState> {
+        self.map.get(key)
+    }
+
+    #[cfg(test)]
+    fn clear(&mut self) {
+        self.map.clear();
+        self.order.clear();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_common::messages::{ExecutionEvent, ExecutionReport};
@@ -2310,7 +2338,7 @@ mod tests {
             ClientOrderId::from("client-rejected")
         );
         assert_eq!(rejected.account_id, AccountId::from("COINBASE-001"));
-        assert_eq!(rejected.reason.as_str(), reason);
+        assert_eq!(rejected.reason, reason);
         assert_eq!(rejected.ts_event, UnixNanos::from(42_u64));
         assert!(!rejected.reconciliation);
         assert!(!rejected.due_post_only);
@@ -2350,7 +2378,6 @@ mod tests {
         let mut dedup = FillDedup::new(2);
         assert!(dedup.insert(("v".to_string(), "t1".to_string())));
         assert!(dedup.insert(("v".to_string(), "t2".to_string())));
-        // Insert a third; oldest (t1) should be evicted so re-insertion succeeds.
         assert!(dedup.insert(("v".to_string(), "t3".to_string())));
         assert!(dedup.insert(("v".to_string(), "t1".to_string())));
     }
@@ -2360,7 +2387,6 @@ mod tests {
         let mut state = CumulativeStateMap::with_capacity(2);
         state.entry_or_default("a");
         state.entry_or_default("b");
-        // Capacity reached; inserting a third evicts "a"
         state.entry_or_default("c");
         assert_eq!(state.len(), 2);
         assert!(state.map.contains_key("b"));
@@ -2374,7 +2400,6 @@ mod tests {
         state.entry_or_default("a");
         state.entry_or_default("b");
         state.remove("a");
-        // After remove, the next insert should fit without evicting "b"
         state.entry_or_default("c");
         assert_eq!(state.len(), 2);
         assert!(state.map.contains_key("b"));
@@ -2383,9 +2408,6 @@ mod tests {
 
     #[rstest]
     fn test_cumulative_state_remove_and_reinsert_does_not_evict_live_state() {
-        // Codex repro: remove() must purge stale deque slots so a later
-        // re-insert of the same key cannot have the eviction loop pop the
-        // stale slot and remove the now-live entry.
         let mut state = CumulativeStateMap::with_capacity(2);
         state.entry_or_default("a");
         state.remove("a");
@@ -2406,9 +2428,6 @@ mod tests {
 
     #[rstest]
     fn test_cumulative_state_hit_refreshes_lru_recency() {
-        // A repeat access to an existing key must move it to the back of the
-        // eviction queue so a hot order receiving many updates is not evicted
-        // by churn on other orders.
         let mut state = CumulativeStateMap::with_capacity(2);
         state.entry_or_default("a");
         state.entry_or_default("b");
@@ -2432,7 +2451,7 @@ mod tests {
         // (compacted) so memory does not grow without bound under high churn.
         let mut state = CumulativeStateMap::with_capacity(2);
         state.entry_or_default("live");
-        // Churn far beyond 2*capacity to force the deque-compaction path.
+
         for i in 0..50 {
             let key = format!("t{i}");
             state.entry_or_default(&key);
@@ -2634,7 +2653,6 @@ mod tests {
             CUMULATIVE_STATE_CAPACITY,
         )));
 
-        // Open with no fills yet.
         let update = make_user_order_update("0", "1.0", "0", "0", CbStatus::Open);
         process_user_order_update(
             make_carrier(update),
@@ -2645,7 +2663,6 @@ mod tests {
             None,
         );
 
-        // Status report emitted, no fill report.
         let mut got_status = false;
         let mut got_fill = false;
 
@@ -2668,25 +2685,20 @@ mod tests {
             CUMULATIVE_STATE_CAPACITY,
         )));
 
-        // First partial: 0.5 @ 100, total_fees=0.05.
         let update_1 = make_user_order_update("0.5", "0.5", "100.00", "0.05", CbStatus::Open);
         process_user_order_update(make_carrier(update_1), None, &emitter, &dedup, &state, None);
 
-        // Second partial: cumulative 1.0 @ 110, total_fees=0.15.
-        // delta_qty = 0.5; per_fill_px = (110*1.0 - 100*0.5) / 0.5 = 120.
-        // delta_fees = 0.10.
+        // per_fill_px = (110*1.0 - 100*0.5) / 0.5 = 120
         let update_2 = make_user_order_update("1.0", "0", "110.00", "0.15", CbStatus::Filled);
         process_user_order_update(make_carrier(update_2), None, &emitter, &dedup, &state, None);
 
         let fills = drain_fill_reports(&mut rx);
         assert_eq!(fills.len(), 2);
 
-        // First synthesized fill mirrors the first partial.
         assert_eq!(fills[0].last_qty, Quantity::from("0.50000000"));
         assert_eq!(fills[0].last_px, Price::from("100.00"));
         assert_eq!(fills[0].commission.as_decimal().to_string(), "0.05");
 
-        // Second synthesized fill is per-fill price (120), not cumulative avg (110).
         assert_eq!(fills[1].last_qty, Quantity::from("0.50000000"));
         assert_eq!(fills[1].last_px, Price::from("120.00"));
         assert_eq!(fills[1].commission.as_decimal().to_string(), "0.10");
@@ -2746,7 +2758,6 @@ mod tests {
         let update = make_user_order_update("1.0", "0", "100.00", "0.10", CbStatus::Filled);
         process_user_order_update(make_carrier(update), None, &emitter, &dedup, &state, None);
 
-        // Drain emitted events.
         let _ = drain_fill_reports(&mut rx);
 
         let s = state.lock();
@@ -2764,7 +2775,6 @@ mod tests {
             CUMULATIVE_STATE_CAPACITY,
         )));
 
-        // cumulative_quantity > 0 but avg_price = 0 (defensive: should not emit fill).
         let update = make_user_order_update("0.5", "0.5", "0", "0", CbStatus::Open);
         process_user_order_update(make_carrier(update), None, &emitter, &dedup, &state, None);
 
@@ -2817,7 +2827,6 @@ mod tests {
             CUMULATIVE_STATE_CAPACITY,
         )));
 
-        // Cold-start snapshot at cumulative=0.5.
         let snap = make_user_order_update("0.5", "0.5", "100.00", "0.05", CbStatus::Open);
         process_user_order_update(
             make_carrier_with_kind(snap, true),
@@ -2828,8 +2837,6 @@ mod tests {
             None,
         );
 
-        // Subsequent live update at cumulative=1.0 should emit a single fill
-        // for the 0.5 delta only, not the full cumulative.
         let live = make_user_order_update("1.0", "0", "110.00", "0.15", CbStatus::Filled);
         process_user_order_update(make_carrier(live), None, &emitter, &dedup, &state, None);
 
@@ -2838,7 +2845,6 @@ mod tests {
         assert_eq!(fills[0].last_qty, Quantity::from("0.50000000"));
         // Per-fill price derived from notional delta: (110*1.0 - 100*0.5) / 0.5 = 120.
         assert_eq!(fills[0].last_px, Price::from("120.00"));
-        // delta_fees = 0.10.
         assert_eq!(fills[0].commission.as_decimal().to_string(), "0.10");
     }
 
@@ -2852,7 +2858,6 @@ mod tests {
             CUMULATIVE_STATE_CAPACITY,
         )));
 
-        // Live partial: cumulative=0, leaves=1.0 (full size 1.0 working).
         let working = make_user_order_update("0", "1.0", "0", "0", CbStatus::Open);
         process_user_order_update(
             make_carrier(working),
@@ -2862,7 +2867,7 @@ mod tests {
             &state,
             None,
         );
-        // Drain the open report.
+
         while rx.try_recv().is_ok() {}
 
         // Cancellation: venue zeroes leaves_quantity. cum+leaves would be 0,

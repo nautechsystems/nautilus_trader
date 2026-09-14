@@ -27,10 +27,11 @@ use std::{
 
 use anyhow::Context;
 use arc_swap::ArcSwapOption;
+use http::{Method, header::USER_AGENT};
 use jiff::{Timestamp, civil::Date};
 use nautilus_core::{
     AtomicMap, AtomicTime, UUID4, consts::NAUTILUS_USER_AGENT, nanos::UnixNanos,
-    time::get_atomic_clock_realtime,
+    string::secret::SecretString, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{Bar, BookOrder, FundingRateUpdate, TradeTick},
@@ -48,7 +49,6 @@ use nautilus_network::{
     retry::{RetryConfig, RetryError, RetryManager},
 };
 use parking_lot::RwLock;
-use reqwest::{Method, header::USER_AGENT};
 use rust_decimal::Decimal;
 use serde::{Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
@@ -103,7 +103,7 @@ pub struct AxRawHttpClient {
     orders_base_url: String,
     client: HttpClient,
     credential: Option<Credential>,
-    session_token: RwLock<Option<String>>,
+    session_token: RwLock<Option<SecretString>>,
     retry_manager: RetryManager<AxHttpError>,
     cancellation_token: RwLock<CancellationToken>,
 }
@@ -257,7 +257,7 @@ impl AxRawHttpClient {
     /// Sets the session token for authenticated requests.
     ///
     /// The session token is obtained through the login flow and used for bearer token authentication.
-    pub fn set_session_token(&self, token: String) {
+    pub fn set_session_token(&self, token: SecretString) {
         *self.session_token.write() = Some(token);
     }
 
@@ -290,7 +290,7 @@ impl AxRawHttpClient {
         let mut headers = HashMap::new();
         headers.insert(
             "Authorization".to_string(),
-            format!("Bearer {session_token}"),
+            format!("Bearer {}", session_token.expose_secret()),
         );
 
         Ok(headers)
@@ -407,13 +407,9 @@ impl AxRawHttpClient {
         let cancel_token = self.cancellation_token.read().clone();
 
         self.retry_manager
-            .execute_with_retry_with_cancel(
-                endpoint.as_str(),
-                operation,
-                should_retry,
-                create_error,
-                &cancel_token,
-            )
+            .invocation(endpoint.as_str(), operation, should_retry, create_error)
+            .cancellation_token(&cancel_token)
+            .execute()
             .await
     }
 
@@ -584,17 +580,27 @@ impl AxRawHttpClient {
             .resolve_credentials()
             .ok_or(AxHttpError::MissingCredentials)?;
 
-        self.authenticate(&api_key, &api_secret, expiration_seconds)
-            .await
+        self.authenticate(
+            api_key.expose_secret(),
+            api_secret.expose_secret(),
+            expiration_seconds,
+        )
+        .await
     }
 
-    fn resolve_credentials(&self) -> Option<(String, String)> {
+    fn resolve_credentials(&self) -> Option<(SecretString, SecretString)> {
         if let Some(cred) = &self.credential {
-            return Some((cred.api_key().to_string(), cred.api_secret().to_string()));
+            return Some((
+                SecretString::from(cred.api_key()),
+                SecretString::from(cred.api_secret()),
+            ));
         }
 
         let cred = Credential::resolve(None, None)?;
-        Some((cred.api_key().to_string(), cred.api_secret().to_string()))
+        Some((
+            SecretString::from(cred.api_key()),
+            SecretString::from(cred.api_secret()),
+        ))
     }
 
     /// Places a new order.
@@ -1250,7 +1256,7 @@ impl AxHttpClient {
     /// Sets the session token for authenticated requests.
     ///
     /// The session token is obtained through the login flow and used for bearer token authentication.
-    pub fn set_session_token(&self, token: String) {
+    pub fn set_session_token(&self, token: SecretString) {
         self.inner.set_session_token(token);
     }
 
@@ -1310,13 +1316,14 @@ impl AxHttpClient {
         api_key: &str,
         api_secret: &str,
         expiration_seconds: i32,
-    ) -> Result<String, AxHttpError> {
+    ) -> Result<SecretString, AxHttpError> {
         let resp = self
             .inner
             .authenticate(api_key, api_secret, expiration_seconds)
             .await?;
-        self.inner.set_session_token(resp.token.clone());
-        Ok(resp.token)
+        let token = resp.into_token();
+        self.inner.set_session_token(token.clone());
+        Ok(token)
     }
 
     /// Authenticates using stored credentials or environment variables.
@@ -1335,10 +1342,14 @@ impl AxHttpClient {
     /// - No credentials are available from either source
     /// - The HTTP request fails
     /// - The credentials are invalid
-    pub async fn authenticate_auto(&self, expiration_seconds: i32) -> Result<String, AxHttpError> {
+    pub async fn authenticate_auto(
+        &self,
+        expiration_seconds: i32,
+    ) -> Result<SecretString, AxHttpError> {
         let resp = self.inner.authenticate_auto(expiration_seconds).await?;
-        self.inner.set_session_token(resp.token.clone());
-        Ok(resp.token)
+        let token = resp.into_token();
+        self.inner.set_session_token(token.clone());
+        Ok(token)
     }
 
     /// Gets an instrument from the cache by symbol.
@@ -1420,7 +1431,7 @@ impl AxHttpClient {
             }
 
             // Skip test instruments (not real tradable products)
-            if inst.symbol.as_str().starts_with("TEST") {
+            if inst.symbol.starts_with("TEST") {
                 log::debug!("Skipping test instrument: {}", inst.symbol);
                 continue;
             }

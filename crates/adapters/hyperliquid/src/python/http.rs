@@ -119,6 +119,12 @@ impl HyperliquidHttpClient {
     ///
     /// This is required for parsing orders, fills, and positions into reports.
     /// Any existing instrument with the same symbol will be replaced.
+    ///
+    /// The venue asset index is taken from the instrument's `info` map so an
+    /// instrument arriving on the message bus becomes submittable without
+    /// refetching venue metadata. An instrument without the key keeps its
+    /// existing asset index, if any, because guessing one would route orders to
+    /// the wrong asset.
     #[pyo3(name = "cache_instrument")]
     fn py_cache_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
         self.cache_instrument(&pyobject_to_instrument_any(py, instrument)?);
@@ -159,7 +165,7 @@ impl HyperliquidHttpClient {
             .collect()
     }
 
-    /// Get spot metadata (internal helper).
+    /// Gets spot metadata for internal use.
     #[pyo3(name = "get_spot_meta")]
     fn py_get_spot_meta<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -498,7 +504,9 @@ impl HyperliquidHttpClient {
     /// # Errors
     ///
     /// Returns an error if credentials are missing, order validation fails, serialization fails,
-    /// or the API returns an error.
+    /// or the API returns an error. Also returns an error for any quote-denominated quantity:
+    /// this raw path has no cached market data for a quote-to-base conversion, so such orders
+    /// must be submitted through the execution client instead.
     #[pyo3(name = "submit_orders")]
     fn py_submit_orders<'py>(
         &self,
@@ -545,7 +553,9 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the API request fails or parsing fails.
+    /// Returns an error if the API request fails, parsing fails, or a venue row cannot be resolved
+    /// to an instrument or converted into a report (the snapshot is then incomplete and must not be
+    /// treated as authoritative).
     #[pyo3(name = "request_order_status_reports")]
     fn py_request_order_status_reports<'py>(
         &self,
@@ -581,7 +591,9 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the API request fails or parsing fails.
+    /// Returns an error if the API request fails, parsing fails, or the matched venue row cannot be
+    /// resolved to an instrument or converted into a report. A genuinely absent order returns
+    /// `Ok(None)`.
     #[pyo3(name = "request_order_status_report")]
     #[pyo3(signature = (venue_order_id=None, client_order_id=None))]
     fn py_request_order_status_report<'py>(
@@ -643,7 +655,9 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the API request fails or parsing fails.
+    /// Returns an error if the API request fails, parsing fails, or a venue row cannot be resolved
+    /// to an instrument or converted into a report (the snapshot is then incomplete and must not be
+    /// treated as authoritative).
     ///
     /// Returns an error if `account_id` is not set on the client.
     #[pyo3(name = "request_fill_reports")]
@@ -687,13 +701,13 @@ impl HyperliquidHttpClient {
     /// is routed like a spot filter (perp leg skipped).
     ///
     /// For vault tokens (starting with "vntls:") that are not in the cache,
-    /// synthetic instruments will be created automatically. Spot balances whose
-    /// base token has no cached instrument are skipped with a debug log.
+    /// synthetic instruments will be created automatically.
     ///
     /// # Errors
     ///
-    /// Returns an error if any clearinghouse request fails (when that product or dex is in scope)
-    /// or parsing fails.
+    /// Returns an error if any clearinghouse request fails (when that product or dex is in scope),
+    /// parsing fails, or a venue row cannot be resolved to an instrument or converted into a
+    /// report (the snapshot is then incomplete and must not be treated as authoritative).
     ///
     /// Returns an error if `account_id` has not been set on the client.
     #[pyo3(name = "request_position_status_reports")]
@@ -790,13 +804,14 @@ impl HyperliquidHttpClient {
     /// this same endpoint with `coin` set to the `+<encoding>` token form;
     /// those balances are resolved against the matching Outcome instrument so
     /// outcome holdings surface as positions through the standard reconcile
-    /// path. Balances whose base token has no matching instrument in the
-    /// cache are skipped with a debug log (callers should ensure
-    /// `request_instruments` has run first).
+    /// path.
     ///
     /// # Errors
     ///
-    /// Returns an error if `account_id` has not been set or the API request fails.
+    /// Returns an error if `account_id` has not been set, the API request fails,
+    /// or a non-zero balance cannot be resolved to an instrument or converted
+    /// into a report (the snapshot is then incomplete and must not be treated
+    /// as authoritative).
     #[pyo3(name = "request_spot_position_status_reports")]
     fn py_request_spot_position_status_reports<'py>(
         &self,

@@ -27,7 +27,6 @@ Example of databento option exercise.
 
 # %%
 from pathlib import Path
-from typing import Self
 
 import pandas as pd
 
@@ -57,19 +56,15 @@ class OptionExerciseConfig(StrategyConfig):
     Collect option exercise config tests.
     """
 
-    _CUSTOM_FIELDS = ("future_id", "option_id")
-
-    def __new__(cls, *args: object, **kwargs: object) -> Self:
+    def __init__(
+        self,
+        *,
+        future_id: InstrumentId,
+        option_id: InstrumentId,
+        **_kwargs: object,
+    ) -> None:
         """
-        Create a new instance.
-        """
-        for field in cls._CUSTOM_FIELDS:
-            kwargs.pop(field, None)
-        return super().__new__(cls, *args, **kwargs)
-
-    def __init__(self, future_id: InstrumentId, option_id: InstrumentId, **_kwargs: object) -> None:
-        """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.future_id = future_id
@@ -83,7 +78,7 @@ class OptionExerciseStrategy(Strategy):
 
     def __init__(self, config: OptionExerciseConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._option_id = config.option_id

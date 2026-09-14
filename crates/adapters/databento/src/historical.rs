@@ -1035,7 +1035,7 @@ impl DatabentoHistoricalClient {
         Ok(result)
     }
 
-    /// Helper method to prepare symbols from instrument IDs.
+    /// Prepares symbols from instrument IDs.
     pub fn prepare_symbols_from_instrument_ids(
         &self,
         instrument_ids: &[InstrumentId],

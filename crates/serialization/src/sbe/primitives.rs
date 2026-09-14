@@ -15,9 +15,7 @@
 
 //! Generic SBE primitive decoders.
 
-use std::str;
-
-use super::{MAX_GROUP_SIZE, SbeDecodeError};
+use super::{MAX_GROUP_SIZE, SbeCursor, SbeDecodeError};
 
 /// Group header encoding (u16 block length + u32 count).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,24 +110,9 @@ impl GroupSize16Encoding {
 /// Returns `BufferTooShort` when the buffer does not contain the full field and
 /// `InvalidUtf8` when the payload bytes are not valid UTF-8.
 pub fn decode_var_string8(buf: &[u8]) -> Result<(&str, usize), SbeDecodeError> {
-    if buf.is_empty() {
-        return Err(SbeDecodeError::BufferTooShort {
-            expected: 1,
-            actual: 0,
-        });
-    }
-
-    let len = usize::from(buf[0]);
-    let total_len = 1 + len;
-    if buf.len() < total_len {
-        return Err(SbeDecodeError::BufferTooShort {
-            expected: total_len,
-            actual: buf.len(),
-        });
-    }
-
-    let s = str::from_utf8(&buf[1..total_len]).map_err(|_| SbeDecodeError::InvalidUtf8)?;
-    Ok((s, total_len))
+    let mut cursor = SbeCursor::new(buf);
+    let value = cursor.read_var_string8_ref()?;
+    Ok((value, cursor.pos()))
 }
 
 #[cfg(test)]

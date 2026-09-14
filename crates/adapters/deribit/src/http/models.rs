@@ -695,7 +695,7 @@ pub struct DeribitBookSummaryRaw {
     /// Quote currency
     #[serde(default)]
     pub quote_currency: Option<String>,
-    /// Instrument creation time (milliseconds since UNIX epoch)
+    /// Book summary snapshot time (milliseconds since UNIX epoch)
     #[serde(default)]
     pub creation_timestamp: i64,
 }
@@ -767,7 +767,7 @@ mod book_summary_tests {
 
 /// Ticker data from `/public/ticker` endpoint.
 ///
-/// Only the fields needed for forward price extraction are included;
+/// Selected option ticker fields are included;
 /// serde will ignore the many additional fields returned by the API.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DeribitTicker {

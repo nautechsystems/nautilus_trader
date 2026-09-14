@@ -317,7 +317,7 @@ const CONTROLLER_REQUEST_MASK: usize = CONTROLLER_CLOSED - 1;
 
 pub(crate) struct ControllerLifecycle {
     state: AtomicUsize,
-    abort_handle: OnceLock<tokio::task::AbortHandle>,
+    abort_handle: OnceLock<Box<dyn Fn() + Send + Sync>>,
 }
 
 impl ControllerLifecycle {
@@ -345,9 +345,9 @@ impl ControllerLifecycle {
             .map(|_| ControllerRequest(self))
     }
 
-    pub(crate) fn set_abort_handle(&self, abort_handle: tokio::task::AbortHandle) {
+    pub(crate) fn set_abort(&self, abort: impl Fn() + Send + Sync + 'static) {
         assert!(
-            self.abort_handle.set(abort_handle).is_ok(),
+            self.abort_handle.set(Box::new(abort)).is_ok(),
             "controller abort handle already set"
         );
     }
@@ -369,7 +369,7 @@ impl ControllerLifecycle {
 
     fn abort(&self) {
         if let Some(abort_handle) = self.abort_handle.get() {
-            abort_handle.abort();
+            abort_handle();
         }
     }
 }
@@ -398,6 +398,68 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case::no_requests(0)]
+    #[case::one_request(1)]
+    #[case::multiple_requests(3)]
+    fn controller_close_waits_for_last_request(#[case] count: usize) {
+        let lifecycle = ControllerLifecycle::new();
+        let aborts = Arc::new(AtomicUsize::new(0));
+        let aborts_callback = Arc::clone(&aborts);
+        lifecycle.set_abort(move || {
+            aborts_callback.fetch_add(1, Ordering::SeqCst);
+        });
+        let mut requests: Vec<_> = (0..count)
+            .map(|_| lifecycle.enter_request().unwrap())
+            .collect();
+
+        lifecycle.close_and_abort();
+
+        assert!(lifecycle.enter_request().is_none());
+        assert_eq!(aborts.load(Ordering::SeqCst), usize::from(count == 0));
+
+        while let Some(request) = requests.pop() {
+            drop(request);
+            assert_eq!(
+                aborts.load(Ordering::SeqCst),
+                usize::from(requests.is_empty()),
+            );
+        }
+
+        assert_eq!(aborts.load(Ordering::SeqCst), 1);
+        assert!(lifecycle.enter_request().is_none());
+    }
+
+    #[rstest]
+    fn controller_request_completion_keeps_admission_open() {
+        let lifecycle = ControllerLifecycle::new();
+        let aborts = Arc::new(AtomicUsize::new(0));
+        let aborts_callback = Arc::clone(&aborts);
+        lifecycle.set_abort(move || {
+            aborts_callback.fetch_add(1, Ordering::SeqCst);
+        });
+
+        drop(lifecycle.enter_request().unwrap());
+        drop(lifecycle.enter_request().unwrap());
+
+        assert_eq!(aborts.load(Ordering::SeqCst), 0);
+    }
+
+    #[rstest]
+    fn controller_activity_drop_closes_admission_without_aborting() {
+        let lifecycle = Arc::new(ControllerLifecycle::new());
+        let aborts = Arc::new(AtomicUsize::new(0));
+        let aborts_callback = Arc::clone(&aborts);
+        lifecycle.set_abort(move || {
+            aborts_callback.fetch_add(1, Ordering::SeqCst);
+        });
+
+        drop(lifecycle.activity());
+
+        assert!(lifecycle.enter_request().is_none());
+        assert_eq!(aborts.load(Ordering::SeqCst), 0);
+    }
 
     #[rstest]
     #[case(ConnectionMode::Active, true, ConnectionMode::Reconnect)]

@@ -25,7 +25,7 @@ use std::{
 };
 
 use ahash::AHashSet;
-use nautilus_core::UnixNanos;
+use nautilus_core::{DurationNanos, UnixNanos};
 use nautilus_system::event_store::DataMarkerConfig;
 
 use crate::{
@@ -180,8 +180,8 @@ impl DataMarkerCapture {
     }
 }
 
-fn duration_nanos_saturating(duration: Duration) -> u64 {
-    u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
+fn duration_nanos_saturating(duration: Duration) -> DurationNanos {
+    DurationNanos::try_from(duration).unwrap_or(DurationNanos::MAX)
 }
 
 #[cfg(test)]

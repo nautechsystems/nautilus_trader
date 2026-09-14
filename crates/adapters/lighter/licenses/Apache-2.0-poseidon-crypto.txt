@@ -3,7 +3,7 @@ Version 2.0, January 2004
 http://www.apache.org/licenses/
 
 APPLICABLE WORK: Apache-2.0 material from `elliottech/poseidon_crypto` and
-`elliottech/lighter-python`. `poseidon_crypto` is used as a behavioural
+`elliottech/lighter-python`. `poseidon_crypto` is used as a behavioral
 reference for the Poseidon2 hash function and the Schnorr binding Lighter
 applies on top of the ecgfp5 curve, including the parameter constants (round
 constants, MDS matrix) Lighter's signer requires. `lighter-python` is used by

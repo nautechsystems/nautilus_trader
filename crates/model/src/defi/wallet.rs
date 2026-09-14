@@ -282,7 +282,6 @@ mod tests {
         stubs::{arbitrum, usdc, weth},
     };
 
-    // Helper to create a token with specific decimals
     fn create_token(symbol: &str, decimals: u8) -> Token {
         Token::new(
             Arc::new(chains::ETHEREUM.clone()),

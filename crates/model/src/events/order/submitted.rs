@@ -300,6 +300,9 @@ impl OrderEvent for OrderSubmitted {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }
+    fn causation_id(&self) -> Option<UUID4> {
+        self.causation_id
+    }
 }
 
 #[cfg(test)]

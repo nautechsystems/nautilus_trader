@@ -61,7 +61,7 @@ class RequiredConfigBacktestExecutionAlgorithmConfig(DataActorConfig):
         log_commands: bool = True,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         self.actor_id = actor_id
         self.exec_algorithm_id = exec_algorithm_id
@@ -78,7 +78,7 @@ class RequiredConfigBacktestExecutionAlgorithm(DataActor):
 
     def __init__(self, config: RequiredConfigBacktestExecutionAlgorithmConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         type(self).received_exec_algorithm_id = config.exec_algorithm_id
@@ -96,7 +96,7 @@ class CustomExecutionAlgorithmConfig(ExecutionAlgorithmConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         self.horizon_secs = horizon_secs
         self.interval_secs = interval_secs
@@ -111,7 +111,7 @@ class CustomExecutionAlgorithm(ExecutionAlgorithm):
 
     def __init__(self, config: CustomExecutionAlgorithmConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         type(self).received_config = config
@@ -157,7 +157,7 @@ class NonForwardingExecutionAlgorithm(ExecutionAlgorithm):
 
     def __init__(self, _config: object) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
 
@@ -169,7 +169,7 @@ class InternalConfigExecutionAlgorithm(ExecutionAlgorithm):
 
     def __init__(self) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(
             ExecutionAlgorithmConfig(
@@ -185,7 +185,7 @@ class InternalActorIdExecutionAlgorithm(ExecutionAlgorithm):
 
     def __init__(self) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(
             DataActorConfig(
@@ -273,11 +273,11 @@ class InternalActorIdExecutionAlgorithm(ExecutionAlgorithm):
         ("publish_data", ["self", "data_type", "data"]),
         ("publish_signal", ["self", "name", "value", "ts_event"]),
         ("subscribe_signal", ["self", "name", "priority"]),
-        ("subscribe_queue_state", ["self", "priority"]),
-        ("subscribe_socket_state", ["self", "priority"]),
+        ("subscribe_queue_state", ["self", "channel", "priority"]),
+        ("subscribe_socket_state", ["self", "client_id", "endpoint", "priority"]),
         ("unsubscribe_signal", ["self", "name"]),
-        ("unsubscribe_queue_state", ["self"]),
-        ("unsubscribe_socket_state", ["self"]),
+        ("unsubscribe_queue_state", ["self", "channel"]),
+        ("unsubscribe_socket_state", ["self", "client_id", "endpoint"]),
         ("on_signal", ["self", "signal"]),
         ("on_queue_state", ["self", "event"]),
         ("on_socket_state", ["self", "event"]),

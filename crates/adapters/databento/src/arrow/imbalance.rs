@@ -100,19 +100,19 @@ impl EncodeToRecordBatch for DatabentoImbalance {
 
         for item in data {
             ref_price_builder
-                .append_value(item.ref_price.raw.to_le_bytes())
+                .append_value(item.ref_price.raw().to_le_bytes())
                 .unwrap();
             cont_book_clr_price_builder
-                .append_value(item.cont_book_clr_price.raw.to_le_bytes())
+                .append_value(item.cont_book_clr_price.raw().to_le_bytes())
                 .unwrap();
             auct_interest_clr_price_builder
-                .append_value(item.auct_interest_clr_price.raw.to_le_bytes())
+                .append_value(item.auct_interest_clr_price.raw().to_le_bytes())
                 .unwrap();
             paired_qty_builder
-                .append_value(item.paired_qty.raw.to_le_bytes())
+                .append_value(item.paired_qty.raw().to_le_bytes())
                 .unwrap();
             total_imbalance_qty_builder
-                .append_value(item.total_imbalance_qty.raw.to_le_bytes())
+                .append_value(item.total_imbalance_qty.raw().to_le_bytes())
                 .unwrap();
             side_builder.append_value(item.side.map_or(0, |side| side as u8));
             significant_imbalance_builder.append_value(item.significant_imbalance as i8);

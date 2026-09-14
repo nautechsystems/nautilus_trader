@@ -79,7 +79,7 @@ use tokio_rustls::TlsConnector;
 use tokio_tungstenite::MaybeTlsStream;
 #[cfg(feature = "turmoil")]
 use tokio_tungstenite::client_async;
-#[cfg(not(feature = "turmoil"))]
+#[cfg(all(not(feature = "turmoil"), not(all(feature = "simulation", madsim))))]
 use tokio_tungstenite::connect_async_with_config;
 use tokio_tungstenite::tungstenite::{
     client::IntoClientRequest, handshake::client::Request, http::HeaderValue,
@@ -162,11 +162,11 @@ pub struct WebSocketClientInner {
     reconnect_headers: ReconnectHeaders,
     handler: Option<IncomingHandler>,
     ping_handler: Option<IncomingPingHandler>,
-    read_task: Option<tokio::task::JoinHandle<()>>,
+    read_task: Option<dst::task::JoinHandle<()>>,
     read_fence: Option<ReadSessionFence>,
-    write_task: tokio::task::JoinHandle<()>,
+    write_task: dst::task::JoinHandle<()>,
     writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
-    heartbeat_task: Option<tokio::task::JoinHandle<()>>,
+    heartbeat_task: Option<dst::task::JoinHandle<()>>,
     connection_mode: Arc<AtomicU8>,
     connection_epoch: Arc<AtomicU64>,
     state_notify: Arc<tokio::sync::Notify>,
@@ -351,7 +351,7 @@ impl WebSocketClientInner {
 
         // Adapters build this config by struct literal, bypassing the builder, so this is the only
         // place the field invariants are enforced for them. Stream mode documents the reconnect and
-        // liveness fields as ignored and permits zero for them, so it checks only what it honours.
+        // liveness fields as ignored and permits zero for them, so it checks only what it honors.
         if is_stream_mode {
             if config.heartbeat_interval_secs == Some(0) {
                 return Err(TransportError::Io(std::io::Error::new(
@@ -374,6 +374,7 @@ impl WebSocketClientInner {
         } else {
             Duration::from_millis(config.connect_timeout_ms.unwrap_or(10_000))
         };
+
         let backoff = ExponentialBackoff::new(
             Duration::from_millis(config.reconnect_delay_initial_ms.unwrap_or(2_000)),
             Duration::from_millis(config.reconnect_delay_max_ms.unwrap_or(30_000)),
@@ -427,6 +428,7 @@ impl WebSocketClientInner {
                 })
             })
         };
+
         let classify = |error: &TransportError| {
             let retryable = is_retryable_initial_connect_error(error);
             let attempt = attempt.load(Ordering::Relaxed);
@@ -437,15 +439,18 @@ impl WebSocketClientInner {
             }
             retryable
         };
+
         let transport = retry_manager
-            .execute_with_retry_with_cancel(
+            .invocation(
                 INITIAL_CONNECT_OPERATION,
                 operation,
                 classify,
                 initial_connect_retry_error,
-                &cancellation_token,
             )
+            .cancellation_token(&cancellation_token)
+            .execute()
             .await?;
+
         let attempt = attempt.load(Ordering::Relaxed);
         if attempt > 1 {
             log::info!("WebSocket connection established after {attempt} attempts");
@@ -561,6 +566,19 @@ impl WebSocketClientInner {
         backend: TransportBackend,
         proxy_url: Option<&str>,
     ) -> Result<(MessageWriter, MessageReader), TransportError> {
+        #[cfg(all(feature = "simulation", madsim))]
+        if backend == TransportBackend::Sockudo {
+            return Err(TransportError::Other(
+                "Sockudo timers are unsupported under simulation; select Tungstenite".into(),
+            ));
+        }
+        #[cfg(all(feature = "simulation", madsim))]
+        if proxy_url.is_some() || !url.starts_with("ws://") {
+            return Err(TransportError::InvalidUrl(
+                "WebSocket simulation requires plaintext ws:// endpoints without a proxy".into(),
+            ));
+        }
+
         match backend {
             TransportBackend::Tungstenite => match proxy_url {
                 Some(proxy) => {
@@ -601,10 +619,25 @@ impl WebSocketClientInner {
         let request = tungstenite_request(url, headers)?;
 
         // Nagle stays enabled here so `apply_socket_options` owns every socket option in one place
+        #[cfg(not(all(feature = "simulation", madsim)))]
         let (stream, _resp) = connect_async_with_config(request, None, false)
             .await
             .map_err(TransportError::from)?;
+        #[cfg(not(all(feature = "simulation", madsim)))]
         crate::net::apply_socket_options(stream.get_ref().get_ref());
+
+        #[cfg(all(feature = "simulation", madsim))]
+        let (stream, _resp) = {
+            let target = request.uri();
+            let host = target
+                .host()
+                .ok_or_else(|| TransportError::InvalidUrl("missing hostname".into()))?;
+            let address = format!("{host}:{}", target.port_u16().unwrap_or(80));
+            let socket = dst::net::TcpStream::connect(address.as_str()).await?;
+            tokio_tungstenite::client_async(request, socket)
+                .await
+                .map_err(TransportError::from)?
+        };
 
         let transport: BoxedWsTransport = Box::pin(TungsteniteTransport::new(stream));
         Ok(transport.split())
@@ -613,7 +646,7 @@ impl WebSocketClientInner {
     /// Connects via an HTTP `CONNECT` proxy and performs the WebSocket
     /// handshake over the resulting tunnel.
     ///
-    /// Recognised but unsupported proxy schemes (currently SOCKS) log a
+    /// Recognized but unsupported proxy schemes (currently SOCKS) log a
     /// warning and fall back to a direct connection so existing REST proxy
     /// configs remain usable. Only available in production builds; the
     /// turmoil simulator does not model arbitrary outbound TCP via a proxy.
@@ -780,7 +813,7 @@ impl WebSocketClientInner {
     /// Connects via an HTTP `CONNECT` proxy and performs the sockudo WebSocket
     /// handshake over the resulting tunnel.
     ///
-    /// Recognised but unsupported proxy schemes (currently SOCKS) log a warning
+    /// Recognized but unsupported proxy schemes (currently SOCKS) log a warning
     /// and fall back to a direct connection, matching the Tungstenite path.
     #[inline]
     #[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]
@@ -812,7 +845,7 @@ impl WebSocketClientInner {
         Self::finish_sockudo_handshake(stream, &target, &headers).await
     }
 
-    /// Turmoil simulator variant: HTTP `CONNECT` tunneling is not modelled under
+    /// Turmoil simulator variant: HTTP `CONNECT` tunneling is not modeled under
     /// the simulator so any proxy URL is rejected up front.
     #[inline]
     #[cfg(all(feature = "transport-sockudo", feature = "turmoil"))]
@@ -844,14 +877,9 @@ impl WebSocketClientInner {
         // Use one path for uniform error logging and ownership of
         // stream construction since sockudo's high-level client drops the
         // handshake leftover.
-        let handshake = client_handshake_with_headers(
-            &mut stream,
-            &target.host_header,
-            &target.path,
-            None,
-            headers,
-        )
-        .await?;
+        let handshake =
+            client_handshake_with_headers(&mut stream, &target.host_header, &target.path, headers)
+                .await?;
 
         // Reading the HTTP 101 may also read the first WebSocket frame prefix;
         // replay it only when present so the ordinary path stays unwrapped.
@@ -1400,24 +1428,19 @@ impl WebSocketClientInner {
             return Ok(ReconnectOutcome::Aborted);
         }
 
-        if self.handler.is_some() {
-            let read_fence = ReadSessionFence::new();
-            self.read_task = Some(Self::spawn_message_handler_task(
-                self.connection_mode.clone(),
-                self.state_notify.clone(),
-                read_fence.clone(),
-                reader,
-                connection_epoch,
-                self.handler.as_ref(),
-                self.ping_handler.as_ref(),
-                self.config.idle_timeout_ms,
-                self.heartbeat_timeout,
-            ));
-            self.read_fence = Some(read_fence);
-        } else {
-            self.read_task = None;
-            self.read_fence = None;
-        }
+        let read_fence = ReadSessionFence::new();
+        self.read_task = Some(Self::spawn_message_handler_task(
+            self.connection_mode.clone(),
+            self.state_notify.clone(),
+            read_fence.clone(),
+            reader,
+            connection_epoch,
+            self.handler.as_ref(),
+            self.ping_handler.as_ref(),
+            self.config.idle_timeout_ms,
+            self.heartbeat_timeout,
+        ));
+        self.read_fence = Some(read_fence);
 
         log::info!("Reconnect succeeded");
         Ok(ReconnectOutcome::Reconnected)
@@ -1451,7 +1474,7 @@ impl WebSocketClientInner {
         ping_handler: Option<&IncomingPingHandler>,
         idle_timeout_ms: Option<u64>,
         heartbeat_timeout: Option<Duration>,
-    ) -> tokio::task::JoinHandle<()> {
+    ) -> dst::task::JoinHandle<()> {
         log::debug!("Started message handler task 'read'");
 
         let check_interval = Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS);
@@ -1460,7 +1483,7 @@ impl WebSocketClientInner {
         let handler = handler.cloned();
         let ping_handler = ping_handler.cloned();
 
-        tokio::task::spawn(async move {
+        dst::task::spawn(async move {
             let mut last_data_time = dst::time::Instant::now();
             let mut last_frame_time = dst::time::Instant::now();
 
@@ -1739,13 +1762,13 @@ impl WebSocketClientInner {
         auth_tracker: Arc<OnceLock<AuthTracker>>,
         reconnect_buffer_waits_for_auth: Arc<AtomicBool>,
         state_sink: Option<SocketStateSink>,
-    ) -> tokio::task::JoinHandle<()> {
+    ) -> dst::task::JoinHandle<()> {
         log_task_started("write");
 
         // Interval between checking the connection mode
         let check_interval = Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS);
 
-        tokio::task::spawn(async move {
+        dst::task::spawn(async move {
             let mut active_writer = writer;
             // Buffer for messages received during reconnection
             // VecDeque for efficient pop_front() operations
@@ -2073,10 +2096,10 @@ impl WebSocketClientInner {
         heartbeat_secs: u64,
         message: Option<String>,
         writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
-    ) -> tokio::task::JoinHandle<()> {
+    ) -> dst::task::JoinHandle<()> {
         log_task_started("heartbeat");
 
-        tokio::task::spawn(async move {
+        dst::task::spawn(async move {
             let interval = Duration::from_secs(heartbeat_secs);
 
             loop {
@@ -2233,7 +2256,7 @@ enum ReconnectBufferAction {
 /// not reconnect automatically. See [`crate::websocket`] for connection ownership, replay, and
 /// epoch guarantees.
 pub struct WebSocketClient {
-    pub(crate) controller_task: tokio::task::JoinHandle<()>,
+    pub(crate) controller_task: dst::task::JoinHandle<()>,
     pub(crate) connection_mode: Arc<AtomicU8>,
     pub(crate) connection_epoch: Arc<AtomicU64>,
     pub(crate) state_notify: Arc<tokio::sync::Notify>,
@@ -2673,7 +2696,8 @@ impl WebSocketClient {
             Arc::clone(&controller_notify),
             Arc::clone(&reconnect_published),
         );
-        controller_lifecycle.set_abort_handle(controller_task.abort_handle());
+        let abort_handle = controller_task.abort_handle();
+        controller_lifecycle.set_abort(move || abort_handle.abort());
 
         Ok((
             reader,
@@ -2927,7 +2951,8 @@ impl WebSocketClient {
             Arc::clone(&controller_notify),
             Arc::clone(&reconnect_published),
         );
-        controller_lifecycle.set_abort_handle(controller_task.abort_handle());
+        let abort_handle = controller_task.abort_handle();
+        controller_lifecycle.set_abort(move || abort_handle.abort());
 
         Ok(Self {
             controller_task,
@@ -3012,7 +3037,7 @@ impl WebSocketClient {
 
     /// Returns whether the client connection is active.
     ///
-    /// Returns `true` if the client is connected and has not been signalled to disconnect.
+    /// Returns `true` if the client is connected and has not been signaled to disconnect.
     /// The client will automatically retry connection based on its configuration.
     #[inline]
     #[must_use]
@@ -3409,8 +3434,8 @@ impl WebSocketClient {
         controller_lifecycle: Arc<ControllerLifecycle>,
         controller_notify: Arc<tokio::sync::Notify>,
         reconnect_published: Arc<AtomicBool>,
-    ) -> tokio::task::JoinHandle<()> {
-        tokio::task::spawn(async move {
+    ) -> dst::task::JoinHandle<()> {
+        dst::task::spawn(async move {
             let _activity = controller_lifecycle.activity();
             log_task_started("controller");
 
@@ -3687,7 +3712,7 @@ impl Drop for WebSocketClient {
 
 #[cfg(test)]
 #[cfg(not(feature = "turmoil"))]
-#[cfg(not(all(feature = "simulation", madsim)))] // transport-layer I/O not simulated
+#[cfg(not(all(feature = "simulation", madsim)))] // These tests drive real localhost sockets
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
     use std::{
@@ -4810,7 +4835,7 @@ mod tests {
 
 #[cfg(test)]
 #[cfg(not(feature = "turmoil"))]
-#[cfg(not(all(feature = "simulation", madsim)))] // transport-layer I/O not simulated
+#[cfg(not(all(feature = "simulation", madsim)))] // These tests drive real localhost sockets
 mod rust_tests {
     use std::{
         pin::Pin,
@@ -9536,7 +9561,7 @@ mod rust_tests {
         "/ws",
         true
     )]
-    // url::Url normalises explicit default ports (`:80` for ws, `:443` for wss)
+    // url::Url normalizes explicit default ports (`:80` for ws, `:443` for wss)
     // away, so `parsed.port()` reports `None` here and Host stays unqualified.
     #[case::ws_explicit_default(
         "ws://example.com:80/ws",

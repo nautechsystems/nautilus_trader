@@ -53,6 +53,8 @@ use ustr::Ustr;
 
 use crate::modules::{SimulationModuleAny, SimulationModuleHandle};
 
+pub(crate) const MAX_BACKTEST_CHUNK_SIZE: usize = 1_000_000;
+
 /// Represents a type of market data for catalog queries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NautilusDataType {
@@ -284,6 +286,15 @@ impl Default for BacktestEngineConfig {
 /// `SimulatedExchange` shapes (runtime handles for modules and models,
 /// and typed `Money` balances), which is why this is distinct from the
 /// YAML-friendly [`BacktestVenueConfig`] used by `BacktestNode`.
+///
+/// # Option Settlement Deferral
+///
+/// With `defer_option_settlement`, the caller schedules expiration processing after
+/// all market data at the expiry timestamp. This defaults to `true`; `BacktestEngine`
+/// schedules the required expiry timers.
+///
+/// Cancellation and market closure remain immediate; explicit contract-close events
+/// bypass deferral, and automatic checks after expiry can also settle.
 #[allow(missing_debug_implementations)]
 #[expect(
     clippy::struct_excessive_bools,
@@ -292,69 +303,100 @@ impl Default for BacktestEngineConfig {
 #[derive(bon::Builder)]
 #[builder(finish_fn(name = build_inner, vis = ""))]
 pub struct SimulatedVenueConfig {
+    /// The simulated venue identifier.
     pub venue: Venue,
+    /// The order management mode for position tracking.
     pub oms_type: OmsType,
+    /// The account type used for balance and margin calculations.
     pub account_type: AccountType,
+    /// The order book type used for matching.
     pub book_type: BookType,
+    /// The initial account balances.
     pub starting_balances: Vec<Money>,
+    /// The account base currency, or `None` for a multi-currency account.
     pub base_currency: Option<Currency>,
-    // Left optional so the engine can fall back to an account-type-appropriate
-    // default (10x for margin, 1x otherwise) when the caller has no preference.
+    /// The default leverage, falling back to 10x for margin accounts and 1x otherwise.
     pub default_leverage: Option<Decimal>,
+    /// The leverage overrides for individual instruments.
     #[builder(default)]
     pub leverages: AHashMap<InstrumentId, Decimal>,
+    /// The model used to calculate margin requirements.
     pub margin_model: Option<MarginModelHandle>,
+    /// The simulation modules run by the exchange.
     #[builder(default)]
     pub modules: Vec<SimulationModuleHandle>,
+    /// The model used to simulate order fills.
     #[builder(default)]
     pub fill_model: FillModelHandle,
+    /// The model used to calculate trading fees.
     #[builder(default)]
     pub fee_model: FeeModelHandle,
+    /// The optional model used to simulate command latency.
     pub latency_model: Option<LatencyModelHandle>,
+    /// If the execution client supports routing orders to other venues.
     #[builder(default = false)]
     pub routing: bool,
+    /// If stop orders already in the market are rejected on submission.
     #[builder(default = true)]
     pub reject_stop_orders: bool,
+    /// If good-till-date order expiry is supported.
     #[builder(default = true)]
     pub support_gtd_orders: bool,
+    /// If contingent order relationships are supported.
     #[builder(default = true)]
     pub support_contingent_orders: bool,
+    /// If venue position IDs are generated.
     #[builder(default = true)]
     pub use_position_ids: bool,
+    /// If generated identifiers use random values instead of sequential counters.
     #[builder(default = false)]
     pub use_random_ids: bool,
+    /// If reduce-only order restrictions are enforced.
     #[builder(default = true)]
     pub use_reduce_only: bool,
+    /// If trading commands are queued instead of processed immediately.
     #[builder(default = true)]
     pub use_message_queue: bool,
+    /// If market orders emit acceptance events before filling.
     #[builder(default = false)]
     pub use_market_order_acks: bool,
+    /// If bars drive order execution.
     #[builder(default = true)]
     pub bar_execution: bool,
+    /// If bar execution visits the high or low closest to the open first.
     #[builder(default = false)]
     pub bar_adaptive_high_low_ordering: bool,
+    /// If trade ticks drive order execution.
     #[builder(default = true)]
     pub trade_execution: bool,
+    /// If fills consume available liquidity.
     #[builder(default = false)]
     pub liquidity_consumption: bool,
+    /// If cash accounts may borrow funds.
     #[builder(default = false)]
     pub allow_cash_borrowing: bool,
+    /// If account balances remain unchanged by simulated trading.
     #[builder(default = false)]
     pub frozen_account: bool,
+    /// If passive fills account for queue position.
     #[builder(default = false)]
     pub queue_position: bool,
+    /// If one-triggers-other orders wait for the parent to fill completely.
     #[builder(default = false)]
     pub oto_full_trigger: bool,
+    /// If option settlement waits for expiry processing after same-timestamp market data.
+    #[builder(default = true)]
+    pub defer_option_settlement: bool,
+    /// The market order price protection distance in ticks, or zero to disable protection.
     #[builder(default = 0)]
     pub price_protection_points: u32,
-    /// If liquidation of positions should be triggered when maintenance margin is breached.
+    /// If positions are liquidated when maintenance margin is breached.
     #[builder(default = false)]
     pub liquidation_enabled: bool,
-    /// The ratio of equity to maintenance margin at which liquidation is triggered.
-    /// A value of 1.0 means liquidation triggers when equity <= `maintenance_margin`.
+    /// The equity-to-maintenance-margin ratio at or below which liquidation triggers.
     #[builder(default = 1.0)]
     pub liquidation_trigger_ratio: f64,
-    /// If open orders should be canceled before closing positions during liquidation.
+    /// If open orders are canceled before liquidating positions.
     #[builder(default = true)]
     pub liquidation_cancel_open_orders: bool,
 }
@@ -473,7 +515,8 @@ pub struct BacktestVenueConfig {
     /// Trade IDs are always deterministic and not affected by this flag.
     #[builder(default)]
     use_random_ids: bool,
-    /// If the `reduce_only` execution instruction on orders will be honored.
+    /// If the `reduce_only` execution instruction on orders will be enforced.
+    /// If false, reduce-only orders are rejected.
     #[builder(default = true)]
     use_reduce_only: bool,
     /// If bars should be processed by the matching engine(s) (and move the market).
@@ -1055,7 +1098,8 @@ pub struct BacktestRunConfig {
     /// The backtest engine configuration (the core system kernel).
     #[builder(default)]
     engine: BacktestEngineConfig,
-    /// The number of data points to process in each chunk during streaming mode.
+    /// The number of data points to process in each chunk during streaming mode
+    /// (range `[1, 1_000_000]`).
     /// If `None`, the backtest will run without streaming, loading all data at once.
     chunk_size: Option<usize>,
     /// If exceptions during build or run should interrupt processing.
@@ -1111,8 +1155,11 @@ impl BacktestRunConfig {
 
         if let Some(chunk_size) = self.chunk_size {
             errors.check(
-                chunk_size > 0,
-                ConfigError::range("chunk_size", format!("must be positive, was {chunk_size}")),
+                (1..=MAX_BACKTEST_CHUNK_SIZE).contains(&chunk_size),
+                ConfigError::range(
+                    "chunk_size",
+                    format!("must be in range [1, {MAX_BACKTEST_CHUNK_SIZE}], was {chunk_size}"),
+                ),
             );
         }
 
@@ -1427,7 +1474,8 @@ mod tests {
 
     #[rstest]
     fn test_minimal_sim_config_is_valid() {
-        assert!(minimal_sim_builder!().build().is_ok());
+        let config = minimal_sim_builder!().build().unwrap();
+        assert!(config.defer_option_settlement);
     }
 
     #[rstest]
@@ -1534,12 +1582,37 @@ mod tests {
     }
 
     #[rstest]
+    fn test_run_config_accepts_maximum_chunk_size() {
+        let config = BacktestRunConfig::builder()
+            .venues(vec![minimal_venue()])
+            .data(vec![])
+            .chunk_size(MAX_BACKTEST_CHUNK_SIZE)
+            .build()
+            .unwrap();
+
+        assert_eq!(config.chunk_size(), Some(MAX_BACKTEST_CHUNK_SIZE));
+    }
+
+    #[rstest]
     fn test_run_config_zero_chunk_size_rejected() {
         let result = BacktestRunConfig::builder()
             .venues(vec![minimal_venue()])
             .data(vec![])
             .chunk_size(0)
             .build();
+        assert!(matches!(result, Err(ConfigError::Range { field, .. }) if field == "chunk_size"));
+    }
+
+    #[rstest]
+    #[case(MAX_BACKTEST_CHUNK_SIZE + 1)]
+    #[case(usize::MAX)]
+    fn test_run_config_rejects_oversized_chunk_size(#[case] chunk_size: usize) {
+        let result = BacktestRunConfig::builder()
+            .venues(vec![minimal_venue()])
+            .data(vec![])
+            .chunk_size(chunk_size)
+            .build();
+
         assert!(matches!(result, Err(ConfigError::Range { field, .. }) if field == "chunk_size"));
     }
 

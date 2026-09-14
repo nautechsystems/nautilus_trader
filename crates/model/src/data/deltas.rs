@@ -28,7 +28,7 @@ use nautilus_core::{
 use serde::{Deserialize, Serialize};
 
 use super::{HasTsInit, OrderBookDelta};
-use crate::identifiers::InstrumentId;
+use crate::{enums::RecordFlag, identifiers::InstrumentId};
 
 /// Represents a grouped batch of `OrderBookDelta` updates for an `OrderBook`.
 ///
@@ -120,6 +120,13 @@ impl OrderBookDeltas {
             ts_init,
         })
     }
+
+    /// Returns whether the batch is a snapshot.
+    #[cfg_attr(not(any(feature = "ffi", feature = "python")), allow(dead_code))]
+    #[must_use]
+    pub(crate) fn is_snapshot(&self) -> bool {
+        RecordFlag::F_SNAPSHOT.matches(self.flags)
+    }
 }
 
 impl PartialEq<Self> for OrderBookDeltas {
@@ -177,7 +184,7 @@ mod tests {
     use super::*;
     use crate::{
         data::{order::BookOrder, stubs::stub_deltas},
-        enums::{BookAction, OrderSide},
+        enums::{BookAction, OrderSide, RecordFlag},
         types::{Price, Quantity},
     };
 
@@ -448,6 +455,42 @@ mod tests {
         assert_eq!(deltas.sequence, 200);
         assert_eq!(deltas.ts_event, UnixNanos::from(1_500_000_000));
         assert_eq!(deltas.ts_init, UnixNanos::from(2_000_000_000));
+    }
+
+    #[rstest]
+    #[case::snapshot(
+        vec![(BookAction::Add, RecordFlag::F_SNAPSHOT as u8)],
+        true
+    )]
+    #[case::combined_flags(
+        vec![(
+            BookAction::Add,
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8,
+        )],
+        true
+    )]
+    #[case::not_snapshot(vec![(BookAction::Add, RecordFlag::F_MBP as u8)], false)]
+    #[case::clear_without_snapshot(
+        vec![(BookAction::Clear, 0), (BookAction::Add, 0)],
+        false
+    )]
+    fn test_order_book_deltas_is_snapshot(
+        #[case] actions_and_flags: Vec<(BookAction, u8)>,
+        #[case] expected: bool,
+    ) {
+        let instrument_id = InstrumentId::from("EURUSD.SIM");
+        let deltas = actions_and_flags
+            .into_iter()
+            .map(|(action, flags)| {
+                let mut delta = create_test_delta();
+                delta.action = action;
+                delta.flags = flags;
+                delta
+            })
+            .collect();
+        let deltas = OrderBookDeltas::new(instrument_id, deltas);
+
+        assert_eq!(deltas.is_snapshot(), expected);
     }
 
     #[rstest]

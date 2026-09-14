@@ -293,7 +293,7 @@ Features marked for removal.
 **Format**:
 
 ```markdown
-- Deprecated `some_config_option`; disable (`False`) to maintain consistent behaviour. Will be removed in future version
+- Deprecated `some_config_option`; disable (`False`) to maintain consistent behavior. Will be removed in future version
 ```
 
 **Guidelines**:

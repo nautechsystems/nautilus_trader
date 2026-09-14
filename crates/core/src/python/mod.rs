@@ -19,7 +19,7 @@
 
 #![allow(
     deprecated,
-    reason = "pyo3-stub-gen currently relies on PyO3 initialization helpers marked as deprecated"
+    reason = "pyo3-stub-gen currently relies on PyO3 initialization functions marked as deprecated"
 )]
 #![expect(
     clippy::missing_errors_doc,

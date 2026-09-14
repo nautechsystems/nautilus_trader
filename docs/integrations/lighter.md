@@ -42,8 +42,8 @@ orders by default (`dry_run=False`), stated in a warning at the top of the modul
 From the repository root:
 
 ```bash
-.venv/bin/python examples/live/lighter/data_tester.py
-.venv/bin/python examples/live/lighter/exec_tester.py
+uv run --project python --no-sync python examples/live/lighter/data_tester.py
+uv run --project python --no-sync python examples/live/lighter/exec_tester.py
 ```
 
 Rust examples live under `crates/adapters/lighter/examples/`. Both testers connect when run. The
@@ -61,12 +61,27 @@ orders when pointed at a funded account on either mainnet deployment. Review the
 instrument, quantity, and environment before running them.
 :::
 
-For emergency account cleanup, `cargo run --bin lighter-flatten -p nautilus-lighter` cancels open
-orders and closes positions for the selected deployment account. It scans all registered markets,
-so the standard 60 req/min REST quota can make the run take several minutes. Review the active
-account and positions first because it is account-wide, not strategy-scoped. Set
-`LIGHTER_DEPLOYMENT` to `lighter` or `robinhood` and `LIGHTER_ENVIRONMENT` to `mainnet` or `testnet`;
-omitted selectors default to Lighter Mainnet and select the matching credential namespace.
+### Emergency account cleanup
+
+`cargo run --bin lighter-flatten -p nautilus-lighter` is a convenience command that cancels open
+orders and closes positions for the selected deployment account. It submits Lighter's account-wide
+immediate cancellation, reads one position snapshot, and submits reduce-only IOC closes for the
+positions in that snapshot.
+
+:::warning
+Stop other writers for the account before running this command. Cleanup is account-wide, not
+strategy-scoped, so review the active account and positions first.
+:::
+
+The command does not confirm the requests or retry until the account is flat. A successful exit
+means the cancellation and discovered close requests were submitted without a known error. Check
+the account state after it exits and rerun the command if anything remains. One run can submit at
+most 15 position closes because the account-wide cancellation uses one slot in its 16-transaction
+nonce window. An incomplete position snapshot or a request or submission failure returns an error.
+
+Set `LIGHTER_DEPLOYMENT` to `lighter` or `robinhood` and `LIGHTER_ENVIRONMENT` to `mainnet` or
+`testnet`; omitted selectors default to Lighter Mainnet and select the matching credential
+namespace.
 
 ## Product support
 
@@ -85,8 +100,9 @@ The current adapter scope is deliberately narrower than the venue's full transac
   not implemented. Batch submit does not use `CreateGroupedOrders`.
 - Order-list submit and batch cancel fan out independent transactions sequentially over WebSocket.
   Both operations are capped at 15 transactions per command.
-- `CancelAllOrders` uses cached open orders for the requested instrument. The adapter does not use
-  Lighter's native account-wide cancel-all transaction because it can affect unrelated markets.
+- The execution client implements `CancelAllOrders` from cached open orders for the requested
+  instrument. It does not use the native account-wide transaction because that can affect unrelated
+  markets.
 - Spot trading supports market and limit orders. Conditional stop-loss and take-profit orders are
   limited to perpetual markets.
 - Account state and position reports come from private WebSocket streams. `query_account` and
@@ -498,7 +514,7 @@ Each bounded mass status captures one cutoff for its inactive orders and fills. 
 the report set complete only when the required order, fill, and position sources succeed and every
 historical fill maps to its order. If a historical source fails, active orders remain available for
 reconciliation while historical fills follow the engine's
-[order-only projection](../concepts/execution.md#order-only-fill-projection) rules.
+[order-only projection](../concepts/execution/reconciliation.md#order-only-fill-projection) rules.
 
 The `trades` endpoint retains only the most recent 3,000 trades per `account_index`, so a bounded
 lookback can request more fill history than the venue serves. Pagination walks back from the newest

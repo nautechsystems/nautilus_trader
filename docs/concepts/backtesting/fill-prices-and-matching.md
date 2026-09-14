@@ -78,7 +78,7 @@ the strategy requires more precise gap and path behavior.
 
 ## Price protection
 
-Price protection limits how far `MARKET` and `STOP_MARKET` orders can walk the book. Configure the
+**Price protection** limits how far `MARKET` and `STOP_MARKET` orders can walk the book. Configure the
 offset as a number of instrument price increments:
 
 ```python
@@ -164,7 +164,7 @@ represent its own liquidity assumptions.
 
 ### Limitations
 
-Consumption tracking estimates available size, not order priority. Set `queue_position=True` with
+Consumption tracking estimates **available size**, not **order priority**. Set `queue_position=True` with
 book and trade data for displayed-queue tracking, or use `prob_fill_on_limit` for a probabilistic
 approximation.
 

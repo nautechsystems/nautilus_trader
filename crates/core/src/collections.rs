@@ -305,12 +305,12 @@ where
 
     #[inline]
     fn contains(&self, v: &T) -> bool {
-        self.get(v).is_some()
+        HashSet::contains(self, v)
     }
 
     #[inline]
     fn is_empty(&self) -> bool {
-        self.len() == 0
+        HashSet::is_empty(self)
     }
 }
 
@@ -358,7 +358,7 @@ where
 
     #[inline]
     fn contains_key(&self, k: &K) -> bool {
-        self.get(k).is_some()
+        Self::contains_key(self, k)
     }
 
     #[inline]
@@ -378,12 +378,12 @@ where
 
     #[inline]
     fn contains_key(&self, k: &K) -> bool {
-        self.get(k).is_some()
+        HashMap::contains_key(self, k)
     }
 
     #[inline]
     fn is_empty(&self) -> bool {
-        self.len() == 0
+        HashMap::is_empty(self)
     }
 }
 
@@ -394,15 +394,9 @@ where
     I: IntoIterator<Item = T>,
     T: AsRef<str>,
 {
-    let iter = iter.into_iter();
-    let (lower, _) = iter.size_hint();
-    let mut result = Vec::with_capacity(lower);
-
-    for item in iter {
-        result.push(Ustr::from(item.as_ref()));
-    }
-
-    result
+    iter.into_iter()
+        .map(|item| Ustr::from(item.as_ref()))
+        .collect()
 }
 
 #[cfg(test)]

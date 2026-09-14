@@ -1,11 +1,12 @@
 """
 Render the AX EURUSD-PERP mean reversion tutorial panels from a backtest run.
 
-Usage:
+After building NautilusTrader from source, run these commands from the repository root:
 
-    uv sync --extra visualization
+    make sync
     TRUEFX_CSV=test_data/local/truefx/EURUSD-2025-12.csv \
-        python3 docs/tutorials/assets/fx_mean_reversion_ax/render_panels.py
+        uv run --project python --no-sync \
+            python docs/tutorials/assets/fx_mean_reversion_ax/render_panels.py
 
 Replays TrueFX EUR/USD ticks through the shipped ``BBMeanReversion`` strategy,
 then writes four PNG panels using the ``nautilus_dark`` tearsheet theme.
@@ -552,7 +553,7 @@ def panel_c_decision_scatter(bars: pd.DataFrame) -> go.Figure:
 def panel_d_pnl(positions: pd.DataFrame, cycles: list[dict]) -> go.Figure:
     fig = go.Figure()
     if not cycles:
-        apply_layout(fig, "Cumulative realised pnl per closed cycle (no cycles)", height=420)
+        apply_layout(fig, "Cumulative realized pnl per closed cycle (no cycles)", height=420)
         return fig
     if "realized_pnl" in positions.columns:
         df = positions.copy()
@@ -597,7 +598,7 @@ def panel_d_pnl(positions: pd.DataFrame, cycles: list[dict]) -> go.Figure:
         ),
     )
     fig.add_hline(y=0, line={"color": NEUTRAL, "dash": "dash", "width": 1})
-    apply_layout(fig, "Cumulative realised pnl per closed position (USD)", height=420)
+    apply_layout(fig, "Cumulative realized pnl per closed position (USD)", height=420)
     fig.update_xaxes(title_text="position close time")
     fig.update_yaxes(title_text="USD")
     return fig

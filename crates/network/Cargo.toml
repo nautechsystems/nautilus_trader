@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-network"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -49,12 +48,24 @@ bon = { workspace = true }
 bytes = { workspace = true }
 dashmap = { workspace = true }
 futures-util = { workspace = true }
+h2 = { workspace = true }
 http = { workspace = true }
+http-body = { workspace = true }
+http-body-util = { workspace = true }
+hyper = { workspace = true, features = ["http2"] }
+hyper-rustls = { workspace = true }
+hyper-util = { workspace = true, features = [
+  "client-legacy",
+  "client-proxy",
+  "http1",
+  "http2",
+] }
 log = { workspace = true }
 parking_lot = { workspace = true }
+percent-encoding = { workspace = true }
 rand = { workspace = true }
-reqwest = { workspace = true }
 rustls = { workspace = true }
+rustls-platform-verifier = { workspace = true }
 serde = { workspace = true }
 serde_urlencoded = { workspace = true }
 socket2 = { workspace = true }
@@ -64,6 +75,8 @@ tokio = { workspace = true }
 tokio-rustls = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
+tower-http = { workspace = true }
+tower-service = { workspace = true }
 url = { workspace = true }
 ustr = { workspace = true }
 webpki-roots = { workspace = true }

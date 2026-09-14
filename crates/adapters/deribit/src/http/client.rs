@@ -576,13 +576,9 @@ impl DeribitRawHttpClient {
 
         let result = self
             .retry_manager
-            .execute_with_retry_with_cancel(
-                &operation_id,
-                operation,
-                should_retry,
-                create_error,
-                &self.cancellation_token,
-            )
+            .invocation(&operation_id, operation, should_retry, create_error)
+            .cancellation_token(&self.cancellation_token)
+            .execute()
             .await;
 
         if let Err(ref e) = result
@@ -1202,7 +1198,7 @@ impl DeribitHttpClient {
             .iter()
             .map(|leg| {
                 let instrument_id =
-                    InstrumentId::new(Symbol::new(leg.instrument_name.as_str()), *DERIBIT_VENUE);
+                    InstrumentId::new(Symbol::new(leg.instrument_name), *DERIBIT_VENUE);
 
                 json!({
                     "amount": leg.amount,
@@ -1773,7 +1769,6 @@ impl DeribitHttpClient {
         let end_ms = end.map_or(now_ms, |ns| nanos_to_millis(ns.as_u64()) as i64);
         let mut reports = Vec::new();
 
-        // Helper closure to parse trade and add to reports
         let mut parse_and_add = |trade: &DeribitUserTradeMsg| {
             let symbol = trade.instrument_name;
             if let Some(instrument) = self.get_instrument(&symbol) {
@@ -1876,7 +1871,7 @@ impl DeribitHttpClient {
 
     /// Requests ticker data for a single instrument.
     ///
-    /// Returns the `DeribitTicker` which includes `underlying_price` (forward price).
+    /// Returns the `DeribitTicker` including its option-chain reference price.
     ///
     /// # Errors
     ///

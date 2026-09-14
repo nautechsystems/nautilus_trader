@@ -29,6 +29,14 @@ const fn default_report_log_level() -> LogLevel {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Builder)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.live", frozen, from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
 pub struct GenerateOrderStatusReport {
     #[builder(default = "UUID4::new()")]
     pub command_id: UUID4,
@@ -88,6 +96,14 @@ impl Display for GenerateOrderStatusReport {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Builder)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.live", frozen, from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
 pub struct GenerateOrderStatusReports {
     #[builder(default = "UUID4::new()")]
     pub command_id: UUID4,
@@ -155,6 +171,14 @@ impl Display for GenerateOrderStatusReports {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Builder)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.live", frozen, from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
 pub struct GenerateFillReports {
     #[builder(default = "UUID4::new()")]
     pub command_id: UUID4,
@@ -223,6 +247,14 @@ impl Display for GenerateFillReports {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Builder)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.live", frozen, from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
 pub struct GeneratePositionStatusReports {
     #[builder(default = "UUID4::new()")]
     pub command_id: UUID4,

@@ -34,7 +34,8 @@ use nautilus_common::{
     clock::Clock,
     component::{
         Component, component_state, deregister_component, dispose_component,
-        register_component_actor, reset_component, start_component, stop_component,
+        register_component_actor, release_component_subscriptions, reset_component,
+        start_component, stop_component,
     },
     enums::{ComponentState, ComponentTrigger, Environment},
     logging::RECV,
@@ -624,10 +625,10 @@ impl Trader {
         let actor_id = strategy.actor_id().inner();
         let callback = TimeEventCallback::from(move |event: TimeEvent| {
             if let Some(mut strategy) = try_get_actor_unchecked::<T>(&actor_id) {
-                log::debug!("{RECV} {event:?}");
+                log::debug!("{RECV} {event}");
 
                 if strategy.not_running() {
-                    log::trace!("Received message when not running - skipping {event:?}");
+                    log::trace!("Received message when not running - skipping {event}");
                     return;
                 }
 
@@ -737,8 +738,7 @@ impl Trader {
     {
         self.validate_exec_algorithm_registration()?;
 
-        let exec_algorithm_id =
-            ExecAlgorithmId::from(exec_algorithm.component_id().inner().as_str());
+        let exec_algorithm_id = ExecAlgorithmId::new(exec_algorithm.component_id().inner());
 
         if self.exec_algorithm_ids.contains(&exec_algorithm_id) {
             anyhow::bail!("Execution algorithm '{exec_algorithm_id}' is already registered");
@@ -1205,7 +1205,8 @@ impl Trader {
     ///
     /// # Errors
     ///
-    /// Returns an error if any component fails to dispose.
+    /// Returns an error if any component fails to dispose or the cache is already borrowed while
+    /// retiring a strategy.
     pub fn dispose_components(&mut self) -> anyhow::Result<()> {
         for actor_id in self.actor_ids.clone() {
             log::debug!("Disposing actor {actor_id}");
@@ -1235,7 +1236,7 @@ impl Trader {
     ///
     /// # Errors
     ///
-    /// Returns an error if any strategy fails to dispose.
+    /// Returns an error if any strategy fails to dispose or the cache is already borrowed.
     pub fn clear_strategies(&mut self) -> anyhow::Result<()> {
         for strategy_id in self.strategy_ids.clone() {
             log::debug!("Disposing strategy {strategy_id}");
@@ -1414,9 +1415,10 @@ impl Trader {
     ///
     /// # Errors
     ///
-    /// Returns an error if the strategy is not registered, or if disposal fails. A failed disposal
-    /// keeps the strategy registered and tracked, and leaves it `Faulted`; see
-    /// [`Component::dispose`]. Calling this again retires the strategy.
+    /// Returns an error if the strategy is not registered, the cache is already borrowed, or
+    /// disposal fails. A cache borrow failure preserves the strategy registration and its external
+    /// order claims. A failed disposal keeps the strategy registered and tracked, and leaves it
+    /// `Faulted`; see [`Component::dispose`]. Calling this again retires the strategy.
     pub fn remove_strategy(&mut self, strategy_id: &StrategyId) -> anyhow::Result<()> {
         if !self.strategy_ids.contains(strategy_id) {
             anyhow::bail!("Cannot remove strategy, {strategy_id} not found");
@@ -1449,7 +1451,20 @@ impl Trader {
 
     /// Disposes a strategy, then releases everything its registration created.
     fn retire_strategy(&mut self, strategy_id: StrategyId) -> anyhow::Result<()> {
+        // Check before disposal so a borrow failure cannot leave a disposed strategy registered.
+        {
+            let _cache = self
+                .cache
+                .try_borrow_mut()
+                .map_err(|e| anyhow::anyhow!("Cannot clear external order claims: {e}"))?;
+        }
+
         Self::dispose_registered_component(strategy_id.inner())?;
+
+        self.cache
+            .try_borrow_mut()
+            .map_err(|e| anyhow::anyhow!("Cannot clear external order claims: {e}"))?
+            .set_external_order_claims(strategy_id, &[])?;
 
         self.remove_strategy_subscriptions(strategy_id);
         self.release_component(ComponentId::from(strategy_id));
@@ -1479,16 +1494,19 @@ impl Trader {
     /// Disposes the component `id` unless it has already reached a terminal state.
     ///
     /// A component disposed from Python has already run `on_dispose`, so a second disposal
-    /// transition would fail and strand the trader's bookkeeping. A `Faulted` component has
-    /// released its subscriptions on every route into that state, through either
-    /// [`Component::dispose`] or [`Component::fault`], so it is retirable without a further
-    /// transition.
+    /// transition would fail and strand the trader's bookkeeping. A `Faulted` component may have
+    /// retained subscriptions after `on_dispose` failed, so release them idempotently without
+    /// invoking the failed hook again.
     fn dispose_registered_component(id: Ustr) -> anyhow::Result<()> {
         let state = component_state(&id)?;
 
-        if matches!(state, ComponentState::Disposed | ComponentState::Faulted) {
+        if state == ComponentState::Disposed {
             log::debug!("Component {id} already {state}, skipping disposal transition");
             return Ok(());
+        }
+
+        if state == ComponentState::Faulted {
+            return release_component_subscriptions(&id);
         }
 
         dispose_component(&id)
@@ -1828,7 +1846,8 @@ mod tests {
         },
         nautilus_actor,
         runner::{
-            SyncTradingCommandSender, drain_trading_cmd_queue, replace_exec_cmd_sender,
+            SyncDataCommandSender, SyncTradingCommandSender, drain_data_cmd_queue,
+            drain_trading_cmd_queue, replace_data_cmd_sender, replace_exec_cmd_sender,
             trading_cmd_queue_is_empty,
         },
     };
@@ -1836,7 +1855,7 @@ mod tests {
     use nautilus_data::engine::{DataEngine, config::DataEngineConfig};
     use nautilus_execution::engine::{ExecutionEngine, config::ExecutionEngineConfig};
     use nautilus_model::{
-        data::{Bar, DataType, stubs::stub_bar},
+        data::{Bar, BarType, DataType, stubs::stub_bar},
         enums::{BookType, OrderSide, OrderStatus, OrderType, PositionAdjustmentType, TimeInForce},
         events::{
             OrderAccepted, OrderDenied, OrderFilled, OrderRejected, OrderUpdated, PositionAdjusted,
@@ -1880,6 +1899,8 @@ mod tests {
     #[derive(Debug)]
     struct TestDataActor {
         core: DataActorCore,
+        fail_stop: bool,
+        fail_fault: bool,
         fail_dispose: bool,
         bars_received: usize,
     }
@@ -1888,6 +1909,8 @@ mod tests {
         fn new(config: DataActorConfig) -> Self {
             Self {
                 core: DataActorCore::new(config),
+                fail_stop: false,
+                fail_fault: false,
                 fail_dispose: false,
                 bars_received: 0,
             }
@@ -1895,9 +1918,23 @@ mod tests {
     }
 
     impl DataActor for TestDataActor {
+        fn on_stop(&mut self) -> anyhow::Result<()> {
+            if self.fail_stop {
+                anyhow::bail!("test actor stop failure");
+            }
+            Ok(())
+        }
+
         fn on_dispose(&mut self) -> anyhow::Result<()> {
             if self.fail_dispose {
                 anyhow::bail!("test actor dispose failure");
+            }
+            Ok(())
+        }
+
+        fn on_fault(&mut self) -> anyhow::Result<()> {
+            if self.fail_fault {
+                anyhow::bail!("test actor fault failure");
             }
             Ok(())
         }
@@ -2030,17 +2067,26 @@ mod tests {
     #[derive(Debug)]
     struct TestStrategy {
         core: StrategyCore,
+        fail_stop: bool,
     }
 
     impl TestStrategy {
         fn new(config: StrategyConfig) -> Self {
             Self {
                 core: StrategyCore::new(config),
+                fail_stop: false,
             }
         }
     }
 
-    impl DataActor for TestStrategy {}
+    impl DataActor for TestStrategy {
+        fn on_stop(&mut self) -> anyhow::Result<()> {
+            if self.fail_stop {
+                anyhow::bail!("test strategy stop failure");
+            }
+            Ok(())
+        }
+    }
 
     nautilus_strategy!(TestStrategy);
 
@@ -2071,11 +2117,11 @@ mod tests {
         fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
             self.time_events += 1;
 
-            if event.name.as_str().starts_with("MARKET_EXIT_CHECK:") {
+            if event.name.starts_with("MARKET_EXIT_CHECK:") {
                 self.post_market_exits_on_callback = Some(self.post_market_exits);
             }
 
-            if let Some(client_order_id) = event.name.as_str().strip_prefix("GTD-EXPIRY:") {
+            if let Some(client_order_id) = event.name.strip_prefix("GTD-EXPIRY:") {
                 self.gtd_timer_active_on_callback =
                     Some(self.has_gtd_expiry_timer(&ClientOrderId::from(client_order_id)));
             }
@@ -3554,6 +3600,88 @@ mod tests {
     }
 
     #[rstest]
+    fn test_remove_strategy_clears_external_order_claims() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let trader_id = TraderId::test_default();
+        let instance_id = UUID4::new();
+        let strategy_id = StrategyId::from("Test-Strategy");
+        let instrument_id = InstrumentId::from("AUDUSD.SIM");
+
+        let mut trader = Trader::new(
+            trader_id,
+            instance_id,
+            Environment::Backtest,
+            clock_factory,
+            cache.clone(),
+            portfolio,
+        );
+        trader
+            .add_strategy(TestStrategy::new(StrategyConfig {
+                strategy_id: Some(strategy_id),
+                ..Default::default()
+            }))
+            .unwrap();
+        cache
+            .borrow_mut()
+            .set_external_order_claims(strategy_id, &[instrument_id])
+            .unwrap();
+
+        trader.remove_strategy(&strategy_id).unwrap();
+
+        assert_eq!(cache.borrow().external_order_claim(&instrument_id), None);
+    }
+
+    #[rstest]
+    fn test_remove_strategy_cache_borrow_failure_preserves_strategy_and_claims() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let strategy_id = StrategyId::from("Test-Strategy");
+        let instrument_id = InstrumentId::from("AUDUSD.SIM");
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache.clone(),
+            portfolio,
+        );
+        trader
+            .add_strategy(TestStrategy::new(StrategyConfig {
+                strategy_id: Some(strategy_id),
+                ..Default::default()
+            }))
+            .unwrap();
+        cache
+            .borrow_mut()
+            .set_external_order_claims(strategy_id, &[instrument_id])
+            .unwrap();
+
+        let cache_borrow = cache.borrow();
+        let error = trader.remove_strategy(&strategy_id).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Cannot clear external order claims: RefCell already borrowed"
+        );
+        assert_eq!(
+            cache_borrow.external_order_claim(&instrument_id),
+            Some(strategy_id)
+        );
+        assert_eq!(trader.strategy_ids(), vec![strategy_id]);
+        assert_eq!(
+            component_state(&strategy_id.inner()).unwrap(),
+            ComponentState::Ready
+        );
+
+        drop(cache_borrow);
+        trader.remove_strategy(&strategy_id).unwrap();
+
+        assert!(trader.strategy_ids().is_empty());
+        assert_eq!(cache.borrow().external_order_claim(&instrument_id), None);
+    }
+
+    #[rstest]
     fn test_can_add_components_while_running() {
         let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
@@ -3747,6 +3875,133 @@ mod tests {
         let event = OrderEventAny::Accepted(OrderAccepted::test_default());
         msgbus::publish_order_event(order_topic, &event);
         assert_eq!(*ext_received.borrow(), 1);
+    }
+
+    #[cfg(feature = "python")]
+    #[rstest]
+    fn test_component_message_bus_across_registered_python_components() {
+        use nautilus_trading::python::algorithm::PyExecutionAlgorithm;
+
+        Python::initialize();
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let bus = msgbus::get_message_bus();
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+        Python::attach(|py| {
+            let locals = PyDict::new(py);
+            locals
+                .set_item("DataActor", py.get_type::<PyDataActor>())
+                .unwrap();
+            locals
+                .set_item("Strategy", py.get_type::<PyStrategy>())
+                .unwrap();
+            locals
+                .set_item("ExecutionAlgorithm", py.get_type::<PyExecutionAlgorithm>())
+                .unwrap();
+            py.run(
+                c_str!(
+                    r#"
+import weakref
+import threading
+class Hooks:
+    def on_start(self): self.subscribe_topic("app.shared", self.receive)
+    def on_stop(self): pass
+    def on_resume(self): pass
+    def on_dispose(self): pass
+    def receive(self, value): self.received.append(value)
+class Actor(Hooks, DataActor): pass
+class TradingStrategy(Hooks, Strategy): pass
+class Algorithm(Hooks, ExecutionAlgorithm): pass
+actor = Actor()
+strategy = TradingStrategy()
+algorithm = Algorithm()
+components = [actor, strategy, algorithm]
+for component in components: component.received = []
+references = [weakref.ref(component) for component in components]
+"#
+                ),
+                Some(&locals),
+                None,
+            )
+            .unwrap();
+            let actor = locals.get_item("actor").unwrap().unwrap().unbind();
+            let strategy = locals.get_item("strategy").unwrap().unwrap().unbind();
+            let algorithm = locals.get_item("algorithm").unwrap().unwrap().unbind();
+            let actor_id = ActorId::from("Actor");
+            trader.add_python_actor_instance(&actor, actor_id).unwrap();
+            trader.add_python_strategy_instance(&strategy).unwrap();
+            let native_algorithm = algorithm
+                .bind(py)
+                .extract::<PyRef<PyExecutionAlgorithm>>()
+                .unwrap()
+                .clone();
+            trader
+                .add_py_execution_algorithm_instance(native_algorithm, &algorithm)
+                .unwrap();
+            drop((actor, strategy, algorithm));
+            py.run(
+                c_str!(
+                    r#"
+
+for component in components: component.start()
+message = {"symbol": "example", "weights": [13, 29]}
+for component in components: component.publish_message("app.shared", message)
+for component in components:
+    assert len(component.received) == 3
+    assert all(value is message for value in component.received)
+errors = []
+def foreign():
+
+    for component in components:
+        for name, args in [("publish_message", ("app.shared", message)),
+                           ("subscribe_topic", ("app.shared", component.receive)),
+                           ("unsubscribe_topic", ("app.shared", component.receive))]:
+            try: getattr(component, name)(*args)
+            except RuntimeError: pass
+            except BaseException as error: errors.append(type(error).__name__)
+            else: errors.append(name)
+thread = threading.Thread(target=foreign)
+thread.start()
+thread.join()
+assert errors == []
+
+for component in components:
+    component.unsubscribe_topic("app.shared", component.receive)
+    component.subscribe_topic("app.shared", component.receive)
+    component.stop()
+"#
+                ),
+                Some(&locals),
+                None,
+            )
+            .unwrap();
+            assert!(Rc::ptr_eq(&bus, &msgbus::get_message_bus()));
+            trader.dispose_components().unwrap();
+            py.run(
+                c_str!(
+                    r#"
+
+for component in components:
+    try: component.subscribe_topic("app.shared", component.receive)
+    except RuntimeError: pass
+    else: raise AssertionError("disposed component accepted a subscription")
+del component, components, actor, strategy, algorithm
+assert [reference() for reference in references] == [None, None, None]
+"#
+                ),
+                Some(&locals),
+                None,
+            )
+            .unwrap();
+            locals.clear();
+        });
     }
 
     #[cfg(feature = "python")]
@@ -4050,6 +4305,76 @@ class StateComponent:
     }
 
     #[rstest]
+    fn test_remove_actor_disposes_after_stop_hook_failure() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+        let actor_id = ActorId::from("Failing-Stop-Actor");
+        let mut actor = TestDataActor::new(DataActorConfig {
+            actor_id: Some(actor_id),
+            ..Default::default()
+        });
+        actor.fail_stop = true;
+        trader.add_actor(actor).unwrap();
+        trader.start_actor(&actor_id).unwrap();
+
+        let error = stop_component(&actor_id.inner()).unwrap_err();
+        assert_eq!(error.to_string(), "test actor stop failure");
+        assert_eq!(
+            component_state(&actor_id.inner()).unwrap(),
+            ComponentState::Stopping,
+        );
+
+        trader.remove_actor(&actor_id).unwrap();
+
+        assert!(get_component(&actor_id.inner()).is_none());
+        assert!(!actor_exists(&actor_id.inner()));
+        assert!(!trader.actor_ids().contains(&actor_id));
+    }
+
+    #[rstest]
+    fn test_remove_strategy_disposes_after_stop_hook_failure() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+        let strategy_id = StrategyId::from("Failing-Stop-Strategy");
+        let mut strategy = TestStrategy::new(StrategyConfig {
+            strategy_id: Some(strategy_id),
+            ..Default::default()
+        });
+        strategy.fail_stop = true;
+        trader.add_strategy(strategy).unwrap();
+        trader.start_strategy(&strategy_id).unwrap();
+
+        let error = stop_component(&strategy_id.inner()).unwrap_err();
+        assert_eq!(error.to_string(), "test strategy stop failure");
+        assert_eq!(
+            component_state(&strategy_id.inner()).unwrap(),
+            ComponentState::Stopping,
+        );
+
+        trader.remove_strategy(&strategy_id).unwrap();
+
+        assert!(get_component(&strategy_id.inner()).is_none());
+        assert!(!actor_exists(&strategy_id.inner()));
+        assert!(!trader.strategy_ids().contains(&strategy_id));
+    }
+
+    #[rstest]
     fn test_clear_exec_algorithms_deregisters_components() {
         let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
@@ -4148,12 +4473,25 @@ class StateComponent:
         });
         actor.fail_dispose = true;
         trader.add_actor(actor).unwrap();
+        trader.start_actor(&actor_id).unwrap();
+
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let deltas_topic = get_book_deltas_topic(instrument_id);
+        get_actor_unchecked::<TestDataActor>(&actor_id.inner()).subscribe_book_deltas(
+            instrument_id,
+            BookType::L3_MBO,
+            None,
+            None,
+            false,
+            None,
+        );
 
         trader.remove_actor(&actor_id).unwrap_err();
         assert_eq!(
             component_state(&actor_id.inner()).unwrap(),
             ComponentState::Faulted
         );
+        assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 1);
 
         // The dead end this closes: retirement previously failed for the life of the process
         trader.remove_actor(&actor_id).unwrap();
@@ -4162,10 +4500,11 @@ class StateComponent:
         assert!(!actor_exists(&actor_id.inner()));
         assert!(trader.actor_ids().is_empty());
         assert!(trader.get_component_clocks().is_empty());
+        assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
     }
 
     #[rstest]
-    fn test_failed_dispose_releases_subscriptions() {
+    fn test_failed_dispose_preserves_subscriptions() {
         let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let mut trader = Trader::new(
@@ -4202,8 +4541,7 @@ class StateComponent:
 
         trader.remove_actor(&actor_id).unwrap_err();
 
-        // A failed disposal releases subscriptions even though it retains the registration
-        assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
+        assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 1);
     }
 
     #[rstest]
@@ -4257,6 +4595,57 @@ class StateComponent:
         assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
         assert!(get_component(&actor_id.inner()).is_none());
         assert!(!actor_exists(&actor_id.inner()));
+    }
+
+    #[rstest]
+    fn test_actor_retires_after_fault_hook_failure() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+        let actor_id = ActorId::from("Failing-Fault-Actor");
+        let mut actor = TestDataActor::new(DataActorConfig {
+            actor_id: Some(actor_id),
+            ..Default::default()
+        });
+        actor.fail_fault = true;
+        trader.add_actor(actor).unwrap();
+        trader.start_actor(&actor_id).unwrap();
+
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let deltas_topic = get_book_deltas_topic(instrument_id);
+        get_actor_unchecked::<TestDataActor>(&actor_id.inner()).subscribe_book_deltas(
+            instrument_id,
+            BookType::L3_MBO,
+            None,
+            None,
+            false,
+            None,
+        );
+        assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 1);
+
+        let error = get_actor_unchecked::<TestDataActor>(&actor_id.inner())
+            .fault()
+            .unwrap_err();
+        assert_eq!(error.to_string(), "test actor fault failure");
+        assert_eq!(
+            component_state(&actor_id.inner()).unwrap(),
+            ComponentState::Faulting,
+        );
+        assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
+
+        trader.remove_actor(&actor_id).unwrap();
+
+        assert!(get_component(&actor_id.inner()).is_none());
+        assert!(!actor_exists(&actor_id.inner()));
+        assert!(trader.actor_ids().is_empty());
+        assert!(trader.get_component_clocks().is_empty());
     }
 
     #[rstest]
@@ -4689,6 +5078,56 @@ class ModuleStrategy(Strategy):
         assert_eq!(msgbus::subscriptions_count_any(data_topic).unwrap(), 0);
         assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
         assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 0);
+    }
+
+    #[rstest]
+    fn test_retirement_releases_bar_aggregator_after_final_subscriber() {
+        let (msgbus, cache, portfolio, data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        set_message_bus(msgbus);
+        replace_data_cmd_sender(Arc::new(SyncDataCommandSender));
+        DataEngine::register_msgbus_handlers(&data_engine);
+
+        let instrument = audusd_sim();
+        cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CurrencyPair(instrument))
+            .unwrap();
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+        let first_id = ActorId::from("Bar-Subscriber-001");
+        let second_id = ActorId::from("Bar-Subscriber-002");
+        for actor_id in [first_id, second_id] {
+            trader
+                .add_actor(TestDataActor::new(DataActorConfig {
+                    actor_id: Some(actor_id),
+                    ..Default::default()
+                }))
+                .unwrap();
+            trader.start_actor(&actor_id).unwrap();
+        }
+
+        let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-INTERNAL");
+        get_actor_unchecked::<TestDataActor>(&first_id.inner())
+            .subscribe_bars(bar_type, None, None);
+        get_actor_unchecked::<TestDataActor>(&second_id.inner())
+            .subscribe_bars(bar_type, None, None);
+        drain_data_cmd_queue();
+        assert!(data_engine.borrow().subscribed_bars().contains(&bar_type));
+
+        trader.remove_actor(&first_id).unwrap();
+        drain_data_cmd_queue();
+        assert!(data_engine.borrow().subscribed_bars().contains(&bar_type));
+
+        trader.remove_actor(&second_id).unwrap();
+        drain_data_cmd_queue();
+        assert!(!data_engine.borrow().subscribed_bars().contains(&bar_type));
     }
 
     #[rstest]

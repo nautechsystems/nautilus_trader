@@ -3,7 +3,8 @@
 Trade ticks trigger matching by default when a venue has `trade_execution=True`. A trade provides
 evidence that liquidity traded at its price, so it can fill resting orders on the passive side.
 
-Set `trade_execution=False` to use trades as strategy data without letting them trigger matching:
+Set `trade_execution=False` to use trades as strategy data without treating them as execution
+liquidity for ordinary resting orders:
 
 ```python
 from nautilus_trader.config import BacktestVenueConfig
@@ -21,9 +22,14 @@ venue = BacktestVenueConfig(
 )
 ```
 
-When trade execution is disabled, trade ticks do not run order matching or matching-engine
-maintenance such as GTD expiry, trailing-stop activation, and instrument-expiration checks. A
-later quote or executable bar can run that maintenance.
+When trade execution is disabled, behavior depends on the venue's book type:
+
+- With L1 data, accepted trade ticks update the L1 book but skip matching and maintenance. Later
+  quote ticks or executable bars drive that work.
+- With L2 or L3 data, accepted trade ticks advance `LastPrice` and run trailing-stop maintenance
+  for all trigger types. They can trigger `LastPrice` stop orders, which fill against existing book
+  liquidity. The tick does not match resting limits or trigger stop orders that use other trigger
+  types. It also runs enabled GTD expiry and instrument-expiration checks.
 
 ## Trade-driven matching
 
@@ -67,7 +73,7 @@ non-aggressor side of the latest quote.
 
 ## Aggressor sides
 
-The aggressor is the participant that crossed the spread:
+The **aggressor** is the participant that crossed the spread:
 
 - `SELL`: A seller hit the bid. The trade can fill a resting BUY order.
 - `BUY`: A buyer lifted the ask. The trade can fill a resting SELL order.
@@ -152,6 +158,11 @@ For L2 books and aggregate L3 updates:
 
 - A DELETE clears the price level and its queue.
 - An UPDATE caps quantity ahead at the level's new displayed size.
+- A completed book snapshot rebases each tracked queue position against the new visible
+  quantity at its price: quantity ahead is capped at the snapshot size, while newly added
+  liquidity does not move an existing simulated order further back. Snapshot batches may start
+  with a `F_SNAPSHOT` clear and finish with a later `F_LAST` delta.
+- A `BookDepth10` replacement applies the same rebase rule after the full depth replacement.
 
 For L3 MBO books:
 
@@ -159,6 +170,8 @@ For L3 MBO books:
 - A size decrease advances the queue by the difference.
 - A size increase keeps the larger order ahead.
 - A price change removes the book order from the tracked queue.
+- A completed book snapshot retains only surviving tracked order IDs ahead, each capped at
+  its previous quantity.
 
 Changing a simulated order's price resets its queue position at the new level. A quantity-only
 change retains the progress already made.
@@ -178,6 +191,9 @@ displayed-size evidence:
 - Queue tracking applies only to `LIMIT` orders.
 - Each simulated order has an independent queue estimate.
 - The initial estimate is limited to book state visible at acceptance.
-- `NO_AGGRESSOR` trades reduce queues on both sides. This can clear a queue and fill an order
-  earlier than reality, so it is optimistic from the strategy's execution perspective.
 - Historical data cannot reveal hidden orders or every venue-specific priority rule.
+
+:::warning[Unknown aggressor side]
+`NO_AGGRESSOR` trades reduce queues on both sides. This can clear a queue and fill an order
+earlier than reality, so it is optimistic from the strategy's execution perspective.
+:::

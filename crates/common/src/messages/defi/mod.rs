@@ -113,6 +113,64 @@ impl DefiSubscribeCommand {
         self
     }
 
+    /// Converts this subscribe command into its matching unsubscribe command.
+    ///
+    /// Preserves the subscribed data identity, client route, and parameters while replacing the
+    /// command ID and initialization timestamp with the supplied values.
+    #[must_use]
+    pub fn into_unsubscribe(self, command_id: UUID4, ts_init: UnixNanos) -> DefiUnsubscribeCommand {
+        match self {
+            Self::Blocks(cmd) => DefiUnsubscribeCommand::Blocks(UnsubscribeBlocks::new(
+                cmd.chain,
+                cmd.client_id,
+                command_id,
+                ts_init,
+                cmd.params,
+            )),
+            Self::Pool(cmd) => DefiUnsubscribeCommand::Pool(UnsubscribePool::new(
+                cmd.instrument_id,
+                cmd.client_id,
+                command_id,
+                ts_init,
+                cmd.params,
+            )),
+            Self::PoolSwaps(cmd) => DefiUnsubscribeCommand::PoolSwaps(UnsubscribePoolSwaps::new(
+                cmd.instrument_id,
+                cmd.client_id,
+                command_id,
+                ts_init,
+                cmd.params,
+            )),
+            Self::PoolLiquidityUpdates(cmd) => {
+                DefiUnsubscribeCommand::PoolLiquidityUpdates(UnsubscribePoolLiquidityUpdates::new(
+                    cmd.instrument_id,
+                    cmd.client_id,
+                    command_id,
+                    ts_init,
+                    cmd.params,
+                ))
+            }
+            Self::PoolFeeCollects(cmd) => {
+                DefiUnsubscribeCommand::PoolFeeCollects(UnsubscribePoolFeeCollects::new(
+                    cmd.instrument_id,
+                    cmd.client_id,
+                    command_id,
+                    ts_init,
+                    cmd.params,
+                ))
+            }
+            Self::PoolFlashEvents(cmd) => {
+                DefiUnsubscribeCommand::PoolFlashEvents(UnsubscribePoolFlashEvents::new(
+                    cmd.instrument_id,
+                    cmd.client_id,
+                    command_id,
+                    ts_init,
+                    cmd.params,
+                ))
+            }
+        }
+    }
+
     /// Returns the blockchain associated with this command.
     ///
     /// # Panics

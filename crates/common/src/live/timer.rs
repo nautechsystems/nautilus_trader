@@ -19,22 +19,24 @@
 //!
 //! Runtime deadlines use the remaining duration to the nominal schedule and are computed before
 //! the timer task is spawned. A deadline already in the past starts immediately. Event timestamps
-//! retain the nominal schedule, and stop times are inclusive.
+//! retain the nominal schedule, and stop times are inclusive. An event whose following schedule is
+//! not representable in [`UnixNanos`] is the timer's final event.
 //!
 //! # Task lifecycle
 //!
 //! Each [`LiveTimer::start`] creates fresh public schedule and task-state atomics. Because aborting
 //! a runtime task does not join it, task retirement linearizes restart, cancellation, and drop
-//! against event reservation. Retirement either prevents the old task from dispatching or observes
-//! the schedule advanced by its reserved event; fresh atomics keep that task from overwriting its
-//! replacement's schedule.
+//! against event reservation. Retirement either prevents the old task from dispatching, or observes
+//! what that task reserved with its event: the following schedule, or terminal exhaustion when no
+//! successor is representable. Fresh atomics keep that task from overwriting its replacement's
+//! schedule.
 //!
 //! # Callback dispatch
 //!
 //! Thread-safe callbacks cross the worker boundary as [`TimeEventMessage`] values. `RustLocal`
 //! callbacks remain in an owner-thread registry and cross the boundary only through tokens and
-//! leases. Senderless Python callbacks run inline and publish their following schedule after the
-//! callback returns.
+//! leases. Senderless Python callbacks run inline and publish their following schedule, when one
+//! exists, after the callback returns.
 
 use std::{
     num::NonZeroU64,
@@ -45,7 +47,7 @@ use std::{
 };
 
 use nautilus_core::{
-    UUID4, UnixNanos,
+    DurationNanos, UUID4, UnixNanos,
     correctness::{FAILED, check_valid_string_utf8},
     datetime::floor_to_nearest_microsecond,
     time::get_atomic_clock_realtime,
@@ -70,6 +72,7 @@ use crate::{
 const TASK_ACTIVE: u8 = 0;
 const TASK_FIRING: u8 = 1;
 const TASK_RETIRED: u8 = 2;
+const TASK_EXHAUSTED: u8 = 3;
 
 /// A live timer for use with a `LiveClock`.
 ///
@@ -95,6 +98,7 @@ pub struct LiveTimer {
     callback: OwnerCallback,
     task_handle: Option<JoinHandle<()>>,
     task_state: Option<Arc<TimerTaskState>>,
+    exhausted: bool,
     canceled: bool,
     sender: Option<Arc<dyn TimeEventSender>>,
 }
@@ -122,7 +126,7 @@ impl LiveTimer {
         let next_time_ns = if fire_immediately {
             start_time_ns.as_u64()
         } else {
-            (start_time_ns + interval_ns.get()).as_u64()
+            (start_time_ns + DurationNanos::new(interval_ns.get())).as_u64()
         };
 
         log::trace!("Creating timer '{name}'");
@@ -150,6 +154,7 @@ impl LiveTimer {
             callback: owner_callback,
             task_handle: None,
             task_state: None,
+            exhausted: false,
             canceled: false,
             sender,
         }
@@ -158,6 +163,7 @@ impl LiveTimer {
     /// Returns the next time in UNIX nanoseconds when the timer will fire.
     ///
     /// Provides the scheduled time for the next event based on the current state of the timer.
+    /// An exhausted timer retains the timestamp of its final event.
     #[must_use]
     pub fn next_time_ns(&self) -> UnixNanos {
         UnixNanos::from(self.next_time_ns.load(atomic::Ordering::SeqCst))
@@ -185,6 +191,9 @@ impl LiveTimer {
     /// (restart semantics); a previously fired event that is already queued
     /// still dispatches.
     ///
+    /// An event whose following schedule would overflow [`UnixNanos`] is the timer's final event.
+    /// The timer then remains expired, and further calls return without starting a task.
+    ///
     /// # Panics
     ///
     /// Panics if using a Rust callback (`Rust` or `RustLocal`) without a `TimeEventSender`.
@@ -202,11 +211,18 @@ impl LiveTimer {
 
         let event_name = self.name;
         let stop_time_ns = self.stop_time_ns;
-        let interval_ns = self.interval_ns.get();
+        let interval_ns = DurationNanos::new(self.interval_ns.get());
 
-        let mut observed_next = self
-            .retire_task()
-            .unwrap_or_else(|| self.next_time_ns.load(atomic::Ordering::SeqCst));
+        let retired_task = self.retire_task();
+
+        if self.exhausted {
+            return;
+        }
+
+        let mut observed_next = retired_task.map_or_else(
+            || self.next_time_ns.load(atomic::Ordering::SeqCst),
+            |retirement| retirement.next_time_ns,
+        );
 
         // Close the old token before registering its replacement;
         // any lease acquired before retirement remains valid.
@@ -270,7 +286,7 @@ impl LiveTimer {
         let task = async move {
             let clock = get_atomic_clock_realtime();
 
-            let mut timer = dst::time::interval_at(start, Duration::from_nanos(interval_ns));
+            let mut timer = dst::time::interval_at(start, Duration::from(interval_ns));
 
             loop {
                 // Never fire an event scheduled past the stop time. The event's
@@ -297,30 +313,34 @@ impl LiveTimer {
 
                 let event = TimeEvent::new(event_name, UUID4::new(), next_time_ns, now_ns);
 
-                // The event scheduled exactly at the stop time fires (inclusive
-                // boundary), then the timer expires.
-                let expires_after_fire = expires_after_scheduled_time(next_time_ns, stop_time_ns);
-                let following_next_time_ns = next_time_ns + interval_ns;
+                // An event at the inclusive stop boundary or without a representable successor
+                // is terminal.
+                let following_next_time_ns = next_time_ns.checked_add(interval_ns);
+                let expires_after_fire = expires_after_scheduled_time(next_time_ns, stop_time_ns)
+                    || following_next_time_ns.is_none();
 
-                // Reserve this fire and its following schedule together. A
-                // restart either observes the advanced schedule or retires
-                // the task before it can dispatch. Registered callbacks
-                // acquire their lease first so token closure cannot suppress
-                // an event whose schedule already advanced.
+                // Reserve this fire with its following schedule or terminal exhaustion. A restart
+                // observes that outcome or retires the task before it can dispatch. Registered
+                // callbacks acquire their lease first so token closure cannot suppress a reserved
+                // event.
                 let registered_lease = if let WorkerDispatch::Registered(token) = &worker_dispatch {
-                    match task_state.reserve_registered_fire(token, following_next_time_ns.as_u64())
-                    {
+                    match task_state.reserve_registered_fire(
+                        token,
+                        following_next_time_ns.map(|time| time.as_u64()),
+                    ) {
                         Some(lease) => Some(lease),
                         None => break,
                     }
                 } else {
-                    if !task_state.reserve_fire(following_next_time_ns.as_u64()) {
+                    if !task_state.reserve_fire(following_next_time_ns.map(|time| time.as_u64())) {
                         break;
                     }
                     None
                 };
 
-                if sender.is_some() {
+                if sender.is_some()
+                    && let Some(following_next_time_ns) = following_next_time_ns
+                {
                     next_time_atomic
                         .store(following_next_time_ns.as_u64(), atomic::Ordering::SeqCst);
                 }
@@ -343,15 +363,19 @@ impl LiveTimer {
                     _ => unreachable!("timer callback dispatch did not match its sender"),
                 }
 
-                if sender.is_none() {
+                if sender.is_none()
+                    && let Some(following_next_time_ns) = following_next_time_ns
+                {
                     next_time_atomic
                         .store(following_next_time_ns.as_u64(), atomic::Ordering::SeqCst);
                 }
 
-                next_time_ns = following_next_time_ns;
+                if let Some(following_next_time_ns) = following_next_time_ns {
+                    next_time_ns = following_next_time_ns;
+                }
 
                 if expires_after_fire {
-                    break; // Timer expired at the stop boundary
+                    break; // Stop boundary reached, or no representable successor
                 }
             }
         };
@@ -387,12 +411,13 @@ impl LiveTimer {
         }
     }
 
-    fn retire_task(&mut self) -> Option<u64> {
+    fn retire_task(&mut self) -> Option<TimerTaskRetirement> {
         let task_state = self.task_state.take()?;
-        let next_time_ns = task_state.retire();
+        let retirement = task_state.retire();
+        self.exhausted |= retirement.exhausted;
         self.next_time_ns
-            .store(next_time_ns, atomic::Ordering::SeqCst);
-        Some(next_time_ns)
+            .store(retirement.next_time_ns, atomic::Ordering::SeqCst);
+        Some(retirement)
     }
 }
 
@@ -457,13 +482,19 @@ fn normalize_start_time_ns(
 }
 
 fn timer_start_delay(next_time_ns: UnixNanos, now_ns: UnixNanos) -> Duration {
-    Duration::from_nanos(next_time_ns.saturating_sub(now_ns.as_u64()))
+    Duration::from(next_time_ns.saturating_duration_since(now_ns))
 }
 
 #[derive(Debug)]
 struct TimerTaskState {
     status: AtomicU8,
     next_time_ns: AtomicU64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct TimerTaskRetirement {
+    next_time_ns: u64,
+    exhausted: bool,
 }
 
 impl TimerTaskState {
@@ -477,13 +508,13 @@ impl TimerTaskState {
     fn reserve_registered_fire(
         &self,
         token: &TimeEventCallbackToken,
-        following_next_time_ns: u64,
+        following_next_time_ns: Option<u64>,
     ) -> Option<TimeEventCallbackLease> {
         let lease = token.acquire()?;
         self.reserve_fire(following_next_time_ns).then_some(lease)
     }
 
-    fn reserve_fire(&self, following_next_time_ns: u64) -> bool {
+    fn reserve_fire(&self, following_next_time_ns: Option<u64>) -> bool {
         if self
             .status
             .compare_exchange(
@@ -497,28 +528,36 @@ impl TimerTaskState {
             return false;
         }
 
-        self.next_time_ns
-            .store(following_next_time_ns, atomic::Ordering::SeqCst);
-        self.status.store(TASK_ACTIVE, atomic::Ordering::SeqCst);
+        if let Some(following_next_time_ns) = following_next_time_ns {
+            self.next_time_ns
+                .store(following_next_time_ns, atomic::Ordering::SeqCst);
+            self.status.store(TASK_ACTIVE, atomic::Ordering::SeqCst);
+        } else {
+            self.status.store(TASK_EXHAUSTED, atomic::Ordering::SeqCst);
+        }
         true
     }
 
-    fn retire(&self) -> u64 {
-        loop {
+    fn retire(&self) -> TimerTaskRetirement {
+        let exhausted = loop {
             match self.status.compare_exchange(
                 TASK_ACTIVE,
                 TASK_RETIRED,
                 atomic::Ordering::SeqCst,
                 atomic::Ordering::SeqCst,
             ) {
-                Ok(_) | Err(TASK_RETIRED) => break,
+                Ok(_) | Err(TASK_RETIRED) => break false,
+                Err(TASK_EXHAUSTED) => break true,
                 // The firing section contains only atomic schedule publication
                 Err(TASK_FIRING) => std::hint::spin_loop(),
                 Err(status) => unreachable!("invalid timer task state {status}"),
             }
-        }
+        };
 
-        self.next_time_ns.load(atomic::Ordering::SeqCst)
+        TimerTaskRetirement {
+            next_time_ns: self.next_time_ns.load(atomic::Ordering::SeqCst),
+            exhausted,
+        }
     }
 }
 
@@ -701,13 +740,18 @@ mod tests {
     }
 
     #[rstest]
-    fn test_timer_task_retirement_prevents_a_late_fire() {
+    #[case::following_schedule(Some(200))]
+    #[case::exhaustion(None)]
+    fn test_timer_task_retirement_prevents_a_late_fire(
+        #[case] following_next_time_ns: Option<u64>,
+    ) {
         let state = super::TimerTaskState::new(100);
 
-        let restart_time_ns = state.retire();
-        let reserved = state.reserve_fire(200);
+        let retirement = state.retire();
+        let reserved = state.reserve_fire(following_next_time_ns);
 
-        assert_eq!(restart_time_ns, 100);
+        assert_eq!(retirement.next_time_ns, 100);
+        assert!(!retirement.exhausted);
         assert!(!reserved);
         assert_eq!(state.next_time_ns.load(Ordering::SeqCst), 100);
     }
@@ -716,12 +760,26 @@ mod tests {
     fn test_timer_task_retirement_preserves_a_reserved_fire() {
         let state = super::TimerTaskState::new(100);
 
-        let reserved = state.reserve_fire(200);
-        let restart_time_ns = state.retire();
+        let reserved = state.reserve_fire(Some(200));
+        let retirement = state.retire();
 
         assert!(reserved);
-        assert_eq!(restart_time_ns, 200);
+        assert_eq!(retirement.next_time_ns, 200);
+        assert!(!retirement.exhausted);
         assert_eq!(state.next_time_ns.load(Ordering::SeqCst), 200);
+    }
+
+    #[rstest]
+    fn test_timer_task_retirement_preserves_exhaustion() {
+        let state = super::TimerTaskState::new(100);
+
+        let reserved = state.reserve_fire(None);
+        let retirement = state.retire();
+
+        assert!(reserved);
+        assert_eq!(retirement.next_time_ns, 100);
+        assert!(retirement.exhausted);
+        assert_eq!(state.next_time_ns.load(Ordering::SeqCst), 100);
     }
 
     #[cfg(not(all(feature = "simulation", madsim)))]
@@ -732,11 +790,12 @@ mod tests {
         let token = register_time_event_callback(callback);
         token.close();
 
-        let lease = state.reserve_registered_fire(&token, 200);
-        let restart_time_ns = state.retire();
+        let lease = state.reserve_registered_fire(&token, Some(200));
+        let retirement = state.retire();
 
         assert!(lease.is_none());
-        assert_eq!(restart_time_ns, 100);
+        assert_eq!(retirement.next_time_ns, 100);
+        assert!(!retirement.exhausted);
         assert_eq!(state.next_time_ns.load(Ordering::SeqCst), 100);
     }
 
@@ -802,6 +861,88 @@ mod tests {
 
         assert_eq!(message.event().ts_event, now);
         assert!(timer.is_expired());
+    }
+
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    #[rstest]
+    fn test_live_timer_expires_after_terminal_event() {
+        let (tx, rx) = mpsc::channel();
+        let sender = Arc::new(ChannelSender { tx });
+        let now = get_atomic_clock_realtime().get_time_ns();
+        let mut timer = LiveTimer::new(
+            Ustr::from("TERMINAL_TIMER"),
+            NonZeroU64::new(u64::MAX).unwrap(),
+            now,
+            None,
+            TimeEventCallback::from(|_| {}),
+            true,
+            Some(sender),
+        );
+
+        timer.start();
+        let scheduled_time = timer.next_time_ns();
+        let message = rx
+            .recv_timeout(StdDuration::from_secs(1))
+            .expect("terminal timer event should arrive");
+        wait_until(|| timer.is_expired(), StdDuration::from_secs(1));
+
+        assert_eq!(message.event().ts_event, scheduled_time);
+        assert_eq!(timer.next_time_ns(), scheduled_time);
+        assert!(timer.is_expired());
+
+        timer.start();
+        assert!(rx.recv_timeout(StdDuration::from_millis(10)).is_err());
+        assert_eq!(timer.next_time_ns(), scheduled_time);
+        assert!(timer.is_expired());
+    }
+
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    #[rstest]
+    fn test_live_timer_registered_callback_expires_after_terminal_event() {
+        let (tx, rx) = mpsc::channel();
+        let sender = Arc::new(ChannelSender { tx });
+        let count = Rc::new(std::cell::Cell::new(0));
+        let callback_count = count.clone();
+        let callback: Rc<dyn Fn(crate::timer::TimeEvent)> =
+            Rc::new(move |_| callback_count.set(callback_count.get() + 1));
+        let callback_weak = Rc::downgrade(&callback);
+        let now = get_atomic_clock_realtime().get_time_ns();
+        let mut timer = LiveTimer::new(
+            Ustr::from("TERMINAL_LOCAL_TIMER"),
+            NonZeroU64::new(u64::MAX).unwrap(),
+            now,
+            None,
+            TimeEventCallback::RustLocal(callback),
+            true,
+            Some(sender),
+        );
+
+        timer.start();
+        let scheduled_time = timer.next_time_ns();
+        let message = rx
+            .recv_timeout(StdDuration::from_secs(1))
+            .expect("registered terminal timer event should arrive");
+        wait_until(|| timer.is_expired(), StdDuration::from_secs(1));
+
+        assert_eq!(message.event().ts_event, scheduled_time);
+        assert!(message.dispatch());
+        assert_eq!(count.get(), 1);
+        assert_eq!(timer.next_time_ns(), scheduled_time);
+        assert!(timer.is_expired());
+
+        timer.start();
+        let token_closed = match &timer.callback {
+            super::OwnerCallback::Registered { token, .. } => token.is_closed(),
+            _ => false,
+        };
+        assert!(rx.recv_timeout(StdDuration::from_millis(10)).is_err());
+        assert!(token_closed);
+        assert_eq!(timer.next_time_ns(), scheduled_time);
+        assert!(timer.is_expired());
+        assert!(callback_weak.upgrade().is_some());
+
+        drop(timer);
+        assert!(callback_weak.upgrade().is_none());
     }
 
     #[cfg(not(all(feature = "simulation", madsim)))]

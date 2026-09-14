@@ -112,21 +112,21 @@ def on_option_chain(self, chain) -> None:
 | `AtmPercent`  | All strikes within a percentage band around ATM.    | `StrikeRange.atm_percent(0.10)`  |
 | `Delta`       | Strikes whose call or put delta is near a target.   | `StrikeRange.delta(0.25, 0.05)`  |
 
-For ATM-based variants, subscriptions are deferred until the ATM price is determined.
-ATM is derived from the forward price embedded in venue-provided `OptionGreeks` updates
-(the `underlying_price` field). It can also be seeded from an initial forward price
-fetched via HTTP, allowing instant bootstrap before live WebSocket ticks arrive. As ATM
-shifts, the active strike set rebalances automatically.
+For dynamic strike ranges, subscriptions are **deferred until the ATM price is determined**.
+ATM is derived from the venue reference price in `OptionGreeks.underlying_price`. It can
+also be seeded from a reference price fetched for the option series via HTTP, allowing
+instant bootstrap before live WebSocket ticks arrive. As ATM shifts, the active strike
+set rebalances automatically.
 
 `Delta` resolves from venue-provided Greeks: a strike is active when its call or put delta
 magnitude (calls positive, puts negative, compared by absolute value) falls within
 `tolerance` of `target`. A typical out-of-the-money target such as `0.25` selects a strike on
-each side of ATM. Before the ATM/forward price is known, `Delta` is deferred like other
-ATM-based ranges. After ATM is known, when no active strike's Greeks match the band
+each side of ATM. Before the ATM reference price is known, `Delta` is deferred like other
+dynamic ranges. After ATM is known, when no active strike's Greeks match the band
 (including before any Greeks arrive), `Delta` falls back to an ATM-relative window of five
 strikes either side of ATM. Before switching from the fallback window to selected delta
 strikes, the aggregator waits until every fallback leg has Greeks so partial early updates do
-not drop neighbouring strikes.
+not drop neighboring strikes.
 
 ### Snapshot vs. raw mode
 
@@ -259,7 +259,7 @@ flowchart TD
     DE -- "handle_greeks()" --> MGR
     MGR --> AGG
     MGR --> ATM
-    ATM -- "forward price" --> AGG
+    ATM -- "reference price" --> AGG
     TMR -- "timer tick" --> MGR
     MGR -- "OptionChainSlice" --> MB((MessageBus))
     MB -- "on_option_chain" --> S[DataActor / Strategy]
@@ -271,12 +271,13 @@ flowchart TD
 #### DataEngine
 
 Holds one `OptionChainManager` per active `OptionSeriesId`. On
-`SubscribeOptionChain`, it resolves instruments from the cache, requests forward
-prices for ATM-based ranges, creates the manager, subscribes active instruments to
-the data client, and sets up the snapshot timer. On each timer tick, the manager
-checks for rebalances, publishes a snapshot, and queues any wire subscription
-changes for the engine to drain. On `UnsubscribeOptionChain` or when all instruments
-expire, it tears down the manager, cancels the timer, and unsubscribes wire-level feeds.
+`SubscribeOptionChain`, it resolves instruments from the cache, requests a series
+reference price for dynamic strike ranges, creates the manager, subscribes active
+instruments to the data client, and sets up the snapshot timer. On each timer tick,
+the manager checks for rebalances, publishes a snapshot, and queues any wire
+subscription changes for the engine to drain. On `UnsubscribeOptionChain` or when
+all instruments expire, it tears down the manager, cancels the timer, and
+unsubscribes wire-level feeds.
 
 #### OptionChainManager
 
@@ -288,7 +289,7 @@ active instrument set internally on the first ATM price.
 
 #### OptionChainAggregator
 
-Accumulates quotes and Greeks into call/put buffers using keep-latest semantics.
+Accumulates quotes and Greeks into call/put buffers using **keep-latest semantics**.
 Instruments that did not update since the last snapshot are still included. Greeks
 that arrive before any quote for an instrument are held in a `pending_greeks`
 buffer and attached when the first quote arrives. On each `snapshot()` call, the
@@ -297,36 +298,37 @@ aggregator produces an immutable `OptionChainSlice`.
 #### AtmTracker
 
 Derives the ATM price reactively from the `underlying_price` field in incoming
-`OptionGreeks` events (the venue-provided forward price for that expiry). It can
-be pre-seeded from an HTTP forward price response for instant bootstrap without
-waiting for WebSocket ticks.
+`OptionGreeks` events. It can be pre-seeded from an HTTP reference price for the
+option series, allowing instant bootstrap without waiting for WebSocket ticks.
 
 ### Bootstrap and rebalancing
 
-For ATM-based strike ranges (`AtmRelative`, `AtmPercent`), the active instrument
-set cannot be determined until the ATM price is known. There are two bootstrap
-paths:
+For dynamic strike ranges (`AtmRelative`, `AtmPercent`, and `Delta`), the active
+instrument set cannot be determined until the ATM price is known. There are two
+bootstrap paths:
 
-**Instant bootstrap (forward price available):**
+**Instant bootstrap (reference price available):**
 
 1. `DataEngine` receives `SubscribeOptionChain`, resolves all instruments for the
-   series from the cache, and requests forward prices from the data client.
-2. When the forward price response arrives, the engine creates the manager with
+   series from the cache, and requests a reference price from the data client.
+2. When the reference price response arrives, the engine creates the manager with
    the ATM price pre-seeded. The manager computes the active strike set during
    construction.
 3. The engine subscribes the active instruments immediately.
 
-**Deferred bootstrap (no forward price):**
+**Deferred bootstrap (no reference price):**
 
-1. Same as above, but no matching forward price is found in the response.
+1. The engine has no matching client or cached option instrument, the client reports no
+   reference price, the request fails, or the request times out after 30 seconds.
 2. The engine creates the manager with no initial ATM price. The active set is
-   empty and no wire subscriptions are made for the chain.
-3. Bootstrap depends on relevant Greeks data already flowing from other
-   subscriptions (e.g., per-instrument `subscribe_option_greeks` calls). When
-   the engine feeds an `OptionGreeks` event with `underlying_price` through
+   empty. When the request reached a client with a cached sample option, the engine
+   subscribes that sample's Greeks as the bootstrap source. Without a client or sample,
+   bootstrap still depends on relevant Greeks data already flowing from another
+   subscription.
+3. When the engine feeds an `OptionGreeks` event with `underlying_price` through
    `handle_greeks()`, the manager bootstraps the active instrument set, registers
    message bus handlers, and queues the new wire subscriptions for the engine to
-   drain.
+   drain. The sample subscription becomes part of the active set or is released.
 
 Once bootstrapped, the aggregator monitors ATM drift. On each snapshot timer tick,
 the manager calls the aggregator's `check_rebalance()` which returns any instruments
@@ -383,13 +385,15 @@ Methods:
 
 ## Adapter support
 
-The following adapters currently support option Greeks subscriptions:
+The following adapters support option Greeks subscriptions:
 
-| Adapter | Per-instrument Greeks | Option chains |
-| ------- | :-------------------: | :-----------: |
-| Deribit | ✓                     | ✓             |
-| Bybit   | ✓                     | ✓             |
-| OKX     | ✓                     | -             |
+| Adapter             | Per-instrument Greeks | Option chains |
+| ------------------- | --------------------- | ------------- |
+| Deribit             | Yes                   | Yes           |
+| Bybit               | Yes                   | Yes           |
+| Derive              | Yes                   | Yes           |
+| Interactive Brokers | Yes                   | Yes           |
+| OKX                 | Yes                   | Yes           |
 
 ## See also
 

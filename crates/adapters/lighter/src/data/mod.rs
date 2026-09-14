@@ -139,7 +139,8 @@ impl LighterDataClient {
             // config value falls back to the env var rather than overriding it.
             let private_key = config
                 .private_key
-                .as_deref()
+                .as_ref()
+                .map(|value| value.expose_secret())
                 .filter(|s| !s.trim().is_empty())
                 .map(str::to_string);
             Credential::resolve_for_deployment(
@@ -163,7 +164,10 @@ impl LighterDataClient {
             config.environment,
             Some(config.http_url()),
             config.http_timeout_secs,
-            config.proxy_url.clone(),
+            config
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
             resolve_quota(config.rest_quota_per_min),
             None,
         )
@@ -222,7 +226,10 @@ impl LighterDataClient {
             registry,
             config.transport_backend,
             config.ws_timeout_secs,
-            config.proxy_url.clone(),
+            config
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         );
 
         ws_client.with_socket_control(socket_factory.control(DATA_STREAMS_ENDPOINT))
@@ -457,14 +464,14 @@ impl LighterDataClient {
                                 }
                             }
                             Some(NautilusWsMessage::Deltas(deltas)) => {
-                                let data = Data::Deltas(Box::new(deltas));
+                                let data = Data::BookDeltas(Box::new(deltas));
                                 if let Err(e) = data_sender.send(DataEvent::Data(data)) {
                                     log::error!("Failed to send order book deltas: {e}");
                                 }
                             }
                             Some(NautilusWsMessage::Depth10(depth)) => {
                                 if let Err(e) =
-                                    data_sender.send(DataEvent::Data(Data::Depth10(depth)))
+                                    data_sender.send(DataEvent::Data(Data::BookDepth10(depth)))
                                 {
                                     log::error!("Failed to send order book depth10: {e}");
                                 }
@@ -3099,7 +3106,7 @@ mod tests {
     ) {
         config.api_key_index = Some(5);
         config.account_index = Some(12_345);
-        config.private_key = Some(PRIVATE_KEY_HEX.to_string());
+        config.private_key = Some(PRIVATE_KEY_HEX.into());
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         replace_data_event_sender(sender);
         let client = LighterDataClient::new(ClientId::new("LIGHTER"), config).unwrap();

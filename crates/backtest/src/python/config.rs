@@ -25,10 +25,10 @@ use nautilus_core::{UUID4, UnixNanos, python::to_pyvalue_err};
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::{
     engine::config::ExecutionEngineConfig,
-    models::latency::LatencyModelAny,
     python::{
         fee::{fee_model_any_to_pyobject, pyobject_to_fee_model_any},
         fill::{fill_model_any_to_pyobject, pyobject_to_fill_model_any},
+        latency::{latency_model_any_to_pyobject, pyobject_to_latency_model_any},
     },
 };
 use nautilus_model::{
@@ -48,7 +48,7 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use super::{
-    engine::{pyobject_to_latency_model_any, pyobject_to_margin_model_any},
+    engine::pyobject_to_margin_model_any,
     modules::{pyobject_to_simulation_module_any, simulation_module_any_to_pyobject},
 };
 use crate::config::{
@@ -388,7 +388,7 @@ impl BacktestVenueConfig {
             .map(|obj| Python::attach(|py| pyobject_to_fill_model_any(obj.bind(py))))
             .transpose()?;
         let latency_model = latency_model
-            .map(|obj| Python::attach(|py| pyobject_to_latency_model_any(py, obj.bind(py))))
+            .map(|obj| Python::attach(|py| pyobject_to_latency_model_any(obj.bind(py))))
             .transpose()?;
         let fee_model = fee_model
             .map(|obj| Python::attach(|py| pyobject_to_fee_model_any(obj.bind(py))))
@@ -980,11 +980,5 @@ fn margin_model_any_to_pyobject(py: Python<'_>, model: &MarginModelAny) -> PyRes
     match model {
         MarginModelAny::Standard(model) => (*model).into_py_any(py),
         MarginModelAny::Leveraged(model) => (*model).into_py_any(py),
-    }
-}
-
-fn latency_model_any_to_pyobject(py: Python<'_>, model: &LatencyModelAny) -> PyResult<Py<PyAny>> {
-    match model {
-        LatencyModelAny::Static(model) => model.clone().into_py_any(py),
     }
 }

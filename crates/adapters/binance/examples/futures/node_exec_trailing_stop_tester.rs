@@ -110,8 +110,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_config = BinanceDataClientConfig {
         product_type,
         environment,
-        api_key: Some(api_key.clone()),
-        api_secret: Some(api_secret.clone()),
+        api_key: Some(api_key.clone().into()),
+        api_secret: Some(api_secret.clone().into()),
         ..Default::default()
     };
 
@@ -119,8 +119,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         account_id,
         product_type,
         environment,
-        api_key: Some(api_key),
-        api_secret: Some(api_secret),
+        api_key: Some(api_key.into()),
+        api_secret: Some(api_secret.into()),
         ..Default::default()
     };
 
@@ -144,7 +144,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from(STRATEGY_ID)),
-            external_order_claims: Some(vec![instrument_id]),
+            external_order_instrument_ids: Some(vec![instrument_id]),
             ..Default::default()
         })
         .instrument_id(instrument_id)

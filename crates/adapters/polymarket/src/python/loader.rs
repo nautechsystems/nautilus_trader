@@ -30,7 +30,11 @@ use nautilus_model::{
     instruments::{BinaryOption, InstrumentAny},
 };
 use nautilus_network::retry::RetryConfig;
-use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyList};
+use pyo3::{
+    conversion::IntoPyObjectExt,
+    prelude::*,
+    types::{PyDict, PyList},
+};
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -40,7 +44,7 @@ use crate::{
         clob::PolymarketClobPublicClient,
         data_api::PolymarketDataApiHttpClient,
         error::Error as PolymarketHttpError,
-        gamma::PolymarketGammaHttpClient,
+        gamma::{PolymarketGammaHttpClient, flatten_event_markets},
         models::{ClobMarketResponse, GammaEvent, GammaMarket},
         parse::{create_instrument_from_def, parse_gamma_market},
         query::{GetGammaMarketsParams, GetSearchParams},
@@ -300,7 +304,7 @@ impl PyPolymarketDataLoader {
             }
 
             let mut loaders = Vec::with_capacity(event.markets.len());
-            for market in event.markets {
+            for market in flatten_event_markets(vec![event]) {
                 loaders.push(
                     build_loader(
                         market,
@@ -506,13 +510,20 @@ fn build_loader_from_details(
         .into_iter()
         .nth(token_index)
         .ok_or_else(|| to_pyvalue_err("Selected token has no instrument definition"))?;
-    let instrument =
+
+    let mut instrument =
         match create_instrument_from_def(&def, get_atomic_clock_realtime().get_time_ns())
             .map_err(to_pyvalue_err)?
         {
             InstrumentAny::BinaryOption(instrument) => instrument,
             _ => return Err(to_pyruntime_err("Expected a BinaryOption instrument")),
         };
+
+    // Fetched snapshots can reveal outcomes that were unknown during the historical period
+    if let Some(info) = instrument.info.as_mut() {
+        info.shift_remove("gamma_market");
+        info.shift_remove("gamma_event");
+    }
 
     let resolution_metadata = resolution_metadata(&market, details);
     let token_id = details.tokens[token_index].token_id.clone();
@@ -568,6 +579,8 @@ fn validate_market_details(
 
 fn resolution_metadata(market: &GammaMarket, details: &ClobMarketResponse) -> Value {
     json!({
+        "gamma_market": market.raw,
+        "gamma_event": market.parent_event.as_ref().map(|event| &event.raw),
         "closed": details.closed,
         "closedTime": market.closed_time,
         "umaResolutionStatus": market.uma_resolution_status,
@@ -602,8 +615,15 @@ fn extract_filters(filters: Option<&Bound<'_, PyAny>>) -> PyResult<HashMap<Strin
 }
 
 fn serialize_to_py<T: Serialize>(py: Python<'_>, value: &T) -> PyResult<Py<PyAny>> {
-    let value = serde_json::to_value(value).map_err(to_pyruntime_err)?;
-    value_to_pyobject(py, &value)
+    let encoded = serde_json::to_string(value).map_err(to_pyruntime_err)?;
+    let kwargs = PyDict::new(py);
+    kwargs.set_item(
+        "parse_float",
+        PyModule::import(py, "decimal")?.getattr("Decimal")?,
+    )?;
+    Ok(PyModule::import(py, "json")?
+        .call_method("loads", (encoded,), Some(&kwargs))?
+        .unbind())
 }
 
 fn trades_to_py(py: Python<'_>, trades: Vec<TradeTick>) -> PyResult<Py<PyAny>> {
@@ -621,6 +641,138 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[rstest]
+    fn test_discovery_python_decimal_precision() {
+        let market: GammaMarket = serde_json::from_str(include_str!(
+            "../../test_data/decimal_precision_market.json"
+        ))
+        .unwrap();
+        Python::initialize();
+        Python::attach(|py| {
+            let output = serialize_to_py(py, &vec![market]).unwrap();
+            let market = output.bind(py).get_item(0).unwrap();
+            let decimal = py.import("decimal").unwrap().getattr("Decimal").unwrap();
+
+            for (field, expected) in [
+                ("bestBid", "0.1234567890123456789012345678"),
+                ("bestAsk", "0.2345678901234567890123456789"),
+                ("liquidityNum", "12345678901.123456"),
+                ("volumeNum", "12345678901.123457"),
+            ] {
+                let actual = market.get_item(field).unwrap();
+                assert!(actual.is_instance(&decimal).unwrap());
+                assert_eq!(actual.str().unwrap().to_str().unwrap(), expected);
+            }
+            let fee = market.get_item("feeSchedule").unwrap();
+            assert_eq!(
+                fee.get_item("exponent")
+                    .unwrap()
+                    .str()
+                    .unwrap()
+                    .to_str()
+                    .unwrap(),
+                "1.234567890123456789012345678"
+            );
+            assert!(
+                fee.get_item("takerOnly")
+                    .unwrap()
+                    .extract::<bool>()
+                    .unwrap()
+            );
+        });
+    }
+
+    #[rstest]
+    fn test_nested_discovery_python_decimal_precision() {
+        let market: GammaMarket = serde_json::from_str(include_str!(
+            "../../test_data/decimal_precision_market.json"
+        ))
+        .unwrap();
+        let mut event: GammaEvent =
+            serde_json::from_str(include_str!("../../test_data/decimal_precision_event.json"))
+                .unwrap();
+        event.markets = vec![market.clone()];
+        let search = crate::http::models::SearchResponse {
+            markets: Some(vec![market]),
+            events: Some(vec![event]),
+        };
+        let clob_raw = include_str!("../../test_data/clob_market_response.json")
+            .replace(
+                "\"max_spread\": 4.5",
+                "\"max_spread\": 0.1234567890123456789012345678",
+            )
+            .replace(
+                "\"price\": 0.715",
+                "\"price\": 0.2345678901234567890123456789",
+            );
+        let clob: ClobMarketResponse = serde_json::from_str(&clob_raw).unwrap();
+        Python::initialize();
+        Python::attach(|py| {
+            let result = serialize_to_py(py, &search).unwrap();
+            let event = result
+                .bind(py)
+                .get_item("events")
+                .unwrap()
+                .get_item(0)
+                .unwrap();
+            let market = event.get_item("markets").unwrap().get_item(0).unwrap();
+            let details = serialize_to_py(py, &clob).unwrap();
+            let decimal = py.import("decimal").unwrap().getattr("Decimal").unwrap();
+            for (actual, expected) in [
+                (event.get_item("volume").unwrap(), "12345678901.123457"),
+                (
+                    market.get_item("bestAsk").unwrap(),
+                    "0.2345678901234567890123456789",
+                ),
+                (
+                    market
+                        .get_item("feeSchedule")
+                        .unwrap()
+                        .get_item("rate")
+                        .unwrap(),
+                    "0.1234567890123456789012345678",
+                ),
+                (
+                    details
+                        .bind(py)
+                        .get_item("rewards")
+                        .unwrap()
+                        .get_item("max_spread")
+                        .unwrap(),
+                    "0.1234567890123456789012345678",
+                ),
+                (
+                    details
+                        .bind(py)
+                        .get_item("tokens")
+                        .unwrap()
+                        .get_item(0)
+                        .unwrap()
+                        .get_item("price")
+                        .unwrap(),
+                    "0.2345678901234567890123456789",
+                ),
+            ] {
+                assert!(actual.is_instance(&decimal).unwrap());
+                assert_eq!(actual.str().unwrap().to_str().unwrap(), expected);
+            }
+            assert_eq!(
+                details
+                    .bind(py)
+                    .get_item("seconds_delay")
+                    .unwrap()
+                    .extract::<i64>()
+                    .unwrap(),
+                1
+            );
+            assert!(market.get_item("closed").unwrap().is_none());
+            assert_eq!(
+                market.get_item("id").unwrap().extract::<String>().unwrap(),
+                "precision-market"
+            );
+        });
+    }
 
     fn gamma_market() -> GammaMarket {
         serde_json::from_value(json!({
@@ -685,6 +837,39 @@ mod tests {
     }
 
     #[rstest]
+    #[case(0, "Yes")]
+    #[case(1, "No")]
+    fn build_loader_retains_parent_event_without_exposing_raw_snapshots(
+        #[case] token_index: usize,
+        #[case] outcome: &str,
+    ) {
+        let events: Vec<GammaEvent> =
+            serde_json::from_str(include_str!("../../test_data/gamma_event.json")).unwrap();
+        let markets = flatten_event_markets(events);
+        assert_eq!(markets.len(), 2);
+
+        for market in markets {
+            let parent = market.parent_event.as_ref().unwrap();
+            let expected_id = parent.id.clone();
+            let expected_event = parent.raw.clone();
+            let expected_market = market.raw.clone();
+            let mut details = clob_market();
+            details.condition_id.clone_from(&market.condition_id);
+            let loader =
+                build_loader_from_details(market, &details, token_index, data_api()).unwrap();
+            let info = loader.instrument.info.as_ref().unwrap();
+
+            assert_eq!(loader.instrument.event_id.unwrap().as_str(), expected_id);
+            assert_eq!(loader.instrument.outcome.unwrap().as_str(), outcome);
+            assert_eq!(info.get_str("event_id"), Some(expected_id.as_str()));
+            assert!(!info.contains_key("gamma_market"));
+            assert!(!info.contains_key("gamma_event"));
+            assert_eq!(loader.resolution_metadata["gamma_market"], expected_market);
+            assert_eq!(loader.resolution_metadata["gamma_event"], expected_event);
+        }
+    }
+
+    #[rstest]
     fn build_loader_selects_token_and_retains_resolution_lifecycle_metadata() {
         let loader = build_loader_from_details(gamma_market(), &clob_market(), 1, data_api())
             .expect("loader should build");
@@ -704,6 +889,11 @@ mod tests {
             Some("https://example.com/result")
         );
         assert_eq!(info.get_str("description"), Some("Test market"));
+        assert!(!info.contains_key("gamma_market"));
+        assert_eq!(
+            loader.resolution_metadata["gamma_market"],
+            gamma_market().raw
+        );
         assert!(!info.contains_key("closed"));
         assert!(!info.contains_key("closedTime"));
         assert!(!info.contains_key("umaResolutionStatus"));

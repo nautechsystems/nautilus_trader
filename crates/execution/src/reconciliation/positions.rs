@@ -614,7 +614,18 @@ fn extract_instrument_reports(
     for (id, fill_list) in mass_status.fill_reports() {
         let filtered: Vec<_> = fill_list
             .iter()
-            .filter(|f| f.instrument_id == instrument_id)
+            .filter(|f| {
+                if f.instrument_id != instrument_id {
+                    return false;
+                }
+
+                if f.last_qty.is_zero() {
+                    log::warn!("Skipping zero-quantity fill report: {f}");
+                    return false;
+                }
+
+                true
+            })
             .cloned()
             .collect();
 
@@ -653,6 +664,11 @@ fn extract_fills_for_instrument(
     for (venue_order_id, fill_reports) in mass_status.fill_reports() {
         for fill in fill_reports {
             if fill.instrument_id == instrument_id {
+                if fill.last_qty.is_zero() {
+                    log::warn!("Skipping zero-quantity fill report: {fill}");
+                    continue;
+                }
+
                 let side = mass_status
                     .order_reports()
                     .get(&venue_order_id)

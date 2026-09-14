@@ -727,7 +727,7 @@ mod tests {
         let json = include_str!("../../../test_data/ws_md_book_l1_captured.json");
         let book: AxMdBookL1 = serde_json::from_str(json).unwrap();
 
-        assert_eq!(book.s.as_str(), "EURUSD-PERP");
+        assert_eq!(book.s, "EURUSD-PERP");
         assert_eq!(book.b.len(), 1);
         assert_eq!(book.a.len(), 1);
 
@@ -748,7 +748,7 @@ mod tests {
         let json = include_str!("../../../test_data/ws_md_book_l2_captured.json");
         let book: AxMdBookL2 = serde_json::from_str(json).unwrap();
 
-        assert_eq!(book.s.as_str(), "EURUSD-PERP");
+        assert_eq!(book.s, "EURUSD-PERP");
         assert_eq!(book.b.len(), 13);
         assert_eq!(book.a.len(), 12);
 
@@ -786,7 +786,7 @@ mod tests {
         let json = include_str!("../../../test_data/ws_md_book_l3_captured.json");
         let book: AxMdBookL3 = serde_json::from_str(json).unwrap();
 
-        assert_eq!(book.s.as_str(), "EURUSD-PERP");
+        assert_eq!(book.s, "EURUSD-PERP");
         assert_eq!(book.b.len(), 15);
         assert_eq!(book.a.len(), 14);
 
@@ -819,7 +819,7 @@ mod tests {
         let json = include_str!("../../../test_data/ws_md_trade_captured.json");
         let trade: AxMdTrade = serde_json::from_str(json).unwrap();
 
-        assert_eq!(trade.s.as_str(), "EURUSD-PERP");
+        assert_eq!(trade.s, "EURUSD-PERP");
         assert_eq!(trade.p, dec!(1.1719));
         assert_eq!(trade.q, 400);
         assert_eq!(trade.d, Some(AxOrderSide::Buy));
@@ -944,7 +944,7 @@ mod tests {
         let json = include_str!("../../../test_data/ws_md_candle.json");
         let candle: AxMdCandle = serde_json::from_str(json).unwrap();
 
-        assert_eq!(candle.symbol.as_str(), "EURUSD-PERP");
+        assert_eq!(candle.symbol, "EURUSD-PERP");
         assert_eq!(candle.open, dec!(49500.00));
         assert_eq!(candle.close, dec!(50000.00));
 

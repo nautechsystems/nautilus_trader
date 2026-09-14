@@ -17,7 +17,10 @@
 
 use std::sync::Arc;
 
-use nautilus_core::{python::to_pyvalue_err, string::secret::REDACTED};
+use nautilus_core::{
+    python::to_pyvalue_err,
+    string::secret::{REDACTED, SecretString},
+};
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::{
     defi::{Chain, DexType},
@@ -92,7 +95,7 @@ impl BlockchainVerificationProviderConfig {
     fn py_new(identity: BlockchainProviderIdentity, http_rpc_url: String) -> Self {
         Self::builder()
             .identity(identity)
-            .http_rpc_url(http_rpc_url)
+            .http_rpc_url(SecretString::from(http_rpc_url))
             .build()
     }
 
@@ -207,15 +210,15 @@ impl BlockchainDataClientConfig {
         Self::builder()
             .chain(Arc::new(chain.clone()))
             .dex_ids(dex_ids)
-            .http_rpc_url(http_rpc_url)
+            .http_rpc_url(SecretString::from(http_rpc_url))
             .maybe_rpc_requests_per_second(rpc_requests_per_second)
             .maybe_multicall_calls_per_rpc_request(multicall_calls_per_rpc_request)
-            .maybe_wss_rpc_url(wss_rpc_url)
+            .maybe_wss_rpc_url(wss_rpc_url.map(SecretString::from))
             .use_hypersync_for_live_data(use_hypersync_for_live_data)
             .maybe_from_block(from_block)
             .maybe_pool_filters(pool_filters)
             .maybe_postgres_cache_database_config(postgres_cache_database_config)
-            .maybe_proxy_url(proxy_url)
+            .maybe_proxy_url(proxy_url.map(SecretString::from))
             .transport_backend(transport_backend.unwrap_or_default())
             .build()
     }
@@ -230,18 +233,6 @@ impl BlockchainDataClientConfig {
     )]
     fn chain(&self) -> Chain {
         (*self.chain).clone()
-    }
-
-    /// Returns the HTTP RPC URL.
-    #[getter]
-    fn http_rpc_url(&self) -> String {
-        self.http_rpc_url.clone()
-    }
-
-    /// Returns the WebSocket RPC URL.
-    #[getter]
-    fn wss_rpc_url(&self) -> Option<String> {
-        self.wss_rpc_url.clone()
     }
 
     /// Returns the RPC requests per second limit.
@@ -338,7 +329,7 @@ impl BlockchainExecutionClientConfig {
             .client_id(client_id)
             .chain(chain.clone())
             .wallet_address(wallet_address)
-            .http_rpc_url(http_rpc_url)
+            .http_rpc_url(SecretString::from(http_rpc_url))
             .signer_private_key_env(signer_private_key_env)
             .router_addresses(router_addresses)
             .weth_address(weth_address)

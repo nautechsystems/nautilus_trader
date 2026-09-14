@@ -117,7 +117,7 @@ pub(super) fn validate_header(
 
 #[inline]
 pub(super) fn encode_price(writer: &mut SbeWriter<'_>, price: &Price) {
-    let raw_i128: i128 = raw_to_wire(price.raw);
+    let raw_i128: i128 = raw_to_wire(price.raw());
 
     writer.write_i128_le(raw_i128);
     writer.write_u8(price.precision);
@@ -137,7 +137,7 @@ pub(super) fn decode_price(cursor: &mut SbeCursor<'_>) -> Result<Price, SbeDecod
 
 #[inline]
 pub(super) fn encode_quantity(writer: &mut SbeWriter<'_>, quantity: &Quantity) {
-    let raw_u128: u128 = raw_to_wire(quantity.raw);
+    let raw_u128: u128 = raw_to_wire(quantity.raw());
 
     writer.write_u128_le(raw_u128);
     writer.write_u8(quantity.precision);
@@ -192,8 +192,16 @@ pub(super) fn encode_instrument_id(
 pub(super) fn decode_instrument_id(
     cursor: &mut SbeCursor<'_>,
 ) -> Result<InstrumentId, SbeDecodeError> {
-    let symbol = Symbol::new(cursor.read_var_string16_ref()?);
-    let venue = Venue::new(cursor.read_var_string16_ref()?);
+    let symbol = Symbol::new_checked(cursor.read_var_string16_ref()?).map_err(|_| {
+        SbeDecodeError::InvalidValue {
+            field: "InstrumentId.symbol",
+        }
+    })?;
+    let venue = Venue::new_checked(cursor.read_var_string16_ref()?).map_err(|_| {
+        SbeDecodeError::InvalidValue {
+            field: "InstrumentId.venue",
+        }
+    })?;
     Ok(InstrumentId::new(symbol, venue))
 }
 
@@ -223,9 +231,6 @@ pub(super) fn decode_optional_ustr(
         return Ok(None);
     }
 
-    if len == 0 {
-        return Ok(Some(Ustr::from("")));
-    }
     let bytes = cursor.read_bytes(usize::from(len))?;
     let s = std::str::from_utf8(bytes).map_err(|_| SbeDecodeError::InvalidUtf8)?;
     Ok(Some(Ustr::from(s)))
@@ -428,4 +433,27 @@ pub(super) fn decode_non_zero_step(step_raw: u32) -> Result<NonZero<usize>, SbeD
     NonZero::new(step).ok_or(SbeDecodeError::InvalidValue {
         field: "BarSpecification.step",
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(&[0, 0, 1, 0, b'X'], "InstrumentId.symbol")]
+    #[case(&[1, 0, b' ', 1, 0, b'X'], "InstrumentId.symbol")]
+    #[case(&[1, 0, b'A', 0, 0], "InstrumentId.venue")]
+    #[case(&[1, 0, b'A', 2, 0, 0xC3, 0xA9], "InstrumentId.venue")]
+    fn test_decode_instrument_id_rejects_invalid_components(
+        #[case] bytes: &[u8],
+        #[case] field: &'static str,
+    ) {
+        let mut cursor = SbeCursor::new(bytes);
+
+        let result = decode_instrument_id(&mut cursor);
+
+        assert_eq!(result, Err(SbeDecodeError::InvalidValue { field }));
+    }
 }

@@ -5,7 +5,7 @@ This crate references third-party material for action-signing equivalence testin
 - **Derive.xyz - `v2-action-signing-python`**
   - Usage: The Rust EIP-712 signing pipeline under `src/signing/` is an original
     implementation of Derive's published self-custodial action-signing protocol.
-    The upstream Python SDK serves as the behavioural reference for the signing
+    The upstream Python SDK serves as the behavioral reference for the signing
     pipeline and generates the oracle vectors recorded under
     `test_data/common/signing_trade_action_vectors.json` via
     `tests/oracle-py/generate_oracle.py`. The vectors are generated outputs for

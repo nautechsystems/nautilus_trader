@@ -40,7 +40,7 @@ Application code constructs configs, registers official adapter factories, and a
 `BacktestNode`, `BacktestEngine`, or `LiveNode`. Rust remains responsible for routing, engine state,
 order management, accounting, and venue clients.
 
-Callbacks execute synchronously on the event-processing thread and must return promptly.
+Callbacks execute **synchronously** on the event-processing thread and must return promptly.
 Blocking I/O, model inference, or long calculations delay market-data handling and order execution.
 Offload that work to an executor or another process. See
 [Configure a live trading node](../how_to/configure_live_trading.md) for the live-trading rule.
@@ -76,12 +76,13 @@ cache-backing contract.
 
 ## Public API contract
 
-The generated type stubs under `python/nautilus_trader/` define the supported Python surface. They
+The generated type stubs under `python/nautilus_trader/` define the supported Rust-bound Python surface. They
 record public classes, methods, properties, parameters, and return types from the Rust binding
 sources. The [Python API reference](../api_reference/index.md) renders the same public modules and
 their documentation.
 
-A runtime attribute absent from the generated stubs is not part of the supported contract. PyO3
+A runtime attribute on a Rust-bound class absent from the generated stubs is not part of the supported contract.
+The documented Python client, provider, and importable-config classes also form a public interface. PyO3
 validates bound arguments before Rust code runs and maps fallible operations to Python exceptions.
 Code should handle the documented exception type instead of depending on an internal Rust error
 representation.
@@ -119,15 +120,12 @@ Official adapters are implemented in Rust and exposed through Python configs, fa
 and data types under `nautilus_trader.adapters`. Their integration guides define the supported venue
 capabilities.
 
-:::note[Custom adapter support]
-The public Python API does not yet define an interface for implementing an out-of-tree adapter
-entirely in Python. Official adapters remain usable from Python. Custom venue integrations
-currently use the Rust adapter traits. An out-of-tree Python adapter surface is planned; see
-[issue 4694](https://github.com/nautechsystems/nautilus_trader/issues/4694).
-:::
-
-Hosted `LiveNode` execution enables Python services to share an asyncio loop with a node. It does
-not by itself add a custom Python adapter interface.
+Custom live adapters subclass the Python client bases and register through `LiveNodeBuilder` or
+`LiveNode.build`. Their async work runs on the node's bound Python event loop. They receive a
+read-only cache view and emit typed data, events, and reports through queued output. Independent
+Rust/PyO3 packages can use the same Python protocol with model objects from the installed wheel.
+See the [Python adapter interface](../developer_guide/python_adapters.md) for the supported hooks,
+factory/config contract, lifecycle rules, and v1 migration limits.
 
 ## Choosing Python or Rust
 

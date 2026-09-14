@@ -98,8 +98,7 @@ impl MarketSbeMessage for OrderBookDeltas {
         )?;
 
         for delta in &self.deltas {
-            encode_order_book_delta_fields(writer, delta);
-            encode_instrument_id(writer, &delta.instrument_id)?;
+            <OrderBookDelta as MarketSbeMessage>::encode_body(delta, writer)?;
         }
         Ok(())
     }
@@ -116,7 +115,7 @@ impl MarketSbeMessage for OrderBookDeltas {
             + self
                 .deltas
                 .iter()
-                .map(encoded_order_book_delta_size)
+                .map(MarketSbeMessage::encoded_body_size)
                 .sum::<usize>()
     }
 }
@@ -162,23 +161,7 @@ fn decode_order_book_deltas_body(
     scratch.reserve(count);
 
     for _ in 0..count {
-        let action = decode_book_action(cursor)?;
-        let order = decode_book_order(cursor)?;
-        let delta_flags = cursor.read_u8()?;
-        let delta_sequence = cursor.read_u64_le()?;
-        let delta_ts_event = decode_unix_nanos(cursor)?;
-        let delta_ts_init = decode_unix_nanos(cursor)?;
-        let delta_instrument_id = decode_instrument_id(cursor)?;
-
-        scratch.push(OrderBookDelta {
-            instrument_id: delta_instrument_id,
-            action,
-            order,
-            flags: delta_flags,
-            sequence: delta_sequence,
-            ts_event: delta_ts_event,
-            ts_init: delta_ts_init,
-        });
+        scratch.push(<OrderBookDelta as MarketSbeMessage>::decode_body(cursor)?);
     }
 
     Ok(OrderBookDeltas {
@@ -305,9 +288,4 @@ fn encode_order_book_delta_fields(writer: &mut SbeWriter<'_>, delta: &OrderBookD
     writer.write_u64_le(delta.sequence);
     encode_unix_nanos(writer, delta.ts_event);
     encode_unix_nanos(writer, delta.ts_init);
-}
-
-fn encoded_order_book_delta_size(delta: &OrderBookDelta) -> usize {
-    usize::from(ORDER_BOOK_DELTA_GROUP_BLOCK_LENGTH)
-        + encoded_instrument_id_size(&delta.instrument_id)
 }

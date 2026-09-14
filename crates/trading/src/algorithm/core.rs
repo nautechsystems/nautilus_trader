@@ -49,6 +49,19 @@ pub struct StrategyEventHandlers {
     pub position_handler: TypedHandler<PositionEvent>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SpawnReduction {
+    /// The primary order whose budget was reduced.
+    pub primary_id: ClientOrderId,
+    /// The quantity deducted from the primary at spawn time.
+    pub deducted_qty: Quantity,
+    /// Whether the spawned quantity was quote-denominated at deduction time.
+    pub spawn_was_quote_quantity: bool,
+    /// The unfilled budget already released, including debt discharge.
+    /// `None` means restoration has not occurred; zero remains tracked for corrections.
+    pub restored_qty: Option<Quantity>,
+}
+
 /// The core component of an [`ExecutionAlgorithm`](super::ExecutionAlgorithm).
 ///
 /// This struct manages the internal state for execution algorithms including
@@ -70,8 +83,13 @@ pub struct ExecutionAlgorithmCore {
     exec_spawn_ids: AHashMap<ClientOrderId, u32>,
     /// Tracks strategies that have been subscribed to for events.
     subscribed_strategies: AHashSet<StrategyId>,
-    /// Tracks pending spawn reductions for quantity restoration on denial/rejection.
-    pending_spawn_reductions: AHashMap<ClientOrderId, Quantity>,
+    /// Tracks spawn reductions through restoration and possible late-fill netting.
+    spawn_reductions: AHashMap<ClientOrderId, SpawnReduction>,
+    /// Tracks uncompensated late-fill quantity per primary order, discharged
+    /// against later spawn restorations.
+    spawn_fill_debts: AHashMap<ClientOrderId, Quantity>,
+    /// Tracks submission handoffs until the cached primary leaves local control.
+    handed_off_primaries: AHashSet<ClientOrderId>,
     /// Maps primary order client IDs to the command params supplied at submission.
     submit_params: AHashMap<ClientOrderId, Params>,
     /// The portfolio shared by the trader.
@@ -119,10 +137,9 @@ impl Debug for ExecutionAlgorithmCore {
             .field("exec_algorithm_id", &self.exec_algorithm_id)
             .field("exec_spawn_ids", &self.exec_spawn_ids.len())
             .field("subscribed_strategies", &self.subscribed_strategies.len())
-            .field(
-                "pending_spawn_reductions",
-                &self.pending_spawn_reductions.len(),
-            )
+            .field("spawn_reductions", &self.spawn_reductions.len())
+            .field("spawn_fill_debts", &self.spawn_fill_debts.len())
+            .field("handed_off_primaries", &self.handed_off_primaries.len())
             .field("submit_params", &self.submit_params.len())
             .field(
                 "strategy_event_handlers",
@@ -145,7 +162,7 @@ impl ExecutionAlgorithmCore {
             .expect("ExecutionAlgorithmConfig must have exec_algorithm_id set");
 
         let actor_config = DataActorConfig {
-            actor_id: Some(ActorId::from(exec_algorithm_id.inner().as_str())),
+            actor_id: Some(ActorId::new(exec_algorithm_id.inner())),
             log_events: config.log_events,
             log_commands: config.log_commands,
         };
@@ -156,7 +173,9 @@ impl ExecutionAlgorithmCore {
             exec_algorithm_id,
             exec_spawn_ids: AHashMap::new(),
             subscribed_strategies: AHashSet::new(),
-            pending_spawn_reductions: AHashMap::new(),
+            spawn_reductions: AHashMap::new(),
+            spawn_fill_debts: AHashMap::new(),
+            handed_off_primaries: AHashSet::new(),
             submit_params: AHashMap::new(),
             portfolio: None,
             strategy_event_handlers: IndexMap::new(),
@@ -233,7 +252,7 @@ impl ExecutionAlgorithmCore {
         std::mem::take(&mut self.strategy_event_handlers)
     }
 
-    /// Clears all spawn tracking state.
+    /// Clears spawn ID tracking state.
     pub fn clear_spawn_ids(&mut self) {
         self.exec_spawn_ids.clear();
     }
@@ -244,18 +263,105 @@ impl ExecutionAlgorithmCore {
     }
 
     /// Tracks a pending spawn reduction for potential restoration.
-    pub fn track_pending_spawn_reduction(&mut self, spawn_id: ClientOrderId, quantity: Quantity) {
-        self.pending_spawn_reductions.insert(spawn_id, quantity);
+    ///
+    /// Associates `spawn_id` with the `primary_id` whose quantity was reduced.
+    pub fn track_pending_spawn_reduction(
+        &mut self,
+        spawn_id: ClientOrderId,
+        primary_id: ClientOrderId,
+        quantity: Quantity,
+        spawn_was_quote_quantity: bool,
+    ) {
+        self.spawn_reductions.insert(
+            spawn_id,
+            SpawnReduction {
+                primary_id,
+                deducted_qty: quantity,
+                spawn_was_quote_quantity,
+                restored_qty: None,
+            },
+        );
     }
 
-    /// Removes and returns the pending spawn reduction for an order, if any.
-    pub fn take_pending_spawn_reduction(&mut self, spawn_id: &ClientOrderId) -> Option<Quantity> {
-        self.pending_spawn_reductions.remove(spawn_id)
+    /// Returns the spawn reduction lifecycle record for an order, if any.
+    #[must_use]
+    pub(crate) fn spawn_reduction(&self, spawn_id: ClientOrderId) -> Option<SpawnReduction> {
+        self.spawn_reductions.get(&spawn_id).copied()
+    }
+
+    /// Updates the spawn reduction lifecycle record for an order.
+    pub(crate) fn set_spawn_reduction(
+        &mut self,
+        spawn_id: ClientOrderId,
+        reduction: SpawnReduction,
+    ) {
+        self.spawn_reductions.insert(spawn_id, reduction);
+    }
+
+    /// Removes and returns the spawn reduction lifecycle record for an order, if any.
+    pub(crate) fn take_pending_spawn_reduction(
+        &mut self,
+        spawn_id: ClientOrderId,
+    ) -> Option<SpawnReduction> {
+        self.spawn_reductions.remove(&spawn_id)
+    }
+
+    /// Returns the uncompensated late-fill debt for a primary order, if any.
+    #[must_use]
+    pub(crate) fn spawn_fill_debt(&self, primary_id: ClientOrderId) -> Option<Quantity> {
+        self.spawn_fill_debts.get(&primary_id).copied()
+    }
+
+    /// Adds uncompensated late-fill debt against a primary order.
+    pub(crate) fn add_spawn_fill_debt(&mut self, primary_id: ClientOrderId, quantity: Quantity) {
+        self.spawn_fill_debts
+            .entry(primary_id)
+            .and_modify(|debt| {
+                let precision = debt.precision;
+                *debt = *debt + quantity;
+                debt.precision = precision;
+            })
+            .or_insert(quantity);
+    }
+
+    /// Sets the uncompensated late-fill debt for a primary order, removing it at zero.
+    pub(crate) fn set_spawn_fill_debt(&mut self, primary_id: ClientOrderId, quantity: Quantity) {
+        if quantity.is_zero() {
+            self.spawn_fill_debts.remove(&primary_id);
+        } else {
+            self.spawn_fill_debts.insert(primary_id, quantity);
+        }
+    }
+
+    /// Marks a primary order as handed off for submission and clears its spawn accounting.
+    pub(crate) fn mark_primary_handed_off(&mut self, primary_id: ClientOrderId) {
+        self.clear_primary_spawn_state(primary_id);
+        self.handed_off_primaries.insert(primary_id);
+    }
+
+    /// Clears accounting once the primary can no longer be changed locally.
+    pub(crate) fn clear_primary_spawn_state(&mut self, primary_id: ClientOrderId) {
+        self.spawn_reductions
+            .retain(|_, reduction| reduction.primary_id != primary_id);
+        self.spawn_fill_debts.remove(&primary_id);
+        self.handed_off_primaries.remove(&primary_id);
+    }
+
+    /// Returns whether a primary submission is awaiting a non-local cached status.
+    #[must_use]
+    pub(crate) fn primary_was_handed_off(&self, primary_id: ClientOrderId) -> bool {
+        self.handed_off_primaries.contains(&primary_id)
+    }
+
+    /// Discards debt that can no longer be discharged after primary submission.
+    pub(crate) fn discard_spawn_fill_debt(&mut self, primary_id: ClientOrderId) {
+        self.spawn_fill_debts.remove(&primary_id);
     }
 
     /// Clears all pending spawn reductions.
     pub fn clear_pending_spawn_reductions(&mut self) {
-        self.pending_spawn_reductions.clear();
+        self.spawn_reductions.clear();
+        self.spawn_fill_debts.clear();
     }
 
     /// Stores the command params supplied with a primary order submission.
@@ -292,7 +398,9 @@ impl ExecutionAlgorithmCore {
     pub fn reset(&mut self) {
         self.exec_spawn_ids.clear();
         self.subscribed_strategies.clear();
-        self.pending_spawn_reductions.clear();
+        self.spawn_reductions.clear();
+        self.spawn_fill_debts.clear();
+        self.handed_off_primaries.clear();
         self.submit_params.clear();
         self.strategy_event_handlers.clear();
     }
@@ -467,6 +575,35 @@ mod tests {
     }
 
     #[rstest]
+    fn test_primary_handoff_clears_only_its_spawn_state() {
+        let mut core = ExecutionAlgorithmCore::new(create_test_config());
+        let primary_a = ClientOrderId::from("A");
+        let primary_b = ClientOrderId::from("B");
+        let primary_c = ClientOrderId::from("C");
+        let child_a = ClientOrderId::from("A-E1");
+        let child_b = ClientOrderId::from("B-E1");
+        core.track_pending_spawn_reduction(child_a, primary_a, Quantity::from("0.3"), false);
+        core.track_pending_spawn_reduction(child_b, primary_b, Quantity::from("0.7"), true);
+        core.add_spawn_fill_debt(primary_a, Quantity::from("0.1"));
+        core.add_spawn_fill_debt(primary_b, Quantity::from("0.2"));
+
+        core.mark_primary_handed_off(primary_c);
+        core.mark_primary_handed_off(primary_a);
+
+        assert!(core.spawn_reduction(child_a).is_none());
+        assert!(core.spawn_fill_debt(primary_a).is_none());
+        assert!(core.primary_was_handed_off(primary_a));
+        assert!(!core.primary_was_handed_off(primary_b));
+        assert!(core.primary_was_handed_off(primary_c));
+        let retained = core.spawn_reduction(child_b).unwrap();
+        assert_eq!(retained.primary_id, primary_b);
+        assert_eq!(retained.deducted_qty, Quantity::from("0.7"));
+        assert!(retained.spawn_was_quote_quantity);
+        assert_eq!(retained.restored_qty, None);
+        assert_eq!(core.spawn_fill_debt(primary_b), Some(Quantity::from("0.2")));
+    }
+
+    #[rstest]
     fn test_reset() {
         let config = create_test_config();
         let mut core = ExecutionAlgorithmCore::new(config);
@@ -476,11 +613,13 @@ mod tests {
 
         let _ = core.spawn_client_order_id(&primary_id);
         core.add_subscribed_strategy(strategy_id);
+        core.mark_primary_handed_off(primary_id);
 
         core.reset();
 
         assert!(core.spawn_sequence(&primary_id).is_none());
         assert!(!core.is_strategy_subscribed(&strategy_id));
+        assert!(!core.primary_was_handed_off(primary_id));
     }
 
     #[rstest]

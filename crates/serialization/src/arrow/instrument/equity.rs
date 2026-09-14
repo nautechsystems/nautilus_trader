@@ -31,12 +31,10 @@ use nautilus_model::{
     instruments::equity::Equity,
     types::{price::Price, quantity::Quantity},
 };
-#[allow(unused)]
 use rust_decimal::Decimal;
-#[allow(unused)]
-use serde_json::Value;
 use ustr::Ustr;
 
+use super::KEY_CLASS;
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
     KEY_PRICE_PRECISION, extract_column, extract_column_by_name_or_index,
@@ -68,7 +66,7 @@ impl ArrowSchemaProvider for Equity {
         ];
 
         let mut final_metadata = HashMap::new();
-        final_metadata.insert("class".to_string(), "Equity".to_string());
+        final_metadata.insert(KEY_CLASS.to_string(), "Equity".to_string());
 
         if let Some(meta) = metadata {
             final_metadata.extend(meta);
@@ -178,7 +176,7 @@ impl EncodeToRecordBatch for Equity {
         }
 
         let mut final_metadata = metadata.clone();
-        final_metadata.insert("class".to_string(), "Equity".to_string());
+        final_metadata.insert(KEY_CLASS.to_string(), "Equity".to_string());
 
         RecordBatch::try_new(
             Self::get_schema(Some(final_metadata)).into(),
@@ -217,12 +215,15 @@ impl EncodeToRecordBatch for Equity {
     }
 }
 
-/// Helper function to decode Equity from RecordBatch
-/// (Cannot implement DecodeFromRecordBatch trait due to `Into<Data>` bound)
+/// Decodes [`Equity`] instruments from a record batch.
+///
+/// Not a [`DecodeFromRecordBatch`] implementation because that trait requires `Into<Data>`.
 ///
 /// # Errors
 ///
-/// Returns an `EncodingError` if the RecordBatch cannot be decoded.
+/// Returns an `EncodingError` if the record batch cannot be decoded.
+///
+/// [`DecodeFromRecordBatch`]: crate::arrow::DecodeFromRecordBatch
 pub fn decode_equity_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
     record_batch: &RecordBatch,

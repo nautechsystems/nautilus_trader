@@ -29,7 +29,7 @@ use std::{
     rc::Rc,
 };
 
-use nautilus_core::{UnixNanos, correctness::FAILED};
+use nautilus_core::{DurationNanos, UnixNanos, correctness::FAILED};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -63,10 +63,10 @@ impl RateLimit {
     /// # Errors
     ///
     /// Returns an error if `limit` or `interval_ns` is zero.
-    pub fn new_checked(limit: usize, interval_ns: u64) -> anyhow::Result<Self> {
+    pub fn new_checked(limit: usize, interval_ns: DurationNanos) -> anyhow::Result<Self> {
         let limit = NonZeroUsize::new(limit)
             .ok_or_else(|| anyhow::anyhow!("Invalid limit: {limit} (must be non-zero)"))?;
-        let interval_ns = NonZeroU64::new(interval_ns).ok_or_else(|| {
+        let interval_ns = NonZeroU64::new(interval_ns.as_u64()).ok_or_else(|| {
             anyhow::anyhow!("Invalid interval_ns: {interval_ns} (must be non-zero)")
         })?;
         Ok(Self { limit, interval_ns })
@@ -78,7 +78,7 @@ impl RateLimit {
     ///
     /// Panics if `limit` or `interval_ns` is zero.
     #[must_use]
-    pub fn new(limit: usize, interval_ns: u64) -> Self {
+    pub fn new(limit: usize, interval_ns: DurationNanos) -> Self {
         Self::new_checked(limit, interval_ns).expect(FAILED)
     }
 
@@ -90,8 +90,8 @@ impl RateLimit {
 
     /// Interval between messages in nanoseconds.
     #[must_use]
-    pub const fn interval_ns(&self) -> u64 {
-        self.interval_ns.get()
+    pub const fn interval_ns(&self) -> DurationNanos {
+        DurationNanos::new(self.interval_ns.get())
     }
 }
 
@@ -162,7 +162,7 @@ where
             .field("actor_id", &self.actor_id)
             .field("timer_name", &self.timer_name)
             .field("limit", &self.limit())
-            .field("interval_ns", &self.interval_ns())
+            .field("interval_ns", &self.interval_ns().as_u64())
             .field("buffer", &self.buffer)
             .field("timestamps", &self.timestamps)
             .field("is_limiting", &self.is_limiting)
@@ -227,7 +227,7 @@ where
     }
 
     #[inline]
-    fn set_timer_after(&self, delta: u64, callback: Option<TimeEventCallback>) {
+    fn set_timer_after(&self, delta: DurationNanos, callback: Option<TimeEventCallback>) {
         let mut clock = self.clock.borrow_mut();
         if clock.timer_exists(&self.timer_name) {
             clock.cancel_timer(&self.timer_name);
@@ -244,29 +244,28 @@ where
     /// Uses saturating subtraction so a clock regression or a future-dated
     /// timestamp yields a zero delta instead of panicking.
     #[inline]
-    pub fn delta_next(&self) -> u64 {
+    pub fn delta_next(&self) -> DurationNanos {
         match self.timestamps.get(self.limit.get() - 1) {
             Some(ts) => {
                 let diff = self
                     .clock
                     .borrow()
                     .timestamp_ns()
-                    .as_u64()
-                    .saturating_sub(ts.as_u64());
-                self.interval_ns.get().saturating_sub(diff)
+                    .saturating_duration_since(*ts);
+                DurationNanos::new(self.interval_ns.get()).saturating_sub(diff)
             }
-            None => 0,
+            None => DurationNanos::default(),
         }
     }
 
     #[inline]
-    fn delta_next_at(&self, now: UnixNanos) -> u64 {
+    fn delta_next_at(&self, now: UnixNanos) -> DurationNanos {
         match self.timestamps.get(self.limit.get() - 1) {
             Some(ts) => {
-                let diff = now.as_u64().saturating_sub(ts.as_u64());
-                self.interval_ns.get().saturating_sub(diff)
+                let diff = now.saturating_duration_since(*ts);
+                DurationNanos::new(self.interval_ns.get()).saturating_sub(diff)
             }
-            None => 0,
+            None => DurationNanos::default(),
         }
     }
 
@@ -299,22 +298,25 @@ impl<T, F> Throttler<T, F> {
     /// Counts sent messages whose timestamps fall inside the current interval
     /// window. Shared by [`Throttler::used`] and [`Throttler::try_reserve`].
     fn count_in_window(&self, now: UnixNanos) -> usize {
-        let interval_start = now.as_i64() - self.interval_ns.get() as i64;
+        let Some(interval_start) = now.checked_sub(DurationNanos::new(self.interval_ns.get()))
+        else {
+            return self.timestamps.len();
+        };
 
         if let Some(oldest) = self.timestamps.back()
-            && oldest.as_i64() > interval_start
+            && *oldest > interval_start
         {
             return self.timestamps.len();
         }
 
         match self.timestamps.front() {
-            Some(newest) if newest.as_i64() > interval_start => {}
+            Some(newest) if *newest > interval_start => {}
             _ => return 0,
         }
 
         self.timestamps
             .iter()
-            .take_while(|&&ts| ts.as_i64() > interval_start)
+            .take_while(|&&ts| ts > interval_start)
             .count()
     }
 
@@ -326,8 +328,8 @@ impl<T, F> Throttler<T, F> {
 
     /// Interval between messages in nanoseconds.
     #[inline]
-    pub const fn interval_ns(&self) -> u64 {
-        self.interval_ns.get()
+    pub const fn interval_ns(&self) -> DurationNanos {
+        DurationNanos::new(self.interval_ns.get())
     }
 
     /// Rate limit configured for this throttler.
@@ -385,7 +387,7 @@ where
         // Register process endpoint
         let process_handler = ThrottlerProcess::<T, F>::new(self.actor_id);
         msgbus::register_any(
-            process_handler.id().as_str().into(),
+            process_handler.id().into(),
             ShareableMessageHandler::from(Rc::new(process_handler) as Rc<dyn Handler<dyn Any>>),
         );
 
@@ -439,7 +441,7 @@ where
 
         let now = self.clock.borrow().timestamp_ns();
         let delta = self.delta_next_at(now);
-        if self.is_limiting && delta == 0 && self.buffer.is_empty() {
+        if self.is_limiting && delta.is_zero() && self.buffer.is_empty() {
             self.is_limiting = false;
         }
 
@@ -452,7 +454,7 @@ where
         if self.limit.get().saturating_sub(used) < count {
             self.is_limiting = true;
 
-            if delta > 0 {
+            if !delta.is_zero() {
                 self.set_timer_after(delta, Some(throttler_resume::<T, F>(self.actor_id)));
             }
             return false;
@@ -511,7 +513,7 @@ where
         }
 
         let delta = if self.is_limiting && !self.buffer.is_empty() {
-            0
+            DurationNanos::default()
         } else {
             self.delta_next()
         };
@@ -520,11 +522,11 @@ where
         // arrived (e.g. for embedded throttlers not registered as actors).
         // Gated on an empty buffer so buffered throttlers keep draining via
         // ThrottlerProcess; only drop-mode throttlers have an empty buffer here.
-        if self.is_limiting && delta == 0 && self.buffer.is_empty() {
+        if self.is_limiting && delta.is_zero() && self.buffer.is_empty() {
             self.is_limiting = false;
         }
 
-        if self.is_limiting || delta > 0 {
+        if self.is_limiting || !delta.is_zero() {
             self.limit_msg(msg);
         } else {
             self.send_msg(msg);
@@ -592,7 +594,7 @@ where
             // Set timer to process more buffered messages
             // if interval limit reached and there are more
             // buffered messages to process
-            if !throttler.buffer.is_empty() && throttler.delta_next() > 0 {
+            if !throttler.buffer.is_empty() && !throttler.delta_next().is_zero() {
                 throttler.is_limiting = true;
                 throttler.set_timer(Some(self.get_timer_callback()));
                 return;
@@ -645,7 +647,7 @@ mod tests {
         rc::Rc,
     };
 
-    use nautilus_core::UUID4;
+    use nautilus_core::{DurationNanos, UUID4, UnixNanos};
     use rstest::{fixture, rstest};
     use ustr::Ustr;
 
@@ -664,7 +666,7 @@ mod tests {
     struct TestThrottler {
         throttler: SharedThrottler,
         clock: Rc<RefCell<TestClock>>,
-        interval: u64,
+        interval: DurationNanos,
     }
 
     #[allow(unsafe_code)]
@@ -701,7 +703,7 @@ mod tests {
     #[case(0, 1_000)]
     #[case(1_000, 0)]
     fn test_rate_limit_new_checked_rejects_zero(#[case] limit: usize, #[case] interval_ns: u64) {
-        assert!(RateLimit::new_checked(limit, interval_ns).is_err());
+        assert!(RateLimit::new_checked(limit, DurationNanos::new(interval_ns)).is_err());
     }
 
     #[rstest]
@@ -709,15 +711,15 @@ mod tests {
     #[case(1_000, 0)]
     #[should_panic]
     fn test_rate_limit_new_panics_on_zero(#[case] limit: usize, #[case] interval_ns: u64) {
-        let _ = RateLimit::new(limit, interval_ns);
+        let _ = RateLimit::new(limit, DurationNanos::new(interval_ns));
     }
 
     #[rstest]
     fn test_rate_limit_new_checked_accepts_positive() {
-        let rate = RateLimit::new_checked(5, 10).unwrap();
+        let rate = RateLimit::new_checked(5, DurationNanos::new(10)).unwrap();
 
         assert_eq!(rate.limit(), 5);
-        assert_eq!(rate.interval_ns(), 10);
+        assert_eq!(rate.interval_ns(), DurationNanos::new(10));
     }
 
     #[fixture]
@@ -727,7 +729,7 @@ mod tests {
         });
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let inner_clock = Rc::clone(&clock);
-        let rate_limit = RateLimit::new(5, 10);
+        let rate_limit = RateLimit::new(5, DurationNanos::new(10));
         let interval = rate_limit.interval_ns();
         let actor_id = Ustr::from(UUID4::new().as_str());
 
@@ -756,7 +758,7 @@ mod tests {
         });
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let inner_clock = Rc::clone(&clock);
-        let rate_limit = RateLimit::new(5, 10);
+        let rate_limit = RateLimit::new(5, DurationNanos::new(10));
         let interval = rate_limit.interval_ns();
         let actor_id = Ustr::from(UUID4::new().as_str());
 
@@ -816,7 +818,7 @@ mod tests {
         // Advance the clock by half the interval
         {
             let mut clock = test_throttler_buffered.clock.borrow_mut();
-            clock.advance_time(half_interval.into(), true);
+            clock.advance_time(UnixNanos::default() + half_interval, true);
         }
 
         assert_eq!(throttler.used(), 1.0);
@@ -883,7 +885,7 @@ mod tests {
     fn test_try_reserve_rejects_batch_larger_than_limit() {
         let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
         let mut throttler = Throttler::<u64, Box<dyn Fn(u64)>>::new(
-            RateLimit::new(5, 10),
+            RateLimit::new(5, DurationNanos::new(10)),
             clock,
             "reserve_over_limit",
             Box::new(|_| ()) as Box<dyn Fn(u64)>,
@@ -905,7 +907,7 @@ mod tests {
     fn test_try_reserve_zero_count_is_noop() {
         let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
         let mut throttler = Throttler::<u64, Box<dyn Fn(u64)>>::new(
-            RateLimit::new(5, 10),
+            RateLimit::new(5, DurationNanos::new(10)),
             clock,
             "reserve_zero",
             Box::new(|_| ()) as Box<dyn Fn(u64)>,
@@ -936,7 +938,11 @@ mod tests {
         // Advance time and process events
         {
             let mut clock = test_throttler_buffered.clock.borrow_mut();
-            let time_events = clock.advance_time(test_throttler_buffered.interval.into(), true);
+            let time_events = clock.advance_time(
+                UnixNanos::default() + test_throttler_buffered.interval,
+                true,
+            );
+
             for each_event in clock.match_handlers(time_events) {
                 drop(clock); // Release the mutable borrow
 
@@ -965,7 +971,11 @@ mod tests {
         // Advance time and process events
         {
             let mut clock = test_throttler_buffered.clock.borrow_mut();
-            let time_events = clock.advance_time(test_throttler_buffered.interval.into(), true);
+            let time_events = clock.advance_time(
+                UnixNanos::default() + test_throttler_buffered.interval,
+                true,
+            );
+
             for each_event in clock.match_handlers(time_events) {
                 drop(clock); // Release the mutable borrow
 
@@ -1000,7 +1010,11 @@ mod tests {
         // Advance time and process events
         {
             let mut clock = test_throttler_buffered.clock.borrow_mut();
-            let time_events = clock.advance_time(test_throttler_buffered.interval.into(), true);
+            let time_events = clock.advance_time(
+                UnixNanos::default() + test_throttler_buffered.interval,
+                true,
+            );
+
             for each_event in clock.match_handlers(time_events) {
                 drop(clock); // Release the mutable borrow
 
@@ -1060,7 +1074,11 @@ mod tests {
         // Advance time and process events
         {
             let mut clock = test_throttler_unbuffered.clock.borrow_mut();
-            let time_events = clock.advance_time(test_throttler_unbuffered.interval.into(), true);
+            let time_events = clock.advance_time(
+                UnixNanos::default() + test_throttler_unbuffered.interval,
+                true,
+            );
+
             for each_event in clock.match_handlers(time_events) {
                 drop(clock); // Release the mutable borrow
 
@@ -1088,7 +1106,11 @@ mod tests {
         // Advance time and process events
         {
             let mut clock = test_throttler_unbuffered.clock.borrow_mut();
-            let time_events = clock.advance_time(test_throttler_unbuffered.interval.into(), true);
+            let time_events = clock.advance_time(
+                UnixNanos::default() + test_throttler_unbuffered.interval,
+                true,
+            );
+
             for each_event in clock.match_handlers(time_events) {
                 drop(clock); // Release the mutable borrow
 
@@ -1124,7 +1146,7 @@ mod tests {
         };
 
         let mut throttler = Throttler::new(
-            RateLimit::new(5, 10),
+            RateLimit::new(5, DurationNanos::new(10)),
             Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
             "embedded_drop_timer",
             sent_cb,
@@ -1152,7 +1174,7 @@ mod tests {
         let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
         let limit = MAX_INITIAL_TIMESTAMPS_CAPACITY + 1;
         let mut throttler = Throttler::<u64, Box<dyn Fn(u64)>>::new(
-            RateLimit::new(limit, 10),
+            RateLimit::new(limit, DurationNanos::new(10)),
             clock,
             "large_limit_timer",
             Box::new(|_| ()) as Box<dyn Fn(u64)>,
@@ -1176,7 +1198,7 @@ mod tests {
     #[rstest]
     fn test_new_preserves_rate_limit() {
         let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
-        let rate_limit = RateLimit::new(5, 10);
+        let rate_limit = RateLimit::new(5, DurationNanos::new(10));
 
         let throttler = Throttler::<u64, Box<dyn Fn(u64)>>::new(
             rate_limit,
@@ -1189,7 +1211,7 @@ mod tests {
 
         assert_eq!(throttler.rate_limit(), rate_limit);
         assert_eq!(throttler.limit(), 5);
-        assert_eq!(throttler.interval_ns(), 10);
+        assert_eq!(throttler.interval_ns(), DurationNanos::new(10));
     }
 
     #[rstest]
@@ -1197,7 +1219,7 @@ mod tests {
         let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
         let actor_id = Ustr::from("debug-actor");
         let mut throttler = Throttler::<u64, Box<dyn Fn(u64)>>::new(
-            RateLimit::new(5, 10),
+            RateLimit::new(5, DurationNanos::new(10)),
             clock,
             "debug_timer",
             Box::new(|_| ()) as Box<dyn Fn(u64)>,
@@ -1248,7 +1270,7 @@ mod tests {
         let mk = |base: &str| -> SharedThrottler {
             let clock: Rc<RefCell<dyn Clock>> = Rc::clone(&clock) as Rc<RefCell<dyn Clock>>;
             Throttler::new(
-                RateLimit::new(5, interval),
+                RateLimit::new(5, DurationNanos::new(interval)),
                 clock,
                 base,
                 Box::new(|_| ()) as Box<dyn Fn(u64)>,
@@ -1335,7 +1357,7 @@ mod tests {
             Box::new(move |msg| sent.borrow_mut().push(msg)) as Box<dyn Fn(u64)>
         };
         let throttler = Throttler::new(
-            RateLimit::new(5, 10),
+            RateLimit::new(5, DurationNanos::new(10)),
             Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
             "reserve_drain_timer",
             sent_cb,
@@ -1380,7 +1402,7 @@ mod tests {
             }
             let mut clock_ref = clock.borrow_mut();
             let current_time = clock_ref.get_time_ns();
-            let time_events = clock_ref.advance_time(current_time + 10, true);
+            let time_events = clock_ref.advance_time(current_time + DurationNanos::new(10), true);
             for each_event in clock_ref.match_handlers(time_events) {
                 drop(clock_ref);
                 each_event.callback.call(each_event.event);
@@ -1435,8 +1457,9 @@ mod tests {
                 ThrottlerInput::AdvanceClock(duration) => {
                     let mut clock_ref = test_clock.borrow_mut();
                     let current_time = clock_ref.get_time_ns();
-                    let time_events =
-                        clock_ref.advance_time(current_time + u64::from(duration), true);
+                    let time_events = clock_ref
+                        .advance_time(current_time + DurationNanos::new(u64::from(duration)), true);
+
                     for each_event in clock_ref.match_handlers(time_events) {
                         drop(clock_ref);
                         each_event.callback.call(each_event.event);
@@ -1450,11 +1473,11 @@ mod tests {
             // * Timestamp queue is filled upto limit
             // * Least recent timestamp in queue exceeds interval
             let buffered_messages = throttler.qsize() > 0;
-            let now = throttler.clock.borrow().timestamp_ns().as_u64();
+            let now = throttler.clock.borrow().timestamp_ns();
             let limit_filled_within_interval = throttler
                 .timestamps
                 .get(throttler.limit() - 1)
-                .is_some_and(|&ts| (now - ts.as_u64()) < interval);
+                .is_some_and(|&ts| (now - ts) < interval);
             let expected_limiting = buffered_messages && limit_filled_within_interval;
             assert_eq!(throttler.is_limiting, expected_limiting);
 
@@ -1469,10 +1492,8 @@ mod tests {
             if throttler.qsize() == 0 {
                 break;
             }
-            let advance_to = interval * 100 * i;
-            let time_events = test_clock
-                .borrow_mut()
-                .advance_time(advance_to.into(), true);
+            let advance_to = UnixNanos::default() + interval * 100 * i;
+            let time_events = test_clock.borrow_mut().advance_time(advance_to, true);
             let mut clock_ref = test_clock.borrow_mut();
             for each_event in clock_ref.match_handlers(time_events) {
                 drop(clock_ref);
@@ -1514,7 +1535,7 @@ mod tests {
 
             let interval = 10u64;
             let throttler = Throttler::new(
-                RateLimit::new(5, interval),
+                RateLimit::new(5, DurationNanos::new(interval)),
                 Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
                 "prop_drop_timer",
                 sent_cb,
@@ -1532,8 +1553,11 @@ mod tests {
                     ThrottlerInput::AdvanceClock(duration) => {
                         let mut clock_ref = clock.borrow_mut();
                         let current_time = clock_ref.get_time_ns();
-                        let time_events =
-                            clock_ref.advance_time(current_time + u64::from(duration), true);
+                        let time_events = clock_ref.advance_time(
+                            current_time + DurationNanos::new(u64::from(duration)),
+                            true,
+                        );
+
                         for each_event in clock_ref.match_handlers(time_events) {
                             drop(clock_ref);
                             each_event.callback.call(each_event.event);
@@ -1595,8 +1619,11 @@ mod tests {
                     ThrottlerReserveInput::AdvanceClock(duration) => {
                         let mut clock_ref = test_clock.borrow_mut();
                         let current_time = clock_ref.get_time_ns();
-                        let time_events =
-                            clock_ref.advance_time(current_time + u64::from(duration), true);
+                        let time_events = clock_ref.advance_time(
+                            current_time + DurationNanos::new(u64::from(duration)),
+                            true,
+                        );
+
                         for each_event in clock_ref.match_handlers(time_events) {
                             drop(clock_ref);
                             each_event.callback.call(each_event.event);
@@ -1612,10 +1639,10 @@ mod tests {
                 if throttler.qsize() == 0 {
                     break;
                 }
-                let advance_to = interval * 100 * i;
+                let advance_to = UnixNanos::default() + interval * 100 * i;
                 let time_events = test_clock
                     .borrow_mut()
-                    .advance_time(advance_to.into(), true);
+                    .advance_time(advance_to, true);
                 let mut clock_ref = test_clock.borrow_mut();
                 for each_event in clock_ref.match_handlers(time_events) {
                     drop(clock_ref);
@@ -1638,7 +1665,7 @@ mod tests {
         let handler_id: Ustr = process.id();
 
         // Verify it's a valid Ustr with expected format
-        assert!(handler_id.as_str().contains("test_throttler_process"));
+        assert!(handler_id.contains("test_throttler_process"));
         assert!(!handler_id.is_empty());
 
         // Verify type - this wouldn't compile if id() didn't return Ustr

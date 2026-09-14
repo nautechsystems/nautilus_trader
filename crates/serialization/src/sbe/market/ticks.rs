@@ -96,7 +96,11 @@ impl MarketSbeMessage for TradeTick {
         let ts_event = decode_unix_nanos(cursor)?;
         let ts_init = decode_unix_nanos(cursor)?;
         let instrument_id = decode_instrument_id(cursor)?;
-        let trade_id = TradeId::new(cursor.read_var_string16_ref()?);
+        let trade_id = TradeId::new_checked(cursor.read_var_string16_ref()?).map_err(|_| {
+            SbeDecodeError::InvalidValue {
+                field: "TradeTick.trade_id",
+            }
+        })?;
 
         Ok(Self {
             instrument_id,

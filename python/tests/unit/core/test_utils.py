@@ -63,15 +63,11 @@ def test_mask_api_key_masks_middle() -> None:
     """
     Test mask api key masks middle.
     """
-    result = mask_api_key("sk-abc123xyz789")
-    assert result.startswith("sk")
-    assert result.endswith("789")
-    assert "..." in result
+    assert mask_api_key("sk-abc123xyz789") == "sk-a...z789"
 
 
 def test_mask_api_key_short_key() -> None:
     """
     Test mask api key short key.
     """
-    result = mask_api_key("abc")
-    assert isinstance(result, str)
+    assert mask_api_key("abc") == "***"

@@ -150,7 +150,7 @@ pub fn make_customer_order_ref_legacy(client_order_id: &str) -> String {
 
 /// Parses a Betfair [`MarketCatalogue`] into a vec of [`InstrumentAny`].
 ///
-/// Each runner in the catalogue becomes a separate [`BettingInstrument`].
+/// Each runner in the catalog becomes a separate [`BettingInstrument`].
 ///
 /// # Errors
 ///
@@ -651,14 +651,14 @@ mod tests {
 
         // Verify first instrument
         if let InstrumentAny::Betting(inst) = &instruments[0] {
-            assert_eq!(inst.market_id.as_str(), "1.221718403");
+            assert_eq!(inst.market_id, "1.221718403");
             assert_eq!(inst.selection_id, 20075720);
-            assert_eq!(inst.selection_name.as_str(), "1. Searover");
-            assert_eq!(inst.event_type_name.as_str(), "Horse Racing");
-            assert_eq!(inst.event_name.as_str(), "Globe Derby (AUS) 27th Nov");
-            assert_eq!(inst.event_country_code.as_str(), "AU");
-            assert_eq!(inst.market_type.as_str(), "WIN");
-            assert_eq!(inst.betting_type.as_str(), "ODDS");
+            assert_eq!(inst.selection_name, "1. Searover");
+            assert_eq!(inst.event_type_name, "Horse Racing");
+            assert_eq!(inst.event_name, "Globe Derby (AUS) 27th Nov");
+            assert_eq!(inst.event_country_code, "AU");
+            assert_eq!(inst.market_type, "WIN");
+            assert_eq!(inst.betting_type, "ODDS");
             assert_eq!(inst.price_precision, 2);
             assert_eq!(inst.size_precision, 2);
             assert_eq!(inst.currency, Currency::GBP());
@@ -705,8 +705,8 @@ mod tests {
             assert_eq!(instruments.len(), 7);
 
             if let InstrumentAny::Betting(inst) = &instruments[0] {
-                assert_eq!(inst.market_id.as_str(), "1.180737206");
-                assert_eq!(inst.market_type.as_str(), "WIN");
+                assert_eq!(inst.market_id, "1.180737206");
+                assert_eq!(inst.market_type, "WIN");
                 assert_eq!(inst.ts_event, ts_event);
                 assert_eq!(inst.ts_init, ts_init);
             } else {

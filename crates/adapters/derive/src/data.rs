@@ -36,11 +36,11 @@ use nautilus_common::{
     messages::{
         DataEvent,
         data::{
-            BarsResponse, DataResponse, ForwardPricesResponse, FundingRatesResponse,
-            InstrumentResponse, InstrumentsResponse, QuotesResponse, RequestBars,
-            RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
-            RequestQuotes, RequestTrades, SubscribeBookDeltas, SubscribeBookDepth10,
-            SubscribeFundingRates, SubscribeIndexPrices, SubscribeMarkPrices,
+            BarsResponse, DataResponse, FundingRatesResponse, InstrumentResponse,
+            InstrumentsResponse, OptionChainReferencePriceResponse, QuotesResponse, RequestBars,
+            RequestFundingRates, RequestInstrument, RequestInstruments,
+            RequestOptionChainReferencePrice, RequestQuotes, RequestTrades, SubscribeBookDeltas,
+            SubscribeBookDepth10, SubscribeFundingRates, SubscribeIndexPrices, SubscribeMarkPrices,
             SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, TradesResponse,
             UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeFundingRates,
             UnsubscribeIndexPrices, UnsubscribeMarkPrices, UnsubscribeOptionGreeks,
@@ -59,13 +59,14 @@ use nautilus_live::{
     task::{TaskGroup, TaskGroupGuard},
 };
 use nautilus_model::{
-    data::{Bar, Data, ForwardPrice, QuoteTick},
+    data::{Bar, Data, QuoteTick},
     enums::{AggregationSource, BookType, PriceType},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
 };
 use parking_lot::Mutex;
+use rust_decimal::Decimal;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -92,7 +93,7 @@ use crate::{
         parse_funding_rate_history_record, parse_index_price, parse_mark_price,
         parse_option_greeks, parse_orderbook_deltas, parse_orderbook_depth10, parse_public_ws_data,
         parse_ticker_quote, parse_ticker_quote_from_rest, parse_trade_tick,
-        parse_trade_tick_from_rest, ticker_channel, ticker_ts_event, trades_channel,
+        parse_trade_tick_from_rest, ticker_channel, trades_channel,
     },
 };
 
@@ -135,10 +136,14 @@ impl DeriveDataClient {
     pub fn new(client_id: ClientId, config: DeriveDataClientConfig) -> anyhow::Result<Self> {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
         let http_client = DeriveHttpClient::new(
             config.rest_url(),
             Some(config.http_timeout_secs),
-            config.proxy_url.clone(),
+            proxy_url.clone(),
             None,
         )?;
         let provider = DeriveInstrumentProvider::with_expired(
@@ -150,7 +155,7 @@ impl DeriveDataClient {
             Some(config.ws_url()),
             config.environment,
             config.transport_backend,
-            config.proxy_url.clone(),
+            proxy_url,
         )
         .with_socket_control(SocketControl::new(
             client_id,
@@ -379,7 +384,7 @@ impl DeriveDataClient {
                         ts_init,
                     ) {
                         Ok(deltas) => {
-                            Self::send_data(ctx, Data::Deltas(Box::new(deltas)));
+                            Self::send_data(ctx, Data::BookDeltas(Box::new(deltas)));
                         }
                         Err(e) => log::warn!("Failed to parse Derive orderbook deltas: {e}"),
                     }
@@ -392,7 +397,7 @@ impl DeriveDataClient {
                         instrument.size_precision(),
                         ts_init,
                     ) {
-                        Ok(depth) => Self::send_data(ctx, Data::Depth10(Box::new(depth))),
+                        Ok(depth) => Self::send_data(ctx, Data::BookDepth10(Box::new(depth))),
                         Err(e) => log::warn!("Failed to parse Derive orderbook depth10: {e}"),
                     }
                 }
@@ -401,7 +406,7 @@ impl DeriveDataClient {
                 let ts_init = ctx.clock.get_time_ns();
 
                 for trade in &msg.trades {
-                    let instrument_id = format_instrument_id(trade.instrument_name.as_str());
+                    let instrument_id = format_instrument_id(trade.instrument_name);
 
                     if !ctx.active_trade_subs.contains(&instrument_id) {
                         continue;
@@ -1481,24 +1486,19 @@ impl DataClient for DeriveDataClient {
         Ok(())
     }
 
-    fn request_forward_prices(&self, request: RequestForwardPrices) -> anyhow::Result<()> {
-        // The DataEngine drives this from `subscribe_option_chain` to bootstrap
-        // the ATM price for the option series. It passes one option instrument
-        // from the target series; that instrument's ticker carries the forward
-        // price for every option at the same expiry. Bulk mode is unsupported
-        // because Derive has no per-currency ticker endpoint.
-        let Some(instrument_id) = request.instrument_id else {
-            anyhow::bail!(
-                "Derive request_forward_prices requires an `instrument_id`; bulk fetch is not supported",
-            );
-        };
+    fn request_option_chain_reference_price(
+        &self,
+        request: RequestOptionChainReferencePrice,
+    ) -> anyhow::Result<()> {
+        let series_id = request.series_id;
+        let instrument_id = request.instrument_id;
         let instrument = self
             .instruments
             .get_cloned(&instrument_id)
             .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         anyhow::ensure!(
             matches!(instrument, InstrumentAny::CryptoOption(_)),
-            "Derive forward prices are only meaningful for options (got {instrument_id})",
+            "Derive option-chain reference prices require an option instrument (got {instrument_id})",
         );
         let venue_symbol = format_venue_symbol(&instrument_id)?.to_string();
 
@@ -1507,58 +1507,51 @@ impl DataClient for DeriveDataClient {
         let clock = self.clock;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let request_id = request.request_id;
-        let venue = request.venue;
-        let underlying = request.underlying;
         let params = request.params;
 
-        self.spawn_task("request_forward_prices", async move {
-            // The engine inserts this request into `pending_option_chain_requests`
-            // and blocks `OptionChainManager` creation until a response arrives.
-            // Always emit a response so the engine can fall back to live-tick
-            // bootstrap when the REST ticker is unavailable or non-option.
-            let forwards: Vec<ForwardPrice> = match http_client.get_ticker(&venue_symbol).await {
+        self.spawn_task("request_option_chain_reference_price", async move {
+            let price = match http_client.get_ticker(&venue_symbol).await {
                 Ok(ticker) => match ticker.option_pricing.as_ref() {
-                    Some(pricing) => match ticker_ts_event(ticker.timestamp) {
-                        Ok(ts_event) => vec![ForwardPrice::new(
-                            instrument_id,
-                            pricing.forward_price,
-                            Some(underlying.to_string()),
-                            ts_event,
-                            clock.get_time_ns(),
-                        )],
-                        Err(e) => {
-                            log::warn!(
-                                "Derive ticker for {instrument_id} has an invalid timestamp: {e:?}; emitting empty forward prices",
-                            );
-                            Vec::new()
+                    Some(pricing) if pricing.forward_price > Decimal::ZERO => {
+                        match Price::from_decimal(pricing.forward_price) {
+                            Ok(price) => Some(price),
+                            Err(e) => {
+                                log::warn!(
+                                    "Invalid Derive option-chain reference price for {instrument_id}: {e}"
+                                );
+                                None
+                            }
                         }
-                    },
+                    }
                     None => {
                         log::warn!(
-                            "Derive ticker for {instrument_id} has no option_pricing; emitting empty forward prices",
+                            "Derive ticker for {instrument_id} has no option pricing reference"
                         );
-                        Vec::new()
+                        None
                     }
+                    Some(_) => None,
                 },
                 Err(e) => {
                     log::error!(
-                        "Failed to fetch Derive ticker for {instrument_id}: {e:?}; emitting empty forward prices",
+                        "Option-chain reference price request failed for {series_id}: {e:?}"
                     );
-                    Vec::new()
+                    None
                 }
             };
 
-            let response = DataResponse::ForwardPrices(ForwardPricesResponse::new(
-                request_id,
-                client_id,
-                venue,
-                forwards,
-                clock.get_time_ns(),
-                params,
-            ));
+            let response = DataResponse::OptionChainReferencePrice(
+                OptionChainReferencePriceResponse::new(
+                    request_id,
+                    client_id,
+                    series_id,
+                    price,
+                    clock.get_time_ns(),
+                    params,
+                ),
+            );
 
             if let Err(e) = sender.send(DataEvent::Response(response)) {
-                log::error!("Failed to send Derive forward prices response: {e}");
+                log::error!("Failed to send option-chain reference price response: {e}");
             }
             Ok(())
         });
@@ -2758,7 +2751,7 @@ mod tests {
         DeriveDataClient::handle_ws_message(DeriveWsMessage::Subscription(payload), &ctx);
 
         match rx.try_recv().unwrap() {
-            DataEvent::Data(Data::Deltas(deltas)) => {
+            DataEvent::Data(Data::BookDeltas(deltas)) => {
                 assert_eq!(deltas.instrument_id, instrument_id);
                 assert_eq!(deltas.deltas.len(), 3);
                 assert_eq!(deltas.deltas[1].order.price, Price::from("3500.00"));
@@ -2782,7 +2775,7 @@ mod tests {
         DeriveDataClient::handle_ws_message(DeriveWsMessage::Subscription(payload), &ctx);
 
         match rx.try_recv().unwrap() {
-            DataEvent::Data(Data::Depth10(depth)) => {
+            DataEvent::Data(Data::BookDepth10(depth)) => {
                 assert_eq!(depth.instrument_id, instrument_id);
                 assert_eq!(depth.bids[0].price, Price::from("3500.00"));
                 assert_eq!(depth.bids[0].size, Quantity::from("1.000"));
@@ -3192,7 +3185,7 @@ mod tests {
                 "instrument_ticker": ticker_json(1_700_000_000_000)
             }),
         );
-        assert_eq!(payload.channel.as_str(), channel);
+        assert_eq!(payload.channel, channel);
         let _ = instrument_id;
         payload
     }

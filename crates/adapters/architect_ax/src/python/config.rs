@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use pyo3::pymethods;
@@ -49,13 +50,13 @@ impl AxDataClientConfig {
     ) -> Self {
         let default = Self::default();
         Self {
-            api_key,
-            api_secret,
+            api_key: api_key.map(SecretString::from),
+            api_secret: api_secret.map(SecretString::from),
             environment: environment.unwrap_or(default.environment),
             base_url_http,
             base_url_ws_public,
             base_url_ws_private,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             http_timeout_secs: http_timeout_secs.unwrap_or(default.http_timeout_secs),
             max_retries: max_retries.unwrap_or(default.max_retries),
             retry_delay_initial_ms: retry_delay_initial_ms
@@ -114,13 +115,13 @@ impl AxExecutionClientConfig {
         let default = Self::default();
         Self {
             account_id: account_id.unwrap_or(default.account_id),
-            api_key,
-            api_secret,
+            api_key: api_key.map(SecretString::from),
+            api_secret: api_secret.map(SecretString::from),
             environment: environment.unwrap_or(default.environment),
             base_url_http,
             base_url_orders,
             base_url_ws_private,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             http_timeout_secs: http_timeout_secs.unwrap_or(default.http_timeout_secs),
             max_retries: max_retries.unwrap_or(default.max_retries),
             retry_delay_initial_ms: retry_delay_initial_ms

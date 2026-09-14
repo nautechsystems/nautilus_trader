@@ -273,7 +273,7 @@ async fn receive_live_mbo_deltas(
             .expect("timed out waiting for live MBO benchmark message")
             .expect("live MBO benchmark message channel closed");
 
-        if let DatabentoMessage::Data(Data::Deltas(deltas)) = msg {
+        if let DatabentoMessage::Data(Data::BookDeltas(deltas)) = msg {
             received += deltas.deltas.len() as u64;
         }
     }

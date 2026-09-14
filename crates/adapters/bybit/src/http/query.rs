@@ -16,15 +16,19 @@
 //! Builder types for Bybit REST query parameters and filters.
 
 use derive_builder::Builder;
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroize;
 
 use crate::common::{
     enums::{
         BybitAccountType, BybitBboSideType, BybitExecType, BybitInstrumentStatus,
         BybitKlineInterval, BybitMarginMode, BybitMarketUnit, BybitOpenOnly, BybitOptionType,
-        BybitOrderFilter, BybitOrderSide, BybitOrderStatus, BybitOrderType, BybitPositionIdx,
-        BybitPositionMode, BybitProductType, BybitSmpType, BybitStopOrderType, BybitTimeInForce,
-        BybitTpSlMode, BybitTriggerDirection, BybitTriggerType,
+        BybitOrderFilter, BybitOrderSide, BybitOrderSmpType, BybitOrderStatus, BybitOrderType,
+        BybitPositionIdx, BybitPositionMode, BybitProductType, BybitStopOrderType,
+        BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection, BybitTriggerType,
     },
     parse::opt_bool_as_int,
 };
@@ -454,7 +458,7 @@ pub struct BybitBatchPlaceOrderEntry {
     pub close_on_trigger: Option<bool>,
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub smp_type: Option<BybitSmpType>,
+    pub smp_type: Option<BybitOrderSmpType>,
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mmp: Option<bool>,
@@ -836,7 +840,7 @@ pub struct BybitTradeHistoryParams {
 /// Kept separate from the response-side
 /// [`crate::http::models::BybitApiKeyPermissions`]: every field here is
 /// `Option<Vec<String>>` with `skip_serializing_if`, so an unset bucket is
-/// omitted from the request body entirely rather than being serialised as an
+/// omitted from the request body entirely rather than being serialized as an
 /// explicit empty array (which the venue treats as "clear all permissions").
 ///
 /// The field set is the superset of the master and sub-account permission
@@ -901,25 +905,34 @@ pub struct BybitApiKeyPermissionUpdate {
 ///
 /// # References
 /// - <https://bybit-exchange.github.io/docs/v5/user/modify-sub-apikey>
-#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default, Builder)]
 #[serde(rename_all = "camelCase")]
-#[builder(default)]
 #[builder(setter(into))]
 pub struct BybitUpdateSubApiParams {
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     // Bybit accepts `readOnly` as a 0/1 integer on the wire; the builder takes
-    // a `bool` and `opt_bool_as_int` serialises it to match.
+    // a `bool` and `opt_bool_as_int` serializes it to match.
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none", with = "opt_bool_as_int")]
     #[builder(setter(strip_option))]
     pub read_only: Option<bool>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
     pub ips: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
     pub permissions: Option<BybitApiKeyPermissionUpdate>,
+}
+
+impl Zeroize for BybitUpdateSubApiParams {
+    fn zeroize(&mut self) {
+        self.api_key.zeroize();
+    }
 }
 
 /// Body parameters for `POST /v5/user/update-api`.
@@ -950,7 +963,7 @@ pub struct BybitUpdateMasterApiParams {
 /// Shared by `GET /v5/user/submembers` and `GET /v5/user/escrow_sub_members`,
 /// which take the same pagination shape (`pageSize` up to 100 plus
 /// `nextCursor`). Bybit documents `pageSize` as a string, but the URL encoder
-/// serialises any numeric value as text anyway, so `u32` is used on the Rust
+/// serializes any numeric value as text anyway, so `u32` is used on the Rust
 /// side for compile-time type safety.
 ///
 /// # References
@@ -993,8 +1006,29 @@ pub struct BybitSubApiKeysParams {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use zeroize::Zeroize;
 
     use super::*;
+
+    #[rstest]
+    fn test_update_sub_api_preserves_wire_value_and_redacts_debug() {
+        let mut params = BybitUpdateSubApiParamsBuilder::default()
+            .api_key("sub-api-key-secret".to_string())
+            .read_only(true)
+            .build()
+            .unwrap();
+
+        let value = serde_json::to_value(&params).unwrap();
+        let debug = format!("{params:?}");
+
+        assert_eq!(value["apiKey"], "sub-api-key-secret");
+        assert_eq!(value["readOnly"], 1);
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains("sub-api-key-secret"));
+
+        params.zeroize();
+        assert!(params.api_key.is_none());
+    }
 
     #[rstest]
     fn test_amend_entry_builds_with_only_order_id() {

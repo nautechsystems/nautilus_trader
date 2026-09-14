@@ -25,6 +25,14 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Builder)]
 #[serde(tag = "type")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.live", frozen, from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
 pub struct CancelOrder {
     pub trader_id: TraderId,
     pub client_id: Option<ClientId>,
@@ -86,6 +94,14 @@ impl Display for CancelOrder {
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Builder)]
 #[serde(tag = "type")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.live", frozen, from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
 pub struct CancelAllOrders {
     pub trader_id: TraderId,
     pub client_id: Option<ClientId>,
@@ -149,6 +165,14 @@ impl Display for CancelAllOrders {
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Builder)]
 #[serde(tag = "type")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.live", frozen, from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
 pub struct BatchCancelOrders {
     pub trader_id: TraderId,
     pub client_id: Option<ClientId>,
@@ -199,8 +223,9 @@ impl Display for BatchCancelOrders {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "BatchCancelOrders(instrument_id={}, cancels=TBD)",
+            "BatchCancelOrders(instrument_id={}, cancels={})",
             self.instrument_id,
+            self.cancels.len(),
         )
     }
 }
@@ -233,6 +258,38 @@ mod tests {
         assert_eq!(
             command.to_string(),
             format!("CancelAllOrders(instrument_id=AUD/USD.SIM, order_side={expected_order_side})")
+        );
+    }
+
+    #[rstest]
+    fn test_batch_cancel_orders_display() {
+        let cancel = CancelOrder::new(
+            TraderId::from("TRADER-001"),
+            None,
+            StrategyId::from("S-001"),
+            InstrumentId::from("AUD/USD.SIM"),
+            ClientOrderId::from("O-001"),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        let command = BatchCancelOrders::new(
+            TraderId::from("TRADER-001"),
+            None,
+            StrategyId::from("S-001"),
+            InstrumentId::from("AUD/USD.SIM"),
+            vec![cancel.clone(), cancel],
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+
+        assert_eq!(
+            command.to_string(),
+            "BatchCancelOrders(instrument_id=AUD/USD.SIM, cancels=2)"
         );
     }
 }

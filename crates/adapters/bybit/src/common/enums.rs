@@ -186,6 +186,7 @@ pub enum BybitPositionIdx {
 )]
 pub enum BybitAccountType {
     Unified,
+    Fund,
 }
 
 /// API key authentication type returned by `/v5/user/list-sub-apikeys`.
@@ -285,6 +286,8 @@ pub enum BybitMarginTrading {
     UtaOnly,
     #[serde(rename = "both")]
     Both,
+    #[serde(rename = "normalSpotOnly")]
+    NormalSpotOnly,
     #[serde(other)]
     Other,
 }
@@ -305,6 +308,7 @@ pub enum BybitInnovationFlag {
 #[serde(rename_all = "PascalCase")]
 pub enum BybitInstrumentStatus {
     PreLaunch,
+    PendingOpen,
     Trading,
     Delivering,
     Closed,
@@ -386,7 +390,7 @@ pub enum BybitContractType {
     InverseFutures,
 }
 
-/// Option flavour values.
+/// Option flavor values.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum BybitOptionType {
@@ -419,6 +423,8 @@ pub enum BybitSymbolType {
     /// Exchange-traded fund derivatives.
     #[serde(rename = "ETF")]
     Etf,
+    /// Tokenized equities (spot mstocks).
+    Mstocks,
     /// Forward-compatible fallback for any value the venue adds later.
     #[serde(other)]
     Other,
@@ -436,6 +442,7 @@ impl BybitSymbolType {
             Self::Stock => Some("stock"),
             Self::Forex => Some("forex"),
             Self::Etf => Some("ETF"),
+            Self::Mstocks => Some("mstocks"),
             Self::Other => None,
         }
     }
@@ -706,6 +713,10 @@ pub fn resolve_trigger_type(trigger_type: Option<TriggerType>) -> BybitTriggerTy
 pub enum BybitCancelType {
     CancelByUser,
     CancelByReduceOnly,
+    CancelByPrepareLiq,
+    CancelAllBeforeLiq,
+    CancelByPrepareAdl,
+    CancelAllBeforeAdl,
     CancelByPrepareLackOfMargin,
     CancelByPrepareOrderFilter,
     CancelByPrepareOrderMarginCheckFailed,
@@ -719,9 +730,25 @@ pub enum BybitCancelType {
     CancelByMarginCheckFailed,
     CancelByPzTakeover,
     CancelByAdmin,
+    CancelBySettle,
     CancelByTpSlTsClear,
     CancelByAmendNotModified,
     CancelByPzCancel,
+    CancelBySmp,
+    #[serde(rename = "CancelByDCP")]
+    CancelByDcp,
+    CancelByRebalance,
+    #[serde(rename = "CancelByOCOTpCanceledBySlTriggered")]
+    CancelByOcoTpCanceledBySlTriggered,
+    #[serde(rename = "CancelByOCOSlCanceledByTpTriggered")]
+    CancelByOcoSlCanceledByTpTriggered,
+    CancelByCannotAffordOrderCost,
+    CancelByPmTrialMmOverEquity,
+    CancelByAccountBlocking,
+    CancelByDelivery,
+    CancelByMmpTriggered,
+    CancelByCrossSelfMuch,
+    CancelByCrossReachMaxTradeNum,
     CancelByCrossSelfMatch,
     CancelBySelfMatchPrevention,
     #[serde(other)]
@@ -733,18 +760,47 @@ pub enum BybitCancelType {
 #[serde(rename_all = "PascalCase")]
 pub enum BybitCreateType {
     CreateByUser,
+    CreateByFutureSpread,
+    CreateByAdminClosing,
+    CreateBySettle,
     CreateByClosing,
     CreateByTakeProfit,
     CreateByStopLoss,
     CreateByTrailingStop,
+    CreateByTrailingProfit,
     CreateByStopOrder,
     CreateByPartialTakeProfit,
     CreateByPartialStopLoss,
     CreateByAdl,
+    #[serde(rename = "CreateByAdl_PassThrough")]
+    CreateByAdlPassThrough,
+    CreateByLiq,
     CreateByLiquidate,
     CreateByTakeover,
-    CreateByTpsl,
+    #[serde(rename = "CreateByTakeOver_PassThrough")]
+    CreateByTakeOverPassThrough,
+    #[serde(rename = "CreateByBlock_PassThrough")]
+    CreateByBlockPassThrough,
+    #[serde(rename = "CreateByBlockTradeMovePosition_PassThrough")]
+    CreateByBlockTradeMovePositionPassThrough,
+    CreateByChaseOrder,
+    #[serde(rename = "CreateByFGridBot")]
+    CreateByFGridBot,
+    #[serde(rename = "CloseByFGridBot")]
+    CloseByFGridBot,
+    #[serde(rename = "CreateByTWAP")]
+    CreateByTwap,
+    CreateByMartingaleBot,
+    CloseByMartingaleBot,
+    #[serde(rename = "CreateByIceBerg")]
+    CreateByIceBerg,
     CreateByBboOrder,
+    #[serde(rename = "CreateByTVSignal")]
+    CreateByTvSignal,
+    CreateByMmRateClose,
+    CreateByArbitrage,
+    CreateByDdh,
+    CreateByTpsl,
     #[serde(other)]
     Other,
 }
@@ -888,6 +944,8 @@ pub enum BybitTimeInForce {
     Fok,
     #[serde(rename = "PostOnly")]
     PostOnly,
+    #[serde(rename = "RPI")]
+    Rpi,
 }
 
 /// Execution type values used in execution reports.
@@ -911,8 +969,20 @@ pub enum BybitExecType {
     BlockTrade,
     #[serde(rename = "MovePosition")]
     MovePosition,
+    #[serde(rename = "FutureSpread")]
+    FutureSpread,
+    /// Retained for execution history recorded while the venue issued this type
+    /// (2026-07-23 to 2026-08-20), before its replacement by the split settlement
+    /// and dividend types.
     #[serde(rename = "CorporateAction")]
     CorporateAction,
+    #[serde(rename = "ForwardSplitSettle")]
+    ForwardSplitSettle,
+    #[serde(rename = "ReverseSplitSettle")]
+    ReverseSplitSettle,
+    #[serde(rename = "Dividend")]
+    Dividend,
+    #[serde(other)]
     #[serde(rename = "UNKNOWN")]
     Unknown,
 }
@@ -922,7 +992,7 @@ impl BybitExecType {
     ///
     /// This covers auto-deleveraging (`AdlTrade`), liquidation takeovers (`BustTrade`),
     /// scheduled deliveries (`Delivery`), settlement (`Settle`), and corporate actions
-    /// (`CorporateAction`).
+    /// (`CorporateAction`, `ForwardSplitSettle`, `ReverseSplitSettle`, `Dividend`).
     #[must_use]
     pub const fn is_exchange_generated(&self) -> bool {
         matches!(
@@ -932,6 +1002,9 @@ impl BybitExecType {
                 | Self::Delivery
                 | Self::Settle
                 | Self::CorporateAction
+                | Self::ForwardSplitSettle
+                | Self::ReverseSplitSettle
+                | Self::Dividend
         )
     }
 }
@@ -953,6 +1026,16 @@ pub enum BybitTransactionType {
     Liquidation,
     #[serde(rename = "AIRDRP")]
     Airdrop,
+    #[serde(rename = "ADL")]
+    Adl,
+    #[serde(rename = "DIVIDEND_SETTLEMENT")]
+    DividendSettlement,
+    #[serde(rename = "FORWARD_SPLIT_SETTLE")]
+    ForwardSplitSettle,
+    #[serde(rename = "REVERSE_SPLIT_SETTLE")]
+    ReverseSplitSettle,
+    #[serde(other)]
+    Other,
 }
 
 /// Endpoint classifications used by the Bybit API.
@@ -1080,6 +1163,8 @@ pub enum BybitRepayStatus {
 #[serde(rename_all = "PascalCase")]
 pub enum BybitPositionStatus {
     Normal,
+    Liq,
+    Adl,
     Settle,
     Delivering,
     #[serde(other)]
@@ -1095,7 +1180,10 @@ pub enum BybitMarketUnit {
     QuoteCoin,
 }
 
-/// Self-match prevention type.
+/// Self-match prevention type reported on an order or execution.
+///
+/// `Other` is a catch-all for values Bybit adds after this enum was written. Requests use
+/// [`BybitOrderSmpType`], which has no catch-all, so an unknown value cannot reach the venue.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum BybitSmpType {
     None,
@@ -1104,6 +1192,18 @@ pub enum BybitSmpType {
     CancelBoth,
     #[serde(other)]
     Other,
+}
+
+/// Self-match prevention type accepted on an order request.
+///
+/// Mirrors [`BybitSmpType`] without its inbound catch-all, so every value this type can hold is one
+/// Bybit accepts on an order.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, AsRefStr, Serialize, Deserialize)]
+pub enum BybitOrderSmpType {
+    None,
+    CancelMaker,
+    CancelTaker,
+    CancelBoth,
 }
 
 #[cfg(test)]
@@ -1161,6 +1261,7 @@ mod tests {
     #[case(BybitSymbolType::Stock, "stock")]
     #[case(BybitSymbolType::Forex, "forex")]
     #[case(BybitSymbolType::Etf, "ETF")]
+    #[case(BybitSymbolType::Mstocks, "mstocks")]
     fn test_symbol_type_round_trip(#[case] symbol_type: BybitSymbolType, #[case] wire_value: &str) {
         let value = serde_json::Value::String(wire_value.to_string());
 
@@ -1186,12 +1287,171 @@ mod tests {
     #[case(BybitExecType::Funding, false)]
     #[case(BybitExecType::BlockTrade, false)]
     #[case(BybitExecType::MovePosition, false)]
+    #[case(BybitExecType::FutureSpread, false)]
     #[case(BybitExecType::CorporateAction, true)]
+    #[case(BybitExecType::ForwardSplitSettle, true)]
+    #[case(BybitExecType::ReverseSplitSettle, true)]
+    #[case(BybitExecType::Dividend, true)]
     #[case(BybitExecType::Unknown, false)]
     fn test_exec_type_is_exchange_generated(
         #[case] exec_type: BybitExecType,
         #[case] expected: bool,
     ) {
         assert_eq!(exec_type.is_exchange_generated(), expected);
+    }
+
+    #[rstest]
+    #[case(BybitExecType::Trade, "Trade")]
+    #[case(BybitExecType::AdlTrade, "AdlTrade")]
+    #[case(BybitExecType::Funding, "Funding")]
+    #[case(BybitExecType::BustTrade, "BustTrade")]
+    #[case(BybitExecType::Delivery, "Delivery")]
+    #[case(BybitExecType::Settle, "Settle")]
+    #[case(BybitExecType::BlockTrade, "BlockTrade")]
+    #[case(BybitExecType::MovePosition, "MovePosition")]
+    #[case(BybitExecType::FutureSpread, "FutureSpread")]
+    #[case(BybitExecType::CorporateAction, "CorporateAction")]
+    #[case(BybitExecType::ForwardSplitSettle, "ForwardSplitSettle")]
+    #[case(BybitExecType::ReverseSplitSettle, "ReverseSplitSettle")]
+    #[case(BybitExecType::Dividend, "Dividend")]
+    #[case(BybitExecType::Unknown, "UNKNOWN")]
+    fn test_exec_type_round_trip(#[case] exec_type: BybitExecType, #[case] wire_value: &str) {
+        let value = serde_json::Value::String(wire_value.to_string());
+
+        assert_eq!(
+            serde_json::from_value::<BybitExecType>(value.clone()).unwrap(),
+            exec_type
+        );
+        assert_eq!(serde_json::to_value(exec_type).unwrap(), value);
+    }
+
+    #[rstest]
+    fn test_exec_type_unrecognized_value_deserializes_to_unknown() {
+        let value = serde_json::Value::String("StockMerger".to_string());
+
+        assert_eq!(
+            serde_json::from_value::<BybitExecType>(value).unwrap(),
+            BybitExecType::Unknown
+        );
+    }
+
+    #[rstest]
+    #[case(BybitAccountType::Unified, "UNIFIED")]
+    #[case(BybitAccountType::Fund, "FUND")]
+    fn test_account_type_round_trip(
+        #[case] account_type: BybitAccountType,
+        #[case] wire_value: &str,
+    ) {
+        let value = serde_json::Value::String(wire_value.to_string());
+
+        assert_eq!(
+            serde_json::from_value::<BybitAccountType>(value.clone()).unwrap(),
+            account_type
+        );
+        assert_eq!(serde_json::to_value(account_type).unwrap(), value);
+    }
+
+    #[rstest]
+    #[case(BybitTimeInForce::Gtc, "GTC")]
+    #[case(BybitTimeInForce::Ioc, "IOC")]
+    #[case(BybitTimeInForce::Fok, "FOK")]
+    #[case(BybitTimeInForce::PostOnly, "PostOnly")]
+    #[case(BybitTimeInForce::Rpi, "RPI")]
+    fn test_time_in_force_round_trip(#[case] tif: BybitTimeInForce, #[case] wire_value: &str) {
+        let value = serde_json::Value::String(wire_value.to_string());
+
+        assert_eq!(
+            serde_json::from_value::<BybitTimeInForce>(value.clone()).unwrap(),
+            tif
+        );
+        assert_eq!(serde_json::to_value(tif).unwrap(), value);
+    }
+
+    #[rstest]
+    #[case("CreateByAdl_PassThrough", BybitCreateType::CreateByAdlPassThrough)]
+    #[case("CreateByLiq", BybitCreateType::CreateByLiq)]
+    #[case(
+        "CreateByTakeOver_PassThrough",
+        BybitCreateType::CreateByTakeOverPassThrough
+    )]
+    #[case("CreateByTWAP", BybitCreateType::CreateByTwap)]
+    #[case("CreateByFutureSpread", BybitCreateType::CreateByFutureSpread)]
+    fn test_create_type_venue_wire_values(
+        #[case] wire_value: &str,
+        #[case] expected: BybitCreateType,
+    ) {
+        let value = serde_json::Value::String(wire_value.to_string());
+
+        assert_eq!(
+            serde_json::from_value::<BybitCreateType>(value.clone()).unwrap(),
+            expected
+        );
+        assert_eq!(serde_json::to_value(expected).unwrap(), value);
+    }
+
+    #[rstest]
+    #[case("CancelBySettle", BybitCancelType::CancelBySettle)]
+    #[case("CancelBySmp", BybitCancelType::CancelBySmp)]
+    #[case("CancelByDCP", BybitCancelType::CancelByDcp)]
+    #[case("CancelAllBeforeLiq", BybitCancelType::CancelAllBeforeLiq)]
+    #[case(
+        "CancelByOCOTpCanceledBySlTriggered",
+        BybitCancelType::CancelByOcoTpCanceledBySlTriggered
+    )]
+    fn test_cancel_type_venue_wire_values(
+        #[case] wire_value: &str,
+        #[case] expected: BybitCancelType,
+    ) {
+        let value = serde_json::Value::String(wire_value.to_string());
+
+        assert_eq!(
+            serde_json::from_value::<BybitCancelType>(value.clone()).unwrap(),
+            expected
+        );
+        assert_eq!(serde_json::to_value(expected).unwrap(), value);
+    }
+
+    #[rstest]
+    fn test_pending_open_instrument_status_round_trip() {
+        let value = serde_json::Value::String("PendingOpen".to_string());
+
+        assert_eq!(
+            serde_json::from_value::<BybitInstrumentStatus>(value.clone()).unwrap(),
+            BybitInstrumentStatus::PendingOpen
+        );
+        assert_eq!(
+            serde_json::to_value(BybitInstrumentStatus::PendingOpen).unwrap(),
+            value
+        );
+    }
+
+    #[rstest]
+    fn test_normal_spot_only_margin_trading_round_trip() {
+        let value = serde_json::Value::String("normalSpotOnly".to_string());
+
+        assert_eq!(
+            serde_json::from_value::<BybitMarginTrading>(value.clone()).unwrap(),
+            BybitMarginTrading::NormalSpotOnly
+        );
+        assert_eq!(
+            serde_json::to_value(BybitMarginTrading::NormalSpotOnly).unwrap(),
+            value
+        );
+    }
+
+    #[rstest]
+    #[case(BybitPositionStatus::Liq, "Liq")]
+    #[case(BybitPositionStatus::Adl, "Adl")]
+    fn test_position_status_liq_adl_round_trip(
+        #[case] status: BybitPositionStatus,
+        #[case] wire_value: &str,
+    ) {
+        let value = serde_json::Value::String(wire_value.to_string());
+
+        assert_eq!(
+            serde_json::from_value::<BybitPositionStatus>(value.clone()).unwrap(),
+            status
+        );
+        assert_eq!(serde_json::to_value(status).unwrap(), value);
     }
 }

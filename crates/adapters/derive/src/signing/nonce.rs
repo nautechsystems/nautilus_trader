@@ -26,7 +26,7 @@
 //!    every manager in the process, including during clock rollback.
 //! 2. Suffixes stay within the venue's documented `0..=999` range.
 //! 3. Atomic allocation per key under contention. A process-wide `DashMap`
-//!    shards the state and a `compare_exchange` loop serialises allocators.
+//!    shards the state and a `compare_exchange` loop serializes allocators.
 //!
 //! [venue schema]: https://docs.derive.xyz/reference/private-replace
 //! [reference SDK]: https://github.com/derivexyz/v2-action-signing-python/blob/d1914d61985e33559244da242892c7255b6fd0ca/derive_action_signing/utils.py#L19-L29

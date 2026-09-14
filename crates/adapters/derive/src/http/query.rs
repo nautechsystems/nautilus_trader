@@ -18,8 +18,13 @@
 use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::{Address, B256, U256};
 use anyhow::Context;
-use nautilus_core::serialization::{
-    deserialize_decimal, serialize_decimal_as_str, serialize_optional_decimal_as_str,
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::{
+    serialization::{
+        deserialize_decimal, serialize_decimal_as_str, serialize_optional_decimal_as_str,
+    },
+    string::secret::SecretString,
 };
 use nautilus_model::orders::{Order, OrderAny};
 use rust_decimal::Decimal;
@@ -57,7 +62,7 @@ pub struct DeriveSignedEnvelope {
     /// Signature expiry in UNIX seconds.
     pub signature_expiry_sec: i64,
     /// 65-byte EIP-712 signature as `0x`-prefixed hex.
-    pub signature: String,
+    pub signature: SecretString,
 }
 
 impl DeriveSignedEnvelope {
@@ -68,7 +73,7 @@ impl DeriveSignedEnvelope {
             nonce: action.nonce(),
             signer: format!("{:?}", action.signer_address()),
             signature_expiry_sec: action.signature_expiry_sec(),
-            signature: action.signature_hex(),
+            signature: SecretString::from(action.signature_hex()),
         }
     }
 }
@@ -680,16 +685,12 @@ fn build_signed_order_params(
 ) -> anyhow::Result<DeriveOrderParams> {
     let direction = order_side_to_derive(order.order_side());
 
-    let asset_address: Address = instrument
-        .base_asset_address
-        .as_str()
-        .parse()
-        .with_context(|| {
-            format!(
-                "failed to parse base_asset_address `{}`",
-                instrument.base_asset_address.as_str(),
-            )
-        })?;
+    let asset_address: Address = instrument.base_asset_address.parse().with_context(|| {
+        format!(
+            "failed to parse base_asset_address `{}`",
+            instrument.base_asset_address.as_str(),
+        )
+    })?;
     let sub_id =
         U256::from_str_radix(instrument.base_asset_sub_id.as_str(), 10).with_context(|| {
             format!(
@@ -775,7 +776,7 @@ mod tests {
             nonce,
             signer: "0xsigner".to_string(),
             signature_expiry_sec: 1_700_000_600 + (nonce as i64 - 123_456),
-            signature: signature.to_string(),
+            signature: SecretString::from(signature),
         }
     }
 
@@ -798,6 +799,7 @@ mod tests {
             trigger_price_type: None,
             trigger_type: None,
         };
+        let debug = format!("{params:?}");
 
         let wire = canonical_wire(&params);
         let expected = include_str!("../../test_data/common/private_order_params_limit.json")
@@ -806,6 +808,8 @@ mod tests {
 
         assert_eq!(wire, expected);
         assert_eq!(round_trip, params);
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains("0xabc"));
     }
 
     #[rstest]

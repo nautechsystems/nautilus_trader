@@ -129,10 +129,16 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
         None,
         None,
         normalize_symbols,
-        config.proxy_url.clone(),
+        config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned()),
     )?;
     let mut machine_client = TardisMachineClient::new(
-        config.tardis_ws_url.as_deref(),
+        config
+            .tardis_ws_url
+            .as_ref()
+            .map(|value| value.expose_secret()),
         normalize_symbols,
         book_snapshot_output,
     )?;
@@ -174,7 +180,13 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
         match result {
             Ok(msg) => {
                 match msg {
-                    Data::Deltas(msg) => {
+                    Data::BookDelta(delta) => {
+                        log::warn!(
+                            "Skipping individual delta message for {} (use Deltas batch instead)",
+                            delta.instrument_id
+                        );
+                    }
+                    Data::BookDeltas(msg) => {
                         handle_deltas_msg(
                             &msg,
                             &mut deltas_map,
@@ -183,7 +195,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
                             compression,
                         );
                     }
-                    Data::Depth10(msg) => {
+                    Data::BookDepth10(msg) => {
                         handle_depth10_msg(
                             *msg,
                             &mut depths_map,
@@ -213,10 +225,10 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
                     Data::Bar(msg) => {
                         handle_bar_msg(msg, &mut bars_map, &mut bars_cursors, &path, compression);
                     }
-                    Data::Delta(delta) => {
-                        log::warn!(
-                            "Skipping individual delta message for {} (use Deltas batch instead)",
-                            delta.instrument_id
+                    Data::MarkPrice(_) | Data::IndexPrice(_) | Data::FundingRate(_) => {
+                        log::debug!(
+                            "Skipping unsupported data type for instrument {}",
+                            msg.instrument_id()
                         );
                     }
                     Data::OptionGreeks(msg) => {
@@ -228,12 +240,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
                             compression,
                         );
                     }
-                    Data::MarkPrice(_)
-                    | Data::IndexPrice(_)
-                    | Data::FundingRate(_)
-                    | Data::InstrumentStatus(_)
-                    | Data::InstrumentClose(_)
-                    | Data::Custom(_) => {
+                    Data::InstrumentStatus(_) | Data::InstrumentClose(_) | Data::Custom(_) => {
                         log::debug!(
                             "Skipping unsupported data type for instrument {}",
                             msg.instrument_id()
@@ -715,6 +722,7 @@ fn write_parquet_local(
 mod tests {
     use std::sync::Arc;
 
+    use nautilus_core::DurationNanos;
     use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     use rstest::rstest;
 
@@ -811,8 +819,8 @@ mod tests {
         };
 
         let mut greeks_2 = greeks_1;
-        greeks_2.ts_event = greeks_1.ts_event + 1_000_000_000;
-        greeks_2.ts_init = greeks_1.ts_init + 1_000_000_000;
+        greeks_2.ts_event = greeks_1.ts_event + DurationNanos::from_secs(1);
+        greeks_2.ts_init = greeks_1.ts_init + DurationNanos::from_secs(1);
         greeks_2.greeks.delta = 0.26;
 
         let option_quote: BookSnapshotMsg =
@@ -826,8 +834,8 @@ mod tests {
         };
 
         let mut quote_2 = quote_1;
-        quote_2.ts_event = quote_1.ts_event + 1_000_000_000;
-        quote_2.ts_init = quote_1.ts_init + 1_000_000_000;
+        quote_2.ts_event = quote_1.ts_event + DurationNanos::from_secs(1);
+        quote_2.ts_init = quote_1.ts_init + DurationNanos::from_secs(1);
 
         let temp_dir = tempfile::tempdir().unwrap();
         let data_path = temp_dir.path().join("data");
@@ -908,8 +916,8 @@ mod tests {
         };
 
         let mut trade_2 = trade_1;
-        trade_2.ts_event = trade_1.ts_event + 1_000_000_000;
-        trade_2.ts_init = trade_1.ts_init + 1_000_000_000;
+        trade_2.ts_event = trade_1.ts_event + DurationNanos::from_secs(1);
+        trade_2.ts_init = trade_1.ts_init + DurationNanos::from_secs(1);
 
         let temp_dir = tempfile::tempdir().unwrap();
         let data_path = temp_dir.path().join("data");
@@ -954,7 +962,7 @@ mod tests {
         let bar_type = BarType::from("BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL");
 
         let ts_1 = UnixNanos::from(utc_nanos(2024, 1, 1, 0, 0, 0, 0));
-        let ts_2 = ts_1 + 1_000_000_000;
+        let ts_2 = ts_1 + DurationNanos::from_secs(1);
 
         let bar_1 = Bar::new(
             bar_type,

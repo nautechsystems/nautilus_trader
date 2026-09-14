@@ -22,6 +22,8 @@ use std::{
 };
 
 use nautilus_core::UnixNanos;
+#[cfg(feature = "python")]
+use nautilus_core::correctness::{CorrectnessError, CorrectnessResult};
 
 use crate::{
     data::order::{BookOrder, OrderId},
@@ -98,15 +100,18 @@ impl Display for BookPrice {
 /// stale MBP data could pollute a new snapshot. Without this distinction,
 /// an incomplete MBP stream (missing `F_LAST`) would leave batch state that
 /// incorrectly affects subsequent snapshot processing.
+///
+/// The discriminants are serialized in Python `OrderBook` state and must remain stable.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(u8)]
 enum L1BatchState {
     /// Not in any batch.
     #[default]
-    None,
+    None = 0,
     /// Accumulating an `F_MBP` batch (final two deltas accumulate).
-    MbpBatch,
+    MbpBatch = 1,
     /// Accumulating an `F_SNAPSHOT` batch (all deltas accumulate).
-    SnapshotBatch,
+    SnapshotBatch = 2,
 }
 
 /// Represents a ladder of price levels for one side of an order book.
@@ -143,6 +148,43 @@ impl BookLadder {
     #[allow(dead_code)]
     pub(crate) fn is_empty(&self) -> bool {
         self.levels.is_empty()
+    }
+
+    #[must_use]
+    #[cfg(feature = "python")]
+    pub(crate) fn batch_state_code(&self) -> u8 {
+        self.batch_state as u8
+    }
+
+    /// Restores the state of an unfinished L1 batch.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an unknown state code or a batch state on a non-L1 ladder.
+    #[cfg(feature = "python")]
+    pub(crate) fn set_batch_state_code(&mut self, code: u8) -> CorrectnessResult<()> {
+        let batch_state = match code {
+            0 => L1BatchState::None,
+            1 => L1BatchState::MbpBatch,
+            2 => L1BatchState::SnapshotBatch,
+            _ => {
+                return Err(CorrectnessError::PredicateViolation {
+                    message: format!("Invalid L1 batch state code: {code}"),
+                });
+            }
+        };
+
+        if self.book_type != BookType::L1_MBP && batch_state != L1BatchState::None {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "Cannot restore L1 batch state for book type {:?}",
+                    self.book_type
+                ),
+            });
+        }
+
+        self.batch_state = batch_state;
+        Ok(())
     }
 
     /// Removes all orders and price levels from the ladder.
@@ -310,7 +352,7 @@ impl BookLadder {
                 level.update(order);
 
                 // If level.update removed the order due to zero size, remove from cache too
-                if order.size.raw == 0 {
+                if order.size.is_zero() {
                     self.cache.remove(&order.order_id);
                     debug_assert_eq!(
                         level.len(),
@@ -1161,7 +1203,7 @@ mod tests {
             side: OrderSide::Buy.into(),
             price: Price::from("100.00"),
             size: Quantity::from(50),
-            order_id: Price::from("100.00").raw as u64,
+            order_id: Price::from("100.00").raw() as u64,
         };
         ladder.add(order1, 0);
 
@@ -1169,7 +1211,7 @@ mod tests {
             side: OrderSide::Buy.into(),
             price: Price::from("99.00"),
             size: Quantity::from(60),
-            order_id: Price::from("99.00").raw as u64,
+            order_id: Price::from("99.00").raw() as u64,
         };
         ladder.add(order2, 0);
 

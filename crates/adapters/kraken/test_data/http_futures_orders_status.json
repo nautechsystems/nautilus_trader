@@ -1,0 +1,48 @@
+{
+  "result": "success",
+  "serverTime": "2026-09-12T04:05:06.789Z",
+  "orders": [
+    {
+      "order": {
+        "type": "ORDER",
+        "orderId": "5f6d15a5-8c9e-4b0a-9d3f-5a2b7c8d9e0f",
+        "cliOrdId": "uuid-mp-held-001",
+        "symbol": "PF_XBTUSD",
+        "side": "buy",
+        "quantity": 0.001,
+        "filled": 0.0004,
+        "limitPrice": 70000.0,
+        "reduceOnly": false,
+        "timestamp": "2026-09-12T04:05:06.100Z",
+        "lastUpdateTimestamp": "2026-09-12T04:05:06.300Z",
+        "algoId": null,
+        "priceTriggerOptions": null,
+        "triggerTime": null
+      },
+      "status": "CANCELLED",
+      "updateReason": "PARTIAL_FILL",
+      "error": null
+    },
+    {
+      "order": {
+        "type": "ORDER",
+        "orderId": "c2e0b1b4-1111-2222-3333-444455556666",
+        "cliOrdId": null,
+        "symbol": "PF_XBTUSD",
+        "side": "sell",
+        "quantity": 0.0002,
+        "filled": 0,
+        "limitPrice": 71000.5,
+        "reduceOnly": true,
+        "timestamp": "2026-09-12T04:05:05.000Z",
+        "lastUpdateTimestamp": "2026-09-12T04:05:05.000Z",
+        "algoId": null,
+        "priceTriggerOptions": null,
+        "triggerTime": null
+      },
+      "status": "ENTERED_BOOK",
+      "updateReason": null,
+      "error": null
+    }
+  ]
+}

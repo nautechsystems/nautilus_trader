@@ -20,7 +20,7 @@ use std::{fmt::Display, io};
 use thiserror::Error;
 
 /// Error type for send operations in network clients.
-#[derive(Error, Debug)]
+#[derive(Clone, Error, Debug)]
 pub enum SendError {
     /// The send input is invalid.
     #[error("send failed: invalid input ({0})")]

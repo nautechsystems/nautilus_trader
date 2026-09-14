@@ -19,14 +19,21 @@
 //! [`crate::http::models::JsonRpcResponse`] envelope; this module covers only
 //! the params payloads and the inbound notification frame.
 
-use std::{collections::HashMap, fmt::Display, str::FromStr};
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+    str::FromStr,
+};
 
-use nautilus_core::serialization::deserialize_decimal;
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::{serialization::deserialize_decimal, string::secret::SecretString};
 use nautilus_model::identifiers::InstrumentId;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, value::RawValue};
 use ustr::Ustr;
+use zeroize::Zeroize;
 
 use crate::{
     common::{
@@ -50,14 +57,14 @@ pub(crate) const DEFAULT_TICKER_INTERVAL: &str = "1000";
 /// The wallet/timestamp/signature triple comes from
 /// [`crate::signing::auth::build_ws_login`]; the venue verifies the signature
 /// recovers `wallet` over the millisecond timestamp string.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize)]
 pub struct WsLoginParams {
     /// Derive Chain smart-contract wallet address (`0x`-prefixed hex).
     pub wallet: String,
     /// Millisecond UNIX timestamp string (matches the bytes that were signed).
     pub timestamp: String,
     /// 0x-prefixed signature hex over `timestamp` under EIP-191.
-    pub signature: String,
+    pub signature: SecretString,
 }
 
 /// Params payload for `subscribe`.
@@ -384,7 +391,7 @@ pub struct WsSubscriptionFrame {
 ///
 /// The channel payload is held as a [`RawValue`] (the raw JSON bytes) rather
 /// than a decoded [`Value`]; each channel parser decodes those bytes straight
-/// into its typed struct, so the inbound path never materialises the payload
+/// into its typed struct, so the inbound path never materializes the payload
 /// into an intermediate `Value` tree.
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsSubscriptionPayload {
@@ -438,7 +445,7 @@ impl DeriveOrderbookData {
     /// Returns the Nautilus instrument ID for this Derive symbol.
     #[must_use]
     pub fn instrument_id(&self) -> InstrumentId {
-        format_instrument_id(self.instrument_name.as_str())
+        format_instrument_id(self.instrument_name)
     }
 }
 
@@ -701,7 +708,7 @@ impl DeriveTickerData {
             return Ok(());
         };
 
-        if !instrument_ticker.instrument_name.as_str().is_empty() {
+        if !instrument_ticker.instrument_name.is_empty() {
             return Ok(());
         }
 
@@ -714,7 +721,7 @@ impl DeriveTickerData {
     /// Returns the Nautilus instrument ID for this Derive symbol.
     #[must_use]
     pub fn instrument_id(&self) -> InstrumentId {
-        format_instrument_id(self.instrument_name().as_str())
+        format_instrument_id(self.instrument_name())
     }
 }
 
@@ -816,7 +823,7 @@ impl DeriveWsFrame {
             return Ok(Self::UncorrelatedError(error));
         }
 
-        // Unrecognised frame: re-parse into a `Value` for diagnostic logging.
+        // Unrecognized frame: re-parse into a `Value` for diagnostic logging.
         // The live feed only sends responses and subscription notifications, so
         // this second parse never runs on a hot path.
         Ok(Self::Unknown(serde_json::from_str(text)?))
@@ -1023,7 +1030,7 @@ mod tests {
                 instrument_name,
                 interval,
             } => {
-                assert_eq!(instrument_name.as_str(), "ETH-PERP");
+                assert_eq!(instrument_name, "ETH-PERP");
                 assert_eq!(interval, DeriveTickerInterval::Ms1000);
             }
             other => panic!("expected TickerSlim, was {other:?}"),
@@ -1035,7 +1042,7 @@ mod tests {
                 group,
                 depth,
             } => {
-                assert_eq!(instrument_name.as_str(), "ETH-PERP");
+                assert_eq!(instrument_name, "ETH-PERP");
                 assert_eq!(group, DeriveOrderbookGroup::G1);
                 assert_eq!(depth, DeriveOrderbookDepth::D10);
             }
@@ -1048,7 +1055,7 @@ mod tests {
                 currency,
             } => {
                 assert_eq!(instrument_type, DeriveInstrumentType::Perp);
-                assert_eq!(currency.as_str(), "ETH");
+                assert_eq!(currency, "ETH");
             }
             other => panic!("expected Trades, was {other:?}"),
         }
@@ -1078,7 +1085,7 @@ mod tests {
             WsRequestParams::from(WsLoginParams {
                 wallet: "0xWALLET".to_string(),
                 timestamp: "1700000000000".to_string(),
-                signature: "0xSIG".to_string(),
+                signature: SecretString::from("0xSIG"),
             }),
         );
         let subscribe = JsonRpcRequest::new(
@@ -1169,12 +1176,16 @@ mod tests {
         let params = WsLoginParams {
             wallet: "0xWALLET".to_string(),
             timestamp: "1700000000000".to_string(),
-            signature: "0xDEAD".to_string(),
+            signature: SecretString::from("0xDEAD"),
         };
+        let debug = format!("{params:?}");
         let wire = serde_json::to_value(&params).unwrap();
+
         assert_eq!(wire["wallet"], "0xWALLET");
         assert_eq!(wire["timestamp"], "1700000000000");
         assert_eq!(wire["signature"], "0xDEAD");
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains("0xDEAD"));
         let back: WsLoginParams = serde_json::from_value(wire).unwrap();
         assert_eq!(back, params);
     }
@@ -1226,7 +1237,7 @@ mod tests {
         let frame = DeriveWsFrame::parse(&text).unwrap();
         match frame {
             DeriveWsFrame::Subscription(payload) => {
-                assert_eq!(payload.channel.as_str(), "ticker.ETH-PERP.1000");
+                assert_eq!(payload.channel, "ticker.ETH-PERP.1000");
                 let data: Value = serde_json::from_str(payload.data.get()).unwrap();
                 assert_eq!(data["mark_price"], "3500.5");
             }

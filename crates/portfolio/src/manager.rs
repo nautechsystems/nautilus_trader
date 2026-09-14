@@ -418,7 +418,7 @@ impl AccountsManager {
             let mut locked = match account.calculate_balance_locked(
                 instrument,
                 order.order_side(),
-                order.quantity(),
+                order.leaves_qty(),
                 price?,
                 None,
             ) {
@@ -476,11 +476,19 @@ impl AccountsManager {
             return None;
         }
 
+        let balances_before = account.base.balances.clone();
+        let locks_before = account.balances_locked.clone();
+
         // Clear existing locks before applying new ones to remove stale currency entries
         account.clear_balance_locked(instrument.id());
 
         for (_, balance_locked) in total_locked {
-            account.update_balance_locked(instrument.id(), balance_locked);
+            if let Err(e) = account.update_balance_locked(instrument.id(), balance_locked) {
+                log::error!("Cannot update balance locked: {e}");
+                account.base.balances = balances_before;
+                account.balances_locked = locks_before;
+                return None;
+            }
             log::info!("{} balance_locked={balance_locked}", instrument.id());
         }
 
@@ -912,10 +920,18 @@ impl AccountsManager {
             return None;
         }
 
+        let balances_before = account.base.balances.clone();
+        let locks_before = account.balances_locked.clone();
+
         account.clear_balance_locked(instrument.id());
 
         for (_, balance_locked) in total_locked {
-            account.update_balance_locked(instrument.id(), balance_locked);
+            if let Err(e) = account.update_balance_locked(instrument.id(), balance_locked) {
+                log::error!("Cannot update betting balance locked: {e}");
+                account.base.balances = balances_before;
+                account.balances_locked = locks_before;
+                return None;
+            }
             log::info!("{} balance_locked={balance_locked}", instrument.id());
         }
 
@@ -1397,12 +1413,12 @@ impl AccountsManager {
 )]
 fn wallet_money_from_quantity(quantity: Quantity, currency: Currency) -> anyhow::Result<Money> {
     anyhow::ensure!(!quantity.is_undefined(), "quantity was undefined");
-    Quantity::from_raw_checked(quantity.raw, quantity.precision)?;
-    check_fixed_raw_u128(u128::from(quantity.raw), quantity.precision)?;
+    Quantity::from_raw_checked(quantity.raw(), quantity.precision)?;
+    check_fixed_raw_u128(u128::from(quantity.raw()), quantity.precision)?;
 
     let source_precision = quantity.precision.max(FIXED_PRECISION);
     let target_precision = currency.precision.max(FIXED_PRECISION);
-    let raw = i128::try_from(u128::from(quantity.raw))
+    let raw = i128::try_from(u128::from(quantity.raw()))
         .map_err(|_| anyhow::anyhow!("quantity for {currency} exceeds signed raw bounds"))?;
     let raw = match source_precision.cmp(&target_precision) {
         Ordering::Less => {
@@ -1609,12 +1625,123 @@ mod tests {
     }
 
     #[rstest]
+    fn test_update_balance_locked_after_partial_fill() {
+        let usd = Currency::USD();
+        let account_state = AccountState::new(
+            AccountId::new("SIM-001"),
+            AccountType::Cash,
+            vec![AccountBalance::new(
+                Money::new(1_000_000.0, usd),
+                Money::zero(usd),
+                Money::new(1_000_000.0, usd),
+            )],
+            Vec::new(),
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            Some(usd),
+        );
+        let account = CashAccount::new(account_state, true, false);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache);
+        let instrument = audusd_sim();
+
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("100000"))
+            .price(Price::from("0.80000"))
+            .build();
+        order
+            .apply(OrderEventAny::Submitted(order_submitted_for(&order)))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Accepted(order_accepted_for(
+                &order,
+                VenueOrderId::new("1"),
+            )))
+            .unwrap();
+
+        let (account, _) = manager
+            .update_orders(
+                &AccountAny::Cash(account),
+                &InstrumentAny::CurrencyPair(instrument.clone()),
+                &[&order],
+                UnixNanos::default(),
+            )
+            .unwrap();
+        let AccountAny::Cash(cash) = &account else {
+            panic!("Expected CashAccount");
+        };
+        assert_eq!(
+            cash.balance_total(Some(usd)),
+            Some(Money::new(1_000_000.0, usd))
+        );
+        assert_eq!(
+            cash.balance_locked(Some(usd)),
+            Some(Money::new(80_000.0, usd))
+        );
+        assert_eq!(
+            cash.balance_free(Some(usd)),
+            Some(Money::new(920_000.0, usd))
+        );
+
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(order.client_order_id())
+            .venue_order_id(VenueOrderId::new("1"))
+            .order_side(OrderSide::Buy)
+            .order_type(OrderType::Limit)
+            .last_qty(Quantity::from("40000"))
+            .last_px(Price::from("0.79000"))
+            .position_id(PositionId::new("P-001"))
+            .commission(Money::new(8.0, usd))
+            .build();
+        order.apply(OrderEventAny::Filled(fill.clone())).unwrap();
+        let (account, _) = manager.update_balances(
+            account,
+            &InstrumentAny::CurrencyPair(instrument.clone()),
+            &fill,
+        );
+
+        let (account, _) = manager
+            .update_orders(
+                &account,
+                &InstrumentAny::CurrencyPair(instrument),
+                &[&order],
+                UnixNanos::default(),
+            )
+            .unwrap();
+
+        let AccountAny::Cash(account) = account else {
+            panic!("Expected CashAccount");
+        };
+        assert_eq!(order.leaves_qty(), Quantity::from("60000"));
+        assert_eq!(
+            account.balance_total(Some(usd)),
+            Some(Money::new(968_392.0, usd))
+        );
+        assert_eq!(
+            account.balance_locked(Some(usd)),
+            Some(Money::new(48_000.0, usd))
+        );
+        assert_eq!(
+            account.balance_free(Some(usd)),
+            Some(Money::new(920_392.0, usd))
+        );
+        assert_eq!(account.commission(&usd), Some(Money::new(8.0, usd)));
+    }
+
+    #[rstest]
     fn test_update_orders_cash_precision_mismatch_preserves_state() {
         let mut cash = multi_currency_cash_account(false);
         let usd = Currency::USD();
         let mut instrument = audusd_sim();
         let instrument_id = instrument.id();
-        cash.update_balance_locked(instrument_id, Money::from("10 USD"));
+        cash.update_balance_locked(instrument_id, Money::from("10 USD"))
+            .unwrap();
         let balances_before = cash.base.balances.clone();
         let locks_before = cash.balances_locked.clone();
         let events_before = cash.base.events.clone();
@@ -1659,6 +1786,132 @@ mod tests {
         assert_eq!(cash.base.balances, balances_before);
         assert_eq!(cash.balances_locked, locks_before);
         assert_eq!(cash.base.events, events_before);
+    }
+
+    // A stale reservation recorded under another instrument passes `reservation_precisions_match`,
+    // which only inspects incoming reservations, then fails inside `balance_from_locks`.
+    #[rstest]
+    fn test_update_orders_cash_error_restores_locks() {
+        let mut cash = multi_currency_cash_account(false);
+        let instrument = audusd_sim();
+        let instrument_id = instrument.id();
+        cash.update_balance_locked(instrument_id, Money::from("10 USD"))
+            .unwrap();
+        cash.balances_locked.insert(
+            (InstrumentId::from("EURUSD.SIM"), Currency::USD()),
+            Money::from("-1 USD"),
+        );
+        let balances_before = cash.base.balances.clone();
+        let locks_before = cash.balances_locked.clone();
+        let events_before = cash.base.events.clone();
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .price(Price::from("0.75"))
+            .build();
+        order
+            .apply(OrderEventAny::Submitted(order_submitted_for(&order)))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Accepted(order_accepted_for(
+                &order,
+                VenueOrderId::new("1"),
+            )))
+            .unwrap();
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache);
+        let mut account = AccountAny::Cash(cash);
+
+        let result = manager.update_orders_in_place(
+            &mut account,
+            &InstrumentAny::CurrencyPair(instrument),
+            &[&order],
+            UnixNanos::default(),
+        );
+
+        assert_eq!(result, None);
+        let AccountAny::Cash(cash) = account else {
+            panic!("Expected CashAccount")
+        };
+        assert_eq!(cash.base.balances, balances_before);
+        assert_eq!(cash.balances_locked, locks_before);
+        assert_eq!(cash.base.events, events_before);
+    }
+
+    #[rstest]
+    fn test_update_orders_betting_error_restores_locks() {
+        let gbp = Currency::GBP();
+        let account_state = AccountState::new(
+            AccountId::new("BETTING-001"),
+            AccountType::Betting,
+            vec![AccountBalance::new(
+                Money::from("1000 GBP"),
+                Money::zero(gbp),
+                Money::from("1000 GBP"),
+            )],
+            Vec::new(),
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+        let mut betting_account = BettingAccount::new(account_state, true);
+        let instrument = betting();
+        let instrument_id = instrument.id();
+        betting_account
+            .update_balance_locked(instrument_id, Money::from("100 GBP"))
+            .unwrap();
+        betting_account.balances_locked.insert(
+            (
+                InstrumentId::from("BETFAIR-1.9999999-99999999-0.0.NONE"),
+                gbp,
+            ),
+            Money::from("-1 GBP"),
+        );
+        let balances_before = betting_account.base.balances.clone();
+        let locks_before = betting_account.balances_locked.clone();
+        let events_before = betting_account.base.events.clone();
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("50"))
+            .price(Price::from("2.0"))
+            .build();
+        order
+            .apply(OrderEventAny::Submitted(order_submitted_for_account(
+                &order,
+                AccountId::new("BETTING-001"),
+            )))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Accepted(order_accepted_for_account(
+                &order,
+                VenueOrderId::new("1"),
+                AccountId::new("BETTING-001"),
+            )))
+            .unwrap();
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache);
+        let mut account = AccountAny::Betting(betting_account);
+
+        let result = manager.update_orders_in_place(
+            &mut account,
+            &InstrumentAny::Betting(instrument),
+            &[&order],
+            UnixNanos::default(),
+        );
+
+        assert_eq!(result, None);
+        let AccountAny::Betting(betting_account) = account else {
+            panic!("Expected BettingAccount")
+        };
+        assert_eq!(betting_account.base.balances, balances_before);
+        assert_eq!(betting_account.balances_locked, locks_before);
+        assert_eq!(betting_account.base.events, events_before);
     }
 
     #[rstest]
@@ -1780,7 +2033,9 @@ mod tests {
         let mut betting_account = BettingAccount::new(account_state, true);
         let mut instrument = betting();
         let instrument_id = instrument.id();
-        betting_account.update_balance_locked(instrument_id, Money::from("100 GBP"));
+        betting_account
+            .update_balance_locked(instrument_id, Money::from("100 GBP"))
+            .unwrap();
         let balances_before = betting_account.base.balances.clone();
         let locks_before = betting_account.balances_locked.clone();
         let events_before = betting_account.base.events.clone();
@@ -2331,13 +2586,13 @@ mod tests {
         let base_balance = wallet.balance(Some(base)).unwrap();
         let quote_balance = wallet.balance(Some(quote)).unwrap();
         assert_eq!(base_balance.currency.precision, 18);
-        assert_eq!(base_balance.total.raw, 1_000_000_000_000_000_000);
-        assert_eq!(base_balance.locked.raw, 123_456_789_012_345_600);
-        assert_eq!(base_balance.free.raw, 876_543_210_987_654_400);
+        assert_eq!(base_balance.total.raw(), 1_000_000_000_000_000_000);
+        assert_eq!(base_balance.locked.raw(), 123_456_789_012_345_600);
+        assert_eq!(base_balance.free.raw(), 876_543_210_987_654_400);
         assert_eq!(quote_balance.currency.precision, 18);
-        assert_eq!(quote_balance.total.raw, 2_000_000_000_000_000_000);
-        assert_eq!(quote_balance.locked.raw, 135_802_467_913_580_160);
-        assert_eq!(quote_balance.free.raw, 1_864_197_532_086_419_840);
+        assert_eq!(quote_balance.total.raw(), 2_000_000_000_000_000_000);
+        assert_eq!(quote_balance.locked.raw(), 135_802_467_913_580_160);
+        assert_eq!(quote_balance.free.raw(), 1_864_197_532_086_419_840);
     }
 
     #[rstest]
@@ -2388,13 +2643,13 @@ mod tests {
         let base_balance = wallet.balance(Some(base)).unwrap();
         let quote_balance = wallet.balance(Some(quote)).unwrap();
         assert_eq!(base_balance.currency.precision, 6);
-        assert_eq!(base_balance.total.raw, scale);
-        assert_eq!(base_balance.locked.raw, 123_456 * grid);
-        assert_eq!(base_balance.free.raw, scale - 123_456 * grid);
+        assert_eq!(base_balance.total.raw(), scale);
+        assert_eq!(base_balance.locked.raw(), 123_456 * grid);
+        assert_eq!(base_balance.free.raw(), scale - 123_456 * grid);
         assert_eq!(quote_balance.currency.precision, 6);
-        assert_eq!(quote_balance.total.raw, 2 * scale);
-        assert_eq!(quote_balance.locked.raw, 358_024 * grid);
-        assert_eq!(quote_balance.free.raw, 2 * scale - 358_024 * grid);
+        assert_eq!(quote_balance.total.raw(), 2 * scale);
+        assert_eq!(quote_balance.locked.raw(), 358_024 * grid);
+        assert_eq!(quote_balance.free.raw(), 2 * scale - 358_024 * grid);
     }
 
     #[rstest]
@@ -3494,6 +3749,84 @@ mod tests {
     }
 
     #[rstest]
+    fn test_update_balances_preserves_subincrement_base_commission() {
+        let btc = Currency::BTC();
+        let usdt = Currency::USDT();
+        let account_id = AccountId::new("SIM-001");
+        let account_state = AccountState::new(
+            account_id,
+            AccountType::Cash,
+            vec![
+                AccountBalance::new(Money::from("1 BTC"), Money::zero(btc), Money::from("1 BTC")),
+                AccountBalance::new(
+                    Money::from("1000 USDT"),
+                    Money::zero(usdt),
+                    Money::from("1000 USDT"),
+                ),
+            ],
+            Vec::new(),
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+        let account = CashAccount::new(account_state, true, false);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache.clone());
+        let mut instrument = currency_pair_btcusdt();
+        instrument.size_increment = Quantity::from("0.005000");
+        let instrument = InstrumentAny::CurrencyPair(instrument);
+        let position_id = PositionId::new("P-001");
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .account_id(account_id)
+            .position_id(position_id)
+            .order_side(OrderSide::Buy)
+            .order_type(OrderType::Market)
+            .last_qty(Quantity::from("0.003000"))
+            .last_px(Price::from("50000.00"))
+            .currency(usdt)
+            .commission(Money::from("0.00040000 BTC"))
+            .build();
+        let position = Position::new(&instrument, fill.clone());
+        cache
+            .borrow_mut()
+            .add_position(&position, OmsType::Netting)
+            .unwrap();
+
+        let (updated, state) =
+            manager.update_balances(AccountAny::Cash(account), &instrument, &fill);
+        let AccountAny::Cash(cash) = updated else {
+            panic!("Expected CashAccount");
+        };
+        let state_btc = state
+            .balances
+            .iter()
+            .find(|balance| balance.currency == btc)
+            .unwrap();
+        let state_usdt = state
+            .balances
+            .iter()
+            .find(|balance| balance.currency == usdt)
+            .unwrap();
+
+        assert_eq!(position.quantity, Quantity::from("0.002600"));
+        assert_eq!(
+            cash.balance_total(Some(btc)),
+            Some(Money::from("1.00260000 BTC")),
+        );
+        assert_eq!(
+            cash.balance_total(Some(usdt)),
+            Some(Money::from("850 USDT")),
+        );
+        assert_eq!(cash.commission(&btc), Some(Money::from("0.00040000 BTC")),);
+        assert_eq!(state_btc.total, Money::from("1.00260000 BTC"));
+        assert_eq!(state_usdt.total, Money::from("850 USDT"));
+    }
+
+    #[rstest]
     fn test_update_balances_rollback_restores_balances_and_commissions() {
         // Overflowing the commission total is the only reachable trigger for a rollback after
         // the balance mutation: the realized PnL lands first, then the commission is rejected.
@@ -4150,7 +4483,8 @@ mod tests {
                 .unwrap();
         let locked =
             Money::from_decimal(Decimal::from_str_exact("32.85965").unwrap(), usdt).unwrap();
-        let free = Money::from_raw(total.raw - locked.raw, usdt);
+        let free = total - locked;
+
         let account_state = AccountState::new(
             AccountId::new("SIM-001"),
             AccountType::Margin,
@@ -4193,8 +4527,8 @@ mod tests {
         assert_eq!(balance.locked, locked, "locked margin preserved");
         assert_eq!(balance.total, total + pnl, "total moved by realized PnL");
         assert_eq!(
-            balance.total.raw,
-            balance.locked.raw + balance.free.raw,
+            balance.total,
+            balance.locked + balance.free,
             "invariant total == locked + free must hold"
         );
     }
@@ -4227,8 +4561,8 @@ mod tests {
             "total reduced by commission"
         );
         assert_eq!(
-            balance.total.raw,
-            balance.locked.raw + balance.free.raw,
+            balance.total,
+            balance.locked + balance.free,
             "invariant total == locked + free must hold"
         );
     }

@@ -21,7 +21,7 @@
 //!   REST call
 //!
 //! Numbers here decompose the EIP-712 cost (typed-data hash + ECDSA) from the
-//! HMAC path so a regression in either is localisable.
+//! HMAC path so a regression in either is localizable.
 
 use std::hint::black_box;
 
@@ -70,7 +70,7 @@ fn sample_order(signature_type: SignatureType) -> PolymarketOrder {
         timestamp: "1713398400000".to_string(),
         metadata: ZERO_BYTES32.to_string(),
         builder: ZERO_BYTES32.to_string(),
-        signature: String::new(),
+        signature: String::new().into(),
     }
 }
 
@@ -141,9 +141,9 @@ fn bench_sign_clob_auth(c: &mut Criterion) {
 
 fn bench_hmac_sign(c: &mut Criterion) {
     let credential = Credential::new(
-        "00000000-0000-0000-0000-000000000001",
-        TEST_API_SECRET,
-        "test-passphrase".to_string(),
+        "00000000-0000-0000-0000-000000000001".into(),
+        TEST_API_SECRET.into(),
+        "test-passphrase".into(),
     )
     .unwrap();
     let body = r#"{"order":{"salt":123},"owner":"00000000-0000-0000-0000-000000000001","orderType":"GTC"}"#;

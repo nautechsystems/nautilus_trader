@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Parsing helpers for Hyperliquid WebSocket payloads.
+//! Parsers for Hyperliquid WebSocket payloads.
 
 use anyhow::Context;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
@@ -339,10 +339,7 @@ pub fn parse_ws_order_status_report(
     // orig_sz is the original order quantity, sz is the remaining quantity
     let orig_qty = parse_quantity(order.order.orig_sz, instrument, "order.orig_sz")?;
     let remaining_qty = parse_quantity(order.order.sz, instrument, "order.sz")?;
-    let filled_qty = Quantity::from_raw(
-        orig_qty.raw.saturating_sub(remaining_qty.raw),
-        instrument.size_precision(),
-    );
+    let filled_qty = orig_qty - orig_qty.min(remaining_qty);
 
     let price = parse_price(order.order.limit_px, instrument, "order.limitPx")?;
 
@@ -925,7 +922,7 @@ mod tests {
         // Zero-fee outcome fills fall back to the instrument's quote currency
         // (USDH) instead of the unregistered side token, keeping downstream
         // OrderFilled events and persistence on a registered currency.
-        assert_eq!(report.commission.currency.code.as_str(), "USDH");
+        assert_eq!(report.commission.currency.code, "USDH");
         assert!(report.commission.as_decimal().is_zero());
         assert_eq!(report.order_side, OrderSide::Buy);
     }

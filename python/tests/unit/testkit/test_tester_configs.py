@@ -117,7 +117,7 @@ def test_exec_tester_config_readback() -> None:
         order_id_tag="001",
         use_hyphens_in_client_order_ids=False,
         use_uuid_client_order_ids=True,
-        external_order_claims=[instrument_id],
+        external_order_instrument_ids=[instrument_id],
         instrument_id=instrument_id,
         client_id=client_id,
         order_qty=Quantity.from_str("0.01"),
@@ -154,7 +154,7 @@ def test_exec_tester_config_readback() -> None:
     assert config.order_id_tag == "001"
     assert config.use_hyphens_in_client_order_ids is False
     assert config.use_uuid_client_order_ids is True
-    assert config.external_order_claims == [instrument_id]
+    assert config.external_order_instrument_ids == [instrument_id]
     assert config.instrument_id == instrument_id
     assert config.client_id == client_id
     assert config.order_qty == Quantity.from_str("0.01")

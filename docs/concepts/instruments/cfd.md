@@ -42,7 +42,8 @@ Examples include CFD contracts on FX, equities, indexes, and commodities.
 - `Cfd` has instrument class `Cfd`.
 - It is never inverse and uses a multiplier of one.
 - It has no activation timestamp, expiration timestamp, strike, or option kind.
-- Use the source market type when a venue offers both cash instruments and CFDs.
+- When a venue offers both a cash instrument and a CFD on the same underlying, use `Cfd`
+  only for the CFD contract and the matching cash type for the underlying market.
 
 ## Example
 

@@ -11,7 +11,19 @@ alongside a `metadata.json` file. These files are always available without netwo
 
 **Large data** (> 1 MB) is hosted as Parquet in the R2 test-data bucket.
 A SHA-256 checksum is recorded in `test_data/large/checksums.json`.
-The `ensure_test_data_exists()` helper downloads the file on first use and verifies integrity.
+Before running tests that use large data, prepare the fixtures from the repository root:
+
+```bash
+cargo run --locked -p nautilus-testkit --bin prepare-test-data
+```
+
+This command downloads missing files and verifies every fixture in the tracked checksum manifest.
+It replaces cached files whose checksums differ, leaves the manifest unchanged, and rejects and
+removes downloads with mismatched checksums. CI runs this setup after restoring the test-data cache.
+
+The `ensure_test_data_exists()` function only checks for a local file. A test that needs a missing
+fixture fails with a message naming the setup command, without downloading data. Setup and tests both
+honor `TEST_DATA_ROOT_PATH`.
 
 **User-fetched data** is used when a vendor license, entitlement model, or access control does not
 allow NautilusTrader to redistribute the data through the public repo or the public R2 bucket.
@@ -103,7 +115,7 @@ Examples:
 Use `scripts/curate-dataset.sh`:
 
 ```bash
-scripts/curate-dataset.sh <slug> <filename> <download-url> <licence>
+scripts/curate-dataset.sh <slug> <filename> <download-url> <license>
 ```
 
 This creates a versioned directory (`v1/<slug>/`) with the file,
@@ -125,7 +137,7 @@ For datasets that NautilusTrader cannot redistribute:
 
 1. Commit a manifest and `metadata.json`, but do not commit the real vendor data or derived
    Parquet output.
-2. Provide a local fetch command or helper that uses the user's own vendor credentials,
+2. Provide a local fetch command or script that uses the user's own vendor credentials,
    entitlements, or purchased historical files.
 3. Convert the vendor data locally into Nautilus Parquet.
 4. Store the resulting files in a local cache path that is ignored by git.
@@ -156,7 +168,7 @@ sharing. Treat this as a separate operational path, not as part of the public te
 4. For large data: upload Parquet to R2, add checksum to `test_data/large/checksums.json`.
 5. For user-fetched data: commit the manifest and fetch instructions only. Keep the source and
    derived data out of the repo and out of the public R2 bucket.
-6. Add path helper functions to `crates/testkit/src/common.rs` when shared testkit access is needed.
+6. Add shared test-data path functions to `crates/testkit/src/common.rs` when needed.
 7. Write tests that consume the dataset.
 
 For user-fetched data, prefer this layout:
@@ -210,32 +222,18 @@ if not filepath.exists():
 For Rust tests that require manual dataset preparation, prefer `#[ignore]` when the test is not
 expected to run in default CI.
 
-## Test runner serialization
-
-Tests that download large data files share target paths across test binaries.
-Because `nextest` runs each binary in a separate process, concurrent downloads
-to the same path can race. The nextest config at `.config/nextest.toml` defines
-a `large-data-tests` group with `max-threads = 1` to serialize these binaries.
-
-When adding a new test binary that downloads large shared files, add it to the
-group filter:
-
-```toml
-[[profile.default.overrides]]
-filter = 'binary(grid_mm_itch) | binary(orderbook_integration) | binary(your_new_binary)'
-test-group = 'large-data-tests'
-```
-
 ## Regenerating datasets
 
 When a schema change invalidates a large Parquet file, regenerate it from the
 original source data using the curation tests below. After regenerating:
 
 1. `sha256sum /tmp/<output_file>.parquet`
-2. Update `test_data/large/checksums.json` with the new hash.
-3. Update the corresponding `metadata.json` (sha256, size_bytes).
-4. Upload the Parquet file to R2.
-5. Commit `checksums.json` and `metadata.json` (this also busts the CI cache).
+1. Update `test_data/large/checksums.json` with the new hash.
+1. Update the corresponding `metadata.json` (sha256, size_bytes).
+1. Upload the Parquet file to R2.
+1. Replace the cached file in `test_data/large/` with the regenerated file, then run the
+   preparation command to verify it. Use the corresponding cache under `TEST_DATA_ROOT_PATH` when set.
+1. Commit `checksums.json` and `metadata.json` (this also busts the CI cache).
 
 ### ITCH AAPL L3 deltas
 
@@ -317,11 +315,9 @@ Build the Python package, then run the source tutorials from the repository root
 
 ```bash
 make build-debug
-UV_PROJECT_ENVIRONMENT="$PWD/.venv" \
-  NAUTILUS_DATA_DIR="$PWD/test_data/local" \
+NAUTILUS_DATA_DIR="$PWD/test_data/local" \
   uv run --project python --no-sync python docs/tutorials/backtest_orderbook_binance.py
-UV_PROJECT_ENVIRONMENT="$PWD/.venv" \
-  NAUTILUS_DATA_DIR="$PWD/test_data/local" \
+NAUTILUS_DATA_DIR="$PWD/test_data/local" \
   uv run --project python --no-sync python docs/tutorials/backtest_orderbook_bybit.py
 ```
 

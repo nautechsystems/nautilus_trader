@@ -25,6 +25,8 @@
 //!   bar-EMA workloads over the same preloaded checked-in data.
 //! - `canonical/load_build_run`: the same four workloads including CSV loading, engine setup, and
 //!   `BacktestEngine::run`.
+//! - `canonical/*/<scenario>_typed`: the same workloads under both boundaries with quotes and bars
+//!   submitted as two typed batches through `BacktestEngine::add_data_batch`.
 //! - `market_data_replay`: interleaved quote and trade ticks with no strategy orders.
 //! - `market_data_replay_4_streams`: the same events split across four streams to exercise heap
 //!   merging, with a separate two-instrument case.
@@ -58,7 +60,7 @@ use nautilus_backtest::{
     engine::BacktestEngine,
 };
 use nautilus_common::{actor::DataActor, logging::logger::LoggerConfig, throttler::RateLimit};
-use nautilus_core::UnixNanos;
+use nautilus_core::{DurationNanos, UnixNanos};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, Data, FundingRateUpdate, IndexPriceUpdate,
@@ -98,17 +100,23 @@ fn bench_canonical(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("backtest_engine/canonical");
 
-    for scenario in canonical::SCENARIOS {
-        let fixture = canonical::load_fixture().expect("canonical workload fixture should load");
-        let data_count = fixture.len();
-        group.throughput(Throughput::Elements(data_count as u64));
+    for input in canonical::INPUTS {
+        for scenario in canonical::SCENARIOS {
+            let fixture =
+                canonical::load_fixture(input).expect("canonical workload fixture should load");
+            let data_count = fixture.len();
+            group.throughput(Throughput::Elements(data_count as u64));
+            let case = scenario.case_name(input);
 
-        group.bench_function(BenchmarkId::new("run_preloaded", scenario.name()), |b| {
-            b.iter_custom(|iters| canonical::run_preloaded_iterations(iters, scenario, &fixture));
-        });
-        group.bench_function(BenchmarkId::new("load_build_run", scenario.name()), |b| {
-            b.iter_custom(|iters| canonical::run_full_iterations(iters, scenario));
-        });
+            group.bench_function(BenchmarkId::new("run_preloaded", &case), |b| {
+                b.iter_custom(|iters| {
+                    canonical::run_preloaded_iterations(iters, scenario, &fixture)
+                });
+            });
+            group.bench_function(BenchmarkId::new("load_build_run", &case), |b| {
+                b.iter_custom(|iters| canonical::run_full_iterations(iters, scenario, input));
+            });
+        }
     }
 
     group.finish();
@@ -569,7 +577,7 @@ fn build_accumulating_market_orders(data: Vec<Data>, order_count: usize) -> Back
             order_count,
         ))),
         EngineBuildConfig {
-            max_order_submit: Some(RateLimit::new(1_000_000, 1_000_000_000)),
+            max_order_submit: Some(RateLimit::new(1_000_000, DurationNanos::from_secs(1))),
             ..Default::default()
         },
     )
@@ -835,9 +843,9 @@ fn generate_l2_delta_data(instrument_id: InstrumentId, event_count: usize) -> Ve
         let ask = order_book_delta(instrument_id, OrderSide::Sell, base + 10, sequence + 1, ts);
 
         if i.is_multiple_of(2) {
-            data.push(Data::Delta(bid));
+            data.push(Data::BookDelta(bid));
         } else {
-            data.push(Data::Deltas(Box::new(OrderBookDeltas::new(
+            data.push(Data::BookDeltas(Box::new(OrderBookDeltas::new(
                 instrument_id,
                 vec![bid, ask],
             ))));
@@ -896,7 +904,7 @@ fn generate_depth10_data(instrument_id: InstrumentId, depth_count: usize) -> Vec
                 );
             }
 
-            Data::Depth10(Box::new(OrderBookDepth10::new(
+            Data::BookDepth10(Box::new(OrderBookDepth10::new(
                 instrument_id,
                 bids,
                 asks,
@@ -1282,7 +1290,7 @@ impl DataActor for GtdLimitExpiry {
         if self.quote_count.is_multiple_of(GTD_ORDER_INTERVAL)
             && self.orders_submitted < self.max_orders
         {
-            self.submit_gtd_limit_order(quote.ts_event + GTD_EXPIRY_OFFSET_NS)?;
+            self.submit_gtd_limit_order(quote.ts_event + DurationNanos::new(GTD_EXPIRY_OFFSET_NS))?;
         }
         Ok(())
     }

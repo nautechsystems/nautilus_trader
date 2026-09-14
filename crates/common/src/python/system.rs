@@ -315,7 +315,7 @@ mod tests {
 
         assert_eq!(command.trader_id, trader_id);
         assert_eq!(command.client_id, client_id);
-        assert_eq!(command.endpoint.as_str(), "polymarket-market-streams");
+        assert_eq!(command.endpoint, "polymarket-market-streams");
         assert_eq!(command.ts_init, UnixNanos::from(11));
     }
 

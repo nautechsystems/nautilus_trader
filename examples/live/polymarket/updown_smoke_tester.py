@@ -131,7 +131,7 @@ def main() -> None:
             strategy_id=STRATEGY_ID,
             instrument_id=instrument_id,
             client_id=ClientId.from_str(POLYMARKET),
-            external_order_claims=[instrument_id],
+            external_order_instrument_ids=[instrument_id],
             order_qty=Quantity.from_str(QUANTITY),
             subscribe_quotes=True,
             subscribe_trades=True,

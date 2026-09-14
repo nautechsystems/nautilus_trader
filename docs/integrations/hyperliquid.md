@@ -61,12 +61,16 @@ config = HyperliquidExecutionClientConfig(
 ### Builder fee approval
 
 Hyperliquid requires a one-time `ApproveBuilderFee` approval before orders can carry the builder
-address: orders from a wallet that has never approved a builder fee are rejected with the reason
-`Builder fee has not been approved` (any prior approval, including at a 0% rate, satisfies the
-check). The approval must be signed by the master wallet's private key, which the adapter does
-not hold in agent (API) wallet setups, so it runs as a one-time script rather than at execution
-client startup. The 0% max fee rate permits attribution only: no builder fee is ever charged,
-and raising the rate would require a new approval signed by you.
+address:
+
+- Orders from a wallet that has never approved a builder fee are rejected with the reason
+  `Builder fee has not been approved` (any prior approval, including at a 0% rate, satisfies
+  the check).
+- The approval must be signed by the master wallet's private key, which the adapter does not
+  hold in agent (API) wallet setups, so it runs as a one-time script rather than at execution
+  client startup.
+- The 0% max fee rate permits attribution only: no builder fee is ever charged, and raising
+  the rate would require a new approval signed by you.
 
 Run the approval script once per wallet (reads `HYPERLIQUID_PK`, or `HYPERLIQUID_TESTNET_PK`
 with `HYPERLIQUID_TESTNET=true`):
@@ -347,21 +351,38 @@ instruments = await client.load_instrument_definitions(
 #### Startup mass status
 
 At `LiveNode` startup, unfiltered open-order and position reconciliation queries the default perp dex
-and each unique HIP-3 dex named by the wallet's recent historical orders or fills. Cached dexes
-without wallet activity do not generate startup requests. If either history response reaches its
-2,000-record limit, reconciliation instead queries every dex returned by the venue's current perp
-dex list so bounded history cannot hide older open orders or positions. Position reconciliation also
-includes spot holdings.
+and each unique HIP-3 dex named by the wallet's recent historical orders or fills:
+
+- Cached dexes without wallet activity do not generate startup requests.
+- If either history response reaches its 2,000-record limit, reconciliation instead queries every
+  dex returned by the venue's current perp dex list so bounded history cannot hide older open
+  orders or positions.
+- Position reconciliation also includes spot holdings.
+
+The returned mass status records its own coverage under the [mass-status history contract](../concepts/execution/reconciliation.md#mass-status-history-contract):
+when a lookback is configured, `lookback_start` carries its lower bound (with no configured lookback
+the snapshot is unbounded), and `reports_complete` is `false` when a history response reached its
+record limit (and may be truncated) or when a venue row needed for the snapshot could not be decoded,
+resolved to an instrument, or converted into a report. Valid rows remain in the report set. A
+snapshot whose venue responses decoded cleanly within the record limits is authoritative, including
+an empty one.
 
 #### Command and direct requests
 
 Outside startup mass status, unfiltered `LiveNode` open-order and position report commands and direct
 `HyperliquidHttpClient` requests query the default perp dex and each builder dex represented by the
-cached perpetual instruments. For perpetual filters, a request filtered to a HIP-3 instrument derives
-the builder dex from the symbol's dex prefix and queries only that dex. A standard perpetual filter
-queries only the default dex. Spot and outcome position filters keep their existing spot-only
-routing. If any required request fails, reconciliation returns an error rather than a partial
-snapshot.
+cached perpetual instruments:
+
+- A request filtered to a HIP-3 instrument derives the builder dex from the symbol's dex prefix and
+  queries only that dex.
+- A standard perpetual filter queries only the default dex.
+- Spot and outcome position filters keep their existing spot-only routing.
+- If any required request fails, or a venue row cannot be decoded, resolved to an instrument, or
+  converted into a report, the request returns an error rather than a partial snapshot; fill and
+  historical-order report requests fail the same way.
+- A targeted order-status lookup on the HTTP client that matches a venue row it cannot use returns
+  an error instead of reporting the order as missing, and the `GenerateOrderStatusReport` command
+  does the same once no venue order ID fallback remains.
 
 ### Differences from standard perpetuals
 
@@ -532,7 +553,7 @@ await client.submit_split_outcome(50, Decimal("1.0"))
 # Burn a matched Yes + No pair back to USDH (amount=None merges the max)
 await client.submit_merge_outcome(50, None)
 
-# Multi-outcome priceBucket helpers
+# Multi-outcome priceBucket operations
 await client.submit_merge_question(9, None)
 await client.submit_negate_outcome(9, 52, Decimal("1.0"))
 ```
@@ -601,7 +622,7 @@ and cross-outcome rotation.
 
 ## Instrument loading
 
-The data client loads the full Hyperliquid universe once at connect. One pass covers spot
+The data client loads the full Hyperliquid universe at connect. One pass covers spot
 markets, standard perpetuals, every HIP-3 builder-deployed perp dex, and HIP-4 outcome side
 tokens; the client config exposes no per-product or per-symbol filter. Strategies select the
 instruments they trade through their own `instrument_id` configuration.
@@ -611,16 +632,26 @@ pairs share a base token, it caches the canonical pair first so balances and fil
 asset by its base token resolve to the canonical Nautilus instrument. Any later definition whose
 Nautilus symbol collides with an earlier definition is dropped with a warning and cannot be traded.
 
-To pick up newly listed markets on the data side, issue a `RequestInstruments` or reconnect the
-data client; either refetches and recaches the whole universe. The execution client bootstraps
-its own asset-index map once on first connect and never refreshes it, so trading a market listed
-after that bootstrap requires a process restart. Submitting for a symbol the execution client
-never loaded is denied with `Asset index not found`.
+The data client then refetches the universe every `update_instruments_interval_mins` minutes:
 
-Failures degrade per product rather than aborting the load: missing spot or perp metadata is
-logged as a warning and that product is skipped, and an absent `outcomeMeta` payload is skipped
-at debug level. A perp dex whose non-USDC collateral token cannot be resolved through `spotMeta`
-is the one hard failure, because guessing the settlement currency would misprice the market.
+- It publishes the definitions that are new or materially changed; unchanged definitions are not
+  republished.
+- The execution client receives those updates and registers each instrument's asset index, so a
+  market listed after startup becomes tradable without a process restart.
+- A `RequestInstrument` or `RequestInstruments` also refetches the whole universe and publishes
+  new or changed definitions the same way.
+- Set `update_instruments_interval_mins` to `0` to disable the periodic refresh; requests and a
+  data client reconnect still refetch the universe on demand.
+
+Submitting for a symbol the execution client has never loaded is denied with
+`INSTRUMENT_NOT_FOUND`.
+
+Failures degrade per product rather than aborting the load:
+
+- Missing spot or perp metadata is logged as a warning and that product is skipped.
+- An absent `outcomeMeta` payload is skipped at debug level.
+- A perp dex whose non-USDC collateral token cannot be resolved through `spotMeta` is the one hard
+  failure, because guessing the settlement currency would misprice the market.
 
 To fetch a narrower set outside a `LiveNode`, call `load_instrument_definitions` on
 `HyperliquidHttpClient` directly with the product flags you want:
@@ -924,10 +955,13 @@ identifiers from the live `perpDexs` info endpoint. The empty string `""`
 represents Hyperliquid's default perp dex; non-empty values such as `xyz`,
 `flx`, or `vntl` are venue-defined builder dex identifiers.
 
-The mapping is resolved from the instruments loaded at connect, and the feed is
-positional (no per-entry coin name), so perps listed later only appear after a
-reconnect. A context-count mismatch for a dex logs a warning to reconnect;
-entries stay aligned positionally, which is correct for appended listings.
+The mapping is rebuilt from the cached instruments at connect, on every
+instrument refresh, and on every instrument request, and the feed is positional
+(no per-entry coin name), so perps listed later appear after the next rebuild.
+When `allPerpMetas` is unavailable the rebuild covers only the default dex and
+keeps the existing mapping for every builder dex. A context-count mismatch for a
+dex logs a warning until the next rebuild; entries stay aligned positionally,
+which is correct for appended listings.
 
 ```python
 from nautilus_trader.adapters.hyperliquid import HYPERLIQUID_CLIENT_ID
@@ -968,13 +1002,9 @@ def on_data(self, data) -> None:
 
 ## Orders capability
 
-Hyperliquid supports a full set of order types and execution options.
-
-:::note
-In the tables below, "Perpetuals" covers both standard validator-operated perps and
-HIP-3 builder-deployed perps. The same order types, time-in-force options, and execution
-instructions apply to both.
-:::
+Hyperliquid supports a full set of order types and execution options. In the tables below,
+"Perpetuals" covers both standard validator-operated perps and HIP-3 builder-deployed perps:
+the same order types, time-in-force options, and execution instructions apply to both.
 
 ### Order types
 
@@ -987,31 +1017,58 @@ instructions apply to both.
 | `MARKET_IF_TOUCHED` | ✓          | ✓    | Take profit at market.                              |
 | `LIMIT_IF_TOUCHED`  | ✓          | ✓    | Take profit with limit execution.                   |
 
-:::info
 Conditional orders (stop and if-touched) are implemented using Hyperliquid's native trigger
 order functionality with automatic TP/SL mode detection. All trigger orders are evaluated
 against the [mark price](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/robust-price-indices).
-:::
+Standalone trigger orders rest on the venue until triggered, independent of the reduce-only
+flag. Grouped (bracket) TP/SL children are always submitted as reduce-only by the adapter.
 
-:::note
-Market orders require cached quote data. The adapter uses the best ask (for buys) or best bid
-(for sells) with a configurable slippage buffer (default 50 bps). Prices are rounded to
-Hyperliquid's price constraints before submission. Subscribe to quotes for any instrument you
-intend to trade with market orders: without a cached quote the adapter emits `OrderDenied`
-rather than guessing a price.
+### Market-order pricing
 
-The slippage buffer is controlled by `market_order_slippage_bps` on `HyperliquidExecutionClientConfig`
-(default 50 bps) and can be overridden per-order via the `market_order_slippage_bps` key in
-`SubmitOrder.params`.
-:::
+Market orders are submitted as IOC limit orders priced from the best ask (for buys) or best
+bid (for sells) with a configurable slippage buffer (default 50 bps). Prices are rounded to
+Hyperliquid's price constraints before submission. The slippage buffer is controlled by
+`market_order_slippage_bps` on `HyperliquidExecutionClientConfig` and can be overridden
+per-order via the `market_order_slippage_bps` key in `SubmitOrder.params`.
 
-:::note
 `STOP_MARKET` and `MARKET_IF_TOUCHED` orders do not carry a limit price. The adapter derives
 one from the trigger price with the same configurable slippage buffer (default 50 bps), rounds
 to 5 significant figures, and clamps to the venue decimal limit (ceiling for buys, floor for
 sells). This guarantees Hyperliquid's `limit_px >= trigger_px` (buys) /
 `limit_px <= trigger_px` (sells) constraint.
+
+:::info
+**Market orders require cached quote data.** Without a cached quote the adapter emits
+`OrderDenied` rather than guessing a price. Subscribe to quotes for any instrument you intend
+to trade with market orders.
 :::
+
+### Quote-denominated quantities
+
+Hyperliquid has no native quote-quantity order: the exchange endpoint takes a base `s` for
+every order. Orders with a quote-denominated quantity (`quote_quantity=True` on the order
+factory) are converted to a base size at submission, using the cached quote's best ask
+(for buys) or best bid (for sells) as the reference price, rounded to the instrument's size
+increment. Consequences of the conversion:
+
+- The converted size is an estimate at the reference price: the venue executes the base size
+  it receives, so the filled notional can differ slightly from the requested quote amount.
+- Venue fills arrive in base units while the order's local quantity stays quote-denominated,
+  so these orders reconcile from venue status reports instead of local quantity comparison.
+- Modifying a quote-denominated order is rejected locally, because the venue modify replaces
+  a base size that cannot be reconciled against a quote target. Cancel and resubmit with a
+  new amount instead.
+- The raw HTTP and WebSocket client methods (`submit_order`, `modify_order`) take explicit
+  base sizes, and the OrderAny-based raw submits (`submit_orders`,
+  `submit_order_from_order_any`) reject quote-denominated orders.
+
+:::info
+**Conversion requires a cached quote.** Without a cached quote, or when the rounded base size
+is zero, the adapter emits `OrderDenied` rather than guessing a size. Subscribe to quotes for
+any instrument you intend to trade with quote-denominated quantities.
+:::
+
+### Price normalization
 
 :::warning
 **Price normalization is enabled by default.** Hyperliquid enforces a maximum of 5 significant
@@ -1042,6 +1099,12 @@ def round_to_sig_figs(price: Decimal, sig_figs: int = 5) -> Decimal:
     return round(price, shift)
 ```
 
+When normalization is disabled, the adapter validates each outgoing limit and trigger price
+against the instrument's decimal limit and denies the order locally when the price carries more
+decimal places. The venue parses prices into its canonical form before verifying the request
+signature, so an over-precise price fails signature verification and the venue answers with a
+misleading "user or API wallet does not exist" error instead of an order validation error.
+
 :::
 
 ### Time in force
@@ -1067,10 +1130,11 @@ cancels only the unfilled remainder.
 
 ### Execution instructions
 
-| Instruction   | Perpetuals | Spot | Notes                            |
-| ------------- | ---------- | ---- | -------------------------------- |
-| `post_only`   | ✓          | ✓    | Equivalent to ALO time in force. |
-| `reduce_only` | ✓          | ✓    | Close-only orders.               |
+| Instruction      | Perpetuals | Spot | Notes                                                        |
+| ---------------- | ---------- | ---- | ------------------------------------------------------------ |
+| `post_only`      | ✓          | ✓    | Equivalent to ALO time in force.                             |
+| `reduce_only`    | ✓          | ✓    | Close-only orders.                                           |
+| `quote_quantity` | ✓          | ✓    | Quote amount converted to a base size from the cached quote. |
 
 :::info
 Post-only orders that would immediately match are rejected by Hyperliquid. The adapter detects
@@ -1094,10 +1158,11 @@ Cancels prefer `cancelByCloid` and fall back to `cancel` by numeric OID when no 
 fast and standard cancels dispatch as separate batched actions, so one cancel request can produce
 more than one venue call.
 
-When the venue returns an authoritative per-order rejection inside a batch-cancel response (for
-example `MissingOrder` for an already-terminal order), the adapter emits a per-order
-`OrderCancelRejected` event and leaves the other cancels intact. Whole-request failures with
-unknown venue outcome do not carry this per-order evidence.
+Definite local cancel failures and authoritative venue rejections emit `OrderCancelRejected` for
+each affected order. Per-order errors in a batch response leave the other cancels intact; an
+explicit whole-request rejection applies to every cancel in that dispatched action. Rejection
+events preserve the venue's error message. After dispatch, transport failures and responses that
+leave the venue outcome unknown keep orders available for reconciliation.
 :::
 
 :::info
@@ -1153,15 +1218,20 @@ sequenceDiagram
 Modify happy path: the strategy sees one `OrderUpdated` carrying the new `oid`, and the venue's
 paired cancel of the old leg never reaches it.
 
+#### Early cancel before the replacement
+
 If Hyperliquid delivers `CANCELED(old_oid)` before `ACCEPTED(new_oid)` for an in-flight modify,
 a pending-modify intent lets the dispatch drop the old leg's cancel and still route the
 subsequent `ACCEPTED` through the `OrderUpdated` path. The intent is queued before the HTTP call,
-so an early cancel is suppressed even while the request is still in flight. A modify the venue
-rejects clears its own intent; a transport failure keeps it, so a modify that reaches the venue
-despite a client-side timeout still suppresses the early `CANCELED(old_oid)` and promotes the
-eventual `ACCEPTED(new_oid)` to `OrderUpdated` (detection otherwise falls back to the cached
-`venue_order_id`, which the late `ACCEPTED` no longer matches). See
+so an early cancel is suppressed even while the request is still in flight. If the request fails
+before dispatch, or the venue rejects it, the adapter emits `OrderModifyRejected` and clears its
+own intent. A failure after dispatch with an unknown venue outcome keeps the intent, so a modify
+that reaches the venue despite a client-side timeout still suppresses the early `CANCELED(old_oid)`
+and promotes the eventual `ACCEPTED(new_oid)` to `OrderUpdated` (detection otherwise falls back to
+the cached `venue_order_id`, which the late `ACCEPTED` no longer matches). See
 [GH-3827](https://github.com/nautechsystems/nautilus_trader/issues/3827).
+
+#### Chained modifies
 
 Rapid repeated modifies under the same `cloid` queue as a chain of in-flight intents rather than
 a single marker. A later modify does not overwrite an earlier intent's old-leg suppression, and a
@@ -1176,6 +1246,8 @@ so an out-of-band status probe that resolves the old `oid` before the replacemen
 terminate the live order. A non-cancel status for the old leg (such as a late `Filled`) is still
 forwarded so reconciliation can recover it.
 
+#### Dropped replacement acceptance
+
 These paths also promote the replacement. Hyperliquid lists the replacement under the same `cloid`
 with a new `oid` in `frontendOpenOrders`, so when the replacement `ACCEPTED(new_oid)` was dropped
 on the WebSocket and no fill has arrived, the query resolves it by `cloid` and promotes it to
@@ -1183,6 +1255,8 @@ on the WebSocket and no fill has arrived, the query resolves it by `cloid` and p
 The order is therefore not left bound to the canceled leg, and subsequent modifies and
 cancels target the live replacement. See
 [GH-4270](https://github.com/nautechsystems/nautilus_trader/issues/4270).
+
+#### Fills racing the replacement
 
 A `FillReport` for the replacement leg can also race ahead of `ACCEPTED(new_oid)`. When the
 pending-modify marker is set and the report's `oid` does not match the cached value, the dispatch
@@ -1301,19 +1375,11 @@ There are two options for supplying your credentials to the Hyperliquid clients.
 Either pass the corresponding values to the configuration objects, or
 set the following environment variables:
 
-For Hyperliquid mainnet clients, you can set:
-
-- `HYPERLIQUID_PK`
-- `HYPERLIQUID_VAULT` (optional, for vault trading)
-
-For Hyperliquid testnet clients, you can set:
-
-- `HYPERLIQUID_TESTNET_PK`
-- `HYPERLIQUID_TESTNET_VAULT` (optional, for vault trading)
-
-For agent (API) wallet trading on either environment, you can also set:
-
-- `HYPERLIQUID_ACCOUNT_ADDRESS` (master account address; shared between mainnet and testnet)
+| Environment                     | Variables                                                                       |
+| ------------------------------- | ------------------------------------------------------------------------------- |
+| Mainnet                         | `HYPERLIQUID_PK`; `HYPERLIQUID_VAULT` (optional, for vault trading)             |
+| Testnet                         | `HYPERLIQUID_TESTNET_PK`; `HYPERLIQUID_TESTNET_VAULT` (optional, vault trading) |
+| Either, for agent (API) wallets | `HYPERLIQUID_ACCOUNT_ADDRESS` (master account address; shared by both)          |
 
 :::tip
 We recommend using environment variables to manage your credentials.
@@ -1389,11 +1455,124 @@ Hyperliquid perpetual futures use a fixed 1-hour funding interval. The adapter s
 
 ## Rate limiting
 
-The adapter implements a token bucket rate limiter for Hyperliquid's REST API with a capacity
-of 1200 weight per minute. HTTP info requests are automatically retried with exponential
-backoff (full jitter) on rate limit (429) and server error (5xx) responses.
-For WebSocket post trading requests, the adapter caps simultaneous inflight messages at 100 to
-match the venue limit.
+Hyperliquid applies limits by IP address and user address. The adapter uses the fixed venue limits
+from the [Hyperliquid rate limits documentation](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/rate-limits-and-user-limits).
+It does not expose higher overrides.
+
+### REST limits
+
+#### Sharing scope
+
+The adapter shares one 1,200-weight-per-minute token bucket among clients in the same process when
+their environment, HTTP endpoint origin, and proxy route match. The `/info` and `/exchange` paths
+on one origin consume the same bucket.
+
+Separate processes, programs, proxy routes, and HTTP clients outside this adapter do not coordinate
+through the in-memory bucket. Deployments that share an egress IP must leave capacity for that
+traffic.
+
+#### Request weights
+
+| Endpoint    | Request                  | Base weight                    |
+| ----------- | ------------------------ | -----------------------------: |
+| `/exchange` | All actions              | `1 + floor(batch length / 40)` |
+| `/info`     | `l2Book`                 |                              2 |
+| `/info`     | `allMids`                |                              2 |
+| `/info`     | `clearinghouseState`     |                              2 |
+| `/info`     | `orderStatus`            |                              2 |
+| `/info`     | `spotClearinghouseState` |                              2 |
+| `/info`     | `exchangeStatus`         |                              2 |
+| `/info`     | `userRole`               |                             60 |
+| `/info`     | All other requests       |                             20 |
+
+An order or cancel batch counts as one IP request. Some `/info` responses add weight based on the
+number of returned items:
+
+| Data                      | Requests                                                        | Added weight             |
+| ------------------------- | --------------------------------------------------------------- | -----------------------: |
+| Candles                   | `candleSnapshot`                                                | +1 per 60 returned items |
+| Trades and orders         | `recentTrades`, `historicalOrders`                              | +1 per 20 returned items |
+| Fills                     | `userFills`, `userFillsByTime`                                  | +1 per 20 returned items |
+| Funding                   | `fundingHistory`, `userFunding`, `nonUserFundingUpdates`        | +1 per 20 returned items |
+| TWAP                      | `twapHistory`, `userTwapSliceFills`, `userTwapSliceFillsByTime` | +1 per 20 returned items |
+| Delegators and validators | `delegatorHistory`, `delegatorRewards`, `validatorStats`        | +1 per 20 returned items |
+
+#### Retries
+
+Each HTTP attempt consumes its full request weight.
+
+| Request or response                         | Behavior                                |
+| ------------------------------------------- | --------------------------------------- |
+| HTTP 408, 429, or 5xx from `/info`          | Retry up to three times.                |
+| HTTP 429 with integer-seconds `Retry-After` | Use the header value as the delay.      |
+| Retryable response without a valid delay    | Use capped full-jitter backoff.         |
+| Response failure from `/exchange`           | No retry; venue outcome may be unknown. |
+
+### WebSocket limits
+
+#### Sharing scope
+
+Clients in the same process share WebSocket limits when their environment, WebSocket endpoint
+origin, and proxy route match.
+
+#### Enforced limits
+
+| Limit             | Maximum      | Applies to                                                       |
+| ----------------- | -----------: | ---------------------------------------------------------------- |
+| Outbound messages | 2,000/minute | Subscriptions, unsubscriptions, posts, heartbeats, and pongs.    |
+| In-flight posts   |          100 | Simultaneous post requests.                                      |
+| Connections       |           10 | Simultaneous connections.                                        |
+| New connections   |    30/minute | Initial connections and reconnect attempts.                      |
+| Subscriptions     |        1,000 | Active and pending subscriptions.                                |
+| Unique users      |           10 | User-specific subscriptions; addresses match case-insensitively. |
+
+#### Reconnects and releases
+
+Automatic reconnects retain the logical connection slot and active subscription reservations.
+They still consume the new-connection rate. A confirmed unsubscribe, explicit client disconnect,
+or terminal handler exit releases the corresponding subscription reservations.
+
+#### Post deadlines and retries
+
+WebSocket post requests use one caller deadline while waiting for an in-flight slot, the command
+channel, the outbound-message quota, the active connection, and the response. The client retries a
+post send only when the network layer proves that writing did not start. A write timeout or broken
+connection after writing starts has an unknown venue outcome, so the adapter returns the error and
+does not resend the action.
+
+### Address and exchange limits
+
+Hyperliquid also enforces server-side limits that one adapter process cannot calculate reliably.
+
+#### Action limits
+
+Each address starts with 10,000 action requests and accrues one request per cumulative USDC traded.
+Once limited, the address may send one request every 10 seconds. Subaccounts have independent
+limits.
+
+#### Cancel allowance
+
+Cancels receive `min(action limit + 100,000, action limit * 2)` requests. A batch of `n` actions
+consumes one IP request but `n` address requests.
+
+#### Open-order limits
+
+Each address starts with 1,000 open orders, gains one additional order per $5 million of cumulative
+volume, and is capped at 5,000. Hyperliquid rejects a new reduce-only or trigger order when the
+address already has at least 1,000 other open orders.
+
+#### Congestion
+
+During congestion, an address's prior UTC-day maker share and the asset's fee tier determine its
+block-space allowance. Do not resend a cancel after Hyperliquid returns a response.
+
+#### Enforcement boundary
+
+Hyperliquid remains authoritative for these limits because volume, open orders, and requests can
+come from other processes and clients. Venue rejections are returned to the caller.
+
+The adapter does not use Hyperliquid's explorer API or the official EVM JSON-RPC endpoint. Their
+separate weights and request limits therefore remain outside this adapter's limiter.
 
 ## Configuration
 
@@ -1414,13 +1593,8 @@ match the venue limit.
 | `stale_stream_recovery_enabled`          | `False`   | Enable automated recovery of stale market data streams (targeted resubscribe, then reconnect).                          |
 | `stale_stream_recovery_cooldown_secs`    | `120`     | Cooldown (seconds) between recovery actions for the same market data stream. Must be positive for recovery to run.      |
 | `stale_stream_max_targeted_resubscribes` | `3`       | Targeted resubscribe attempts for a stale stream before escalating to a full WebSocket reconnect.                       |
-| `update_instruments_interval_mins`       | `60`      | Interval (minutes) between instrument catalogue refreshes. Accepted but not yet consumed.                               |
+| `update_instruments_interval_mins`       | `60`      | Interval (minutes) between instrument catalog refreshes. Set to `0` to disable the refresh.                             |
 | `transport_backend`                      | `Sockudo` | WebSocket transport backend.                                                                                            |
-
-:::note
-The data client loads instruments once at connect, so `update_instruments_interval_mins` has no
-effect yet. See [Instrument loading](#instrument-loading) for how to refresh the universe.
-:::
 
 ### Execution client configuration options
 
@@ -1451,7 +1625,9 @@ effect yet. See [Instrument loading](#instrument-loading) for how to refresh the
 `HyperliquidExecutionClientConfig` Python constructor and always uses its default. The
 `max_retries`, `retry_delay_initial_ms`, and `retry_delay_max_ms` fields are accepted on
 both the Rust and Python config but are not yet consumed by the execution client (its HTTP
-client is constructed with only the request timeout and proxy).
+client is constructed with only the request timeout and proxy). These fields do not change the
+bounded read-only REST retries or the pre-write-only WebSocket post retries described in
+[Rate limiting](#rate-limiting).
 :::
 
 ### Live node configuration

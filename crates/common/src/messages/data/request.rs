@@ -19,10 +19,9 @@ use jiff::Timestamp;
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     data::{BarType, DataType},
-    identifiers::{ClientId, InstrumentId, Venue},
+    identifiers::{ClientId, InstrumentId, OptionSeriesId, Venue},
 };
 use serde::{Deserialize, Serialize};
-use ustr::Ustr;
 
 use super::check_client_id_or_venue;
 
@@ -279,30 +278,27 @@ impl RequestFundingRates {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RequestForwardPrices {
-    pub venue: Venue,
-    pub underlying: Ustr,
-    pub instrument_id: Option<InstrumentId>,
+pub struct RequestOptionChainReferencePrice {
+    pub series_id: OptionSeriesId,
+    pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
     pub request_id: UUID4,
     pub ts_init: UnixNanos,
     pub params: Option<Params>,
 }
 
-impl RequestForwardPrices {
-    /// Creates a new [`RequestForwardPrices`] instance.
+impl RequestOptionChainReferencePrice {
+    /// Creates a new [`RequestOptionChainReferencePrice`] instance.
     pub fn new(
-        venue: Venue,
-        underlying: Ustr,
-        instrument_id: Option<InstrumentId>,
+        series_id: OptionSeriesId,
+        instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         request_id: UUID4,
         ts_init: UnixNanos,
         params: Option<Params>,
     ) -> Self {
         Self {
-            venue,
-            underlying,
+            series_id,
             instrument_id,
             client_id,
             request_id,

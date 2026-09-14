@@ -24,7 +24,7 @@ use std::{
 };
 
 use futures_util::Stream;
-use nautilus_core::AtomicMap;
+use nautilus_core::{AtomicMap, string::secret::SecretString};
 use nautilus_live::{
     SocketControl, SocketControlFactory,
     task::{TaskJoinOutcome, TaskSlot, finish_task},
@@ -80,7 +80,7 @@ pub struct BinanceSpotPublicJsonWebSocketClient {
     request_id_counter: Arc<AtomicU64>,
     instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
     transport_backend: TransportBackend,
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
     socket_factory: Option<SocketControlFactory>,
     socket_endpoint: Option<String>,
 }
@@ -133,7 +133,7 @@ impl BinanceSpotPublicJsonWebSocketClient {
     /// Configures the proxy used by every connection in the stream pool.
     #[must_use]
     pub fn with_proxy(mut self, proxy_url: Option<String>) -> Self {
-        self.proxy_url = proxy_url;
+        self.proxy_url = proxy_url.map(SecretString::from);
         self
     }
 
@@ -516,11 +516,14 @@ impl BinanceSpotPublicJsonWebSocketClient {
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         };
 
         let keyed_quotas = vec![(
-            BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION[0].as_str().to_string(),
+            BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION[0].to_string(),
             *BINANCE_WS_SUBSCRIPTION_QUOTA,
         )];
 
@@ -594,7 +597,6 @@ impl BinanceSpotPublicJsonWebSocketClient {
             .send(BinanceSpotPublicWsCommand::SetClient(client))
             .map_err(|e| anyhow::anyhow!("Failed to set Spot public JSON WS client: {e}"))?;
 
-        let signal = self.signal.clone();
         let token = cancellation_token.clone();
         let resubscribe_tx = cmd_tx.clone();
 
@@ -632,12 +634,7 @@ impl BinanceSpotPublicJsonWebSocketClient {
                                     break;
                                 }
                             }
-                            None => {
-                                if signal.load(Ordering::Relaxed) {
-                                    break;
-                                }
-                                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-                            }
+                            None => break,
                         }
                     }
                 }
@@ -778,7 +775,7 @@ mod tests {
                 .with_proxy(Some("http://proxy.example:8080".to_string()));
 
         assert_eq!(
-            client.proxy_url.as_deref(),
+            client.proxy_url.as_ref().map(SecretString::expose_secret),
             Some("http://proxy.example:8080")
         );
     }

@@ -23,8 +23,7 @@ use nautilus_model::{
 };
 use serde::{Deserialize, Serialize};
 
-// Upper bound for `market_exit_interval_ms` so the nanosecond conversion on the market exit
-// timer path (`interval_ms * 1_000_000`) cannot overflow a `u64`.
+// Upper bound for `market_exit_interval_ms` so its `DurationNanos` conversion cannot overflow.
 const MAX_MARKET_EXIT_INTERVAL_MS: u64 = u64::MAX / 1_000_000;
 
 /// The base model for all trading strategy configurations.
@@ -64,10 +63,9 @@ pub struct StrategyConfig {
     /// The order management system type for the strategy. This will determine
     /// how the `ExecutionEngine` handles position IDs.
     pub oms_type: Option<OmsType>,
-    /// The external order claim instrument IDs.
-    /// External orders, fills, and materialized reconciliation activity for matching instrument IDs
-    /// will be associated with the strategy.
-    pub external_order_claims: Option<Vec<InstrumentId>>,
+    /// Instrument IDs the strategy intends to claim for external orders, fills, and materialized
+    /// reconciliation activity when registered.
+    pub external_order_instrument_ids: Option<Vec<InstrumentId>>,
     /// If OTO, OCO, and OUO **open** contingent orders should be managed automatically by the strategy.
     /// Any emulated orders which are active local will be managed by the `OrderEmulator` instead.
     #[serde(default = "default_false")]
@@ -387,7 +385,7 @@ mod tests {
         assert!(!config.use_uuid_client_order_ids);
         assert!(config.use_hyphens_in_client_order_ids);
         assert!(config.oms_type.is_none());
-        assert!(config.external_order_claims.is_none());
+        assert!(config.external_order_instrument_ids.is_none());
         assert!(!config.manage_contingent_orders);
         assert!(!config.manage_gtd_expiry);
         assert!(!config.manage_stop);
@@ -417,6 +415,7 @@ mod tests {
             strategy_id: Some(StrategyId::from("TEST-001")),
             order_id_tag: Some("TAG1".to_string()),
             use_uuid_client_order_ids: true,
+            external_order_instrument_ids: Some(vec![InstrumentId::from("AUDUSD.SIM")]),
             ..Default::default()
         };
 
@@ -428,6 +427,10 @@ mod tests {
         assert_eq!(
             config.use_uuid_client_order_ids,
             deserialized.use_uuid_client_order_ids
+        );
+        assert_eq!(
+            config.external_order_instrument_ids,
+            deserialized.external_order_instrument_ids
         );
     }
 }

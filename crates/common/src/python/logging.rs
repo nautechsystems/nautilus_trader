@@ -421,8 +421,7 @@ pub fn py_init_tracing() -> PyResult<()> {
     crate::logging::bridge::init_tracing().map_err(to_pyvalue_err)
 }
 
-/// A thin wrapper around the global Rust logger which exposes ergonomic
-/// logging helpers for Python code.
+/// Python wrapper around the global Rust logger.
 ///
 /// It mirrors the familiar Python `logging` interface while forwarding
 /// all records through the Nautilus logging infrastructure so that log levels
@@ -529,7 +528,7 @@ impl PyLogger {
         log::logger().flush();
     }
 
-    /// Emit a log record at the given level (Python-facing helper).
+    /// Emits a log record at the given level for Python callers.
     #[pyo3(name = "_log")]
     #[pyo3(signature = (level, color=None, message=""))]
     fn py_log(&self, level: LogLevel, color: Option<LogColor>, message: &str) {

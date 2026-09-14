@@ -1109,6 +1109,7 @@ pub(crate) fn parse_order_canceled_with_client_order_id(
         false, // reconciliation
         Some(venue_order_id),
         Some(account_id),
+        msg.cancel_reason.as_deref().map(Ustr::from),
     )
 }
 
@@ -1307,7 +1308,7 @@ mod tests {
         http::models::{DeribitInstrument, DeribitJsonRpcResponse},
     };
 
-    /// Helper function to create a test instrument (BTC-PERPETUAL).
+    /// Creates a BTC-PERPETUAL test instrument.
     fn test_perpetual_instrument() -> InstrumentAny {
         let json = load_test_json("http_get_instruments.json");
         let response: DeribitJsonRpcResponse<Vec<DeribitInstrument>> =
@@ -1421,7 +1422,7 @@ mod tests {
             .result
             .unwrap()
             .into_iter()
-            .find(|i| i.instrument_name.as_str() == "BTC-CS-19MAY26-70000_75000")
+            .find(|i| i.instrument_name == "BTC-CS-19MAY26-70000_75000")
             .expect("fixture must contain BTC-CS-19MAY26-70000_75000");
         parse_deribit_instrument_any(&combo_raw, UnixNanos::default(), UnixNanos::default())
             .unwrap()
@@ -1467,7 +1468,7 @@ mod tests {
     fn test_parse_trades_data_combo_not_cached_emits_no_tick() {
         // When the combo InstrumentAny is not in the WS handler cache,
         // parse_trades_data must drop the message rather than panic or
-        // synthesise a tick against an unknown instrument.
+        // synthesize a tick against an unknown instrument.
         let cache: AHashMap<Ustr, InstrumentAny> = AHashMap::new();
         let trades = load_combo_trade_msgs();
         let data = parse_trades_data(&trades, &cache, UnixNanos::default());
@@ -1616,7 +1617,7 @@ mod tests {
             serde_json::from_value(response["params"]["data"].clone()).unwrap();
 
         // Verify the message was deserialized correctly
-        assert_eq!(msg.instrument_name.as_str(), "BTC-PERPETUAL");
+        assert_eq!(msg.instrument_name, "BTC-PERPETUAL");
         assert_eq!(msg.timestamp, 1_765_541_474_086);
         assert_eq!(msg.best_bid_price, Some(dec!(92283.5)));
         assert_eq!(msg.best_ask_price, Some(dec!(92284.0)));
@@ -1645,7 +1646,7 @@ mod tests {
             serde_json::from_value(response["params"]["data"].clone()).unwrap();
 
         // Verify the message was deserialized correctly
-        assert_eq!(msg.instrument_name.as_str(), "BTC-PERPETUAL");
+        assert_eq!(msg.instrument_name, "BTC-PERPETUAL");
         assert_eq!(msg.timestamp, 1_765_541_767_174);
         assert_eq!(msg.best_bid_price, dec!(92288.0));
         assert_eq!(msg.best_ask_price, dec!(92288.5));

@@ -31,9 +31,9 @@ use nautilus_core::{
     UUID4, UnixNanos,
     python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err},
 };
-use nautilus_execution::{
-    models::latency::{LatencyModelAny, StaticLatencyModel},
-    python::{fee::pyobject_to_fee_model_handle, fill::pyobject_to_fill_model_handle},
+use nautilus_execution::python::{
+    fee::pyobject_to_fee_model_handle, fill::pyobject_to_fill_model_handle,
+    latency::pyobject_to_latency_model_any,
 };
 #[cfg(feature = "defi")]
 use nautilus_model::defi::DefiData;
@@ -226,7 +226,7 @@ impl PyBacktestEngine {
             .transpose()?
             .unwrap_or_default();
         let latency_model = latency_model
-            .map(|obj| Python::attach(|py| pyobject_to_latency_model_any(py, obj.bind(py))))
+            .map(|obj| Python::attach(|py| pyobject_to_latency_model_any(obj.bind(py))))
             .transpose()?
             .map(Into::into);
         let modules = modules
@@ -971,7 +971,7 @@ impl PyBacktestEngine {
 
                 if let Some(id_value) = id_attr {
                     let actor_id_val = if let Ok(eaid) = id_value.extract::<ExecAlgorithmId>() {
-                        ActorId::new(eaid.inner().as_str())
+                        ActorId::new(eaid.inner())
                     } else if let Ok(aid) = id_value.extract::<ActorId>() {
                         aid
                     } else if let Ok(aid_str) = id_value.extract::<String>() {
@@ -1174,9 +1174,9 @@ fn register_hurst_vpin_directional(
     config: &Bound<'_, PyAny>,
 ) -> PyResult<()> {
     let config = config.extract::<HurstVpinDirectionalConfig>()?;
-    engine
-        .add_strategy(HurstVpinDirectional::new(config))
-        .map_err(to_pyruntime_err)
+    let strategy =
+        HurstVpinDirectional::new_checked(config).map_err(config_error_to_pyvalue_err)?;
+    engine.add_strategy(strategy).map_err(to_pyruntime_err)
 }
 
 #[cfg(feature = "examples")]
@@ -1569,20 +1569,6 @@ mod tests {
     }
 }
 
-pub(crate) fn pyobject_to_latency_model_any(
-    _py: Python,
-    obj: &Bound<'_, PyAny>,
-) -> PyResult<LatencyModelAny> {
-    if let Ok(m) = obj.extract::<StaticLatencyModel>() {
-        return Ok(LatencyModelAny::Static(m));
-    }
-
-    let type_name = obj.get_type().name()?;
-    Err(to_pytype_err(format!(
-        "Cannot convert {type_name} to LatencyModel"
-    )))
-}
-
 pub(crate) fn pyobject_to_margin_model_any(
     _py: Python,
     obj: &Bound<'_, PyAny>,
@@ -1603,11 +1589,11 @@ pub(crate) fn pyobject_to_margin_model_any(
 
 fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
     if let Ok(delta) = obj.extract::<OrderBookDelta>() {
-        return Ok(Data::Delta(delta));
+        return Ok(Data::BookDelta(delta));
     }
 
     if let Ok(deltas) = obj.extract::<OrderBookDeltas>() {
-        return Ok(Data::Deltas(Box::new(deltas)));
+        return Ok(Data::BookDeltas(Box::new(deltas)));
     }
 
     if let Ok(quote) = obj.extract::<QuoteTick>() {
@@ -1623,7 +1609,7 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
     }
 
     if let Ok(depth) = obj.extract::<OrderBookDepth10>() {
-        return Ok(Data::Depth10(Box::new(depth)));
+        return Ok(Data::BookDepth10(Box::new(depth)));
     }
 
     if let Ok(mark) = obj.extract::<MarkPriceUpdate>() {

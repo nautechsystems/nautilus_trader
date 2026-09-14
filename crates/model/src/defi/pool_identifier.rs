@@ -205,7 +205,7 @@ impl PoolIdentifier {
     pub fn to_pool_id_bytes(&self) -> anyhow::Result<[u8; 32]> {
         match self {
             Self::PoolId(s) => {
-                let hex_str = s.as_str().strip_prefix("0x").unwrap_or(s.as_str());
+                let hex_str = s.strip_prefix("0x").unwrap_or(s.as_str());
                 hex::decode_array::<32>(hex_str)
                     .map_err(|e| anyhow::anyhow!("Failed to decode pool ID hex: {e}"))
             }
@@ -228,7 +228,7 @@ impl PartialEq for PoolIdentifier {
         match (self, other) {
             (Self::Address(a), Self::Address(b)) | (Self::PoolId(a), Self::PoolId(b)) => {
                 // Case-insensitive comparison
-                a.as_str().eq_ignore_ascii_case(b.as_str())
+                a.eq_ignore_ascii_case(b)
             }
             // Different variants are never equal
             _ => false,
@@ -246,7 +246,7 @@ impl Hash for PoolIdentifier {
         // Then hash the lowercase version of the string
         match self {
             Self::Address(s) | Self::PoolId(s) => {
-                for byte in s.as_str().bytes() {
+                for byte in s.bytes() {
                     state.write_u8(byte.to_ascii_lowercase());
                 }
             }

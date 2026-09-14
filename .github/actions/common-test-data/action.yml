@@ -1,5 +1,5 @@
 name: common-test-data
-description: Common test data caching
+description: Prepare, verify, and cache common test data
 
 runs:
   using: "composite"
@@ -8,7 +8,7 @@ runs:
       # Skip on macOS: hashFiles() broken in composite actions after Nov 20 runner update
       # See: https://github.com/actions/runner/issues/3765
       if: runner.os != 'macOS'
-      # The post step saves files downloaded by the Rust tests on a cache miss.
+      # The post step saves fixtures fetched by the preparation step
       # https://github.com/actions/cache
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
@@ -17,3 +17,7 @@ runs:
         key: large-files-${{ hashFiles('test_data/large/checksums.json') }}
         restore-keys: large-files-
         enableCrossOsArchive: true
+
+    - name: Prepare test data
+      shell: bash
+      run: cargo run --locked -p nautilus-testkit --bin prepare-test-data

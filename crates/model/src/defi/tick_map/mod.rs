@@ -133,7 +133,7 @@ impl TickMap {
         (fee_growth_inside_0, fee_growth_inside_1)
     }
 
-    /// Internal helper to update tick data and return flip status.
+    /// Updates tick data and returns its flip status.
     fn update_tick_data(
         &mut self,
         tick: i32,

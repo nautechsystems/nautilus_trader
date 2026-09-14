@@ -18,7 +18,7 @@
 //! Decimal/Price/Quantity/TradeId/UUID construction).
 //!
 //! Use these when a `data.rs` or `exec.rs` bench regresses and you need to
-//! localise where the time went, or when evaluating a structural change
+//! localize where the time went, or when evaluating a structural change
 //! (e.g. swapping the JSON tokenizer) and want to confirm the gain landed in
 //! the layer it was supposed to.
 //!
@@ -382,11 +382,12 @@ fn bench_compute_commission(c: &mut Criterion) {
         b.iter(|| {
             let commission = compute_commission(
                 black_box(dec!(0.03)),
-                black_box(2.0),
+                black_box(dec!(2)),
                 black_box(dec!(25)),
                 black_box(dec!(0.50)),
                 black_box(LiquiditySide::Taker),
-            );
+            )
+            .unwrap();
             black_box(commission);
         });
     });
@@ -400,7 +401,7 @@ fn bench_adjust_market_buy_amount(c: &mut Criterion) {
                 black_box(dec!(50)),
                 black_box(dec!(0.50)),
                 black_box(dec!(0.03)),
-                black_box(2.0),
+                black_box(dec!(2)),
                 black_box(dec!(0)),
             )
             .unwrap();

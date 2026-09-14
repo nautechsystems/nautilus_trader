@@ -12,7 +12,7 @@ The visualization system has three parts:
 2. **Theme System** - Consistent styling with built-in and custom themes.
 3. **Configuration** - Declarative specification of what to render and how to display it.
 
-Tearsheets are written as self-contained HTML files that can be viewed in any modern
+Tearsheets are written as **self-contained HTML files** that can be viewed in any modern
 browser, shared with stakeholders, or archived for future reference. Passing a static
 image extension (such as `.png` or `.pdf`) as the output path exports a static image
 via Kaleido instead.
@@ -22,7 +22,7 @@ The visualization system requires the `visualization` extra. It installs Pandas 
 DataFrame handling, Plotly for interactive figures, and Kaleido for static image export:
 
 ```bash
-uv pip install "nautilus_trader[visualization]"
+uv pip install --pre "nautilus_trader[visualization]"
 ```
 
 :::
@@ -81,8 +81,10 @@ create_tearsheet(
 )
 ```
 
+:::warning
 Passing a node whose matching run configuration enables disposal raises `ValueError` because its
 cache and reports are no longer available.
+:::
 
 ### Customization
 
@@ -135,7 +137,7 @@ pass `currency` for multi-currency backtests so return charts use the selected
 currency.
 
 For `BacktestResult` input, `currency` filters PnL statistics and account balances. The result's
-stored return series remains unchanged.
+**stored return series remains unchanged**.
 
 ## Available charts
 
@@ -514,8 +516,10 @@ This approach is useful for:
 Custom charts work best when paired with statistics supplied through the same
 `stats_pnls`, `stats_returns`, and `stats_general` dictionaries used by the built-in
 tearsheet charts. For `BacktestEngine` input these values come from
-`engine.get_result()`; for offline analysis, pass compatible dictionaries directly to
-`create_tearsheet_from_stats()`:
+`engine.get_result()`, so a statistic registered with `Portfolio.register_statistic()` reaches the
+tearsheet without any extra wiring; see
+[Custom statistics](portfolio.md#custom-statistics). For offline analysis, pass compatible
+dictionaries directly to `create_tearsheet_from_stats()`:
 
 ```python
 stats_returns = {

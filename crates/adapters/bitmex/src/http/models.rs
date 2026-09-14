@@ -16,10 +16,12 @@
 //! Data structures representing BitMEX REST API payloads.
 
 use jiff::Timestamp;
+use nautilus_core::string::secret::SecretString;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 use uuid::Uuid;
+use zeroize::Zeroize;
 
 use crate::common::{
     enums::{
@@ -584,11 +586,11 @@ pub struct BitmexAnnouncement {
 }
 
 /// Persistent API Keys for Developers.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BitmexAPIKey {
-    pub id: String,
-    pub secret: Option<String>,
+    pub id: SecretString,
+    pub secret: Option<SecretString>,
     pub name: String,
     pub nonce: i64,
     pub cidr: Option<String>,
@@ -596,6 +598,13 @@ pub struct BitmexAPIKey {
     pub enabled: Option<bool>,
     pub user_id: i32,
     pub created: Option<Timestamp>,
+}
+
+impl Zeroize for BitmexAPIKey {
+    fn zeroize(&mut self) {
+        self.id.zeroize();
+        self.secret.zeroize();
+    }
 }
 
 /// Account Notifications.
@@ -614,14 +623,20 @@ pub struct BitmexGlobalNotification {
     pub sound: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BitmexAccessToken {
-    pub id: String,
+    pub id: SecretString,
     /// The time to live in seconds (2 weeks by default).
     pub ttl: Option<f64>,
     pub created: Option<Timestamp>,
     pub user_id: Option<f64>,
+}
+
+impl Zeroize for BitmexAccessToken {
+    fn zeroize(&mut self) {
+        self.id.zeroize();
+    }
 }
 
 /// Daily Quote Fill Ratio Statistic.
@@ -709,15 +724,22 @@ pub struct BitmexMargin {
 }
 
 /// User communication SNS token.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BitmexCommunicationToken {
-    pub id: String,
+    pub id: SecretString,
     #[serde(rename = "userId")]
     pub user_id: i32,
     #[serde(rename = "deviceToken")]
-    pub device_token: String,
+    pub device_token: SecretString,
     pub channel: String,
+}
+
+impl Zeroize for BitmexCommunicationToken {
+    fn zeroize(&mut self) {
+        self.id.zeroize();
+        self.device_token.zeroize();
+    }
 }
 
 /// User Events for auditing.
@@ -886,5 +908,48 @@ mod tests {
                 BitmexExecInstruction::ReduceOnly,
             ])
         );
+    }
+
+    #[rstest]
+    fn test_credential_models_redact_and_zeroize() {
+        let mut api_key = BitmexAPIKey {
+            id: SecretString::from("api-key-sentinel"),
+            secret: Some(SecretString::from("api-secret-sentinel")),
+            name: "test".to_string(),
+            nonce: 1,
+            cidr: None,
+            permissions: vec![],
+            enabled: Some(true),
+            user_id: 2,
+            created: None,
+        };
+        let mut access_token = BitmexAccessToken {
+            id: SecretString::from("access-token-sentinel"),
+            ttl: Some(60.0),
+            created: None,
+            user_id: Some(2.0),
+        };
+        let mut communication_token = BitmexCommunicationToken {
+            id: SecretString::from("communication-id-sentinel"),
+            user_id: 2,
+            device_token: SecretString::from("device-token-sentinel"),
+            channel: "push".to_string(),
+        };
+
+        let debug = format!("{api_key:?} {access_token:?} {communication_token:?}");
+        api_key.zeroize();
+        access_token.zeroize();
+        communication_token.zeroize();
+
+        assert!(!debug.contains("api-key-sentinel"));
+        assert!(!debug.contains("api-secret-sentinel"));
+        assert!(!debug.contains("access-token-sentinel"));
+        assert!(!debug.contains("communication-id-sentinel"));
+        assert!(!debug.contains("device-token-sentinel"));
+        assert_eq!(api_key.id.expose_secret(), "");
+        assert_eq!(api_key.secret, None);
+        assert_eq!(access_token.id.expose_secret(), "");
+        assert_eq!(communication_token.id.expose_secret(), "");
+        assert_eq!(communication_token.device_token.expose_secret(), "");
     }
 }

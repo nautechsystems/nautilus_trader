@@ -42,16 +42,31 @@ pub const HYPERLIQUID_TESTNET_WS_URL: &str = "wss://api.hyperliquid-testnet.xyz/
 pub const HYPERLIQUID_TESTNET_INFO_URL: &str = "https://api.hyperliquid-testnet.xyz/info";
 pub const HYPERLIQUID_TESTNET_EXCHANGE_URL: &str = "https://api.hyperliquid-testnet.xyz/exchange";
 
+pub(crate) const HYPERLIQUID_REST_WEIGHT_PER_MINUTE: u32 = 1_200;
+pub(crate) const HYPERLIQUID_WS_MESSAGES_PER_MINUTE: u32 = 2_000;
+pub(crate) const HYPERLIQUID_WS_CONNECTIONS_MAX: usize = 10;
+pub(crate) const HYPERLIQUID_WS_CONNECTIONS_PER_MINUTE: u32 = 30;
+pub(crate) const HYPERLIQUID_WS_SUBSCRIPTIONS_MAX: usize = 1_000;
+pub(crate) const HYPERLIQUID_WS_SUBSCRIPTION_USERS_MAX: usize = 10;
+pub(crate) const HYPERLIQUID_WS_POST_INFLIGHT_MAX: usize = 100;
+pub const INFLIGHT_MAX: usize = HYPERLIQUID_WS_POST_INFLIGHT_MAX;
+
 // Builder code address for order attribution (zero-fee)
 // Address MUST be lowercase for msgpack serialization
 pub const NAUTILUS_BUILDER_ADDRESS: &str = "0x0c8d970c462726e014ad36f6c5a63e99db48a8e7";
 
 /// Public docs anchor for builder fee approval.
 pub const HYPERLIQUID_BUILDER_APPROVAL_DOCS_URL: &str =
-    "https://nautilustrader.io/docs/nightly/integrations/hyperliquid.html#builder-fee-approval";
+    "https://nautilustrader.io/docs/nightly/integrations/hyperliquid/#builder-fee-approval";
 
 /// Hyperliquid signing chain ID (0x66eee = 421614 decimal).
 pub const HYPERLIQUID_CHAIN_ID: u64 = 421614;
+
+/// Key carrying the venue asset index on an instrument's `info` map.
+///
+/// Order signing needs the numeric asset index, and `InstrumentAny` is the only
+/// shape published on the message bus, so the index travels with the instrument.
+pub const ASSET_INDEX_INFO_KEY: &str = "asset_index";
 
 // Error message substrings for detecting specific rejection reasons
 pub const HYPERLIQUID_POST_ONLY_WOULD_MATCH: &str =
@@ -122,8 +137,6 @@ pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 pub const RECONNECT_BASE_BACKOFF: Duration = Duration::from_millis(250);
 pub const RECONNECT_MAX_BACKOFF: Duration = Duration::from_secs(30);
 pub const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
-// Max 100 inflight WS post messages per Hyperliquid docs
-pub const INFLIGHT_MAX: usize = 100;
 pub const QUEUE_MAX: usize = 1000;
 
 #[cfg(test)]
@@ -171,7 +184,14 @@ mod tests {
         assert_eq!(RECONNECT_BASE_BACKOFF, Duration::from_millis(250));
         assert_eq!(RECONNECT_MAX_BACKOFF, Duration::from_secs(30));
         assert_eq!(HTTP_TIMEOUT, Duration::from_secs(10));
-        assert_eq!(INFLIGHT_MAX, 100);
+        assert_eq!(HYPERLIQUID_REST_WEIGHT_PER_MINUTE, 1_200);
+        assert_eq!(HYPERLIQUID_WS_MESSAGES_PER_MINUTE, 2_000);
+        assert_eq!(HYPERLIQUID_WS_CONNECTIONS_MAX, 10);
+        assert_eq!(HYPERLIQUID_WS_CONNECTIONS_PER_MINUTE, 30);
+        assert_eq!(HYPERLIQUID_WS_SUBSCRIPTIONS_MAX, 1_000);
+        assert_eq!(HYPERLIQUID_WS_SUBSCRIPTION_USERS_MAX, 10);
+        assert_eq!(HYPERLIQUID_WS_POST_INFLIGHT_MAX, 100);
+        assert_eq!(INFLIGHT_MAX, HYPERLIQUID_WS_POST_INFLIGHT_MAX);
         assert_eq!(QUEUE_MAX, 1000);
     }
 }

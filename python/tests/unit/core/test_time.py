@@ -57,9 +57,9 @@ def test_time_constants_match_conversion_scale() -> None:
     assert micros_to_nanos(1) == NANOSECONDS_IN_MICROSECOND
 
 
-def test_datetime_helpers_are_available_from_core_and_datetime_module() -> None:
+def test_datetime_conversions_are_available_from_core_and_datetime_module() -> None:
     """
-    Test datetime helpers are available from core and datetime module.
+    Test datetime conversions are available from core and datetime module.
     """
     assert dt_to_unix_nanos_from_datetime_module is dt_to_unix_nanos
     assert unix_nanos_to_dt_from_datetime_module is unix_nanos_to_dt

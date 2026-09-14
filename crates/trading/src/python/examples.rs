@@ -15,6 +15,7 @@
 
 //! Python bindings for the example strategy and actor configs.
 
+use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_model::{
     data::BarType,
     enums::TimeInForce,
@@ -506,6 +507,8 @@ impl HurstVpinDirectionalConfig {
     /// Combines a rescaled-range Hurst regime filter on dollar bars with a
     /// VPIN-derived informed-flow signal, and gates entry timing on the
     /// live quote stream.
+    ///
+    /// The Hurst and VPIN rolling windows must each be in the range `[1, 16_384]`.
     #[new]
     #[pyo3(signature = (
         instrument_id,
@@ -535,7 +538,7 @@ impl HurstVpinDirectionalConfig {
         vpin_window: usize,
         vpin_threshold: f64,
         max_holding_secs: u64,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let mut config = Self::builder()
             .instrument_id(instrument_id)
             .bar_type(bar_type)
@@ -557,7 +560,8 @@ impl HurstVpinDirectionalConfig {
             config.base.order_id_tag = Some(tag);
         }
 
-        config
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     #[getter]

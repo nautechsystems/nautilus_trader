@@ -1506,8 +1506,8 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
 
         // Empty levels
         for i in 5..10 {
-            assert_eq!(first.bids[i].price.raw, 0);
-            assert_eq!(first.bids[i].size.raw, 0);
+            assert_eq!(first.bids[i].price.raw(), 0);
+            assert_eq!(first.bids[i].size.raw(), 0);
             assert_eq!(first.bids[i].side, None);
         }
 
@@ -1534,8 +1534,8 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
 
         // Empty levels
         for i in 5..10 {
-            assert_eq!(first.asks[i].price.raw, 0);
-            assert_eq!(first.asks[i].size.raw, 0);
+            assert_eq!(first.asks[i].price.raw(), 0);
+            assert_eq!(first.asks[i].size.raw(), 0);
             assert_eq!(first.asks[i].side, None);
         }
 

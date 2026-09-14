@@ -15,11 +15,10 @@
 
 //! Deterministic simulation testing (DST) seam for network async primitives.
 //!
-//! Re-exports time-related async primitives so every call site in
-//! `nautilus-network` routes through one cfg-gated location. Under
-//! `simulation` + `cfg(madsim)`, re-exports from `madsim::time` so waits and
-//! timeouts advance with madsim's virtual clock. Otherwise re-exports from
-//! `tokio::time`.
+//! Routes time primitives, owned WebSocket tasks, and supported HTTP/WebSocket
+//! byte streams through a network-local boundary. With `simulation` and
+//! `cfg(madsim)`, clocks, tasks, and streams use Madsim. Normal builds use
+//! Tokio clocks and tasks and the existing `crate::net` streams.
 //!
 //! `Instant` is routed the same way so that `now()` reads and `sleep`/`timeout`
 //! waits share a single clock base. Using `tokio::time::Instant` on normal
@@ -28,8 +27,9 @@
 //!
 //! `nautilus-network` sits below `nautilus-common` in the dependency graph and
 //! cannot import from `nautilus_common::live::dst`, which is why this module
-//! is crate-local.
+//! lives in the network crate.
 
+/// Clock and timeout primitives selected for deterministic simulation.
 pub mod time {
     pub use std::time::Duration;
 
@@ -38,6 +38,25 @@ pub mod time {
     #[cfg(not(all(feature = "simulation", madsim)))]
     pub use tokio::time::{Instant, sleep, sleep_until, timeout};
 }
+
+/// Owned tasks selected for deterministic simulation.
+pub mod task {
+    #[cfg(all(feature = "simulation", madsim))]
+    pub use madsim::task::{JoinHandle, spawn};
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    pub use tokio::task::{JoinHandle, spawn};
+}
+
+/// Network byte streams selected for deterministic simulation.
+pub mod net {
+    #[cfg(all(feature = "simulation", madsim))]
+    pub use super::stream::{TcpListener, TcpStream};
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    pub use crate::net::{TcpListener, TcpStream};
+}
+
+#[cfg(all(feature = "simulation", madsim))]
+mod stream;
 
 #[cfg(test)]
 mod tests {

@@ -31,6 +31,9 @@ pub mod status;
 pub mod symbol;
 pub mod urls;
 
+pub(crate) mod failure;
+pub(crate) mod http;
+
 pub(crate) mod websocket;
 
 #[cfg(test)]

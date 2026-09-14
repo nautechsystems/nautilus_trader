@@ -533,7 +533,7 @@ async fn execute_schema_as_role(
 //
 // Skips `--` line comments and respects single-quoted string literals and `$$` dollar-quoted
 // bodies, so a semicolon inside a comment, string literal, or `DO` block does not split a
-// statement. Tagged `$tag$` quoting is not recognised; keep the schema files on bare `$$`.
+// statement. Tagged `$tag$` quoting is not recognized; keep the schema files on bare `$$`.
 // Used for the plain DDL schema files; the PL/pgSQL files are split separately on their
 // function terminators.
 fn split_sql_statements(sql: &str) -> Vec<String> {

@@ -11,7 +11,9 @@ The following applies to **all** source files (Rust, Python, shell, etc.):
 
 - Use **spaces only**, never hard tab characters.
 - Lines should generally stay below **100 characters**; wrap thoughtfully when necessary.
-- Prefer American English spelling (`color`, `serialize`, `behavior`).
+- Use American English spelling (`color`, `serialize`, `behavior`), enforced by `.typos.toml`.
+  Preserve external API spellings through exact identifier exceptions; exclude verbatim data and generated files.
+  Run `prek run typos --all-files` to check the repository.
 
 ### Shell scripts
 
@@ -60,9 +62,8 @@ documentation feel natural to end-users.
    as `BinanceExecutionClientConfig`. Internal implementation types may retain established `Exec`
    names. Also reserve `Exec` for the `ExecAlgorithmId` and `ExecTester` families, established
    `exec_*` names, and venue or protocol terms such as `BitmexExecType`. Name protocol-specific
-   wire models after the venue concept, such as `HyperliquidExchangeAction`. Preserve shipped names
-   on legacy v1 compatibility surfaces, in historical release entries, and on the source side of
-   migration tables.
+   wire models after the venue concept, such as `HyperliquidExchangeAction`. Preserve established
+   public names, historical release entries, and source names in migration tables.
 
 5. **Runtime qualifiers**: Use `Live` when a type selects or configures real-time runtime semantics,
    such as `LiveNode` versus `BacktestNode`, `LiveClock` versus `TestClock`, and the
@@ -113,7 +114,7 @@ A venue adapter exposes its canonical identity constants plus the supported publ
 - stateless loaders (`load_*`, `stream_*`, `convert_*`) and intentional utilities
   (`decode_*`, `get_*_arrow_schema_map`)
 
-Keep the facade thin. Never add raw HTTP or WebSocket clients, wire models, endpoint helpers
+Keep the facade thin. Never add raw HTTP or WebSocket clients, wire models, endpoint URL resolvers
 (`get_*_url`, `*_HTTP_URL`), caches, or other internals to `__all__` merely for structural parity.
 Data providers (such as `databento` and `tardis`), the `blockchain` data client, the `sandbox`
 execution client, and the multi-venue `interactive_brokers` broker omit venue constants because the

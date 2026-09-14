@@ -11,7 +11,11 @@
 # %% [markdown]
 # ## Prerequisites
 # - Python 3.12+
-# - [NautilusTrader](https://pypi.org/project/nautilus_trader/) latest release installed (`pip install nautilus_trader`)
+# - [NautilusTrader](https://pypi.org/project/nautilus_trader/) 2.x installed
+#   (`pip install -U --pre nautilus_trader`). The `--pre` flag is required while 2.x
+#   ships as `2.0.0rcN`.
+# - pandas (`pip install pandas`), used by the reports at the end. The wheel
+#   declares no runtime dependencies.
 
 # %%
 from decimal import Decimal
@@ -123,23 +127,9 @@ engine.add_data(ticks)
 
 # %%
 class EMACrossTWAPConfig(StrategyConfig):
-    _CUSTOM_FIELDS = (
-        "instrument_id",
-        "bar_type",
-        "trade_size",
-        "fast_ema_period",
-        "slow_ema_period",
-        "twap_horizon_secs",
-        "twap_interval_secs",
-    )
-
-    def __new__(cls, *args: object, **kwargs: object) -> object:
-        for field in cls._CUSTOM_FIELDS:
-            kwargs.pop(field, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: InstrumentId,
         bar_type: BarType,
         trade_size: Decimal,

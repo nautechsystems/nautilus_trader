@@ -15,7 +15,7 @@
 
 //! Catch-unwind wrapper used by every plug-in `extern "C"` thunk.
 //!
-//! Unwinding across an FFI boundary is undefined behaviour, so every host-bound
+//! Unwinding across an FFI boundary is undefined behavior, so every host-bound
 //! call from a plug-in must be wrapped to convert a panic into a returned
 //! [`PluginError`] with code [`PluginErrorCode::Panic`].
 
@@ -46,7 +46,7 @@ pub fn guard<T>(f: impl FnOnce() -> Result<T, PluginError>) -> PluginResult<T> {
 /// On panic, logs the message and aborts the process. Aborting is the only
 /// sound option once a panic reaches this point: returning a sentinel would
 /// silently corrupt downstream computation, and unwinding across the FFI
-/// boundary is undefined behaviour.
+/// boundary is undefined behavior.
 pub fn guard_infallible<T>(thunk_name: &str, f: impl FnOnce() -> T) -> T {
     match catch_unwind(AssertUnwindSafe(f)) {
         Ok(t) => t,
@@ -75,12 +75,13 @@ pub fn guard_or_null<T>(thunk_name: &str, f: impl FnOnce() -> *mut T) -> *mut T 
             drop_payload(payload);
             // A panicking logger must not unwind out of the thunk; the
             // null-return contract holds even when reporting fails.
-            let _ = catch_unwind(AssertUnwindSafe(|| {
+            catch_unwind(AssertUnwindSafe(|| {
                 log::error!(
                     target: "nautilus_plugin",
                     "plug-in panicked in `{thunk_name}` thunk; returning null: {msg}",
                 );
-            }));
+            }))
+            .unwrap_or_else(drop_payload);
             std::ptr::null_mut()
         }
     }
@@ -97,12 +98,13 @@ pub fn guard_drop(thunk_name: &str, f: impl FnOnce()) {
         drop_payload(payload);
         // A panicking logger must not unwind out of the thunk; the
         // swallow-and-leak contract holds even when reporting fails.
-        let _ = catch_unwind(AssertUnwindSafe(|| {
+        catch_unwind(AssertUnwindSafe(|| {
             log::error!(
                 target: "nautilus_plugin",
                 "plug-in panicked in `{thunk_name}` thunk; value leaked: {msg}",
             );
-        }));
+        }))
+        .unwrap_or_else(drop_payload);
     }
 }
 
@@ -110,12 +112,19 @@ pub fn guard_drop(thunk_name: &str, f: impl FnOnce()) {
 ///
 /// `std::panic::catch_unwind` catches the original panic, but if the payload
 /// itself panics on drop the second panic unwinds the caller. For an
-/// `extern "C"` thunk that is undefined behaviour. Wrapping the drop in
+/// `extern "C"` thunk that is undefined behavior. Wrapping the drop in
 /// another `catch_unwind` keeps the surface around the FFI boundary
 /// unwind-free even with adversarial payloads (e.g. `panic_any(T)` where
-/// `T: Drop` panics).
+/// `T: Drop` panics). If disposal panics, its new payload is deliberately leaked.
 pub fn drop_payload(payload: Box<dyn std::any::Any + Send>) {
-    let _ = catch_unwind(AssertUnwindSafe(move || drop(payload)));
+    if let Err(nested) = catch_unwind(AssertUnwindSafe(move || drop(payload))) {
+        // Its destructor is also untrusted; attempting another drop can unwind again
+        #[allow(
+            clippy::mem_forget,
+            reason = "the replacement payload can also panic on drop"
+        )]
+        std::mem::forget(nested);
+    }
 }
 
 pub(crate) fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
@@ -251,5 +260,104 @@ mod tests {
 
         // Drop ran inside the inner catch_unwind; observed exactly once
         assert_eq!(DROPS_OBSERVED.load(Ordering::SeqCst), 1);
+    }
+
+    #[rstest]
+    fn guard_contains_successive_panicking_payload_destructors() {
+        use std::sync::Arc;
+
+        struct Payload {
+            drops: Arc<AtomicUsize>,
+        }
+
+        impl Drop for Payload {
+            fn drop(&mut self) {
+                self.drops.fetch_add(1, Ordering::SeqCst);
+                std::panic::panic_any(Self {
+                    drops: Arc::clone(&self.drops),
+                });
+            }
+        }
+
+        let drops = Arc::new(AtomicUsize::new(0));
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            guard(|| -> Result<(), PluginError> {
+                std::panic::panic_any(Payload {
+                    drops: Arc::clone(&drops),
+                });
+            })
+        }));
+        let result = match result {
+            Ok(result) => Some(result.into_result().unwrap_err()),
+            Err(payload) => {
+                // Disposing of this escaped payload would panic again in the failing test
+                #[allow(
+                    clippy::mem_forget,
+                    reason = "preserve the assertion failure without another panic"
+                )]
+                std::mem::forget(payload);
+                None
+            }
+        };
+
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
+        let error = result.expect("panic cleanup must not unwind out of the guard");
+        assert_eq!(error.code, PluginErrorCode::Panic);
+        assert_eq!(
+            error.message_string(),
+            "plug-in panicked with non-string payload"
+        );
+    }
+
+    #[rstest]
+    fn guards_contain_panicking_logger_payloads() {
+        const CHILD: &str = "NAUTILUS_TEST_PANIC_LOGGER_CHILD";
+        static DROPS: AtomicUsize = AtomicUsize::new(0);
+        struct Payload;
+        impl Drop for Payload {
+            fn drop(&mut self) {
+                DROPS.fetch_add(1, Ordering::SeqCst);
+                std::panic::panic_any(Self);
+            }
+        }
+        struct Logger;
+        impl log::Log for Logger {
+            fn enabled(&self, _: &log::Metadata<'_>) -> bool {
+                true
+            }
+            fn log(&self, _: &log::Record<'_>) {
+                std::panic::panic_any(Payload);
+            }
+            fn flush(&self) {}
+        }
+        static LOGGER: Logger = Logger;
+        extern "C" fn exercise() {
+            let pointer = guard_or_null::<u8>("logger", || panic!("constructor panic"));
+            assert!(pointer.is_null());
+            guard_drop("logger", || panic!("destructor panic"));
+        }
+
+        if std::env::var_os(CHILD).is_none() {
+            let current = std::thread::current();
+            let name = current.name().expect("the test harness names its thread");
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", name])
+                .env(CHILD, "1")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+
+        log::set_logger(&LOGGER).unwrap();
+        log::set_max_level(log::LevelFilter::Error);
+
+        exercise();
+
+        assert_eq!(DROPS.load(Ordering::SeqCst), 2);
     }
 }

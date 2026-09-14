@@ -80,8 +80,17 @@ pub enum BinanceFuturesWsStreamsMessage {
     ListenKeyExpired,
     /// Error from the server.
     Error(BinanceFuturesWsErrorMsg),
-    /// WebSocket reconnected.
-    Reconnected,
+    /// WebSocket reconnected; carries the correlation IDs of the unsubscribe
+    /// requests the old connection abandoned.
+    Reconnected(Vec<u64>),
+    /// Venue confirmation of an unsubscribe request, carrying the confirmed stream
+    /// names and the request's correlation ID when one was supplied.
+    Unsubscribed {
+        /// Confirmed stream names.
+        streams: Vec<String>,
+        /// Correlates the confirmation with the caller's unsubscribe lifecycle.
+        correlation: Option<u64>,
+    },
 }
 
 /// Error message from Binance Futures WebSocket.
@@ -103,7 +112,12 @@ pub enum BinanceFuturesWsStreamsCommand {
     /// Subscribe to streams.
     Subscribe { streams: Vec<String> },
     /// Unsubscribe from streams.
-    Unsubscribe { streams: Vec<String> },
+    Unsubscribe {
+        /// Streams to unsubscribe from.
+        streams: Vec<String>,
+        /// Correlates the venue confirmation with the caller's unsubscribe lifecycle.
+        correlation: Option<u64>,
+    },
 }
 
 /// Handler command for execution client-handler communication.
@@ -850,6 +864,9 @@ pub enum BinanceExecutionType {
     Trade,
     /// Amendment (order modified).
     Amendment,
+    /// Unknown or undocumented execution type.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Margin call event from user data stream.

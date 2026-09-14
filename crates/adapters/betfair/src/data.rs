@@ -41,6 +41,7 @@ use nautilus_common::{
 };
 use nautilus_core::{
     AtomicMap, Params,
+    string::secret::SecretString,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -427,7 +428,7 @@ impl BetfairDataClient {
                                     Ok(Some(deltas)) => {
                                         if is_snapshot {
                                             if let Err(e) = data_sender.send(DataEvent::Data(
-                                                Data::Deltas(Box::new(deltas)),
+                                                Data::BookDeltas(Box::new(deltas)),
                                             )) {
                                                 log::warn!("Failed to send book deltas: {e}");
                                             }
@@ -525,8 +526,8 @@ impl BetfairDataClient {
                         }
 
                         for deltas in buffered_deltas {
-                            if let Err(e) =
-                                data_sender.send(DataEvent::Data(Data::Deltas(Box::new(deltas))))
+                            if let Err(e) = data_sender
+                                .send(DataEvent::Data(Data::BookDeltas(Box::new(deltas))))
                             {
                                 log::warn!("Failed to send book deltas: {e}");
                             }
@@ -1289,17 +1290,17 @@ fn refresh_stream_sessions(
     race_stream: Option<&BetfairRaceStreamClient>,
     cricket_stream: Option<&BetfairRaceStreamClient>,
     app_key: &str,
-    token: &str,
+    token: &SecretString,
     session_replaced: bool,
 ) {
-    stream.update_auth(app_key, token.to_string());
+    stream.update_auth(app_key, token.clone());
 
     if let Some(race_stream) = race_stream {
-        race_stream.update_auth(app_key, token.to_string());
+        race_stream.update_auth(app_key, token.clone());
     }
 
     if let Some(cricket_stream) = cricket_stream {
-        cricket_stream.update_auth(app_key, token.to_string());
+        cricket_stream.update_auth(app_key, token.clone());
     }
 
     if !session_replaced {

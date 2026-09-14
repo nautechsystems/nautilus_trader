@@ -28,7 +28,8 @@ use nautilus_model::{
 
 use super::{
     DecodeDataFromRecordBatch, EncodingError, KEY_BAR_TYPE, KEY_PRICE_PRECISION,
-    KEY_SIZE_PRECISION, decode_price, decode_quantity, extract_column, validate_precision_bytes,
+    KEY_SIZE_PRECISION, decode_price, decode_quantity, extract_column, parse_precision,
+    validate_precision_bytes,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -58,17 +59,8 @@ fn parse_metadata(metadata: &HashMap<String, String>) -> Result<(BarType, u8, u8
     let bar_type = BarType::from_str(bar_type_str)
         .map_err(|e| EncodingError::ParseError(KEY_BAR_TYPE, e.to_string()))?;
 
-    let price_precision = metadata
-        .get(KEY_PRICE_PRECISION)
-        .ok_or_else(|| EncodingError::MissingMetadata(KEY_PRICE_PRECISION))?
-        .parse::<u8>()
-        .map_err(|e| EncodingError::ParseError(KEY_PRICE_PRECISION, e.to_string()))?;
-
-    let size_precision = metadata
-        .get(KEY_SIZE_PRECISION)
-        .ok_or_else(|| EncodingError::MissingMetadata(KEY_SIZE_PRECISION))?
-        .parse::<u8>()
-        .map_err(|e| EncodingError::ParseError(KEY_SIZE_PRECISION, e.to_string()))?;
+    let price_precision = parse_precision(metadata, KEY_PRICE_PRECISION)?;
+    let size_precision = parse_precision(metadata, KEY_SIZE_PRECISION)?;
 
     Ok((bar_type, price_precision, size_precision))
 }
@@ -88,17 +80,19 @@ impl EncodeToRecordBatch for Bar {
 
         for bar in data {
             open_builder
-                .append_value(bar.open.raw.to_le_bytes())
+                .append_value(bar.open.raw().to_le_bytes())
                 .unwrap();
             high_builder
-                .append_value(bar.high.raw.to_le_bytes())
+                .append_value(bar.high.raw().to_le_bytes())
                 .unwrap();
-            low_builder.append_value(bar.low.raw.to_le_bytes()).unwrap();
+            low_builder
+                .append_value(bar.low.raw().to_le_bytes())
+                .unwrap();
             close_builder
-                .append_value(bar.close.raw.to_le_bytes())
+                .append_value(bar.close.raw().to_le_bytes())
                 .unwrap();
             volume_builder
-                .append_value(bar.volume.raw.to_le_bytes())
+                .append_value(bar.volume.raw().to_le_bytes())
                 .unwrap();
             ts_event_builder.append_value(bar.ts_event.as_u64());
             ts_init_builder.append_value(bar.ts_init.as_u64());

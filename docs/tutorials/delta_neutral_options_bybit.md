@@ -275,8 +275,8 @@ Selected put: BTC-28APR26-75000-P-USDT-OPTION.BYBIT (strike=75000)
 Strangle: 1 contracts per leg, hedge on BTCUSDT-LINEAR.BYBIT
 ```
 
-That is enough to reason about the strategy's structural behaviour. The
-panels below visualise the mechanics around the actual selected strikes
+That is enough to reason about the strategy's structural behavior. The
+panels below visualize the mechanics around the actual selected strikes
 (75,000 / 81,000) at the captured underlying.
 
 ![Short strangle payoff at expiry](./assets/delta_neutral_options_bybit/panel_a_strangle_payoff.png)
@@ -309,12 +309,16 @@ deltas around the underlying.*
 
 ### Regenerate the panels
 
+After building NautilusTrader from source, run these commands from the repository root:
+
 ```bash
+make sync
+
 timeout 30 ./target/release/examples/bybit-delta-neutral > /tmp/bybit_dn.log 2>&1
 
-uv sync --extra visualization
 DN_LOG=/tmp/bybit_dn.log \
-    python3 docs/tutorials/assets/delta_neutral_options_bybit/render_panels.py
+    uv run --project python --no-sync \
+        python docs/tutorials/assets/delta_neutral_options_bybit/render_panels.py
 ```
 
 The renderer parses selected strikes from the log; the panels themselves

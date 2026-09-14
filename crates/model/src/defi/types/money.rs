@@ -30,7 +30,7 @@ impl Money {
     pub fn from_u256(amount: U256, currency: Currency) -> CorrectnessResult<Self> {
         let quantity = Quantity::from_u256(amount, currency.precision)?;
         let raw =
-            i128::try_from(quantity.raw).map_err(|_| CorrectnessError::PredicateViolation {
+            i128::try_from(quantity.raw()).map_err(|_| CorrectnessError::PredicateViolation {
                 message: format!("Amount for {currency} exceeds Money raw range"),
             })?;
         Self::from_raw_checked(raw, currency)
@@ -83,8 +83,11 @@ impl Money {
             "Failed to convert money with precision {} to wei (requires precision 18)",
             self.currency.precision,
         );
-        assert!(self.raw >= 0, "Failed to convert negative money to wei");
-        U256::from(self.raw as u128)
+        assert!(
+            !self.is_negative(),
+            "Failed to convert negative money to wei"
+        );
+        U256::from(self.raw() as u128)
     }
 }
 
@@ -115,7 +118,7 @@ mod tests {
 
         let money = Money::from_u256(U256::from(987_654_321_u64), usdc).unwrap();
 
-        assert_eq!(money.raw, 9_876_543_210_000_000_000);
+        assert_eq!(money.raw(), 9_876_543_210_000_000_000);
         assert_eq!(money.as_decimal(), dec!(987.654321));
         assert_eq!(money.currency, usdc);
     }

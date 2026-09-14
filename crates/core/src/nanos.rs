@@ -13,16 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A `UnixNanos` type for working with timestamps in nanoseconds since the UNIX epoch.
+//! Nanosecond timestamp and duration types.
 //!
-//! This module provides a strongly-typed representation of timestamps as nanoseconds
-//! since the UNIX epoch (January 1, 1970, 00:00:00 UTC). The `UnixNanos` type offers
-//! conversion utilities, arithmetic operations, and comparison methods.
+//! [`UnixNanos`] represents a timestamp since the UNIX epoch, while [`DurationNanos`]
+//! represents an unsigned elapsed duration. Timestamp differences produce durations, and
+//! timestamps accept durations for arithmetic so the two concepts cannot be mixed implicitly.
 //!
 //! # Features
 //!
 //! - Zero-cost abstraction with appropriate operator implementations.
-//! - Conversion to/from `Timestamp`.
+//! - Conversion to/from `Timestamp` and [`std::time::Duration`].
 //! - RFC 3339 string formatting.
 //! - Duration calculations.
 //! - Flexible parsing and serialization.
@@ -50,24 +50,325 @@
 use std::{
     cmp::Ordering,
     fmt::Display,
-    ops::{Add, AddAssign, Deref, Sub, SubAssign},
+    ops::{Add, AddAssign, Deref, Div, DivAssign, Mul, MulAssign, Sub, SubAssign},
     str::FromStr,
-    time::SystemTime,
+    time::{Duration, SystemTime},
 };
 
-use jiff::{Timestamp, civil::Date, tz::Offset};
+use jiff::{SignedDuration, Timestamp, civil::Date, tz::Offset};
 use serde::{
     Deserialize, Deserializer, Serialize,
     de::{self, Visitor},
 };
+use thiserror::Error;
 
 use crate::datetime::{
-    NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND,
-    U64_UPPER_BOUND_F64,
+    NANOSECONDS_IN_DAY, NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND,
+    NANOSECONDS_IN_MINUTE, NANOSECONDS_IN_SECOND, SECONDS_IN_HOUR, U64_UPPER_BOUND_F64,
 };
 
-/// Represents a duration in nanoseconds.
-pub type DurationNanos = u64;
+/// Represents an unsigned duration in nanoseconds.
+#[repr(transparent)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
+#[serde(transparent)]
+pub struct DurationNanos(u64);
+
+/// Error returned when a duration cannot be represented as nanoseconds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+#[error("duration {value} {unit} exceeds the nanosecond range")]
+pub struct DurationNanosOutOfRangeError {
+    value: u64,
+    unit: &'static str,
+}
+
+impl DurationNanos {
+    /// A duration of zero nanoseconds.
+    pub const ZERO: Self = Self(0);
+
+    /// The maximum duration representable by this type.
+    pub const MAX: Self = Self(u64::MAX);
+
+    /// Creates a duration from an exact nanosecond count.
+    #[must_use]
+    pub const fn new(nanos: u64) -> Self {
+        Self(nanos)
+    }
+
+    /// Creates a duration from a number of whole microseconds.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the result exceeds [`DurationNanos::MAX`].
+    #[must_use]
+    pub const fn from_micros(micros: u64) -> Self {
+        match Self::try_from_micros(micros) {
+            Ok(duration) => duration,
+            Err(_) => panic!("DurationNanos overflow in from_micros"),
+        }
+    }
+
+    /// Creates a duration from a number of whole microseconds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the result exceeds [`DurationNanos::MAX`].
+    pub const fn try_from_micros(micros: u64) -> Result<Self, DurationNanosOutOfRangeError> {
+        Self::try_from_units(micros, NANOSECONDS_IN_MICROSECOND, "microseconds")
+    }
+
+    /// Creates a duration from a number of whole milliseconds.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the result exceeds [`DurationNanos::MAX`].
+    #[must_use]
+    pub const fn from_millis(millis: u64) -> Self {
+        match Self::try_from_millis(millis) {
+            Ok(duration) => duration,
+            Err(_) => panic!("DurationNanos overflow in from_millis"),
+        }
+    }
+
+    /// Creates a duration from a number of whole milliseconds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the result exceeds [`DurationNanos::MAX`].
+    pub const fn try_from_millis(millis: u64) -> Result<Self, DurationNanosOutOfRangeError> {
+        Self::try_from_units(millis, NANOSECONDS_IN_MILLISECOND, "milliseconds")
+    }
+
+    /// Creates a duration from a number of whole seconds.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the result exceeds [`DurationNanos::MAX`].
+    #[must_use]
+    pub const fn from_secs(secs: u64) -> Self {
+        match Self::try_from_secs(secs) {
+            Ok(duration) => duration,
+            Err(_) => panic!("DurationNanos overflow in from_secs"),
+        }
+    }
+
+    /// Creates a duration from a number of whole seconds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the result exceeds [`DurationNanos::MAX`].
+    pub const fn try_from_secs(secs: u64) -> Result<Self, DurationNanosOutOfRangeError> {
+        Self::try_from_units(secs, NANOSECONDS_IN_SECOND, "seconds")
+    }
+
+    /// Creates a duration from a number of whole minutes.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the result exceeds [`DurationNanos::MAX`].
+    #[must_use]
+    pub const fn from_mins(mins: u64) -> Self {
+        match Self::try_from_mins(mins) {
+            Ok(duration) => duration,
+            Err(_) => panic!("DurationNanos overflow in from_mins"),
+        }
+    }
+
+    /// Creates a duration from a number of whole minutes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the result exceeds [`DurationNanos::MAX`].
+    pub const fn try_from_mins(mins: u64) -> Result<Self, DurationNanosOutOfRangeError> {
+        Self::try_from_units(mins, NANOSECONDS_IN_MINUTE, "minutes")
+    }
+
+    /// Creates a duration from a number of whole hours.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the result exceeds [`DurationNanos::MAX`].
+    #[must_use]
+    pub const fn from_hours(hours: u64) -> Self {
+        match Self::try_from_hours(hours) {
+            Ok(duration) => duration,
+            Err(_) => panic!("DurationNanos overflow in from_hours"),
+        }
+    }
+
+    /// Creates a duration from a number of whole hours.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the result exceeds [`DurationNanos::MAX`].
+    pub const fn try_from_hours(hours: u64) -> Result<Self, DurationNanosOutOfRangeError> {
+        Self::try_from_units(hours, SECONDS_IN_HOUR * NANOSECONDS_IN_SECOND, "hours")
+    }
+
+    /// Creates a duration from a number of whole days.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the result exceeds [`DurationNanos::MAX`].
+    #[must_use]
+    pub const fn from_days(days: u64) -> Self {
+        match Self::try_from_days(days) {
+            Ok(duration) => duration,
+            Err(_) => panic!("DurationNanos overflow in from_days"),
+        }
+    }
+
+    /// Creates a duration from a number of whole days.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the result exceeds [`DurationNanos::MAX`].
+    pub const fn try_from_days(days: u64) -> Result<Self, DurationNanosOutOfRangeError> {
+        Self::try_from_units(days, NANOSECONDS_IN_DAY, "days")
+    }
+
+    const fn try_from_units(
+        value: u64,
+        nanos_per_unit: u64,
+        unit: &'static str,
+    ) -> Result<Self, DurationNanosOutOfRangeError> {
+        match value.checked_mul(nanos_per_unit) {
+            Some(nanos) => Ok(Self(nanos)),
+            None => Err(DurationNanosOutOfRangeError { value, unit }),
+        }
+    }
+
+    /// Returns `true` if the duration is zero.
+    #[must_use]
+    pub const fn is_zero(&self) -> bool {
+        self.0 == 0
+    }
+
+    /// Returns the exact duration in nanoseconds as `u64`.
+    #[must_use]
+    pub const fn as_u64(&self) -> u64 {
+        self.0
+    }
+
+    /// Returns the total duration in whole microseconds.
+    #[must_use]
+    pub const fn as_micros(&self) -> u64 {
+        self.0 / NANOSECONDS_IN_MICROSECOND
+    }
+
+    /// Returns the total duration in whole milliseconds.
+    #[must_use]
+    pub const fn as_millis(&self) -> u64 {
+        self.0 / NANOSECONDS_IN_MILLISECOND
+    }
+
+    /// Returns the total duration in whole seconds.
+    #[must_use]
+    pub const fn as_secs(&self) -> u64 {
+        self.0 / NANOSECONDS_IN_SECOND
+    }
+
+    /// Returns the total duration in seconds as `f64`.
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "subnanosecond precision is unavailable and large durations may lose precision"
+    )]
+    pub const fn as_secs_f64(&self) -> f64 {
+        self.as_secs() as f64 + self.subsec_nanos() as f64 / NANOSECONDS_IN_SECOND as f64
+    }
+
+    /// Returns the total duration in whole minutes.
+    #[must_use]
+    pub const fn as_mins(&self) -> u64 {
+        self.0 / NANOSECONDS_IN_MINUTE
+    }
+
+    /// Returns the total duration in whole hours.
+    #[must_use]
+    pub const fn as_hours(&self) -> u64 {
+        self.0 / (SECONDS_IN_HOUR * NANOSECONDS_IN_SECOND)
+    }
+
+    /// Returns the total duration in whole 24-hour days.
+    #[must_use]
+    pub const fn as_days(&self) -> u64 {
+        self.0 / NANOSECONDS_IN_DAY
+    }
+
+    /// Returns the fractional part of this duration in whole milliseconds.
+    #[must_use]
+    pub const fn subsec_millis(&self) -> u64 {
+        (self.0 % NANOSECONDS_IN_SECOND) / NANOSECONDS_IN_MILLISECOND
+    }
+
+    /// Returns the fractional part of this duration in whole microseconds.
+    #[must_use]
+    pub const fn subsec_micros(&self) -> u64 {
+        (self.0 % NANOSECONDS_IN_SECOND) / NANOSECONDS_IN_MICROSECOND
+    }
+
+    /// Returns the fractional part of this duration in nanoseconds.
+    #[must_use]
+    pub const fn subsec_nanos(&self) -> u64 {
+        self.0 % NANOSECONDS_IN_SECOND
+    }
+
+    /// Returns `Some(self + rhs)` or `None` if the addition would overflow.
+    #[must_use]
+    pub const fn checked_add(self, rhs: Self) -> Option<Self> {
+        match self.0.checked_add(rhs.0) {
+            Some(value) => Some(Self(value)),
+            None => None,
+        }
+    }
+
+    /// Returns `Some(self - rhs)` or `None` if the subtraction would underflow.
+    #[must_use]
+    pub const fn checked_sub(self, rhs: Self) -> Option<Self> {
+        match self.0.checked_sub(rhs.0) {
+            Some(value) => Some(Self(value)),
+            None => None,
+        }
+    }
+
+    /// Adds `rhs`, saturating at [`DurationNanos::MAX`].
+    #[must_use]
+    pub const fn saturating_add(self, rhs: Self) -> Self {
+        Self(self.0.saturating_add(rhs.0))
+    }
+
+    /// Subtracts `rhs`, saturating at zero.
+    #[must_use]
+    pub const fn saturating_sub(self, rhs: Self) -> Self {
+        Self(self.0.saturating_sub(rhs.0))
+    }
+
+    /// Returns `Some(self * rhs)` or `None` if the multiplication would overflow.
+    #[must_use]
+    pub const fn checked_mul(self, rhs: u64) -> Option<Self> {
+        match self.0.checked_mul(rhs) {
+            Some(value) => Some(Self(value)),
+            None => None,
+        }
+    }
+
+    /// Multiplies by `rhs`, saturating at [`DurationNanos::MAX`].
+    #[must_use]
+    pub const fn saturating_mul(self, rhs: u64) -> Self {
+        Self(self.0.saturating_mul(rhs))
+    }
+
+    /// Returns `Some(self / rhs)` or `None` if `rhs` is zero.
+    #[must_use]
+    pub const fn checked_div(self, rhs: u64) -> Option<Self> {
+        match self.0.checked_div(rhs) {
+            Some(value) => Some(Self(value)),
+            None => None,
+        }
+    }
+}
 
 /// Represents a timestamp in nanoseconds since the UNIX epoch.
 #[repr(C)]
@@ -238,7 +539,30 @@ impl UnixNanos {
     /// greater than `self` (indicating a negative duration is not possible with `DurationNanos`).
     #[must_use]
     pub const fn duration_since(&self, other: &Self) -> Option<DurationNanos> {
-        self.0.checked_sub(other.0)
+        match self.0.checked_sub(other.0) {
+            Some(duration) => Some(DurationNanos(duration)),
+            None => None,
+        }
+    }
+
+    /// Calculates the duration in nanoseconds since `earlier`, saturating at zero.
+    #[must_use]
+    pub const fn saturating_duration_since(&self, earlier: Self) -> DurationNanos {
+        DurationNanos(self.0.saturating_sub(earlier.0))
+    }
+
+    /// Rounds this timestamp down to the nearest multiple of `interval` since the UNIX epoch.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `interval` is zero.
+    #[must_use]
+    pub const fn floor(self, interval: DurationNanos) -> Self {
+        assert!(
+            !interval.is_zero(),
+            "cannot floor UnixNanos to a zero interval"
+        );
+        Self(self.0 - self.0 % interval.0)
     }
 
     fn parse_string(s: &str) -> Result<Self, String> {
@@ -289,26 +613,32 @@ impl UnixNanos {
 
     /// Returns `Some(self + rhs)` or `None` if the addition would overflow
     #[must_use]
-    pub fn checked_add<T: Into<u64>>(self, rhs: T) -> Option<Self> {
-        self.0.checked_add(rhs.into()).map(Self)
+    pub const fn checked_add(self, rhs: DurationNanos) -> Option<Self> {
+        match self.0.checked_add(rhs.0) {
+            Some(value) => Some(Self(value)),
+            None => None,
+        }
     }
 
     /// Returns `Some(self - rhs)` or `None` if the subtraction would underflow
     #[must_use]
-    pub fn checked_sub<T: Into<u64>>(self, rhs: T) -> Option<Self> {
-        self.0.checked_sub(rhs.into()).map(Self)
+    pub const fn checked_sub(self, rhs: DurationNanos) -> Option<Self> {
+        match self.0.checked_sub(rhs.0) {
+            Some(value) => Some(Self(value)),
+            None => None,
+        }
     }
 
-    /// Saturating addition - if overflow occurs the value is clamped to `u64::MAX`.
+    /// Adds `rhs`, saturating at [`UnixNanos::max`].
     #[must_use]
-    pub fn saturating_add_ns<T: Into<u64>>(self, rhs: T) -> Self {
-        Self(self.0.saturating_add(rhs.into()))
+    pub const fn saturating_add(self, rhs: DurationNanos) -> Self {
+        Self(self.0.saturating_add(rhs.0))
     }
 
-    /// Saturating subtraction - if underflow occurs the value is clamped to `0`.
+    /// Subtracts `rhs`, saturating at zero.
     #[must_use]
-    pub fn saturating_sub_ns<T: Into<u64>>(self, rhs: T) -> Self {
-        Self(self.0.saturating_sub(rhs.into()))
+    pub const fn saturating_sub(self, rhs: DurationNanos) -> Self {
+        Self(self.0.saturating_sub(rhs.0))
     }
 }
 
@@ -338,6 +668,145 @@ fn f64_seconds_to_nanos(value: f64) -> Result<u64, String> {
     }
 
     Ok(nanos_f64.trunc() as u64)
+}
+
+impl From<DurationNanos> for Duration {
+    fn from(value: DurationNanos) -> Self {
+        Self::from_nanos(value.0)
+    }
+}
+
+impl From<DurationNanos> for SignedDuration {
+    fn from(value: DurationNanos) -> Self {
+        Self::from_nanos_i128(i128::from(value.0))
+    }
+}
+
+impl TryFrom<SignedDuration> for DurationNanos {
+    type Error = std::num::TryFromIntError;
+
+    fn try_from(value: SignedDuration) -> Result<Self, Self::Error> {
+        u64::try_from(value.as_nanos()).map(Self)
+    }
+}
+
+impl TryFrom<Duration> for DurationNanos {
+    type Error = std::num::TryFromIntError;
+
+    fn try_from(value: Duration) -> Result<Self, Self::Error> {
+        u64::try_from(value.as_nanos()).map(Self)
+    }
+}
+
+/// Adds two [`DurationNanos`] values.
+///
+/// # Panics
+///
+/// Panics if the result exceeds [`DurationNanos::MAX`]. Use
+/// [`DurationNanos::checked_add`] or [`DurationNanos::saturating_add`] for explicit overflow
+/// handling.
+impl Add for DurationNanos {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        self.checked_add(rhs)
+            .expect("DurationNanos overflow in addition")
+    }
+}
+
+/// Subtracts one [`DurationNanos`] value from another.
+///
+/// # Panics
+///
+/// Panics if `rhs` exceeds `self`. Use [`DurationNanos::checked_sub`] or
+/// [`DurationNanos::saturating_sub`] for explicit underflow handling.
+impl Sub for DurationNanos {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        self.checked_sub(rhs)
+            .expect("DurationNanos underflow in subtraction")
+    }
+}
+
+/// Add-assigns a duration.
+///
+/// # Panics
+///
+/// Panics if the result exceeds [`DurationNanos::MAX`].
+impl AddAssign for DurationNanos {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs;
+    }
+}
+
+/// Sub-assigns a duration.
+///
+/// # Panics
+///
+/// Panics if `rhs` exceeds `self`.
+impl SubAssign for DurationNanos {
+    fn sub_assign(&mut self, rhs: Self) {
+        *self = *self - rhs;
+    }
+}
+
+/// Multiplies a duration by an unsigned scalar.
+///
+/// # Panics
+///
+/// Panics if the result exceeds [`DurationNanos::MAX`]. Use
+/// [`DurationNanos::checked_mul`] or [`DurationNanos::saturating_mul`] for explicit overflow
+/// handling.
+impl Mul<u64> for DurationNanos {
+    type Output = Self;
+
+    fn mul(self, rhs: u64) -> Self::Output {
+        self.checked_mul(rhs)
+            .expect("DurationNanos overflow in multiplication")
+    }
+}
+
+/// Multiply-assigns a duration by an unsigned scalar.
+///
+/// # Panics
+///
+/// Panics if the result exceeds [`DurationNanos::MAX`].
+impl MulAssign<u64> for DurationNanos {
+    fn mul_assign(&mut self, rhs: u64) {
+        *self = *self * rhs;
+    }
+}
+
+/// Divides a duration by an unsigned scalar.
+///
+/// # Panics
+///
+/// Panics if `rhs` is zero. Use [`DurationNanos::checked_div`] when the divisor may be zero.
+impl Div<u64> for DurationNanos {
+    type Output = Self;
+
+    fn div(self, rhs: u64) -> Self::Output {
+        self.checked_div(rhs)
+            .expect("DurationNanos division by zero")
+    }
+}
+
+/// Divide-assigns a duration by an unsigned scalar.
+///
+/// # Panics
+///
+/// Panics if `rhs` is zero.
+impl DivAssign<u64> for DurationNanos {
+    fn div_assign(&mut self, rhs: u64) {
+        *self = *self / rhs;
+    }
+}
+
+impl Display for DurationNanos {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
 impl Deref for UnixNanos {
@@ -469,109 +938,70 @@ impl FromStr for UnixNanos {
     }
 }
 
-/// Adds two [`UnixNanos`] values.
+/// Returns the elapsed duration between two timestamps.
 ///
 /// # Panics
 ///
-/// Panics on overflow. This is intentional fail-fast behavior: overflow in timestamp
-/// arithmetic indicates a logic error in calculations that would corrupt data.
-/// Use [`UnixNanos::checked_add()`] or [`UnixNanos::saturating_add_ns()`] if you need
-/// explicit overflow handling.
-impl Add for UnixNanos {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self(
-            self.0
-                .checked_add(rhs.0)
-                .expect("UnixNanos overflow in addition - invalid timestamp calculation"),
-        )
-    }
-}
-
-/// Subtracts one [`UnixNanos`] from another.
-///
-/// # Panics
-///
-/// Panics on underflow. This is intentional fail-fast behavior: underflow in timestamp
-/// arithmetic indicates a logic error in calculations that would corrupt data.
-/// Use [`UnixNanos::checked_sub()`] or [`UnixNanos::saturating_sub_ns()`] if you need
-/// explicit underflow handling.
+/// Panics if `rhs` is later than `self`. Use [`UnixNanos::duration_since`] or
+/// [`UnixNanos::saturating_duration_since`] when the timestamps may be out of order.
 impl Sub for UnixNanos {
-    type Output = Self;
+    type Output = DurationNanos;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        Self(
-            self.0
-                .checked_sub(rhs.0)
-                .expect("UnixNanos underflow in subtraction - invalid timestamp calculation"),
-        )
+        self.duration_since(&rhs)
+            .expect("UnixNanos underflow in timestamp subtraction")
     }
 }
 
-/// Adds a `u64` nanosecond value to [`UnixNanos`].
+/// Adds a duration to a timestamp.
+///
+/// # Panics
+///
+/// Panics on overflow. Use [`UnixNanos::checked_add`] or [`UnixNanos::saturating_add`] for
+/// explicit overflow handling.
+impl Add<DurationNanos> for UnixNanos {
+    type Output = Self;
+
+    fn add(self, rhs: DurationNanos) -> Self::Output {
+        self.checked_add(rhs)
+            .expect("UnixNanos overflow in duration addition")
+    }
+}
+
+/// Subtracts a duration from a timestamp.
+///
+/// # Panics
+///
+/// Panics on underflow. Use [`UnixNanos::checked_sub`] or [`UnixNanos::saturating_sub`] for
+/// explicit underflow handling.
+impl Sub<DurationNanos> for UnixNanos {
+    type Output = Self;
+
+    fn sub(self, rhs: DurationNanos) -> Self::Output {
+        self.checked_sub(rhs)
+            .expect("UnixNanos underflow in duration subtraction")
+    }
+}
+
+/// Add-assigns a duration to [`UnixNanos`].
 ///
 /// # Panics
 ///
 /// Panics on overflow. This is intentional fail-fast behavior for timestamp arithmetic.
-/// Use [`UnixNanos::checked_add()`] for explicit overflow handling.
-impl Add<u64> for UnixNanos {
-    type Output = Self;
-
-    fn add(self, rhs: u64) -> Self::Output {
-        Self(
-            self.0
-                .checked_add(rhs)
-                .expect("UnixNanos overflow in addition"),
-        )
+impl AddAssign<DurationNanos> for UnixNanos {
+    fn add_assign(&mut self, rhs: DurationNanos) {
+        *self = *self + rhs;
     }
 }
 
-/// Subtracts a `u64` nanosecond value from [`UnixNanos`].
+/// Sub-assigns a duration from [`UnixNanos`].
 ///
 /// # Panics
 ///
 /// Panics on underflow. This is intentional fail-fast behavior for timestamp arithmetic.
-/// Use [`UnixNanos::checked_sub()`] for explicit underflow handling.
-impl Sub<u64> for UnixNanos {
-    type Output = Self;
-
-    fn sub(self, rhs: u64) -> Self::Output {
-        Self(
-            self.0
-                .checked_sub(rhs)
-                .expect("UnixNanos underflow in subtraction"),
-        )
-    }
-}
-
-/// Add-assigns a value to [`UnixNanos`].
-///
-/// # Panics
-///
-/// Panics on overflow. This is intentional fail-fast behavior for timestamp arithmetic.
-impl<T: Into<u64>> AddAssign<T> for UnixNanos {
-    fn add_assign(&mut self, other: T) {
-        let other_u64 = other.into();
-        self.0 = self
-            .0
-            .checked_add(other_u64)
-            .expect("UnixNanos overflow in add_assign");
-    }
-}
-
-/// Sub-assigns a value from [`UnixNanos`].
-///
-/// # Panics
-///
-/// Panics on underflow. This is intentional fail-fast behavior for timestamp arithmetic.
-impl<T: Into<u64>> SubAssign<T> for UnixNanos {
-    fn sub_assign(&mut self, other: T) {
-        let other_u64 = other.into();
-        self.0 = self
-            .0
-            .checked_sub(other_u64)
-            .expect("UnixNanos underflow in sub_assign");
+impl SubAssign<DurationNanos> for UnixNanos {
+    fn sub_assign(&mut self, rhs: DurationNanos) {
+        *self = *self - rhs;
     }
 }
 
@@ -644,9 +1074,203 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::approx_eq;
 
     fn timestamp(value: &str) -> Timestamp {
         value.parse().unwrap()
+    }
+
+    #[rstest]
+    fn test_duration_nanos_construction_and_conversion() {
+        let duration = DurationNanos::new(123);
+        let standard = Duration::from(duration);
+        let signed = SignedDuration::from(duration);
+        let signed_max = SignedDuration::from(DurationNanos::MAX);
+
+        assert_eq!(duration.as_u64(), 123);
+        assert_eq!(standard, Duration::from_nanos(123));
+        assert_eq!(DurationNanos::try_from(standard), Ok(duration));
+        assert_eq!(signed, SignedDuration::from_nanos(123));
+        assert_eq!(DurationNanos::try_from(signed), Ok(duration));
+        assert_eq!(signed_max.as_nanos(), i128::from(u64::MAX));
+        assert_eq!(DurationNanos::try_from(signed_max), Ok(DurationNanos::MAX));
+        assert!(DurationNanos::try_from(SignedDuration::from_nanos(-1)).is_err());
+    }
+
+    #[rstest]
+    fn test_duration_nanos_unit_construction_and_accessors() {
+        let duration = DurationNanos::from_hours(1)
+            + DurationNanos::from_mins(2)
+            + DurationNanos::from_secs(3)
+            + DurationNanos::new(456_789_123);
+
+        assert_eq!(DurationNanos::from_micros(1), DurationNanos::new(1_000));
+        assert_eq!(DurationNanos::from_millis(1), DurationNanos::new(1_000_000));
+        assert_eq!(DurationNanos::from_days(1), DurationNanos::from_hours(24));
+        assert_eq!(duration.as_micros(), 3_723_456_789);
+        assert_eq!(duration.as_millis(), 3_723_456);
+        assert_eq!(duration.as_secs(), 3_723);
+        assert!(approx_eq!(
+            f64,
+            duration.as_secs_f64(),
+            3_723.456_789_123,
+            epsilon = 1e-12
+        ));
+        let expected_max_secs = Duration::from_nanos(u64::MAX).as_secs_f64();
+        assert!(approx_eq!(
+            f64,
+            DurationNanos::MAX.as_secs_f64(),
+            expected_max_secs,
+            epsilon = expected_max_secs * f64::EPSILON
+        ));
+        assert_eq!(duration.as_mins(), 62);
+        assert_eq!(duration.as_hours(), 1);
+        assert_eq!(DurationNanos::from_hours(49).as_days(), 2);
+        assert_eq!(duration.subsec_millis(), 456);
+        assert_eq!(duration.subsec_micros(), 456_789);
+        assert_eq!(duration.subsec_nanos(), 456_789_123);
+    }
+
+    #[rstest]
+    fn test_duration_nanos_fallible_unit_construction() {
+        assert_eq!(
+            DurationNanos::try_from_secs(1),
+            Ok(DurationNanos::from_secs(1))
+        );
+        assert_eq!(
+            DurationNanos::try_from_secs(u64::MAX)
+                .unwrap_err()
+                .to_string(),
+            "duration 18446744073709551615 seconds exceeds the nanosecond range"
+        );
+        assert!(DurationNanos::try_from_micros(u64::MAX).is_err());
+        assert!(DurationNanos::try_from_millis(u64::MAX).is_err());
+        assert!(DurationNanos::try_from_secs(u64::MAX).is_err());
+        assert!(DurationNanos::try_from_mins(u64::MAX).is_err());
+        assert!(DurationNanos::try_from_hours(u64::MAX).is_err());
+        assert!(DurationNanos::try_from_days(u64::MAX).is_err());
+
+        let max_hours = DurationNanos::MAX.as_hours();
+        assert_eq!(
+            DurationNanos::try_from_hours(max_hours),
+            Ok(DurationNanos::from_hours(max_hours))
+        );
+        assert!(DurationNanos::try_from_hours(max_hours + 1).is_err());
+
+        let max_days = DurationNanos::MAX.as_days();
+        assert_eq!(
+            DurationNanos::try_from_days(max_days),
+            Ok(DurationNanos::from_days(max_days))
+        );
+        assert!(DurationNanos::try_from_days(max_days + 1).is_err());
+    }
+
+    #[rstest]
+    fn test_duration_nanos_zero_and_max() {
+        assert_eq!(DurationNanos::default(), DurationNanos::ZERO);
+        assert!(DurationNanos::ZERO.is_zero());
+        assert_eq!(DurationNanos::MAX.as_u64(), u64::MAX);
+        assert!(!DurationNanos::MAX.is_zero());
+    }
+
+    #[rstest]
+    fn test_duration_nanos_layout_matches_u64() {
+        assert_eq!(
+            std::mem::size_of::<DurationNanos>(),
+            std::mem::size_of::<u64>()
+        );
+        assert_eq!(
+            std::mem::align_of::<DurationNanos>(),
+            std::mem::align_of::<u64>()
+        );
+    }
+
+    #[rstest]
+    fn test_duration_nanos_format_and_ordering() {
+        let shorter = DurationNanos::new(123);
+        let longer = DurationNanos::new(456);
+
+        assert_eq!(shorter.to_string(), "123");
+        assert_eq!(format!("{shorter:?}"), "DurationNanos(123)");
+        assert!(shorter < longer);
+        assert_eq!(shorter, DurationNanos::new(123));
+    }
+
+    #[rstest]
+    fn test_duration_nanos_serde_preserves_u64_format() {
+        let duration = DurationNanos::MAX;
+        let json = serde_json::to_string(&duration).unwrap();
+        let deserialized: DurationNanos = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(json, u64::MAX.to_string());
+        assert_eq!(deserialized, duration);
+    }
+
+    #[rstest]
+    #[case("-1")]
+    #[case("1.5")]
+    #[case("\"1\"")]
+    fn test_duration_nanos_serde_rejects_non_u64_formats(#[case] json: &str) {
+        assert!(serde_json::from_str::<DurationNanos>(json).is_err());
+    }
+
+    #[rstest]
+    fn test_duration_nanos_checked_arithmetic_boundaries() {
+        let zero = DurationNanos::ZERO;
+        let one = DurationNanos::new(1);
+        let max = DurationNanos::MAX;
+
+        assert_eq!(zero.checked_sub(one), None);
+        assert_eq!(max.checked_add(one), None);
+        assert_eq!(one.checked_sub(one), Some(zero));
+        assert_eq!(zero.checked_add(max), Some(max));
+    }
+
+    #[rstest]
+    fn test_duration_nanos_saturating_arithmetic_boundaries() {
+        let zero = DurationNanos::ZERO;
+        let one = DurationNanos::new(1);
+        let max = DurationNanos::MAX;
+
+        assert_eq!(zero.saturating_sub(one), zero);
+        assert_eq!(max.saturating_add(one), max);
+        assert_eq!(max.saturating_mul(2), max);
+    }
+
+    #[rstest]
+    fn test_duration_nanos_scalar_arithmetic() {
+        let duration = DurationNanos::new(12);
+
+        assert_eq!(duration.checked_mul(3), Some(DurationNanos::new(36)));
+        assert_eq!(DurationNanos::MAX.checked_mul(2), None);
+        assert_eq!(duration.checked_div(3), Some(DurationNanos::new(4)));
+        assert_eq!(duration.checked_div(0), None);
+        assert_eq!(duration * 3, DurationNanos::new(36));
+        assert_eq!(duration / 3, DurationNanos::new(4));
+    }
+
+    #[rstest]
+    #[should_panic(expected = "DurationNanos overflow in addition")]
+    fn test_duration_nanos_addition_panics_on_overflow() {
+        let _ = DurationNanos::MAX + DurationNanos::new(1);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "DurationNanos underflow in subtraction")]
+    fn test_duration_nanos_subtraction_panics_on_underflow() {
+        let _ = DurationNanos::default() - DurationNanos::new(1);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "DurationNanos overflow in multiplication")]
+    fn test_duration_nanos_multiplication_panics_on_overflow() {
+        let _ = DurationNanos::MAX * 2;
+    }
+
+    #[rstest]
+    #[should_panic(expected = "DurationNanos division by zero")]
+    fn test_duration_nanos_division_panics_on_zero() {
+        let _ = DurationNanos::new(1) / 0;
     }
 
     #[rstest]
@@ -811,16 +1435,16 @@ mod tests {
 
     #[rstest]
     fn test_addition() {
-        let nanos1 = UnixNanos::from(100);
-        let nanos2 = UnixNanos::from(200);
-        let result = nanos1 + nanos2;
+        let nanos = UnixNanos::from(100);
+        let duration = DurationNanos::new(200);
+        let result = nanos + duration;
         assert_eq!(result.as_u64(), 300);
     }
 
     #[rstest]
     fn test_add_assign() {
         let mut nanos = UnixNanos::from(100);
-        nanos += 50_u64;
+        nanos += DurationNanos::new(50);
         assert_eq!(nanos.as_u64(), 150);
     }
 
@@ -829,13 +1453,13 @@ mod tests {
         let nanos1 = UnixNanos::from(200);
         let nanos2 = UnixNanos::from(100);
         let result = nanos1 - nanos2;
-        assert_eq!(result.as_u64(), 100);
+        assert_eq!(result, DurationNanos::new(100));
     }
 
     #[rstest]
     fn test_sub_assign() {
         let mut nanos = UnixNanos::from(200);
-        nanos -= 50_u64;
+        nanos -= DurationNanos::new(50);
         assert_eq!(nanos.as_u64(), 150);
     }
 
@@ -843,33 +1467,20 @@ mod tests {
     #[should_panic(expected = "UnixNanos overflow")]
     fn test_overflow_add() {
         let nanos = UnixNanos::from(u64::MAX);
-        let _ = nanos + UnixNanos::from(1); // This should panic due to overflow
-    }
-
-    #[rstest]
-    #[should_panic(expected = "UnixNanos overflow")]
-    fn test_overflow_add_u64() {
-        let nanos = UnixNanos::from(u64::MAX);
-        let _ = nanos + 1_u64; // This should panic due to overflow
+        let _ = nanos + DurationNanos::new(1);
     }
 
     #[rstest]
     #[should_panic(expected = "UnixNanos underflow")]
     fn test_overflow_sub() {
-        let _ = UnixNanos::default() - UnixNanos::from(1); // This should panic due to underflow
+        let _ = UnixNanos::default() - DurationNanos::new(1);
     }
 
     #[rstest]
-    #[should_panic(expected = "UnixNanos underflow")]
-    fn test_overflow_sub_u64() {
-        let _ = UnixNanos::default() - 1_u64; // This should panic due to underflow
-    }
-
-    #[rstest]
-    #[case(100, 50, Some(50))]
-    #[case(1_000_000_000, 500_000_000, Some(500_000_000))]
-    #[case(u64::MAX, u64::MAX - 1, Some(1))]
-    #[case(50, 50, Some(0))]
+    #[case(100, 50, Some(DurationNanos::new(50)))]
+    #[case(1_000_000_000, 500_000_000, Some(DurationNanos::new(500_000_000)))]
+    #[case(u64::MAX, u64::MAX - 1, Some(DurationNanos::new(1)))]
+    #[case(50, 50, Some(DurationNanos::ZERO))]
     #[case(50, 100, None)]
     #[case(0, 1, None)]
     fn test_duration_since(
@@ -885,7 +1496,45 @@ mod tests {
     #[rstest]
     fn test_duration_since_same_moment() {
         let moment = UnixNanos::from(1_707_577_123_456_789_000);
-        assert_eq!(moment.duration_since(&moment), Some(0));
+        assert_eq!(
+            moment.duration_since(&moment),
+            Some(DurationNanos::default())
+        );
+    }
+
+    #[rstest]
+    #[case::later(100, 50, DurationNanos::new(50))]
+    #[case::same(50, 50, DurationNanos::ZERO)]
+    #[case::earlier(50, 100, DurationNanos::ZERO)]
+    #[case::full_range(u64::MAX, 0, DurationNanos::new(u64::MAX))]
+    fn test_saturating_duration_since(
+        #[case] time: u64,
+        #[case] earlier: u64,
+        #[case] expected: DurationNanos,
+    ) {
+        assert_eq!(
+            UnixNanos::from(time).saturating_duration_since(UnixNanos::from(earlier)),
+            expected
+        );
+    }
+
+    #[rstest]
+    #[case(100, 30, 90)]
+    #[case(90, 30, 90)]
+    #[case(100, 101, 0)]
+    #[case(u64::MAX, u64::MAX, u64::MAX)]
+    #[case(u64::MAX, 1_000_000_000, 18_446_744_073_000_000_000)]
+    fn test_floor(#[case] time: u64, #[case] interval: u64, #[case] expected: u64) {
+        assert_eq!(
+            UnixNanos::new(time).floor(DurationNanos::new(interval)),
+            UnixNanos::new(expected)
+        );
+    }
+
+    #[rstest]
+    #[should_panic(expected = "cannot floor UnixNanos to a zero interval")]
+    fn test_floor_panics_for_zero_interval() {
+        let _ = UnixNanos::default().floor(DurationNanos::ZERO);
     }
 
     #[rstest]
@@ -909,7 +1558,7 @@ mod tests {
 
         assert_eq!(
             later_nanos.duration_since(&earlier_nanos),
-            Some(expected_duration)
+            Some(DurationNanos::new(expected_duration))
         );
         assert_eq!(earlier_nanos.duration_since(&later_nanos), None);
     }
@@ -920,15 +1569,15 @@ mod tests {
         let max = UnixNanos::from(u64::MAX);
         let smaller = UnixNanos::from(u64::MAX - 1000);
 
-        assert_eq!(max.duration_since(&smaller), Some(1000));
+        assert_eq!(max.duration_since(&smaller), Some(DurationNanos::new(1000)));
         assert_eq!(smaller.duration_since(&max), None);
 
         // Test with minimum value
         let min = UnixNanos::default(); // Zero timestamp
         let larger = UnixNanos::from(1000);
 
-        assert_eq!(min.duration_since(&min), Some(0));
-        assert_eq!(larger.duration_since(&min), Some(1000));
+        assert_eq!(min.duration_since(&min), Some(DurationNanos::default()));
+        assert_eq!(larger.duration_since(&min), Some(DurationNanos::new(1000)));
         assert_eq!(min.duration_since(&larger), None);
     }
 
@@ -984,26 +1633,26 @@ mod tests {
     #[rstest]
     fn test_checked_add_overflow_returns_none() {
         let max = UnixNanos::from(u64::MAX);
-        assert_eq!(max.checked_add(1_u64), None);
+        assert_eq!(max.checked_add(DurationNanos::new(1)), None);
     }
 
     #[rstest]
     fn test_checked_sub_underflow_returns_none() {
         let zero = UnixNanos::default();
-        assert_eq!(zero.checked_sub(1_u64), None);
+        assert_eq!(zero.checked_sub(DurationNanos::new(1)), None);
     }
 
     #[rstest]
     fn test_saturating_add_overflow() {
         let max = UnixNanos::from(u64::MAX);
-        let result = max.saturating_add_ns(1_u64);
+        let result = max.saturating_add(DurationNanos::new(1));
         assert_eq!(result, UnixNanos::from(u64::MAX));
     }
 
     #[rstest]
     fn test_saturating_sub_underflow() {
         let zero = UnixNanos::default();
-        let result = zero.saturating_sub_ns(1_u64);
+        let result = zero.saturating_sub(DurationNanos::new(1));
         assert_eq!(result, UnixNanos::default());
     }
 
@@ -1225,6 +1874,14 @@ mod tests {
         (unix_nanos_strategy(), unix_nanos_strategy())
     }
 
+    fn duration_nanos_strategy() -> impl Strategy<Value = DurationNanos> {
+        any::<u64>().prop_map(DurationNanos::new)
+    }
+
+    fn duration_nanos_pair_strategy() -> impl Strategy<Value = (DurationNanos, DurationNanos)> {
+        (duration_nanos_strategy(), duration_nanos_strategy())
+    }
+
     proptest! {
         #[rstest]
         #[expect(
@@ -1244,55 +1901,52 @@ mod tests {
         }
 
         #[rstest]
-        fn prop_unix_nanos_addition_commutative(
-            (nanos1, nanos2) in unix_nanos_pair_strategy()
+        fn prop_duration_nanos_addition_commutative(
+            (duration1, duration2) in duration_nanos_pair_strategy()
         ) {
-            // Addition should be commutative when no overflow occurs
             if let (Some(sum1), Some(sum2)) = (
-                nanos1.checked_add(nanos2.as_u64()),
-                nanos2.checked_add(nanos1.as_u64())
+                duration1.checked_add(duration2),
+                duration2.checked_add(duration1)
             ) {
                 prop_assert_eq!(sum1, sum2, "Addition should be commutative");
             }
         }
 
         #[rstest]
-        fn prop_unix_nanos_addition_associative(
-            nanos1 in unix_nanos_strategy(),
-            nanos2 in unix_nanos_strategy(),
-            nanos3 in unix_nanos_strategy(),
+        fn prop_duration_nanos_addition_associative(
+            duration1 in duration_nanos_strategy(),
+            duration2 in duration_nanos_strategy(),
+            duration3 in duration_nanos_strategy(),
         ) {
-            let expected = nanos1
-                .as_u64()
-                .checked_add(nanos2.as_u64())
-                .and_then(|sum| sum.checked_add(nanos3.as_u64()));
+            let expected = duration1
+                .checked_add(duration2)
+                .and_then(|sum| sum.checked_add(duration3));
 
             if let Some(expected) = expected {
-                let left = (nanos1 + nanos2) + nanos3;
-                let right = nanos1 + (nanos2 + nanos3);
-                prop_assert_eq!(left.as_u64(), expected);
-                prop_assert_eq!(right.as_u64(), expected);
+                let left = (duration1 + duration2) + duration3;
+                let right = duration1 + (duration2 + duration3);
+                prop_assert_eq!(left, expected);
+                prop_assert_eq!(right, expected);
             }
         }
 
         #[rstest]
-        fn prop_unix_nanos_subtraction_inverse(
-            (nanos1, nanos2) in unix_nanos_pair_strategy()
+        fn prop_unix_nanos_duration_arithmetic_roundtrip(
+            nanos in unix_nanos_strategy(),
+            duration in duration_nanos_strategy(),
         ) {
-            // Subtraction should be the inverse of addition when no underflow occurs
-            if let Some(sum) = nanos1.checked_add(nanos2.as_u64()) {
-                let diff = sum - nanos2;
-                prop_assert_eq!(diff, nanos1, "Subtraction should be inverse of addition");
+            if let Some(sum) = nanos.checked_add(duration) {
+                prop_assert_eq!(sum - duration, nanos);
+                prop_assert_eq!(sum - nanos, duration);
             }
         }
 
         #[rstest]
-        fn prop_unix_nanos_zero_identity(nanos in unix_nanos_strategy()) {
-            // Zero should be additive identity
-            let zero = UnixNanos::default();
-            prop_assert_eq!(nanos + zero, nanos, "Zero should be additive identity");
-            prop_assert_eq!(zero + nanos, nanos, "Zero should be additive identity (commutative)");
-            prop_assert!(zero.is_zero(), "Zero should be recognized as zero");
+        fn prop_duration_nanos_zero_identity(duration in duration_nanos_strategy()) {
+            let zero = DurationNanos::default();
+            prop_assert_eq!(duration + zero, duration);
+            prop_assert_eq!(zero + duration, duration);
+            prop_assert!(zero.is_zero());
         }
 
         #[rstest]
@@ -1350,66 +2004,62 @@ mod tests {
         ) {
             // duration_since should be consistent with comparison and arithmetic
             let duration = nanos1.duration_since(&nanos2);
+            let saturating_duration = nanos1.saturating_duration_since(nanos2);
 
             if nanos1 >= nanos2 {
                 // If nanos1 >= nanos2, duration should be Some and equal to difference
                 prop_assert!(duration.is_some(), "Duration should be Some when first >= second");
                 if let Some(dur) = duration {
-                    prop_assert_eq!(dur, nanos1.as_u64() - nanos2.as_u64(),
+                    prop_assert_eq!(dur.as_u64(), nanos1.as_u64() - nanos2.as_u64(),
                         "Duration should equal the difference");
-                    prop_assert_eq!(nanos2 + dur, nanos1.as_u64(),
+                    prop_assert_eq!(saturating_duration, dur,
+                        "Saturating duration should equal the difference");
+                    prop_assert_eq!(nanos2 + dur, nanos1,
                         "second + duration should equal first");
                 }
             } else {
                 // If nanos1 < nanos2, duration should be None
                 prop_assert!(duration.is_none(), "Duration should be None when first < second");
+                prop_assert_eq!(saturating_duration, DurationNanos::default(),
+                    "Saturating duration should be zero when first < second");
             }
         }
 
         #[rstest]
         fn prop_unix_nanos_checked_arithmetic(
-            (nanos1, nanos2) in unix_nanos_pair_strategy()
+            nanos in unix_nanos_strategy(),
+            duration in duration_nanos_strategy(),
         ) {
-            // Checked arithmetic should be consistent with regular arithmetic when no overflow/underflow
-            let checked_add = nanos1.checked_add(nanos2.as_u64());
-            let checked_sub = nanos1.checked_sub(nanos2.as_u64());
+            let checked_add = nanos.checked_add(duration);
+            let checked_sub = nanos.checked_sub(duration);
 
-            // If checked_add succeeds, regular addition should produce the same result
-            if let Some(sum) = checked_add
-                && nanos1.as_u64().checked_add(nanos2.as_u64()).is_some() {
-                    prop_assert_eq!(sum, nanos1 + nanos2, "Checked add should match regular add when no overflow");
-                }
+            if let Some(sum) = checked_add {
+                prop_assert_eq!(sum, nanos + duration, "Checked add should match regular add when no overflow");
+            }
 
-            // If checked_sub succeeds, regular subtraction should produce the same result
-            if let Some(diff) = checked_sub
-                && nanos1.as_u64() >= nanos2.as_u64() {
-                    prop_assert_eq!(diff, nanos1 - nanos2, "Checked sub should match regular sub when no underflow");
-                }
+            if let Some(diff) = checked_sub {
+                prop_assert_eq!(diff, nanos - duration, "Checked sub should match regular sub when no underflow");
+            }
         }
 
         #[rstest]
         fn prop_unix_nanos_saturating_arithmetic(
-            (nanos1, nanos2) in unix_nanos_pair_strategy()
+            nanos in unix_nanos_strategy(),
+            duration in duration_nanos_strategy(),
         ) {
-            // Saturating arithmetic should never panic and produce reasonable results
-            let sat_add = nanos1.saturating_add_ns(nanos2.as_u64());
-            let sat_sub = nanos1.saturating_sub_ns(nanos2.as_u64());
+            let sat_add = nanos.saturating_add(duration);
+            let sat_sub = nanos.saturating_sub(duration);
 
-            // Saturating add should be >= both operands
-            prop_assert!(sat_add >= nanos1, "Saturating add result should be >= first operand");
-            prop_assert!(sat_add.as_u64() >= nanos2.as_u64(), "Saturating add result should be >= second operand");
+            prop_assert!(sat_add >= nanos, "Saturating add result should be >= timestamp");
+            prop_assert!(sat_sub <= nanos, "Saturating sub result should be <= timestamp");
 
-            // Saturating sub should be <= first operand
-            prop_assert!(sat_sub <= nanos1, "Saturating sub result should be <= first operand");
-
-            // If no overflow/underflow would occur, saturating should match checked
-            if let Some(checked_sum) = nanos1.checked_add(nanos2.as_u64()) {
+            if let Some(checked_sum) = nanos.checked_add(duration) {
                 prop_assert_eq!(sat_add, checked_sum, "Saturating add should match checked add when no overflow");
             } else {
                 prop_assert_eq!(sat_add, UnixNanos::from(u64::MAX), "Saturating add should be MAX on overflow");
             }
 
-            if let Some(checked_diff) = nanos1.checked_sub(nanos2.as_u64()) {
+            if let Some(checked_diff) = nanos.checked_sub(duration) {
                 prop_assert_eq!(sat_sub, checked_diff, "Saturating sub should match checked sub when no underflow");
             } else {
                 prop_assert_eq!(sat_sub, UnixNanos::default(), "Saturating sub should be zero on underflow");
@@ -1418,20 +2068,18 @@ mod tests {
 
         #[rstest]
         fn prop_unix_nanos_assign_mirrors_op(
-            (nanos1, nanos2) in unix_nanos_pair_strategy()
+            nanos in unix_nanos_strategy(),
+            duration in duration_nanos_strategy(),
         ) {
-            // AddAssign should produce the same result as Add
-            if let Some(expected) = nanos1.checked_add(nanos2.as_u64()) {
-                let mut add_result = nanos1;
-                add_result += nanos2;
+            if let Some(expected) = nanos.checked_add(duration) {
+                let mut add_result = nanos;
+                add_result += duration;
                 prop_assert_eq!(add_result, expected, "AddAssign should mirror Add");
             }
 
-            // SubAssign should produce the same result as Sub
-            if nanos1.as_u64() >= nanos2.as_u64() {
-                let expected = nanos1 - nanos2;
-                let mut sub_result = nanos1;
-                sub_result -= nanos2;
+            if let Some(expected) = nanos.checked_sub(duration) {
+                let mut sub_result = nanos;
+                sub_result -= duration;
                 prop_assert_eq!(sub_result, expected, "SubAssign should mirror Sub");
             }
         }

@@ -492,7 +492,7 @@ impl OrderEmulator {
             TradingCommand::ModifyOrders(ref command) => self.handle_batch_modify_orders(command),
             TradingCommand::CancelOrder(command) => self.handle_cancel_order(command),
             TradingCommand::CancelAllOrders(ref command) => self.handle_cancel_all_orders(command),
-            _ => log::error!("Cannot handle command: unrecognized {command:?}"),
+            _ => log::error!("Cannot handle command: unrecognized {command}"),
         }
 
         self.drain_pending_messages();
@@ -1160,6 +1160,7 @@ impl OrderEmulator {
             false,
             order.venue_order_id(),
             order.account_id(),
+            None,
         );
 
         let event = OrderEventAny::Canceled(event);
@@ -1219,7 +1220,7 @@ impl OrderEmulator {
             return None;
         }
 
-        Some(released_price.unwrap())
+        released_price
     }
 
     /// # Panics
@@ -3818,6 +3819,7 @@ mod tests {
                 0.into(),
                 0.into(),
                 false,
+                None,
                 None,
                 None,
             )))

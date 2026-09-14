@@ -606,10 +606,10 @@ Class/struct: `DeriveDataClientConfig`.
 | `transport_backend`                | `Sockudo` | WebSocket transport when `transport-sockudo` is enabled.                                    |
 
 `auto_load_missing_instruments` covers subscribe commands only. The request commands
-(`request_quotes`, `request_trades`, `request_bars`, `request_funding_rates`, and
-`request_forward_prices`) fail when the instrument is not already cached, so bulk-load its
-currency or subscribe first. `request_instrument` is the exception: it always fetches
-`public/get_instrument`.
+(`request_quotes`, `request_trades`, `request_bars`, and `request_funding_rates`) fail when
+the instrument is not already cached, so bulk-load its currency or subscribe first.
+`request_instrument` is the exception: it always fetches `public/get_instrument`. Option-chain
+subscriptions also require a cached option from the series to fetch the initial reference price.
 
 ### Execution client configuration options
 
@@ -743,4 +743,4 @@ fails before creating venue clients when the field is missing or non-positive.
   are not exposed by the venue. See the capabilities table above.
 - Derive's official REST docs mark `public/get_ticker` as deprecated in favor of
   `public/get_tickers` as of December 1, 2025. The adapter uses `public/get_tickers`
-  for quote snapshots and option-chain forward-price bootstrap.
+  for quote snapshots and option-chain reference-price bootstrap.

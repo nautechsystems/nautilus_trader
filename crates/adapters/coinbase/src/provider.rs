@@ -458,8 +458,8 @@ mod tests {
             other => panic!("Expected CryptoPerpetual, was {other:?}"),
         };
 
-        assert_eq!(perp.base_currency().unwrap().code.as_str(), "BTC");
-        assert_eq!(perp.quote_currency().code.as_str(), "USD");
+        assert_eq!(perp.base_currency().unwrap().code, "BTC");
+        assert_eq!(perp.quote_currency().code, "USD");
         assert_eq!(perp.multiplier, Quantity::from("0.01"));
     }
 
@@ -477,7 +477,7 @@ mod tests {
 
         // 2026-04-24T15:00:00Z
         assert_eq!(future.expiration_ns.as_u64(), 1_777_042_800_000_000_000);
-        assert_eq!(future.base_currency().unwrap().code.as_str(), "BTC");
+        assert_eq!(future.base_currency().unwrap().code, "BTC");
     }
 
     /// Loads the spot fixture JSON and patches `product_type` and

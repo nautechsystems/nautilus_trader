@@ -204,7 +204,7 @@ def _line_number(source: str, position: int) -> int:
 
 
 def _check_file(path: Path) -> list[str]:
-    source = path.read_text()
+    source = path.read_text(encoding="utf-8")
     masked = _mask_non_code(source)
     pymethod_ranges = _pymethod_ranges(masked, source)
     violations = []

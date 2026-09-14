@@ -4,8 +4,8 @@ The `LiveNode` connects to real venues and data sources through adapter clients.
 walks through a complete live trading setup using OKX as an example.
 
 For the node lifecycle, see [Live trading](../concepts/live.md). For command outcomes, see
-[Execution](../concepts/execution.md#command-outcomes). For state recovery, see
-[Execution reconciliation](../concepts/reconciliation.md). For project setup and feature flags,
+[Execution policies](../concepts/execution/policies.md#command-outcomes). For state recovery, see
+[Execution reconciliation](../concepts/execution/reconciliation.md). For project setup and feature flags,
 see the [Rust](../concepts/rust.md#project-setup) concept guide.
 
 ## Dependencies
@@ -15,11 +15,11 @@ Add the live crate, your venue adapter, and supporting crates to
 
 ```toml
 [dependencies]
-nautilus-common = "0.62"
-nautilus-live = "0.62"
-nautilus-model = "0.62"
-nautilus-okx = "0.62"
-nautilus-trading = { version = "0.62", features = ["examples"] }
+nautilus-common = "0.63"
+nautilus-live = "0.63"
+nautilus-model = "0.63"
+nautilus-okx = "0.63"
+nautilus-trading = { version = "0.63", features = ["examples"] }
 
 anyhow = "1"
 dotenvy = "0.15"
@@ -81,7 +81,7 @@ let mut node = LiveNode::builder(trader_id, Environment::Live)?
 :::warning
 This example disables reconciliation for simplicity. In production, remove
 `.with_reconciliation(false)` so the engine aligns cached state with the
-venue on startup. See [Execution reconciliation](../concepts/reconciliation.md).
+venue on startup. See [Execution reconciliation](../concepts/execution/reconciliation.md).
 :::
 
 ## Add strategies and run

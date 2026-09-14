@@ -93,10 +93,7 @@ impl SizeForImpactResult {
         diff <= tolerance_bps
     }
 
-    /// Get the convergence quality as a percentage.
-    ///
-    /// # Returns
-    /// Accuracy percentage (100.0 = perfect match, lower = less accurate)
+    /// Returns the convergence quality as a percentage, where 100.0 is a perfect match.
     #[must_use]
     pub fn accuracy_percent(&self) -> f64 {
         if self.target_impact_bps == 0 {
@@ -110,8 +107,7 @@ impl SizeForImpactResult {
 
 /// Internal state from binary search algorithm.
 ///
-/// Used by the private helper function to return all tracking information
-/// without timing overhead.
+/// Captures all binary search tracking information without timing overhead.
 #[derive(Debug, Clone)]
 struct BinarySearchState {
     /// Final lower bound when search terminated.
@@ -130,19 +126,11 @@ struct BinarySearchState {
     final_slippage_bps: Option<u32>,
 }
 
-/// Estimates the maximum trade size for a given impact target.
+/// Estimates the initial trade size bound for a target price impact.
 ///
-/// Uses a simple heuristic: size ≈ liquidity × `price_factor` × `impact_ratio` × `safety_multiplier`
-/// The binary search will refine this estimate, so perfect accuracy isn't needed.
-///
-/// # Arguments
-/// - `profiler` - Reference to the pool profiler
-/// - `impact_bps` - Target impact in basis points
-/// - `zero_for_one` - Swap direction
-/// - `config` - Estimation configuration (only uses `safety_multiplier`)
-///
-/// # Returns
-/// Estimated maximum size as U256
+/// Uses active liquidity, the current square root price, swap direction, and target impact in basis
+/// points, then applies a fixed 2x safety factor. Set `zero_for_one` to `true` for token0-to-token1
+/// swaps. The binary search refines the estimate.
 #[must_use]
 pub fn estimate_max_size_for_impact(
     profiler: &PoolProfiler,
@@ -179,20 +167,17 @@ pub fn estimate_max_size_for_impact(
     }
 }
 
-/// Calculates the slippage in basis points for a given trade size.
+/// Calculates the slippage for a given trade size, where 10,000 basis points is 100%.
 ///
-/// This function simulates a swap with the specified size and returns the slippage
-/// (total execution cost including fees) in basis points. Slippage is calculated
-/// as the difference between the execution price and the spot price before the swap.
-///
-/// # Returns
-/// Slippage in basis points (10000 = 100%)
+/// Simulates a swap and calculates its total execution cost, including fees, as the difference
+/// between the execution price and the spot price before the swap.
 ///
 /// # Errors
+///
 /// Returns error if:
-/// - Pool is not initialized
-/// - Swap simulation fails
-/// - Trade info calculation fails
+/// - The pool is not initialized.
+/// - The swap simulation fails.
+/// - The trade info or slippage calculation fails.
 pub fn slippage_for_size_bps(
     profiler: &PoolProfiler,
     size: U256,
@@ -214,11 +199,6 @@ pub fn slippage_for_size_bps(
     trade_info.get_slippage_bps()
 }
 
-/// Core binary search algorithm for finding optimal trade size.
-///
-/// # Returns
-/// State containing final bounds, iterations, convergence status, and optionally
-/// the final slippage if it was calculated during convergence.
 fn binary_search_for_size(
     profiler: &PoolProfiler,
     impact_bps: u32,
@@ -318,29 +298,26 @@ fn binary_search_for_size(
     })
 }
 
-/// Finds the maximum trade size that produces a target slippage (including fees).
+/// Finds a trade size for a target slippage, including fees.
 ///
-/// Uses binary search with optional adaptive upper bound expansion to find the
-/// largest trade size that results in slippage at or below the target. The method
-/// iteratively simulates swaps at different sizes until it converges to the optimal
-/// size within the specified tolerance.
+/// Uses binary search with optional adaptive upper bound expansion. If the search does not converge
+/// within the configured tolerance, returns its last lower bound.
 ///
 /// # Algorithm
-/// 1. Estimate initial upper bound using hybrid strategy (heuristic + liquidity scan)
-/// 2. Binary search between 0 and upper bound
-/// 3. For each midpoint, calculate actual slippage via simulation
-/// 4. Adjust bounds based on whether slippage is above or below target
-/// 5. If adaptive bounds enabled and upper bound reached, expand and continue
-/// 6. Converge when slippage is within tolerance or size delta is minimal
 ///
-/// # Returns
-/// The maximum trade size (U256) that produces the target slippage
+/// 1. Estimate the initial upper bound from active liquidity and price.
+/// 1. Binary search between zero and the upper bound.
+/// 1. Calculate the slippage at each midpoint through simulation.
+/// 1. Adjust the bounds based on whether slippage is above or below the target.
+/// 1. Expand the upper bound when enabled and the midpoint approaches it.
+/// 1. Stop when slippage is within tolerance, the midpoint is zero, or the iteration limit is
+///    reached.
 ///
 /// # Errors
+///
 /// Returns error if:
-/// - Impact is zero or exceeds 100% (10000 bps)
-/// - Pool is not initialized
-/// - Swap simulations fail
+/// - The target impact is zero or exceeds 10,000 basis points.
+/// - The pool is not initialized.
 pub fn size_for_impact_bps(
     profiler: &PoolProfiler,
     impact_bps: u32,
@@ -351,26 +328,18 @@ pub fn size_for_impact_bps(
     Ok(state.low)
 }
 
-/// Finds the maximum trade size with detailed search diagnostics.
+/// Finds a trade size with detailed search diagnostics.
 ///
-/// This is the detailed version of [`size_for_impact_bps`] that returns detailed
-/// information about the search process including convergence metrics, iterations,
-/// bounds used, and timing information.
-///
-/// # Arguments
-/// - `profiler` - Reference to the pool profiler
-/// - `impact_bps` - Target slippage in basis points (including fees)
-/// - `zero_for_one` - Swap direction (true = token0 for token1)
-/// - `config` - Estimation configuration
-///
-/// # Returns
-/// Detailed result containing size, search metrics, and convergence information
+/// This is the detailed version of [`size_for_impact_bps`]. It returns the convergence status,
+/// iteration and expansion counts, final slippage, and search bounds. The target impact includes
+/// fees and uses basis points. Set `zero_for_one` to `true` for token0-to-token1 swaps.
 ///
 /// # Errors
+///
 /// Returns error if:
-/// - Impact is zero or exceeds 100% (10000 bps)
-/// - Pool is not initialized
-/// - Swap simulations fail
+/// - The target impact is zero or exceeds 10,000 basis points.
+/// - The pool is not initialized.
+/// - The final slippage calculation fails.
 pub fn size_for_impact_bps_detailed(
     profiler: &PoolProfiler,
     impact_bps: u32,

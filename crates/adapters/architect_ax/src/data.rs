@@ -469,9 +469,14 @@ impl DataClient for AxDataClient {
             });
 
         let credential = if self.config.has_api_credentials() {
-            let credential =
-                Credential::resolve(self.config.api_key.clone(), self.config.api_secret.clone())
-                    .context("API credentials not configured")?;
+            let credential = Credential::resolve(
+                self.config.api_key.clone().map(|value| value.into_inner()),
+                self.config
+                    .api_secret
+                    .clone()
+                    .map(|value| value.into_inner()),
+            )
+            .context("API credentials not configured")?;
 
             let token = self
                 .http_client
@@ -1245,7 +1250,7 @@ fn handle_md_message(
 
             match parse_book_l2_deltas(&book, instrument, sequence, ts_init()) {
                 Ok(deltas) => {
-                    let _ = sender.send(DataEvent::Data(Data::Deltas(Box::new(deltas))));
+                    let _ = sender.send(DataEvent::Data(Data::BookDeltas(Box::new(deltas))));
                 }
                 Err(e) => log::error!("Failed to parse L2 to OrderBookDeltas: {e}"),
             }
@@ -1276,7 +1281,7 @@ fn handle_md_message(
 
             match parse_book_l3_deltas(&book, instrument, sequence, ts_init()) {
                 Ok(deltas) => {
-                    let _ = sender.send(DataEvent::Data(Data::Deltas(Box::new(deltas))));
+                    let _ = sender.send(DataEvent::Data(Data::BookDeltas(Box::new(deltas))));
                 }
                 Err(e) => log::error!("Failed to parse L3 to OrderBookDeltas: {e}"),
             }

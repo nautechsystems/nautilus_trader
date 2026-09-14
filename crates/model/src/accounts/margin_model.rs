@@ -525,45 +525,99 @@ mod tests {
     }
 
     #[rstest]
-    fn test_leveraged_zero_leverage_errors() {
+    #[case::zero(Decimal::ZERO)]
+    #[case::negative(dec!(-1))]
+    fn test_leveraged_rejects_non_positive_leverage(#[case] leverage: Decimal) {
         let model = LeveragedMarginModel;
         let instrument = ethusdt();
+        let quantity = Quantity::from("1.000");
+        let price = Price::from("5000.00");
+        let expected = format!("Invalid leverage {leverage} for {}", instrument.id());
 
-        let result = model.calculate_initial_margin(
-            &instrument,
-            Quantity::from("1.000"),
-            Price::from("5000.00"),
-            Decimal::ZERO,
-            None,
-        );
+        let initial = model.calculate_initial_margin(&instrument, quantity, price, leverage, None);
+        let maintenance =
+            model.calculate_maintenance_margin(&instrument, quantity, price, leverage, None);
 
-        assert!(result.is_err());
+        assert_eq!(initial.unwrap_err().to_string(), expected);
+        assert_eq!(maintenance.unwrap_err().to_string(), expected);
     }
 
     #[rstest]
     fn test_leveraged_margin_decimal_overflow_returns_error() {
         let model = LeveragedMarginModel;
         let instrument = ethusdt();
+        let quantity = Quantity::from("1.000");
+        let price = Price::from("5000.00");
+        let leverage = Decimal::new(1, 28);
 
-        let result = model.calculate_initial_margin(
-            &instrument,
-            Quantity::from("1.000"),
-            Price::from("5000.00"),
-            Decimal::new(1, 28),
-            None,
-        );
+        let initial = model.calculate_initial_margin(&instrument, quantity, price, leverage, None);
+        let maintenance =
+            model.calculate_maintenance_margin(&instrument, quantity, price, leverage, None);
 
         assert_eq!(
-            result.unwrap_err().to_string(),
+            initial.unwrap_err().to_string(),
             "initial margin calculation overflow"
+        );
+        assert_eq!(
+            maintenance.unwrap_err().to_string(),
+            "maintenance margin calculation overflow"
         );
     }
 
     #[rstest]
     fn test_margin_model_any_default_is_leveraged() {
         let model = MarginModelAny::default();
+        let instrument = ethusdt();
+        let quantity = Quantity::from("10.000");
+        let price = Price::from("5000.00");
+        let leverage = dec!(10);
+
+        let initial = model
+            .calculate_initial_margin(&instrument, quantity, price, leverage, None)
+            .unwrap();
+        let maintenance = model
+            .calculate_maintenance_margin(&instrument, quantity, price, leverage, None)
+            .unwrap();
+
+        // notional = 10 * 5000 = 50000, adjusted = 50000 / 10 = 5000
         assert!(matches!(model, MarginModelAny::Leveraged(_)));
         assert_eq!(model.name(), "leveraged");
+        assert_eq!(
+            initial.as_decimal(),
+            Decimal::from(5000) * instrument.margin_init()
+        );
+        assert_eq!(
+            maintenance.as_decimal(),
+            Decimal::from(5000) * instrument.margin_maint()
+        );
+    }
+
+    #[rstest]
+    fn test_margin_model_any_standard_dispatches_to_the_standard_model() {
+        let model = MarginModelAny::Standard(StandardMarginModel);
+        let instrument = ethusdt();
+        let quantity = Quantity::from("10.000");
+        let price = Price::from("5000.00");
+        let leverage = dec!(10);
+
+        let initial = model
+            .calculate_initial_margin(&instrument, quantity, price, leverage, None)
+            .unwrap();
+        let maintenance = model
+            .calculate_maintenance_margin(&instrument, quantity, price, leverage, None)
+            .unwrap();
+
+        // notional = 10 * 5000 = 50000, which the standard model reserves against in full
+        assert_eq!(model.name(), "standard");
+        assert_eq!(
+            initial.as_decimal(),
+            Decimal::from(50000) * instrument.margin_init()
+        );
+        assert_eq!(
+            maintenance.as_decimal(),
+            Decimal::from(50000) * instrument.margin_maint()
+        );
+        assert_eq!(initial.currency, Currency::USDT());
     }
 
     #[rstest]

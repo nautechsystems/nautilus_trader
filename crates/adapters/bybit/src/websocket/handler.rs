@@ -24,6 +24,7 @@ use std::{
 };
 
 use dashmap::DashMap;
+use nautilus_core::string::secret::SecretString;
 use nautilus_network::{
     error::SendError,
     retry::{RetryManager, create_websocket_retry_manager},
@@ -97,7 +98,7 @@ enum OrderSendFailure {
 pub enum HandlerCommand {
     SetClient(WebSocketClient),
     Disconnect,
-    Authenticate { payload: String },
+    Authenticate { payload: SecretString },
     Subscribe { topics: Vec<String> },
     Unsubscribe { topics: Vec<String> },
     SendOrder { command: BybitWsOrderCommand },
@@ -150,15 +151,19 @@ impl BybitWsFeedHandler {
 
     /// Sends a WebSocket message with retry logic.
     async fn send_with_retry(&self, payload: String) -> Result<(), BybitWsError> {
+        self.send_secret_with_retry(payload.into()).await
+    }
+
+    async fn send_secret_with_retry(&self, payload: SecretString) -> Result<(), BybitWsError> {
         if let Some(client) = &self.inner {
             self.retry_manager
-                .execute_with_retry(
+                .invocation(
                     "websocket_send",
                     || {
                         let payload = payload.clone();
                         async move {
                             client
-                                .send_text(payload, None)
+                                .send_text(payload.expose_secret().to_owned(), None)
                                 .await
                                 .map_err(|e| BybitWsError::Transport(format!("Send failed: {e}")))
                         }
@@ -166,6 +171,7 @@ impl BybitWsFeedHandler {
                     should_retry_bybit_error,
                     |e| create_bybit_timeout_error(e.to_string()),
                 )
+                .execute()
                 .await
         } else {
             Err(BybitWsError::ClientError(
@@ -294,7 +300,7 @@ impl BybitWsFeedHandler {
                         HandlerCommand::Authenticate { payload } => {
                             log::debug!("Authenticate command received");
 
-                            if let Err(e) = self.send_with_retry(payload).await {
+                            if let Err(e) = self.send_secret_with_retry(payload).await {
                                 log::error!("Failed to send authentication after retries: {e}");
                             }
                         }
@@ -661,6 +667,7 @@ fn is_already_subscribed_error(error_msg: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::string::secret::REDACTED;
     use rstest::rstest;
     use ustr::Ustr;
 
@@ -689,6 +696,19 @@ mod tests {
             ),
             Arc::new(AtomicU64::new(5_000)),
         )
+    }
+
+    #[rstest]
+    fn test_authenticate_command_debug_redacts_payload() {
+        let payload = "authentication-secret";
+        let command = HandlerCommand::Authenticate {
+            payload: SecretString::from(payload.to_string()),
+        };
+
+        let debug = format!("{command:?}");
+
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains(payload));
     }
 
     fn load_value(fixture: &str) -> serde_json::Value {
@@ -723,7 +743,7 @@ mod tests {
             panic!("Expected order response");
         };
 
-        assert_eq!(response.op.as_str(), "order.create");
+        assert_eq!(response.op, "order.create");
         assert_eq!(response.ret_code, -1);
         assert_eq!(response.req_id.as_deref(), Some("not-sent-request"));
         assert_eq!(response.ret_msg, "Client error: No active WebSocket client");
@@ -833,7 +853,7 @@ mod tests {
         let frame = parse_bybit_ws_frame(value);
         match frame {
             BybitWsFrame::OrderResponse(resp) => {
-                assert_eq!(resp.op.as_str(), "order.create");
+                assert_eq!(resp.op, "order.create");
                 assert_eq!(resp.ret_code, 0);
                 assert_eq!(resp.ret_msg, "OK");
             }

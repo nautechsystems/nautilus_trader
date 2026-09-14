@@ -178,6 +178,7 @@ impl ExecutionClientFactory for PolymarketExecutionClientFactory {
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
+        _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let polymarket_config = config
             .as_any()
@@ -356,6 +357,7 @@ mod tests {
             POLYMARKET,
             &wrong_config,
             cache.into(),
+            Rc::new(RefCell::new(TestClock::new())),
         );
         assert!(result.is_err());
         assert!(
@@ -372,7 +374,7 @@ mod tests {
         const SECRET: &str = "data-factory-proxy-secret";
         let factory = PolymarketDataClientFactory;
         let config = PolymarketDataClientConfig {
-            proxy_url: Some(format!("http://proxy-user:{SECRET}@[::1")),
+            proxy_url: Some(format!("http://proxy-user:{SECRET}@[::1").into()),
             ..PolymarketDataClientConfig::default()
         };
         let cache = Rc::new(RefCell::new(Cache::default()));
@@ -389,7 +391,7 @@ mod tests {
         const SECRET: &str = "execution-factory-proxy-secret";
         let factory = PolymarketExecutionClientFactory;
         let config = PolymarketExecutionClientConfig {
-            proxy_url: Some(format!("http://proxy-user:{SECRET}@[::1")),
+            proxy_url: Some(format!("http://proxy-user:{SECRET}@[::1").into()),
             ..PolymarketExecutionClientConfig::default()
         };
         let cache = Rc::new(RefCell::new(Cache::default()));
@@ -398,6 +400,7 @@ mod tests {
             POLYMARKET,
             &config,
             cache.into(),
+            Rc::new(RefCell::new(TestClock::new())),
         ) else {
             panic!("malformed proxy URL should fail");
         };
@@ -420,7 +423,7 @@ mod tests {
             base_url_gamma: Some("https://gamma.fixture".to_string()),
             base_url_data_api: Some("https://data.fixture".to_string()),
             base_url_rtds: Some("wss://rtds.fixture/ws".to_string()),
-            proxy_url: Some(proxy_url.clone()),
+            proxy_url: Some(proxy_url.clone().into()),
             http_timeout_secs: 2,
             ..PolymarketDataClientConfig::default()
         };
@@ -497,9 +500,9 @@ mod tests {
         let proxy_url =
             ProxyUrl::parse(format!("http://{USERNAME}:{SECRET}@{proxy_addr}")).unwrap();
         let credential = Credential::new(
-            "fixture-key",
-            "Zml4dHVyZQ==",
-            "fixture-passphrase".to_string(),
+            "fixture-key".into(),
+            "Zml4dHVyZQ==".into(),
+            "fixture-passphrase".into(),
         )
         .unwrap();
         let clob_auth = PolymarketClobHttpClient::new_with_proxy(

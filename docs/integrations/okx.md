@@ -330,6 +330,25 @@ The low-level Rust clients expose the same single and batch matrix:
 The WebSocket batch amend tuple accepts an optional request ID and serializes it as `reqId`; it
 does not replace the order's client ID.
 
+### RPI minimum notional
+
+RPI maker orders must meet both the instrument's `minSz` and the
+[RPI minimum notional](https://www.okx.com/docs-v5/log_en/#2026-08-18-rpi-maker-minimum-notional-amount):
+
+- `SWAP` and `FUTURES`: 10,000 USD.
+- `SPOT`: 1,000 USD.
+- `EVENTS`: exempt from the RPI minimum notional.
+
+OKX rejects an order below the applicable notional threshold with `54051`; the execution client emits
+`OrderRejected` for a rejected placement. An amend that includes `newSz` is checked again, with or
+without `newPx`. A rejected amend leaves the original order active; the adapter emits
+`OrderModifyRejected` and stops tracking the amend as pending. A price-only amend does not trigger
+this check. Each sub-order in a batch place or amend request is checked independently.
+
+Orders already on the book when the rule took effect in production on August 18, 2026, are grandfathered.
+Non-RPI orders, including orders with `rpiTakerAccess: true`, are exempt from this notional rule.
+An order that meets `minSz` can still fail the RPI minimum-notional check.
+
 ### RPI responses and lifecycle
 
 Private order messages parse both `ordType: rpi` and the migration alias `ordType: elp`. If an
@@ -377,8 +396,71 @@ for linear perpetual swap products on OKX.
 OKX WebSocket order operations use `instIdCode` (a numeric instrument identifier)
 instead of the string `instId` parameter. The adapter resolves `instIdCode` values
 from the instrument definitions fetched during startup and caches them for the
-session lifetime. If the instrument cache is empty (e.g. because of a failed
-bootstrap), order submissions fail with a clear error.
+session lifetime. Order submissions fail with a clear error if the required
+`instIdCode` is missing from the cache.
+
+The initial execution connection requires usable instruments from every requested
+instrument type or family. A failed request or a scope with no usable instruments
+aborts the connection before WebSockets open, even if another scope succeeds.
+Pre-open instruments and entries that cannot be parsed do not satisfy this
+requirement. Options without configured instrument families remain skipped.
+
+### USD to USDC spot migration
+
+OKX is consolidating USD and USDC spot books. This is a breaking venue change. Affected
+`Crypto-USD` instruments are replaced by `Crypto-USDC` instruments. See the
+[OKX changelog](https://www.okx.com/docs-v5/log_en/#upcoming-changes-okx-to-migrate-usd-spot-trading-pairs).
+
+| Event                  | Time                            |
+| ---------------------- | ------------------------------- |
+| Parallel trading opens | 08:00 UTC on 23 September 2026. |
+| USD pairs delisted     | 08:00 UTC on 30 September 2026. |
+
+#### Instrument IDs
+
+Subscribe to and trade the replacement instrument IDs:
+
+| Before        | After          |
+| ------------- | -------------- |
+| `BTC-USD.OKX` | `BTC-USDC.OKX` |
+
+OKX does not map old USD `instId` or `instIdCode` values to the new USDC instruments. The
+adapter does not rewrite USD keys in the instrument or `instIdCode` caches. After
+delisting, requests and subscriptions that still use a USD ID may fail or return no data.
+
+#### Trading quote currency
+
+The default `tradeQuoteCcy` is the quote currency in `instId`. Switching only the
+instrument ID from `Crypto-USD` to `Crypto-USDC` changes the default trading quote from
+USD to USDC.
+
+Set `spot_trade_quote_ccy` on `OKXExecutionClientConfig`:
+
+| `spot_trade_quote_ccy` | Effect                                                                            |
+| ---------------------- | --------------------------------------------------------------------------------- |
+| Unset (`None`)         | Omits the field; OKX uses the quote currency in `instId` (USDC on `Crypto-USDC`). |
+| `"USD"`                | Keeps trading in USD on a `Crypto-USDC` instrument.                               |
+
+The adapter sends `tradeQuoteCcy` on regular REST and WebSocket spot orders. It does not
+send the field on algo or conditional orders.
+
+The adapter rejects the order locally when:
+
+- The configured value is absent from that instrument's `tradeQuoteCcyList`.
+- The list is unknown.
+
+The list is retained from instrument definitions, including
+`GET /api/v5/account/instruments`, and stored on the instrument `info` map as
+`okx_trade_quote_ccy_list`.
+
+#### Account activation
+
+:::warning
+Before trading a `Crypto-USDC` instrument, call `OKXHttpClient.activate_feature("1")`
+once per master account and once per sub-account to enable USDC order book trading, if
+that account has not already traded USDC. The adapter never activates accounts
+implicitly.
+:::
 
 ### Client order ID requirements
 
@@ -448,10 +530,17 @@ Relevant OKX docs:
 
 ### Execution instructions
 
-| Instruction   | Linear perpetual swap | Notes                                                                             |
-| ------------- | --------------------- | --------------------------------------------------------------------------------- |
-| `post_only`   | ✓                     | Only for limit orders.                                                            |
-| `reduce_only` | ✓                     | Futures and swaps need `net` mode; margin needs `isolated` or `cross` trade mode. |
+| Instruction   | Linear perpetual swap | Notes                                                 |
+| ------------- | --------------------- | ----------------------------------------------------- |
+| `post_only`   | ✓                     | Only for limit orders.                                |
+| `reduce_only` | ✓                     | See the product and position-mode restrictions below. |
+
+The adapter sends OKX's literal `reduceOnly` field for margin orders in `isolated` or `cross`
+trade mode and for futures or swap orders in `net` position mode. In `long/short` position mode,
+OKX does not accept that field. The adapter uses the closing `side` and `posSide` combination as
+the enforcing venue instruction instead. It rejects reduce-only orders for cash, option, and event
+products, and rejects a long/short-mode combination that would increase the selected side. See
+OKX's [place order documentation](https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-place-order).
 
 ### Time in force
 
@@ -802,7 +891,8 @@ Greeks.
 
 ### Restrictions
 
-- `reduce_only` is not applicable to options and is automatically stripped.
+- Reduce-only option orders are rejected by the adapter because OKX does not support the
+  instruction for options.
 - Position side defaults to `Net`.
 
 ### Configuration
@@ -867,10 +957,9 @@ order = strategy.order_factory.limit(
 strategy.submit_order(order)
 ```
 
-OKX requires `outcome` for `EVENTS` orders. It also requires `speedBump=1` for
-non-post-only event contract orders and amendments. The adapter validates `outcome`
-before sending the order and defaults `speedBump` to `1` for non-post-only event
-orders when it is not supplied.
+OKX requires `outcome` for `EVENTS` orders, which the adapter validates before
+sending. OKX ignores the obsolete `speedBump` request parameter, so the adapter
+omits it. Remove `speed_bump` from existing client calls and order `params`.
 
 Settlement fills arrive with OKX order category `delivery`. The adapter parses this
 category during live order updates and reconciliation.
@@ -880,6 +969,7 @@ Upstream references:
 - [Event contract REST endpoints](https://www.okx.com/docs-v5/en/#public-data-rest-api-get-series).
 - [WS channel](https://www.okx.com/docs-v5/en/#public-data-websocket-event-contract-markets-channel).
 - [Place order request fields](https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-place-order).
+- [Removal of `speedBump`](https://www.okx.com/docs-v5/log_en/#2026-07-24).
 
 ## Authentication
 
@@ -1159,6 +1249,7 @@ The OKX execution client provides the following Python configuration options.
 | `environment`            | `LIVE`                     | Environment enum (`LIVE` or `DEMO`).                                                                    |
 | `region`                 | `GLOBAL`                   | Region enum (`GLOBAL`, `EEA`, or `US`).                                                                 |
 | `margin_mode`            | `None`                     | Margin mode (`ISOLATED` or `CROSS`).                                                                    |
+| `spot_trade_quote_ccy`   | `None`                     | SPOT `tradeQuoteCcy` override. Set `"USD"` to keep USD after migrating to `Crypto-USDC`.                |
 | `http_timeout_secs`      | `60`                       | REST trading request timeout.                                                                           |
 | `max_retries`            | `3`                        | Retry attempts for recoverable REST errors. Order submission endpoints are exempt and always send once. |
 | `retry_delay_initial_ms` | `1,000`                    | Initial delay before retrying.                                                                          |
@@ -1173,6 +1264,8 @@ Supported execution client `instrument_types` values are `SPOT`, `MARGIN`, `SWAP
 
 Spread instruments use OKX spread IDs instead of `instrument_types`; load them with
 `load_spreads=True` on the data and execution clients before trading them.
+
+See [USD to USDC spot migration](#usd-to-usdc-spot-migration) for `spot_trade_quote_ccy`.
 
 ### Manual endpoint overrides
 

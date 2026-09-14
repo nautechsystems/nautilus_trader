@@ -942,7 +942,7 @@ impl PoolProfiler {
         Ok(())
     }
 
-    /// Internal helper to add liquidity to a position.
+    /// Adds liquidity to a position.
     ///
     /// Updates position state, tracks deposited amounts, and manages tick maps.
     /// Called by both historical event processing and simulated operations.

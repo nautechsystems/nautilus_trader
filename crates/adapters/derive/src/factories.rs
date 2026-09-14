@@ -136,6 +136,7 @@ impl ExecutionClientFactory for DeriveExecutionClientFactory {
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
+        _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let derive_config = config
             .as_any()
@@ -257,6 +258,7 @@ mod tests {
             DERIVE,
             &wrong_config,
             cache.into(),
+            Rc::new(RefCell::new(TestClock::new())),
         );
 
         assert!(result.is_err());

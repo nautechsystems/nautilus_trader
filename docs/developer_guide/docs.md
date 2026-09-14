@@ -101,6 +101,10 @@ than line numbers, which become stale as code changes.
 Heading style, case, and hierarchy follow the [Markdown Style](markdown_style.md#headings) guide:
 title case for the page heading, sentence case below it.
 
+NautilusTrader makes one exception for `index.md` pages: headings and navigation links that name
+individual documents use the target document's exact H1 title, including its capitalization.
+General section headings retain sentence case.
+
 Always capitalize proper nouns regardless of heading level (product names, technologies,
 companies, acronyms).
 

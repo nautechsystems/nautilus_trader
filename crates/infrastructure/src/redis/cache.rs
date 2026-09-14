@@ -59,7 +59,10 @@ use nautilus_core::{UUID4, UnixNanos, correctness::check_slice_not_empty};
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Bar, CustomData, DataType, FundingRateUpdate, HasTsInit, QuoteTick, TradeTick},
+    data::{
+        Bar, CustomData, DataType, FundingRateUpdate, HasTsInit, InstrumentClose, QuoteTick,
+        TradeTick,
+    },
     events::{
         AccountState, OrderEventAny, OrderFilled, OrderSnapshot,
         position::snapshot::PositionSnapshot,
@@ -94,6 +97,7 @@ const INDEX: &str = "index";
 const GENERAL: &str = "general";
 const CURRENCIES: &str = "currencies";
 const INSTRUMENTS: &str = "instruments";
+const INSTRUMENT_CLOSES: &str = "instrument_closes";
 const SYNTHETICS: &str = "synthetics";
 const ACCOUNTS: &str = "accounts";
 const ORDERS: &str = "orders";
@@ -941,7 +945,8 @@ fn insert(pipe: &mut Pipeline, collection: &str, key: &str, value: &[Bytes]) -> 
 
     match collection {
         INDEX => insert_index(pipe, key, value),
-        GENERAL | CURRENCIES | INSTRUMENTS | SYNTHETICS | ACTORS | STRATEGIES | HEALTH | CUSTOM => {
+        GENERAL | CURRENCIES | INSTRUMENTS | INSTRUMENT_CLOSES | SYNTHETICS | ACTORS
+        | STRATEGIES | HEALTH | CUSTOM => {
             insert_string(pipe, key, value[0].as_ref());
             Ok(())
         }
@@ -1329,6 +1334,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         let (
             currencies,
             instruments,
+            instrument_closes,
             synthetics,
             accounts,
             orders,
@@ -1338,6 +1344,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         ) = tokio::try_join!(
             self.load_currencies(),
             self.load_instruments(),
+            self.load_instrument_closes(),
             self.load_synthetics(),
             self.load_accounts(),
             self.load_orders(),
@@ -1350,6 +1357,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         Ok(CacheMap {
             currencies,
             instruments,
+            instrument_closes,
             synthetics,
             accounts,
             orders,
@@ -1410,6 +1418,17 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
 
     async fn load_instruments(&self) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>> {
         DatabaseQueries::load_instruments(
+            &self.database.con,
+            &self.database.trader_key,
+            self.encoding(),
+        )
+        .await
+    }
+
+    async fn load_instrument_closes(
+        &self,
+    ) -> anyhow::Result<AHashMap<InstrumentId, InstrumentClose>> {
+        DatabaseQueries::load_instrument_closes(
             &self.database.con,
             &self.database.trader_key,
             self.encoding(),
@@ -1619,6 +1638,15 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     fn add_instrument(&self, instrument: &InstrumentAny) -> anyhow::Result<()> {
         let key = format!("{INSTRUMENTS}{REDIS_DELIMITER}{}", instrument.id());
         let payload = DatabaseQueries::serialize_payload(self.encoding(), instrument)?;
+        self.database.insert(key, Some(vec![Bytes::from(payload)]))
+    }
+
+    fn add_instrument_close(&self, close: &InstrumentClose) -> anyhow::Result<()> {
+        let key = format!(
+            "{INSTRUMENT_CLOSES}{REDIS_DELIMITER}{}",
+            close.instrument_id
+        );
+        let payload = DatabaseQueries::serialize_payload(self.encoding(), close)?;
         self.database.insert(key, Some(vec![Bytes::from(payload)]))
     }
 

@@ -85,7 +85,7 @@ pub const LIGHTER_ERROR_CODE_TX_RANGE: std::ops::Range<u64> = 21_000..22_000;
 
 /// Public docs anchor for integrator approval.
 pub const LIGHTER_INTEGRATOR_APPROVAL_DOCS_URL: &str =
-    "https://nautilustrader.io/docs/nightly/integrations/lighter.html#integrator-attribution";
+    "https://nautilustrader.io/docs/nightly/integrations/lighter/#integrator-attribution";
 
 /// Maximum batch size for `sendTxBatch` on the WebSocket transport.
 pub const LIGHTER_MAX_BATCH_TX: usize = 15;

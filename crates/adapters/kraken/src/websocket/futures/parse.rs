@@ -139,7 +139,8 @@ pub fn parse_futures_ws_book_snapshot_deltas(
         }
         let price = Price::from_decimal_dp(level.price, price_precision)?;
         let size = Quantity::from_decimal_dp(level.qty, size_precision)?;
-        let order_id = price.raw as u64;
+        let order_id = price.raw() as u64;
+
         let order = BookOrder::new(OrderSide::Buy, price, size, order_id);
         deltas.push(OrderBookDelta::new(
             instrument_id,
@@ -159,7 +160,8 @@ pub fn parse_futures_ws_book_snapshot_deltas(
         }
         let price = Price::from_decimal_dp(level.price, price_precision)?;
         let size = Quantity::from_decimal_dp(level.qty, size_precision)?;
-        let order_id = price.raw as u64;
+        let order_id = price.raw() as u64;
+
         let order = BookOrder::new(OrderSide::Sell, price, size, order_id);
         deltas.push(OrderBookDelta::new(
             instrument_id,
@@ -188,7 +190,7 @@ pub fn parse_futures_ws_book_delta(
     let price = Price::from_decimal_dp(delta.price, price_precision)?;
     let size = Quantity::from_decimal_dp(delta.qty, size_precision)?;
 
-    let action = if size.raw == 0 {
+    let action = if size.is_zero() {
         BookAction::Delete
     } else {
         BookAction::Update
@@ -199,7 +201,8 @@ pub fn parse_futures_ws_book_delta(
         KrakenOrderSide::Sell => OrderSide::Sell,
     };
 
-    let order_id = price.raw as u64;
+    let order_id = price.raw() as u64;
+
     let order = BookOrder::new(side, price, size, order_id);
     let ts_event = millis_to_nanos(delta.timestamp);
 

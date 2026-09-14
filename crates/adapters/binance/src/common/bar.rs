@@ -117,8 +117,7 @@ impl BinanceBar {
     /// Returns the taker sell base asset volume.
     #[must_use]
     pub fn taker_sell_base_volume(&self) -> Decimal {
-        Decimal::from(self.volume.raw) / Decimal::new(10i64.pow(self.volume.precision.into()), 0)
-            - self.taker_buy_base_volume
+        self.volume.as_decimal() - self.taker_buy_base_volume
     }
 
     /// Returns the taker sell quote asset volume.
@@ -231,16 +230,20 @@ mod tests {
     use super::*;
 
     fn stub_binance_bar() -> BinanceBar {
+        binance_bar_with_volumes(Quantity::from("148976.11427815"), dec!(1756.87402397))
+    }
+
+    fn binance_bar_with_volumes(volume: Quantity, taker_buy_base_volume: Decimal) -> BinanceBar {
         BinanceBar::new(
             BarType::from("BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL"),
             Price::from("0.01634790"),
             Price::from("0.01640000"),
             Price::from("0.01575800"),
             Price::from("0.01577100"),
-            Quantity::from("148976.11427815"),
+            volume,
             dec!(2434.19055334),
             100,
-            dec!(1756.87402397),
+            taker_buy_base_volume,
             dec!(28.46694368),
             UnixNanos::from(1_650_000_000_000_000_000u64),
             UnixNanos::from(1_650_000_000_000_000_000u64),
@@ -252,6 +255,34 @@ mod tests {
         let bar = stub_binance_bar();
         assert_eq!(bar.type_name(), "BinanceBar");
         assert_eq!(BinanceBar::type_name_static(), "BinanceBar");
+    }
+
+    #[rstest]
+    fn test_taker_sell_base_volume() {
+        let bar = binance_bar_with_volumes(Quantity::from("10.00"), dec!(3));
+        assert_eq!(bar.taker_sell_base_volume(), dec!(7));
+    }
+
+    #[rstest]
+    fn test_taker_sell_base_volume_fractional() {
+        let bar = stub_binance_bar();
+        assert_eq!(bar.taker_sell_base_volume(), dec!(147219.24025418));
+    }
+
+    #[rstest]
+    #[case("10")]
+    #[case("10.0")]
+    #[case("10.00")]
+    #[case("10.00000")]
+    fn test_taker_sell_base_volume_matches_across_display_precisions(#[case] volume: &str) {
+        let bar = binance_bar_with_volumes(Quantity::from(volume), dec!(3));
+        assert_eq!(bar.taker_sell_base_volume(), dec!(7));
+    }
+
+    #[rstest]
+    fn test_taker_sell_base_volume_zero_when_total_equals_taker_buy() {
+        let bar = binance_bar_with_volumes(Quantity::from("10.00"), dec!(10));
+        assert_eq!(bar.taker_sell_base_volume(), dec!(0));
     }
 
     #[rstest]

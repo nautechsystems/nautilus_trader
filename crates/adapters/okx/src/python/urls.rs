@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python wrapper functions for OKX URL helpers.
+//! Python bindings for OKX URL resolution.
 
 use pyo3::prelude::*;
 

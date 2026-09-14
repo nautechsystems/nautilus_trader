@@ -15,7 +15,7 @@
 
 //! DeFi data input for the backtest engine.
 
-use nautilus_model::{data::Data, defi::DefiData, identifiers::ClientId};
+use nautilus_model::{data::DataBatch, defi::DefiData, identifiers::ClientId};
 
 use crate::engine::BacktestEngine;
 
@@ -52,11 +52,8 @@ impl BacktestEngine {
     where
         I: IntoIterator<Item = DefiData>,
     {
-        let data: Vec<Data> = data
-            .into_iter()
-            .map(|defi| Data::Defi(Box::new(defi)))
-            .collect();
-        self.add_data(data, client_id, false, sort)
+        let data: Vec<DefiData> = data.into_iter().collect();
+        self.add_data_batch(DataBatch::from(data), client_id, false, sort)
     }
 
     pub(crate) fn add_defi_data_client_if_not_exists(&mut self, client_id: Option<ClientId>) {

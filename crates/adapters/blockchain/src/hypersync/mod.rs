@@ -20,7 +20,7 @@
 //! of historical blockchain data across multiple networks.
 
 pub mod client;
-pub mod helpers;
+pub mod log;
 pub mod transform;
 
 /// Type alias for HyperSync log entries.

@@ -39,7 +39,7 @@ impl BinaryOption {
     /// Represents a generic binary option instrument.
     #[expect(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (instrument_id, raw_symbol, asset_class, currency, activation_ns, expiration_ns, price_precision, size_precision, price_increment, size_increment, ts_event, ts_init, outcome=None, description=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None, tick_scheme=None, info=None))]
+    #[pyo3(signature = (instrument_id, raw_symbol, asset_class, currency, activation_ns, expiration_ns, price_precision, size_precision, price_increment, size_increment, ts_event, ts_init, outcome=None, description=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None, tick_scheme=None, info=None, event_id=None))]
     fn py_new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -67,6 +67,7 @@ impl BinaryOption {
         taker_fee: Option<Decimal>,
         tick_scheme: Option<String>,
         info: Option<Py<PyDict>>,
+        event_id: Option<String>,
     ) -> PyResult<Self> {
         // Convert Python dict to Params
         let info_map = if let Some(info_dict) = info {
@@ -86,6 +87,7 @@ impl BinaryOption {
             .size_precision(size_precision)
             .price_increment(price_increment)
             .size_increment(size_increment)
+            .maybe_event_id(event_id.map(|value| Ustr::from(&value)))
             .maybe_outcome(outcome.map(|x| Ustr::from(&x)))
             .maybe_description(description.map(|x| Ustr::from(&x)))
             .maybe_max_quantity(max_quantity)
@@ -183,6 +185,12 @@ impl BinaryOption {
     #[pyo3(name = "size_increment")]
     fn py_size_increment(&self) -> Quantity {
         self.size_increment
+    }
+
+    #[getter]
+    #[pyo3(name = "event_id")]
+    fn py_event_id(&self) -> Option<&str> {
+        self.event_id.map(|value| value.as_str())
     }
 
     #[getter]
@@ -336,6 +344,8 @@ impl BinaryOption {
             dict.set_item("info", PyDict::new(py))?;
         }
 
+        dict.set_item("event_id", self.event_id.map(|value| value.to_string()))?;
+
         match &self.outcome {
             Some(value) => dict.set_item("outcome", value.to_string())?,
             None => dict.set_item("outcome", py.None())?,
@@ -391,13 +401,86 @@ mod tests {
     use crate::instruments::{BinaryOption, stubs::*};
 
     #[rstest]
-    fn test_dict_round_trip(binary_option: BinaryOption) {
+    #[case(None)]
+    #[case(Some("event-123"))]
+    fn test_python_constructor_event_id(
+        binary_option: BinaryOption,
+        #[case] event_id: Option<&str>,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("instrument_id", binary_option.id).unwrap();
+            kwargs
+                .set_item("raw_symbol", binary_option.raw_symbol)
+                .unwrap();
+            kwargs
+                .set_item("asset_class", binary_option.asset_class)
+                .unwrap();
+            kwargs.set_item("currency", binary_option.currency).unwrap();
+            kwargs
+                .set_item("activation_ns", binary_option.activation_ns.as_u64())
+                .unwrap();
+            kwargs
+                .set_item("expiration_ns", binary_option.expiration_ns.as_u64())
+                .unwrap();
+            kwargs
+                .set_item("price_precision", binary_option.price_precision)
+                .unwrap();
+            kwargs
+                .set_item("size_precision", binary_option.size_precision)
+                .unwrap();
+            kwargs
+                .set_item("price_increment", binary_option.price_increment)
+                .unwrap();
+            kwargs
+                .set_item("size_increment", binary_option.size_increment)
+                .unwrap();
+            kwargs.set_item("ts_event", 1_u64).unwrap();
+            kwargs.set_item("ts_init", 2_u64).unwrap();
+            if let Some(event_id) = event_id {
+                kwargs.set_item("event_id", event_id).unwrap();
+            }
+
+            let instance = py
+                .get_type::<BinaryOption>()
+                .call((), Some(&kwargs))
+                .unwrap();
+            assert_eq!(
+                instance
+                    .getattr("event_id")
+                    .unwrap()
+                    .extract::<Option<String>>()
+                    .unwrap()
+                    .as_deref(),
+                event_id
+            );
+            let constructed = instance.extract::<BinaryOption>().unwrap();
+            assert_eq!(constructed.event_id.map(|id| id.as_str()), event_id);
+            assert_eq!(constructed.ts_event.as_u64(), 1);
+            assert_eq!(constructed.ts_init.as_u64(), 2);
+        });
+    }
+
+    #[rstest]
+    fn test_dict_round_trip(mut binary_option: BinaryOption) {
+        binary_option.event_id = Some("event-123".into());
+        let mut info = nautilus_core::Params::new();
+        info.insert(
+            "gamma_market".to_string(),
+            "0.1234567890123456789012345678".into(),
+        );
+        binary_option.info = Some(info);
         Python::initialize();
         Python::attach(|py| {
             let values = binary_option.py_to_dict(py).unwrap();
             let values: Py<PyDict> = values.extract(py).unwrap();
             let new_binary_option = BinaryOption::py_from_dict(py, values).unwrap();
-            assert_eq!(binary_option, new_binary_option);
+            assert_eq!(new_binary_option.event_id, Some("event-123".into()));
+            assert_eq!(
+                serde_json::to_value(&binary_option).unwrap(),
+                serde_json::to_value(&new_binary_option).unwrap(),
+            );
         });
     }
 }

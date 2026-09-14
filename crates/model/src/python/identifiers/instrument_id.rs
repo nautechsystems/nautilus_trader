@@ -138,10 +138,10 @@ impl InstrumentId {
     }
 
     /// Returns the parent-symbol components `(root, class)` if this id has
-    /// a recognised parent shape `<root>.<class>` in its symbol component.
+    /// a recognized parent shape `<root>.<class>` in its symbol component.
     ///
     /// Returns `None` when the symbol has zero or more than one `.`, or when
-    /// the suffix is not a recognised `InstrumentClass` parent suffix
+    /// the suffix is not a recognized `InstrumentClass` parent suffix
     /// (see `InstrumentClass.try_from_parent_suffix`).
     ///
     /// Used to gate parent-style subscription fan-out: a `None` return means

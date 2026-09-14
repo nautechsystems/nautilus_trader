@@ -102,7 +102,7 @@ pub enum BetfairOrderStatus {
     Expired,
 }
 
-/// Controls which data fields are returned with market catalogues.
+/// Controls which data fields are returned with market catalogs.
 #[derive(
     Clone,
     Copy,

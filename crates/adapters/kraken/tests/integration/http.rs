@@ -1,0 +1,4575 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
+//! Integration tests for the Kraken HTTP client using a mock Axum server.
+
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
+
+use axum::{
+    Router,
+    body::Body,
+    extract::{Query, Request},
+    http::{HeaderMap, StatusCode},
+    response::Response,
+};
+use jiff::Timestamp;
+use nautilus_common::{
+    cache::INSTRUMENT_NOT_FOUND,
+    clients::DataClient,
+    live::runner::replace_data_event_sender,
+    messages::{
+        DataEvent, DataResponse,
+        data::{InstrumentResponse, RequestInstrument},
+    },
+    testing::wait_until_async,
+};
+use nautilus_core::{UUID4, UnixNanos};
+use nautilus_kraken::{
+    common::{
+        consts::KRAKEN_CLIENT_ID,
+        enums::{
+            KrakenApiResult, KrakenEnvironment, KrakenOrderSide, KrakenOrderStatus,
+            KrakenOrderType, KrakenProductType, KrakenSendStatus,
+        },
+    },
+    config::KrakenDataClientConfig,
+    data::{KrakenFuturesDataClient, KrakenSpotDataClient},
+    http::{
+        KrakenFuturesHttpClient, KrakenFuturesRawHttpClient, KrakenHttpError,
+        KrakenSpotAddOrderParamsBuilder, KrakenSpotCancelOrderParamsBuilder, KrakenSpotHttpClient,
+        KrakenSpotRawHttpClient,
+    },
+};
+use nautilus_model::{
+    data::BarType,
+    enums::{
+        AccountType, MarketStatusAction, OrderSide as ModelOrderSide, OrderStatus,
+        OrderType as ModelOrderType, TimeInForce, TriggerType,
+    },
+    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
+    instruments::{CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
+    types::{Currency, Price, Quantity, fixed::FIXED_PRECISION},
+};
+use nautilus_network::http::HttpClient;
+use nautilus_testkit::events::drain_data_events;
+use rstest::rstest;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
+use serde_json::Value;
+
+#[derive(Clone)]
+struct TestServerState {
+    open_orders_count: Arc<AtomicUsize>,
+    rate_limit_after: Arc<AtomicUsize>,
+    last_trades_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
+    last_ohlc_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
+    last_executions_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
+    add_order_calls: Arc<AtomicUsize>,
+    add_order_batch_calls: Arc<AtomicUsize>,
+    /// When true, `/0/private/TradeBalance` returns an API error instead of the normal fixture.
+    trade_balance_error: Arc<AtomicBool>,
+    /// When set, `/0/private/TradeBalance` returns this JSON string instead of the fixture file.
+    trade_balance_json: Arc<tokio::sync::Mutex<Option<String>>>,
+    /// Captures the last raw body posted to `/0/private/TradeBalance` for assertion.
+    last_trade_balance_body: Arc<tokio::sync::Mutex<Option<String>>>,
+    /// When set, `/0/private/BalanceEx` returns this JSON string instead of the fixture file.
+    balance_ex_json: Arc<tokio::sync::Mutex<Option<String>>>,
+    /// When true, `/0/private/OpenPositions` returns an empty positions map.
+    open_positions_empty: Arc<AtomicBool>,
+    /// When set, `/0/private/OpenPositions` returns this JSON string instead of the fixture file.
+    open_positions_json: Arc<tokio::sync::Mutex<Option<String>>>,
+    trade_volume_request_count: Arc<AtomicUsize>,
+    trade_volume_failures_remaining: Arc<AtomicUsize>,
+    trade_volume_bodies: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    trade_volume_omitted_fee: Arc<tokio::sync::Mutex<Option<String>>>,
+    trade_volume_omitted_maker_fee: Arc<tokio::sync::Mutex<Option<String>>>,
+    spot_asset_pairs_empty: Arc<AtomicBool>,
+    spot_asset_pairs_tokenized_duplicate: Arc<AtomicBool>,
+    spot_asset_pairs_request_count: Arc<AtomicUsize>,
+    futures_instruments_empty: Arc<AtomicBool>,
+    futures_instruments_over_precision: Arc<AtomicBool>,
+    futures_instruments_request_count: Arc<AtomicUsize>,
+}
+
+impl Default for TestServerState {
+    fn default() -> Self {
+        Self {
+            open_orders_count: Arc::new(AtomicUsize::new(0)),
+            rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)), // No rate limit
+            last_trades_query: Arc::new(tokio::sync::Mutex::new(None)),
+            last_ohlc_query: Arc::new(tokio::sync::Mutex::new(None)),
+            last_executions_query: Arc::new(tokio::sync::Mutex::new(None)),
+            add_order_calls: Arc::new(AtomicUsize::new(0)),
+            add_order_batch_calls: Arc::new(AtomicUsize::new(0)),
+            trade_balance_error: Arc::new(AtomicBool::new(false)),
+            trade_balance_json: Arc::new(tokio::sync::Mutex::new(None)),
+            last_trade_balance_body: Arc::new(tokio::sync::Mutex::new(None)),
+            balance_ex_json: Arc::new(tokio::sync::Mutex::new(None)),
+            open_positions_empty: Arc::new(AtomicBool::new(false)),
+            open_positions_json: Arc::new(tokio::sync::Mutex::new(None)),
+            trade_volume_request_count: Arc::new(AtomicUsize::new(0)),
+            trade_volume_failures_remaining: Arc::new(AtomicUsize::new(0)),
+            trade_volume_bodies: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            trade_volume_omitted_fee: Arc::new(tokio::sync::Mutex::new(None)),
+            trade_volume_omitted_maker_fee: Arc::new(tokio::sync::Mutex::new(None)),
+            spot_asset_pairs_empty: Arc::new(AtomicBool::new(false)),
+            spot_asset_pairs_tokenized_duplicate: Arc::new(AtomicBool::new(false)),
+            spot_asset_pairs_request_count: Arc::new(AtomicUsize::new(0)),
+            futures_instruments_empty: Arc::new(AtomicBool::new(false)),
+            futures_instruments_over_precision: Arc::new(AtomicBool::new(false)),
+            futures_instruments_request_count: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+}
+
+/// Wait for the test server to be ready by polling a health endpoint.
+async fn wait_for_server(addr: SocketAddr, path: &str) {
+    let health_url = format!("http://{addr}{path}");
+    let http_client = HttpClient::builder().build().unwrap();
+    wait_until_async(
+        || {
+            let url = health_url.clone();
+            let client = http_client.clone();
+            async move { client.get(url, None, None, Some(1), None).await.is_ok() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
+#[allow(dead_code)]
+fn create_test_futures_instrument() -> InstrumentAny {
+    let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
+    let raw_symbol = Symbol::new("PF_XBTUSD");
+    let btc = Currency::BTC();
+    let usd = Currency::USD();
+
+    // price_precision must match price_increment.precision (0 for "1")
+    // size_precision must match size_increment.precision (4 for "0.0001")
+    InstrumentAny::CryptoPerpetual(
+        CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(raw_symbol)
+            .base_currency(btc)
+            .quote_currency(usd)
+            .settlement_currency(usd)
+            .is_inverse(false)
+            // price_precision (matches "1" increment)
+            .price_precision(0)
+            // size_precision (matches "0.0001" increment)
+            .size_precision(4)
+            .price_increment(Price::from("1"))
+            .size_increment(Quantity::from("0.0001"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap(),
+    )
+}
+
+fn manifest_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+fn load_test_data(filename: &str) -> Value {
+    let path = manifest_path().join("test_data").join(filename);
+    let content = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("Failed to load test data from {}: {e}", path.display()));
+    serde_json::from_str(&content)
+        .unwrap_or_else(|e| panic!("Failed to parse test data from {}: {e}", path.display()))
+}
+
+fn has_auth_headers(headers: &HeaderMap) -> bool {
+    headers.contains_key("API-Key") && headers.contains_key("API-Sign")
+}
+
+async fn mock_server_time() -> Response {
+    let data = load_test_data("http_server_time.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_system_status() -> Response {
+    let data = load_test_data("http_system_status.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_asset_pairs(aclass_base: Option<&str>, state: Arc<TestServerState>) -> Response {
+    state
+        .spot_asset_pairs_request_count
+        .fetch_add(1, Ordering::Relaxed);
+
+    if state.spot_asset_pairs_empty.load(Ordering::Relaxed) {
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"error":[],"result":{}}"#))
+            .unwrap();
+    }
+
+    let filename = match aclass_base {
+        Some("tokenized_asset") => "http_asset_pairs_tokenized.json",
+        _ => "http_asset_pairs.json",
+    };
+    let mut data = load_test_data(filename);
+
+    if aclass_base == Some("tokenized_asset")
+        && state
+            .spot_asset_pairs_tokenized_duplicate
+            .load(Ordering::Relaxed)
+    {
+        let duplicate = data["result"]["AAPLxUSD"].clone();
+        data["result"]["AAPLSPVUSD"] = duplicate;
+    }
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_ticker() -> Response {
+    let data = load_test_data("http_ticker.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_ohlc(
+    Query(params): Query<HashMap<String, String>>,
+    state: Arc<TestServerState>,
+) -> Response {
+    *state.last_ohlc_query.lock().await = Some(params);
+    let data = load_test_data("http_ohlc.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_order_book() -> Response {
+    let data = load_test_data("http_order_book.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_trades(
+    Query(params): Query<HashMap<String, String>>,
+    state: Arc<TestServerState>,
+) -> Response {
+    *state.last_trades_query.lock().await = Some(params);
+    let data = load_test_data("http_trades.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_websockets_token(headers: HeaderMap) -> Response {
+    if !has_auth_headers(&headers) {
+        let error_response = r#"{"error":["EAPI:Invalid key"]}"#;
+        return Response::builder()
+            .status(StatusCode::UNAUTHORIZED)
+            .header("content-type", "application/json")
+            .body(Body::from(error_response))
+            .unwrap();
+    }
+
+    let response = r#"{
+        "error": [],
+        "result": {
+            "token": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "expires": 900
+        }
+    }"#;
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(response))
+        .unwrap()
+}
+
+async fn mock_rate_limit_error() -> Response {
+    let error_response = r#"{"error":["EAPI:Rate limit exceeded"]}"#;
+    Response::builder()
+        .status(StatusCode::TOO_MANY_REQUESTS)
+        .header("content-type", "application/json")
+        .body(Body::from(error_response))
+        .unwrap()
+}
+
+async fn mock_futures_instruments(state: Arc<TestServerState>) -> Response {
+    state
+        .futures_instruments_request_count
+        .fetch_add(1, Ordering::Relaxed);
+
+    if state.futures_instruments_empty.load(Ordering::Relaxed) {
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"result":"success","instruments":[]}"#))
+            .unwrap();
+    }
+
+    let mut data = load_test_data("http_futures_instruments.json");
+
+    if state
+        .futures_instruments_over_precision
+        .load(Ordering::Relaxed)
+    {
+        let instrument = data["instruments"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|instrument| instrument["symbol"] == "PF_PEPEUSD")
+            .unwrap();
+        let tick_size = format!("0.{}1", "0".repeat(usize::from(FIXED_PRECISION)));
+        instrument["tickSize"] = serde_json::from_str(&tick_size).unwrap();
+    } else if !cfg!(feature = "high-precision") {
+        data["instruments"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|instrument| instrument["symbol"] != "PF_PEPEUSD");
+    }
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_futures_tickers() -> Response {
+    let data = load_test_data("http_futures_tickers.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_futures_candles(req: Request) -> Response {
+    let path = req.uri().path();
+    let parts: Vec<&str> = path.split('/').collect();
+
+    if parts.len() >= 6 {
+        let tick_type = parts[4];
+        let filename = match tick_type {
+            "trade" => "http_futures_candles_trade.json",
+            "mark" => "http_futures_candles_mark.json",
+            "spot" => "http_futures_candles_spot.json",
+            _ => "http_futures_candles_trade.json",
+        };
+
+        let data = load_test_data(filename);
+        Response::builder()
+            .status(StatusCode::OK)
+            .header("content-type", "application/json")
+            .body(Body::from(data.to_string()))
+            .unwrap()
+    } else {
+        Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::from("Invalid candles path"))
+            .unwrap()
+    }
+}
+
+async fn mock_open_orders(state: Arc<TestServerState>) -> Response {
+    let count = state.open_orders_count.fetch_add(1, Ordering::SeqCst) + 1;
+    let limit = state.rate_limit_after.load(Ordering::SeqCst);
+
+    if count > limit {
+        return mock_rate_limit_error().await;
+    }
+
+    let data = load_test_data("http_open_orders.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_closed_orders() -> Response {
+    let data = load_test_data("http_closed_orders.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_trades_history() -> Response {
+    let data = load_test_data("http_trades_history.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_futures_open_orders() -> Response {
+    let data = load_test_data("http_futures_open_orders.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_futures_order_events() -> Response {
+    let data = load_test_data("http_futures_order_events.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_futures_fills() -> Response {
+    let data = load_test_data("http_futures_fills.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_futures_open_positions() -> Response {
+    let data = load_test_data("http_futures_open_positions.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+// Order Execution Mock Handlers
+
+async fn mock_add_order_spot() -> Response {
+    let data = load_test_data("http_add_order_spot.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_cancel_order_spot() -> Response {
+    let data = load_test_data("http_cancel_order_spot.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_send_order_futures() -> Response {
+    let data = load_test_data("http_send_order_futures.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_cancel_order_futures() -> Response {
+    let data = load_test_data("http_cancel_order_futures.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_futures_public_executions() -> Response {
+    let data = load_test_data("http_futures_public_executions.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_futures_orderbook() -> Response {
+    let data = load_test_data("http_futures_orderbook.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_futures_historical_funding_rates() -> Response {
+    let data = load_test_data("http_futures_historical_funding_rates.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_handler(req: Request, state: Arc<TestServerState>) -> Response {
+    let path = req.uri().path();
+
+    if path.starts_with("/derivatives/api/v3/") || path.starts_with("/derivatives/api/v4/") {
+        // Strip query string for matching (some endpoints embed params in the path)
+        let match_path = path.split('?').next().unwrap_or(path);
+        return match match_path {
+            "/derivatives/api/v3/instruments" => mock_futures_instruments(state.clone()).await,
+            "/derivatives/api/v3/tickers" => mock_futures_tickers().await,
+            "/derivatives/api/v3/fills" => mock_futures_fills().await,
+            "/derivatives/api/v3/openpositions" => mock_futures_open_positions().await,
+            "/derivatives/api/v3/openorders" => mock_futures_open_orders().await,
+            "/derivatives/api/v3/sendorder" => mock_send_order_futures().await,
+            "/derivatives/api/v3/cancelorder" => mock_cancel_order_futures().await,
+            "/derivatives/api/v3/editorder" => mock_cancel_order_futures().await,
+            "/derivatives/api/v3/batchorder" => mock_batch_order_futures().await,
+            "/derivatives/api/v3/cancelallorders" => mock_cancel_order_futures().await,
+            "/derivatives/api/v3/orderbook" => mock_futures_orderbook().await,
+            "/derivatives/api/v4/historicalfundingrates" => {
+                mock_futures_historical_funding_rates().await
+            }
+            _ => Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(Body::from("Futures endpoint not found"))
+                .unwrap(),
+        };
+    }
+
+    if path.starts_with("/api/history/v2/") || path.starts_with("/api/history/v3/") {
+        return match path {
+            p if p.starts_with("/api/history/v2/orders") => mock_futures_order_events().await,
+            p if p.contains("/market/") && p.contains("/executions") => {
+                let params = Query::<HashMap<String, String>>::try_from_uri(req.uri())
+                    .map(|q| q.0)
+                    .unwrap_or_default();
+                *state.last_executions_query.lock().await = Some(params);
+                mock_futures_public_executions().await
+            }
+            _ => Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(Body::from("Futures history endpoint not found"))
+                .unwrap(),
+        };
+    }
+
+    if path.starts_with("/api/charts/v1/") {
+        return mock_futures_candles(req).await;
+    }
+
+    match path {
+        "/0/public/Time" => mock_server_time().await,
+        "/0/public/SystemStatus" => mock_system_status().await,
+        "/0/public/AssetPairs" => {
+            let query =
+                Query::<HashMap<String, String>>::try_from_uri(req.uri()).unwrap_or_default();
+            let aclass_base = query.get("aclass_base").map(|s| s.as_str());
+            mock_asset_pairs(aclass_base, state.clone()).await
+        }
+        "/0/public/Ticker" => mock_ticker().await,
+        "/0/public/OHLC" => {
+            let query =
+                Query::<HashMap<String, String>>::try_from_uri(req.uri()).unwrap_or_default();
+            mock_ohlc(query, state.clone()).await
+        }
+        "/0/public/Depth" => mock_order_book().await,
+        "/0/public/Trades" => {
+            let query =
+                Query::<HashMap<String, String>>::try_from_uri(req.uri()).unwrap_or_default();
+            mock_trades(query, state.clone()).await
+        }
+        "/0/private/GetWebSocketsToken" => mock_websockets_token(req.headers().clone()).await,
+        "/0/private/Balance" => mock_spot_balance().await,
+        "/0/private/BalanceEx" => {
+            if let Some(json) = state.balance_ex_json.lock().await.clone() {
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header("content-type", "application/json")
+                    .body(Body::from(json))
+                    .unwrap()
+            } else {
+                mock_spot_balance_ex().await
+            }
+        }
+        "/0/private/TradeBalance" => {
+            let body_bytes = axum::body::to_bytes(req.into_body(), usize::MAX)
+                .await
+                .unwrap_or_default();
+            let body_str = String::from_utf8_lossy(&body_bytes).into_owned();
+            *state.last_trade_balance_body.lock().await = Some(body_str);
+
+            if state.trade_balance_error.load(Ordering::Relaxed) {
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"error":["EAPI:Invalid key"],"result":{}}"#))
+                    .unwrap()
+            } else if let Some(json) = state.trade_balance_json.lock().await.clone() {
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header("content-type", "application/json")
+                    .body(Body::from(json))
+                    .unwrap()
+            } else {
+                mock_spot_trade_balance().await
+            }
+        }
+        "/0/private/TradeVolume" => mock_spot_trade_volume(req, state.clone()).await,
+        "/0/private/OpenPositions" => {
+            if state.open_positions_empty.load(Ordering::Relaxed) {
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"error":[],"result":{}}"#))
+                    .unwrap()
+            } else if let Some(json) = state.open_positions_json.lock().await.clone() {
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header("content-type", "application/json")
+                    .body(Body::from(json))
+                    .unwrap()
+            } else {
+                mock_spot_open_positions().await
+            }
+        }
+        "/0/private/OpenOrders" => mock_open_orders(state.clone()).await,
+        "/0/private/ClosedOrders" => mock_closed_orders().await,
+        "/0/private/TradesHistory" => mock_trades_history().await,
+        "/0/private/AddOrder" => {
+            state.add_order_calls.fetch_add(1, Ordering::Relaxed);
+            mock_add_order_spot().await
+        }
+        "/0/private/AddOrderBatch" => {
+            state.add_order_batch_calls.fetch_add(1, Ordering::Relaxed);
+            mock_add_order_batch_spot().await
+        }
+        "/0/private/CancelOrder" => mock_cancel_order_spot().await,
+        "/0/private/CancelAll" => mock_cancel_order_spot().await,
+        "/0/private/EditOrder" => mock_add_order_spot().await,
+        "/0/test/rate_limit" => mock_rate_limit_error().await,
+        _ => Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::from("Not found"))
+            .unwrap(),
+    }
+}
+
+async fn mock_batch_order_futures() -> Response {
+    let response = r#"{
+        "result": "success",
+        "serverTime": "2024-01-01T00:00:00.000Z",
+        "batchStatus": [
+            {"status": "edited", "order_id": "batch-edit-1"},
+            {"status": "insufficientAvailableFunds", "order_id": "batch-edit-2"}
+        ]
+    }"#;
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(response))
+        .unwrap()
+}
+
+async fn mock_add_order_batch_spot() -> Response {
+    let response = r#"{
+        "error": [],
+        "result": {
+            "orders": [
+                {"txid": "batch-spot-1"},
+                {"error": "EOrder:Post only order"}
+            ]
+        }
+    }"#;
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(response))
+        .unwrap()
+}
+
+async fn mock_spot_balance() -> Response {
+    let data = std::fs::read_to_string("test_data/http_spot_balance.json").unwrap_or_else(|_| {
+        r#"{"error":[],"result":{"ZUSD":"10000.00","XXBT":"0.5","ETH":"2.0"}}"#.to_string()
+    });
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data))
+        .unwrap()
+}
+
+async fn mock_spot_balance_ex() -> Response {
+    let data = std::fs::read_to_string("test_data/http_spot_balance_ex.json")
+        .expect("Failed to load http_spot_balance_ex.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data))
+        .unwrap()
+}
+
+async fn mock_spot_trade_balance() -> Response {
+    let data = std::fs::read_to_string("test_data/http_spot_trade_balance.json")
+        .expect("Failed to load http_spot_trade_balance.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data))
+        .unwrap()
+}
+
+async fn mock_spot_trade_volume(req: Request, state: Arc<TestServerState>) -> Response {
+    state
+        .trade_volume_request_count
+        .fetch_add(1, Ordering::Relaxed);
+
+    if !has_auth_headers(req.headers()) {
+        return Response::builder()
+            .status(StatusCode::UNAUTHORIZED)
+            .body(Body::from("Missing authentication headers"))
+            .unwrap();
+    }
+
+    let body = axum::body::to_bytes(req.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    state.trade_volume_bodies.lock().await.push(body.clone());
+
+    if state
+        .trade_volume_failures_remaining
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
+            remaining.checked_sub(1)
+        })
+        .is_ok()
+    {
+        return Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::from("Temporary server error"))
+            .unwrap();
+    }
+
+    let result = if let Some(pairs) = body["pair"].as_array() {
+        let mut fees = serde_json::Map::new();
+        let mut fees_maker = serde_json::Map::new();
+        let omitted_fee = state.trade_volume_omitted_fee.lock().await.clone();
+        let omitted_maker_fee = state.trade_volume_omitted_maker_fee.lock().await.clone();
+
+        for pair in pairs {
+            let asset = pair["asset"].as_str().unwrap();
+            let fee_key = match asset {
+                "AAPL/USD" => "AAPLZUSD.EQ",
+                _ => asset,
+            };
+
+            if omitted_fee.as_deref() == Some(fee_key) {
+                continue;
+            }
+            fees.insert(fee_key.to_string(), serde_json::json!({"fee": "0.1900"}));
+            if omitted_maker_fee.as_deref() != Some(fee_key) {
+                fees_maker.insert(fee_key.to_string(), serde_json::json!({"fee": "0.0300"}));
+            }
+        }
+        serde_json::json!({
+            "error": [],
+            "result": {"fees": fees, "fees_maker": fees_maker}
+        })
+    } else {
+        serde_json::json!({
+            "error": [],
+            "result": {
+                "fees": {"XBTUSDT": {"fee": "0.2900"}},
+                "fees_maker": {"XBTUSDT": {"fee": "0.1700"}}
+            }
+        })
+    };
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(result.to_string()))
+        .unwrap()
+}
+
+async fn mock_spot_open_positions() -> Response {
+    let data = std::fs::read_to_string("test_data/http_spot_open_positions.json")
+        .expect("Failed to load http_spot_open_positions.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data))
+        .unwrap()
+}
+
+fn create_router(state: Arc<TestServerState>) -> Router {
+    Router::new().fallback(move |req| {
+        let state = state.clone();
+        async move { mock_handler(req, state).await }
+    })
+}
+
+async fn start_test_server() -> (SocketAddr, Arc<TestServerState>) {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    (addr, state)
+}
+
+fn instrument_response(events: &[DataEvent]) -> Option<&InstrumentResponse> {
+    events.iter().find_map(|event| match event {
+        DataEvent::Response(DataResponse::Instrument(response)) => Some(response.as_ref()),
+        _ => None,
+    })
+}
+
+fn create_data_config(addr: SocketAddr, product_type: KrakenProductType) -> KrakenDataClientConfig {
+    KrakenDataClientConfig {
+        product_type,
+        environment: KrakenEnvironment::Live,
+        base_url: Some(format!("http://{addr}")),
+        ws_public_url: Some(format!("ws://{addr}/ws-public")),
+        ws_private_url: Some(format!("ws://{addr}/ws-private")),
+        ws_l3_url: Some(format!("ws://{addr}/ws-l3")),
+        timeout_secs: 10,
+        max_requests_per_second: Some(5),
+        ..KrakenDataClientConfig::default()
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_data_client_request_instrument_refetches_when_cached() {
+    let (addr, state) = start_test_server().await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+    let client = KrakenSpotDataClient::new(
+        *KRAKEN_CLIENT_ID,
+        create_data_config(addr, KrakenProductType::Spot),
+    )
+    .expect("Kraken spot data client");
+    let instrument_id = InstrumentId::from("BTC/USDT.KRAKEN");
+
+    let first_request_id = UUID4::new();
+    client
+        .request_instrument(RequestInstrument::new(
+            instrument_id,
+            None,
+            None,
+            Some(*KRAKEN_CLIENT_ID),
+            first_request_id,
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("first request_instrument");
+
+    wait_until_async(
+        || async {
+            state.spot_asset_pairs_request_count.load(Ordering::Relaxed) >= 1 && !rx.is_empty()
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+    let events = drain_data_events(&mut rx, Duration::from_millis(200)).await;
+    let response = instrument_response(&events).expect("instrument response");
+    assert_eq!(response.correlation_id, first_request_id);
+    assert_eq!(response.client_id, *KRAKEN_CLIENT_ID);
+    assert_eq!(response.instrument_id, instrument_id);
+
+    let count_after_first = state.spot_asset_pairs_request_count.load(Ordering::Relaxed);
+    state.spot_asset_pairs_empty.store(true, Ordering::Relaxed);
+
+    client
+        .request_instrument(RequestInstrument::new(
+            instrument_id,
+            None,
+            None,
+            Some(*KRAKEN_CLIENT_ID),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("second request_instrument");
+
+    wait_until_async(
+        || async {
+            state.spot_asset_pairs_request_count.load(Ordering::Relaxed) > count_after_first
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let events = drain_data_events(&mut rx, Duration::from_millis(300)).await;
+    assert!(
+        instrument_response(&events).is_none(),
+        "request_instrument must not emit a stale cached response when Kraken Spot returns no instruments; events were: {events:?}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_data_client_publishes_account_fee_rates() {
+    let (addr, state) = start_test_server().await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+    let mut config = create_data_config(addr, KrakenProductType::Spot);
+    config.api_key = Some("test_api_key".into());
+    config.api_secret = Some("dGVzdF9hcGlfc2VjcmV0X2Jhc2U2NA==".into());
+    let client =
+        KrakenSpotDataClient::new(*KRAKEN_CLIENT_ID, config).expect("Kraken spot data client");
+    let instrument_id = InstrumentId::from("BTC/USDT.KRAKEN");
+
+    client
+        .request_instrument(RequestInstrument::new(
+            instrument_id,
+            None,
+            None,
+            Some(*KRAKEN_CLIENT_ID),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("request_instrument");
+
+    wait_until_async(
+        || async {
+            state.trade_volume_request_count.load(Ordering::Relaxed) == 2 && !rx.is_empty()
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+    let events = drain_data_events(&mut rx, Duration::from_millis(200)).await;
+    let response = instrument_response(&events).expect("instrument response");
+
+    assert_eq!(response.instrument_id, instrument_id);
+    assert_eq!(response.data.maker_fee(), dec!(0.0017));
+    assert_eq!(response.data.taker_fee(), dec!(0.0029));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_data_client_request_instrument_refetches_when_cached() {
+    let (addr, state) = start_test_server().await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+    let client = KrakenFuturesDataClient::new(
+        *KRAKEN_CLIENT_ID,
+        create_data_config(addr, KrakenProductType::Futures),
+    )
+    .expect("Kraken futures data client");
+    let instrument_id = InstrumentId::from("PF_ETHUSD.KRAKEN");
+
+    let first_request_id = UUID4::new();
+    client
+        .request_instrument(RequestInstrument::new(
+            instrument_id,
+            None,
+            None,
+            Some(*KRAKEN_CLIENT_ID),
+            first_request_id,
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("first request_instrument");
+
+    wait_until_async(
+        || async {
+            state
+                .futures_instruments_request_count
+                .load(Ordering::Relaxed)
+                >= 1
+                && !rx.is_empty()
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+    let events = drain_data_events(&mut rx, Duration::from_millis(200)).await;
+    let response = instrument_response(&events).expect("instrument response");
+    assert_eq!(response.correlation_id, first_request_id);
+    assert_eq!(response.client_id, *KRAKEN_CLIENT_ID);
+    assert_eq!(response.instrument_id, instrument_id);
+
+    state
+        .futures_instruments_empty
+        .store(true, Ordering::Relaxed);
+
+    client
+        .request_instrument(RequestInstrument::new(
+            instrument_id,
+            None,
+            None,
+            Some(*KRAKEN_CLIENT_ID),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("second request_instrument");
+
+    wait_until_async(
+        || async {
+            state
+                .futures_instruments_request_count
+                .load(Ordering::Relaxed)
+                >= 2
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let events = drain_data_events(&mut rx, Duration::from_millis(300)).await;
+    assert!(
+        instrument_response(&events).is_none(),
+        "request_instrument must not emit a stale cached response when Kraken Futures returns no instruments; events were: {events:?}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_data_client_does_not_cache_partial_catalog() {
+    let (addr, state) = start_test_server().await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+    let client = KrakenFuturesDataClient::new(
+        *KRAKEN_CLIENT_ID,
+        create_data_config(addr, KrakenProductType::Futures),
+    )
+    .expect("Kraken futures data client");
+    let instrument_id = InstrumentId::from("PF_ETHUSD.KRAKEN");
+
+    client
+        .request_instrument(RequestInstrument::new(
+            instrument_id,
+            None,
+            None,
+            Some(*KRAKEN_CLIENT_ID),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("initial request_instrument");
+
+    wait_until_async(
+        || async {
+            state
+                .futures_instruments_request_count
+                .load(Ordering::Relaxed)
+                >= 1
+                && !rx.is_empty()
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+    let events = drain_data_events(&mut rx, Duration::from_millis(200)).await;
+    assert!(instrument_response(&events).is_some());
+    let cached_count = client.instruments().len();
+    let cached_ts_init = client.get_instrument(&instrument_id).unwrap().ts_init();
+
+    state
+        .futures_instruments_over_precision
+        .store(true, Ordering::Relaxed);
+    client
+        .request_instrument(RequestInstrument::new(
+            instrument_id,
+            None,
+            None,
+            Some(*KRAKEN_CLIENT_ID),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("mixed-catalog request_instrument");
+
+    wait_until_async(
+        || async {
+            state
+                .futures_instruments_request_count
+                .load(Ordering::Relaxed)
+                >= 2
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let events = drain_data_events(&mut rx, Duration::from_millis(300)).await;
+    let cached = client.instruments();
+    assert!(
+        instrument_response(&events).is_none(),
+        "failed catalog must not emit an instrument response; events were: {events:?}",
+    );
+    assert_eq!(cached.len(), cached_count);
+    assert_eq!(
+        client.get_instrument(&instrument_id).unwrap().ts_init(),
+        cached_ts_init
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_raw_get_server_time() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotRawHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.get_server_time().await;
+    assert!(result.is_ok(), "Failed to get server time: {result:?}");
+
+    let server_time = result.unwrap();
+    assert!(server_time.unixtime > 0);
+    assert!(!server_time.rfc1123.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_raw_get_system_status() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotRawHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.get_system_status().await;
+    assert!(result.is_ok(), "Failed to get system status: {result:?}");
+
+    let status = result.unwrap();
+    assert!(!status.timestamp.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_raw_get_asset_pairs() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotRawHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.get_asset_pairs(None, None).await;
+    assert!(result.is_ok(), "Failed to get asset pairs: {result:?}");
+
+    let pairs = result.unwrap();
+    assert!(!pairs.is_empty());
+    assert!(pairs.contains_key("XBTUSDT"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_raw_get_asset_pairs_tokenized() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotRawHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.get_asset_pairs(None, Some("tokenized_asset")).await;
+    assert!(
+        result.is_ok(),
+        "Failed to get tokenized asset pairs: {result:?}"
+    );
+
+    let pairs = result.unwrap();
+    assert!(!pairs.is_empty());
+    assert!(pairs.contains_key("AAPLxUSD"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_domain_request_instruments() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.request_instruments(None).await;
+    assert!(result.is_ok(), "Failed to request instruments: {result:?}");
+
+    let instruments = result.unwrap();
+    let currency_pair = instruments
+        .iter()
+        .find(|instrument| instrument.raw_symbol().as_str() == "XBTUSDT")
+        .expect("XBTUSDT instrument");
+    let tokenized = instruments
+        .iter()
+        .find(|instrument| instrument.raw_symbol().as_str() == "AAPLxUSD")
+        .expect("AAPLxUSD instrument");
+
+    assert!(matches!(currency_pair, InstrumentAny::CurrencyPair(_)));
+    assert_eq!(currency_pair.maker_fee(), dec!(0.0025));
+    assert_eq!(currency_pair.taker_fee(), dec!(0.004));
+    assert!(matches!(tokenized, InstrumentAny::TokenizedAsset(_)));
+    assert_eq!(tokenized.maker_fee(), dec!(-0.0002));
+    assert_eq!(tokenized.taker_fee(), dec!(0.001));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_domain_request_instruments_uses_account_fee_rates_and_retries() {
+    let (addr, state) = start_test_server().await;
+    state
+        .trade_volume_failures_remaining
+        .store(1, Ordering::Relaxed);
+    state
+        .spot_asset_pairs_tokenized_duplicate
+        .store(true, Ordering::Relaxed);
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "dGVzdF9hcGlfc2VjcmV0X2Jhc2U2NA==".to_string(),
+        KrakenEnvironment::Live,
+        Some(format!("http://{addr}")),
+        10,
+        Some(1),
+        Some(1),
+        Some(1),
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instruments = client.request_instruments(None).await.unwrap();
+    let currency_pair = instruments
+        .iter()
+        .find(|instrument| instrument.raw_symbol().as_str() == "XBTUSDT")
+        .expect("XBTUSDT instrument");
+    let tokenized = instruments
+        .iter()
+        .find(|instrument| instrument.raw_symbol().as_str() == "AAPLxUSD")
+        .expect("AAPLxUSD instrument");
+    let tokenized_spv = instruments
+        .iter()
+        .find(|instrument| instrument.raw_symbol().as_str() == "AAPLSPVUSD")
+        .expect("AAPLSPVUSD instrument");
+    let bodies = state.trade_volume_bodies.lock().await;
+
+    assert_eq!(currency_pair.maker_fee(), dec!(0.0017));
+    assert_eq!(currency_pair.taker_fee(), dec!(0.0029));
+    assert_eq!(tokenized.maker_fee(), dec!(0.0003));
+    assert_eq!(tokenized.taker_fee(), dec!(0.0019));
+    assert_eq!(tokenized_spv.maker_fee(), dec!(0.0003));
+    assert_eq!(tokenized_spv.taker_fee(), dec!(0.0019));
+    assert_eq!(state.trade_volume_request_count.load(Ordering::Relaxed), 3);
+    assert_eq!(bodies.len(), 3);
+    assert_eq!(bodies[0]["pair"], serde_json::json!("XBTUSDT"));
+    assert_eq!(bodies[1]["pair"], serde_json::json!("XBTUSDT"));
+    assert_ne!(bodies[0]["nonce"], bodies[1]["nonce"]);
+    assert_eq!(
+        bodies[2]["pair"],
+        serde_json::json!([
+            {"asset": "AAPL/USD", "aclass": "equity_pair"}
+        ])
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_domain_request_instruments_rejects_missing_account_fee() {
+    let (addr, state) = start_test_server().await;
+    *state.trade_volume_omitted_fee.lock().await = Some("AAPLZUSD.EQ".to_string());
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "dGVzdF9hcGlfc2VjcmV0X2Jhc2U2NA==".to_string(),
+        KrakenEnvironment::Live,
+        Some(format!("http://{addr}")),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.request_instruments(None).await;
+
+    assert!(matches!(
+        result,
+        Err(KrakenHttpError::ParseError(ref message))
+            if message == "TradeVolume response missing taker fee for AAPLxUSD"
+    ));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_domain_request_instruments_uses_taker_fee_when_maker_fee_missing() {
+    let (addr, state) = start_test_server().await;
+    *state.trade_volume_omitted_maker_fee.lock().await = Some("AAPLZUSD.EQ".to_string());
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "dGVzdF9hcGlfc2VjcmV0X2Jhc2U2NA==".to_string(),
+        KrakenEnvironment::Live,
+        Some(format!("http://{addr}")),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instruments = client.request_instruments(None).await.unwrap();
+    let tokenized = instruments
+        .iter()
+        .find(|instrument| instrument.raw_symbol().as_str() == "AAPLxUSD")
+        .expect("AAPLxUSD instrument");
+
+    assert_eq!(tokenized.maker_fee(), dec!(0.0019));
+    assert_eq!(tokenized.taker_fee(), dec!(0.0019));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_domain_request_instrument_statuses() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let statuses = client.request_instrument_statuses(None).await.unwrap();
+
+    assert_eq!(
+        statuses.get(&InstrumentId::from("BTC/USDT.KRAKEN")),
+        Some(&MarketStatusAction::Trading),
+    );
+    assert_eq!(
+        statuses.get(&InstrumentId::from("AAPLx/USD.KRAKEN")),
+        Some(&MarketStatusAction::Trading),
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_raw_get_ticker() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotRawHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.get_ticker(vec!["XBTUSDT".to_string()], None).await;
+    assert!(result.is_ok(), "Failed to get ticker: {result:?}");
+
+    let ticker = result.unwrap();
+    assert!(ticker.contains_key("XBTUSDT"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_raw_get_book_depth() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotRawHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.get_book_depth("XBTUSDT", None, None).await;
+    assert!(result.is_ok(), "Failed to get book depth: {result:?}");
+
+    let book = result.unwrap();
+    assert!(book.contains_key("XBTUSDT"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_raw_get_trades() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotRawHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.get_trades("XBTUSDT", None, None).await;
+    assert!(result.is_ok(), "Failed to get trades: {result:?}");
+
+    let response = result.unwrap();
+    assert!(!response.data.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_raw_get_ohlc() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotRawHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.get_ohlc("XBTUSDT", Some(60), None, None).await;
+    assert!(result.is_ok(), "Failed to get OHLC: {result:?}");
+
+    let response = result.unwrap();
+    assert!(!response.data.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_raw_get_trades_with_since() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotRawHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let since = "1234567890".to_string();
+    let result = client
+        .get_trades("XBTUSDT", Some(since.clone()), None)
+        .await;
+    assert!(
+        result.is_ok(),
+        "Failed to get trades with since: {result:?}"
+    );
+
+    let query = state.last_trades_query.lock().await;
+    assert!(query.is_some());
+    let params = query.as_ref().unwrap();
+    assert_eq!(params.get("since"), Some(&since));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_raw_get_ohlc_with_interval() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotRawHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.get_ohlc("XBTUSDT", Some(60), None, None).await;
+    assert!(
+        result.is_ok(),
+        "Failed to get OHLC with interval: {result:?}"
+    );
+
+    let query = state.last_ohlc_query.lock().await;
+    assert!(query.is_some());
+    let params = query.as_ref().unwrap();
+    assert_eq!(params.get("interval"), Some(&"60".to_string()));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_raw_get_websockets_token_requires_credentials() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    // Client without credentials
+    let client = KrakenSpotRawHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.get_websockets_token().await;
+    assert!(result.is_err());
+    assert!(
+        matches!(result, Err(e) if e.to_string().contains("credentials")),
+        "Expected authentication error"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_raw_get_websockets_token_with_credentials() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    // Client with credentials (API secret must be base64-encoded)
+    let client = KrakenSpotRawHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "dGVzdF9hcGlfc2VjcmV0X2Jhc2U2NA==".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.get_websockets_token().await;
+    assert!(result.is_ok(), "Failed to get websockets token: {result:?}");
+
+    let token = result.unwrap();
+    assert_eq!(
+        token.token.expose_secret(),
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    );
+    assert_eq!(token.expires, 900);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_domain_request_trades_missing_cached_instrument_returns_parse_error() {
+    let client =
+        KrakenSpotHttpClient::new(KrakenEnvironment::Live, None, 10, None, None, None, None, 5)
+            .unwrap();
+
+    let instrument_id = InstrumentId::from("UNKNOWN.KRAKEN");
+    let result = client.request_trades(instrument_id, None, None, None).await;
+
+    match result {
+        Err(KrakenHttpError::ParseError(message)) => {
+            assert_eq!(message, format!("{INSTRUMENT_NOT_FOUND}: {instrument_id}"));
+        }
+        other => panic!("Expected parse error, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_domain_request_trades() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    // First load instruments to populate cache
+    let instruments = client.request_instruments(None).await.unwrap();
+    client.cache_instruments(&instruments);
+
+    // Create a valid instrument ID from cached instruments (normalized to BTC)
+    let instrument_id = InstrumentId::from("BTC/USDT.KRAKEN");
+
+    let result = client.request_trades(instrument_id, None, None, None).await;
+    assert!(result.is_ok(), "Failed to request trades: {result:?}");
+
+    let all = result.unwrap();
+    assert!(!all.is_empty());
+
+    // `ts_init` is stamped per request and differs between the two calls, so
+    // compare the most recent trades by trade id rather than by value
+    let limited = client
+        .request_trades(instrument_id, None, None, Some(3))
+        .await
+        .unwrap();
+    assert_eq!(limited.len(), 3);
+    let recent_ids: Vec<_> = all[all.len() - 3..].iter().map(|t| t.trade_id).collect();
+    let limited_ids: Vec<_> = limited.iter().map(|t| t.trade_id).collect();
+    assert_eq!(limited_ids, recent_ids);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_domain_request_bars() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    // First load instruments to populate cache
+    let instruments = client.request_instruments(None).await.unwrap();
+    client.cache_instruments(&instruments);
+
+    // Create a BarType for 1-minute bars (normalized to BTC)
+    let bar_type = BarType::from("BTC/USDT.KRAKEN-1-MINUTE-LAST-INTERNAL");
+
+    let result = client.request_bars(bar_type, None, None, None).await;
+    assert!(result.is_ok(), "Failed to request bars: {result:?}");
+
+    let bars = result.unwrap();
+    assert!(!bars.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_raw_get_instruments() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenFuturesRawHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.get_instruments().await;
+    assert!(
+        result.is_ok(),
+        "Failed to get futures instruments: {result:?}"
+    );
+
+    let response = result.unwrap();
+    assert_eq!(response.result, KrakenApiResult::Success);
+    assert!(!response.instruments.is_empty());
+    assert_eq!(response.instruments[0].symbol, "PI_XBTUSD");
+    assert_eq!(response.instruments[0].base, "BTC");
+    assert_eq!(response.instruments[0].quote, "USD");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_domain_request_instrument_statuses() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenFuturesHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let statuses = client.request_instrument_statuses().await.unwrap();
+
+    assert_eq!(
+        statuses.get(&InstrumentId::from("PI_XBTUSD.KRAKEN")),
+        Some(&MarketStatusAction::Trading),
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_raw_get_tickers() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenFuturesRawHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.get_tickers().await;
+    assert!(result.is_ok(), "Failed to get futures tickers: {result:?}");
+
+    let response = result.unwrap();
+    assert_eq!(response.result, KrakenApiResult::Success);
+    assert!(!response.tickers.is_empty());
+
+    let ticker = &response.tickers[0];
+    assert_eq!(ticker.symbol, "PI_XBTUSD");
+    assert_eq!(ticker.mark_price, Some(dec!(91506.6009839176)));
+    assert_eq!(ticker.index_price, Some(dec!(91468.38)));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_raw_get_ohlc_trade() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenFuturesRawHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client
+        .get_ohlc("trade", "PI_XBTUSD", "1h", None, None)
+        .await;
+    assert!(
+        result.is_ok(),
+        "Failed to get futures trade candles: {result:?}"
+    );
+
+    let response = result.unwrap();
+    assert!(!response.candles.is_empty());
+    assert_eq!(response.candles.len(), 3);
+
+    let candle = &response.candles[0];
+    assert_eq!(candle.time, 1_731_715_200_000);
+    assert_eq!(candle.open, "91069");
+    assert_eq!(candle.close, "91045.5");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_raw_get_ohlc_mark() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenFuturesRawHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.get_ohlc("mark", "PI_XBTUSD", "1h", None, None).await;
+    assert!(
+        result.is_ok(),
+        "Failed to get futures mark candles: {result:?}"
+    );
+
+    let response = result.unwrap();
+    assert!(!response.candles.is_empty());
+
+    let candle = &response.candles[0];
+    assert_eq!(candle.time, 1_731_715_200_000);
+    assert!(candle.open.contains('.'));
+    assert_eq!(candle.volume, "0");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_raw_get_ohlc_spot() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenFuturesRawHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.get_ohlc("spot", "PI_XBTUSD", "1h", None, None).await;
+    assert!(
+        result.is_ok(),
+        "Failed to get futures spot/index candles: {result:?}"
+    );
+
+    let response = result.unwrap();
+    assert!(!response.candles.is_empty());
+
+    let candle = &response.candles[0];
+    assert_eq!(candle.time, 1_731_715_200_000);
+    assert!(candle.open.contains('.'));
+    assert_eq!(candle.volume, "0");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_raw_get_public_executions() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenFuturesRawHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client
+        .get_public_executions("PF_XBTUSD", None, None, None, None)
+        .await;
+
+    assert!(result.is_ok(), "Expected success, was: {:?}", result.err());
+    let response = result.unwrap();
+    assert!(
+        !response.elements.is_empty(),
+        "Expected at least one execution"
+    );
+
+    // Verify execution data
+    let element = &response.elements[0];
+    let execution = &element.event.execution.execution;
+    assert!(!execution.uid.is_empty());
+    assert!(!execution.price.is_empty());
+    assert!(!execution.quantity.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_raw_get_open_orders() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotRawHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.get_open_orders(Some(true), None).await;
+    assert!(result.is_ok(), "Failed to get open orders: {result:?}");
+
+    let orders = result.unwrap();
+    assert_eq!(orders.len(), 2);
+    assert!(orders.contains_key("O26VBY-ISGAE-JP5TLU"));
+    assert!(orders.contains_key("OYEQF4-FDE4C-NMUYUI"));
+
+    let first_order = orders.get("O26VBY-ISGAE-JP5TLU").unwrap();
+    assert_eq!(first_order.status, KrakenOrderStatus::Open);
+    assert_eq!(first_order.descr.pair, "XBTUSDT");
+    assert_eq!(first_order.vol, "0.50000000");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_raw_get_closed_orders() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotRawHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client
+        .get_closed_orders(Some(true), None, None, None, None, None)
+        .await;
+    assert!(result.is_ok(), "Failed to get closed orders: {result:?}");
+
+    let orders = result.unwrap();
+    assert_eq!(orders.len(), 2);
+    assert!(orders.contains_key("O5KZFT-GH3AD-LP6TLU"));
+    assert!(orders.contains_key("OCLOSED-2-TESTID"));
+
+    let first_order = orders.get("O5KZFT-GH3AD-LP6TLU").unwrap();
+    assert_eq!(first_order.status, KrakenOrderStatus::Closed);
+    assert_eq!(first_order.vol_exec, "0.50000000");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_raw_get_trades_history() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotRawHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client
+        .get_trades_history(None, Some(true), None, None, None)
+        .await;
+    assert!(result.is_ok(), "Failed to get trades history: {result:?}");
+
+    let trades = result.unwrap();
+    assert!(!trades.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_raw_get_open_orders() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenFuturesRawHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.get_open_orders().await;
+    assert!(
+        result.is_ok(),
+        "Failed to get futures open orders: {result:?}"
+    );
+
+    let response = result.unwrap();
+    assert_eq!(response.result, KrakenApiResult::Success);
+    assert_eq!(response.open_orders.len(), 3);
+
+    let first_order = &response.open_orders[0];
+    assert_eq!(first_order.order_id, "2ce038ae-c144-4de7-a0f1-82f7f4fca864");
+    assert_eq!(first_order.symbol, "PI_ETHUSD");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_domain_request_order_status_reports_uses_position_size_for_attached_trigger()
+{
+    let (addr, _) = start_test_server().await;
+    let base_url = format!("http://{addr}");
+
+    let client = KrakenFuturesHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instruments = client.request_instruments().await.unwrap();
+    client.cache_instruments(&instruments);
+
+    let account_id = AccountId::from("KRAKEN-001");
+    let reports = client
+        .request_order_status_reports(account_id, None, None, None, true)
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 2);
+    assert_eq!(
+        reports
+            .iter()
+            .map(|report| report.venue_order_id.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "c8135f52-2a86-4e26-b629-43cc37da9dbf",
+            "7a9f8b3e-1c2d-4e5f-9a8b-7c6d5e4f3a2b",
+        ]
+    );
+
+    let report = reports
+        .iter()
+        .find(|report| report.venue_order_id.as_str() == "c8135f52-2a86-4e26-b629-43cc37da9dbf")
+        .unwrap();
+    assert_eq!(report.account_id, account_id);
+    assert_eq!(report.instrument_id, InstrumentId::from("PI_XBTUSD.KRAKEN"));
+    assert_eq!(report.client_order_id, None);
+    assert_eq!(report.order_side, Some(ModelOrderSide::Buy));
+    assert_eq!(report.order_type, ModelOrderType::MarketIfTouched);
+    assert_eq!(report.time_in_force, TimeInForce::Gtc);
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert_eq!(report.quantity, Quantity::from("8000"));
+    assert_eq!(report.filled_qty, Quantity::from("0"));
+    assert_eq!(report.price, None);
+    assert_eq!(report.trigger_price, Some(Price::from("1880.4")));
+    assert_eq!(report.trigger_type, Some(TriggerType::LastPrice));
+    assert!(report.reduce_only);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_domain_submit_order_uses_submitted_size_for_attached_trigger() {
+    let (addr, _) = start_test_server().await;
+    let base_url = format!("http://{addr}");
+
+    let client = KrakenFuturesHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instruments = client.request_instruments().await.unwrap();
+    client.cache_instruments(&instruments);
+
+    let account_id = AccountId::from("KRAKEN-001");
+    let report = client
+        .submit_order(
+            account_id,
+            InstrumentId::from("PI_XBTUSD.KRAKEN"),
+            ClientOrderId::from("test-order-001"),
+            ModelOrderSide::Buy,
+            ModelOrderType::MarketIfTouched,
+            Quantity::from("1234"),
+            TimeInForce::Gtc,
+            None,
+            Some(Price::from("1880.4")),
+            Some(TriggerType::LastPrice),
+            true,
+            false,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(report.account_id, account_id);
+    assert_eq!(report.instrument_id, InstrumentId::from("PI_XBTUSD.KRAKEN"));
+    assert_eq!(
+        report.venue_order_id,
+        VenueOrderId::from("c8135f52-2a86-4e26-b629-43cc37da9dbf")
+    );
+    assert_eq!(report.order_side, Some(ModelOrderSide::Buy));
+    assert_eq!(report.order_type, ModelOrderType::MarketIfTouched);
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert_eq!(report.quantity, Quantity::from("1234"));
+    assert_eq!(report.filled_qty, Quantity::from("0"));
+    assert_eq!(report.price, None);
+    assert_eq!(report.trigger_price, Some(Price::from("1880.4")));
+    assert_eq!(report.trigger_type, Some(TriggerType::LastPrice));
+    assert!(report.reduce_only);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_raw_get_order_events() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenFuturesRawHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.get_order_events(None, None, None).await;
+    assert!(
+        result.is_ok(),
+        "Failed to get futures order events: {result:?}"
+    );
+
+    let response = result.unwrap();
+    assert_eq!(response.order_events.len(), 3);
+
+    let first_event = &response.order_events[0].order;
+    assert_eq!(first_event.order_id, "c8a35168-8d52-4609-944f-3f32bb0d5c77");
+    assert_eq!(first_event.symbol, "PI_XBTUSD");
+    assert_eq!(first_event.filled, dec!(5000));
+    assert_eq!(first_event.quantity, dec!(5000));
+
+    let third_event = &response.order_events[2].order;
+    assert_eq!(third_event.filled, dec!(0));
+    assert!(third_event.reduce_only);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_raw_get_fills() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenFuturesRawHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.get_fills(None).await;
+    assert!(result.is_ok(), "Failed to get futures fills: {result:?}");
+
+    let response = result.unwrap();
+    assert_eq!(response.result, KrakenApiResult::Success);
+    assert_eq!(response.fills.len(), 3);
+
+    let first_fill = &response.fills[0];
+    assert_eq!(first_fill.fill_id, "cad76f07-814e-4dc6-8478-7867407b6bff");
+    assert_eq!(first_fill.symbol, "PI_XBTUSD");
+    assert_eq!(first_fill.size, dec!(5000));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_raw_get_open_positions() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenFuturesRawHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.get_open_positions().await;
+    assert!(
+        result.is_ok(),
+        "Failed to get futures open positions: {result:?}"
+    );
+
+    let response = result.unwrap();
+    assert_eq!(response.result, KrakenApiResult::Success);
+    assert_eq!(response.open_positions.len(), 2);
+
+    let first_position = &response.open_positions[0];
+    assert_eq!(first_position.symbol, "PI_XBTUSD");
+    assert_eq!(first_position.size, dec!(8000));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_raw_add_order() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotRawHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let params = KrakenSpotAddOrderParamsBuilder::default()
+        .pair("XBTUSD")
+        .side(KrakenOrderSide::Buy)
+        .order_type(KrakenOrderType::Limit)
+        .volume("0.01")
+        .price("50000")
+        .build()
+        .unwrap();
+
+    let result = client.add_order(&params).await;
+    assert!(result.is_ok(), "Failed to add order: {result:?}");
+
+    let response = result.unwrap();
+    assert_eq!(response.txid.len(), 1);
+    assert_eq!(response.txid[0], "OUF4EM-FRGI2-MQMWZD");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_raw_cancel_order() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotRawHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let params = KrakenSpotCancelOrderParamsBuilder::default()
+        .txid("OUF4EM-FRGI2-MQMWZD")
+        .build()
+        .unwrap();
+
+    let result = client.cancel_order(&params).await;
+    assert!(result.is_ok(), "Failed to cancel order: {result:?}");
+
+    let response = result.unwrap();
+    assert_eq!(response.count, 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_raw_send_order() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenFuturesRawHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let mut params = HashMap::new();
+    params.insert("symbol".to_string(), "PI_XBTUSD".to_string());
+    params.insert("side".to_string(), "buy".to_string());
+    params.insert("orderType".to_string(), "lmt".to_string());
+    params.insert("size".to_string(), "1".to_string());
+    params.insert("limitPrice".to_string(), "50000".to_string());
+
+    let result = client.send_order(params).await;
+    assert!(result.is_ok(), "Failed to send order: {result:?}");
+
+    let response = result.unwrap();
+    assert_eq!(response.result, KrakenApiResult::Success);
+    assert_eq!(response.send_status.unwrap().status, "placed");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_raw_cancel_order() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenFuturesRawHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client
+        .cancel_order(
+            Some("c8a35168-8d52-4609-944f-3f32bb0d5c77".to_string()),
+            None,
+        )
+        .await;
+    assert!(result.is_ok(), "Failed to cancel order: {result:?}");
+
+    let response = result.unwrap();
+    assert_eq!(response.result, KrakenApiResult::Success);
+    assert_eq!(response.cancel_status.status, KrakenSendStatus::Cancelled);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_raw_rate_limit_error() {
+    let state = Arc::new(TestServerState::default());
+    state.rate_limit_after.store(3, Ordering::SeqCst);
+
+    let app = create_router(state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    // API secret must be base64-encoded
+    let api_secret = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, "secret");
+    let client = KrakenSpotRawHttpClient::with_credentials(
+        "test_key".to_string(),
+        api_secret,
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let mut last_error = None;
+    for _ in 0..10 {
+        match client.get_open_orders(None, None).await {
+            Ok(_) => {}
+            Err(e) => {
+                last_error = Some(e);
+                break;
+            }
+        }
+    }
+
+    assert!(last_error.is_some(), "Expected rate limit error");
+    let error = last_error.unwrap();
+    assert!(
+        error.to_string().contains("Rate limit")
+            || error.to_string().contains("429")
+            || error.to_string().contains("TOO_MANY"),
+        "Expected rate limit error message, was: {error}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_raw_api_error_response() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotRawHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.get_websockets_token().await;
+    assert!(result.is_err());
+
+    let error = result.unwrap_err();
+    assert!(
+        error.to_string().contains("credentials") || error.to_string().contains("Missing"),
+        "Expected credentials error, was: {error}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_domain_request_trades_missing_cached_instrument_returns_parse_error() {
+    let client =
+        KrakenFuturesHttpClient::new(KrakenEnvironment::Live, None, 10, None, None, None, None, 5)
+            .unwrap();
+
+    let instrument_id = InstrumentId::from("UNKNOWN.KRAKEN");
+    let result = client.request_trades(instrument_id, None, None, None).await;
+
+    match result {
+        Err(KrakenHttpError::ParseError(message)) => {
+            assert_eq!(message, format!("{INSTRUMENT_NOT_FOUND}: {instrument_id}"));
+        }
+        other => panic!("Expected parse error, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_domain_request_trades() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenFuturesHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instruments = client.request_instruments().await.unwrap();
+    client.cache_instruments(&instruments);
+
+    // PF_ETHUSD is in mock instruments; trades may be partially parsed
+    // due to mock execution data having BTC-level prices
+    let instrument_id = InstrumentId::from("PF_ETHUSD.KRAKEN");
+
+    // Count-only requests fetch the most recent page with `sort=desc`
+    let trades = client
+        .request_trades(instrument_id, None, None, None)
+        .await
+        .expect("Failed to request futures trades");
+    {
+        let query = state.last_executions_query.lock().await;
+        let sort = query.as_ref().and_then(|params| params.get("sort"));
+        assert_eq!(sort.map(String::as_str), Some("desc"));
+    }
+    // The `sort=desc` page is reversed back to ascending chronological order
+    assert!(
+        trades.len() >= 2,
+        "need >=2 parsed trades to assert ordering, was {}",
+        trades.len()
+    );
+    assert!(
+        trades.windows(2).all(|w| w[0].ts_event <= w[1].ts_event),
+        "count-only futures trades must be ascending by ts_event"
+    );
+
+    // A count-only limit keeps the most recent trade (tail after reversal)
+    let limited = client
+        .request_trades(instrument_id, None, None, Some(1))
+        .await
+        .expect("Failed to request limited futures trades");
+    assert_eq!(limited.len(), 1);
+    assert_eq!(limited[0].trade_id, trades[trades.len() - 1].trade_id);
+
+    // Anchored requests page forward from `start` with `sort=asc`
+    let start = Some(Timestamp::from_second(1_700_000_000).unwrap());
+    let result = client
+        .request_trades(instrument_id, start, None, None)
+        .await;
+    assert!(
+        result.is_ok(),
+        "Failed to request anchored futures trades: {result:?}"
+    );
+    {
+        let query = state.last_executions_query.lock().await;
+        let sort = query.as_ref().and_then(|params| params.get("sort"));
+        assert_eq!(sort.map(String::as_str), Some("asc"));
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_domain_request_instruments_includes_tokenized_contract() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenFuturesHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instruments = client.request_instruments().await.unwrap();
+
+    let tokenized_future = instruments
+        .iter()
+        .find(|instrument| instrument.raw_symbol().as_str() == "PF_AAPLxUSD")
+        .expect("Expected tokenized futures instrument");
+
+    match tokenized_future {
+        InstrumentAny::CryptoPerpetual(perp) => {
+            assert_eq!(perp.id.symbol.as_str(), "PF_AAPLxUSD");
+            assert_eq!(perp.base_currency.code, "AAPLx");
+            assert_eq!(perp.quote_currency.code, "USD");
+            assert_eq!(perp.size_increment.as_decimal(), dec!(0.01));
+        }
+        _ => panic!("Expected CryptoPerpetual"),
+    }
+}
+
+#[cfg(feature = "high-precision")]
+#[rstest]
+#[tokio::test]
+async fn test_futures_domain_request_instruments_includes_precision_10_contract() {
+    let (addr, _) = start_test_server().await;
+    let client = KrakenFuturesHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(format!("http://{addr}")),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instruments = client.request_instruments().await.unwrap();
+    let instrument = instruments
+        .iter()
+        .find(|instrument| instrument.raw_symbol().as_str() == "PF_PEPEUSD")
+        .expect("PF_PEPEUSD instrument");
+
+    assert_eq!(instrument.price_precision(), 10);
+    assert_eq!(instrument.price_increment(), Price::from("0.0000000001"));
+}
+
+#[cfg(not(feature = "high-precision"))]
+#[rstest]
+#[tokio::test]
+async fn test_futures_domain_request_instruments_rejects_partial_catalog() {
+    let (addr, state) = start_test_server().await;
+    state
+        .futures_instruments_over_precision
+        .store(true, Ordering::Relaxed);
+    let client = KrakenFuturesHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(format!("http://{addr}")),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let error = client.request_instruments().await.unwrap_err();
+
+    match error {
+        KrakenHttpError::ParseError(message) => assert_eq!(
+            message,
+            "Cannot parse Kraken Futures instrument 'PF_PEPEUSD': tick_size 0.0000000001 requires \
+             precision 10, but this build supports at most 9; enable the 'high-precision' Cargo \
+             feature and rebuild"
+        ),
+        other => panic!("Expected parse error, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_domain_request_bars() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenFuturesHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instruments = client.request_instruments().await.unwrap();
+    client.cache_instruments(&instruments);
+
+    let bar_type = BarType::from("PI_XBTUSD.KRAKEN-1-HOUR-LAST-INTERNAL");
+
+    let result = client.request_bars(bar_type, None, None, None).await;
+    assert!(result.is_ok(), "Failed to request futures bars: {result:?}");
+
+    let bars = result.unwrap();
+    assert!(!bars.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_domain_request_book_snapshot() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instruments = client.request_instruments(None).await.unwrap();
+    client.cache_instruments(&instruments);
+
+    let instrument_id = InstrumentId::from("BTC/USDT.KRAKEN");
+    let result = client.request_book_snapshot(instrument_id, Some(5)).await;
+    assert!(
+        result.is_ok(),
+        "Failed to request book snapshot: {result:?}"
+    );
+
+    let book = result.unwrap();
+    assert!(book.best_bid_price().is_some());
+    assert!(book.best_ask_price().is_some());
+    // HTTP snapshot must not advance the book's high-water sequence; the WS
+    // subscription owns sequencing once it starts streaming deltas.
+    assert_eq!(book.sequence, 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_domain_request_book_snapshot() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenFuturesHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instruments = client.request_instruments().await.unwrap();
+    client.cache_instruments(&instruments);
+
+    let instrument_id = InstrumentId::from("PF_ETHUSD.KRAKEN");
+    let result = client.request_book_snapshot(instrument_id, None).await;
+    assert!(
+        result.is_ok(),
+        "Failed to request futures book snapshot: {result:?}"
+    );
+
+    let book = result.unwrap();
+    assert_eq!(book.best_bid_price(), Some(Price::from("105900.0")));
+    assert_eq!(book.best_ask_price(), Some(Price::from("105950.0")));
+    // HTTP snapshot must not advance the book's high-water sequence; the WS
+    // subscription owns sequencing once it starts streaming deltas.
+    assert_eq!(book.sequence, 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_domain_request_funding_rates() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenFuturesHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instruments = client.request_instruments().await.unwrap();
+    client.cache_instruments(&instruments);
+
+    let instrument_id = InstrumentId::from("PF_ETHUSD.KRAKEN");
+    let result = client
+        .request_funding_rates(instrument_id, None, None, None)
+        .await;
+    assert!(
+        result.is_ok(),
+        "Failed to request funding rates: {result:?}"
+    );
+
+    let rates = result.unwrap();
+    assert_eq!(rates.len(), 3);
+    assert_eq!(rates[0].instrument_id, instrument_id);
+    assert_eq!(rates[0].rate, dec!(0.00015));
+
+    // Rates are returned in ascending chronological order (oldest first)
+    assert!(rates[0].ts_event < rates[1].ts_event);
+    assert!(rates[1].ts_event < rates[2].ts_event);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_domain_submit_orders_batch_preserves_status_order() {
+    use nautilus_model::enums::AccountType;
+
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instrument_id = InstrumentId::from("XBT/USD.KRAKEN");
+    client.cache_instrument(InstrumentAny::CurrencyPair(
+        CurrencyPair::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::new("XBTUSD"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USD())
+            .price_precision(1)
+            .size_precision(8)
+            .price_increment(Price::from("0.1"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap(),
+    ));
+
+    let statuses = client
+        .submit_orders_batch(
+            vec![
+                (
+                    InstrumentId::from("ETH/USD.KRAKEN"),
+                    ClientOrderId::new("missing-cache"),
+                    ModelOrderSide::Buy,
+                    ModelOrderType::Limit,
+                    Quantity::from("0.01"),
+                    TimeInForce::Gtc,
+                    None,
+                    Some(Price::from("50000")),
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                    false,
+                    false,
+                    None,
+                    None,
+                ),
+                (
+                    instrument_id,
+                    ClientOrderId::new("batch-ok-1"),
+                    ModelOrderSide::Buy,
+                    ModelOrderType::Limit,
+                    Quantity::from("0.02"),
+                    TimeInForce::Gtc,
+                    None,
+                    Some(Price::from("50010")),
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                    false,
+                    false,
+                    None,
+                    None,
+                ),
+                (
+                    instrument_id,
+                    ClientOrderId::new("batch-ok-2"),
+                    ModelOrderSide::Sell,
+                    ModelOrderType::Limit,
+                    Quantity::from("0.03"),
+                    TimeInForce::Gtc,
+                    None,
+                    Some(Price::from("50020")),
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                    true,
+                    false,
+                    None,
+                    None,
+                ),
+            ],
+            AccountType::Cash,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(statuses.len(), 3);
+    assert!(statuses[0].starts_with("validation_error:"));
+    assert_eq!(statuses[1], "placed");
+    assert_eq!(statuses[2], "EOrder:Post only order");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_domain_submit_orders_batch_singleton_falls_back_to_add_order() {
+    use nautilus_model::enums::AccountType;
+
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instrument_id = InstrumentId::from("XBT/USD.KRAKEN");
+    client.cache_instrument(InstrumentAny::CurrencyPair(
+        CurrencyPair::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::new("XBTUSD"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USD())
+            .price_precision(1)
+            .size_precision(8)
+            .price_increment(Price::from("0.1"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap(),
+    ));
+
+    let statuses = client
+        .submit_orders_batch(
+            vec![(
+                instrument_id,
+                ClientOrderId::new("batch-singleton"),
+                ModelOrderSide::Buy,
+                ModelOrderType::Limit,
+                Quantity::from("0.01"),
+                TimeInForce::Gtc,
+                None,
+                Some(Price::from("50000")),
+                None,
+                None,
+                None,
+                None,
+                false,
+                false,
+                false,
+                None,
+                None,
+            )],
+            AccountType::Cash,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(statuses, vec!["placed".to_string()]);
+    assert_eq!(state.add_order_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(state.add_order_batch_calls.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_domain_edit_orders_batch_preserves_status_order() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenFuturesHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instrument = create_test_futures_instrument();
+    client.cache_instrument(instrument);
+
+    let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
+    let statuses = client
+        .edit_orders_batch(vec![
+            (
+                instrument_id,
+                None,
+                None,
+                Some(Quantity::from("10")),
+                Some(Price::from("45000")),
+                None,
+            ),
+            (
+                instrument_id,
+                Some(ClientOrderId::new("edit-order-1")),
+                None,
+                Some(Quantity::from("20")),
+                Some(Price::from("45100")),
+                None,
+            ),
+            (
+                instrument_id,
+                None,
+                Some(VenueOrderId::new("venue-order-2")),
+                None,
+                Some(Price::from("45200")),
+                Some(Price::from("44900")),
+            ),
+        ])
+        .await
+        .unwrap();
+
+    assert_eq!(statuses.len(), 3);
+    assert!(statuses[0].starts_with("validation_error:"));
+    assert_eq!(statuses[1], "edited");
+    assert_eq!(statuses[2], "insufficientAvailableFunds");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_raw_get_trade_balance() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotRawHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.get_trade_balance(None).await;
+    assert!(result.is_ok(), "Failed to get trade balance: {result:?}");
+
+    let tb = result.unwrap();
+    assert_eq!(tb.eb, "198750.42");
+    assert_eq!(tb.m, "12500.00");
+    assert_eq!(tb.mf, "185999.67");
+    assert!(tb.ml.is_some());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_request_account_state_margin_does_not_lock_free_margin() {
+    // Kraken TradeBalance exposes a single used-margin value `m` and free margin `mf`,
+    // with no separate maintenance figure. Nautilus `MarginAccount::recalculate_balance`
+    // sums `initial + maintenance` to compute locked, so duplicating `m` would double-lock
+    // equity and diverge from Kraken's `mf = e - m`. Map `m` to `initial` and zero
+    // `maintenance` so locked equals `m`.
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let account_id = AccountId::new("KRAKEN-001");
+    let state = client
+        .request_account_state(account_id, AccountType::Margin, None)
+        .await
+        .unwrap();
+
+    assert_eq!(state.account_type, AccountType::Margin);
+    assert_eq!(state.margins.len(), 1, "expected one MarginBalance entry");
+    let mb = &state.margins[0];
+    assert_eq!(mb.initial.as_decimal(), dec!(12500));
+    assert_eq!(
+        mb.maintenance.as_decimal(),
+        Decimal::ZERO,
+        "maintenance must stay zero to avoid double-locking TradeBalance `m`"
+    );
+    assert_eq!(mb.currency.code, "USD");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_request_account_state_margin_with_gbp_asset_tags_currency() {
+    let server_state = Arc::new(TestServerState::default());
+    let app = create_router(server_state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let account_id = AccountId::new("KRAKEN-001");
+    let state = client
+        .request_account_state(account_id, AccountType::Margin, Some("ZGBP"))
+        .await
+        .unwrap();
+
+    assert_eq!(state.margins.len(), 1);
+    assert_eq!(
+        state.margins[0].currency.code, "GBP",
+        "MarginBalance currency should normalize ZGBP -> GBP"
+    );
+
+    let body = server_state
+        .last_trade_balance_body
+        .lock()
+        .await
+        .clone()
+        .expect("TradeBalance handler must capture request body");
+    assert!(
+        body.contains("asset=ZGBP"),
+        "request body should propagate asset=ZGBP, received: {body}"
+    );
+
+    if let Some(usd) = state.balances.iter().find(|b| b.currency.code == "USD") {
+        assert_eq!(
+            usd.locked.as_decimal().normalize(),
+            dec!(1500),
+            "USD wallet should carry only its own BalanceEx hold, not the GBP margin lock"
+        );
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_request_account_state_margin_locked_from_free_margin() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let account_id = AccountId::new("KRAKEN-001");
+    let state = client
+        .request_account_state(account_id, AccountType::Margin, None)
+        .await
+        .unwrap();
+
+    let usd = state
+        .balances
+        .iter()
+        .find(|b| b.currency.code == "USD")
+        .expect("expected USD balance (equity-based synthetic entry)");
+    assert_eq!(usd.total.as_decimal().normalize(), dec!(198499.67));
+    assert_eq!(usd.free.as_decimal().normalize(), dec!(185999.67));
+    assert_eq!(usd.locked.as_decimal().normalize(), dec!(12500));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_request_account_state_margin_other_wallets_lock_own_holds() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let account_id = AccountId::new("KRAKEN-001");
+    let state = client
+        .request_account_state(account_id, AccountType::Margin, None)
+        .await
+        .unwrap();
+
+    // Fixture holds from test_data/http_spot_balance_ex.json.
+    for (code, expected_locked) in [("XBT", dec!(0.1)), ("ETH", dec!(0))] {
+        let balance = state
+            .balances
+            .iter()
+            .find(|b| b.currency.code == code)
+            .unwrap_or_else(|| panic!("expected {code} wallet balance"));
+
+        assert_eq!(
+            balance.locked.as_decimal().normalize(),
+            expected_locked.normalize(),
+            "non-margin-asset wallet {code} must lock only its own BalanceEx hold, \
+             never the TradeBalance used margin"
+        );
+        assert_eq!(
+            balance.free.as_decimal(),
+            balance.total.as_decimal() - balance.locked.as_decimal(),
+            "free must derive from total minus the venue hold for {code}"
+        );
+    }
+}
+
+/// Cash balances must report the venue-held portion of each wallet.
+///
+/// Wallet balances are sourced from `BalanceEx`, whose per-asset `hold_trade` gives the amount
+/// Kraken has reserved against resting orders. Sourcing them from `Balance` (totals only) forces
+/// `locked = 0`, so `free` would report reserved funds as available.
+#[rstest]
+#[tokio::test]
+async fn test_spot_request_account_state_cash_locks_held_amounts() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let account_id = AccountId::new("KRAKEN-001");
+    let state = client
+        .request_account_state(account_id, AccountType::Cash, None)
+        .await
+        .unwrap();
+
+    // Fixture values from test_data/http_spot_balance_ex.json.
+    let usd = state
+        .balances
+        .iter()
+        .find(|b| b.currency.code == "USD")
+        .expect("expected USD balance");
+    assert_eq!(usd.total.as_decimal().normalize(), dec!(200000));
+    assert_eq!(usd.locked.as_decimal().normalize(), dec!(1500));
+    assert_eq!(usd.free.as_decimal().normalize(), dec!(198500));
+
+    let xbt = state
+        .balances
+        .iter()
+        .find(|b| b.currency.code == "XBT")
+        .expect("expected XBT balance");
+    assert_eq!(xbt.total.as_decimal().normalize(), dec!(0.5));
+    assert_eq!(xbt.locked.as_decimal().normalize(), dec!(0.1));
+    assert_eq!(xbt.free.as_decimal().normalize(), dec!(0.4));
+
+    // A wallet with nothing held still reports the full balance as free.
+    let eth = state
+        .balances
+        .iter()
+        .find(|b| b.currency.code == "ETH")
+        .expect("expected ETH balance");
+    assert_eq!(eth.locked.as_decimal(), Decimal::ZERO);
+    assert_eq!(eth.free, eth.total);
+}
+
+/// Credit-line accounts must include net credit in the available balance.
+///
+/// Kraken documents available funds as `balance + credit - credit_used - hold_trade`, so net
+/// credit belongs in `total` for `free` to derive to that figure. `credit` and `credit_used` are
+/// returned only for accounts holding a credit line, and are absent otherwise.
+#[rstest]
+#[tokio::test]
+async fn test_spot_request_account_state_cash_includes_net_credit() {
+    let server_state = Arc::new(TestServerState::default());
+    let app = create_router(server_state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    *server_state.balance_ex_json.lock().await = Some(
+        r#"{"error":[],"result":{
+            "ZUSD":{"balance":"1000.00","hold_trade":"250.00","credit":"5000.00","credit_used":"2000.00"},
+            "XXBT":{"balance":"0.0","hold_trade":"0.0","credit":"1.5","credit_used":"0.5"},
+            "ETH":{"balance":"3.0","hold_trade":"1.0"}
+        }}"#
+        .to_string(),
+    );
+
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let account_id = AccountId::new("KRAKEN-001");
+    let state = client
+        .request_account_state(account_id, AccountType::Cash, None)
+        .await
+        .unwrap();
+
+    // Net credit of 5000 - 2000 raises total above the 1000 wallet balance, and free becomes
+    // 1000 + 5000 - 2000 - 250.
+    let usd = state
+        .balances
+        .iter()
+        .find(|b| b.currency.code == "USD")
+        .expect("expected USD balance");
+    assert_eq!(usd.total.as_decimal().normalize(), dec!(4000));
+    assert_eq!(usd.locked.as_decimal().normalize(), dec!(250));
+    assert_eq!(usd.free.as_decimal().normalize(), dec!(3750));
+
+    // Available credit alone must keep the wallet, even with a zero balance.
+    let xbt = state
+        .balances
+        .iter()
+        .find(|b| b.currency.code == "XBT")
+        .expect("expected XBT balance from available credit alone");
+    assert_eq!(xbt.total.as_decimal().normalize(), dec!(1));
+    assert_eq!(xbt.locked.as_decimal(), Decimal::ZERO);
+    assert_eq!(xbt.free.as_decimal().normalize(), dec!(1));
+
+    // Absent credit fields mean no credit line, so total stays the wallet balance.
+    let eth = state
+        .balances
+        .iter()
+        .find(|b| b.currency.code == "ETH")
+        .expect("expected ETH balance");
+    assert_eq!(eth.total.as_decimal().normalize(), dec!(3));
+    assert_eq!(eth.locked.as_decimal().normalize(), dec!(1));
+    assert_eq!(eth.free.as_decimal().normalize(), dec!(2));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_request_margin_metrics_returns_full_snapshot() {
+    let server_state = Arc::new(TestServerState::default());
+    let app = create_router(server_state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let metrics = client.request_margin_metrics(None).await.unwrap();
+
+    // Fixture values from test_data/http_spot_trade_balance.json.
+    assert_eq!(metrics.get("equity").map(String::as_str), Some("198499.67"));
+    assert_eq!(
+        metrics.get("free_margin").map(String::as_str),
+        Some("185999.67")
+    );
+    assert_eq!(
+        metrics.get("used_margin").map(String::as_str),
+        Some("12500.00")
+    );
+    assert_eq!(
+        metrics.get("unrealized_pnl").map(String::as_str),
+        Some("-250.75")
+    );
+    assert_eq!(
+        metrics.get("margin_level").map(String::as_str),
+        Some("1587.99")
+    );
+    assert_eq!(
+        metrics.get("trade_balance").map(String::as_str),
+        Some("150000.00")
+    );
+    assert_eq!(
+        metrics.get("equivalent_balance").map(String::as_str),
+        Some("198750.42")
+    );
+    assert_eq!(
+        metrics.get("cost_basis").map(String::as_str),
+        Some("12350.00")
+    );
+    assert_eq!(
+        metrics.get("valuation").map(String::as_str),
+        Some("12099.25")
+    );
+    assert_eq!(
+        metrics.get("unexecuted_value").map(String::as_str),
+        Some("0.00")
+    );
+    // None arg defaults to ZUSD -> normalized USD.
+    assert_eq!(metrics.get("asset").map(String::as_str), Some("USD"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_request_margin_metrics_passes_asset_param() {
+    let server_state = Arc::new(TestServerState::default());
+    let app = create_router(server_state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let metrics = client.request_margin_metrics(Some("ZGBP")).await.unwrap();
+
+    assert_eq!(metrics.get("asset").map(String::as_str), Some("GBP"));
+
+    let body = server_state
+        .last_trade_balance_body
+        .lock()
+        .await
+        .clone()
+        .expect("TradeBalance handler must capture request body");
+    assert!(
+        body.contains("asset=ZGBP"),
+        "request body should propagate asset=ZGBP, received: {body}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_raw_get_open_positions() {
+    use nautilus_kraken::http::SpotOpenPositionsParams;
+
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotRawHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client
+        .get_open_positions(&SpotOpenPositionsParams::default())
+        .await;
+    assert!(result.is_ok(), "Failed to get open positions: {result:?}");
+
+    let positions = result.unwrap();
+    assert_eq!(positions.len(), 1);
+    assert!(positions.contains_key("TF4RHX-FZPAS-ABCDEF"));
+
+    let pos = positions.get("TF4RHX-FZPAS-ABCDEF").unwrap();
+    assert_eq!(pos.pair, "XXBTZUSD");
+    assert_eq!(pos.vol, "0.50000000");
+    assert_eq!(pos.margin, "10000.00");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_add_order_with_leverage() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotRawHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let params = KrakenSpotAddOrderParamsBuilder::default()
+        .pair("XBTUSD")
+        .side(KrakenOrderSide::Buy)
+        .order_type(KrakenOrderType::Limit)
+        .volume("0.01")
+        .price("50000")
+        .leverage("3:1")
+        .build()
+        .unwrap();
+
+    let result = client.add_order(&params).await;
+    assert!(
+        result.is_ok(),
+        "Failed to add order with leverage: {result:?}"
+    );
+
+    let response = result.unwrap();
+    assert_eq!(response.txid.len(), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_request_account_state_trade_balance_error() {
+    let state = Arc::new(TestServerState::default());
+    state.trade_balance_error.store(true, Ordering::Relaxed);
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let account_id = AccountId::new("KRAKEN-001");
+    let result = client
+        .request_account_state(account_id, AccountType::Margin, None)
+        .await;
+
+    assert!(
+        result.is_err(),
+        "TradeBalance failure in margin mode must propagate as Err"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_request_account_state_synthetic_margin_balance_error() {
+    let state = Arc::new(TestServerState::default());
+    *state.trade_balance_json.lock().await = Some(
+        r#"{
+            "error": [],
+            "result": {
+                "eb": "20000000000000000.00",
+                "tb": "20000000000000000.00",
+                "m": "1.00",
+                "uv": "0.00",
+                "n": "0.00",
+                "c": "0.00",
+                "v": "0.00",
+                "e": "20000000000000000.00",
+                "mf": "19999999999999999.00",
+                "ml": "2000000000000000000.00"
+            }
+        }"#
+        .to_string(),
+    );
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let account_id = AccountId::new("KRAKEN-001");
+    let result = client
+        .request_account_state(account_id, AccountType::Margin, None)
+        .await;
+
+    let err = result.expect_err("synthetic margin balance failure must propagate as Err");
+    assert!(
+        err.to_string()
+            .contains("Failed to build synthetic margin AccountBalance"),
+        "unexpected error: {err}"
+    );
+}
+
+fn create_xbtusd_spot_instrument() -> (InstrumentId, InstrumentAny) {
+    let instrument_id = InstrumentId::from("XBT/USD.KRAKEN");
+    let inst = InstrumentAny::CurrencyPair(
+        CurrencyPair::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::new("XXBTZUSD"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USD())
+            .price_precision(1)
+            .size_precision(8)
+            .price_increment(Price::from("0.1"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap(),
+    );
+    (instrument_id, inst)
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_margin_position_flat_when_fully_closed() {
+    // When a margin position has been fully closed, Kraken removes it from OpenPositions.
+    // request_position_status_reports must emit a FLAT report for the requested instrument.
+    // Otherwise stale positions in the engine cannot be reconciled.
+    use nautilus_model::{
+        enums::{AccountType, PositionSide},
+        identifiers::AccountId,
+    };
+
+    let state = Arc::new(TestServerState::default());
+    state.open_positions_empty.store(true, Ordering::Relaxed);
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instrument_id = InstrumentId::from("XBT/USD.KRAKEN");
+    client.cache_instrument(InstrumentAny::CurrencyPair(
+        CurrencyPair::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::new("XBTUSD"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USD())
+            .price_precision(1)
+            .size_precision(8)
+            .price_increment(Price::from("0.1"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap(),
+    ));
+
+    let account_id = AccountId::new("KRAKEN-001");
+    let reports = client
+        .request_position_status_reports(
+            account_id,
+            Some(instrument_id),
+            AccountType::Margin,
+            false,
+            ustr::Ustr::from("USDT"),
+        )
+        .await
+        .expect("request_position_status_reports should not error");
+
+    assert_eq!(
+        reports.len(),
+        1,
+        "Expected one FLAT PositionStatusReport for closed position: {reports:?}"
+    );
+    let report = &reports[0];
+    assert_eq!(report.instrument_id, instrument_id);
+    assert!(
+        report.quantity.is_zero(),
+        "FLAT report quantity must be zero, received {}",
+        report.quantity
+    );
+    assert_eq!(
+        report.position_side,
+        PositionSide::Flat,
+        "FLAT report side must be Flat, received {:?}",
+        report.position_side
+    );
+}
+
+fn make_open_positions_json(lots: &[(&str, &str, Decimal, Decimal)]) -> String {
+    let entries: Vec<String> = lots
+        .iter()
+        .map(|(pos_id, side, vol, vol_closed)| {
+            format!(
+                r#""{pos_id}": {{"ordertxid": "O-{pos_id}", "pair": "XXBTZUSD", "time": 1714500000.0, "type": "{side}", "ordertype": "market", "cost": "50000.00", "fee": "75.00", "vol": "{vol}", "vol_closed": "{vol_closed}", "margin": "10000.00"}}"#
+            )
+        })
+        .collect();
+    format!(r#"{{"error":[],"result":{{{}}}}}"#, entries.join(","))
+}
+
+async fn setup_margin_position_test(json: String) -> (KrakenSpotHttpClient, InstrumentId) {
+    let state = Arc::new(TestServerState::default());
+    *state.open_positions_json.lock().await = Some(json);
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let (instrument_id, inst) = create_xbtusd_spot_instrument();
+    client.cache_instrument(inst);
+
+    (client, instrument_id)
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_margin_position_opposing_lots_net_to_long() {
+    use nautilus_model::{
+        enums::{AccountType, PositionSide},
+        identifiers::AccountId,
+    };
+
+    let json = make_open_positions_json(&[
+        ("LOT1", "buy", dec!(1), Decimal::ZERO),
+        ("LOT2", "sell", dec!(0.4), Decimal::ZERO),
+    ]);
+    let (client, instrument_id) = setup_margin_position_test(json).await;
+
+    let reports = client
+        .request_position_status_reports(
+            AccountId::new("KRAKEN-001"),
+            None,
+            AccountType::Margin,
+            false,
+            ustr::Ustr::from("USDT"),
+        )
+        .await
+        .expect("should not error");
+
+    assert_eq!(reports.len(), 1);
+    let r = &reports[0];
+    assert_eq!(r.instrument_id, instrument_id);
+    assert_eq!(r.position_side, PositionSide::Long);
+    assert_eq!(r.quantity, Quantity::from("0.6"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_margin_position_opposing_lots_net_to_short() {
+    use nautilus_model::{
+        enums::{AccountType, PositionSide},
+        identifiers::AccountId,
+    };
+
+    let json = make_open_positions_json(&[
+        ("LOT1", "buy", dec!(0.3), Decimal::ZERO),
+        ("LOT2", "sell", dec!(0.8), Decimal::ZERO),
+    ]);
+    let (client, instrument_id) = setup_margin_position_test(json).await;
+
+    let reports = client
+        .request_position_status_reports(
+            AccountId::new("KRAKEN-001"),
+            None,
+            AccountType::Margin,
+            false,
+            ustr::Ustr::from("USDT"),
+        )
+        .await
+        .expect("should not error");
+
+    assert_eq!(reports.len(), 1);
+    let r = &reports[0];
+    assert_eq!(r.instrument_id, instrument_id);
+    assert_eq!(r.position_side, PositionSide::Short);
+    assert_eq!(r.quantity, Quantity::from("0.5"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_margin_position_opposing_lots_net_to_flat() {
+    use nautilus_model::{
+        enums::{AccountType, PositionSide},
+        identifiers::AccountId,
+    };
+
+    let json = make_open_positions_json(&[
+        ("LOT1", "buy", dec!(0.5), Decimal::ZERO),
+        ("LOT2", "sell", dec!(0.5), Decimal::ZERO),
+    ]);
+    let (client, instrument_id) = setup_margin_position_test(json).await;
+
+    let reports = client
+        .request_position_status_reports(
+            AccountId::new("KRAKEN-001"),
+            None,
+            AccountType::Margin,
+            false,
+            ustr::Ustr::from("USDT"),
+        )
+        .await
+        .expect("should not error");
+
+    assert_eq!(reports.len(), 1);
+    let r = &reports[0];
+    assert_eq!(r.instrument_id, instrument_id);
+    assert_eq!(r.position_side, PositionSide::Flat);
+    assert!(
+        r.quantity.is_zero(),
+        "expected zero qty, received {}",
+        r.quantity
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_margin_position_bails_on_unknown_pair_when_cache_missing() {
+    use nautilus_model::{enums::AccountType, identifiers::AccountId};
+
+    let json = make_open_positions_json(&[("LOT1", "buy", dec!(1), Decimal::ZERO)]);
+
+    let state = Arc::new(TestServerState::default());
+    *state.open_positions_json.lock().await = Some(json);
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    // Unknown pair must cause an Err when no instrument is cached
+    let result = client
+        .request_position_status_reports(
+            AccountId::new("KRAKEN-001"),
+            None,
+            AccountType::Margin,
+            false,
+            ustr::Ustr::from("USDT"),
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "expected Err for unknown pair in cache, received Ok({:?})",
+        result.ok()
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_margin_position_bails_on_unparsable_volume() {
+    use nautilus_model::{enums::AccountType, identifiers::AccountId};
+
+    let bad_json = r#"{"error":[],"result":{"LOT1":{"ordertxid":"O-LOT1","pair":"XXBTZUSD","time":1714500000.0,"type":"buy","ordertype":"market","cost":"50000.00","fee":"75.00","vol":"not_a_number","vol_closed":"0.0","margin":"10000.00"}}}"#.to_string();
+    let (client, _) = setup_margin_position_test(bad_json).await;
+
+    let result = client
+        .request_position_status_reports(
+            AccountId::new("KRAKEN-001"),
+            None,
+            AccountType::Margin,
+            false,
+            ustr::Ustr::from("USDT"),
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "expected Err for unparsable volume, received Ok({:?})",
+        result.ok()
+    );
+}

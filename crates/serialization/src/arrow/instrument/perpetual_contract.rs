@@ -33,12 +33,10 @@ use nautilus_model::{
     instruments::perpetual_contract::PerpetualContract,
     types::{money::Money, price::Price, quantity::Quantity},
 };
-#[allow(unused)]
 use rust_decimal::Decimal;
-#[allow(unused)]
-use serde_json::Value;
 use ustr::Ustr;
 
+use super::KEY_CLASS;
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
     KEY_PRICE_PRECISION, extract_column, extract_column_by_name_or_index,
@@ -79,7 +77,7 @@ impl ArrowSchemaProvider for PerpetualContract {
         ];
 
         let mut final_metadata = HashMap::new();
-        final_metadata.insert("class".to_string(), "PerpetualContract".to_string());
+        final_metadata.insert(KEY_CLASS.to_string(), "PerpetualContract".to_string());
 
         if let Some(meta) = metadata {
             final_metadata.extend(meta);
@@ -213,7 +211,7 @@ impl EncodeToRecordBatch for PerpetualContract {
         }
 
         let mut final_metadata = metadata.clone();
-        final_metadata.insert("class".to_string(), "PerpetualContract".to_string());
+        final_metadata.insert(KEY_CLASS.to_string(), "PerpetualContract".to_string());
 
         RecordBatch::try_new(
             Self::get_schema(Some(final_metadata)).into(),
@@ -261,12 +259,15 @@ impl EncodeToRecordBatch for PerpetualContract {
     }
 }
 
-/// Helper function to decode PerpetualContract from RecordBatch
-/// (Cannot implement DecodeFromRecordBatch trait due to `Into<Data>` bound)
+/// Decodes [`PerpetualContract`] instruments from a record batch.
+///
+/// Not a [`DecodeFromRecordBatch`] implementation because that trait requires `Into<Data>`.
 ///
 /// # Errors
 ///
-/// Returns an `EncodingError` if the RecordBatch cannot be decoded.
+/// Returns an `EncodingError` if the record batch cannot be decoded.
+///
+/// [`DecodeFromRecordBatch`]: crate::arrow::DecodeFromRecordBatch
 pub fn decode_perpetual_contract_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
     record_batch: &RecordBatch,

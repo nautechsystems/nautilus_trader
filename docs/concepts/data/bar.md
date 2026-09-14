@@ -23,6 +23,12 @@ can supply bars, or NautilusTrader can aggregate them from quote ticks, trade ti
 - `bar_type` determines whether a bar is internal or external.
 - Composite bar types use `@` syntax to identify the source bar type.
 
+:::warning[Bar timestamps for execution simulation]
+For execution simulation, `ts_init` must represent the close of the bar interval, which prevents
+the complete bar from becoming visible before it formed. See
+[bar timestamp convention](../backtesting/bar-execution.md#bar-timestamp-convention).
+:::
+
 ## Example
 
 ```rust tab="Rust"

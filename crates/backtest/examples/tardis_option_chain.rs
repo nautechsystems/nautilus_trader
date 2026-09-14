@@ -337,10 +337,7 @@ fn load_option_metadata(
         .filter_map(option_metadata)
         .filter(|metadata| {
             metadata.instrument_id.venue == venue
-                && metadata
-                    .underlying
-                    .as_str()
-                    .eq_ignore_ascii_case(underlying)
+                && metadata.underlying.eq_ignore_ascii_case(underlying)
         })
         .collect();
 

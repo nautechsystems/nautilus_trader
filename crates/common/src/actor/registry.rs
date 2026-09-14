@@ -104,7 +104,7 @@ thread_local! {
 
 /// Registry for storing actors.
 pub struct ActorRegistry {
-    actors: RefCell<AHashMap<Ustr, Rc<UnsafeCell<dyn Actor>>>>,
+    actors: RefCell<AHashMap<Ustr, Registration>>,
 }
 
 impl Debug for ActorRegistry {
@@ -135,11 +135,22 @@ impl ActorRegistry {
         if actors.contains_key(&id) {
             log::warn!("Replacing existing actor with id: {id}");
         }
-        actors.insert(id, actor);
+        let previous = actors.insert(
+            id,
+            Registration {
+                actor,
+                identity: Rc::new(()),
+            },
+        );
+        drop(actors);
+        drop(previous);
     }
 
     pub fn get(&self, id: &Ustr) -> Option<Rc<UnsafeCell<dyn Actor>>> {
-        self.actors.borrow().get(id).cloned()
+        self.actors
+            .borrow()
+            .get(id)
+            .map(|entry| entry.actor.clone())
     }
 
     /// Returns the number of registered actors.
@@ -154,7 +165,7 @@ impl ActorRegistry {
 
     /// Removes an actor from the registry.
     pub fn remove(&self, id: &Ustr) -> Option<Rc<UnsafeCell<dyn Actor>>> {
-        self.actors.borrow_mut().remove(id)
+        self.actors.borrow_mut().remove(id).map(|entry| entry.actor)
     }
 
     /// Checks if an actor with the `id` exists.
@@ -267,10 +278,101 @@ pub fn actor_count() -> usize {
     with_actor_registry(ActorRegistry::len)
 }
 
+#[derive(Clone)]
+struct Registration {
+    actor: Rc<UnsafeCell<dyn Actor>>,
+    identity: Rc<()>,
+}
+
+#[allow(
+    dead_code,
+    reason = "registration-bound admission remains inactive until runtime integration"
+)]
+pub(super) fn reserve_actor<T: Actor, E: 'static>(
+    id: Ustr,
+    heap_bytes: usize,
+) -> Option<ActorAdmission<T, E>> {
+    let registration = ACTOR_REGISTRY
+        .try_with(|registry| registry.actors.borrow().get(&id).cloned())
+        .ok()
+        .flatten()?;
+    let admission = super::dispatch::reserve(heap_bytes)?;
+    Some(ActorAdmission {
+        id,
+        registration,
+        admission,
+    })
+}
+
+#[allow(
+    dead_code,
+    reason = "registration-bound admission remains inactive until runtime integration"
+)]
+pub(super) struct ActorAdmission<T: Actor, E> {
+    id: Ustr,
+    registration: Registration,
+    admission: super::dispatch::Admission<ActorDelivery<T, E>>,
+}
+
+#[allow(
+    dead_code,
+    reason = "registration-bound admission remains inactive until runtime integration"
+)]
+impl<T: Actor, E: 'static> ActorAdmission<T, E> {
+    pub(super) fn commit(self, event: E, handler: fn(&mut T, &E)) {
+        self.admission.commit(
+            ActorDelivery {
+                id: self.id,
+                registration: self.registration,
+                event,
+                handler,
+            },
+            ActorDelivery::run,
+        );
+    }
+}
+
+struct ActorDelivery<T: Actor, E> {
+    id: Ustr,
+    registration: Registration,
+    event: E,
+    handler: fn(&mut T, &E),
+}
+
+impl<T: Actor, E> ActorDelivery<T, E> {
+    fn run(&mut self) -> bool {
+        let current =
+            ACTOR_REGISTRY
+                .try_with(|registry| {
+                    registry.actors.borrow().get(&self.id).is_some_and(|entry| {
+                        Rc::ptr_eq(&entry.identity, &self.registration.identity)
+                    })
+                })
+                .unwrap_or(false);
+
+        if !current {
+            return true;
+        }
+
+        match super::access::ActorGuard::acquire(self.registration.actor.clone()) {
+            Ok(mut actor) => {
+                (self.handler)(&mut actor, &self.event);
+                true
+            }
+            Err(super::access::ActorAccessError::Busy) => false,
+            Err(_) => {
+                super::dispatch::record_failure(super::dispatch::DispatchError::InvalidDestination);
+                true
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 /// Clears the actor registry (for test isolation).
 pub fn clear_actor_registry() {
-    with_actor_registry(|registry| registry.actors.borrow_mut().clear());
+    let actors = with_actor_registry(|registry| std::mem::take(&mut *registry.actors.borrow_mut()));
+    drop(actors);
 }
 
 #[cfg(test)]
@@ -295,6 +397,118 @@ mod tests {
         fn as_any(&self) -> &dyn Any {
             self
         }
+    }
+
+    #[rstest]
+    fn owned_delivery_waits_for_access_and_cancels_same_allocation_registration() {
+        super::super::dispatch::clear().unwrap();
+        clear_actor_registry();
+        let id = Ustr::from("owned-registration");
+        let allocation = register_actor(TestActor { id, value: 11 });
+        let guard =
+            super::super::access::ActorGuard::<TestActor>::acquire(allocation.clone()).unwrap();
+        reserve_actor::<TestActor, _>(id, 0)
+            .unwrap()
+            .commit(23, |actor, value| actor.value = *value);
+        assert_eq!(super::super::dispatch::drain(1).unwrap().delivered, 0);
+        drop(guard);
+        assert_eq!(super::super::dispatch::drain(1).unwrap().delivered, 1);
+        assert_eq!(get_actor_unchecked::<TestActor>(&id).value, 23);
+        reserve_actor::<TestActor, _>(id, 0)
+            .unwrap()
+            .commit(37, |actor, value| actor.value = *value);
+        deregister_actor(&id);
+        with_actor_registry(|registry| registry.insert(id, allocation));
+        assert_eq!(super::super::dispatch::drain(1).unwrap().delivered, 1);
+        assert_eq!(get_actor_unchecked::<TestActor>(&id).value, 23);
+        super::super::dispatch::clear().unwrap();
+    }
+
+    #[rstest]
+    fn owned_delivery_retries_busy_allocation() {
+        super::super::dispatch::clear().unwrap();
+        clear_actor_registry();
+        let id = Ustr::from("busy-delivery");
+        let allocation = register_actor(TestActor { id, value: 11 });
+        let registration = with_actor_registry(|registry| registry.actors.borrow()[&id].clone());
+        let mut delivery = ActorDelivery {
+            id,
+            registration,
+            event: 23,
+            handler: |actor: &mut TestActor, value: &i32| actor.value = *value,
+        };
+        let guard = super::super::access::ActorGuard::<TestActor>::acquire(allocation).unwrap();
+        let busy = delivery.run();
+        assert!(!busy);
+        assert_eq!(guard.value, 11);
+        assert_eq!(super::super::dispatch::failure(), None);
+        drop(guard);
+        let delivered = delivery.run();
+        assert!(delivered);
+        assert_eq!(get_actor_unchecked::<TestActor>(&id).value, 23);
+        assert_eq!(super::super::dispatch::failure(), None);
+        clear_actor_registry();
+    }
+
+    #[rstest]
+    fn owned_delivery_rejects_wrong_actor_type() {
+        #[derive(Debug)]
+        struct OtherActor;
+
+        impl Actor for OtherActor {
+            fn id(&self) -> Ustr {
+                Ustr::from("wrong-delivery-type")
+            }
+            fn handle(&mut self, _msg: &dyn Any) {}
+            fn as_any(&self) -> &dyn Any {
+                self
+            }
+        }
+
+        super::super::dispatch::clear().unwrap();
+        clear_actor_registry();
+        let id = OtherActor.id();
+        register_actor(OtherActor);
+        reserve_actor::<TestActor, _>(id, 0)
+            .unwrap()
+            .commit(23, |_, _| panic!("wrong-type handler must not run"));
+        let result = super::super::dispatch::drain(1);
+        assert_eq!(
+            result,
+            Err(super::super::dispatch::DispatchError::InvalidDestination)
+        );
+        assert_eq!(
+            super::super::dispatch::failure(),
+            Some(super::super::dispatch::DispatchError::InvalidDestination)
+        );
+        super::super::dispatch::clear().unwrap();
+        clear_actor_registry();
+    }
+
+    #[rstest]
+    fn actor_reservation_rejects_after_registry_teardown() {
+        struct Probe;
+
+        impl Drop for Probe {
+            fn drop(&mut self) {
+                assert!(ACTOR_REGISTRY.try_with(|_| ()).is_err());
+                assert!(reserve_actor::<TestActor, ()>(Ustr::from("teardown"), 0).is_none());
+            }
+        }
+
+        thread_local! {
+            static PROBE: Probe = const { Probe };
+        }
+
+        std::thread::spawn(|| {
+            PROBE.with(|_| ());
+            register_actor(TestActor {
+                id: Ustr::from("teardown"),
+                value: 11,
+            });
+        })
+        .join()
+        .unwrap();
     }
 
     #[rstest]

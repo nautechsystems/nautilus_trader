@@ -16,7 +16,7 @@
 //! Shared fixture decoders for the signing module's vector tests.
 //!
 //! Each fixture-driven test module decoded vectors with its own ad-hoc copy of
-//! these routines. This module centralises the lowercase-hex codec and a
+//! these routines. This module centralizes the lowercase-hex codec and a
 //! handful of typed decoders so test files can focus on the assertion content.
 //! The module is gated by `#[cfg(test)]` and is not part of the public API.
 

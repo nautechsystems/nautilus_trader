@@ -105,12 +105,12 @@ impl QuoteTick {
     fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
         (
             self.instrument_id.to_string(),
-            self.bid_price.raw,
-            self.ask_price.raw,
+            self.bid_price.raw(),
+            self.ask_price.raw(),
             self.bid_price.precision,
             self.ask_price.precision,
-            self.bid_size.raw,
-            self.ask_size.raw,
+            self.bid_size.raw(),
+            self.ask_size.raw(),
             self.bid_size.precision,
             self.ask_size.precision,
             self.ts_event.as_u64(),

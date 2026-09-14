@@ -15,6 +15,7 @@
 
 //! Python bindings for Lighter configuration.
 
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::identifiers::{AccountId, Venue};
 use nautilus_network::websocket::TransportBackend;
 use pyo3::pymethods;
@@ -69,10 +70,10 @@ impl LighterDataClientConfig {
             venue,
             account_index,
             api_key_index,
-            private_key,
+            private_key: private_key.map(SecretString::from),
             base_url_http,
             base_url_ws,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             ws_timeout_secs: ws_timeout_secs.unwrap_or(defaults.ws_timeout_secs),
             update_instruments_interval_mins: update_instruments_interval_mins
@@ -142,10 +143,10 @@ impl LighterExecutionClientConfig {
             account_id,
             account_index,
             api_key_index,
-            private_key,
+            private_key: private_key.map(SecretString::from),
             base_url_http,
             base_url_ws,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             ws_timeout_secs: ws_timeout_secs.unwrap_or(defaults.ws_timeout_secs),
             market_order_slippage_bps: market_order_slippage_bps

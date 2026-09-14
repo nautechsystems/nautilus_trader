@@ -177,9 +177,9 @@ mod tests {
         let quantity = u256_to_quantity(amount, decimals).unwrap();
         let price = u256_to_price(amount, decimals).unwrap();
 
-        assert_eq!(quantity.raw, expected_raw);
+        assert_eq!(quantity.raw(), expected_raw);
         assert_eq!(quantity.precision, expected_precision);
-        assert_eq!(price.raw, expected_raw.cast_signed());
+        assert_eq!(price.raw(), expected_raw.cast_signed());
         assert_eq!(price.precision, expected_precision);
     }
 
@@ -190,9 +190,9 @@ mod tests {
         let quantity = u256_to_quantity(amount, 18).unwrap();
         let price = u256_to_price(amount, 18).unwrap();
 
-        assert_eq!(quantity.raw, 9_007_199_254_740_993);
+        assert_eq!(quantity.raw(), 9_007_199_254_740_993);
         assert_eq!(quantity.precision, 18);
-        assert_eq!(price.raw, 9_007_199_254_740_993);
+        assert_eq!(price.raw(), 9_007_199_254_740_993);
         assert_eq!(price.precision, 18);
     }
 
@@ -201,9 +201,9 @@ mod tests {
         let quantity = u256_to_quantity(U256::from(QUANTITY_RAW_MAX), FIXED_PRECISION).unwrap();
         let price = u256_to_price(U256::from(PRICE_RAW_MAX), FIXED_PRECISION).unwrap();
 
-        assert_eq!(quantity.raw, QUANTITY_RAW_MAX);
+        assert_eq!(quantity.raw(), QUANTITY_RAW_MAX);
         assert_eq!(quantity.precision, FIXED_PRECISION);
-        assert_eq!(price.raw, PRICE_RAW_MAX);
+        assert_eq!(price.raw(), PRICE_RAW_MAX);
         assert_eq!(price.precision, FIXED_PRECISION);
     }
 

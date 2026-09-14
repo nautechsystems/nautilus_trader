@@ -149,6 +149,42 @@ mod tests {
     };
 
     #[rstest]
+    fn test_fee_model_preserves_instrument_metadata_precision() {
+        let rate = dec!(0.1234567890123456789012345678);
+        let instrument = instrument_with_schedule(Some(fee_schedule(
+            rate,
+            dec!(0.2345678901234567890123456789),
+        )));
+        let order = fill_order(&instrument, LiquiditySide::Taker);
+        let commission = PolymarketFeeModel
+            .get_commission(
+                &order,
+                Quantity::from("30000000000000"),
+                Price::from("0.50"),
+                &instrument,
+            )
+            .unwrap();
+        assert_eq!(commission.as_decimal(), dec!(925925917592.59259));
+        let InstrumentAny::BinaryOption(binary) = &instrument else {
+            unreachable!()
+        };
+        let restored: FeeSchedule = serde_json::from_value(
+            binary
+                .info
+                .as_ref()
+                .unwrap()
+                .get("fee_schedule")
+                .unwrap()
+                .clone(),
+        )
+        .unwrap();
+        assert_eq!(restored.rate, rate);
+        assert_eq!(restored.rebate_rate, dec!(0.2345678901234567890123456789));
+        assert_eq!(restored.exponent, Decimal::ONE);
+        assert!(restored.taker_only);
+    }
+
+    #[rstest]
     #[case(dec!(0.07), dec!(0.20), dec!(-0.35))]
     #[case(dec!(0.05), dec!(0.15), dec!(-0.1875))]
     #[case(dec!(0.04), dec!(0.25), dec!(-0.25))]

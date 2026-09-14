@@ -33,14 +33,17 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `examples`: Enables the crate's example binaries.
 //! - `extension-module`: Builds as a Python extension module.
+//! - `fuzz`: Enables libFuzzer integration for fuzz targets.
+//! - `high-precision` (default): Enables
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
+//!   to use 128-bit value types.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //!
 //! Python bindings for the Lighter adapter are intentionally scoped to configuration,
 //! enums, factory wiring, and integrator revocation. Data and execution
 //! clients are consumed directly through the Rust trait surface.
-//!
-//! [High-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) (128-bit value types) is enabled by default.
 //!
 //! # Integrator attribution
 //!
@@ -58,7 +61,7 @@
 //!
 //! Robinhood Mainnet instead applies the `NAUTILUS` referral to the account's public L1 address
 //! during execution-client startup. Application failures log a warning and do not block trading.
-//! Robinhood Testnet does not apply a referral. See the [Lighter integration guide](https://nautilustrader.io/docs/nightly/integrations/lighter.html#integrator-attribution)
+//! Robinhood Testnet does not apply a referral. See the [Lighter integration guide](https://nautilustrader.io/docs/nightly/integrations/lighter/#integrator-attribution)
 //! for attribution and revocation details.
 
 #![warn(rustc::all)]

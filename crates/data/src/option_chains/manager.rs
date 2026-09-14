@@ -33,11 +33,11 @@ use nautilus_common::{
     msgbus::{self, MStr, Topic, TypedHandler, switchboard},
     timer::{TimeEvent, TimeEventCallback},
 };
-use nautilus_core::{UUID4, correctness::FAILED, datetime::millis_to_nanos_unchecked};
+use nautilus_core::{DurationNanos, UUID4, correctness::FAILED};
 use nautilus_model::{
     data::{QuoteTick, option_chain::OptionGreeks},
     enums::OptionKind,
-    identifiers::{InstrumentId, OptionSeriesId, Venue},
+    identifiers::{ClientId, InstrumentId, OptionSeriesId, Venue},
     instruments::Instrument,
     types::Price,
 };
@@ -71,6 +71,7 @@ pub struct OptionChainManager {
     deferred_cmd_queue: DeferredCommandQueue,
     /// Clock reference for constructing command timestamps.
     clock: Rc<RefCell<dyn Clock>>,
+    client_id: Option<ClientId>,
     /// When `true`, every quote/greeks update for an active instrument immediately publishes a snapshot.
     raw_mode: bool,
 }
@@ -95,6 +96,7 @@ impl OptionChainManager {
     ) -> Rc<RefCell<Self>> {
         let topic = switchboard::get_option_chain_topic(series_id);
         let instruments = Self::resolve_instruments(cache, &series_id);
+        let client_id = client.as_ref().map(|client| client.client_id);
 
         let mut tracker = AtmTracker::new();
 
@@ -129,6 +131,7 @@ impl OptionChainManager {
             bootstrapped,
             deferred_cmd_queue,
             clock: clock.clone(),
+            client_id,
             raw_mode,
         };
         let manager_rc = Rc::new(RefCell::new(manager));
@@ -246,7 +249,7 @@ impl OptionChainManager {
         };
 
         for instrument_id in instrument_ids {
-            client.execute_subscribe(SubscribeCommand::Quotes(SubscribeQuotes {
+            client.execute_subscribe_intent(SubscribeCommand::Quotes(SubscribeQuotes {
                 instrument_id: *instrument_id,
                 client_id: cmd.client_id,
                 venue: Some(venue),
@@ -255,16 +258,18 @@ impl OptionChainManager {
                 correlation_id: None,
                 params: None,
             }));
-            client.execute_subscribe(SubscribeCommand::OptionGreeks(SubscribeOptionGreeks {
-                instrument_id: *instrument_id,
-                client_id: cmd.client_id,
-                venue: Some(venue),
-                command_id: UUID4::new(),
-                ts_init,
-                correlation_id: None,
-                params: None,
-            }));
-            client.execute_subscribe(SubscribeCommand::InstrumentStatus(
+            client.execute_subscribe_intent(SubscribeCommand::OptionGreeks(
+                SubscribeOptionGreeks {
+                    instrument_id: *instrument_id,
+                    client_id: cmd.client_id,
+                    venue: Some(venue),
+                    command_id: UUID4::new(),
+                    ts_init,
+                    correlation_id: None,
+                    params: None,
+                },
+            ));
+            client.execute_subscribe_intent(SubscribeCommand::InstrumentStatus(
                 SubscribeInstrumentStatus {
                     instrument_id: *instrument_id,
                     client_id: cmd.client_id,
@@ -290,12 +295,15 @@ impl OptionChainManager {
         interval_ms: u64,
         clock: &Rc<RefCell<dyn Clock>>,
     ) -> Ustr {
-        let interval_ns = millis_to_nanos_unchecked(interval_ms as f64);
+        let interval_ns = DurationNanos::from_millis(interval_ms);
         let publisher = OptionChainSlicePublisher::new(manager_rc);
         let timer_name = Ustr::from(&format!("OptionChain|{series_id}|{interval_ms}"));
 
-        let now_ns = clock.borrow().timestamp_ns().as_u64();
-        let start_time_ns = now_ns - (now_ns % interval_ns) + interval_ns;
+        let now_ns = clock.borrow().timestamp_ns();
+        let start_time_ns = now_ns
+            .floor(interval_ns)
+            .checked_add(interval_ns)
+            .expect("Option chain timer start exceeds UnixNanos range");
 
         let callback_fn: Rc<dyn Fn(TimeEvent)> = Rc::new(move |event| publisher.publish(&event));
         let callback = TimeEventCallback::from(callback_fn);
@@ -305,7 +313,7 @@ impl OptionChainManager {
             .set_timer_ns(
                 &timer_name,
                 interval_ns,
-                Some(start_time_ns.into()),
+                Some(start_time_ns),
                 None,
                 Some(callback),
                 None,
@@ -332,6 +340,16 @@ impl OptionChainManager {
     #[must_use]
     pub const fn is_bootstrapped(&self) -> bool {
         self.bootstrapped
+    }
+
+    #[must_use]
+    pub(crate) fn is_instrument_active(&self, instrument_id: &InstrumentId) -> bool {
+        self.aggregator.active_ids().contains(instrument_id)
+    }
+
+    #[must_use]
+    pub(crate) const fn client_id(&self) -> Option<ClientId> {
+        self.client_id
     }
 
     /// Tears down this manager: unregisters all msgbus handlers and cancels the timer.
@@ -369,7 +387,7 @@ impl OptionChainManager {
 
     /// Routes incoming greeks to the aggregator.
     ///
-    /// Also updates the ATM tracker from the forward price if `ForwardPrice` source is active,
+    /// Also updates the ATM tracker from the reference price when one is available,
     /// and triggers deferred bootstrap on the first arrival.
     pub fn handle_greeks(&mut self, greeks: &OptionGreeks) {
         if self.aggregator.is_expired(greeks.ts_event) {
@@ -562,7 +580,7 @@ impl OptionChainManager {
         queue.push_back(DeferredCommand::Subscribe(SubscribeCommand::Quotes(
             SubscribeQuotes {
                 instrument_id,
-                client_id: None,
+                client_id: self.client_id,
                 venue: Some(venue),
                 command_id: UUID4::new(),
                 ts_init,
@@ -573,7 +591,7 @@ impl OptionChainManager {
         queue.push_back(DeferredCommand::Subscribe(SubscribeCommand::OptionGreeks(
             SubscribeOptionGreeks {
                 instrument_id,
-                client_id: None,
+                client_id: self.client_id,
                 venue: Some(venue),
                 command_id: UUID4::new(),
                 ts_init,
@@ -584,7 +602,7 @@ impl OptionChainManager {
         queue.push_back(DeferredCommand::Subscribe(
             SubscribeCommand::InstrumentStatus(SubscribeInstrumentStatus {
                 instrument_id,
-                client_id: None,
+                client_id: self.client_id,
                 venue: Some(venue),
                 command_id: UUID4::new(),
                 ts_init,
@@ -602,7 +620,7 @@ impl OptionChainManager {
         queue.push_back(DeferredCommand::Unsubscribe(UnsubscribeCommand::Quotes(
             UnsubscribeQuotes {
                 instrument_id,
-                client_id: None,
+                client_id: self.client_id,
                 venue: Some(venue),
                 command_id: UUID4::new(),
                 ts_init,
@@ -613,7 +631,7 @@ impl OptionChainManager {
         queue.push_back(DeferredCommand::Unsubscribe(
             UnsubscribeCommand::OptionGreeks(UnsubscribeOptionGreeks {
                 instrument_id,
-                client_id: None,
+                client_id: self.client_id,
                 venue: Some(venue),
                 command_id: UUID4::new(),
                 ts_init,
@@ -624,7 +642,7 @@ impl OptionChainManager {
         queue.push_back(DeferredCommand::Unsubscribe(
             UnsubscribeCommand::InstrumentStatus(UnsubscribeInstrumentStatus {
                 instrument_id,
-                client_id: None,
+                client_id: self.client_id,
                 venue: Some(venue),
                 command_id: UUID4::new(),
                 ts_init,
@@ -650,7 +668,7 @@ impl OptionChainManager {
 
         let ts_init = clock.borrow().timestamp_ns();
 
-        client.execute_subscribe(SubscribeCommand::Quotes(SubscribeQuotes {
+        client.execute_subscribe_intent(SubscribeCommand::Quotes(SubscribeQuotes {
             instrument_id,
             client_id: None,
             venue: Some(venue),
@@ -659,7 +677,7 @@ impl OptionChainManager {
             correlation_id: None,
             params: None,
         }));
-        client.execute_subscribe(SubscribeCommand::OptionGreeks(SubscribeOptionGreeks {
+        client.execute_subscribe_intent(SubscribeCommand::OptionGreeks(SubscribeOptionGreeks {
             instrument_id,
             client_id: None,
             venue: Some(venue),
@@ -668,7 +686,7 @@ impl OptionChainManager {
             correlation_id: None,
             params: None,
         }));
-        client.execute_subscribe(SubscribeCommand::InstrumentStatus(
+        client.execute_subscribe_intent(SubscribeCommand::InstrumentStatus(
             SubscribeInstrumentStatus {
                 instrument_id,
                 client_id: None,
@@ -858,6 +876,7 @@ mod tests {
             bootstrapped: true,
             deferred_cmd_queue: queue.clone(),
             clock,
+            client_id: None,
             raw_mode: false,
         };
         (manager, queue)
@@ -934,6 +953,7 @@ mod tests {
             bootstrapped: false,
             deferred_cmd_queue: queue.clone(),
             clock,
+            client_id: None,
             raw_mode: false,
         };
         (manager, queue)
@@ -1205,6 +1225,7 @@ mod tests {
             bootstrapped: true,
             deferred_cmd_queue: queue,
             clock,
+            client_id: None,
             raw_mode: false,
         };
 

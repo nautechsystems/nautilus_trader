@@ -72,7 +72,7 @@ use crate::{
 
 /// Extracts fee rates from a cached instrument.
 ///
-/// Returns a tuple of (margin_init, margin_maint, maker_fee, taker_fee).
+/// Returns a tuple of (`margin_init`, `margin_maint`, `maker_fee`, `taker_fee`).
 /// All values are None if the instrument type doesn't support fees.
 pub(crate) fn extract_fees_from_cached_instrument(
     instrument: &InstrumentAny,
@@ -171,7 +171,7 @@ pub fn parse_order_event(
     let has_new_fill = (!msg.fill_sz.is_empty() && msg.fill_sz != "0")
         || !msg.trade_id.is_empty()
         || has_acc_fill_sz_increased(
-            &msg.acc_fill_sz,
+            msg.acc_fill_sz.as_deref(),
             previous_filled_qty,
             instrument.size_precision(),
         );
@@ -280,6 +280,7 @@ pub fn parse_order_event(
                     false,
                     Some(venue_order_id),
                     Some(account_id),
+                    None,
                 )))
             }
         }
@@ -312,7 +313,7 @@ pub fn parse_spread_order_event(
     let instrument_id = instrument.id();
     let has_new_fill = (!msg.fill_sz.is_empty() && msg.fill_sz != "0")
         || !msg.trade_id.is_empty()
-        || has_acc_fill_sz_increased_value(
+        || has_acc_fill_sz_increased(
             Some(msg.acc_fill_sz.as_str()),
             previous_filled_qty,
             instrument.size_precision(),
@@ -398,6 +399,7 @@ pub fn parse_spread_order_event(
                 false,
                 Some(venue_order_id),
                 Some(account_id),
+                None,
             )))
         }
         _ => parse_common_spread_order_status_report(
@@ -419,8 +421,8 @@ pub fn parse_spread_order_event(
 /// the result fits inside the 36-character `TradeId` cap and stays stable
 /// across reconnect replays of the same physical fill.
 fn synthesize_trade_id(msg: &OKXOrderMsg) -> String {
-    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
-    const FNV_PRIME: u64 = 0x100000001b3;
+    const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const FNV_PRIME: u64 = 0x0100_0000_01b3;
 
     let mut hasher: u64 = FNV_OFFSET;
     let mut update = |bytes: &[u8]| {
@@ -516,8 +518,8 @@ fn log_unknown_cancel_source_inner(
 
 /// Checks if order parameters have been updated compared to previous state.
 ///
-/// For Live status, venue_id changes are ignored because algo triggers create new IDs
-/// but should emit OrderAccepted, not OrderUpdated. Price/quantity changes still count.
+/// For Live status, `venue_id` changes are ignored because algo triggers create new IDs
+/// but should emit `OrderAccepted`, not `OrderUpdated`. Price/quantity changes still count.
 fn is_order_updated_excluding_venue_id_for_live(
     msg: &OKXOrderMsg,
     previous: &OrderStateSnapshot,
@@ -629,7 +631,7 @@ pub fn parse_book_msg_vec(
     let mut deltas = Vec::with_capacity(data.len());
 
     for msg in data {
-        deltas.push(Data::Deltas(Box::new(parse_book_msg(
+        deltas.push(Data::BookDeltas(Box::new(parse_book_msg(
             &msg,
             *instrument_id,
             price_precision,
@@ -658,7 +660,7 @@ pub fn parse_rpi_book_msg_vec(
     let mut deltas = Vec::with_capacity(data.len());
 
     for msg in data {
-        deltas.push(Data::Deltas(Box::new(parse_rpi_book_msg(
+        deltas.push(Data::BookDeltas(Box::new(parse_rpi_book_msg(
             &msg,
             *instrument_id,
             price_precision,
@@ -872,7 +874,7 @@ pub fn parse_book10_msg_vec(
             size_precision,
             ts_init,
         )?;
-        depth10_updates.push(Data::Depth10(Box::new(depth10)));
+        depth10_updates.push(Data::BookDepth10(Box::new(depth10)));
     }
 
     Ok(depth10_updates)
@@ -1308,16 +1310,8 @@ pub fn update_fee_fill_caches(
     }
 }
 
-/// Checks if acc_fill_sz has increased compared to the previous filled quantity.
+/// Checks if `acc_fill_sz` has increased compared to the previous filled quantity.
 fn has_acc_fill_sz_increased(
-    acc_fill_sz: &Option<String>,
-    previous_filled_qty: Option<Quantity>,
-    size_precision: u8,
-) -> bool {
-    has_acc_fill_sz_increased_value(acc_fill_sz.as_deref(), previous_filled_qty, size_precision)
-}
-
-fn has_acc_fill_sz_increased_value(
     acc_fill_sz: Option<&str>,
     previous_filled_qty: Option<Quantity>,
     size_precision: u8,
@@ -1361,7 +1355,7 @@ pub fn parse_order_msg(
     let has_new_fill = (!msg.fill_sz.is_empty() && msg.fill_sz != "0")
         || !msg.trade_id.is_empty()
         || has_acc_fill_sz_increased(
-            &msg.acc_fill_sz,
+            msg.acc_fill_sz.as_deref(),
             previous_filled_qty,
             instrument.size_precision(),
         );
@@ -1422,7 +1416,7 @@ pub fn parse_spread_order_msg(
     let previous_filled_qty = filled_qty_cache.get(&msg.ord_id).copied();
     let has_new_fill = (!msg.fill_sz.is_empty() && msg.fill_sz != "0")
         || !msg.trade_id.is_empty()
-        || has_acc_fill_sz_increased_value(
+        || has_acc_fill_sz_increased(
             Some(msg.acc_fill_sz.as_str()),
             previous_filled_qty,
             instrument.size_precision(),
@@ -1473,11 +1467,14 @@ pub fn parse_algo_order_msg(
     instruments: &AHashMap<Ustr, InstrumentAny>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Option<ExecutionReport>> {
-    // Skip unsupported algo types (iceberg, twap, chase); their triggered child
-    // orders still arrive on the regular orders channel
+    // Skip unsupported algo types (iceberg, smart_iceberg, twap, chase); their
+    // triggered child orders still arrive on the regular orders channel
     if matches!(
         msg.ord_type,
-        OKXAlgoOrderType::Iceberg | OKXAlgoOrderType::Twap | OKXAlgoOrderType::Chase
+        OKXAlgoOrderType::Iceberg
+            | OKXAlgoOrderType::SmartIceberg
+            | OKXAlgoOrderType::Twap
+            | OKXAlgoOrderType::Chase
     ) {
         log::debug!("Skipping unsupported algo order type: {:?}", msg.ord_type);
         return Ok(None);
@@ -2102,13 +2099,12 @@ pub fn parse_fill_report(
     // If fillSz is provided, use it directly as the incremental fill quantity
     let last_qty = if !msg.fill_sz.is_empty() && msg.fill_sz != "0" {
         parse_quantity(&msg.fill_sz, size_precision)
-            .map_err(|e| anyhow::anyhow!("Failed to parse fill_sz='{}': {e}", msg.fill_sz,))?
+            .map_err(|e| anyhow::anyhow!("Failed to parse fill_sz='{}': {e}", msg.fill_sz))?
     } else if let Some(ref acc_fill_sz) = msg.acc_fill_sz {
         // If fillSz is missing but accFillSz is available, calculate incremental fill
         if !acc_fill_sz.is_empty() && acc_fill_sz != "0" {
-            let current_filled = parse_quantity(acc_fill_sz, size_precision).map_err(|e| {
-                anyhow::anyhow!("Failed to parse acc_fill_sz='{acc_fill_sz}': {e}",)
-            })?;
+            let current_filled = parse_quantity(acc_fill_sz, size_precision)
+                .map_err(|e| anyhow::anyhow!("Failed to parse acc_fill_sz='{acc_fill_sz}': {e}"))?;
 
             // Calculate incremental fill as: current_total - previous_total
             if let Some(prev_qty) = previous_filled_qty {
@@ -2311,7 +2307,7 @@ pub fn parse_option_summary_greeks(
         .fwd_px
         .as_deref()
         .filter(|s| !s.is_empty())
-        .map(|s| s.parse::<f64>())
+        .map(str::parse::<f64>)
         .transpose()
         .context("invalid fwd_px")?;
 
@@ -2368,7 +2364,7 @@ pub fn parse_ws_message_data(
                     extract_fees_from_cached_instrument,
                 );
                 let instrument_id =
-                    cached_instrument.map_or_else(|| parse_instrument_id(inst_key), |i| i.id());
+                    cached_instrument.map_or_else(|| parse_instrument_id(inst_key), Instrument::id);
 
                 let status_action = okx_status_to_market_action(msg.state);
                 let status = InstrumentStatus::new(
@@ -2552,7 +2548,7 @@ mod tests {
             acc_fill_sz,
             algo_id: None,
             avg_px: "50000.0".to_string(),
-            c_time: 1746947317401,
+            c_time: 1_746_947_317_401,
             cancel_source: None,
             cancel_source_reason: None,
             category: OKXOrderCategory::Normal,
@@ -2575,7 +2571,7 @@ mod tests {
             fill_pnl: None,
             fill_px: "50000.0".to_string(),
             fill_sz: fill_sz.to_string(),
-            fill_time: 1746947317402,
+            fill_time: 1_746_947_317_402,
             inst_id: Ustr::from("BTC-USDT-SWAP"),
             inst_type: OKXInstrumentType::Swap,
             is_tp_limit: None,
@@ -2611,7 +2607,7 @@ mod tests {
             tp_trigger_px: None,
             tp_trigger_px_type: None,
             trade_id: trade_id.to_string(),
-            u_time: 1746947317402,
+            u_time: 1_746_947_317_402,
             amend_result: None,
             req_id: None,
             code: None,
@@ -2642,8 +2638,8 @@ mod tests {
         assert_eq!(deltas.instrument_id, instrument_id);
         assert_eq!(deltas.deltas.len(), 16);
         assert_eq!(deltas.flags, 32);
-        assert_eq!(deltas.sequence, 123456);
-        assert_eq!(deltas.ts_event, UnixNanos::from(1597026383085000000));
+        assert_eq!(deltas.sequence, 123_456);
+        assert_eq!(deltas.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
         assert_eq!(deltas.ts_init, UnixNanos::default());
 
         // Verify some individual deltas are parsed correctly
@@ -2688,8 +2684,8 @@ mod tests {
         assert_eq!(deltas.instrument_id, instrument_id);
         assert_eq!(deltas.deltas.len(), 16);
         assert_eq!(deltas.flags, 0);
-        assert_eq!(deltas.sequence, 123457);
-        assert_eq!(deltas.ts_event, UnixNanos::from(1597026383085000000));
+        assert_eq!(deltas.sequence, 123_457);
+        assert_eq!(deltas.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
         assert_eq!(deltas.ts_init, UnixNanos::default());
 
         // Verify some individual deltas are parsed correctly
@@ -2759,7 +2755,7 @@ mod tests {
         assert_eq!(trade.ask_price, Price::from("9999.99"));
         assert_eq!(trade.bid_size, Quantity::from(5));
         assert_eq!(trade.ask_size, Quantity::from(11));
-        assert_eq!(trade.ts_event, UnixNanos::from(1597026383085000000));
+        assert_eq!(trade.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
         assert_eq!(trade.ts_init, UnixNanos::default());
     }
 
@@ -2781,7 +2777,7 @@ mod tests {
         assert_eq!(quote.ask_price, Price::from("8476.98"));
         assert_eq!(quote.bid_size, Quantity::from(256));
         assert_eq!(quote.ask_size, Quantity::from(415));
-        assert_eq!(quote.ts_event, UnixNanos::from(1597026383085000000));
+        assert_eq!(quote.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
         assert_eq!(quote.ts_init, UnixNanos::default());
     }
 
@@ -2803,7 +2799,7 @@ mod tests {
         assert_eq!(trade.size, Quantity::from("0.12060306"));
         assert_eq!(trade.aggressor_side, AggressorSide::Buy);
         assert_eq!(trade.trade_id, TradeId::from("130639474"));
-        assert_eq!(trade.ts_event, UnixNanos::from(1630048897897000000));
+        assert_eq!(trade.ts_event, UnixNanos::from(1_630_048_897_897_000_000));
         assert_eq!(trade.ts_init, UnixNanos::default());
     }
 
@@ -2830,7 +2826,7 @@ mod tests {
         assert_eq!(bar.low, Price::from("8527.17"));
         assert_eq!(bar.close, Price::from("8548.26"));
         assert_eq!(bar.volume, Quantity::from(45247));
-        assert_eq!(bar.ts_event, UnixNanos::from(1597026383085000000));
+        assert_eq!(bar.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
         assert_eq!(bar.ts_init, UnixNanos::default());
     }
 
@@ -2854,9 +2850,12 @@ mod tests {
         assert_eq!(funding_rate.interval, Some(8 * 60));
         assert_eq!(
             funding_rate.next_funding_ns,
-            Some(UnixNanos::from(1744590349506000000))
+            Some(UnixNanos::from(1_744_590_349_506_000_000))
         );
-        assert_eq!(funding_rate.ts_event, UnixNanos::from(1744590349506000000));
+        assert_eq!(
+            funding_rate.ts_event,
+            UnixNanos::from(1_744_590_349_506_000_000)
+        );
         assert_eq!(funding_rate.ts_init, UnixNanos::default());
     }
 
@@ -2875,8 +2874,8 @@ mod tests {
 
         assert_eq!(deltas_vec.len(), 1);
 
-        if let Data::Deltas(d) = &deltas_vec[0] {
-            assert_eq!(d.sequence, 123456);
+        if let Data::BookDeltas(d) = &deltas_vec[0] {
+            assert_eq!(d.sequence, 123_456);
         } else {
             panic!("Expected Deltas");
         }
@@ -2987,8 +2986,8 @@ mod tests {
         assert_eq!(bid.size, "256");
         assert_eq!(bid.liquidated_orders_count, "0");
         assert_eq!(bid.orders_count, "12");
-        assert_eq!(book_msg.ts, 1597026383085);
-        assert_eq!(book_msg.seq_id, 123456);
+        assert_eq!(book_msg.ts, 1_597_026_383_085);
+        assert_eq!(book_msg.seq_id, 123_456);
         assert_eq!(book_msg.checksum, None);
         assert_eq!(book_msg.prev_seq_id, None);
     }
@@ -3279,8 +3278,8 @@ mod tests {
             parse_book10_msg(&msgs[0], instrument_id, 2, 0, UnixNanos::default()).unwrap();
 
         assert_eq!(depth10.instrument_id, instrument_id);
-        assert_eq!(depth10.sequence, 123456);
-        assert_eq!(depth10.ts_event, UnixNanos::from(1597026383085000000));
+        assert_eq!(depth10.sequence, 123_456);
+        assert_eq!(depth10.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
         assert_eq!(depth10.flags, RecordFlag::F_SNAPSHOT as u8);
 
         // Check bid levels (available in test data: 8 levels)
@@ -3329,9 +3328,9 @@ mod tests {
 
         assert_eq!(depth10_vec.len(), 1);
 
-        if let Data::Depth10(d) = &depth10_vec[0] {
+        if let Data::BookDepth10(d) = &depth10_vec[0] {
             assert_eq!(d.instrument_id, instrument_id);
-            assert_eq!(d.sequence, 123456);
+            assert_eq!(d.sequence, 123_456);
             assert_eq!(d.bids[0].price, Price::from("8476.97"));
             assert_eq!(d.asks[0].price, Price::from("8476.98"));
         } else {
@@ -3366,7 +3365,7 @@ mod tests {
             acc_fill_sz: Some("0.01".to_string()),
             algo_id: None,
             avg_px: "50000.0".to_string(),
-            c_time: 1746947317401,
+            c_time: 1_746_947_317_401,
             cancel_source: None,
             cancel_source_reason: None,
             category: OKXOrderCategory::Normal,
@@ -3389,7 +3388,7 @@ mod tests {
             fill_pnl: None,
             fill_px: "50000.0".to_string(),
             fill_sz: "0.01".to_string(),
-            fill_time: 1746947317402,
+            fill_time: 1_746_947_317_402,
             inst_id: Ustr::from("BTC-USDT-SWAP"),
             inst_type: OKXInstrumentType::Swap,
             is_tp_limit: None,
@@ -3425,7 +3424,7 @@ mod tests {
             tp_trigger_px: None,
             tp_trigger_px_type: None,
             trade_id: "trade_1".to_string(),
-            u_time: 1746947317402,
+            u_time: 1_746_947_317_402,
             amend_result: None,
             req_id: None,
             code: None,
@@ -3451,7 +3450,7 @@ mod tests {
             acc_fill_sz: Some("0.03".to_string()),
             algo_id: None,
             avg_px: "50000.0".to_string(),
-            c_time: 1746947317401,
+            c_time: 1_746_947_317_401,
             cancel_source: None,
             cancel_source_reason: None,
             category: OKXOrderCategory::Normal,
@@ -3474,7 +3473,7 @@ mod tests {
             fill_pnl: None,
             fill_px: "50000.0".to_string(),
             fill_sz: "0.02".to_string(),
-            fill_time: 1746947317403,
+            fill_time: 1_746_947_317_403,
             inst_id: Ustr::from("BTC-USDT-SWAP"),
             inst_type: OKXInstrumentType::Swap,
             is_tp_limit: None,
@@ -3510,7 +3509,7 @@ mod tests {
             tp_trigger_px: None,
             tp_trigger_px_type: None,
             trade_id: "trade_2".to_string(),
-            u_time: 1746947317403,
+            u_time: 1_746_947_317_403,
             amend_result: None,
             req_id: None,
             code: None,
@@ -3561,7 +3560,7 @@ mod tests {
             acc_fill_sz: Some("0.01".to_string()),
             algo_id: None,
             avg_px: "50000.0".to_string(),
-            c_time: 1746947317401,
+            c_time: 1_746_947_317_401,
             cancel_source: None,
             cancel_source_reason: None,
             category: OKXOrderCategory::Normal,
@@ -3584,7 +3583,7 @@ mod tests {
             fill_pnl: None,
             fill_px: "50000.0".to_string(),
             fill_sz: "0.01".to_string(),
-            fill_time: 1746947317402,
+            fill_time: 1_746_947_317_402,
             inst_id: Ustr::from("BTC-USDT-SWAP"),
             inst_type: OKXInstrumentType::Swap,
             is_tp_limit: None,
@@ -3620,7 +3619,7 @@ mod tests {
             tp_trigger_px: None,
             tp_trigger_px_type: None,
             trade_id: "trade_rebate_1".to_string(),
-            u_time: 1746947317402,
+            u_time: 1_746_947_317_402,
             amend_result: None,
             req_id: None,
             code: None,
@@ -3646,7 +3645,7 @@ mod tests {
             acc_fill_sz: Some("0.02".to_string()),
             algo_id: None,
             avg_px: "50000.0".to_string(),
-            c_time: 1746947317401,
+            c_time: 1_746_947_317_401,
             cancel_source: None,
             cancel_source_reason: None,
             category: OKXOrderCategory::Normal,
@@ -3669,7 +3668,7 @@ mod tests {
             fill_pnl: None,
             fill_px: "50000.0".to_string(),
             fill_sz: "0.01".to_string(),
-            fill_time: 1746947317403,
+            fill_time: 1_746_947_317_403,
             inst_id: Ustr::from("BTC-USDT-SWAP"),
             inst_type: OKXInstrumentType::Swap,
             is_tp_limit: None,
@@ -3705,7 +3704,7 @@ mod tests {
             tp_trigger_px: None,
             tp_trigger_px_type: None,
             trade_id: "trade_rebate_2".to_string(),
-            u_time: 1746947317403,
+            u_time: 1_746_947_317_403,
             amend_result: None,
             req_id: None,
             code: None,
@@ -3754,7 +3753,7 @@ mod tests {
             acc_fill_sz: Some("0.01".to_string()),
             algo_id: None,
             avg_px: "50000.0".to_string(),
-            c_time: 1746947317401,
+            c_time: 1_746_947_317_401,
             cancel_source: None,
             cancel_source_reason: None,
             category: OKXOrderCategory::Normal,
@@ -3777,7 +3776,7 @@ mod tests {
             fill_pnl: None,
             fill_px: "50000.0".to_string(),
             fill_sz: "0.01".to_string(),
-            fill_time: 1746947317402,
+            fill_time: 1_746_947_317_402,
             inst_id: Ustr::from("BTC-USDT-SWAP"),
             inst_type: OKXInstrumentType::Swap,
             is_tp_limit: None,
@@ -3813,7 +3812,7 @@ mod tests {
             tp_trigger_px: None,
             tp_trigger_px_type: None,
             trade_id: "trade_transition_1".to_string(),
-            u_time: 1746947317402,
+            u_time: 1_746_947_317_402,
             amend_result: None,
             req_id: None,
             code: None,
@@ -3841,7 +3840,7 @@ mod tests {
             acc_fill_sz: Some("0.02".to_string()),
             algo_id: None,
             avg_px: "50000.0".to_string(),
-            c_time: 1746947317401,
+            c_time: 1_746_947_317_401,
             cancel_source: None,
             cancel_source_reason: None,
             category: OKXOrderCategory::Normal,
@@ -3864,7 +3863,7 @@ mod tests {
             fill_pnl: None,
             fill_px: "50000.0".to_string(),
             fill_sz: "0.01".to_string(),
-            fill_time: 1746947317403,
+            fill_time: 1_746_947_317_403,
             inst_id: Ustr::from("BTC-USDT-SWAP"),
             inst_type: OKXInstrumentType::Swap,
             is_tp_limit: None,
@@ -3900,7 +3899,7 @@ mod tests {
             tp_trigger_px: None,
             tp_trigger_px_type: None,
             trade_id: "trade_transition_2".to_string(),
-            u_time: 1746947317403,
+            u_time: 1_746_947_317_403,
             amend_result: None,
             req_id: None,
             code: None,
@@ -3950,7 +3949,7 @@ mod tests {
             acc_fill_sz: Some("0.01".to_string()),
             algo_id: None,
             avg_px: "50000.0".to_string(),
-            c_time: 1746947317401,
+            c_time: 1_746_947_317_401,
             cancel_source: None,
             cancel_source_reason: None,
             category: OKXOrderCategory::Normal,
@@ -3973,7 +3972,7 @@ mod tests {
             fill_pnl: None,
             fill_px: "50000.0".to_string(),
             fill_sz: "0.01".to_string(),
-            fill_time: 1746947317402,
+            fill_time: 1_746_947_317_402,
             inst_id: Ustr::from("BTC-USDT-SWAP"),
             inst_type: OKXInstrumentType::Swap,
             is_tp_limit: None,
@@ -4009,7 +4008,7 @@ mod tests {
             tp_trigger_px: None,
             tp_trigger_px_type: None,
             trade_id: "trade_neg_inc_1".to_string(),
-            u_time: 1746947317402,
+            u_time: 1_746_947_317_402,
             amend_result: None,
             req_id: None,
             code: None,
@@ -4035,7 +4034,7 @@ mod tests {
             acc_fill_sz: Some("0.02".to_string()),
             algo_id: None,
             avg_px: "50000.0".to_string(),
-            c_time: 1746947317401,
+            c_time: 1_746_947_317_401,
             cancel_source: None,
             cancel_source_reason: None,
             category: OKXOrderCategory::Normal,
@@ -4058,7 +4057,7 @@ mod tests {
             fill_pnl: None,
             fill_px: "50000.0".to_string(),
             fill_sz: "0.01".to_string(),
-            fill_time: 1746947317403,
+            fill_time: 1_746_947_317_403,
             inst_id: Ustr::from("BTC-USDT-SWAP"),
             inst_type: OKXInstrumentType::Swap,
             is_tp_limit: None,
@@ -4094,7 +4093,7 @@ mod tests {
             tp_trigger_px: None,
             tp_trigger_px_type: None,
             trade_id: "trade_neg_inc_2".to_string(),
-            u_time: 1746947317403,
+            u_time: 1_746_947_317_403,
             amend_result: None,
             req_id: None,
             code: None,
@@ -4358,10 +4357,10 @@ mod tests {
                 liquidated_orders_count: "0".to_string(),
                 orders_count: "12".to_string(),
             }],
-            ts: 1597026383085,
+            ts: 1_597_026_383_085,
             checksum: None,
             prev_seq_id: None,
-            seq_id: 123456,
+            seq_id: 123_456,
         };
 
         let instrument_id = InstrumentId::from("BTC-USDT.OKX");
@@ -4634,7 +4633,7 @@ mod tests {
         let msg = &data[0];
         assert_eq!(msg.category, OKXOrderCategory::FullLiquidation);
         assert_eq!(msg.state, OKXOrderStatus::Filled);
-        assert_eq!(msg.inst_id.as_str(), "BTC-USDT-SWAP");
+        assert_eq!(msg.inst_id, "BTC-USDT-SWAP");
 
         let account_id = AccountId::new("OKX-001");
         let mut instruments = AHashMap::new();
@@ -4697,7 +4696,7 @@ mod tests {
         let msg = &data[0];
         assert_eq!(msg.category, OKXOrderCategory::Adl);
         assert_eq!(msg.state, OKXOrderStatus::Filled);
-        assert_eq!(msg.inst_id.as_str(), "ETH-USDT-SWAP");
+        assert_eq!(msg.inst_id, "ETH-USDT-SWAP");
 
         let account_id = AccountId::new("OKX-001");
         let mut instruments = AHashMap::new();
@@ -4806,7 +4805,7 @@ mod tests {
             acc_fill_sz: Some("0.25".to_string()),
             algo_id: None,
             avg_px: "39000.0".to_string(),
-            c_time: 1746947317401,
+            c_time: 1_746_947_317_401,
             cancel_source: None,
             cancel_source_reason: None,
             category: OKXOrderCategory::PartialLiquidation,
@@ -4829,7 +4828,7 @@ mod tests {
             fill_pnl: None,
             fill_px: "39000.0".to_string(),
             fill_sz: "0.25".to_string(),
-            fill_time: 1746947317402,
+            fill_time: 1_746_947_317_402,
             inst_id: Ustr::from("BTC-USDT-SWAP"),
             inst_type: OKXInstrumentType::Swap,
             is_tp_limit: None,
@@ -4865,7 +4864,7 @@ mod tests {
             tp_trigger_px: None,
             tp_trigger_px_type: None,
             trade_id: "1518905888".to_string(),
-            u_time: 1746947317402,
+            u_time: 1_746_947_317_402,
             amend_result: None,
             req_id: None,
             code: None,
@@ -5077,8 +5076,8 @@ mod tests {
         assert_eq!(warning.pos, "0.5");
         assert_eq!(warning.mgn_ratio, "0.62");
         assert_eq!(warning.mark_px, "41250.5");
-        assert_eq!(warning.c_time, 1622559930237);
-        assert_eq!(warning.u_time, 1788000000001);
+        assert_eq!(warning.c_time, 1_622_559_930_237);
+        assert_eq!(warning.u_time, 1_788_000_000_001);
         assert_eq!(warning.p_time.as_deref(), Some("1788000000002"));
     }
 
@@ -5478,7 +5477,7 @@ mod tests {
             acc_fill_sz: Some("0".to_string()),
             algo_id: None,
             avg_px: "50000.0".to_string(),
-            c_time: 1746947317401,
+            c_time: 1_746_947_317_401,
             cancel_source: None,
             cancel_source_reason: None,
             category: OKXOrderCategory::Normal,
@@ -5537,7 +5536,7 @@ mod tests {
             tp_trigger_px: None,
             tp_trigger_px_type: None,
             trade_id: String::new(),
-            u_time: 1746947317402,
+            u_time: 1_746_947_317_402,
             amend_result: None,
             req_id: None,
             code: None,
@@ -5704,7 +5703,7 @@ mod tests {
         let account_id = AccountId::new("OKX-001");
         let trader_id = TraderId::new("TRADER-001");
         let strategy_id = StrategyId::new("STRATEGY-001");
-        let ts_init = UnixNanos::from(1000000000);
+        let ts_init = UnixNanos::from(1_000_000_000);
 
         let result = parse_order_event(
             &msg,
@@ -5945,7 +5944,7 @@ mod tests {
         let account_id = AccountId::new("OKX-001");
         let trader_id = TraderId::new("TRADER-001");
         let strategy_id = StrategyId::new("STRATEGY-001");
-        let ts_init = UnixNanos::from(1000000000);
+        let ts_init = UnixNanos::from(1_000_000_000);
 
         let previous_state = OrderStateSnapshot {
             venue_order_id: VenueOrderId::new("venue_456"),
@@ -5991,7 +5990,8 @@ mod tests {
         let account_id = AccountId::new("OKX-001");
         let trader_id = TraderId::new("TRADER-001");
         let strategy_id = StrategyId::new("STRATEGY-001");
-        let ts_init = UnixNanos::from(1000000000);
+        let ts_init = UnixNanos::from(1_000_000_000);
+
         let previous_state = OrderStateSnapshot {
             venue_order_id: VenueOrderId::new("venue_456"),
             quantity: Quantity::from("0.01000000"),
@@ -6036,7 +6036,7 @@ mod tests {
         let account_id = AccountId::new("OKX-001");
         let trader_id = TraderId::new("TRADER-001");
         let strategy_id = StrategyId::new("STRATEGY-001");
-        let ts_init = UnixNanos::from(1000000000);
+        let ts_init = UnixNanos::from(1_000_000_000);
 
         let result = parse_order_event(
             &msg,
@@ -6080,7 +6080,7 @@ mod tests {
         let account_id = AccountId::new("OKX-001");
         let trader_id = TraderId::new("TRADER-001");
         let strategy_id = StrategyId::new("STRATEGY-001");
-        let ts_init = UnixNanos::from(1000000000);
+        let ts_init = UnixNanos::from(1_000_000_000);
 
         let result = parse_order_event(
             &msg,
@@ -6124,7 +6124,7 @@ mod tests {
         let account_id = AccountId::new("OKX-001");
         let trader_id = TraderId::new("TRADER-001");
         let strategy_id = StrategyId::new("STRATEGY-001");
-        let ts_init = UnixNanos::from(1000000000);
+        let ts_init = UnixNanos::from(1_000_000_000);
 
         let result = parse_order_event(
             &msg,
@@ -6299,7 +6299,7 @@ mod tests {
         let account_id = AccountId::new("OKX-001");
         let trader_id = TraderId::new("TRADER-001");
         let strategy_id = StrategyId::new("STRATEGY-001");
-        let ts_init = UnixNanos::from(1000000000);
+        let ts_init = UnixNanos::from(1_000_000_000);
 
         let previous_state = OrderStateSnapshot {
             venue_order_id: VenueOrderId::new("venue_456"),
@@ -6431,7 +6431,7 @@ mod tests {
             acc_fill_sz: Some("0".to_string()),
             algo_id: None,
             avg_px: String::new(),
-            c_time: 1706000000000, // ~2024-01-23 in ms
+            c_time: 1_706_000_000_000, // ~2024-01-23 in ms
             cancel_source: None,
             cancel_source_reason: None,
             category: OKXOrderCategory::Normal,
@@ -6490,7 +6490,7 @@ mod tests {
             tp_trigger_px: None,
             tp_trigger_px_type: None,
             trade_id: String::new(),
-            u_time: 1706000001000, // 1 second later in ms
+            u_time: 1_706_000_001_000, // 1 second later in ms
             amend_result: None,
             req_id: None,
             code: None,
@@ -6501,11 +6501,11 @@ mod tests {
 
         assert_eq!(
             report.ts_accepted,
-            UnixNanos::from(1706000000000u64 * 1_000_000)
+            UnixNanos::from(1_706_000_000_000_u64 * 1_000_000)
         );
         assert_eq!(
             report.ts_last,
-            UnixNanos::from(1706000001000u64 * 1_000_000)
+            UnixNanos::from(1_706_000_001_000_u64 * 1_000_000)
         );
         assert_eq!(report.ts_init, ts_init);
     }
@@ -6521,7 +6521,7 @@ mod tests {
             acc_fill_sz: Some("0".to_string()),
             algo_id: None,
             avg_px: String::new(),
-            c_time: 1706000000000,
+            c_time: 1_706_000_000_000,
             cancel_source: None,
             cancel_source_reason: None,
             category: OKXOrderCategory::Normal,
@@ -6607,7 +6607,7 @@ mod tests {
             tp_trigger_px: None,
             tp_trigger_px_type: None,
             trade_id: String::new(),
-            u_time: 1706000001000,
+            u_time: 1_706_000_001_000,
             amend_result: None,
             req_id: None,
             code: None,
@@ -6660,8 +6660,8 @@ mod tests {
             actual_px: String::new(),
             actual_sz: String::new(),
             notional_usd: String::new(),
-            c_time: 1706000000000,
-            u_time: 1706000001000,
+            c_time: 1_706_000_000_000,
+            u_time: 1_706_000_001_000,
             trigger_time: String::new(),
             fail_code: String::new(),
             tag: String::new(),
@@ -6677,8 +6677,8 @@ mod tests {
 
         let report = parse_algo_order_status_report(&msg, &inst, account_id, ts_init).unwrap();
 
-        let expected_accepted_ns = 1706000000000u64 * 1_000_000;
-        let expected_last_ns = 1706000001000u64 * 1_000_000;
+        let expected_accepted_ns = 1_706_000_000_000_u64 * 1_000_000;
+        let expected_last_ns = 1_706_000_001_000_u64 * 1_000_000;
         assert_eq!(report.ts_accepted, UnixNanos::from(expected_accepted_ns));
         assert_eq!(report.ts_last, UnixNanos::from(expected_last_ns));
         assert_eq!(report.ts_init, ts_init);
@@ -6714,8 +6714,8 @@ mod tests {
             actual_px: String::new(),
             actual_sz: String::new(),
             notional_usd: String::new(),
-            c_time: 1706000000000,
-            u_time: 1706000001000,
+            c_time: 1_706_000_000_000,
+            u_time: 1_706_000_001_000,
             trigger_time: String::new(),
             fail_code: String::new(),
             tag: String::new(),
@@ -7000,7 +7000,7 @@ mod tests {
         OKXBookMsg {
             bids,
             asks,
-            ts: 1706000000000,
+            ts: 1_706_000_000_000,
             seq_id: 1,
             prev_seq_id: Some(0),
             checksum: None,
@@ -7202,14 +7202,17 @@ mod tests {
                 None,
                 None,
                 None,
-                UnixNanos::from(1706000000000000000u64),
-                UnixNanos::from(1706000000000000000u64),
+                UnixNanos::from(1_706_000_000_000_000_000_u64),
+                UnixNanos::from(1_706_000_000_000_000_000_u64),
             )
             .unwrap();
 
         assert_eq!(quote.bid_price, Price::from("0.0010"));
         assert_eq!(quote.ask_price, Price::from("0.0015"));
-        assert_eq!(quote.ts_event, UnixNanos::from(1706000000000000000u64));
+        assert_eq!(
+            quote.ts_event,
+            UnixNanos::from(1_706_000_000_000_000_000_u64)
+        );
     }
 
     #[rstest]
@@ -7499,7 +7502,7 @@ mod tests {
 
         assert_eq!(greeks.instrument_id, instrument_id);
         assert!((greeks.greeks.delta - 0.5312).abs() < 1e-10);
-        assert!((greeks.greeks.gamma - 0.0000134).abs() < 1e-15);
+        assert!((greeks.greeks.gamma - 0.000_013_4).abs() < 1e-15);
         assert!((greeks.greeks.vega - 0.0038).abs() < 1e-10);
         assert!((greeks.greeks.theta - (-0.0015)).abs() < 1e-10);
         assert!((greeks.greeks.rho - 0.0).abs() < 1e-10);
@@ -7574,7 +7577,7 @@ mod tests {
 
         assert_eq!(greeks.instrument_id, instrument_id);
         assert!((greeks.greeks.delta - 0.5234).abs() < 1e-10);
-        assert!((greeks.greeks.gamma - 0.0000123).abs() < 1e-15);
+        assert!((greeks.greeks.gamma - 0.000_012_3).abs() < 1e-15);
         assert!((greeks.greeks.vega - 0.0034).abs() < 1e-10);
         assert!((greeks.greeks.theta - (-0.0012)).abs() < 1e-10);
         assert!((greeks.greeks.rho - 0.0).abs() < 1e-10);
@@ -7853,7 +7856,7 @@ mod tests {
             "asks": [["16.7", "100", "1"]],
             "bids": [["16.65", "100", "1"]],
             "ts": "1780044924909",
-            "seqId": 1779935772619784_u64,
+            "seqId": 1_779_935_772_619_784_u64,
         }))
         .unwrap();
         let instrument_id = InstrumentId::from("ETH-USD-260925_ETH-USD-261225.OKX");

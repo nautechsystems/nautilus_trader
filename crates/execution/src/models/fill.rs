@@ -299,7 +299,7 @@ impl Display for DefaultFillModel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "DefaultFillModel(prob_fill_on_limit: {}, prob_slippage: {})",
+            "DefaultFillModel(prob_fill_on_limit={}, prob_slippage={})",
             self.state.prob_fill_on_limit, self.state.prob_slippage
         )
     }
@@ -1355,6 +1355,7 @@ impl FillModel for FillModelAny {
         }
     }
 
+    #[rustfmt::skip]
     fn get_orderbook_for_fill_simulation(
         &mut self,
         instrument: &InstrumentAny,
@@ -1363,39 +1364,17 @@ impl FillModel for FillModelAny {
         best_ask: Price,
     ) -> anyhow::Result<Option<OrderBook>> {
         match self {
-            Self::Default(m) => {
-                m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask)
-            }
-            Self::BestPrice(m) => {
-                m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask)
-            }
-            Self::OneTickSlippage(m) => {
-                m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask)
-            }
-            Self::Probabilistic(m) => {
-                m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask)
-            }
-            Self::TwoTier(m) => {
-                m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask)
-            }
-            Self::ThreeTier(m) => {
-                m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask)
-            }
-            Self::LimitOrderPartialFill(m) => {
-                m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask)
-            }
-            Self::SizeAware(m) => {
-                m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask)
-            }
-            Self::CompetitionAware(m) => {
-                m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask)
-            }
-            Self::VolumeSensitive(m) => {
-                m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask)
-            }
-            Self::MarketHours(m) => {
-                m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask)
-            }
+            Self::Default(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
+            Self::BestPrice(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
+            Self::OneTickSlippage(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
+            Self::Probabilistic(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
+            Self::TwoTier(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
+            Self::ThreeTier(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
+            Self::LimitOrderPartialFill(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
+            Self::SizeAware(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
+            Self::CompetitionAware(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
+            Self::VolumeSensitive(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
+            Self::MarketHours(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
         }
     }
 }
@@ -1440,6 +1419,14 @@ mod tests {
     fn fill_model() -> DefaultFillModel {
         let seed = 42;
         DefaultFillModel::new(0.5, 0.1, Some(seed)).unwrap()
+    }
+
+    #[rstest]
+    fn test_fill_model_display(fill_model: DefaultFillModel) {
+        assert_eq!(
+            format!("{fill_model}"),
+            "DefaultFillModel(prob_fill_on_limit=0.5, prob_slippage=0.1)"
+        );
     }
 
     #[rstest]
@@ -1835,5 +1822,45 @@ mod tests {
 
         let one_tick = FillModelAny::OneTickSlippage(OneTickSlippageFillModel::default());
         assert!(!one_tick.fill_limit_inside_spread().unwrap());
+    }
+
+    #[rstest]
+    fn test_market_hours_fill_model_switches_liquidity_and_preserves_clone_state() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(17))
+            .build();
+        let mut model = MarketHoursFillModel::default();
+
+        for (low_liquidity, bid, ask) in [
+            (false, dec!(0.80000), dec!(0.80010)),
+            (true, dec!(0.79999), dec!(0.80011)),
+            (false, dec!(0.80000), dec!(0.80010)),
+        ] {
+            model.set_low_liquidity_period(low_liquidity);
+            let mut cloned = model.clone();
+            let book = cloned
+                .get_orderbook_for_fill_simulation(
+                    &instrument,
+                    &order,
+                    Price::from("0.80000"),
+                    Price::from("0.80010"),
+                )
+                .unwrap()
+                .unwrap();
+
+            assert_eq!(model.is_low_liquidity_period(), low_liquidity);
+            assert_eq!(cloned.is_low_liquidity_period(), low_liquidity);
+            assert_eq!(
+                book.bids_as_map(None).into_iter().collect::<Vec<_>>(),
+                vec![(bid, dec!(500))]
+            );
+            assert_eq!(
+                book.asks_as_map(None).into_iter().collect::<Vec<_>>(),
+                vec![(ask, dec!(500))]
+            );
+        }
     }
 }

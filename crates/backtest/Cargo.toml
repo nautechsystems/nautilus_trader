@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-backtest"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -65,7 +64,7 @@ nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
 nautilus-data = { workspace = true }
 nautilus-execution = { workspace = true }
-nautilus-model = { workspace = true, features = ["test-support"] }
+nautilus-model = { workspace = true }
 nautilus-persistence = { workspace = true, optional = true }
 nautilus-portfolio = { workspace = true }
 nautilus-risk = { workspace = true }
@@ -83,15 +82,16 @@ log = { workspace = true }
 parking_lot = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 ustr = { workspace = true }
 
 mimalloc = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
-serde_json = { workspace = true }
 
 [dev-dependencies]
 nautilus-indicators = { workspace = true }
+nautilus-model = { workspace = true, features = ["test-support"] }
 nautilus-persistence = { workspace = true }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "datasets",
@@ -129,9 +129,3 @@ name = "tardis-option-chain"
 path = "examples/tardis_option_chain.rs"
 required-features = ["examples", "streaming"]
 doc = false
-
-# Run in the normal `--tests` lane; the dev-dependency enables `nautilus-trading/examples`
-[[test]]
-name = "backtest-node-workload"
-path = "tests/backtest_node_workload.rs"
-required-features = ["streaming"]

@@ -74,7 +74,7 @@ pub struct MessageBusConfig {
     pub stream_per_topic: bool,
     /// The external stream keys the message bus will listen to for publishing deserialized message payloads internally.
     pub external_streams: Option<Vec<String>>,
-    /// A list of serializable types **not** to publish externally.
+    /// A list of serializable payload type names **not** to publish externally.
     pub types_filter: Option<Vec<String>>,
     /// The heartbeat interval (seconds).
     pub heartbeat_interval_secs: Option<u16>,

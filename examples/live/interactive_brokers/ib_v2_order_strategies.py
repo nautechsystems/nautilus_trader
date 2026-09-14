@@ -169,7 +169,7 @@ class IbV2SubscriptionStrategy(Strategy):
 
     def __init__(self) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(
             StrategyConfig(
@@ -275,7 +275,7 @@ class DatabentoSubscriptionStrategy(Strategy):
 
     def __init__(self) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(
             StrategyConfig(
@@ -336,7 +336,7 @@ class OptionGreeksStrategy(Strategy):
 
     def __init__(self) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(
             StrategyConfig(
@@ -401,7 +401,7 @@ class IbV2OrderStrategy(Strategy):
 
     def __init__(self) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(
             StrategyConfig(
@@ -837,7 +837,7 @@ class SpreadOrderStrategy(IbV2OrderStrategy):
 
     def __init__(self) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = env_instrument_id(
@@ -899,7 +899,7 @@ class DatabentoInstrumentIdStrategy(IbV2OrderStrategy):
 
     def __init__(self) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = env_instrument_id(

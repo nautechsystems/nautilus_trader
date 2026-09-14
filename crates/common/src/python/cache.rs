@@ -23,7 +23,7 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::defi::{Pool, PoolProfiler};
 use nautilus_model::{
     data::{
-        Bar, BarType, FundingRateUpdate, InstrumentStatus, QuoteTick, TradeTick,
+        Bar, BarType, FundingRateUpdate, InstrumentClose, InstrumentStatus, QuoteTick, TradeTick,
         prices::{IndexPriceUpdate, MarkPriceUpdate},
     },
     enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType},
@@ -97,8 +97,9 @@ impl PyCache {
 impl PyCache {
     #[new]
     #[pyo3(signature = (config=None))]
-    fn py_new(config: Option<CacheConfig>) -> Self {
-        Self(Rc::new(RefCell::new(Cache::new(config, None))))
+    fn py_new(config: Option<CacheConfig>) -> PyResult<Self> {
+        let cache = Cache::try_new(config, None).map_err(config_error_to_pyvalue_err)?;
+        Ok(Self(Rc::new(RefCell::new(cache))))
     }
 
     #[pyo3(name = "reset")]
@@ -160,6 +161,15 @@ impl PyCache {
         self.0
             .borrow_mut()
             .add(key, Bytes::from(value))
+            .map_err(to_pyvalue_err)
+    }
+
+    /// Adds an instrument close, replacing any close cached for the same instrument.
+    #[pyo3(name = "add_instrument_close")]
+    fn py_add_instrument_close(&mut self, close: InstrumentClose) -> PyResult<()> {
+        self.0
+            .borrow_mut()
+            .add_instrument_close(close)
             .map_err(to_pyvalue_err)
     }
 
@@ -258,6 +268,11 @@ impl PyCache {
         self.0.borrow().instrument_statuses(&instrument_id)
     }
 
+    #[pyo3(name = "instrument_close")]
+    fn py_instrument_close(&self, instrument_id: InstrumentId) -> Option<InstrumentClose> {
+        self.0.borrow().instrument_close(&instrument_id).copied()
+    }
+
     #[pyo3(name = "price")]
     fn py_price(&self, instrument_id: InstrumentId, price_type: PriceType) -> Option<Price> {
         self.0.borrow().price(&instrument_id, price_type)
@@ -306,6 +321,11 @@ impl PyCache {
     #[pyo3(name = "has_instrument_statuses")]
     fn py_has_instrument_statuses(&self, instrument_id: InstrumentId) -> bool {
         self.0.borrow().has_instrument_statuses(&instrument_id)
+    }
+
+    #[pyo3(name = "has_instrument_close")]
+    fn py_has_instrument_close(&self, instrument_id: InstrumentId) -> bool {
+        self.0.borrow().has_instrument_close(&instrument_id)
     }
 
     #[pyo3(name = "has_bars")]
@@ -1228,6 +1248,8 @@ impl PyCache {
 #[cfg(test)]
 mod tests {
     use nautilus_core::UnixNanos;
+    use nautilus_model::{data::stubs::stub_instrument_close, enums::InstrumentCloseType};
+    use pyo3::exceptions::PyValueError;
     use rstest::rstest;
 
     use super::*;
@@ -1261,6 +1283,53 @@ mod tests {
             py_cache.py_order_lists(None, None, None, None),
             vec![order_list],
         );
+    }
+
+    #[rstest]
+    fn test_add_instrument_close_replaces_existing() {
+        let first = stub_instrument_close();
+        let replacement = InstrumentClose::new(
+            first.instrument_id,
+            Price::from("0.00000"),
+            InstrumentCloseType::EndOfSession,
+            UnixNanos::from(3_u64),
+            UnixNanos::from(4_u64),
+        );
+        let mut py_cache = PyCache::from_rc(Rc::new(RefCell::new(Cache::default())));
+
+        py_cache.py_add_instrument_close(first).unwrap();
+        py_cache.py_add_instrument_close(replacement).unwrap();
+
+        assert_eq!(
+            py_cache.py_instrument_close(first.instrument_id),
+            Some(replacement)
+        );
+    }
+
+    #[rstest]
+    fn test_py_cache_constructor_returns_value_error_for_invalid_config() {
+        Python::initialize();
+        let config = CacheConfig {
+            tick_capacity: 0,
+            ..Default::default()
+        };
+
+        let err = PyCache::py_new(Some(config)).expect_err("invalid capacity must be rejected");
+
+        Python::attach(|py| assert!(err.is_instance_of::<PyValueError>(py)));
+    }
+
+    #[rstest]
+    fn test_native_cache_binding_returns_value_error_for_invalid_config() {
+        Python::initialize();
+        let config = CacheConfig {
+            bar_capacity: 0,
+            ..Default::default()
+        };
+
+        let err = Cache::py_new(Some(config)).expect_err("invalid capacity must be rejected");
+
+        Python::attach(|py| assert!(err.is_instance_of::<PyValueError>(py)));
     }
 }
 
@@ -1410,8 +1479,8 @@ impl CacheConfig {
 impl Cache {
     /// A common in-memory `Cache` for market and execution related data.
     #[new]
-    fn py_new(config: Option<CacheConfig>) -> Self {
-        Self::new(config, None)
+    fn py_new(config: Option<CacheConfig>) -> PyResult<Self> {
+        Self::try_new(config, None).map_err(config_error_to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
@@ -1422,7 +1491,8 @@ impl Cache {
     ///
     /// All stateful fields are reset to their initial value. Instruments,
     /// currencies, and synthetics are retained when `drop_instruments_on_reset`
-    /// is `false` so that repeated backtest runs can reuse the same dataset.
+    /// is `false` so that repeated backtest runs can reuse the same dataset. External order claims
+    /// are retained so registered strategy routing remains configured across resets.
     #[pyo3(name = "reset")]
     fn py_reset(&mut self) {
         self.reset();
@@ -1953,6 +2023,12 @@ impl Cache {
         self.has_instrument_statuses(&instrument_id)
     }
 
+    /// Returns whether the cache contains a close for the `instrument_id`.
+    #[pyo3(name = "has_instrument_close")]
+    fn py_has_instrument_close(&self, instrument_id: InstrumentId) -> bool {
+        self.has_instrument_close(&instrument_id)
+    }
+
     /// Returns whether the cache contains bars for the `bar_type`.
     #[pyo3(name = "has_bars")]
     fn py_has_bars(&self, bar_type: BarType) -> bool {
@@ -2047,6 +2123,12 @@ impl Cache {
     #[pyo3(name = "instrument_statuses")]
     fn py_instrument_statuses(&self, instrument_id: InstrumentId) -> Option<Vec<InstrumentStatus>> {
         self.instrument_statuses(&instrument_id)
+    }
+
+    /// Returns the close cached for `instrument_id`, if present.
+    #[pyo3(name = "instrument_close")]
+    fn py_instrument_close(&self, instrument_id: InstrumentId) -> Option<InstrumentClose> {
+        self.instrument_close(&instrument_id).copied()
     }
 
     /// Gets a reference to the order book for the `instrument_id`.

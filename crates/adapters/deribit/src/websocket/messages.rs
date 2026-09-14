@@ -15,9 +15,12 @@
 
 //! Data structures for Deribit WebSocket JSON-RPC messages.
 
-use std::str::FromStr;
+use std::{fmt::Debug, str::FromStr};
 
-use nautilus_core::serialization::{deserialize_decimal, deserialize_optional_decimal};
+use nautilus_core::{
+    serialization::{deserialize_decimal, deserialize_optional_decimal},
+    string::secret::{REDACTED, SecretString},
+};
 use nautilus_model::{
     data::{
         Data, FundingRateUpdate, InstrumentStatus, OrderBookDeltas, greeks::OptionGreekValues,
@@ -33,6 +36,7 @@ use nautilus_model::{
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Deserializer, Serialize, de};
 use ustr::Ustr;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use super::enums::{DeribitBookAction, DeribitBookMsgType, DeribitHeartbeatType};
 pub use crate::common::{
@@ -62,20 +66,20 @@ pub struct DeribitSubscriptionParams<T> {
 }
 
 /// Authentication request parameters for client_signature grant.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Zeroize)]
 pub struct DeribitAuthParams {
     /// Grant type (client_signature for HMAC auth).
     pub grant_type: String,
     /// Client ID (API key).
-    pub client_id: String,
+    pub client_id: SecretString,
     /// Unix timestamp in milliseconds.
     pub timestamp: u64,
     /// HMAC-SHA256 signature.
-    pub signature: String,
+    pub signature: SecretString,
     /// Random nonce.
     pub nonce: String,
     /// Data string (empty for WebSocket auth).
-    pub data: String,
+    pub data: SecretString,
     /// Optional scope for session-based authentication.
     /// Use "session:name" for persistent session auth (allows skipping access_token in private requests).
     /// Use "connection" (default) for per-connection auth (requires access_token in each private request).
@@ -84,23 +88,23 @@ pub struct DeribitAuthParams {
 }
 
 /// Token refresh request parameters.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Zeroize)]
 pub struct DeribitRefreshTokenParams {
     /// Grant type (always "refresh_token").
     pub grant_type: String,
     /// The refresh token obtained from authentication.
-    pub refresh_token: String,
+    pub refresh_token: SecretString,
 }
 
 /// Authentication response result.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct DeribitAuthResult {
     /// Access token.
-    pub access_token: String,
+    pub access_token: SecretString,
     /// Token expiration time in seconds.
     pub expires_in: u64,
     /// Refresh token.
-    pub refresh_token: String,
+    pub refresh_token: SecretString,
     /// Granted scope.
     pub scope: String,
     /// Token type (bearer).
@@ -815,7 +819,7 @@ pub struct DeribitPortfolioMsg {
 }
 
 /// Raw Deribit WebSocket message variants.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum DeribitWsMessage {
     /// JSON-RPC response to a request.
     Response(DeribitJsonRpcResponse<serde_json::Value>),
@@ -827,6 +831,27 @@ pub enum DeribitWsMessage {
     Error(DeribitJsonRpcError),
     /// Reconnection event (internal).
     Reconnected,
+}
+
+impl Debug for DeribitWsMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Response(response)
+                if response.result.as_ref().is_some_and(|result| {
+                    result.get("access_token").is_some() || result.get("refresh_token").is_some()
+                }) =>
+            {
+                f.debug_tuple("Response").field(&REDACTED).finish()
+            }
+            Self::Response(response) => f.debug_tuple("Response").field(response).finish(),
+            Self::Notification(notification) => {
+                f.debug_tuple("Notification").field(notification).finish()
+            }
+            Self::Heartbeat(heartbeat) => f.debug_tuple("Heartbeat").field(heartbeat).finish(),
+            Self::Error(error) => f.debug_tuple("Error").field(error).finish(),
+            Self::Reconnected => f.write_str("Reconnected"),
+        }
+    }
 }
 
 /// Deribit WebSocket error for external consumers.
@@ -959,6 +984,69 @@ mod tests {
 
     use super::*;
 
+    fn assert_zeroize_on_drop<T: ZeroizeOnDrop>() {}
+
+    #[rstest]
+    fn auth_messages_preserve_wire_values_and_redact_debug() {
+        let params = DeribitAuthParams {
+            grant_type: "client_signature".to_string(),
+            client_id: SecretString::from("client-id-value"),
+            timestamp: 1_700_000_000_000,
+            signature: SecretString::from("signature-value"),
+            nonce: "nonce-value".to_string(),
+            data: SecretString::from("data-value"),
+            scope: Some("session:test".to_string()),
+        };
+        let refresh = DeribitRefreshTokenParams {
+            grant_type: "refresh_token".to_string(),
+            refresh_token: SecretString::from("refresh-token-value"),
+        };
+
+        let params_json = serde_json::to_value(&params).unwrap();
+        let refresh_json = serde_json::to_value(&refresh).unwrap();
+        let formatted = format!("{params:?} {refresh:?}");
+
+        assert_eq!(params_json["client_id"], "client-id-value");
+        assert_eq!(params_json["signature"], "signature-value");
+        assert_eq!(params_json["data"], "data-value");
+        assert_eq!(refresh_json["refresh_token"], "refresh-token-value");
+        assert!(!formatted.contains("client-id-value"));
+        assert!(!formatted.contains("signature-value"));
+        assert!(!formatted.contains("data-value"));
+        assert!(!formatted.contains("refresh-token-value"));
+
+        let DeribitAuthParams {
+            client_id,
+            signature,
+            data,
+            ..
+        } = params;
+        let DeribitRefreshTokenParams { refresh_token, .. } = refresh;
+        assert_eq!(client_id.expose_secret(), "client-id-value");
+        assert_eq!(signature.expose_secret(), "signature-value");
+        assert_eq!(data.expose_secret(), "data-value");
+        assert_eq!(refresh_token.expose_secret(), "refresh-token-value");
+    }
+
+    #[rstest]
+    fn auth_result_zeroizes_on_drop() {
+        assert_zeroize_on_drop::<DeribitAuthResult>();
+
+        let result = DeribitAuthResult {
+            access_token: SecretString::from("access-token-value"),
+            expires_in: 900,
+            refresh_token: SecretString::from("refresh-token-value"),
+            scope: "session:test".to_string(),
+            token_type: "bearer".to_string(),
+            enabled_features: vec!["feature".to_string()],
+        };
+        let formatted = format!("{result:?}");
+
+        assert_eq!(formatted.matches(REDACTED).count(), 2);
+        assert!(!formatted.contains(result.access_token.expose_secret()));
+        assert!(!formatted.contains(result.refresh_token.expose_secret()));
+    }
+
     #[rstest]
     fn test_parse_subscription_notification() {
         let json = r#"{
@@ -988,6 +1076,29 @@ mod tests {
 
         let msg = parse_raw_message(json).unwrap();
         assert!(matches!(msg, DeribitWsMessage::Response(_)));
+    }
+
+    #[rstest]
+    fn test_auth_response_debug_redacts_tokens() {
+        let access_token = "access-token-value";
+        let refresh_token = "refresh-token-value";
+        let json = format!(
+            r#"{{
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {{
+                    "access_token": "{access_token}",
+                    "refresh_token": "{refresh_token}"
+                }}
+            }}"#,
+        );
+
+        let msg = parse_raw_message(&json).unwrap();
+        let debug = format!("{msg:?}");
+
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains(access_token));
+        assert!(!debug.contains(refresh_token));
     }
 
     #[rstest]

@@ -17,7 +17,7 @@ use ahash::AHashMap;
 use nautilus_common::signal::Signal;
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Bar, CustomData, DataType, HasTsInit, QuoteTick, TradeTick},
+    data::{Bar, CustomData, DataType, HasTsInit, InstrumentClose, QuoteTick, TradeTick},
     events::{
         AccountState, OrderEvent, OrderEventAny, OrderFilled, OrderInitialized, OrderSnapshot,
         position::snapshot::PositionSnapshot,
@@ -33,7 +33,7 @@ use sqlx::{PgPool, Postgres, Row, Transaction};
 use super::models::{orders::OrderSnapshotRow, positions::PositionSnapshotRow, types::SignalRow};
 use crate::sql::models::{
     accounts::AccountEventRow,
-    data::{BarRow, QuoteTickRow, TradeTickRow},
+    data::{BarRow, InstrumentCloseRow, QuoteTickRow, TradeTickRow},
     enums::{
         AggregationSourcePg, AggressorSidePg, AssetClassPg, BarAggregationPg, CurrencyTypePg,
         PriceTypePg, TrailingOffsetTypePg,
@@ -61,19 +61,22 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!("Failed to truncate tables: {e}"))
     }
 
-    /// Inserts a raw key-value entry into the `general` table via the provided `pool`.
+    /// Inserts or replaces a raw key-value entry in the `general` table via the provided `pool`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the INSERT operation fails.
+    /// Returns an error if the INSERT or UPDATE operation fails.
     pub async fn add(pool: &PgPool, key: String, value: Vec<u8>) -> anyhow::Result<()> {
-        sqlx::query("INSERT INTO general (id, value) VALUES ($1, $2)")
-            .bind(key)
-            .bind(value)
-            .execute(pool)
-            .await
-            .map(|_| ())
-            .map_err(|e| anyhow::anyhow!("Failed to insert into general table: {e}"))
+        sqlx::query(
+            "INSERT INTO general (id, value) VALUES ($1, $2) \
+             ON CONFLICT (id) DO UPDATE SET value = EXCLUDED.value",
+        )
+        .bind(key)
+        .bind(value)
+        .execute(pool)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to insert into general table: {e}"))
     }
 
     /// Loads all entries from the `general` table via the provided `pool`.
@@ -157,15 +160,15 @@ impl DatabaseQueries {
                 id, kind, raw_symbol, base_currency, underlying, quote_currency, settlement_currency, isin, asset_class, exchange,
                 strategy_type, multiplier, option_kind, is_inverse, strike_price, activation_ns, expiration_ns, price_precision, size_precision,
                 price_increment, size_increment, maker_fee, taker_fee, margin_init, margin_maint, lot_size, max_quantity, min_quantity, max_notional,
-                min_notional, max_price, min_price, ts_init, ts_event, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::asset_class, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                min_notional, max_price, min_price, ts_init, ts_event, info, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::asset_class, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35::json, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON CONFLICT (id)
             DO UPDATE
             SET
                 kind = $2, raw_symbol = $3, base_currency= $4, underlying = $5, quote_currency = $6, settlement_currency = $7, isin = $8, asset_class = $9, exchange = $10,
                  strategy_type = $11, multiplier = $12, option_kind = $13, is_inverse = $14, strike_price = $15, activation_ns = $16, expiration_ns = $17 , price_precision = $18, size_precision = $19,
                  price_increment = $20, size_increment = $21, maker_fee = $22, taker_fee = $23, margin_init = $24, margin_maint = $25, lot_size = $26, max_quantity = $27,
-                 min_quantity = $28, max_notional = $29, min_notional = $30, max_price = $31, min_price = $32, ts_init = $33,  ts_event = $34, updated_at = CURRENT_TIMESTAMP
+                 min_quantity = $28, max_notional = $29, min_notional = $30, max_price = $31, min_price = $32, ts_init = $33,  ts_event = $34, info = $35::json, updated_at = CURRENT_TIMESTAMP
             "#)
             .bind(instrument.id().to_string())
             .bind(kind)
@@ -201,6 +204,7 @@ impl DatabaseQueries {
             .bind(instrument.min_price().map(|x| x.to_string()))
             .bind(instrument.ts_init().to_string())
             .bind(instrument.ts_event().to_string())
+            .bind(instrument.info().map(serde_json::to_string).transpose()?)
             .execute(pool)
             .await
             .map(|_| ())
@@ -237,6 +241,53 @@ impl DatabaseQueries {
             .await
             .map(|rows| rows.into_iter().map(|row| row.0).collect())
             .map_err(|e| anyhow::anyhow!("Failed to load instruments: {e}"))
+    }
+
+    /// Inserts or replaces an `InstrumentClose`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL INSERT or UPDATE fails.
+    pub async fn add_instrument_close(
+        pool: &PgPool,
+        close: &InstrumentClose,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO "instrument_close" (
+                instrument_id, close_price, close_type, ts_event, ts_init, created_at
+            ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+            ON CONFLICT (instrument_id) DO UPDATE
+            SET close_price = EXCLUDED.close_price,
+                close_type = EXCLUDED.close_type,
+                ts_event = EXCLUDED.ts_event,
+                ts_init = EXCLUDED.ts_init
+            "#,
+        )
+        .bind(close.instrument_id.to_string())
+        .bind(close.close_price.to_string())
+        .bind(close.close_type.to_string())
+        .bind(close.ts_event.to_string())
+        .bind(close.ts_init.to_string())
+        .execute(pool)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to insert instrument close: {e}"))
+    }
+
+    /// Loads all `InstrumentClose` entries.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL SELECT or row decoding fails.
+    pub async fn load_instrument_closes(pool: &PgPool) -> anyhow::Result<Vec<InstrumentClose>> {
+        sqlx::query_as::<_, InstrumentCloseRow>(
+            "SELECT * FROM instrument_close ORDER BY instrument_id ASC",
+        )
+        .fetch_all(pool)
+        .await
+        .map(|rows| rows.into_iter().map(|row| row.0).collect())
+        .map_err(|e| anyhow::anyhow!("Failed to load instrument closes: {e}"))
     }
 
     /// Inserts an `OrderInitialized` event via the provided `pool`.
@@ -611,6 +662,11 @@ impl DatabaseQueries {
             .map(serde_json::to_value)
             .transpose()
             .map_err(|e| anyhow::anyhow!("Failed to serialize exec algorithm params: {e}"))?;
+        let info = order_event
+            .info()
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|e| anyhow::anyhow!("Failed to serialize order event info: {e}"))?;
 
         sqlx::query(r#"
             INSERT INTO "order_event" (
@@ -618,11 +674,13 @@ impl DatabaseQueries {
                 post_only, reduce_only, quote_quantity, reconciliation, price, last_px, last_qty, trigger_price, trigger_type, limit_offset, trailing_offset,
                 trailing_offset_type, expire_time, display_qty, emulation_trigger, trigger_instrument_id, contingency_type,
                 order_list_id, linked_order_ids, parent_order_id,
-                exec_algorithm_id, exec_spawn_id, venue_order_id, account_id, position_id, commission, ts_event, ts_init, activation_price, exec_algorithm_params, tags, created_at, updated_at
+                exec_algorithm_id, exec_spawn_id, venue_order_id, account_id, position_id, commission, ts_event, ts_init, activation_price, exec_algorithm_params, tags,
+                released_price, protection_price, due_post_only, correction_id, is_reopened, info, causation_id, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
                 $21, $22, $23, $24, $25, $26::trailing_offset_type, $27, $28, $29, $30, $31, $32, $33, $34,
-                $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46,
+                $47, $48, $49, $50, $51, $52, $53, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             ON CONFLICT (id)
             DO UPDATE
@@ -632,7 +690,8 @@ impl DatabaseQueries {
                 last_qty = $22, trigger_price = $23, trigger_type = $24, limit_offset = $25, trailing_offset = $26, trailing_offset_type = $27, expire_time = $28, display_qty = $29,
                 emulation_trigger = $30, trigger_instrument_id = $31, contingency_type = $32, order_list_id = $33, linked_order_ids = $34, parent_order_id = $35, exec_algorithm_id = $36,
                 exec_spawn_id = $37, venue_order_id = $38, account_id = $39, position_id = $40, commission = $41, ts_event = $42, ts_init = $43, activation_price = $44,
-                exec_algorithm_params = $45, tags = $46, updated_at = CURRENT_TIMESTAMP
+                exec_algorithm_params = $45, tags = $46, released_price = $47, protection_price = $48, due_post_only = $49, correction_id = $50,
+                is_reopened = $51, info = $52, causation_id = $53, updated_at = CURRENT_TIMESTAMP
 
         "#)
             .bind(order_event.id().to_string())
@@ -692,6 +751,13 @@ impl DatabaseQueries {
             .bind(order_event.activation_price().map(|x| x.to_string()))
             .bind(exec_algorithm_params)
             .bind(order_event.tags().map(|x| x.iter().map(ToString::to_string).collect::<Vec<String>>()))
+            .bind(order_event.released_price().map(|x| x.to_string()))
+            .bind(order_event.protection_price().map(|x| x.to_string()))
+            .bind(order_event.due_post_only())
+            .bind(order_event.correction_id().map(|x| x.to_string()))
+            .bind(order_event.is_reopened())
+            .bind(info)
+            .bind(order_event.causation_id().map(|x| x.to_string()))
             .execute(&mut *transaction)
             .await
             .map(|_| ())
@@ -960,15 +1026,23 @@ impl DatabaseQueries {
         .map(|_| ())
         .map_err(|e| anyhow::anyhow!("Failed to insert into trader table: {e}"))?;
 
+        let position_event_info = event
+            .info
+            .clone()
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|e| anyhow::anyhow!("Failed to serialize fill info: {e}"))?;
+
         sqlx::query(
             r#"
             INSERT INTO "position_event" (
                 id, kind, trader_id, strategy_id, instrument_id, client_order_id, venue_order_id,
                 account_id, trade_id, currency, order_type, order_side, last_px, last_qty,
-                liquidity_side, position_id, commission, ts_event, ts_init, created_at, updated_at
+                liquidity_side, position_id, commission, reconciliation, info, causation_id,
+                ts_event, ts_init, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-                $18, $19, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                $18, $19, $20, $21, $22, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
         "#,
         )
@@ -989,6 +1063,13 @@ impl DatabaseQueries {
         .bind(event.liquidity_side.to_string())
         .bind(position_id.to_string())
         .bind(event.commission.map(|commission| commission.to_string()))
+        .bind(event.reconciliation)
+        .bind(position_event_info)
+        .bind(
+            event
+                .causation_id
+                .map(|causation_id| causation_id.to_string()),
+        )
         .bind(event.ts_event.to_string())
         .bind(event.ts_init.to_string())
         .execute(&mut **transaction)

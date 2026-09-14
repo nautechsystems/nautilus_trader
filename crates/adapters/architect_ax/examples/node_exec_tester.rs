@@ -39,6 +39,7 @@ use nautilus_architect_ax::{
 use nautilus_common::enums::Environment;
 use nautilus_live::{config::LiveExecutionEngineConfig, node::LiveNode};
 use nautilus_model::{
+    enums::TimeInForce,
     identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
@@ -107,7 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from(STRATEGY_ID)),
-            external_order_claims: Some(vec![instrument_id]),
+            external_order_instrument_ids: Some(vec![instrument_id]),
             ..Default::default()
         })
         .instrument_id(instrument_id)
@@ -115,10 +116,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .order_qty(order_qty)
         .dry_run(DRY_RUN)
         .open_position_on_start_qty(order_qty.as_decimal())
+        .open_position_time_in_force(TimeInForce::Ioc)
         .tob_offset_ticks(1)
         .use_post_only(true)
+        .subscribe_book(true)
+        .modify_orders_to_maintain_tob_offset(true)
+        .cancel_orders_on_stop(true)
+        .close_positions_on_stop(true)
         .reduce_only_on_stop(false)
-        .log_data(false)
+        // .log_data(true)
         .build()?;
 
     let tester = ExecTester::new(tester_config);

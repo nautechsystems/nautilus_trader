@@ -44,10 +44,13 @@ Examples include dated BTC or ETH futures on crypto derivatives venues.
 ## Behavior
 
 - `CryptoFuture` has asset class `Cryptocurrency` and instrument class `Future`.
-- Linear contracts typically set `is_inverse=False` and settle in the quote currency.
-- Inverse contracts set `is_inverse=True` and typically settle in the underlying currency.
-- Quanto contracts settle in a third currency that differs from both underlying and quote.
 - Use `CryptoPerpetual` for crypto derivatives with no expiration.
+
+The currency set determines the settlement style:
+
+- **Linear**: typically sets `is_inverse=False` and settles in the quote currency.
+- **Inverse**: sets `is_inverse=True` and typically settles in the underlying currency.
+- **Quanto**: settles in a third currency that differs from both underlying and quote.
 
 ## Example
 

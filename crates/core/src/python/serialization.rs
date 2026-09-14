@@ -236,6 +236,7 @@ mod tests {
     use serde::{Deserialize, Serialize};
 
     use super::*;
+    use crate::UUID4;
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     struct Payload {
@@ -254,6 +255,40 @@ mod tests {
 
             let payload: Payload = from_pyobject_pyo3(py, dict.as_any()).unwrap();
             assert_eq!(payload.values.get("clé").unwrap(), "café");
+        });
+    }
+
+    #[rstest]
+    fn test_typed_map_conversions() {
+        Python::initialize();
+        Python::attach(|py| {
+            let first = UUID4::from("2d89666b-1a1e-4a75-b193-4eb3b454c757");
+            let second = UUID4::from("46922ecb-4324-4e40-a56c-841e0d774cef");
+            let dict = PyDict::new(py);
+            dict.set_item(Py::new(py, first).unwrap(), 11_u64).unwrap();
+            dict.set_item(Py::new(py, second).unwrap(), 22_u64).unwrap();
+
+            let indexmap: IndexMap<UUID4, u64> =
+                indexmap_from_pyobject_pyo3(py, dict.as_any()).unwrap();
+            let hashmap: HashMap<UUID4, u64> =
+                hashmap_from_pyobject_pyo3(py, dict.as_any()).unwrap();
+            let indexmap_dict = indexmap_to_pydict_pyo3(py, &indexmap).unwrap();
+            let hashmap_dict = hashmap_to_pydict_pyo3(py, &hashmap).unwrap();
+            let restored_indexmap: IndexMap<UUID4, u64> =
+                indexmap_from_pyobject_pyo3(py, indexmap_dict.bind(py)).unwrap();
+            let restored_hashmap: HashMap<UUID4, u64> =
+                hashmap_from_pyobject_pyo3(py, hashmap_dict.bind(py)).unwrap();
+
+            assert_eq!(
+                indexmap.into_iter().collect::<Vec<_>>(),
+                [(first, 11), (second, 22)]
+            );
+            assert_eq!(hashmap, HashMap::from([(first, 11), (second, 22)]));
+            assert_eq!(
+                restored_indexmap,
+                IndexMap::from([(first, 11), (second, 22)])
+            );
+            assert_eq!(restored_hashmap, HashMap::from([(first, 11), (second, 22)]));
         });
     }
 }

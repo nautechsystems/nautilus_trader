@@ -34,18 +34,19 @@ use nautilus_core::{
 };
 use nautilus_model::instruments::InstrumentAny;
 use nautilus_network::{
-    http::{HttpClient, HttpClientError, HttpResponse, Method, USER_AGENT},
+    http::{HttpClient, HttpClientError, Method, USER_AGENT},
     retry::{RetryConfig, RetryManager},
     websocket::proxy::ProxyUrl,
 };
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use serde_json::Value;
+use serde_json::{Value, value::RawValue};
 
 use crate::{
     common::urls::gamma_api_url,
     filters::set_market_closed,
     http::{
-        error::{Error, Result},
+        error::{Error, Result, decode_response},
         models::{GammaEvent, GammaMarket, GammaTag, SearchResponse},
         pagination::{Completion, CursorProtocol, FetchOutcome, Paginator, WindowedCollect},
         parse::{create_instrument_from_def, parse_gamma_market},
@@ -155,23 +156,10 @@ impl PolymarketGammaRawHttpClient {
         params: GetGammaMarketsParams,
     ) -> Result<Vec<GammaMarket>> {
         let query_params = gamma_markets_query_params(params)?;
-        let value: Value = self
+        let raw: Box<RawValue> = self
             .send_get_query_map("/markets", Some(&query_params))
             .await?;
-
-        let array = match value {
-            Value::Array(_) => value,
-            Value::Object(ref map) if map.contains_key("data") => {
-                map.get("data").cloned().unwrap_or(Value::Array(vec![]))
-            }
-            _ => {
-                return Err(Error::decode(
-                    "Unrecognized Gamma markets response schema".to_string(),
-                ));
-            }
-        };
-
-        serde_json::from_value(array).map_err(Error::Serde)
+        parse_gamma_markets_response(&raw)
     }
 
     async fn get_gamma_markets_keyset(
@@ -254,17 +242,6 @@ struct GammaMarketsKeysetResponse {
 struct GammaEventsKeysetResponse {
     events: Vec<GammaEvent>,
     next_cursor: Option<String>,
-}
-
-fn decode_response<T: DeserializeOwned>(response: &HttpResponse) -> Result<T> {
-    if response.status.is_success() {
-        serde_json::from_slice(&response.body).map_err(Error::Serde)
-    } else {
-        Err(Error::from_status_code(
-            response.status.as_u16(),
-            &response.body,
-        ))
-    }
 }
 
 fn gamma_markets_query_params(
@@ -378,7 +355,7 @@ fn parse_markets_to_instruments(markets: &[GammaMarket], ts_init: UnixNanos) -> 
 // `closed` state is recorded here rather than in `create_instrument_from_def`. Historical loader
 // instruments share that constructor and must not carry terminal state in `info`; they expose it
 // through `resolution_metadata` instead.
-fn parse_markets_with_transient(
+pub(crate) fn parse_markets_with_transient(
     markets: &[GammaMarket],
     ts_init: UnixNanos,
 ) -> (Vec<InstrumentAny>, Vec<String>) {
@@ -431,15 +408,19 @@ fn is_transient_clob_token_ids(raw: &str) -> bool {
     }
 }
 
-fn flatten_event_markets(events: Vec<GammaEvent>) -> Vec<GammaMarket> {
+pub(crate) fn flatten_event_markets(events: Vec<GammaEvent>) -> Vec<GammaMarket> {
     events
         .into_iter()
-        .flat_map(|event| {
-            let event_game_id = event.game_id;
-            event.markets.into_iter().map(move |mut market| {
+        .flat_map(|mut event| {
+            let markets = std::mem::take(&mut event.markets);
+            let event = Arc::new(event);
+
+            markets.into_iter().map(move |mut market| {
                 if market.game_id.is_none() {
-                    market.game_id.clone_from(&event_game_id);
+                    market.game_id.clone_from(&event.game_id);
                 }
+
+                market.parent_event = Some(event.clone());
                 market
             })
         })
@@ -634,7 +615,7 @@ impl PolymarketGammaHttpClient {
         let ts_init = self.clock.get_time_ns();
 
         self.retry_manager
-            .execute_with_retry(
+            .invocation(
                 "gamma_fetch_by_slugs",
                 || {
                     let inner = Arc::clone(&inner);
@@ -678,6 +659,7 @@ impl PolymarketGammaHttpClient {
                 |e| e.is_retryable(),
                 |e| Error::transport(e.to_string()),
             )
+            .execute()
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))
     }
@@ -802,36 +784,36 @@ impl PolymarketGammaHttpClient {
                 let cmp = match order_field.as_str() {
                     "liquidity" => a
                         .liquidity_num
-                        .unwrap_or(0.0)
-                        .partial_cmp(&b.liquidity_num.unwrap_or(0.0)),
+                        .unwrap_or(Decimal::ZERO)
+                        .partial_cmp(&b.liquidity_num.unwrap_or(Decimal::ZERO)),
                     "volume" => a
                         .volume_num
-                        .unwrap_or(0.0)
-                        .partial_cmp(&b.volume_num.unwrap_or(0.0)),
+                        .unwrap_or(Decimal::ZERO)
+                        .partial_cmp(&b.volume_num.unwrap_or(Decimal::ZERO)),
                     "volume24hr" => a
                         .volume_24hr
-                        .unwrap_or(0.0)
-                        .partial_cmp(&b.volume_24hr.unwrap_or(0.0)),
+                        .unwrap_or(Decimal::ZERO)
+                        .partial_cmp(&b.volume_24hr.unwrap_or(Decimal::ZERO)),
                     "competitive" => a
                         .competitive
                         .unwrap_or(0.0)
                         .partial_cmp(&b.competitive.unwrap_or(0.0)),
                     "spread" => a
                         .spread
-                        .unwrap_or(f64::MAX)
-                        .partial_cmp(&b.spread.unwrap_or(f64::MAX)),
+                        .unwrap_or(Decimal::MAX)
+                        .partial_cmp(&b.spread.unwrap_or(Decimal::MAX)),
                     "best_bid" => a
                         .best_bid
-                        .unwrap_or(0.0)
-                        .partial_cmp(&b.best_bid.unwrap_or(0.0)),
+                        .unwrap_or(Decimal::ZERO)
+                        .partial_cmp(&b.best_bid.unwrap_or(Decimal::ZERO)),
                     "one_day_price_change" => a
                         .one_day_price_change
-                        .unwrap_or(0.0)
-                        .partial_cmp(&b.one_day_price_change.unwrap_or(0.0)),
+                        .unwrap_or(Decimal::ZERO)
+                        .partial_cmp(&b.one_day_price_change.unwrap_or(Decimal::ZERO)),
                     "volume_1wk" => a
                         .volume_1wk
-                        .unwrap_or(0.0)
-                        .partial_cmp(&b.volume_1wk.unwrap_or(0.0)),
+                        .unwrap_or(Decimal::ZERO)
+                        .partial_cmp(&b.volume_1wk.unwrap_or(Decimal::ZERO)),
                     _ => None,
                 };
                 let cmp = cmp.unwrap_or(std::cmp::Ordering::Equal);
@@ -958,5 +940,193 @@ impl PolymarketGammaHttpClient {
     #[must_use]
     pub fn inner(&self) -> &Arc<PolymarketGammaRawHttpClient> {
         &self.inner
+    }
+}
+
+fn parse_gamma_markets_response(raw: &RawValue) -> Result<Vec<GammaMarket>> {
+    #[derive(Deserialize)]
+    struct MarketsEnvelope {
+        data: Vec<GammaMarket>,
+    }
+
+    if raw.get().starts_with('[') {
+        return serde_json::from_str(raw.get()).map_err(Error::Serde);
+    }
+    serde_json::from_str::<MarketsEnvelope>(raw.get())
+        .map(|envelope| envelope.data)
+        .map_err(Error::Serde)
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use rust_decimal_macros::dec;
+
+    use super::*;
+
+    #[rstest]
+    fn test_live_instrument_funnel_retains_gamma_metadata() {
+        let raw = include_str!("../../test_data/gamma_market_metadata.json");
+        let market: GammaMarket = serde_json::from_str(raw).unwrap();
+        let expected = raw.trim();
+        let (instruments, transient) = parse_markets_with_transient(&[market], 1.into());
+        assert_eq!(instruments.len(), 2);
+        assert_eq!(transient, Vec::<String>::new());
+
+        for instrument in instruments {
+            let InstrumentAny::BinaryOption(binary) = instrument else {
+                unreachable!()
+            };
+
+            assert_eq!(binary.event_id.map(|id| id.as_str()), Some("event-456"));
+            let info = binary.info.unwrap();
+            assert_eq!(info.get_str("gamma_market"), Some(expected));
+            assert_eq!(info.get_bool("closed"), Some(false));
+        }
+    }
+
+    #[rstest]
+    fn test_event_discovery_retains_parent_metadata() {
+        let raw = include_str!("../../test_data/gamma_event.json");
+        let events: Vec<GammaEvent> = serde_json::from_str(raw).unwrap();
+        let expected: Vec<Value> = serde_json::from_str(raw).unwrap();
+        let markets = flatten_event_markets(events);
+        assert_eq!(markets.len(), 2);
+
+        for market in &markets {
+            let parent = market.parent_event.as_ref().unwrap();
+            let expected_event = expected
+                .iter()
+                .find(|event| event["id"] == parent.id)
+                .unwrap();
+            let expected_market = expected_event["markets"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|raw| raw["id"] == market.id)
+                .unwrap();
+            assert_eq!(
+                serde_json::from_str::<Value>(&parent.raw).unwrap(),
+                *expected_event
+            );
+            assert_eq!(
+                serde_json::from_str::<Value>(&market.raw).unwrap(),
+                *expected_market
+            );
+            let defs = parse_gamma_market(market).unwrap();
+            for def in defs {
+                assert_eq!(def.event_id.unwrap().as_str(), parent.id);
+                assert_eq!(def.gamma_event.as_ref(), Some(&parent.raw));
+                assert_eq!(def.gamma_market, market.raw);
+                let instrument = create_instrument_from_def(&def, 1.into()).unwrap();
+
+                let InstrumentAny::BinaryOption(binary) = instrument else {
+                    unreachable!()
+                };
+
+                let info = binary.info.unwrap();
+                assert_eq!(binary.event_id.unwrap().as_str(), parent.id);
+                assert_eq!(info.get_str("gamma_event"), Some(parent.raw.as_str()));
+                assert_eq!(info.get_str("gamma_market"), Some(market.raw.as_str()));
+            }
+        }
+    }
+
+    #[rstest]
+    #[case("liquidity")]
+    #[case("volume")]
+    #[case("volume24hr")]
+    #[case("spread")]
+    #[case("best_bid")]
+    #[case("one_day_price_change")]
+    #[case("volume_1wk")]
+    #[tokio::test]
+    async fn test_event_sort_preserves_adjacent_decimal_values(#[case] field: &str) {
+        use nautilus_model::instruments::Instrument;
+
+        let mut lower: GammaMarket =
+            serde_json::from_str(include_str!("../../test_data/gamma_market.json")).unwrap();
+        lower.clob_token_ids = serde_json::to_string(&["1", "2"]).unwrap();
+        let mut higher = lower.clone();
+        higher.clob_token_ids = serde_json::to_string(&["3", "4"]).unwrap();
+
+        for (market, value) in [
+            (&mut lower, dec!(0.1234567890123456789012345678)),
+            (&mut higher, dec!(0.1234567890123456789012345679)),
+        ] {
+            match field {
+                "liquidity" => market.liquidity_num = Some(value),
+                "volume" => market.volume_num = Some(value),
+                "volume24hr" => market.volume_24hr = Some(value),
+                "spread" => market.spread = Some(value),
+                "best_bid" => market.best_bid = Some(value),
+                "one_day_price_change" => market.one_day_price_change = Some(value),
+                "volume_1wk" => market.volume_1wk = Some(value),
+                _ => unreachable!(),
+            }
+        }
+        let mut event: GammaEvent =
+            serde_json::from_str(include_str!("../../test_data/decimal_precision_event.json"))
+                .unwrap();
+        event.markets = vec![lower, higher];
+        let response = serde_json::to_string(&vec![event]).unwrap();
+        let router = axum::Router::new().route(
+            "/events",
+            axum::routing::get(move || {
+                let response = response.clone();
+                async move { response }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let client = PolymarketGammaHttpClient::new(
+            Some(format!("http://{address}")),
+            5,
+            RetryConfig::default(),
+        )
+        .unwrap();
+        let instruments = client
+            .request_instruments_by_event_query(
+                "precision",
+                GetGammaMarketsParams {
+                    order: Some(field.into()),
+                    ascending: Some(false),
+                    max_markets: Some(1),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        server.abort();
+        assert_eq!(instruments.len(), 2);
+        assert_eq!(instruments[0].raw_symbol().as_str(), "3");
+        assert_eq!(instruments[1].raw_symbol().as_str(), "4");
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_markets_response_preserves_decimal_precision(#[case] enveloped: bool) {
+        let market = include_str!("../../test_data/decimal_precision_market.json");
+        let array = format!("[{market}]");
+        let raw = if enveloped {
+            format!("{{\"data\":{array}}}")
+        } else {
+            array
+        };
+        let markets =
+            parse_gamma_markets_response(&serde_json::from_str::<Box<RawValue>>(&raw).unwrap())
+                .unwrap();
+        assert_eq!(markets.len(), 1);
+        assert_eq!(
+            markets[0].best_bid,
+            Some(dec!(0.1234567890123456789012345678))
+        );
+        assert_eq!(markets[0].volume_num, Some(dec!(12345678901.123457)));
+        assert_eq!(
+            markets[0].fee_schedule.as_ref().unwrap().rate,
+            dec!(0.1234567890123456789012345678)
+        );
     }
 }

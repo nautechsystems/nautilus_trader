@@ -56,8 +56,8 @@ use crate::{
     spot::{
         http::models::{
             BinanceAccountTrade, BinanceKlines, BinanceLotSizeFilterSbe, BinanceNewOrderResponse,
-            BinanceOrderResponse, BinancePriceFilterSbe, BinanceSymbolJson, BinanceSymbolSbe,
-            BinanceTrades,
+            BinanceNotionalFilter, BinanceOrderResponse, BinancePriceFilterSbe, BinanceSymbolJson,
+            BinanceSymbolSbe, BinanceTrades,
         },
         sbe::spot::{
             order_side::OrderSide as SbeOrderSide, order_status::OrderStatus as SbeOrderStatus,
@@ -67,6 +67,8 @@ use crate::{
 };
 const CONTRACT_TYPE_PERPETUAL: &str = "PERPETUAL";
 const CONTRACT_TYPE_TRADIFI_PERPETUAL: &str = "TRADIFI_PERPETUAL";
+const CONTRACT_TYPE_CURRENT_WEEK: &str = "CURRENT_WEEK";
+const CONTRACT_TYPE_NEXT_WEEK: &str = "NEXT_WEEK";
 const CONTRACT_TYPE_CURRENT_MONTH: &str = "CURRENT_MONTH";
 const CONTRACT_TYPE_NEXT_MONTH: &str = "NEXT_MONTH";
 const CONTRACT_TYPE_CURRENT_QUARTER: &str = "CURRENT_QUARTER";
@@ -120,8 +122,11 @@ fn parse_tradifi_asset_class(symbol: &BinanceFuturesUsdSymbol) -> anyhow::Result
         )
     })?;
 
+    // Binance uses CN_EQUITY for some China-listed TradFi perpetuals,
+    // including UNITREEUSDT. It has the same instrument semantics as the
+    // other equity underlying types supported here.
     match underlying_type {
-        "EQUITY" | "KR_EQUITY" | "HK_EQUITY" | "PREMARKET" => Ok(AssetClass::Equity),
+        "EQUITY" | "CN_EQUITY" | "KR_EQUITY" | "HK_EQUITY" | "PREMARKET" => Ok(AssetClass::Equity),
         "COMMODITY" => Ok(AssetClass::Commodity),
         _ => anyhow::bail!(
             "Unsupported underlying type '{underlying_type}' for TRADIFI_PERPETUAL symbol '{}'",
@@ -281,7 +286,9 @@ pub(crate) fn parse_usdm_instrument_with_fees(
     let contract_kind = match symbol.contract_type.as_str() {
         CONTRACT_TYPE_PERPETUAL => ContractKind::CryptoPerpetual,
         CONTRACT_TYPE_TRADIFI_PERPETUAL => ContractKind::TradFi(parse_tradifi_asset_class(symbol)?),
-        CONTRACT_TYPE_CURRENT_MONTH
+        CONTRACT_TYPE_CURRENT_WEEK
+        | CONTRACT_TYPE_NEXT_WEEK
+        | CONTRACT_TYPE_CURRENT_MONTH
         | CONTRACT_TYPE_NEXT_MONTH
         | CONTRACT_TYPE_CURRENT_QUARTER
         | CONTRACT_TYPE_NEXT_QUARTER => ContractKind::Delivery,
@@ -723,6 +730,9 @@ pub(crate) fn parse_spot_instrument_sbe_with_fees(
 
     let (step_size, max_quantity, min_quantity) = parse_sbe_lot_size_filter(lot_filter)?;
 
+    let (min_notional, max_notional) =
+        parse_spot_notional_rules(&symbol.filters.notional_filters, quote_currency)?;
+
     // Spot has no leverage, use 1.0 margin
     let default_margin = Decimal::new(1, 0);
 
@@ -738,6 +748,8 @@ pub(crate) fn parse_spot_instrument_sbe_with_fees(
         .lot_size(step_size)
         .maybe_max_quantity(max_quantity)
         .maybe_min_quantity(min_quantity)
+        .maybe_min_notional(min_notional)
+        .maybe_max_notional(max_notional)
         .maybe_max_price(max_price)
         .maybe_min_price(min_price)
         .margin_init(default_margin)
@@ -792,6 +804,56 @@ pub(crate) fn parse_spot_instrument_json_with_fees(
     )?;
     anyhow::ensure!(!step_size.is_zero(), "Invalid stepSize of 0");
 
+    let quote_currency = get_currency(&symbol.quote_asset);
+    let mut rules = Vec::new();
+
+    for filter in &symbol.filters {
+        if !matches!(filter.filter_type.as_str(), "MIN_NOTIONAL" | "NOTIONAL") {
+            continue;
+        }
+
+        let range = filter.filter_type == "NOTIONAL";
+
+        rules.push(BinanceNotionalFilter {
+            min: Decimal::from_str_exact(
+                filter
+                    .min_notional
+                    .as_deref()
+                    .context("missing minNotional")?,
+            )?,
+
+            max: if range {
+                Some(Decimal::from_str_exact(
+                    filter
+                        .max_notional
+                        .as_deref()
+                        .context("missing maxNotional")?,
+                )?)
+            } else {
+                None
+            },
+
+            apply_min_to_market: if range {
+                filter.apply_min_to_market
+            } else {
+                filter.apply_to_market
+            }
+            .context("missing minimum notional market flag")?,
+
+            apply_max_to_market: if range {
+                filter
+                    .apply_max_to_market
+                    .context("missing applyMaxToMarket")?
+            } else {
+                false
+            },
+
+            avg_price_mins: filter.avg_price_mins.context("missing avgPriceMins")?,
+        });
+    }
+
+    let (min_notional, max_notional) = parse_spot_notional_rules(&rules, quote_currency)?;
+
     let instrument = CurrencyPair::builder()
         .instrument_id(InstrumentId::new(
             Symbol::from_str_unchecked(&symbol.symbol),
@@ -799,7 +861,9 @@ pub(crate) fn parse_spot_instrument_json_with_fees(
         ))
         .raw_symbol(Symbol::new(&symbol.symbol))
         .base_currency(get_currency(&symbol.base_asset))
-        .quote_currency(get_currency(&symbol.quote_asset))
+        .quote_currency(quote_currency)
+        .maybe_min_notional(min_notional)
+        .maybe_max_notional(max_notional)
         .price_precision(tick_size.precision)
         .size_precision(step_size.precision)
         .price_increment(tick_size)
@@ -831,6 +895,35 @@ pub(crate) fn parse_spot_instrument_json_with_fees(
         .unwrap();
 
     Ok(InstrumentAny::CurrencyPair(instrument))
+}
+
+fn parse_spot_notional_rules(
+    rules: &[BinanceNotionalFilter],
+    currency: Currency,
+) -> anyhow::Result<(Option<Money>, Option<Money>)> {
+    let mut minimum: Option<Decimal> = None;
+    let mut maximum: Option<Decimal> = None;
+    for rule in rules {
+        anyhow::ensure!(rule.min >= Decimal::ZERO, "negative minimum notional");
+        minimum = Some(minimum.map_or(rule.min, |min| min.max(rule.min)));
+
+        if let Some(max) = rule.max {
+            anyhow::ensure!(max >= rule.min, "maximum notional is below minimum");
+            maximum = Some(maximum.map_or(max, |current| current.min(max)));
+        }
+    }
+
+    if let (Some(min), Some(max)) = (minimum, maximum) {
+        anyhow::ensure!(min <= max, "conflicting notional bounds");
+    }
+    Ok((
+        minimum
+            .map(|value| Money::from_decimal(value, currency))
+            .transpose()?,
+        maximum
+            .map(|value| Money::from_decimal(value, currency))
+            .transpose()?,
+    ))
 }
 
 fn decimal_price(value: &str) -> anyhow::Result<Price> {
@@ -927,9 +1020,12 @@ pub fn parse_spot_trades_sbe(
 }
 
 /// Maps Binance SBE order status to Nautilus order status.
-#[must_use]
-pub const fn map_order_status_sbe(status: SbeOrderStatus) -> OrderStatus {
-    match status {
+///
+/// # Errors
+///
+/// Returns an error for an unknown or absent venue value.
+pub fn map_order_status_sbe(status: SbeOrderStatus) -> anyhow::Result<OrderStatus> {
+    Ok(match status {
         SbeOrderStatus::New => OrderStatus::Accepted,
         SbeOrderStatus::PendingNew => OrderStatus::Submitted,
         SbeOrderStatus::PartiallyFilled => OrderStatus::PartiallyFilled,
@@ -939,21 +1035,26 @@ pub const fn map_order_status_sbe(status: SbeOrderStatus) -> OrderStatus {
         SbeOrderStatus::Rejected => OrderStatus::Rejected,
         SbeOrderStatus::Expired | SbeOrderStatus::ExpiredInMatch => OrderStatus::Expired,
         SbeOrderStatus::Unknown | SbeOrderStatus::NonRepresentable | SbeOrderStatus::NullVal => {
-            OrderStatus::Initialized
+            anyhow::bail!("unknown Binance SBE order status")
         }
-    }
+    })
 }
 
 /// Maps Binance SBE order type to Nautilus order type.
-#[must_use]
-pub const fn map_order_type_sbe(order_type: SbeOrderType) -> OrderType {
-    match order_type {
+///
+/// # Errors
+///
+/// Returns an error for an unknown or absent venue value.
+pub fn map_order_type_sbe(order_type: SbeOrderType) -> anyhow::Result<OrderType> {
+    Ok(match order_type {
         SbeOrderType::Market => OrderType::Market,
         SbeOrderType::Limit | SbeOrderType::LimitMaker => OrderType::Limit,
         SbeOrderType::StopLoss | SbeOrderType::TakeProfit => OrderType::StopMarket,
         SbeOrderType::StopLossLimit | SbeOrderType::TakeProfitLimit => OrderType::StopLimit,
-        SbeOrderType::NonRepresentable | SbeOrderType::NullVal => OrderType::Market,
-    }
+        SbeOrderType::NonRepresentable | SbeOrderType::NullVal => {
+            anyhow::bail!("unknown Binance SBE order type")
+        }
+    })
 }
 
 /// Maps Binance SBE order side to Nautilus order side.
@@ -967,14 +1068,19 @@ pub const fn map_order_side_sbe(side: SbeOrderSide) -> Option<OrderSide> {
 }
 
 /// Maps Binance SBE time in force to Nautilus time in force.
-#[must_use]
-pub const fn map_time_in_force_sbe(tif: SbeTimeInForce) -> TimeInForce {
-    match tif {
+///
+/// # Errors
+///
+/// Returns an error for an unknown or absent venue value.
+pub fn map_time_in_force_sbe(tif: SbeTimeInForce) -> anyhow::Result<TimeInForce> {
+    Ok(match tif {
         SbeTimeInForce::Gtc => TimeInForce::Gtc,
         SbeTimeInForce::Ioc => TimeInForce::Ioc,
         SbeTimeInForce::Fok => TimeInForce::Fok,
-        SbeTimeInForce::NonRepresentable | SbeTimeInForce::NullVal => TimeInForce::Gtc,
-    }
+        SbeTimeInForce::NonRepresentable | SbeTimeInForce::NullVal => {
+            anyhow::bail!("unknown Binance SBE time in force")
+        }
+    })
 }
 
 /// Parses a Binance SBE order response into a Nautilus `OrderStatusReport`.
@@ -1046,10 +1152,10 @@ pub fn parse_order_status_report_sbe(
     });
 
     // Map enums
-    let order_status = map_order_status_sbe(order.status);
-    let order_type = map_order_type_sbe(order.order_type);
+    let order_status = map_order_status_sbe(order.status)?;
+    let order_type = map_order_type_sbe(order.order_type)?;
     let order_side = map_order_side_sbe(order.side);
-    let time_in_force = map_time_in_force_sbe(order.time_in_force);
+    let time_in_force = map_time_in_force_sbe(order.time_in_force)?;
 
     // Determine trigger type for stop orders
     let trigger_type = if trigger_price.is_some() {
@@ -1189,10 +1295,10 @@ pub fn parse_new_order_response_sbe(
         }
     });
 
-    let order_status = map_order_status_sbe(response.status);
-    let order_type = map_order_type_sbe(response.order_type);
+    let order_status = map_order_status_sbe(response.status)?;
+    let order_type = map_order_type_sbe(response.order_type)?;
     let order_side = map_order_side_sbe(response.side);
-    let time_in_force = map_time_in_force_sbe(response.time_in_force);
+    let time_in_force = map_time_in_force_sbe(response.time_in_force)?;
 
     let trigger_type = if trigger_price.is_some() {
         Some(TriggerType::LastPrice)
@@ -1514,6 +1620,34 @@ mod tests {
     };
 
     #[rstest]
+    fn test_sbe_order_mappings_reject_unknown_values() {
+        for status in [
+            SbeOrderStatus::Unknown,
+            SbeOrderStatus::NonRepresentable,
+            SbeOrderStatus::NullVal,
+        ] {
+            assert_eq!(
+                map_order_status_sbe(status).unwrap_err().to_string(),
+                "unknown Binance SBE order status"
+            );
+        }
+
+        for order_type in [SbeOrderType::NonRepresentable, SbeOrderType::NullVal] {
+            assert_eq!(
+                map_order_type_sbe(order_type).unwrap_err().to_string(),
+                "unknown Binance SBE order type"
+            );
+        }
+
+        for tif in [SbeTimeInForce::NonRepresentable, SbeTimeInForce::NullVal] {
+            assert_eq!(
+                map_time_in_force_sbe(tif).unwrap_err().to_string(),
+                "unknown Binance SBE time in force"
+            );
+        }
+    }
+
+    #[rstest]
     fn test_quote_to_l1_deltas_maps_all_fields() {
         let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
         let ts_event = UnixNanos::from(1_700_000_000_000_000_001u64);
@@ -1754,6 +1888,7 @@ mod tests {
             is_spot_trading_allowed: true,
             is_margin_trading_allowed: false,
             filters: crate::spot::http::models::BinanceSymbolFiltersSbe {
+                notional_filters: Vec::new(),
                 price_filter: Some(BinancePriceFilterSbe {
                     price_exponent: -8,
                     min_price: 1_000_000,
@@ -1769,6 +1904,146 @@ mod tests {
             },
             permissions: vec![vec!["SPOT".to_string()]],
         }
+    }
+
+    #[rstest]
+    #[case::min(
+        include_bytes!("../../test_data/spot/http_sbe/notional_min.sbe").as_slice(),
+        include_str!("../../test_data/spot/http_json/notional_min.json"),
+        dec!(12.34567891), None,
+    )]
+    #[case::range(
+        include_bytes!("../../test_data/spot/http_sbe/notional_range.sbe").as_slice(),
+        include_str!("../../test_data/spot/http_json/notional_range.json"),
+        dec!(23.45678912), Some(dec!(98.76543219)),
+    )]
+    #[case::both(
+        include_bytes!("../../test_data/spot/http_sbe/notional_both.sbe").as_slice(),
+        include_str!("../../test_data/spot/http_json/notional_both.json"),
+        dec!(23.45678912), Some(dec!(98.76543219)),
+    )]
+    fn test_spot_notional_fixtures(
+        #[case] wire: &[u8],
+        #[case] json: &str,
+        #[case] minimum: Decimal,
+        #[case] maximum: Option<Decimal>,
+    ) {
+        let decoded = crate::spot::http::parse::decode_exchange_info(wire).unwrap();
+        let symbol: BinanceSymbolJson = serde_json::from_str(json).unwrap();
+        let ts_event = UnixNanos::from(123u64);
+        let ts_init = UnixNanos::from(456u64);
+        let maker = Some(dec!(0.00013));
+        let taker = Some(dec!(0.00027));
+        let sbe = parse_spot_instrument_sbe_with_fees(
+            &decoded.symbols[0],
+            maker,
+            taker,
+            ts_event,
+            ts_init,
+        )
+        .unwrap();
+        let json =
+            parse_spot_instrument_json_with_fees(&symbol, maker, taker, ts_event, ts_init).unwrap();
+        let InstrumentAny::CurrencyPair(mut expected) = parse_spot_instrument_sbe_with_fees(
+            &sample_spot_symbol_sbe(),
+            maker,
+            taker,
+            ts_event,
+            ts_init,
+        )
+        .unwrap() else {
+            panic!("Expected CurrencyPair")
+        };
+        let rules = decoded.symbols[0].filters.notional_filters.clone();
+        expected.min_notional =
+            Some(Money::from_decimal(minimum, expected.quote_currency).unwrap());
+        expected.max_notional =
+            maximum.map(|value| Money::from_decimal(value, expected.quote_currency).unwrap());
+        let expected = serde_json::to_value(InstrumentAny::CurrencyPair(expected)).unwrap();
+
+        assert_eq!(serde_json::to_value(sbe).unwrap(), expected);
+        assert_eq!(serde_json::to_value(json).unwrap(), expected);
+        assert_eq!(
+            rules[0].min,
+            if rules.len() == 2 || maximum.is_none() {
+                dec!(12.34567891)
+            } else {
+                minimum
+            }
+        );
+
+        for rule in &rules {
+            if rule.max.is_none() {
+                assert_eq!(
+                    rule,
+                    &BinanceNotionalFilter {
+                        min: dec!(12.34567891),
+                        max: None,
+                        apply_min_to_market: true,
+                        apply_max_to_market: false,
+                        avg_price_mins: 7
+                    }
+                );
+            } else {
+                assert_eq!(
+                    rule,
+                    &BinanceNotionalFilter {
+                        min: dec!(23.45678912),
+                        max: Some(dec!(98.76543219)),
+                        apply_min_to_market: false,
+                        apply_max_to_market: true,
+                        avg_price_mins: 3
+                    }
+                );
+            }
+        }
+    }
+
+    #[rstest]
+    #[case("minNotional", "missing minNotional")]
+    #[case("maxNotional", "missing maxNotional")]
+    #[case("applyMinToMarket", "missing minimum notional market flag")]
+    #[case("applyMaxToMarket", "missing applyMaxToMarket")]
+    #[case("avgPriceMins", "missing avgPriceMins")]
+    fn test_spot_notional_json_missing_fields(#[case] field: &str, #[case] error: &str) {
+        let mut value: Value = serde_json::from_str(include_str!(
+            "../../test_data/spot/http_json/notional_range.json"
+        ))
+        .unwrap();
+        value["filters"][2].as_object_mut().unwrap().remove(field);
+        let symbol = serde_json::from_value(value).unwrap();
+        let result = parse_spot_instrument_json_with_fees(
+            &symbol,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        assert_eq!(result.unwrap_err().to_string(), error);
+    }
+
+    #[rstest]
+    #[case(vec![(dec!(-1), None)], "negative minimum notional")]
+    #[case(vec![(dec!(2), Some(dec!(1)))], "maximum notional is below minimum")]
+    #[case(vec![(dec!(2), None), (dec!(0), Some(dec!(1)))], "conflicting notional bounds")]
+    fn test_spot_notional_invalid_bounds(
+        #[case] bounds: Vec<(Decimal, Option<Decimal>)>,
+        #[case] error: &str,
+    ) {
+        let rules = bounds
+            .into_iter()
+            .map(|(min, max)| BinanceNotionalFilter {
+                min,
+                max,
+                apply_min_to_market: false,
+                apply_max_to_market: true,
+                avg_price_mins: 7,
+            })
+            .collect::<Vec<_>>();
+
+        let result = parse_spot_notional_rules(&rules, Currency::USD());
+
+        assert_eq!(result.unwrap_err().to_string(), error);
     }
 
     fn sample_spot_instrument() -> InstrumentAny {
@@ -1793,9 +2068,9 @@ mod tests {
             InstrumentAny::CryptoPerpetual(perp) => {
                 assert_eq!(perp.id.to_string(), "BTCUSDT-PERP.BINANCE");
                 assert_eq!(perp.raw_symbol.to_string(), "BTCUSDT");
-                assert_eq!(perp.base_currency.code.as_str(), "BTC");
-                assert_eq!(perp.quote_currency.code.as_str(), "USDT");
-                assert_eq!(perp.settlement_currency.code.as_str(), "USDT");
+                assert_eq!(perp.base_currency.code, "BTC");
+                assert_eq!(perp.quote_currency.code, "USDT");
+                assert_eq!(perp.settlement_currency.code, "USDT");
                 assert!(!perp.is_inverse);
                 assert_eq!(perp.price_increment, Price::from_str("0.10").unwrap());
                 assert_eq!(perp.size_increment, Quantity::from_str("0.001").unwrap());
@@ -1829,6 +2104,7 @@ mod tests {
 
     #[rstest]
     #[case::equity("SNDKUSDT", "SNDK", "EQUITY", AssetClass::Equity)]
+    #[case::chinese_equity("UNITREEUSDT", "UNITREE", "CN_EQUITY", AssetClass::Equity)]
     #[case::korean_equity("005930USDT", "005930", "KR_EQUITY", AssetClass::Equity)]
     #[case::hong_kong_equity("0700USDT", "0700", "HK_EQUITY", AssetClass::Equity)]
     #[case::premarket("SPCXUSDT", "SPCX", "PREMARKET", AssetClass::Equity)]
@@ -1850,8 +2126,8 @@ mod tests {
                 assert_eq!(perp.underlying, Ustr::from(underlying));
                 assert_eq!(perp.asset_class, expected_asset_class);
                 assert_eq!(perp.base_currency, None);
-                assert_eq!(perp.quote_currency.code.as_str(), "USDT");
-                assert_eq!(perp.settlement_currency.code.as_str(), "USDT");
+                assert_eq!(perp.quote_currency.code, "USDT");
+                assert_eq!(perp.settlement_currency.code, "USDT");
                 assert!(!perp.is_inverse);
                 assert_eq!(perp.price_increment, Price::from_str("0.10").unwrap());
                 assert_eq!(perp.size_increment, Quantity::from_str("0.001").unwrap());
@@ -1885,6 +2161,8 @@ mod tests {
     }
 
     #[rstest]
+    #[case::current_week(CONTRACT_TYPE_CURRENT_WEEK)]
+    #[case::next_week(CONTRACT_TYPE_NEXT_WEEK)]
     #[case::current_month(CONTRACT_TYPE_CURRENT_MONTH)]
     #[case::next_month(CONTRACT_TYPE_NEXT_MONTH)]
     #[case::current_quarter(CONTRACT_TYPE_CURRENT_QUARTER)]
@@ -1904,9 +2182,9 @@ mod tests {
 
         assert_eq!(future.id.to_string(), "BTCUSDT_260925.BINANCE");
         assert_eq!(future.raw_symbol.to_string(), "BTCUSDT_260925");
-        assert_eq!(future.underlying.code.as_str(), "BTC");
-        assert_eq!(future.quote_currency.code.as_str(), "USDT");
-        assert_eq!(future.settlement_currency.code.as_str(), "USDT");
+        assert_eq!(future.underlying.code, "BTC");
+        assert_eq!(future.quote_currency.code, "USDT");
+        assert_eq!(future.settlement_currency.code, "USDT");
         assert!(!future.is_inverse);
         assert_eq!(
             future.activation_ns,
@@ -1982,9 +2260,9 @@ mod tests {
             InstrumentAny::CryptoPerpetual(perp) => {
                 assert_eq!(perp.id.to_string(), "BTCUSD_PERP.BINANCE");
                 assert_eq!(perp.raw_symbol.to_string(), "BTCUSD_PERP");
-                assert_eq!(perp.base_currency.code.as_str(), "BTC");
-                assert_eq!(perp.quote_currency.code.as_str(), "USD");
-                assert_eq!(perp.settlement_currency.code.as_str(), "BTC");
+                assert_eq!(perp.base_currency.code, "BTC");
+                assert_eq!(perp.quote_currency.code, "USD");
+                assert_eq!(perp.settlement_currency.code, "BTC");
                 assert!(perp.is_inverse);
                 assert_eq!(perp.price_increment, Price::from_str("0.10").unwrap());
                 assert_eq!(perp.size_increment, Quantity::from_str("1").unwrap());
@@ -2037,9 +2315,9 @@ mod tests {
 
         assert_eq!(future.id.to_string(), "BTCUSD_260925.BINANCE");
         assert_eq!(future.raw_symbol.to_string(), "BTCUSD_260925");
-        assert_eq!(future.underlying.code.as_str(), "BTC");
-        assert_eq!(future.quote_currency.code.as_str(), "USD");
-        assert_eq!(future.settlement_currency.code.as_str(), "BTC");
+        assert_eq!(future.underlying.code, "BTC");
+        assert_eq!(future.quote_currency.code, "USD");
+        assert_eq!(future.settlement_currency.code, "BTC");
         assert!(future.is_inverse);
         assert_eq!(
             future.activation_ns,
@@ -2087,8 +2365,8 @@ mod tests {
             InstrumentAny::CurrencyPair(pair) => {
                 assert_eq!(pair.id.to_string(), "ETHUSDT.BINANCE");
                 assert_eq!(pair.raw_symbol.to_string(), "ETHUSDT");
-                assert_eq!(pair.base_currency.code.as_str(), "ETH");
-                assert_eq!(pair.quote_currency.code.as_str(), "USDT");
+                assert_eq!(pair.base_currency.code, "ETH");
+                assert_eq!(pair.quote_currency.code, "USDT");
                 assert_eq!(pair.price_increment, Price::from_str("0.01").unwrap());
                 assert_eq!(pair.size_increment, Quantity::from_str("0.0001").unwrap());
             }

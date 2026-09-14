@@ -1,0 +1,38 @@
+{
+  "topic": "execution",
+  "id": "386825804_BTCUSDT_140612148849384",
+  "creationTime": 1788508800002,
+  "data": [
+    {
+      "category": "linear",
+      "symbol": "BTCUSDT",
+      "closedSize": "0",
+      "execFee": "0.7506234",
+      "execId": "7d3328ca-604f-4335-b9cb-d63826563800",
+      "execPrice": "80626.20",
+      "execQty": "0.093",
+      "execType": "Funding",
+      "execValue": "7498.2366",
+      "feeRate": "0.0001",
+      "tradeIv": "",
+      "markIv": "",
+      "blockTradeId": "",
+      "markPrice": "80626.20",
+      "indexPrice": "80620.10",
+      "underlyingPrice": "",
+      "leavesQty": "0",
+      "orderId": "acd8b753-9691-47a8-8c6a-abef38a892f1",
+      "orderLinkId": "",
+      "orderPrice": "0",
+      "orderQty": "0.093",
+      "orderType": "UNKNOWN",
+      "stopOrderType": "UNKNOWN",
+      "side": "Buy",
+      "execTime": "1788508800000",
+      "isLeverage": "0",
+      "isMaker": false,
+      "seq": 140612148849384,
+      "feeCurrency": "USDT"
+    }
+  ]
+}

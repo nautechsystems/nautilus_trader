@@ -15,24 +15,22 @@ documented in `docs/developer_guide/adapters.md`.
 
 ## Layout
 
-- `live.rs`: the seam test target, one test per scenario.
-- `node.rs`: the full-node smoke target (phase 2), booting a real `LiveNode` against the mock
-  venue (see [Full-node smoke](#full-node-smoke) below).
-- `harness/mod.rs`: the reusable harness, made up of:
+- `integration/live.rs`: the seam test module, one test per scenario.
+- `integration/node.rs`: the full-node smoke module (phase 2), booting a real `LiveNode` against the
+  mock venue (see [Full-node smoke](#full-node-smoke) below).
+- `integration/harness/mod.rs`: the Betfair wrapper around
+  `nautilus_live::testing::ExecutionHarness`, plus:
   - `Harness::build`
-  - the `submit_via_risk` / `modify_via_risk` command drivers
-  - the `reconcile_from_venue` HTTP reconcile driver
-  - `override_betting_result` and `mark_pending_cancel` for scenario setup
-  - the drain-and-route pump
+  - `override_betting_result` for scenario setup
   - the `StreamFeeder`
-  - the `invariants` module
   - the order/quote builders
 
-  This module is the unit to extract into a shared `nautilus-live-testkit` crate once a second
-  adapter adopts the pattern.
-- `../test_data/stream/ocm_harness_*.json`: matched OCM frames (cancel, fill, partial fill, external).
+  The engine wiring, command drivers, routing pump, reconciliation driver, pending-cancel setup,
+  `ExecTester` registration, and lifecycle assertions are shared behind the `nautilus-live`
+  `test-support` feature.
+- `../test_data/stream/ocm_harness_*.json`: matched OCM frames used by the seam and node scenarios.
 
-## Why two targets
+## Why two layers
 
 The two layers are complementary: each asserts something the other structurally cannot.
 
@@ -49,14 +47,14 @@ A seam failure localizes to the fork; a node failure points at assembly or the r
 ## Running
 
 ```bash
-cargo nextest run -p nautilus-betfair --test live
-cargo nextest run -p nautilus-betfair --test node
+cargo nextest run -p nautilus-betfair --test integration live::
+cargo nextest run -p nautilus-betfair --test integration node::
 ```
 
 nextest runs each test in its own process, which isolates the thread-local message bus and logging
 that the engines rely on. The seam harness also tolerates multiple builds on one thread (it installs
 a fresh bus per build and uses the replace-style sender setters), so `cargo test -- --test-threads=1`
-works too. The `node` target boots a real `LiveNode` (one global logger per process), so prefer
+works too. The `node` module boots a real `LiveNode` (one global logger per process), so prefer
 nextest for it.
 
 ## Flow
@@ -83,7 +81,8 @@ assertion, and routes it through the real fork until a cache predicate holds.
 
 ## Invariants
 
-- `assert_tracked_used_events`: the routing contract, no report on a tracked happy path.
+- `assert_tracked_used_events`: the routing contract, at least one order event and no report on a
+  tracked happy path.
 - `assert_order_status`: the order reaches the expected state.
 - `assert_own_book_consistent`: no closed order lingers in the own order book.
 - `assert_filled_qty`: cumulative filled quantity matches.
@@ -115,9 +114,9 @@ OCM-stream scenario:
 
 ## Reusing for another adapter
 
-Supply the adapter's own mock venue and matched frames; reuse the engine wiring, the pump, and the
-invariants from `harness/mod.rs`. ExecTester registers against any adapter via the `Strategy` trait's
-`core_mut`, configured to the adapter's instrument and client id.
+Enable the `nautilus-live` `test-support` feature, then wrap `ExecutionHarness` with the adapter's
+mock venue, client, instruments, orders, and matched frames. `ExecTester` registers against any
+adapter through the shared harness when configured with the adapter's instrument and client ID.
 
 ## Routing-contract proof
 
@@ -126,7 +125,7 @@ to emit a report (set the `tracked` binding in `execution.rs` to `None`) makes
 `tracked_cancel_emits_event_and_shrinks_own_book` fail with:
 
 ```
-tracked happy path routed 1 report(s), expected 0 (routing-contract violation): [Account, Order, Order, Report]
+tracked happy path routed 1 report(s), expected 0: [Account, Order, Order, Report]
 ```
 
 The order still reaches `Canceled` via reconciliation (book size is double-guarded, since the

@@ -221,10 +221,10 @@ mod tests {
     #[rstest]
     fn test_get_currency() {
         let btc = Currency::get_or_create_crypto("BTC");
-        assert_eq!(btc.code.as_str(), "BTC");
+        assert_eq!(btc.code, "BTC");
 
         let usdc = Currency::get_or_create_crypto("USDC");
-        assert_eq!(usdc.code.as_str(), "USDC");
+        assert_eq!(usdc.code, "USDC");
     }
 
     #[rstest]

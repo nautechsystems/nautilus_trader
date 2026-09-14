@@ -1,15 +1,15 @@
 # nautilus-bitmex
 
 [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
-[![Documentation](https://img.shields.io/docsrs/nautilus-bitmex)](https://docs.rs/nautilus-bitmex/latest/nautilus-bitmex/)
+[![Documentation](https://img.shields.io/docsrs/nautilus-bitmex)](https://docs.rs/nautilus-bitmex/latest/nautilus_bitmex/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-bitmex.svg)](https://crates.io/crates/nautilus-bitmex)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
-[NautilusTrader](https://nautilustrader.io) adapter for the [BitMEX](https://bitmex.com) cryptocurrency exchange.
+[NautilusTrader](https://nautilustrader.io) adapter for the [BitMEX](https://www.bitmex.com) cryptocurrency exchange.
 
-The `nautilus-bitmex` crate provides client bindings (HTTP & WebSocket), data
-models and helper utilities that wrap the official **BitMEX API**.
+The `nautilus-bitmex` crate provides client bindings (HTTP & WebSocket) and data
+models for the official **BitMEX API**.
 
 The official BitMEX API reference can be found at <https://www.bitmex.com/app/apiOverview>.
 
@@ -25,10 +25,12 @@ event-driven architecture, providing research-to-live semantic parity.
 
 This crate provides feature flags to control source code inclusion during compilation:
 
-- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+- `examples`: Enables the crate's example binaries.
 - `extension-module`: Builds as a Python extension module.
-
-[High-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) (128-bit value types) is enabled by default.
+- `high-precision` (default): Enables
+  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
+  to use 128-bit value types.
+- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
 ## Documentation
 

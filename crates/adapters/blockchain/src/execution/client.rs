@@ -59,7 +59,7 @@ use nautilus_model::{
         wallet::{TokenBalance, WalletBalance},
     },
     enums::{CurrencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType},
-    events::{OrderCanceled, OrderEventAny, OrderFilled, OrderRejected},
+    events::{OrderCanceled, OrderDeniedReason, OrderEventAny, OrderFilled, OrderRejected},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, TradeId, Venue, VenueOrderId},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -108,8 +108,8 @@ use crate::{
     },
     rpc::{
         error::BroadcastError,
-        helpers as rpc_helpers,
         http::{BlockchainHttpRpcClient, EXECUTION_RPC_TIMEOUT_SECS},
+        log as rpc_log,
         types::{RpcCallType, RpcTransaction, RpcTransactionReceipt},
         verification::{
             VerificationCoordinator, VerificationOutcome, Verified, VerifiedBlockHeader,
@@ -118,10 +118,8 @@ use crate::{
     },
 };
 
-/// Interval between receipt polls while awaiting transaction finality.
 const RECEIPT_POLL_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_PAYLOAD_OPERATION_BATCH_SIZE: usize = 1_000;
-/// Basis points denominator for slippage derivation.
 const BPS_DENOMINATOR: u32 = 10_000;
 /// Denial reason for order-list submissions, which have no on-chain execution route.
 const ORDER_LIST_UNSUPPORTED: &str =
@@ -130,171 +128,11 @@ const ORDER_LIST_UNSUPPORTED: &str =
 const ORDER_MODIFY_UNSUPPORTED: &str = "Order modification is not supported";
 /// Rejection reason for order cancellations, which immutable on-chain swaps cannot support.
 const ORDER_CANCEL_UNSUPPORTED: &str = "Order cancellation is not supported";
+
 /// Error for venue report probes that cannot answer without implying absence.
 const VENUE_EXECUTION_REPORTS_UNSUPPORTED: &str =
     "Venue execution reports are not supported on the blockchain execution client";
-/// Maximum historical block range inspected to identify a signer-nonce replacement.
 const MAX_REPLACEMENT_SCAN_BLOCKS: u64 = 4_096;
-
-/// Result of authenticating every persisted signed transaction in one execution database.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PayloadStorageCheck {
-    /// Whether payload protection is active.
-    pub protected: bool,
-    /// Durable deployment identity when protection is active.
-    pub deployment_id: Option<String>,
-    /// Rows which still contain plaintext signed transaction bytes.
-    pub plaintext_rows: u64,
-    /// Signed transaction rows which require a payload.
-    pub original_rows: u64,
-    /// Canonical replacement rows whose original bytes are unavailable.
-    pub replacement_rows: u64,
-    /// Payload rows successfully opened and authenticated.
-    pub authenticated_rows: u64,
-    /// Key IDs referenced by protected payloads.
-    pub key_ids: Vec<String>,
-    /// Database roles with direct table ownership or `SELECT` grants.
-    pub read_roles: Vec<String>,
-}
-
-impl From<ExecutionPayloadCheck> for PayloadStorageCheck {
-    fn from(value: ExecutionPayloadCheck) -> Self {
-        Self {
-            protected: value.protected,
-            deployment_id: value.deployment_id,
-            plaintext_rows: value.plaintext_rows,
-            original_rows: value.original_rows,
-            replacement_rows: value.replacement_rows,
-            authenticated_rows: value.authenticated_rows,
-            key_ids: value.key_ids,
-            read_roles: value.read_roles,
-        }
-    }
-}
-
-// A broadcast transaction awaiting finality, occupying the single in-flight slot.
-#[derive(Debug, Clone, Copy)]
-struct InFlightTransaction {
-    intent_id: i64,
-    nonce: u64,
-    tx_hash: B256,
-    purpose: TransactionPurpose,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct RecoveryTransaction {
-    intent_id: i64,
-    nonce: u64,
-    purpose: TransactionPurpose,
-}
-
-/// The single in-flight transaction slot.
-///
-/// The slot is claimed before any preparation RPC call so the `pending` nonce read stays
-/// authoritative: a second transaction is rejected before it can sign. A claim is released
-/// only when preparation fails before signing; from persistence onward the slot is never
-/// released on failure, because the database may have committed before its acknowledgement
-/// was lost.
-#[derive(Debug, Clone, Copy)]
-enum InFlightSlot {
-    /// Claimed before preparation; no signed transaction exists yet.
-    Preparing(TransactionPurpose),
-    /// Restored durable ownership retained while persisted transaction data is authenticated.
-    Recovering(RecoveryTransaction),
-    /// Signed, persisted, and awaiting finality.
-    AwaitingFinality(InFlightTransaction),
-}
-
-#[derive(Debug, Clone)]
-struct IncludedTransaction {
-    intent_id: i64,
-    nonce: u64,
-    tx_hash: B256,
-    block_number: u64,
-    receipt: RpcTransactionReceipt,
-    finality: StableFinality,
-}
-
-#[derive(Debug, Clone)]
-struct StableFinality {
-    decisions: Vec<ExecutionVerificationDecision>,
-    inclusion_header: ExecutionVerifiedHeader,
-    finalized_headers: Vec<ExecutionVerifiedHeader>,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum TransactionAuthorization {
-    Wrap {
-        weth: Address,
-    },
-    Approve {
-        token: Address,
-        router: Address,
-        amount: U256,
-    },
-}
-
-/// The single-in-flight limit error naming the transaction currently occupying the slot.
-fn in_flight_limit_error(slot: &InFlightSlot) -> anyhow::Error {
-    match slot {
-        InFlightSlot::Preparing(purpose) => anyhow::anyhow!(
-            "A {} transaction is being prepared; at most one transaction can be in flight",
-            purpose.as_str()
-        ),
-        InFlightSlot::Recovering(recovery) => anyhow::anyhow!(
-            "Execution intent {} ({}, nonce {}) retains signer ownership pending recovery; at most one transaction can be in flight",
-            recovery.intent_id,
-            recovery.purpose.as_str(),
-            recovery.nonce
-        ),
-        InFlightSlot::AwaitingFinality(in_flight) => anyhow::anyhow!(
-            "Transaction {} (intent {}, {}, nonce {}) is still awaiting finality; at most one transaction can be in flight",
-            in_flight.tx_hash,
-            in_flight.intent_id,
-            in_flight.purpose.as_str(),
-            in_flight.nonce
-        ),
-    }
-}
-
-/// Releases a pre-signature slot claim when the slot is still in the preparing state.
-///
-/// Aborted or failed preparation can leave a claim behind; because no signed transaction
-/// exists for a preparing slot, releasing it cannot strand a broadcastable signature.
-fn release_preparing_slot(in_flight: &Mutex<Option<InFlightSlot>>) {
-    let mut slot = in_flight.lock();
-    if matches!(*slot, Some(InFlightSlot::Preparing(_))) {
-        *slot = None;
-    }
-}
-
-fn release_preparing_if_reservation_not_committed(
-    in_flight: &Mutex<Option<InFlightSlot>>,
-    error: &anyhow::Error,
-) {
-    if reservation_failure_proven_not_committed(error) {
-        release_preparing_slot(in_flight);
-    }
-}
-
-#[derive(Debug)]
-struct TransactionLimits {
-    allowed_token_pairs: HashSet<(Address, Address)>,
-    quote_spend_limits: HashMap<(Address, Address), QuoteSpendCeiling>,
-    slippage_bps: u32,
-    max_slippage_bps: u32,
-    max_order_amount: u64,
-    deadline_seconds: u64,
-    max_quote_age_blocks: u64,
-    receipt_timeout_secs: u64,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct QuoteSpendCeiling {
-    spend_token: Address,
-    spend_token_decimals: u8,
-    max_amount: U256,
-}
 
 /// Execution client for blockchain interactions including balance tracking and order execution.
 #[derive(Debug)]
@@ -335,7 +173,7 @@ impl BlockchainExecutionClient {
         let chain = Arc::new(config.chain.clone());
         let cache = BlockchainCache::new(chain.clone());
         let http_rpc_client = Arc::new(BlockchainHttpRpcClient::new(
-            config.http_rpc_url.clone(),
+            config.http_rpc_url.clone().into_inner(),
             config.rpc_requests_per_second,
             None,
         ));
@@ -352,7 +190,7 @@ impl BlockchainExecutionClient {
         );
         let verification = VerificationCoordinator::new(
             http_rpc_client.clone(),
-            &config.http_rpc_url,
+            config.http_rpc_url.expose_secret(),
             verification_config,
             config.rpc_requests_per_second,
         )?;
@@ -374,7 +212,6 @@ impl BlockchainExecutionClient {
         let weth_address = validate_address(config.weth_address.as_str())?;
         Self::validate_manifest_contracts(&config, &router_addresses, weth_address)?;
 
-        // Initialize token universe, so we can fetch them from the blockchain later.
         let mut token_universe = HashSet::new();
 
         if let Some(specified_tokens) = &config.tokens {
@@ -642,7 +479,6 @@ impl BlockchainExecutionClient {
         Ok(())
     }
 
-    /// Fetches the native currency balance (e.g., ETH) for the wallet from the blockchain.
     async fn fetch_native_currency_balance(&self) -> anyhow::Result<Money> {
         let balance_u256 = self
             .http_rpc_client
@@ -654,12 +490,10 @@ impl BlockchainExecutionClient {
         Money::from_u256(balance_u256, native_currency).map_err(Into::into)
     }
 
-    /// Fetches the balance of a specific ERC-20 token for the wallet.
     async fn fetch_token_balance(
         &mut self,
         token_address: &Address,
     ) -> anyhow::Result<TokenBalance> {
-        // Get the cached token or fetch it from the blockchain and cache it.
         let token = if let Some(token) = self.cache.get_token(token_address) {
             token.to_owned()
         } else {
@@ -967,7 +801,6 @@ impl BlockchainExecutionClient {
             })
     }
 
-    /// Resolves the pool selected by `instrument_id` from the shared engine cache.
     fn resolve_pool(&self, instrument_id: &InstrumentId) -> anyhow::Result<Pool> {
         let (blockchain, dex_type) = instrument_id.venue.parse_dex()?;
         if blockchain != self.chain.name {
@@ -1125,11 +958,6 @@ impl BlockchainExecutionClient {
         }
     }
 
-    /// Builds the shared transaction executor from the connected client state.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if no durable store is configured or the signer is not initialized.
     fn transaction_executor(&self) -> anyhow::Result<TransactionExecutor> {
         let database = self.cache.database.clone().ok_or_else(|| {
             anyhow::anyhow!("No durable store configured; refusing to submit a transaction")
@@ -1917,6 +1745,166 @@ impl BlockchainExecutionClient {
             profiler_position: Some(profiler_position),
         })
     }
+}
+
+/// Result of authenticating every persisted signed transaction in one execution database.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PayloadStorageCheck {
+    /// Whether payload protection is active.
+    pub protected: bool,
+    /// Durable deployment identity when protection is active.
+    pub deployment_id: Option<String>,
+    /// Rows which still contain plaintext signed transaction bytes.
+    pub plaintext_rows: u64,
+    /// Signed transaction rows which require a payload.
+    pub original_rows: u64,
+    /// Canonical replacement rows whose original bytes are unavailable.
+    pub replacement_rows: u64,
+    /// Payload rows successfully opened and authenticated.
+    pub authenticated_rows: u64,
+    /// Key IDs referenced by protected payloads.
+    pub key_ids: Vec<String>,
+    /// Database roles with direct table ownership or `SELECT` grants.
+    pub read_roles: Vec<String>,
+}
+
+impl From<ExecutionPayloadCheck> for PayloadStorageCheck {
+    fn from(value: ExecutionPayloadCheck) -> Self {
+        Self {
+            protected: value.protected,
+            deployment_id: value.deployment_id,
+            plaintext_rows: value.plaintext_rows,
+            original_rows: value.original_rows,
+            replacement_rows: value.replacement_rows,
+            authenticated_rows: value.authenticated_rows,
+            key_ids: value.key_ids,
+            read_roles: value.read_roles,
+        }
+    }
+}
+
+// A broadcast transaction awaiting finality, occupying the single in-flight slot.
+#[derive(Debug, Clone, Copy)]
+struct InFlightTransaction {
+    intent_id: i64,
+    nonce: u64,
+    tx_hash: B256,
+    purpose: TransactionPurpose,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RecoveryTransaction {
+    intent_id: i64,
+    nonce: u64,
+    purpose: TransactionPurpose,
+}
+
+/// The single in-flight transaction slot.
+///
+/// The slot is claimed before any preparation RPC call so the `pending` nonce read stays
+/// authoritative: a second transaction is rejected before it can sign. A claim is released
+/// only when preparation fails before signing; from persistence onward the slot is never
+/// released on failure, because the database may have committed before its acknowledgement
+/// was lost.
+#[derive(Debug, Clone, Copy)]
+enum InFlightSlot {
+    /// Claimed before preparation; no signed transaction exists yet.
+    Preparing(TransactionPurpose),
+    /// Restored durable ownership retained while persisted transaction data is authenticated.
+    Recovering(RecoveryTransaction),
+    /// Signed, persisted, and awaiting finality.
+    AwaitingFinality(InFlightTransaction),
+}
+
+#[derive(Debug, Clone)]
+struct IncludedTransaction {
+    intent_id: i64,
+    nonce: u64,
+    tx_hash: B256,
+    block_number: u64,
+    receipt: RpcTransactionReceipt,
+    finality: StableFinality,
+}
+
+#[derive(Debug, Clone)]
+struct StableFinality {
+    decisions: Vec<ExecutionVerificationDecision>,
+    inclusion_header: ExecutionVerifiedHeader,
+    finalized_headers: Vec<ExecutionVerifiedHeader>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TransactionAuthorization {
+    Wrap {
+        weth: Address,
+    },
+    Approve {
+        token: Address,
+        router: Address,
+        amount: U256,
+    },
+}
+
+/// The single-in-flight limit error naming the transaction currently occupying the slot.
+fn in_flight_limit_error(slot: &InFlightSlot) -> anyhow::Error {
+    match slot {
+        InFlightSlot::Preparing(purpose) => anyhow::anyhow!(
+            "A {} transaction is being prepared; at most one transaction can be in flight",
+            purpose.as_str()
+        ),
+        InFlightSlot::Recovering(recovery) => anyhow::anyhow!(
+            "Execution intent {} ({}, nonce {}) retains signer ownership pending recovery; at most one transaction can be in flight",
+            recovery.intent_id,
+            recovery.purpose.as_str(),
+            recovery.nonce
+        ),
+        InFlightSlot::AwaitingFinality(in_flight) => anyhow::anyhow!(
+            "Transaction {} (intent {}, {}, nonce {}) is still awaiting finality; at most one transaction can be in flight",
+            in_flight.tx_hash,
+            in_flight.intent_id,
+            in_flight.purpose.as_str(),
+            in_flight.nonce
+        ),
+    }
+}
+
+/// Releases a pre-signature slot claim when the slot is still in the preparing state.
+///
+/// Aborted or failed preparation can leave a claim behind; because no signed transaction
+/// exists for a preparing slot, releasing it cannot strand a broadcastable signature.
+fn release_preparing_slot(in_flight: &Mutex<Option<InFlightSlot>>) {
+    let mut slot = in_flight.lock();
+    if matches!(*slot, Some(InFlightSlot::Preparing(_))) {
+        *slot = None;
+    }
+}
+
+fn release_preparing_if_reservation_not_committed(
+    in_flight: &Mutex<Option<InFlightSlot>>,
+    error: &anyhow::Error,
+) {
+    if reservation_failure_proven_not_committed(error) {
+        release_preparing_slot(in_flight);
+    }
+}
+
+#[derive(Debug)]
+struct TransactionLimits {
+    allowed_token_pairs: HashSet<(Address, Address)>,
+    quote_spend_limits: HashMap<(Address, Address), QuoteSpendCeiling>,
+    slippage_bps: u32,
+    max_slippage_bps: u32,
+    max_order_amount: u64,
+    deadline_seconds: u64,
+    max_quote_age_blocks: u64,
+    receipt_timeout_secs: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct QuoteSpendCeiling {
+    spend_token: Address,
+    spend_token_decimals: u8,
+    max_amount: U256,
 }
 
 /// A locally signed EIP-1559 transaction ready for persist-before-broadcast.
@@ -3233,7 +3221,6 @@ impl TransactionExecutor {
             .await
     }
 
-    /// Broadcasts the signed transaction and classifies the acceptance outcome.
     async fn broadcast(&self, prepared: &PreparedTransaction) -> anyhow::Result<BroadcastOutcome> {
         let tx_hash = prepared.tx_hash;
 
@@ -3665,7 +3652,6 @@ fn open_execution_payload(
     Ok(raw_transaction)
 }
 
-/// Derives the receipt poll budget from the configured inclusion timeout in seconds.
 fn receipt_max_polls(receipt_timeout_secs: u64) -> u32 {
     u32::try_from(receipt_timeout_secs.max(1)).unwrap_or(u32::MAX)
 }
@@ -4222,7 +4208,7 @@ async fn validate_profiler_event_verified(
     let matching_logs = receipt
         .logs
         .iter()
-        .filter(|log| rpc_helpers::extract_log_index(log).ok() == Some(position.log_index))
+        .filter(|log| rpc_log::extract_log_index(log).ok() == Some(position.log_index))
         .collect::<Vec<_>>();
     anyhow::ensure!(
         matching_logs.len() == 1,
@@ -4231,7 +4217,7 @@ async fn validate_profiler_event_verified(
         position.log_index
     );
     let log = matching_logs[0];
-    let log_transaction_hash = B256::from_str(&rpc_helpers::extract_transaction_hash(log)?)
+    let log_transaction_hash = B256::from_str(&rpc_log::extract_transaction_hash(log)?)
         .with_context(|| "Invalid profiler log transaction hash")?;
     let log_block_hash = log
         .block_hash
@@ -4240,13 +4226,13 @@ async fn validate_profiler_event_verified(
     anyhow::ensure!(
         !log.removed
             && log_transaction_hash == transaction_hash
-            && rpc_helpers::extract_block_number(log)? == position.number
-            && rpc_helpers::extract_transaction_index(log)? == position.transaction_index
+            && rpc_log::extract_block_number(log)? == position.number
+            && rpc_log::extract_transaction_index(log)? == position.transaction_index
             && B256::from_str(log_block_hash)? == expected_block_hash,
         "Profiler log position does not match its ingestion watermark"
     );
     anyhow::ensure!(
-        rpc_helpers::extract_address(log)? == pool_address,
+        rpc_log::extract_address(log)? == pool_address,
         "Profiler watermark log did not come from expected pool {pool_address}"
     );
     let signature = log
@@ -4648,6 +4634,7 @@ async fn complete_finalized_swap(
                 false,
                 Some(fill.venue_order_id),
                 Some(emitter.account_id()),
+                None,
             );
             emitter.try_send_order_event(OrderEventAny::Canceled(canceled))?;
         }
@@ -4752,7 +4739,7 @@ fn validate_finalized_swap_fill(
         plan.pool_address
     );
     let log = swap_logs[0];
-    let log_transaction_hash = B256::from_str(&rpc_helpers::extract_transaction_hash(log)?)
+    let log_transaction_hash = B256::from_str(&rpc_log::extract_transaction_hash(log)?)
         .with_context(|| "Invalid finalized Swap log transaction hash")?;
     let log_block_hash = log
         .block_hash
@@ -4760,8 +4747,8 @@ fn validate_finalized_swap_fill(
         .ok_or_else(|| anyhow::anyhow!("Finalized Swap log has no block hash"))?;
     anyhow::ensure!(
         log_transaction_hash == included.tx_hash
-            && rpc_helpers::extract_block_number(log)? == included.block_number
-            && u64::from(rpc_helpers::extract_transaction_index(log)?)
+            && rpc_log::extract_block_number(log)? == included.block_number
+            && u64::from(rpc_log::extract_transaction_index(log)?)
                 == included.receipt.transaction_index
             && B256::from_str(log_block_hash)
                 .with_context(|| "Invalid finalized Swap log block hash")?
@@ -5216,7 +5203,7 @@ fn quantity_to_raw_amount(quantity: Quantity, decimals: u8) -> anyhow::Result<U2
         anyhow::bail!("Order quantity must be positive");
     }
 
-    let raw = U256::from(quantity.raw);
+    let raw = U256::from(quantity.raw());
     let raw_precision = quantity.precision.max(FIXED_PRECISION);
     if decimals >= raw_precision {
         let scale = U256::from(10u64)
@@ -5280,7 +5267,6 @@ fn raw_amount_to_quantity(amount: U256, decimals: u8) -> anyhow::Result<Quantity
     Ok(quantity)
 }
 
-/// Extracts the positive output amount from an exact-input swap quote.
 fn exact_output_amount(quote: &SwapQuote, zero_for_one: bool) -> anyhow::Result<U256> {
     let amount = if zero_for_one {
         quote.amount1
@@ -5698,6 +5684,11 @@ impl ExecutionClient for BlockchainExecutionClient {
             return Ok(());
         }
 
+        if let Err(reason) = validate_order(&order) {
+            self.emitter.emit_order_denied(&order, &reason.to_string());
+            return Ok(());
+        }
+
         if !self.pending_tasks.is_open() {
             self.emitter
                 .emit_order_denied(&order, "Blockchain execution client is shutting down");
@@ -5871,7 +5862,6 @@ impl ExecutionClient for BlockchainExecutionClient {
         )?
         .map(Arc::new);
 
-        // Attach or reuse the durable store for execution transaction records
         if self.cache.database.is_some() || self.config.postgres_cache_database_config.is_some() {
             let keys = payload_keys.as_deref().ok_or_else(|| {
                 anyhow::anyhow!(
@@ -6284,6 +6274,14 @@ impl ExecutionClient for BlockchainExecutionClient {
     }
 }
 
+fn validate_order(order: &impl Order) -> Result<(), OrderDeniedReason> {
+    if order.is_reduce_only() {
+        return Err(OrderDeniedReason::UnsupportedReduceOnly);
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -6452,8 +6450,6 @@ mod tests {
     const ROUTER: &str = "0xE592427A0AEce92De3Edee1F18E0157C05861564";
     const WETH: &str = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1";
     const USDC: &str = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
-    const LIVE_READ_SMOKE_ENV: &str = "BLOCKCHAIN_LIVE_READ_SMOKE";
-    const LIVE_READ_SMOKE_RPC: &str = "https://arb1.arbitrum.io/rpc";
     const TEST_TIMEOUT: Duration = Duration::from_secs(10);
 
     const WETH_ADDRESS: Address = address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1");
@@ -6642,7 +6638,8 @@ mod tests {
                         operator_id: "operator-b".to_string(),
                         failure_domain_ids: vec!["domain-b".to_string()],
                     },
-                    http_rpc_url: format!("{http_rpc_url}{verifier_separator}source=verifier-a"),
+                    http_rpc_url: format!("{http_rpc_url}{verifier_separator}source=verifier-a")
+                        .into(),
                 },
                 BlockchainVerificationProviderConfig {
                     identity: BlockchainProviderIdentity {
@@ -6650,7 +6647,8 @@ mod tests {
                         operator_id: "operator-c".to_string(),
                         failure_domain_ids: vec!["domain-c".to_string()],
                     },
-                    http_rpc_url: format!("{http_rpc_url}{verifier_separator}source=verifier-b"),
+                    http_rpc_url: format!("{http_rpc_url}{verifier_separator}source=verifier-b")
+                        .into(),
                 },
             ],
             chain_anchor: BlockchainChainAnchorConfig {
@@ -6672,7 +6670,7 @@ mod tests {
             .client_id(AccountId::from("BLOCKCHAIN-001"))
             .chain(chains::ARBITRUM.clone())
             .wallet_address(WALLET.to_string())
-            .http_rpc_url(http_rpc_url)
+            .http_rpc_url(http_rpc_url.into())
             .verification(verification)
             .signer_private_key_env(signer_env.to_string())
             .router_addresses(vec![ROUTER.to_string()])
@@ -7281,14 +7279,12 @@ mod tests {
         finalized_swap_rpc_state(tx_hash, min_amount_out)
     }
 
-    /// The swap state with a broadcast response whose hash differs from the signed hash.
     async fn swap_rpc_state_for_mismatch() -> MockRpcState {
         swap_rpc_state()
             .await
             .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION)
     }
 
-    /// Extracts the transaction awaiting finality in the in-flight slot.
     fn awaiting_in_flight(client: &BlockchainExecutionClient) -> InFlightTransaction {
         let slot = *client.in_flight.lock();
         let Some(InFlightSlot::AwaitingFinality(in_flight)) = slot else {
@@ -7647,7 +7643,6 @@ mod tests {
         .abi_encode()
     }
 
-    /// Derives the expected minimum output with the same live profiler the plan used.
     fn expected_min_amount_out(slippage_bps: u32) -> U256 {
         expected_min_amount_out_for(&test_pool(), true, slippage_bps)
     }
@@ -8026,8 +8021,6 @@ mod tests {
         .to_string()
     }
 
-    /// The canonical block at the receipt height containing the given wrap transaction with
-    /// the exact persisted call fields.
     fn finalized_wrap_block(tx_hash: B256) -> String {
         serde_json::json!({
             "jsonrpc": "2.0",
@@ -8056,8 +8049,6 @@ mod tests {
         .to_string()
     }
 
-    /// The canonical block at the receipt height containing the given approve transaction
-    /// with the exact persisted call fields.
     fn finalized_approve_block(tx_hash: B256, amount: U256) -> String {
         let calldata = ERC20::approveCall {
             spender: ROUTER_ADDRESS,
@@ -8578,146 +8569,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn live_arbitrum_numbered_swap_reads_are_available() {
-        if std::env::var(LIVE_READ_SMOKE_ENV).as_deref() != Ok("1") {
-            eprintln!("{LIVE_READ_SMOKE_ENV} is not 1; skipping live read smoke");
-            return;
-        }
-
-        let rpc_url = std::env::var("ARBITRUM_RPC_HTTP_URL")
-            .unwrap_or_else(|_| LIVE_READ_SMOKE_RPC.to_string());
-        let rpc = Arc::new(BlockchainHttpRpcClient::new(rpc_url, None, None));
-        let anchor = rpc.latest_block().await.unwrap();
-        let pool = test_pool();
-        let factory = UNISWAP_V3.dex.factory;
-        let wallet = Address::from_str(WALLET).unwrap();
-        let mut balance_call =
-            nautilus_core::hex::decode(BALANCE_OF_SELECTOR.trim_start_matches("0x")).unwrap();
-        balance_call.extend_from_slice(&[0; 12]);
-        balance_call.extend_from_slice(wallet.as_slice());
-
-        let code = rpc
-            .get_code_at(&ROUTER_ADDRESS, anchor.number)
-            .await
-            .unwrap();
-        let router_factory = rpc
-            .call_at(
-                None,
-                &ROUTER_ADDRESS,
-                U256::ZERO,
-                &UniswapV3RouterState::factoryCall {}.abi_encode(),
-                anchor.number,
-            )
-            .await
-            .unwrap();
-        let router_factory =
-            UniswapV3RouterState::factoryCall::abi_decode_returns(&router_factory).unwrap();
-        let router_weth = rpc
-            .call_at(
-                None,
-                &ROUTER_ADDRESS,
-                U256::ZERO,
-                &UniswapV3RouterState::WETH9Call {}.abi_encode(),
-                anchor.number,
-            )
-            .await
-            .unwrap();
-        let router_weth =
-            UniswapV3RouterState::WETH9Call::abi_decode_returns(&router_weth).unwrap();
-        let registered_pool_call = UniswapV3Factory::getPoolCall {
-            tokenA: WETH_ADDRESS,
-            tokenB: USDC_ADDRESS,
-            fee: U24::try_from(500u32).unwrap(),
-        }
-        .abi_encode();
-        let registered_pool = rpc
-            .call_at(
-                None,
-                &factory,
-                U256::ZERO,
-                &registered_pool_call,
-                anchor.number,
-            )
-            .await
-            .unwrap();
-        let registered_pool =
-            UniswapV3Factory::getPoolCall::abi_decode_returns(&registered_pool).unwrap();
-        let weth_decimals = rpc
-            .call_at(
-                None,
-                &WETH_ADDRESS,
-                U256::ZERO,
-                &ERC20::decimalsCall {}.abi_encode(),
-                anchor.number,
-            )
-            .await
-            .unwrap();
-        let weth_decimals = ERC20::decimalsCall::abi_decode_returns(&weth_decimals).unwrap();
-        let usdc_decimals = rpc
-            .call_at(
-                None,
-                &USDC_ADDRESS,
-                U256::ZERO,
-                &ERC20::decimalsCall {}.abi_encode(),
-                anchor.number,
-            )
-            .await
-            .unwrap();
-        let usdc_decimals = ERC20::decimalsCall::abi_decode_returns(&usdc_decimals).unwrap();
-        let allowance_call = ERC20::allowanceCall {
-            owner: wallet,
-            spender: ROUTER_ADDRESS,
-        }
-        .abi_encode();
-        rpc.call_at(
-            None,
-            &WETH_ADDRESS,
-            U256::ZERO,
-            &allowance_call,
-            anchor.number,
-        )
-        .await
-        .unwrap();
-        let balance_call = ERC20::balanceOfCall { account: wallet }.abi_encode();
-        rpc.call_at(
-            None,
-            &WETH_ADDRESS,
-            U256::ZERO,
-            &balance_call,
-            anchor.number,
-        )
-        .await
-        .unwrap();
-        let gas = rpc
-            .estimate_gas_at(
-                &wallet,
-                &WETH_ADDRESS,
-                U256::ZERO,
-                &balance_call,
-                anchor.number,
-            )
-            .await
-            .unwrap();
-        rpc.get_balance_with_timeout(
-            &wallet,
-            Some(anchor.number),
-            Some(EXECUTION_RPC_TIMEOUT_SECS),
-        )
-        .await
-        .unwrap();
-        let canonical = rpc.block_by_number(anchor.number, false).await.unwrap();
-
-        assert!(!code.is_empty());
-        assert_eq!(router_factory, factory);
-        assert_eq!(router_weth, WETH_ADDRESS);
-        assert_eq!(registered_pool, pool.address);
-        assert_eq!(weth_decimals, 18);
-        assert_eq!(usdc_decimals, 6);
-        assert!(gas > 0);
-        assert_eq!(canonical.hash, anchor.hash);
-    }
-
-    #[tokio::test]
     async fn swap_quote_rejects_missing_ingestion_block_hash() {
         let (client, state) = client_with_mock_rpc(execution_rpc_state()).await;
         let plan = fixture_sell_plan();
@@ -8947,13 +8798,12 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("not in the `allowed_token_pairs` allowlist"),
             "was: {}",
             denied.reason
         );
         assert!(
-            denied.reason.as_str().contains(&USDC_ADDRESS.to_string()),
+            denied.reason.contains(&USDC_ADDRESS.to_string()),
             "was: {}",
             denied.reason
         );
@@ -8987,7 +8837,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("Quote-denominated"),
+            denied.reason.contains("Quote-denominated"),
             "was: {}",
             denied.reason
         );
@@ -9015,7 +8865,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("exceeds the configured `max_order_amount`"),
             "was: {}",
             denied.reason
@@ -9044,7 +8893,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("No `quote_spend_limits` entry for BUY token pair"),
             "was: {}",
             denied.reason
@@ -9078,7 +8926,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("No `quote_spend_limits` entry for BUY token pair"),
             "was: {}",
             denied.reason
@@ -9120,7 +8967,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("exceeds the configured `quote_spend_limits` maximum 0"),
             "was: {}",
             denied.reason
@@ -9149,7 +8995,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains(&format!(
+            denied.reason.contains(&format!(
                 "BUY quote amount {amount_in} exceeds the configured `quote_spend_limits`"
             )),
             "was: {}",
@@ -9189,7 +9035,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("only Market is supported"),
+            denied.reason.contains("only Market is supported"),
             "was: {}",
             denied.reason
         );
@@ -9223,7 +9069,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("Quote-denominated"),
+            denied.reason.contains("Quote-denominated"),
             "was: {}",
             denied.reason
         );
@@ -9258,7 +9104,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("Unknown pool"),
+            denied.reason.contains("Unknown pool"),
             "was: {}",
             denied.reason
         );
@@ -9282,13 +9128,12 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("not in the `allowed_token_pairs` allowlist"),
             "was: {}",
             denied.reason
         );
         assert!(
-            denied.reason.as_str().contains(&WETH_ADDRESS.to_string()),
+            denied.reason.contains(&WETH_ADDRESS.to_string()),
             "was: {}",
             denied.reason
         );
@@ -9312,7 +9157,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("Blockchain execution client is not connected"),
             "was: {}",
             denied.reason
@@ -9337,7 +9181,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("not in the `allowed_token_pairs` allowlist"),
             "was: {}",
             denied.reason
@@ -9362,7 +9205,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("exceeds the configured `max_order_amount`"),
             "was: {}",
             denied.reason
@@ -9387,7 +9229,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("exceeds the configured `max_slippage_bps`"),
             "was: {}",
             denied.reason
@@ -9428,7 +9269,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("no fee tier"),
+            denied.reason.contains("no fee tier"),
             "was: {}",
             denied.reason
         );
@@ -9467,7 +9308,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("No pool profiler"),
+            denied.reason.contains("No pool profiler"),
             "was: {}",
             denied.reason
         );
@@ -9487,7 +9328,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("is not connected"),
+            denied.reason.contains("is not connected"),
             "was: {}",
             denied.reason
         );
@@ -9508,10 +9349,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied
-                .reason
-                .as_str()
-                .contains("No durable store configured"),
+            denied.reason.contains("No durable store configured"),
             "was: {}",
             denied.reason
         );
@@ -9538,7 +9376,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("still awaiting finality"),
+            denied.reason.contains("still awaiting finality"),
             "was: {}",
             denied.reason
         );
@@ -9564,7 +9402,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("Signer not initialized"),
+            denied.reason.contains("Signer not initialized"),
             "was: {}",
             denied.reason
         );
@@ -9808,7 +9646,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("pre-sign checkpoint reread verification disagreed"),
             "was: {}",
             denied.reason
@@ -9917,7 +9754,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("changed before signing"),
+            denied.reason.contains("changed before signing"),
             "was: {}",
             denied.reason
         );
@@ -9976,7 +9813,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("pre-sign checkpoint reread verification disagreed"),
             "was: {}",
             denied.reason
@@ -10095,7 +9931,7 @@ mod tests {
         assert_eq!(fill.order_side, OrderSide::Sell);
         assert_eq!(fill.last_qty, Quantity::from("0.001"));
         assert_eq!(fill.last_px, Price::from("1000"));
-        assert_eq!(fill.currency.code.as_str(), "USDC");
+        assert_eq!(fill.currency.code, "USDC");
         assert_eq!(fill.commission, Some(expected_commission));
         assert_eq!(fill.liquidity_side, LiquiditySide::Taker);
         assert_eq!(account_states.len(), 1);
@@ -10388,7 +10224,7 @@ mod tests {
         assert_eq!(fill.venue_order_id.as_str(), expected_hash.to_string());
         assert_eq!(fill.order_side, OrderSide::Buy);
         assert_eq!(fill.last_qty, Quantity::from("0.001"));
-        assert_eq!(fill.currency.code.as_str(), "USDC");
+        assert_eq!(fill.currency.code, "USDC");
         assert_eq!(fill.commission, Some(expected_commission));
         assert_eq!(fill.liquidity_side, LiquiditySide::Taker);
         assert_eq!(
@@ -10664,7 +10500,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("is below the swap amount"),
+            denied.reason.contains("is below the swap amount"),
             "was: {}",
             denied.reason
         );
@@ -10790,7 +10626,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("swap deployment manifest verification disagreed"),
             "was: {}",
             denied.reason
@@ -10834,7 +10669,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("swap deployment manifest verification disagreed"),
             "was: {}",
             denied.reason
@@ -10878,7 +10712,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("swap deployment manifest verification disagreed"),
             "was: {}",
             denied.reason
@@ -10924,7 +10757,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("swap deployment manifest verification disagreed"),
             "was: {}",
             denied.reason
@@ -10966,7 +10798,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("below the swap amount"),
+            denied.reason.contains("below the swap amount"),
             "was: {}",
             denied.reason
         );
@@ -11011,7 +10843,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("is below the swap amount"),
+            denied.reason.contains("is below the swap amount"),
             "was: {}",
             denied.reason
         );
@@ -11041,10 +10873,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied
-                .reason
-                .as_str()
-                .contains("below maximum transaction cost"),
+            denied.reason.contains("below maximum transaction cost"),
             "was: {}",
             denied.reason
         );
@@ -11093,7 +10922,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("Stale quote"),
+            denied.reason.contains("Stale quote"),
             "was: {}",
             denied.reason
         );
@@ -11133,10 +10962,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied
-                .reason
-                .as_str()
-                .contains("is ahead of the latest block"),
+            denied.reason.contains("is ahead of the latest block"),
             "was: {}",
             denied.reason
         );
@@ -11174,7 +11000,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("deadline overflow"),
+            denied.reason.contains("deadline overflow"),
             "was: {}",
             denied.reason
         );
@@ -11296,7 +11122,7 @@ mod tests {
             panic!("expected OrderRejected, was {:?}", events[1]);
         };
         assert!(
-            rejected.reason.as_str().contains("reverted on-chain"),
+            rejected.reason.contains("reverted on-chain"),
             "was: {}",
             rejected.reason
         );
@@ -11518,7 +11344,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("Execution intent reservation failed before commit"),
             "was: {}",
             denied.reason
@@ -11531,7 +11356,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", retry_events[0]);
         };
         assert_eq!(
-            retry_denied.reason.as_str(),
+            retry_denied.reason,
             "Execution intent reservation failed before commit"
         );
         let broadcasts = state
@@ -11578,13 +11403,13 @@ mod tests {
         let denied_commit = events
             .iter()
             .filter(|event| {
-                matches!(event, OrderEventAny::Denied(denied) if denied.reason.as_str() == "Execution intent reservation commit outcome is unknown; reconciliation is required")
+                matches!(event, OrderEventAny::Denied(denied) if denied.reason == "Execution intent reservation commit outcome is unknown; reconciliation is required")
             })
             .count();
         let denied_in_flight = events
             .iter()
             .filter(|event| {
-                matches!(event, OrderEventAny::Denied(denied) if denied.reason.as_str().contains("at most one transaction can be in flight"))
+                matches!(event, OrderEventAny::Denied(denied) if denied.reason.contains("at most one transaction can be in flight"))
             })
             .count();
         let requests = state.recorded_requests();
@@ -12674,7 +12499,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("exceeds uint24"),
+            denied.reason.contains("exceeds uint24"),
             "was: {}",
             denied.reason
         );
@@ -12717,7 +12542,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("is not initialized"),
+            denied.reason.contains("is not initialized"),
             "was: {}",
             denied.reason
         );
@@ -12769,7 +12594,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("cannot fill the order"),
+            denied.reason.contains("cannot fill the order"),
             "was: {}",
             denied.reason
         );
@@ -13056,7 +12881,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("pre-sign chain ID verification disagreed"),
             "was: {}",
             denied.reason
@@ -13202,7 +13026,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("at most one transaction can be in flight"),
             "was: {}",
             denied.reason
@@ -14305,22 +14128,22 @@ mod tests {
         let balances = client.wallet_balance.lock().as_account_balances().unwrap();
 
         assert_eq!(balances.len(), 3);
-        assert_eq!(balances[0].currency.code.as_str(), "ETH");
-        assert_eq!(balances[0].currency.name.as_str(), "Ethereum");
+        assert_eq!(balances[0].currency.code, "ETH");
+        assert_eq!(balances[0].currency.name, "Ethereum");
         assert_eq!(balances[0].currency.precision, 18);
-        assert_eq!(balances[0].total.raw, 1_000_000_000_000_000_000);
+        assert_eq!(balances[0].total.raw(), 1_000_000_000_000_000_000);
         assert_eq!(balances[0].free, balances[0].total);
         assert_eq!(balances[0].locked, Money::zero(balances[0].currency));
-        assert_eq!(balances[1].currency.code.as_str(), "WETH");
-        assert_eq!(balances[1].currency.name.as_str(), "Wrapped Ether");
+        assert_eq!(balances[1].currency.code, "WETH");
+        assert_eq!(balances[1].currency.name, "Wrapped Ether");
         assert_eq!(balances[1].currency.precision, 18);
-        assert_eq!(balances[1].total.raw, 1_234_567_890_123_456_789);
+        assert_eq!(balances[1].total.raw(), 1_234_567_890_123_456_789);
         assert_eq!(balances[1].free, balances[1].total);
         assert_eq!(balances[1].locked, Money::zero(balances[1].currency));
-        assert_eq!(balances[2].currency.code.as_str(), "USDC");
-        assert_eq!(balances[2].currency.name.as_str(), "USD Coin");
+        assert_eq!(balances[2].currency.code, "USDC");
+        assert_eq!(balances[2].currency.name, "USD Coin");
         assert_eq!(balances[2].currency.precision, 6);
-        assert_eq!(balances[2].total.raw, 9_876_543_210_000_000_000);
+        assert_eq!(balances[2].total.raw(), 9_876_543_210_000_000_000);
         assert_eq!(balances[2].free, balances[2].total);
         assert_eq!(balances[2].locked, Money::zero(balances[2].currency));
 
@@ -14329,9 +14152,9 @@ mod tests {
 
         assert_eq!(balances.len(), 3);
         assert_eq!(client.wallet_balance.lock().token_balances.len(), 2);
-        assert_eq!(balances[0].total.raw, 0);
-        assert_eq!(balances[1].total.raw, 2_000_000_000_000_000_000);
-        assert_eq!(balances[2].total.raw, 12_345_670_000_000_000);
+        assert_eq!(balances[0].total.raw(), 0);
+        assert_eq!(balances[1].total.raw(), 2_000_000_000_000_000_000);
+        assert_eq!(balances[2].total.raw(), 12_345_670_000_000_000);
     }
 
     #[allow(unsafe_code)] // env-var mutation in tests; unique var names avoid cross-test races
@@ -18162,6 +17985,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn submit_order_denies_reduce_only_without_side_effects() {
+        let (mut client, state, cache) = unsupported_client_with_mock_rpc().await;
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("S-001"))
+            .instrument_id(test_pool().instrument_id)
+            .client_order_id(ClientOrderId::from("O-REDUCE-ONLY"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("0.001"))
+            .reduce_only(true)
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 1, "was: {events:?}");
+        let OrderEventAny::Denied(denied) = &events[0] else {
+            panic!("expected OrderDenied, was {:?}", events[0]);
+        };
+        assert_eq!(denied.client_order_id, order.client_order_id());
+        assert_eq!(denied.reason, "UNSUPPORTED_REDUCE_ONLY");
+        assert!(state.recorded_requests().is_empty());
+        assert!(client.in_flight.lock().is_none());
+    }
+
+    #[tokio::test]
     async fn submit_order_list_denies_every_order_without_side_effects() {
         let (mut client, state, cache) = unsupported_client_with_mock_rpc().await;
         let pool = test_pool();
@@ -18185,7 +18039,7 @@ mod tests {
             let OrderEventAny::Denied(denied) = event else {
                 panic!("expected OrderDenied, was {event:?}");
             };
-            assert_eq!(denied.reason.as_str(), ORDER_LIST_UNSUPPORTED);
+            assert_eq!(denied.reason, ORDER_LIST_UNSUPPORTED);
             denied_ids.push(denied.client_order_id);
         }
         denied_ids.sort();
@@ -18222,7 +18076,7 @@ mod tests {
             panic!("expected OrderModifyRejected, was {:?}", events[0]);
         };
         assert_eq!(rejected.client_order_id, order.client_order_id());
-        assert_eq!(rejected.reason.as_str(), ORDER_MODIFY_UNSUPPORTED);
+        assert_eq!(rejected.reason, ORDER_MODIFY_UNSUPPORTED);
         assert!(state.recorded_requests().is_empty());
         assert!(client.in_flight.lock().is_none());
         let cache_ref = cache.borrow();
@@ -18249,7 +18103,7 @@ mod tests {
             panic!("expected OrderCancelRejected, was {:?}", events[0]);
         };
         assert_eq!(rejected.client_order_id, order.client_order_id());
-        assert_eq!(rejected.reason.as_str(), ORDER_CANCEL_UNSUPPORTED);
+        assert_eq!(rejected.reason, ORDER_CANCEL_UNSUPPORTED);
         assert!(state.recorded_requests().is_empty());
         assert!(client.in_flight.lock().is_none());
         let cache_ref = cache.borrow();
@@ -18285,7 +18139,7 @@ mod tests {
             let OrderEventAny::CancelRejected(rejected) = event else {
                 panic!("expected OrderCancelRejected, was {event:?}");
             };
-            assert_eq!(rejected.reason.as_str(), ORDER_CANCEL_UNSUPPORTED);
+            assert_eq!(rejected.reason, ORDER_CANCEL_UNSUPPORTED);
             rejected_ids.push(rejected.client_order_id);
         }
         rejected_ids.sort();

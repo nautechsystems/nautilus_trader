@@ -142,7 +142,7 @@ impl CryptoFuturesSpread {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> CorrectnessResult<Self> {
-        check_valid_string_ascii(strategy_type.as_str(), stringify!(strategy_type))?;
+        check_valid_string_ascii(strategy_type, stringify!(strategy_type))?;
         check_equal_u8(
             price_precision,
             price_increment.precision,
@@ -289,9 +289,6 @@ impl Hash for CryptoFuturesSpread {
 }
 
 impl Instrument for CryptoFuturesSpread {
-    fn tick_scheme(&self) -> Option<Ustr> {
-        self.tick_scheme
-    }
     fn into_any(self) -> InstrumentAny {
         InstrumentAny::CryptoFuturesSpread(self)
     }
@@ -382,6 +379,14 @@ impl Instrument for CryptoFuturesSpread {
 
     fn min_price(&self) -> Option<Price> {
         self.min_price
+    }
+
+    fn tick_scheme(&self) -> Option<Ustr> {
+        self.tick_scheme
+    }
+
+    fn info(&self) -> Option<&Params> {
+        self.info.as_ref()
     }
 
     fn ts_event(&self) -> UnixNanos {

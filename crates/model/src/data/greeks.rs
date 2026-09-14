@@ -1661,7 +1661,7 @@ mod tests {
         };
         let abs_tolerance = 1e-10; // Minimum absolute tolerance for near-zero values
 
-        // Helper function to check relative error with 7 significant decimals precision
+        // Check relative error with seven significant decimal places
         let check_7_sig_figs = |fast: f64, exact: f64, name: &str| {
             let abs_diff = (fast - exact).abs();
             // For very small values (near zero), use absolute tolerance instead of relative
@@ -1844,7 +1844,7 @@ mod tests {
             }
         };
 
-        // Helper function to check relative error with 6 decimals precision
+        // Check relative error with six decimal places
         // Gamma is more sensitive to vol differences, so use more lenient tolerance
         // If imply_vol failed (vol < 1e-6 or way off for short expiry), the greeks may be wrong, so skip comparison
         // Deep ITM/OTM with very short expiry is especially problematic

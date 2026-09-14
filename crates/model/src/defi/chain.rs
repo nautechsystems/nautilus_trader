@@ -556,9 +556,9 @@ mod tests {
 
         // Test native currency
         let currency = eth_chain.native_currency();
-        assert_eq!(currency.code.as_str(), "ETH");
+        assert_eq!(currency.code, "ETH");
         assert_eq!(currency.precision, 18);
-        assert_eq!(currency.name.as_str(), "Ethereum");
+        assert_eq!(currency.name, "Ethereum");
     }
 
     #[rstest]
@@ -574,9 +574,9 @@ mod tests {
 
         // Test native currency (Arbitrum uses ETH)
         let currency = arbitrum_chain.native_currency();
-        assert_eq!(currency.code.as_str(), "ETH");
+        assert_eq!(currency.code, "ETH");
         assert_eq!(currency.precision, 18);
-        assert_eq!(currency.name.as_str(), "Ethereum");
+        assert_eq!(currency.name, "Ethereum");
     }
 
     #[rstest]

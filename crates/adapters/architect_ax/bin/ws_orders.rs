@@ -97,7 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,
     );
 
-    client.connect(&auth_response.token).await?;
+    client.connect(auth_response.token.expose_secret()).await?;
     log::info!("Connected and authenticated");
 
     log::info!("Requesting open orders...");

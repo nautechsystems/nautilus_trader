@@ -24,7 +24,12 @@ use std::{
 };
 
 use arc_swap::ArcSwap;
-use nautilus_core::AtomicMap;
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::{
+    AtomicMap,
+    string::secret::{SecretString, zeroize_json_value},
+};
 use nautilus_live::{
     SocketControl,
     task::{TaskGroup, TaskShutdownError},
@@ -44,6 +49,7 @@ use nautilus_network::{
 };
 use parking_lot::RwLock;
 use tokio_util::sync::CancellationToken;
+use zeroize::Zeroizing;
 
 use super::{
     handler::{FuturesFeedHandler, FuturesHandlerCommand},
@@ -79,18 +85,18 @@ pub struct KrakenFuturesWebSocketClient {
     handler_tasks: Arc<TaskGroup>,
     connect_lock: Arc<tokio::sync::Mutex<()>>,
     subscriptions: SubscriptionState,
-    subscription_payloads: Arc<tokio::sync::RwLock<HashMap<String, String>>>,
+    subscription_payloads: Arc<tokio::sync::RwLock<HashMap<String, SecretString>>>,
     auth_tracker: AuthTracker,
     cancellation_token: CancellationToken,
     credential: Option<KrakenCredential>,
-    original_challenge: Arc<tokio::sync::RwLock<Option<String>>>,
-    signed_challenge: Arc<tokio::sync::RwLock<Option<String>>>,
+    original_challenge: Arc<tokio::sync::RwLock<Option<SecretString>>>,
+    signed_challenge: Arc<tokio::sync::RwLock<Option<SecretString>>>,
     account_id: Arc<RwLock<Option<AccountId>>>,
     truncated_id_map: Arc<AtomicMap<String, ClientOrderId>>,
     order_instrument_map: Arc<AtomicMap<String, InstrumentId>>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     transport_backend: TransportBackend,
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
     socket_control: Option<SocketControl>,
 }
 
@@ -174,7 +180,7 @@ impl KrakenFuturesWebSocketClient {
             order_instrument_map: Arc::new(AtomicMap::new()),
             instruments: Arc::new(AtomicMap::new()),
             transport_backend,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             socket_control: None,
         }
     }
@@ -332,7 +338,10 @@ impl KrakenFuturesWebSocketClient {
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         };
 
         let keyed_quotas = vec![(
@@ -445,7 +454,11 @@ impl KrakenFuturesWebSocketClient {
                             continue;
                         };
 
-                        match cred.sign_ws_challenge(&challenge) {
+                        let challenge = SecretString::from(challenge);
+                        match cred
+                            .sign_ws_challenge(challenge.expose_secret())
+                            .map(SecretString::from)
+                        {
                             Ok(signed) => {
                                 *original_challenge_for_reconnect.write().await =
                                     Some(challenge.clone());
@@ -461,8 +474,8 @@ impl KrakenFuturesWebSocketClient {
                                         &subscriptions,
                                         &payloads,
                                         cred,
-                                        challenge.as_str(),
-                                        signed.as_str(),
+                                        challenge.expose_secret(),
+                                        signed.expose_secret(),
                                     );
                                     pending_resubscribe = false;
                                 }
@@ -854,6 +867,8 @@ impl KrakenFuturesWebSocketClient {
             KrakenWsError::AuthenticationError("API credentials required".to_string())
         })?;
 
+        let original_challenge = SecretString::from(original_challenge);
+        let signed_challenge = SecretString::from(signed_challenge);
         *self.original_challenge.write().await = Some(original_challenge);
         *self.signed_challenge.write().await = Some(signed_challenge);
         self.auth_tracker.succeed();
@@ -1017,14 +1032,15 @@ impl KrakenFuturesWebSocketClient {
         &self,
         feed: KrakenFuturesFeed,
         product_ids: Vec<String>,
-    ) -> Result<String, KrakenWsError> {
+    ) -> Result<SecretString, KrakenWsError> {
         let request = KrakenFuturesRequest {
             event: KrakenFuturesEvent::Subscribe,
             feed,
             product_ids,
         };
-        let payload =
-            serde_json::to_string(&request).map_err(|e| KrakenWsError::JsonError(e.to_string()))?;
+        let payload = SecretString::from(
+            serde_json::to_string(&request).map_err(|e| KrakenWsError::JsonError(e.to_string()))?,
+        );
         self.cmd_tx
             .read()
             .await
@@ -1045,8 +1061,9 @@ impl KrakenFuturesWebSocketClient {
             feed,
             product_ids,
         };
-        let payload =
-            serde_json::to_string(&request).map_err(|e| KrakenWsError::JsonError(e.to_string()))?;
+        let payload = SecretString::from(
+            serde_json::to_string(&request).map_err(|e| KrakenWsError::JsonError(e.to_string()))?,
+        );
         self.cmd_tx
             .read()
             .await
@@ -1058,7 +1075,7 @@ impl KrakenFuturesWebSocketClient {
     async fn send_private_subscribe_feed(
         &self,
         feed: KrakenFuturesFeed,
-    ) -> Result<String, KrakenWsError> {
+    ) -> Result<SecretString, KrakenWsError> {
         let credential = self.credential.as_ref().ok_or_else(|| {
             KrakenWsError::AuthenticationError("API credentials required".to_string())
         })?;
@@ -1078,15 +1095,18 @@ impl KrakenFuturesWebSocketClient {
             )
         })?;
 
-        let request = KrakenFuturesPrivateSubscribeRequest {
+        let request = Zeroizing::new(KrakenFuturesPrivateSubscribeRequest {
             event: KrakenFuturesEvent::Subscribe,
             feed,
-            api_key: credential.api_key().to_string(),
+            api_key: credential.api_key().into(),
             original_challenge,
             signed_challenge,
-        };
-        let payload =
-            serde_json::to_string(&request).map_err(|e| KrakenWsError::JsonError(e.to_string()))?;
+        });
+        let payload = SecretString::from(
+            serde_json::to_string(&*request)
+                .map_err(|e| KrakenWsError::JsonError(e.to_string()))?,
+        );
+        drop(request);
         self.cmd_tx
             .read()
             .await
@@ -1103,7 +1123,7 @@ fn update_private_payload_credentials(
     api_key: &str,
     original_challenge: &str,
     signed_challenge: &str,
-) -> Option<String> {
+) -> Option<SecretString> {
     let mut value: serde_json::Value = serde_json::from_str(payload).ok()?;
     let obj = value.as_object_mut()?;
     obj.insert(
@@ -1118,15 +1138,17 @@ fn update_private_payload_credentials(
         "signed_challenge".to_string(),
         serde_json::Value::String(signed_challenge.to_string()),
     );
-    serde_json::to_string(&value).ok()
+    let payload = serde_json::to_string(&value).ok().map(SecretString::from);
+    zeroize_json_value(&mut value);
+    payload
 }
 
-fn build_challenge_payload(credential: &KrakenCredential) -> serde_json::Result<String> {
-    let request = KrakenFuturesChallengeRequest {
+fn build_challenge_payload(credential: &KrakenCredential) -> serde_json::Result<SecretString> {
+    let request = Zeroizing::new(KrakenFuturesChallengeRequest {
         event: KrakenFuturesEvent::Challenge,
-        api_key: credential.api_key().to_string(),
-    };
-    serde_json::to_string(&request)
+        api_key: credential.api_key().into(),
+    });
+    serde_json::to_string(&*request).map(SecretString::from)
 }
 
 fn is_private_feed_key(key: &str) -> bool {
@@ -1136,7 +1158,7 @@ fn is_private_feed_key(key: &str) -> bool {
 fn resubscribe_public(
     cmd_tx: &tokio::sync::mpsc::UnboundedSender<FuturesHandlerCommand>,
     subscriptions: &SubscriptionState,
-    payloads: &HashMap<String, String>,
+    payloads: &HashMap<String, SecretString>,
 ) {
     for (key, payload) in payloads {
         if is_private_feed_key(key) {
@@ -1157,7 +1179,7 @@ fn resubscribe_public(
 fn resubscribe_private(
     cmd_tx: &tokio::sync::mpsc::UnboundedSender<FuturesHandlerCommand>,
     subscriptions: &SubscriptionState,
-    payloads: &HashMap<String, String>,
+    payloads: &HashMap<String, SecretString>,
     credential: &KrakenCredential,
     original_challenge: &str,
     signed_challenge: &str,
@@ -1168,7 +1190,7 @@ fn resubscribe_private(
         }
 
         let Some(updated) = update_private_payload_credentials(
-            payload,
+            payload.expose_secret(),
             credential.api_key(),
             original_challenge,
             signed_challenge,
@@ -1207,6 +1229,33 @@ mod tests {
         KrakenCredential::new("test_key", secret)
     }
 
+    #[rstest]
+    #[tokio::test]
+    async fn test_debug_redacts_auth_state_and_proxy_url() {
+        let client = KrakenFuturesWebSocketClient::with_credentials(
+            "wss://test".to_string(),
+            30,
+            Some(test_credential()),
+            None,
+            TransportBackend::default(),
+            Some("http://user:proxy-secret@localhost".to_string()),
+        );
+        client
+            .set_auth_credentials(
+                "original-challenge".to_string(),
+                "signed-challenge".to_string(),
+            )
+            .await
+            .unwrap();
+
+        let debug = format!("{client:?}");
+
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains("proxy-secret"));
+        assert!(!debug.contains("original-challenge"));
+        assert!(!debug.contains("signed-challenge"));
+    }
+
     #[tokio::test]
     async fn test_last_client_owner_drop_aborts_handler_task() {
         let client = KrakenFuturesWebSocketClient::new("wss://test".to_string(), 30, None);
@@ -1241,8 +1290,8 @@ mod tests {
     fn test_build_challenge_payload_emits_expected_event() {
         let credential = test_credential();
         let payload = build_challenge_payload(&credential).expect("serializes");
-        assert!(payload.contains(r#""event":"challenge""#));
-        assert!(payload.contains(r#""api_key":"test_key""#));
+        assert!(payload.expose_secret().contains(r#""event":"challenge""#));
+        assert!(payload.expose_secret().contains(r#""api_key":"test_key""#));
     }
 
     #[rstest]
@@ -1254,11 +1303,13 @@ mod tests {
         let mut payloads = HashMap::new();
         payloads.insert(
             "trades:PI_XBTUSD".to_string(),
-            r#"{"event":"subscribe","feed":"trade","product_ids":["PI_XBTUSD"]}"#.to_string(),
+            SecretString::from(
+                r#"{"event":"subscribe","feed":"trade","product_ids":["PI_XBTUSD"]}"#.to_string(),
+            ),
         );
         payloads.insert(
             "open_orders".to_string(),
-            r#"{"event":"subscribe","feed":"open_orders"}"#.to_string(),
+            SecretString::from(r#"{"event":"subscribe","feed":"open_orders"}"#.to_string()),
         );
 
         resubscribe_public(&cmd_tx, &subscriptions, &payloads);
@@ -1273,7 +1324,7 @@ mod tests {
             1,
             "only the public feed should resubscribe"
         );
-        assert!(subscribed[0].contains("PI_XBTUSD"));
+        assert!(subscribed[0].expose_secret().contains("PI_XBTUSD"));
     }
 
     #[rstest]
@@ -1287,14 +1338,16 @@ mod tests {
         let mut payloads = HashMap::new();
         payloads.insert(
             "trades:PI_XBTUSD".to_string(),
-            r#"{"event":"subscribe","feed":"trade","product_ids":["PI_XBTUSD"]}"#.to_string(),
+            SecretString::from(
+                r#"{"event":"subscribe","feed":"trade","product_ids":["PI_XBTUSD"]}"#.to_string(),
+            ),
         );
 
         resubscribe_public(&cmd_tx, &subscriptions, &payloads);
 
         match cmd_rx.try_recv().expect("public subscribe expected") {
             FuturesHandlerCommand::Subscribe { payload } => {
-                assert!(payload.contains("PI_XBTUSD"));
+                assert!(payload.expose_secret().contains("PI_XBTUSD"));
             }
             other => panic!("expected Subscribe, was {other:?}"),
         }
@@ -1310,11 +1363,16 @@ mod tests {
         let mut payloads = HashMap::new();
         payloads.insert(
             "open_orders".to_string(),
-            r#"{"event":"subscribe","feed":"open_orders","api_key":"","original_challenge":"","signed_challenge":""}"#.to_string(),
+            SecretString::from(
+                r#"{"event":"subscribe","feed":"open_orders","api_key":"","original_challenge":"","signed_challenge":""}"#
+                    .to_string(),
+            ),
         );
         payloads.insert(
             "trades:PI_XBTUSD".to_string(),
-            r#"{"event":"subscribe","feed":"trade","product_ids":["PI_XBTUSD"]}"#.to_string(),
+            SecretString::from(
+                r#"{"event":"subscribe","feed":"trade","product_ids":["PI_XBTUSD"]}"#.to_string(),
+            ),
         );
 
         resubscribe_private(
@@ -1337,7 +1395,7 @@ mod tests {
             "only the private feed should resubscribe"
         );
         let value: serde_json::Value =
-            serde_json::from_str(&subscribed[0]).expect("payload is valid JSON");
+            serde_json::from_str(subscribed[0].expose_secret()).expect("payload is valid JSON");
         assert_eq!(value["event"], "subscribe");
         assert_eq!(value["feed"], "open_orders");
         assert_eq!(value["api_key"], "test_key");

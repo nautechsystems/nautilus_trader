@@ -18,12 +18,13 @@ use std::{any::Any, sync::Arc};
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     data::{
-        Bar, BarType, DataType, ForwardPrice, FundingRateUpdate, HasTsInit, OrderBookDelta,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, BarType, DataType, FundingRateUpdate, HasTsInit, OrderBookDelta, OrderBookDepth10,
+        QuoteTick, TradeTick,
     },
-    identifiers::{ClientId, InstrumentId, Venue},
+    identifiers::{ClientId, InstrumentId, OptionSeriesId, Venue},
     instruments::InstrumentAny,
     orderbook::OrderBook,
+    types::Price,
 };
 use serde::{Deserialize, Serialize};
 
@@ -471,30 +472,30 @@ impl FundingRatesResponse {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ForwardPricesResponse {
+pub struct OptionChainReferencePriceResponse {
     pub correlation_id: UUID4,
     pub client_id: ClientId,
-    pub venue: Venue,
-    pub data: Vec<ForwardPrice>,
+    pub series_id: OptionSeriesId,
+    pub price: Option<Price>,
     pub ts_init: UnixNanos,
     pub params: Option<Params>,
 }
 
-impl ForwardPricesResponse {
-    /// Creates a new [`ForwardPricesResponse`] instance.
+impl OptionChainReferencePriceResponse {
+    /// Creates a new [`OptionChainReferencePriceResponse`] instance.
     pub fn new(
         correlation_id: UUID4,
         client_id: ClientId,
-        venue: Venue,
-        data: Vec<ForwardPrice>,
+        series_id: OptionSeriesId,
+        price: Option<Price>,
         ts_init: UnixNanos,
         params: Option<Params>,
     ) -> Self {
         Self {
             correlation_id,
             client_id,
-            venue,
-            data,
+            series_id,
+            price,
             ts_init,
             params,
         }

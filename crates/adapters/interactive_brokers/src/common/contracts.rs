@@ -84,7 +84,6 @@ pub fn parse_contract_from_json(json: &Value) -> anyhow::Result<Contract> {
         .as_object()
         .ok_or_else(|| anyhow::anyhow!("Expected JSON object for contract"))?;
 
-    // Helper to get string field with default
     let get_str = |key: &str| -> String {
         obj.get(key)
             .and_then(|v| v.as_str())
@@ -92,17 +91,14 @@ pub fn parse_contract_from_json(json: &Value) -> anyhow::Result<Contract> {
             .to_string()
     };
 
-    // Helper to get i32 field with default
     let get_i32 = |key: &str| -> i32 {
         obj.get(key)
             .and_then(|v| v.as_i64())
             .map_or(0, |n| n as i32)
     };
 
-    // Helper to get f64 field with default
     let get_f64 = |key: &str| -> f64 { obj.get(key).and_then(|v| v.as_f64()).unwrap_or(0.0) };
 
-    // Helper to get bool field with default
     let get_bool = |key: &str| -> bool { obj.get(key).and_then(|v| v.as_bool()).unwrap_or(false) };
 
     let parse_option_right = |key: &str| -> Option<OptionRight> {

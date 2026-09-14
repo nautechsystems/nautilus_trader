@@ -78,7 +78,7 @@ for AX EURUSD-PERP backtests.
 ## Prerequisites
 
 - Python 3.12+
-- [NautilusTrader](https://pypi.org/project/nautilus_trader/) installed.
+- [NautilusTrader installed](../getting_started/installation.md).
 - A free TrueFX account, used to download a monthly tick archive.
 
 ## Data preparation
@@ -193,7 +193,7 @@ rates.
 | `rsi_sell_threshold` | `0.70` | Short entry confirmation.                                  |
 | `trade_size`         | `1`    | One contract per trade (1,000 EUR notional).               |
 
-:::tip
+:::note
 NautilusTrader RSI returns values in `[0.0, 1.0]`, not `[0, 100]`. The
 `0.30` / `0.70` thresholds correspond to the textbook 30 / 70 levels.
 :::
@@ -276,7 +276,7 @@ same strategy and setup pattern. It is at
 
 Replaying TrueFX EUR/USD December 2025 through `BBMeanReversion(20, 2sd, RSI 14)`
 prints 44,591 1-minute mid bars and closes 1,089 positions across 2,178 fills.
-Cumulative realised pnl ends at **-1,287 USD**: the strategy bleeds steadily
+Cumulative realized pnl ends at **-1,287 USD**: the strategy bleeds steadily
 through the month with no clear regime-driven recovery. Mean reversion
 without a regime filter pays the spread on every cycle, and EUR/USD ran a
 pronounced uptrend through the second half of December which the strategy
@@ -302,9 +302,9 @@ regions mark the entry-eligible quadrants: lower-left (long) and upper-right
 (short). The diagonal lobe is the natural co-movement of band-relative price
 and RSI.*
 
-![Cumulative realised pnl per closed position](./assets/fx_mean_reversion_ax/panel_d_pnl.png)
+![Cumulative realized pnl per closed position](./assets/fx_mean_reversion_ax/panel_d_pnl.png)
 
-**Figure 4.** *Cumulative realised USD pnl across closed positions. The
+**Figure 4.** *Cumulative realized USD pnl across closed positions. The
 curve declines roughly linearly, dominated by spread and small adverse
 moves on each cycle.*
 
@@ -314,10 +314,13 @@ A self-contained renderer re-runs the backtest, computes BB and RSI on the
 captured bars, and writes PNG panels using the shared `nautilus_dark`
 tearsheet theme.
 
+After building NautilusTrader from source, run these commands from the repository root:
+
 ```bash
-uv sync --extra visualization
+make sync
 TRUEFX_CSV=test_data/local/truefx/EURUSD-2025-12.csv \
-    python3 docs/tutorials/assets/fx_mean_reversion_ax/render_panels.py
+    uv run --project python --no-sync \
+        python docs/tutorials/assets/fx_mean_reversion_ax/render_panels.py
 ```
 
 Set `TRUEFX_CSV` to wherever you saved the EUR/USD archive.
@@ -325,7 +328,7 @@ Set `TRUEFX_CSV` to wherever you saved the EUR/USD archive.
 ## Next steps
 
 - **Add a regime filter**. The drawdown is concentrated in trending sessions.
-  Suppress entries when realised range or a slower trend filter says the
+  Suppress entries when realized range or a slower trend filter says the
   market is directional.
 - **Tune thresholds**. A wider band (`bb_std=2.5`) or stricter RSI cutoffs
   (`0.25` / `0.75`) cut entries but raise the bar for confirmation.

@@ -378,7 +378,7 @@ impl ExecTesterConfig {
         order_id_tag = None,
         use_hyphens_in_client_order_ids = None,
         use_uuid_client_order_ids = None,
-        external_order_claims = None,
+        external_order_instrument_ids = None,
         instrument_id = None,
         client_id = None,
         order_qty = None,
@@ -444,7 +444,7 @@ impl ExecTesterConfig {
         order_id_tag: Option<String>,
         use_hyphens_in_client_order_ids: Option<bool>,
         use_uuid_client_order_ids: Option<bool>,
-        external_order_claims: Option<Vec<InstrumentId>>,
+        external_order_instrument_ids: Option<Vec<InstrumentId>>,
         instrument_id: Option<InstrumentId>,
         client_id: Option<ClientId>,
         order_qty: Option<Quantity>,
@@ -517,7 +517,7 @@ impl ExecTesterConfig {
                     .unwrap_or(defaults.base.use_hyphens_in_client_order_ids),
                 use_uuid_client_order_ids: use_uuid_client_order_ids
                     .unwrap_or(defaults.base.use_uuid_client_order_ids),
-                external_order_claims,
+                external_order_instrument_ids,
                 log_events: log_events.unwrap_or(defaults.base.log_events),
                 log_commands: log_commands.unwrap_or(defaults.base.log_commands),
                 ..Default::default()
@@ -624,9 +624,9 @@ impl ExecTesterConfig {
     }
 
     #[getter]
-    #[pyo3(name = "external_order_claims")]
-    fn py_external_order_claims(&self) -> Option<Vec<InstrumentId>> {
-        self.base.external_order_claims.clone()
+    #[pyo3(name = "external_order_instrument_ids")]
+    fn py_external_order_instrument_ids(&self) -> Option<Vec<InstrumentId>> {
+        self.base.external_order_instrument_ids.clone()
     }
 
     #[getter]

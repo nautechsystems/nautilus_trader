@@ -608,12 +608,12 @@ impl Bar {
     fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
         (
             self.bar_type.to_string(),
-            self.open.raw,
+            self.open.raw(),
             self.open.precision,
-            self.high.raw,
-            self.low.raw,
-            self.close.raw,
-            self.volume.raw,
+            self.high.raw(),
+            self.low.raw(),
+            self.close.raw(),
+            self.volume.raw(),
             self.volume.precision,
             self.ts_event.as_u64(),
             self.ts_init.as_u64(),

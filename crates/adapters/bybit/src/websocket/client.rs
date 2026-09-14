@@ -31,7 +31,9 @@ use std::{
 use arc_swap::ArcSwap;
 #[cfg(test)]
 use nautilus_common::live::get_runtime;
-use nautilus_core::{AtomicMap, AtomicSet, UUID4, consts::NAUTILUS_USER_AGENT};
+use nautilus_core::{
+    AtomicMap, AtomicSet, UUID4, consts::NAUTILUS_USER_AGENT, string::secret::SecretString,
+};
 use nautilus_live::{
     SocketControl,
     task::{SharedTaskSlot, TaskJoinOutcome},
@@ -55,15 +57,16 @@ use nautilus_network::{
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
+use zeroize::Zeroizing;
 
 use crate::{
     common::{
         consts::{BYBIT_NAUTILUS_BROKER_ID, BYBIT_WS_TOPIC_DELIMITER},
         credential::Credential,
         enums::{
-            BybitBboSideType, BybitEnvironment, BybitOrderSide, BybitOrderType, BybitPositionIdx,
-            BybitProductType, BybitTimeInForce, BybitTpSlMode, BybitWsOrderRequestOp,
-            resolve_trigger_type,
+            BybitBboSideType, BybitEnvironment, BybitOrderSide, BybitOrderSmpType, BybitOrderType,
+            BybitPositionIdx, BybitProductType, BybitTimeInForce, BybitTpSlMode,
+            BybitWsOrderRequestOp, resolve_trigger_type,
         },
         parse::{
             bar_spec_to_bybit_interval, extract_base_coin, extract_raw_symbol, map_time_in_force,
@@ -122,7 +125,7 @@ pub struct BybitWebSocketClient {
     bars_timestamp_on_close: Arc<AtomicBool>,
     transport_backend: TransportBackend,
     cancellation_token: Arc<ArcSwap<CancellationToken>>,
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
     socket_control: Option<SocketControl>,
 }
 
@@ -288,7 +291,7 @@ impl BybitWebSocketClient {
             mm_level: Arc::new(AtomicU8::new(0)),
             transport_backend,
             cancellation_token: Arc::new(ArcSwap::from_pointee(CancellationToken::new())),
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             socket_control: None,
         }
     }
@@ -358,7 +361,7 @@ impl BybitWebSocketClient {
             mm_level: Arc::new(AtomicU8::new(0)),
             transport_backend,
             cancellation_token: Arc::new(ArcSwap::from_pointee(CancellationToken::new())),
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             socket_control: None,
         }
     }
@@ -421,7 +424,7 @@ impl BybitWebSocketClient {
             mm_level: Arc::new(AtomicU8::new(0)),
             transport_backend,
             cancellation_token: Arc::new(ArcSwap::from_pointee(CancellationToken::new())),
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             socket_control: None,
         }
     }
@@ -477,15 +480,20 @@ impl BybitWebSocketClient {
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         };
 
         let message_rate_limiter = Arc::new(RateLimiter::<Ustr, MonotonicClock>::new_with_quota(
             None,
             vec![],
         ));
-        let connection_rate_limiter =
-            websocket_connection_limiter(&self.url, self.proxy_url.as_deref());
+        let connection_rate_limiter = websocket_connection_limiter(
+            &self.url,
+            self.proxy_url.as_ref().map(SecretString::expose_secret),
+        );
         let connection_rate_keys: Arc<[Ustr]> = Arc::from([websocket_connection_key()]);
         let client = WebSocketClient::builder()
             .config(config.clone())
@@ -542,7 +550,7 @@ impl BybitWebSocketClient {
                 recv_window_ms,
             );
 
-            // Helper closure to resubscribe all tracked subscriptions after reconnection
+            // Resubscribe all tracked subscriptions after reconnection
             let resubscribe_all = || async {
                 let topics = subscriptions.all_topics();
 
@@ -602,16 +610,18 @@ impl BybitWebSocketClient {
                                     + WEBSOCKET_AUTH_WINDOW_MS;
                                 let signature = cred.sign_websocket_auth(expires);
 
-                                let auth_message = BybitAuthRequest {
+                                let auth_message = Zeroizing::new(BybitAuthRequest {
                                     op: BybitWsOperation::Auth,
                                     args: vec![
                                         Value::String(cred.api_key().to_string()),
                                         Value::Number(expires.into()),
                                         Value::String(signature),
                                     ],
-                                };
+                                });
 
-                                if let Ok(payload) = serde_json::to_string(&auth_message) {
+                                if let Ok(payload) =
+                                    serde_json::to_string(&*auth_message).map(SecretString::from)
+                                {
                                     let cmd = HandlerCommand::Authenticate { payload };
                                     if let Err(e) = cmd_tx_for_reconnect.send(cmd) {
                                         log::error!(
@@ -1582,6 +1592,7 @@ impl BybitWebSocketClient {
                 sl_limit_price: order.sl_limit_price,
                 tp_limit_price: order.tp_limit_price,
                 order_iv: order.order_iv,
+                smp_type: order.smp_type,
                 mmp: order.mmp,
                 position_idx: order.position_idx,
                 bbo_side_type: order.bbo_side_type,
@@ -1792,6 +1803,7 @@ impl BybitWebSocketClient {
         position_idx: Option<BybitPositionIdx>,
         bbo_side_type: Option<BybitBboSideType>,
         bbo_level: Option<String>,
+        smp_type: Option<BybitOrderSmpType>,
     ) -> BybitWsResult<String> {
         let params = self.build_place_order_params(
             product_type,
@@ -1813,6 +1825,7 @@ impl BybitWebSocketClient {
             position_idx,
             bbo_side_type,
             bbo_level,
+            smp_type,
         )?;
 
         self.place_order(params).await
@@ -1889,6 +1902,7 @@ impl BybitWebSocketClient {
         position_idx: Option<BybitPositionIdx>,
         bbo_side_type: Option<BybitBboSideType>,
         bbo_level: Option<String>,
+        smp_type: Option<BybitOrderSmpType>,
     ) -> BybitWsResult<BybitWsPlaceOrderParams> {
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())
             .map_err(|e| BybitWsError::ClientError(e.to_string()))?;
@@ -1957,6 +1971,7 @@ impl BybitWebSocketClient {
                 sl_limit_price: None,
                 tp_limit_price: None,
                 order_iv: None,
+                smp_type,
                 mmp: None,
                 position_idx,
                 bbo_side_type,
@@ -1999,6 +2014,7 @@ impl BybitWebSocketClient {
                 sl_limit_price: None,
                 tp_limit_price: None,
                 order_iv: None,
+                smp_type,
                 mmp: None,
                 position_idx,
                 bbo_side_type,
@@ -2095,16 +2111,17 @@ impl BybitWebSocketClient {
         let expires = jiff::Timestamp::now().as_millisecond() + WEBSOCKET_AUTH_WINDOW_MS;
         let signature = credential.sign_websocket_auth(expires);
 
-        let auth_message = BybitAuthRequest {
+        let auth_message = Zeroizing::new(BybitAuthRequest {
             op: BybitWsOperation::Auth,
             args: vec![
                 Value::String(credential.api_key().to_string()),
                 Value::Number(expires.into()),
                 Value::String(signature),
             ],
-        };
+        });
 
-        let payload = serde_json::to_string(&auth_message)?;
+        let payload = SecretString::from(serde_json::to_string(&*auth_message)?);
+        drop(auth_message);
 
         // Begin auth attempt so succeed() will update state
         let _rx = self.auth_tracker.begin();
@@ -2436,6 +2453,7 @@ mod tests {
             sl_limit_price: None,
             tp_limit_price: None,
             order_iv: Some("0.80".to_string()),
+            smp_type: None,
             mmp: Some(true),
             position_idx: None,
             bbo_side_type: None,
@@ -2619,6 +2637,68 @@ mod tests {
     }
 
     #[rstest]
+    fn batch_place_command_carries_smp_type_per_order() {
+        let client = BybitWebSocketClient::new_trade(
+            BybitEnvironment::Testnet,
+            Some("test-key".to_string()),
+            Some("test-secret".to_string()),
+            None,
+            20,
+            TransportBackend::default(),
+            None,
+        );
+
+        let expectations = [
+            (Some(BybitOrderSmpType::CancelMaker), Some("CancelMaker")),
+            (Some(BybitOrderSmpType::CancelBoth), Some("CancelBoth")),
+            (None, None),
+        ];
+
+        let orders = expectations
+            .into_iter()
+            .enumerate()
+            .map(|(index, (smp_type, _))| {
+                client
+                    .build_place_order_params(
+                        BybitProductType::Linear,
+                        InstrumentId::from("ETHUSDT-LINEAR.BYBIT"),
+                        ClientOrderId::from(format!("smp-batch-{index}").as_str()),
+                        OrderSide::Buy,
+                        OrderType::Limit,
+                        Quantity::from("1.0"),
+                        false,
+                        Some(TimeInForce::Gtc),
+                        Some(Price::from("50000.0")),
+                        None,
+                        None,
+                        None,
+                        None,
+                        false,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        smp_type,
+                    )
+                    .expect("failed to build params")
+            })
+            .collect::<Vec<_>>();
+
+        let command = client
+            .build_batch_place_command(orders, "req-smp-batch".to_string())
+            .expect("failed to build batch command");
+
+        let items = batch_nested_items(&command);
+
+        assert_eq!(items.len(), expectations.len());
+
+        for (item, (_, expected)) in items.iter().zip(expectations) {
+            assert_eq!(item.get("smpType").and_then(Value::as_str), expected);
+        }
+    }
+
+    #[rstest]
     fn test_race_duplicate_subscribe_messages_idempotent() {
         let subscriptions = SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER);
         let topic = "publicTrade.BTCUSDT";
@@ -2688,6 +2768,7 @@ mod tests {
                 None,
                 None,
                 is_leverage,
+                None,
                 None,
                 None,
                 None,
@@ -2768,6 +2849,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
             )
             .expect("Failed to build params");
 
@@ -2807,6 +2889,7 @@ mod tests {
                 None,
                 Some(BybitBboSideType::Queue),
                 Some("2".to_string()),
+                None,
             )
             .expect("Failed to build params");
 

@@ -75,16 +75,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (api_key, api_secret) = credential.into_parts();
 
     let data_config = KrakenDataClientConfig {
-        api_key: Some(api_key.clone()),
-        api_secret: Some(api_secret.clone()),
+        api_key: Some(api_key.clone().into()),
+        api_secret: Some(api_secret.clone().into()),
         product_type,
         ..Default::default()
     };
 
     let exec_config = KrakenExecutionClientConfig {
         account_id,
-        api_key,
-        api_secret,
+        api_key: api_key.into(),
+        api_secret: api_secret.into(),
         product_type,
         ..Default::default()
     };

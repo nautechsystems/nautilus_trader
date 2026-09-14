@@ -1,5 +1,9 @@
 # nautilus-pyo3
 
+[![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
+![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
+[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
+
 Python bindings for [NautilusTrader](https://nautilustrader.io).
 
 The `nautilus-pyo3` crate provides all [PyO3](https://pyo3.rs) Python bindings for the
@@ -17,13 +21,16 @@ event-driven architecture, providing research-to-live semantic parity.
 
 This crate provides feature flags to control source code inclusion during compilation:
 
-- `extension-module`: Builds as a Python extension module (automatically enabled by `maturin`).
+- `arrow`: Enables Apache Arrow support in dependent crates.
+- `betfair`: Enables the Betfair adapter and its Python bindings.
+- `defi`: Enables DeFi (Decentralized Finance) support, including blockchain adapters.
+- `extension-module`: Builds as a Python extension module and is automatically enabled by `maturin`.
 - `high-precision`: Uses 128-bit value types throughout the workspace.
+- `hypersync`: Enables [`hypersync-client`](https://crates.io/crates/hypersync-client) support for the blockchain adapter.
+- `mimalloc`: Sets [mimalloc](https://crates.io/crates/mimalloc) as Rust's global allocator.
 - `postgres`: Enables PostgreSQL (sqlx) back-ends in dependent crates.
 - `redis`: Enables Redis based infrastructure in dependent crates.
-- `hypersync`: Enables hypersync support (fast parallel hash maps) where available.
 - `tracing-bridge`: Enables the `tracing` subscriber bridge for log integration.
-- `defi`: Enables DeFi (Decentralized Finance) support including blockchain adapters.
 
 ## License
 

@@ -238,6 +238,7 @@ impl HttpClient {
     }
 }
 """.strip(),
+        encoding="utf-8",
     )
     binding_path = python_dir / "http.rs"
     binding_path.write_text(
@@ -253,6 +254,7 @@ impl HttpClient {
     }
 }
 """.strip(),
+        encoding="utf-8",
     )
 
     # Act
@@ -262,7 +264,7 @@ impl HttpClient {
     # Assert
     assert updates == 1
     assert captured.err == ""
-    updated = binding_path.read_text()
+    updated = binding_path.read_text(encoding="utf-8")
     assert "/// # Errors" in updated
     assert "/// Returns an error when the request fails." in updated
     assert "/// # Panics" not in updated
@@ -314,7 +316,7 @@ pub struct Foo {}
 )] // trailing comment on closing line
 pub struct Bar {}
 """
-    (tmp_path / "lib.rs").write_text(source)
+    (tmp_path / "lib.rs").write_text(source, encoding="utf-8")
 
     # Act
     docs = generate_docstrings.collect_source_docs(tmp_path)

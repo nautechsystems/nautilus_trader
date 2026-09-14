@@ -285,7 +285,7 @@ mod tests {
         let serialized = funding_rate.to_json_bytes().unwrap();
         let deserialized = FundingRateUpdate::from_json_bytes(&serialized).unwrap();
 
-        assert_eq!(funding_rate, deserialized);
+        assert_funding_rate_fields(&funding_rate, &deserialized);
     }
 
     #[rstest]
@@ -308,7 +308,7 @@ mod tests {
         let serialized = funding_rate.to_msgpack_bytes().unwrap();
         let deserialized = FundingRateUpdate::from_msgpack_bytes(&serialized).unwrap();
 
-        assert_eq!(funding_rate, deserialized);
+        assert_funding_rate_fields(&funding_rate, &deserialized);
     }
 
     #[rstest]
@@ -331,6 +331,15 @@ mod tests {
         let json_str = serde_json::to_string(&funding_rate).unwrap();
         let deserialized: FundingRateUpdate = serde_json::from_str(&json_str).unwrap();
 
-        assert_eq!(funding_rate, deserialized);
+        assert_funding_rate_fields(&funding_rate, &deserialized);
+    }
+
+    fn assert_funding_rate_fields(expected: &FundingRateUpdate, actual: &FundingRateUpdate) {
+        assert_eq!(expected.instrument_id, actual.instrument_id);
+        assert_eq!(expected.rate, actual.rate);
+        assert_eq!(expected.interval, actual.interval);
+        assert_eq!(expected.next_funding_ns, actual.next_funding_ns);
+        assert_eq!(expected.ts_event, actual.ts_event);
+        assert_eq!(expected.ts_init, actual.ts_init);
     }
 }

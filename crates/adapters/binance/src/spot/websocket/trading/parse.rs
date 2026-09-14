@@ -20,7 +20,7 @@
 
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
-    enums::{AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
+    enums::{AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType},
     events::AccountState,
     identifiers::{AccountId, InstrumentId, TradeId, VenueOrderId},
     reports::{FillReport, OrderStatusReport},
@@ -32,7 +32,7 @@ use super::user_data::{BinanceSpotAccountPositionMsg, BinanceSpotExecutionReport
 use crate::common::{
     consts::BINANCE_NAUTILUS_SPOT_BROKER_ID,
     encoder::decode_client_order_id,
-    enums::{BinanceOrderStatus, BinanceSide, BinanceTimeInForce},
+    enums::{BinanceOrderStatus, BinanceSide},
     parse::{
         parse_millis_or_init, parse_required_decimal, parse_required_price_at_precision,
         parse_required_quantity_at_precision,
@@ -54,7 +54,7 @@ pub fn parse_spot_exec_report_to_order_status(
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     let client_order_id =
-        decode_client_order_id(&msg.client_order_id, BINANCE_NAUTILUS_SPOT_BROKER_ID)?;
+        decode_client_order_id(msg.order_client_order_id(), BINANCE_NAUTILUS_SPOT_BROKER_ID)?;
     let venue_order_id = VenueOrderId::new(msg.order_id.to_string());
     let ts_event = parse_millis_or_init(msg.event_time, "Spot execution event time", ts_init);
 
@@ -63,9 +63,9 @@ pub fn parse_spot_exec_report_to_order_status(
         BinanceSide::Sell => OrderSide::Sell,
     };
 
-    let order_status = parse_order_status(msg.order_status, treat_expired_as_canceled);
-    let order_type = parse_spot_order_type(&msg.order_type);
-    let time_in_force = parse_time_in_force(msg.time_in_force);
+    let order_status = parse_order_status(msg.order_status, treat_expired_as_canceled)?;
+    let order_type = parse_spot_order_type(&msg.order_type)?;
+    let time_in_force = msg.time_in_force.to_nautilus_time_in_force()?;
 
     let quantity =
         parse_required_quantity_at_precision(&msg.original_qty, size_precision, "original_qty")?;
@@ -142,7 +142,7 @@ pub fn parse_spot_exec_report_to_fill(
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
     let client_order_id =
-        decode_client_order_id(&msg.client_order_id, BINANCE_NAUTILUS_SPOT_BROKER_ID)?;
+        decode_client_order_id(msg.order_client_order_id(), BINANCE_NAUTILUS_SPOT_BROKER_ID)?;
     let venue_order_id = VenueOrderId::new(msg.order_id.to_string());
     let trade_id = TradeId::new(msg.trade_id.to_string());
     let ts_event = parse_millis_or_init(msg.event_time, "Spot execution event time", ts_init);
@@ -226,8 +226,11 @@ pub fn parse_spot_account_position(
     )
 }
 
-fn parse_order_status(status: BinanceOrderStatus, treat_expired_as_canceled: bool) -> OrderStatus {
-    match status {
+fn parse_order_status(
+    status: BinanceOrderStatus,
+    treat_expired_as_canceled: bool,
+) -> anyhow::Result<OrderStatus> {
+    Ok(match status {
         BinanceOrderStatus::New | BinanceOrderStatus::PendingNew => OrderStatus::Accepted,
         BinanceOrderStatus::PartiallyFilled => OrderStatus::PartiallyFilled,
         BinanceOrderStatus::Filled
@@ -242,35 +245,25 @@ fn parse_order_status(status: BinanceOrderStatus, treat_expired_as_canceled: boo
                 OrderStatus::Expired
             }
         }
-        BinanceOrderStatus::Unknown => OrderStatus::Accepted,
-    }
+        BinanceOrderStatus::Unknown => anyhow::bail!("unknown Binance Spot order status"),
+    })
 }
 
-fn parse_spot_order_type(order_type: &str) -> OrderType {
-    match order_type {
+fn parse_spot_order_type(order_type: &str) -> anyhow::Result<OrderType> {
+    Ok(match order_type {
         "LIMIT" | "LIMIT_MAKER" => OrderType::Limit,
         "MARKET" => OrderType::Market,
         "STOP_LOSS" => OrderType::StopMarket,
         "STOP_LOSS_LIMIT" => OrderType::StopLimit,
         "TAKE_PROFIT" => OrderType::MarketIfTouched,
         "TAKE_PROFIT_LIMIT" => OrderType::LimitIfTouched,
-        _ => OrderType::Market,
-    }
-}
-
-fn parse_time_in_force(tif: BinanceTimeInForce) -> TimeInForce {
-    match tif {
-        BinanceTimeInForce::Gtc | BinanceTimeInForce::Gtx => TimeInForce::Gtc,
-        BinanceTimeInForce::Ioc | BinanceTimeInForce::Rpi => TimeInForce::Ioc,
-        BinanceTimeInForce::Fok => TimeInForce::Fok,
-        BinanceTimeInForce::Gtd => TimeInForce::Gtd,
-        BinanceTimeInForce::Unknown => TimeInForce::Gtc,
-    }
+        _ => anyhow::bail!("unknown Binance Spot order type: {order_type}"),
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::{identifiers::ClientOrderId, types::Quantity};
+    use nautilus_model::{enums::TimeInForce, identifiers::ClientOrderId, types::Quantity};
     use rstest::rstest;
 
     use super::*;
@@ -287,6 +280,30 @@ mod tests {
     }
 
     #[rstest]
+    #[case::status("X", "unknown Binance Spot order status")]
+    #[case::order_type("o", "unknown Binance Spot order type: UNRECOGNIZED")]
+    #[case::tif("f", "unknown Binance time in force")]
+    fn test_order_report_rejects_unknown_values(#[case] field: &str, #[case] expected: &str) {
+        let json = load_fixture_string("spot/user_data_json/execution_report_new.json");
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        value[field] = serde_json::Value::String("UNRECOGNIZED".to_string());
+        let msg: BinanceSpotExecutionReport = serde_json::from_value(value).unwrap();
+
+        let error = parse_spot_exec_report_to_order_status(
+            &msg,
+            InstrumentId::from("ETHUSDT.BINANCE"),
+            2,
+            5,
+            AccountId::from("BINANCE-001"),
+            false,
+            UnixNanos::default(),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), expected);
+    }
+
+    #[rstest]
     #[case::as_expired(false, OrderStatus::Expired)]
     #[case::as_canceled(true, OrderStatus::Canceled)]
     fn test_parse_order_status_expired_respects_treat_as_canceled(
@@ -294,14 +311,15 @@ mod tests {
         #[case] expected: OrderStatus,
     ) {
         assert_eq!(
-            parse_order_status(BinanceOrderStatus::Expired, treat_expired_as_canceled),
+            parse_order_status(BinanceOrderStatus::Expired, treat_expired_as_canceled).unwrap(),
             expected,
         );
         assert_eq!(
             parse_order_status(
                 BinanceOrderStatus::ExpiredInMatch,
                 treat_expired_as_canceled,
-            ),
+            )
+            .unwrap(),
             expected,
         );
     }
@@ -423,6 +441,33 @@ mod tests {
         );
 
         assert_eq!(result.unwrap_err().to_string(), expected);
+    }
+
+    #[rstest]
+    #[case::orig_set(Some("x-TD67BGP9-T0000000000000"), "O-20200101-000000-000-000-0")]
+    #[case::orig_empty(Some(""), "web_9f8e7d6c5b4a")]
+    #[case::orig_missing(None, "web_9f8e7d6c5b4a")]
+    fn test_parse_execution_report_to_order_status_canceled_prefers_orig_client_order_id(
+        #[case] original_client_order_id: Option<&str>,
+        #[case] expected: &str,
+    ) {
+        let json = load_fixture_string("spot/user_data_json/execution_report_canceled.json");
+        let mut msg: BinanceSpotExecutionReport = serde_json::from_str(&json).unwrap();
+        msg.client_order_id = "web_9f8e7d6c5b4a".to_string();
+        msg.original_client_order_id = original_client_order_id.map(str::to_string);
+
+        let report = parse_spot_exec_report_to_order_status(
+            &msg,
+            instrument_id(),
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            AccountId::from("BINANCE-001"),
+            false,
+            UnixNanos::from(1_000_000_000u64),
+        )
+        .unwrap();
+
+        assert_eq!(report.client_order_id, Some(ClientOrderId::from(expected)));
     }
 
     #[rstest]
@@ -652,6 +697,6 @@ mod tests {
 
         assert_eq!(state.balances.len(), 1);
         let balance = &state.balances[0];
-        assert_eq!(balance.total.raw, balance.locked.raw + balance.free.raw);
+        assert_eq!(balance.total, balance.locked + balance.free);
     }
 }

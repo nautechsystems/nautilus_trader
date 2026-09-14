@@ -91,11 +91,12 @@ The sections below detail the controls at each layer of that lifecycle.
   hashes. Wildcard version requirements are prohibited.
 - **Dependency cooldowns**: Python dependency resolution excludes packages published within the
   last 7 days through `exclude-newer` in `python/pyproject.toml`. Rust crate updates remain subject
-  to a 3-day cooldown and cargo-vet review. A security fix or critical bug fix may bypass either
-  cooldown after explicit review. These windows give the community time to detect and quarantine
-  compromised releases. Development tools are pinned to explicit versions across
-  `.nautilus-engineering/tools.toml`, `tools.toml`, `Cargo.toml`, and related manifests, and version
-  bumps are reviewed during security audits.
+  to a 3-day cooldown and cargo-vet review. Resolved crates.io publication dates are committed in
+  `.supply-chain/crate-dates.json` so the check can run without registry access. A security fix or
+  critical bug fix may bypass either cooldown after explicit review. These windows give the
+  community time to detect and quarantine compromised releases. Development tools are pinned to
+  explicit versions across `.nautilus-engineering/tools.toml`, `tools.toml`, `Cargo.toml`, and
+  related manifests, and version bumps are reviewed during security audits.
 - **Wheel-only Python installs**: The `no-build-package` list in `[tool.uv]` enumerates every
   third-party package locked in `python/uv.lock` and forbids `uv` from building any of them from source.
   In normal operation uv prefers wheels, so the setting is a no-op; it kicks in only if a listed

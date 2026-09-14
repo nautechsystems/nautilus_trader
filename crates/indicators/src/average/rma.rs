@@ -277,7 +277,7 @@ mod tests {
 
     /// Period = 1 should act as a pure 1-tick MA (α = 1) and be initialized immediately.
     #[rstest]
-    fn test_rma_period_one_behaviour() {
+    fn test_rma_period_one_behavior() {
         let mut rma = WilderMovingAverage::new(1, None);
 
         // First tick seeds and immediately initializes

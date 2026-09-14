@@ -24,6 +24,7 @@ use std::{
 };
 
 use ahash::AHashMap;
+use nautilus_core::string::secret::SecretString;
 use nautilus_network::{
     RECONNECTED,
     websocket::{AuthTracker, SubscriptionState, WebSocketClient},
@@ -32,6 +33,7 @@ use serde_json::value::RawValue;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender}; // tokio-import-ok
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
+use zeroize::Zeroize;
 
 use super::{
     client::{POLYMARKET_HEARTBEAT_PAYLOAD, POLYMARKET_HEARTBEAT_SECS, WsChannel},
@@ -229,11 +231,11 @@ impl FeedHandler {
             return;
         };
 
-        let req = UserSubscribeRequest {
+        let mut req = UserSubscribeRequest {
             auth: PolymarketWsAuth {
-                api_key: cred.api_key().to_string(),
+                api_key: SecretString::from(cred.api_key_str()),
                 secret: cred.api_secret(),
-                passphrase: cred.passphrase().to_string(),
+                passphrase: SecretString::from(cred.passphrase()),
             },
             msg_type: "user",
         };
@@ -241,7 +243,10 @@ impl FeedHandler {
         // Begin auth tracking; discard receiver, state is queried via is_authenticated()
         drop(self.auth_tracker.begin());
 
-        match serde_json::to_string(&req) {
+        let payload = serde_json::to_string(&req);
+        req.zeroize();
+
+        match payload {
             Ok(payload) => {
                 // auth_tracker.succeed() is NOT called here; sending the request only
                 // confirms delivery to the server, not that the credentials were accepted.
@@ -1114,14 +1119,14 @@ mod tests {
             panic!("Expected first message to be a price change");
         };
         assert_eq!(
-            quotes.market.as_str(),
+            quotes.market,
             "0x1111111111111111111111111111111111111111111111111111111111111111"
         );
         assert_eq!(quotes.timestamp, "1700000000001");
         assert_eq!(quotes.price_changes.len(), 1);
 
         let quote = &quotes.price_changes[0];
-        assert_eq!(quote.asset_id.as_str(), "101");
+        assert_eq!(quote.asset_id, "101");
         assert_eq!(quote.price, "0.37");
         assert_eq!(quote.side, PolymarketOrderSide::Buy);
         assert_eq!(quote.size, "12.5");
@@ -1134,10 +1139,10 @@ mod tests {
             panic!("Expected second message to be a last trade price");
         };
         assert_eq!(
-            trade.market.as_str(),
+            trade.market,
             "0x2222222222222222222222222222222222222222222222222222222222222222"
         );
-        assert_eq!(trade.asset_id.as_str(), "202");
+        assert_eq!(trade.asset_id, "202");
         assert_eq!(trade.fee_rate_bps, "17");
         assert_eq!(trade.price, "0.63");
         assert_eq!(trade.side, PolymarketOrderSide::Sell);
@@ -1159,11 +1164,11 @@ mod tests {
             panic!("Expected a last trade price");
         };
         assert_eq!(
-            trade.market.as_str(),
+            trade.market,
             "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917"
         );
         assert_eq!(
-            trade.asset_id.as_str(),
+            trade.asset_id,
             "71321045679252212594626385532706912750332728571942532289631379312455583992563"
         );
         assert_eq!(trade.fee_rate_bps, "0");

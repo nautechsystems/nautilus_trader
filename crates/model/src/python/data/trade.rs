@@ -112,9 +112,9 @@ impl TradeTick {
     fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
         (
             self.instrument_id.to_string(),
-            self.price.raw,
+            self.price.raw(),
             self.price.precision,
-            self.size.raw,
+            self.size.raw(),
             self.size.precision,
             self.aggressor_side as u8,
             self.trade_id.to_string(),

@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-databento"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -118,13 +117,3 @@ name = "databento-data-tester"
 path = "examples/node_data_tester.rs"
 required-features = ["live"]
 doc = false
-
-[[test]]
-name = "feed_handler"
-path = "tests/feed_handler.rs"
-required-features = ["live"]
-
-[[test]]
-name = "python"
-path = "tests/python.rs"
-required-features = ["python"]

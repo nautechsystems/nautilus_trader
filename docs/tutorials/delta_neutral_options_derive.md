@@ -359,15 +359,19 @@ sits near the `(1 - target_call_delta)` percentile and the put near `abs(target_
 
 ### Regenerate the panels
 
+After building NautilusTrader from source, run these commands from the repository root:
+
 ```bash
+make sync
+
 export DERIVE_ENVIRONMENT=mainnet
 export DERIVE_DELTA_NEUTRAL_HEDGE_ENABLED=false
 timeout 45 cargo run --example derive-delta-neutral --package nautilus-derive --features examples \
     > /tmp/derive_dn.log 2>&1
 
-uv sync --extra visualization
 export DN_LOG=/tmp/derive_dn.log
-python3 docs/tutorials/assets/delta_neutral_options_derive/render_panels.py
+uv run --project python --no-sync \
+    python docs/tutorials/assets/delta_neutral_options_derive/render_panels.py
 ```
 
 The renderer only uses the log to pick strikes. The plots remain illustrative because the no-order

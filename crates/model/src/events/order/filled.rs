@@ -54,6 +54,7 @@ pub struct OrderFilled {
     pub instrument_id: InstrumentId,
     /// The client order ID associated with the event.
     pub client_order_id: ClientOrderId,
+    /// The venue order ID associated with the event.
     pub venue_order_id: VenueOrderId,
     /// The account ID associated with the event.
     pub account_id: AccountId,
@@ -164,15 +165,18 @@ impl OrderFilled {
         opening_position_id: Option<PositionId>,
         opening_event_id: UUID4,
     ) -> anyhow::Result<(Self, Self)> {
-        anyhow::ensure!(!closing_qty.is_zero(), "closing quantity was zero");
+        anyhow::ensure!(closing_qty.non_zero(), "closing quantity was zero");
         anyhow::ensure!(
-            closing_qty.raw < self.last_qty.raw,
+            closing_qty < self.last_qty,
             "closing quantity {closing_qty} must be smaller than fill quantity {}",
             self.last_qty,
         );
 
-        let opening_qty =
-            Quantity::from_raw(self.last_qty.raw - closing_qty.raw, closing_qty.precision);
+        let mut opening_qty = self
+            .last_qty
+            .checked_sub(closing_qty)
+            .ok_or_else(|| anyhow::anyhow!("fill quantities have incompatible scales"))?;
+        opening_qty.precision = closing_qty.precision;
         let closing_fraction = closing_qty.as_decimal() / self.last_qty.as_decimal();
         let (closing_commission, opening_commission) = match self.commission {
             Some(commission) => {
@@ -462,6 +466,13 @@ impl OrderEvent for OrderFilled {
 
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
+    }
+    fn causation_id(&self) -> Option<UUID4> {
+        self.causation_id
+    }
+
+    fn info(&self) -> Option<IndexMap<Ustr, Ustr>> {
+        self.info.clone()
     }
 }
 

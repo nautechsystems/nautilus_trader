@@ -5,7 +5,14 @@
 Set up a Python 3.12-3.14 environment and install the package:
 
 ```bash
-pip install -U nautilus_trader
+pip install -U --pre nautilus_trader
+```
+
+PyPI publishes NautilusTrader 2.x as `2.0.0rcN` pre-releases. Include `--pre` until `2.0.0` is
+released. Confirm the install with:
+
+```bash
+python -c "import nautilus_trader; print(nautilus_trader.__version__)"
 ```
 
 See the [Installation](installation) guide for platform support, source builds, and

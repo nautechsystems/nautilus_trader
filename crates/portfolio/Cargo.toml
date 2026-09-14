@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-portfolio"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -39,7 +38,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 nautilus-analysis = { workspace = true }
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
-nautilus-model = { workspace = true, features = ["test-support"] }
+nautilus-model = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
@@ -54,6 +53,8 @@ rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
 
 [dev-dependencies]
+nautilus-model = { workspace = true, features = ["test-support"] }
+
 criterion = { workspace = true }
 rstest = { workspace = true }
 

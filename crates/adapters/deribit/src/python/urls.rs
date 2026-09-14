@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python URL helper functions for Deribit.
+//! Python bindings for Deribit URL resolution.
 
 use pyo3::prelude::*;
 

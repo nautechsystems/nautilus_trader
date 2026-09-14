@@ -54,7 +54,8 @@ use nautilus_network::{
 };
 use parking_lot::RwLock;
 use rust_decimal::Decimal;
-use serde::de::DeserializeOwned;
+use rust_decimal_macros::dec;
+use serde::{Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -72,8 +73,9 @@ use crate::{
         },
         parse::{
             bar_type_to_spot_interval, normalize_currency_code, normalize_spot_symbol, parse_bar,
-            parse_fill_report, parse_order_status_report, parse_spot_instrument,
-            parse_tokenized_instrument, parse_trade_tick_from_array, truncate_cl_ord_id,
+            parse_fill_report, parse_order_status_report, parse_spot_instrument_with_fee_rates,
+            parse_tokenized_instrument_with_fee_rates, parse_trade_tick_from_array,
+            truncate_cl_ord_id,
         },
         urls::get_kraken_http_base_url,
     },
@@ -320,6 +322,31 @@ impl KrakenSpotRawHttpClient {
         body: Option<Vec<u8>>,
         authenticate: bool,
     ) -> anyhow::Result<KrakenResponse<T>, KrakenHttpError> {
+        self.send_request_with_body(method, endpoint, RequestBody::Form(body), authenticate)
+            .await
+    }
+
+    async fn send_json_request<T: DeserializeOwned, P: Serialize>(
+        &self,
+        method: Method,
+        endpoint: &str,
+        params: &P,
+        authenticate: bool,
+    ) -> anyhow::Result<KrakenResponse<T>, KrakenHttpError> {
+        let body = serde_json::to_value(params).map_err(|e| {
+            KrakenHttpError::RequestNotStarted(format!("Failed to encode request params: {e}"))
+        })?;
+        self.send_request_with_body(method, endpoint, RequestBody::Json(body), authenticate)
+            .await
+    }
+
+    async fn send_request_with_body<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        endpoint: &str,
+        body: RequestBody,
+        authenticate: bool,
+    ) -> anyhow::Result<KrakenResponse<T>, KrakenHttpError> {
         // Serialize authenticated requests to ensure nonces arrive at Kraken in order.
         // Without this, concurrent requests can race through the network and arrive
         // out-of-order, causing "Invalid nonce" errors.
@@ -350,13 +377,9 @@ impl KrakenSpotRawHttpClient {
         let cancellation_token = self.cancellation_token();
 
         self.retry_manager
-            .execute_with_retry_with_cancel(
-                &endpoint,
-                operation,
-                should_retry,
-                create_error,
-                &cancellation_token,
-            )
+            .invocation(&endpoint, operation, should_retry, create_error)
+            .cancellation_token(&cancellation_token)
+            .execute()
             .await
     }
 
@@ -377,7 +400,7 @@ impl KrakenSpotRawHttpClient {
         self.send_request_attempt(
             method,
             endpoint,
-            body,
+            RequestBody::Form(body),
             authenticate,
             Some(&cancellation_token),
         )
@@ -407,45 +430,81 @@ impl KrakenSpotRawHttpClient {
         &self,
         method: Method,
         endpoint: &str,
-        body: Option<Vec<u8>>,
+        body: RequestBody,
         authenticate: bool,
         cancellation_token: Option<&CancellationToken>,
     ) -> anyhow::Result<KrakenResponse<T>, KrakenHttpError> {
         let mut headers = Self::default_headers();
-        let final_body = if authenticate {
-            let nonce = self.generate_nonce();
-            log::debug!("Generated nonce {nonce} for {endpoint}");
+        let (final_body, content_type) = match (authenticate, body) {
+            (true, RequestBody::Form(body)) => {
+                let nonce = self.generate_nonce();
+                log::debug!("Generated nonce {nonce} for {endpoint}");
 
-            let params: HashMap<String, String> = if let Some(ref body_bytes) = body {
-                let body_str = std::str::from_utf8(body_bytes).map_err(|e| {
+                let params: HashMap<String, String> = if let Some(ref body_bytes) = body {
+                    let body_str = std::str::from_utf8(body_bytes).map_err(|e| {
+                        KrakenHttpError::RequestNotStarted(format!(
+                            "Invalid UTF-8 in request body: {e}"
+                        ))
+                    })?;
+                    serde_urlencoded::from_str(body_str).map_err(|e| {
+                        KrakenHttpError::RequestNotStarted(format!(
+                            "Failed to parse request params: {e}"
+                        ))
+                    })?
+                } else {
+                    HashMap::new()
+                };
+
+                let (auth_headers, post_data) =
+                    self.sign_spot(endpoint, nonce, &params).map_err(|e| {
+                        KrakenHttpError::RequestNotStarted(format!("Failed to sign request: {e}"))
+                    })?;
+                headers.extend(auth_headers);
+                (
+                    Some(post_data.into_bytes()),
+                    "application/x-www-form-urlencoded",
+                )
+            }
+            (true, RequestBody::Json(mut body)) => {
+                let nonce = self.generate_nonce();
+                log::debug!("Generated nonce {nonce} for {endpoint}");
+
+                let body = body.as_object_mut().ok_or_else(|| {
+                    KrakenHttpError::RequestNotStarted(
+                        "Authenticated JSON request body must be an object".to_string(),
+                    )
+                })?;
+                body.insert("nonce".to_string(), serde_json::json!(nonce.to_string()));
+                let body = serde_json::to_string(body).map_err(|e| {
                     KrakenHttpError::RequestNotStarted(format!(
-                        "Invalid UTF-8 in request body: {e}"
+                        "Failed to serialize request body: {e}"
                     ))
                 })?;
-                serde_urlencoded::from_str(body_str).map_err(|e| {
-                    KrakenHttpError::RequestNotStarted(format!(
-                        "Failed to parse request params: {e}"
-                    ))
-                })?
-            } else {
-                HashMap::new()
-            };
-
-            let (auth_headers, post_data) =
-                self.sign_spot(endpoint, nonce, &params).map_err(|e| {
-                    KrakenHttpError::RequestNotStarted(format!("Failed to sign request: {e}"))
+                let credential = self.credential.as_ref().ok_or_else(|| {
+                    KrakenHttpError::RequestNotStarted("Missing credentials".to_string())
                 })?;
-            headers.extend(auth_headers);
-            Some(post_data.into_bytes())
-        } else {
-            body
+                let signature = credential
+                    .sign_spot_json(endpoint, nonce, &body)
+                    .map_err(|e| {
+                        KrakenHttpError::RequestNotStarted(format!("Failed to sign request: {e}"))
+                    })?;
+                headers.insert("API-Key".to_string(), credential.api_key().to_string());
+                headers.insert("API-Sign".to_string(), signature);
+                (Some(body.into_bytes()), "application/json")
+            }
+            (false, RequestBody::Form(body)) => (body, "application/x-www-form-urlencoded"),
+            (false, RequestBody::Json(body)) => {
+                let body = serde_json::to_vec(&body).map_err(|e| {
+                    KrakenHttpError::RequestNotStarted(format!(
+                        "Failed to serialize request body: {e}"
+                    ))
+                })?;
+                (Some(body), "application/json")
+            }
         };
 
         if method == Method::POST {
-            headers.insert(
-                "Content-Type".to_string(),
-                "application/x-www-form-urlencoded".to_string(),
-            );
+            headers.insert("Content-Type".to_string(), content_type.to_string());
         }
 
         let response = if let Some(cancellation_token) = cancellation_token {
@@ -1157,6 +1216,27 @@ impl KrakenSpotRawHttpClient {
         })
     }
 
+    /// Requests account balances including held amounts (requires authentication).
+    ///
+    /// Unlike [`Self::get_balance`], which reports only total wallet amounts, this additionally
+    /// reports `hold_trade`: the portion of each balance Kraken has reserved against resting
+    /// orders. Required to populate `locked` on cash balances.
+    pub async fn get_balance_ex(&self) -> anyhow::Result<BalanceExResponse, KrakenHttpError> {
+        if self.credential.is_none() {
+            return Err(KrakenHttpError::AuthenticationError(
+                "API credentials required for BalanceEx".to_string(),
+            ));
+        }
+
+        let response: KrakenResponse<BalanceExResponse> = self
+            .send_request(Method::POST, "/0/private/BalanceEx", None, true)
+            .await?;
+
+        response.result.ok_or_else(|| {
+            KrakenHttpError::ParseError("Missing result in extended balance response".to_string())
+        })
+    }
+
     /// Requests margin account summary (requires authentication).
     ///
     /// Unlike `get_balance` which returns per-currency wallet amounts, this returns margin
@@ -1190,6 +1270,23 @@ impl KrakenSpotRawHttpClient {
         })
     }
 
+    async fn get_trade_volume(
+        &self,
+        params: &SpotTradeVolumeParams,
+    ) -> anyhow::Result<SpotTradeVolumeResponse, KrakenHttpError> {
+        if self.credential.is_none() {
+            return Err(KrakenHttpError::MissingCredentials);
+        }
+
+        let response: KrakenResponse<SpotTradeVolumeResponse> = self
+            .send_json_request(Method::POST, "/0/private/TradeVolume", params, true)
+            .await?;
+
+        response.result.ok_or_else(|| {
+            KrakenHttpError::ParseError("Missing result in TradeVolume response".to_string())
+        })
+    }
+
     /// Requests open spot margin positions (requires authentication).
     pub async fn get_open_positions(
         &self,
@@ -1214,6 +1311,36 @@ impl KrakenSpotRawHttpClient {
             KrakenHttpError::ParseError("Missing result in OpenPositions response".to_string())
         })
     }
+}
+
+#[derive(Clone)]
+enum RequestBody {
+    Form(Option<Vec<u8>>),
+    Json(serde_json::Value),
+}
+
+#[derive(Clone, Serialize)]
+struct SpotTradeVolumeParams {
+    pair: SpotTradeVolumePairs,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(untagged)]
+enum SpotTradeVolumePairs {
+    Names(String),
+    Classified(Vec<SpotTradeVolumePair>),
+}
+
+#[derive(Clone, Serialize)]
+struct SpotTradeVolumePair {
+    asset: String,
+    aclass: SpotTradeVolumeAssetClass,
+}
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum SpotTradeVolumeAssetClass {
+    EquityPair,
 }
 
 pub(crate) type SpotBatchOrder = (
@@ -1471,17 +1598,26 @@ impl KrakenSpotHttpClient {
     ///
     /// When `pairs` is `None` (loading all), also fetches tokenized asset pairs
     /// (xStocks) and merges them with the default currency pairs.
+    /// When credentials are configured, instruments use account fee rates from `TradeVolume`;
+    /// otherwise, they use the public base-tier rates from `AssetPairs`.
     pub async fn request_instruments(
         &self,
         pairs: Option<Vec<String>>,
     ) -> anyhow::Result<Vec<InstrumentAny>, KrakenHttpError> {
         let ts_init = self.generate_ts_init();
         let asset_pairs = self.inner.get_asset_pairs(pairs.clone(), None).await?;
+        let fee_rates = self.request_fee_rates(&asset_pairs, None).await?;
 
         let mut instruments: Vec<InstrumentAny> = asset_pairs
             .iter()
             .filter_map(|(pair_name, definition)| {
-                match parse_spot_instrument(pair_name, definition, ts_init, ts_init) {
+                match parse_spot_instrument_with_fee_rates(
+                    pair_name,
+                    definition,
+                    fee_rates.get(pair_name).copied(),
+                    ts_init,
+                    ts_init,
+                ) {
                     Ok(instrument) => Some((instrument, definition)),
                     Err(e) => {
                         log::warn!("Failed to parse instrument {pair_name}: {e}");
@@ -1515,11 +1651,21 @@ impl KrakenSpotHttpClient {
                     if !tokenized_pairs.is_empty() {
                         log::debug!("Fetched {} tokenized asset pairs", tokenized_pairs.len());
                     }
-                    let tokenized_instruments: Vec<InstrumentAny> =
-                        tokenized_pairs
-                            .iter()
-                            .filter_map(|(pair_name, definition)| match parse_tokenized_instrument(
-                                pair_name, definition, ts_init, ts_init,
+                    let fee_rates = self
+                        .request_fee_rates(
+                            &tokenized_pairs,
+                            Some(SpotTradeVolumeAssetClass::EquityPair),
+                        )
+                        .await?;
+                    let tokenized_instruments: Vec<InstrumentAny> = tokenized_pairs
+                        .iter()
+                        .filter_map(|(pair_name, definition)| {
+                            match parse_tokenized_instrument_with_fee_rates(
+                                pair_name,
+                                definition,
+                                fee_rates.get(pair_name).copied(),
+                                ts_init,
+                                ts_init,
                             ) {
                                 Ok(instrument) => Some(instrument),
                                 Err(e) => {
@@ -1528,8 +1674,9 @@ impl KrakenSpotHttpClient {
                                     );
                                     None
                                 }
-                            })
-                            .collect();
+                            }
+                        })
+                        .collect();
                     instruments.extend(tokenized_instruments);
                 }
                 Err(e) => {
@@ -1539,6 +1686,68 @@ impl KrakenSpotHttpClient {
         }
 
         Ok(instruments)
+    }
+
+    async fn request_fee_rates(
+        &self,
+        pairs: &AssetPairsResponse,
+        asset_class: Option<SpotTradeVolumeAssetClass>,
+    ) -> anyhow::Result<AHashMap<String, (Decimal, Decimal)>, KrakenHttpError> {
+        if self.inner.credential().is_none() || pairs.is_empty() {
+            return Ok(AHashMap::new());
+        }
+
+        let (pair_ids, fee_keys) = match asset_class {
+            Some(aclass) => {
+                let mut assets = IndexMap::new();
+                let mut fee_keys = AHashMap::with_capacity(pairs.len());
+                for (pair_name, definition) in pairs {
+                    let base = definition.base.strip_suffix('x').ok_or_else(|| {
+                        KrakenHttpError::ParseError(format!(
+                            "Tokenized pair {pair_name} base {} is missing the x suffix",
+                            definition.base
+                        ))
+                    })?;
+                    let quote = normalize_currency_code(definition.quote.as_str());
+                    let asset = format!("{base}/{quote}");
+                    let fee_key = format!("{base}{}.EQ", definition.quote);
+                    assets.insert(asset, ());
+                    fee_keys.insert(pair_name.clone(), fee_key);
+                }
+                let pairs = assets
+                    .into_keys()
+                    .map(|asset| SpotTradeVolumePair { asset, aclass })
+                    .collect();
+                (SpotTradeVolumePairs::Classified(pairs), fee_keys)
+            }
+            None => (
+                SpotTradeVolumePairs::Names(pairs.keys().cloned().collect::<Vec<_>>().join(",")),
+                pairs
+                    .keys()
+                    .map(|pair_name| (pair_name.clone(), pair_name.clone()))
+                    .collect(),
+            ),
+        };
+        let response = self
+            .inner
+            .get_trade_volume(&SpotTradeVolumeParams { pair: pair_ids })
+            .await?;
+
+        fee_keys
+            .into_iter()
+            .map(|(pair_name, fee_key)| {
+                let taker = response.fees.get(&fee_key).ok_or_else(|| {
+                    KrakenHttpError::ParseError(format!(
+                        "TradeVolume response missing taker fee for {pair_name}"
+                    ))
+                })?;
+                let maker = response.fees_maker.get(&fee_key).unwrap_or(taker);
+                let maker_fee = maker.fee / dec!(100);
+                let taker_fee = taker.fee / dec!(100);
+
+                Ok((pair_name.clone(), (maker_fee, taker_fee)))
+            })
+            .collect()
     }
 
     /// Requests the current market status for Kraken Spot instruments.
@@ -1799,7 +2008,13 @@ impl KrakenSpotHttpClient {
     /// `TradeBalance`. Kraken reports these values across all collateral, which
     /// avoids clamping free margin to one wallet bucket in multi-asset accounts.
     ///
-    /// The single shared fetch keeps Kraken rate-limit usage symmetric with `Balance`
+    /// Wallet balances come from `BalanceEx`, whose per-asset `hold_trade` gives the amount
+    /// Kraken has reserved against resting orders and populates `locked`. Net credit
+    /// (`credit - credit_used`, returned only for credit-line accounts) is included in `total`,
+    /// so `free` derives to Kraken's available balance of
+    /// `balance + credit - credit_used - hold_trade`.
+    ///
+    /// The single shared fetch keeps Kraken rate-limit usage symmetric with `BalanceEx`
     /// (one request per account update), instead of two as if `request_account_state`
     /// and `request_margin_metrics` were called in sequence.
     pub async fn request_account_state_with_metrics(
@@ -1808,7 +2023,7 @@ impl KrakenSpotHttpClient {
         account_type: AccountType,
         margin_balance_asset: Option<&str>,
     ) -> anyhow::Result<(AccountState, IndexMap<String, String>)> {
-        let balances_raw = self.inner.get_balance().await?;
+        let balances_raw = self.inner.get_balance_ex().await?;
         let ts_init = self.generate_ts_init();
 
         let (margins, metrics, margin_entry, target_code) = if account_type == AccountType::Margin {
@@ -1838,9 +2053,15 @@ impl KrakenSpotHttpClient {
 
         let balances: Vec<AccountBalance> = balances_raw
             .iter()
-            .filter_map(|(currency_code, amount_str)| {
-                let amount = Decimal::from_str_exact(amount_str).ok()?;
-                if amount.is_zero() {
+            .filter_map(|(currency_code, entry)| {
+                let balance = Decimal::from_str_exact(&entry.balance).ok()?;
+                let credit = optional_credit_amount(entry.credit.as_deref())?;
+                let credit_used = optional_credit_amount(entry.credit_used.as_deref())?;
+
+                // Kraken defines available funds as `balance + credit - credit_used -
+                // hold_trade`, so net credit belongs in `total` for `free` to derive to it.
+                let total = balance + credit - credit_used;
+                if total.is_zero() {
                     return None;
                 }
 
@@ -1853,8 +2074,9 @@ impl KrakenSpotHttpClient {
                     return None;
                 }
 
+                let locked = Decimal::from_str_exact(&entry.hold_trade).ok()?;
                 let currency = Currency::new(normalized_code, 8, 0, "0", CurrencyType::Crypto);
-                AccountBalance::from_total_and_locked(amount, Decimal::ZERO, currency).ok()
+                AccountBalance::from_total_and_locked(total, locked, currency).ok()
             })
             .chain(margin_entry)
             .collect();
@@ -2988,6 +3210,18 @@ struct TradeBalanceSnapshot {
     equity: Decimal,
 }
 
+/// Parses an optional `BalanceEx` credit amount, treating an absent field as zero.
+///
+/// Kraken only includes `credit` and `credit_used` for accounts holding a credit line, so their
+/// absence means no credit rather than an unknown amount. Returns `None` when the field is present
+/// but unparsable, so the caller can skip the balance rather than understate it.
+fn optional_credit_amount(value: Option<&str>) -> Option<Decimal> {
+    match value {
+        Some(amount) => Decimal::from_str_exact(amount).ok(),
+        None => Some(Decimal::ZERO),
+    }
+}
+
 /// Resolves the Nautilus [`Currency`] used to denominate `TradeBalance` margin metrics.
 ///
 /// Kraken's `TradeBalance` defaults to `ZUSD` when no asset is supplied. This strips
@@ -3102,6 +3336,36 @@ mod tests {
                 if message == "Request canceled before transport invocation"
         ));
         assert!(!reset_token.is_cancelled());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_trade_volume_request_cancellation_before_transport() {
+        let client = KrakenSpotRawHttpClient::with_credentials(
+            "test_key".to_string(),
+            "dGVzdF9hcGlfc2VjcmV0X2Jhc2U2NA==".to_string(),
+            KrakenEnvironment::Live,
+            Some("http://127.0.0.1:1".to_string()),
+            1,
+            None,
+            None,
+            None,
+            None,
+            KRAKEN_SPOT_DEFAULT_RATE_LIMIT_PER_SECOND,
+        )
+        .unwrap();
+        let params = SpotTradeVolumeParams {
+            pair: SpotTradeVolumePairs::Names("XBTUSDT".to_string()),
+        };
+        client.cancel_all_requests();
+
+        let result = client.get_trade_volume(&params).await;
+
+        assert!(matches!(
+            result,
+            Err(KrakenHttpError::NetworkError(ref message))
+                if message.contains("canceled") || message.contains("cancelled")
+        ));
     }
 
     #[rstest]
@@ -3336,7 +3600,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_build_add_order_params_leverage_serialised_as_ratio() {
+    fn test_build_add_order_params_leverage_serialized_as_ratio() {
         let client = KrakenSpotHttpClient::default();
         let instrument_id =
             cache_test_spot_instrument_with_leverage(&client, &[2, 3, 5], &[2, 3, 5]);

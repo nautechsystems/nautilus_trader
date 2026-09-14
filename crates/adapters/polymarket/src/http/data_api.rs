@@ -32,9 +32,9 @@ use nautilus_network::{
 use rust_decimal::Decimal;
 
 use crate::{
-    common::enums::PolymarketOrderSide,
+    common::{enums::PolymarketOrderSide, urls::data_api_url},
     http::{
-        error::{Error, Result},
+        error::{Error, Result, decode_response},
         models::{DataApiPosition, DataApiTrade},
         pagination::{
             CollectAll, Completion, FetchOutcome, OffsetProtocol, PageFingerprint, PageReducer,
@@ -43,7 +43,7 @@ use crate::{
     },
 };
 
-// Composite key for stabilising same-second trades across paginated responses
+// Composite key for stabilizing same-second trades across paginated responses
 fn data_api_trade_sort_key(t: &DataApiTrade) -> (i64, &str, &str, &'static str, Decimal, Decimal) {
     (
         t.timestamp,
@@ -74,8 +74,6 @@ pub(crate) fn build_polymarket_trade_id(transaction_hash: &str, asset: &str, seq
     };
     format!("{hash_suffix}-{asset_suffix}-{seq:06}")
 }
-
-const POLYMARKET_DATA_API_URL: &str = "https://data-api.polymarket.com";
 
 fn position_page_fingerprint(rows: &[DataApiPosition]) -> PageFingerprint {
     let descriptors = rows
@@ -255,7 +253,7 @@ impl PolymarketDataApiHttpClient {
                 .maybe_proxy_url(proxy_url.map(|url| url.expose().to_string()))
                 .build()?,
             base_url: base_url
-                .unwrap_or_else(|| POLYMARKET_DATA_API_URL.to_string())
+                .unwrap_or_else(|| data_api_url().to_string())
                 .trim_end_matches('/')
                 .to_string(),
         })
@@ -375,14 +373,7 @@ impl PolymarketDataApiHttpClient {
             .await
             .map_err(Error::from_http_client)?;
 
-        if response.status.is_success() {
-            serde_json::from_slice(&response.body).map_err(Error::Serde)
-        } else {
-            Err(Error::from_status_code(
-                response.status.as_u16(),
-                &response.body,
-            ))
-        }
+        decode_response(&response)
     }
 
     /// Fetches trades and converts them to [`TradeTick`] for the given instrument.
@@ -539,7 +530,7 @@ fn parse_trade_ticks(
     price_precision: u8,
     size_precision: u8,
 ) -> anyhow::Result<Vec<TradeTick>> {
-    // Composite sort to stabilise same-second trades across pages
+    // Composite sort to stabilize same-second trades across pages
     data_api_trades.sort_by(|a, b| data_api_trade_sort_key(a).cmp(&data_api_trade_sort_key(b)));
 
     let mut timestamp_counts: HashMap<u64, u32> = HashMap::new();

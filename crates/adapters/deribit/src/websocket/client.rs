@@ -33,7 +33,7 @@ use futures_util::{FutureExt, Stream, StreamExt, stream::FuturesUnordered};
 use nautilus_common::{enums::LogColor, log_debug};
 use nautilus_core::{
     AtomicMap, AtomicSet, consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt,
-    time::get_atomic_clock_realtime,
+    string::secret::SecretString, time::get_atomic_clock_realtime,
 };
 use nautilus_live::{SocketControl, task::TaskGroup};
 use nautilus_model::{
@@ -107,7 +107,7 @@ pub struct DeribitWebSocketClient {
     bars_timestamp_on_close: bool,
     subscribe_errors: Arc<Mutex<Vec<String>>>,
     transport_backend: TransportBackend,
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
     socket_control: Option<SocketControl>,
 }
 
@@ -219,7 +219,7 @@ impl DeribitWebSocketClient {
             bars_timestamp_on_close: true,
             subscribe_errors: Arc::new(Mutex::new(Vec::new())),
             transport_backend,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             socket_control: None,
         })
     }
@@ -568,7 +568,10 @@ impl DeribitWebSocketClient {
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         };
 
         // Configure rate limits
@@ -719,6 +722,7 @@ impl DeribitWebSocketClient {
                             }
                         }
                         NautilusWsMessage::Authenticated(result) => {
+                            let result = *result;
                             let timestamp = get_atomic_clock_realtime().get_time_ms();
                             let new_auth_state = AuthState::from_auth_result(&result, timestamp);
                             *auth_state.write().await = Some(new_auth_state);
@@ -993,7 +997,7 @@ impl DeribitWebSocketClient {
     }
 
     /// Returns the current access token if available.
-    pub async fn access_token(&self) -> Option<String> {
+    pub async fn access_token(&self) -> Option<SecretString> {
         self.auth_state
             .read()
             .await

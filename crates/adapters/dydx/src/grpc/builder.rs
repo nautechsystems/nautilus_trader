@@ -69,7 +69,7 @@ impl TxBuilder {
 
     /// Estimate a transaction fee.
     ///
-    /// See also [What Are Crypto Gas Fees?](https://dydx.exchange/crypto-learning/what-are-crypto-gas-fees).
+    /// See also [What Are Crypto Gas Fees?](https://www.dydx.xyz/crypto-learning/what-are-crypto-gas-fees).
     ///
     /// # Errors
     ///

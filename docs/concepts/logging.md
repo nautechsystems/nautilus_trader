@@ -4,14 +4,15 @@ The platform provides logging for both backtesting and live trading using a high
 with a standardized facade from the `log` crate.
 
 The core logger operates in a separate thread and uses a multi-producer single-consumer (MPSC) channel to receive log messages.
-This design ensures that the main thread remains performant, avoiding potential bottlenecks caused by log string formatting or file I/O operations.
+This moves log output I/O off the calling thread. Message arguments are still formatted on the
+calling thread before the event is queued.
 
 Logging output is configurable and supports:
 
 - **stdout/stderr writer** for console output
 - **file writer** for persistent storage of logs
 
-:::info
+:::tip
 Infrastructure such as [Vector](https://github.com/vectordotdev/vector) can be integrated to collect and aggregate events within your system.
 :::
 
@@ -311,7 +312,7 @@ logger = Logger("MyLogger")
 
 See the [`init_logging` API Reference](/docs/python-api-latest/common.html) for further details.
 
-Keep the returned `LogGuard` alive for as long as direct logging is needed. The logging subsystem
+**Keep the returned `LogGuard` alive** for as long as direct logging is needed. The logging subsystem
 supports up to 255 concurrent guards.
 
 ## LogGuard: managing log lifecycle

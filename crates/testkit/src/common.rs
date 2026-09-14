@@ -28,8 +28,6 @@ use nautilus_model::{
 use nautilus_serialization::arrow::DecodeFromRecordBatch;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
-use crate::files::ensure_file_exists_or_download_http;
-
 /// Returns the full path to the test data file at the specified relative `path` within the standard test data directory.
 ///
 /// # Panics
@@ -65,71 +63,60 @@ pub fn get_test_data_large_checksums_filepath() -> PathBuf {
     get_test_data_path().join("large").join("checksums.json")
 }
 
-/// Ensures that the specified test data file exists locally by downloading it if necessary, using the provided `url`.
+/// Returns the path to a large test data file that is already present locally.
 ///
 /// # Panics
 ///
-/// Panics if the download or checksum verification fails, or if the resulting path cannot be represented as a valid UTF-8 string.
+/// Panics if the file is missing, with the command to prepare test data.
 #[must_use]
-pub fn ensure_test_data_exists(filename: &str, url: &str) -> PathBuf {
+pub fn ensure_test_data_exists(filename: &str) -> PathBuf {
     let filepath = get_test_data_path().join("large").join(filename);
-    let checksums_filepath = get_test_data_large_checksums_filepath();
-    ensure_file_exists_or_download_http(&filepath, url, Some(&checksums_filepath), None).unwrap();
+    assert!(
+        filepath.is_file(),
+        "Missing test data file: {}. Run `cargo run --locked -p nautilus-testkit --bin prepare-test-data` before testing.",
+        filepath.display(),
+    );
     filepath
 }
 
-/// Ensures the NASDAQ ITCH AAPL deltas Parquet file exists locally, downloading from R2 if necessary.
+/// Returns the path to the local NASDAQ ITCH AAPL deltas Parquet file.
 ///
 /// # Panics
 ///
-/// Panics if the download or checksum verification fails.
+/// Panics if the file is missing, with the command to prepare test data.
 #[must_use]
 pub fn ensure_itch_aapl_deltas_parquet() -> PathBuf {
-    ensure_test_data_exists(
-        "itch_AAPL.XNAS_2019-01-30_deltas.parquet",
-        "https://test-data.nautechsystems.io/large/itch_AAPL.XNAS_2019-01-30_deltas.parquet",
-    )
+    ensure_test_data_exists("itch_AAPL.XNAS_2019-01-30_deltas.parquet")
 }
 
-/// Ensures the Tardis Deribit BTC-PERPETUAL deltas Parquet file exists locally, downloading from R2 if necessary.
+/// Returns the path to the local Tardis Deribit BTC-PERPETUAL deltas Parquet file.
 ///
 /// # Panics
 ///
-/// Panics if the download or checksum verification fails.
+/// Panics if the file is missing, with the command to prepare test data.
 #[must_use]
 pub fn ensure_tardis_deribit_deltas_parquet() -> PathBuf {
-    ensure_test_data_exists(
-        "tardis_BTC-PERPETUAL.DERIBIT_2020-04-01_deltas.parquet",
-        "https://test-data.nautechsystems.io/large/tardis_BTC-PERPETUAL.DERIBIT_2020-04-01_deltas.parquet",
-    )
+    ensure_test_data_exists("tardis_BTC-PERPETUAL.DERIBIT_2020-04-01_deltas.parquet")
 }
 
-/// Ensures the HISTDATA EURUSD.SIM quotes Parquet file exists locally, downloading from R2
-/// if necessary.
+/// Returns the path to the local HISTDATA EURUSD.SIM quotes Parquet file.
 ///
 /// # Panics
 ///
-/// Panics if the download or checksum verification fails.
+/// Panics if the file is missing, with the command to prepare test data.
 #[must_use]
 pub fn ensure_histdata_eurusd_quotes_parquet() -> PathBuf {
-    ensure_test_data_exists(
-        "histdata_EURUSD.SIM_2020-01_quotes.parquet",
-        "https://test-data.nautechsystems.io/large/histdata_EURUSD.SIM_2020-01_quotes.parquet",
-    )
+    ensure_test_data_exists("histdata_EURUSD.SIM_2020-01_quotes.parquet")
 }
 
-/// Ensures the HISTDATA EURUSD.SIM instrument Parquet file exists locally, downloading from R2
-/// if necessary.
+/// Returns the path to the local HISTDATA EURUSD.SIM instrument Parquet file.
 ///
 /// # Panics
 ///
-/// Panics if the download or checksum verification fails.
+/// Panics if the file is missing, with the command to prepare test data.
 #[must_use]
 pub fn ensure_histdata_eurusd_instrument_parquet() -> PathBuf {
-    ensure_test_data_exists(
-        "histdata_EURUSD.SIM_2020-01_instrument.parquet",
-        "https://test-data.nautechsystems.io/large/histdata_EURUSD.SIM_2020-01_instrument.parquet",
-    )
+    ensure_test_data_exists("histdata_EURUSD.SIM_2020-01_instrument.parquet")
 }
 
 /// Returns the path to the Tardis Deribit incremental book L2 test data.
@@ -181,7 +168,7 @@ pub fn itch_aapl_equity() -> InstrumentAny {
 
 /// Loads ITCH AAPL order book deltas from the parquet test dataset.
 ///
-/// Downloads the file on first access. Pass `limit` to subsample.
+/// Requires prepared local test data. Pass `limit` to subsample.
 #[must_use]
 pub fn load_itch_aapl_deltas(limit: Option<usize>) -> Vec<OrderBookDelta> {
     static PATH: OnceLock<PathBuf> = OnceLock::new();
@@ -191,7 +178,7 @@ pub fn load_itch_aapl_deltas(limit: Option<usize>) -> Vec<OrderBookDelta> {
 
 /// Loads Tardis Deribit BTC-PERPETUAL order book deltas from the parquet test dataset.
 ///
-/// Downloads the file on first access. Pass `limit` to subsample.
+/// Requires prepared local test data. Pass `limit` to subsample.
 #[must_use]
 pub fn load_tardis_deribit_deltas(limit: Option<usize>) -> Vec<OrderBookDelta> {
     static PATH: OnceLock<PathBuf> = OnceLock::new();
@@ -217,4 +204,45 @@ fn load_deltas_from_parquet(filepath: &Path, limit: Option<usize>) -> Vec<OrderB
         deltas.extend(batch_deltas);
     }
     deltas
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use tempfile::TempDir;
+
+    use super::*;
+
+    #[rstest]
+    #[case::file("file")]
+    #[case::missing("missing")]
+    #[case::directory("directory")]
+    fn test_ensure_test_data_exists(#[case] state: &str) {
+        let directory = TempDir::new().unwrap();
+        let filepath = directory.path().join("fixture.parquet");
+        if state == "file" {
+            std::fs::write(&filepath, "local fixture").unwrap();
+        } else if state == "directory" {
+            std::fs::create_dir(&filepath).unwrap();
+        }
+
+        // The absolute path isolates this test without changing the shared test data root
+        let result =
+            std::panic::catch_unwind(|| ensure_test_data_exists(filepath.to_str().unwrap()));
+
+        if state == "file" {
+            assert_eq!(result.unwrap(), filepath);
+            assert_eq!(std::fs::read_to_string(&filepath).unwrap(), "local fixture");
+        } else {
+            let panic = result.unwrap_err().downcast::<String>().unwrap();
+            assert_eq!(
+                *panic,
+                format!(
+                    "Missing test data file: {}. Run `cargo run --locked -p nautilus-testkit --bin prepare-test-data` before testing.",
+                    filepath.display(),
+                ),
+            );
+            assert_eq!(filepath.exists(), state == "directory");
+        }
+    }
 }

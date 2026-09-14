@@ -730,9 +730,9 @@ mod tests {
             Some(ProxyUrl::parse(MARKET_PROXY).unwrap()),
         );
         let credential = crate::common::credential::Credential::new(
-            "fixture-key",
-            "Zml4dHVyZQ==",
-            "fixture-passphrase".to_string(),
+            "fixture-key".into(),
+            "Zml4dHVyZQ==".into(),
+            "fixture-passphrase".into(),
         )
         .unwrap();
         let user = PolymarketWebSocketClient::new_user_with_proxy(

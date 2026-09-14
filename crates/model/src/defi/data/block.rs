@@ -554,7 +554,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_block_builder_helpers() {
+    fn test_block_builder_optional_fields() {
         let block = Block::new(
             "0xabc".into(),
             "0xdef".into(),

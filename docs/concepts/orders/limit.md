@@ -73,4 +73,4 @@ for further details.
 
 - [Orders](index.md) - Order concepts, execution instructions, and the order factory.
 - [Emulated orders](emulated.md) - Emulating *Limit* orders, released as *Market* orders on trigger.
-- [Execution](../execution.md) - How orders reach the venue and fills are handled.
+- [Execution](../execution/) - How orders reach the venue and fills are handled.

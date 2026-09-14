@@ -324,14 +324,14 @@ the default selection rules described under
 | Funding rates         | `perpetual.{instrument}.{interval}`                                       | Perpetuals only; other instruments are rejected.                           |
 | Volatility index      | `deribit_volatility_index.{index_name}`                                   | Custom data; see [Volatility index](#volatility-index).                    |
 
-| Nautilus request     | Deribit endpoint                                         | Notes                                                        |
-| -------------------- | -------------------------------------------------------- | ------------------------------------------------------------ |
-| Instruments          | `public/get_instruments`                                 | Scoped to the configured `product_types`.                    |
-| Trades               | `public/get_last_trades_by_instrument_and_time`          | Accepts combo instrument names.                              |
-| Bars                 | `public/get_tradingview_chart_data`                      | See [Bars](#bars).                                           |
-| Book snapshot        | `public/get_order_book`                                  | Requires the instrument in the client cache.                 |
-| Forward prices       | `public/ticker` or `public/get_book_summary_by_currency` | Single instrument uses the ticker; bulk uses book summaries. |
-| `DeribitBookSummary` | `public/get_book_summary_by_currency`                    | Custom data; see [Book summaries](#book-summaries).          |
+| Nautilus request             | Deribit endpoint                                | Notes                                               |
+| ---------------------------- | ----------------------------------------------- | --------------------------------------------------- |
+| Instruments                  | `public/get_instruments`                        | Scoped to the configured `product_types`.           |
+| Trades                       | `public/get_last_trades_by_instrument_and_time` | Accepts combo instrument names.                     |
+| Bars                         | `public/get_tradingview_chart_data`             | See [Bars](#bars).                                  |
+| Book snapshot                | `public/get_order_book`                         | Requires the instrument in the client cache.        |
+| Option-chain reference price | `public/ticker`                                 | Used internally to bootstrap dynamic strike ranges. |
+| `DeribitBookSummary`         | `public/get_book_summary_by_currency`           | Custom data; see [Book summaries](#book-summaries). |
 
 ### Bars
 

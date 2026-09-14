@@ -54,7 +54,7 @@ use super::csv::record::{
 };
 use crate::common::parse::{
     derive_trade_id, parse_aggressor_side, parse_book_action, parse_instrument_id,
-    parse_order_side, parse_price, parse_timestamp,
+    parse_order_side, parse_price, parse_timestamp, validate_non_zero_amount,
 };
 
 fn infer_precision(value: f64) -> u8 {
@@ -372,8 +372,10 @@ fn parse_options_chain_record_as_quote(
 
     let bid_price = Price::new_checked(bid_price, price_precision)?;
     let ask_price = Price::new_checked(ask_price, price_precision)?;
-    let bid_size = Quantity::non_zero_checked(bid_amount, size_precision)?;
-    let ask_size = Quantity::non_zero_checked(ask_amount, size_precision)?;
+    validate_non_zero_amount(bid_amount, size_precision)?;
+    let bid_size = Quantity::new_checked(bid_amount, size_precision)?;
+    validate_non_zero_amount(ask_amount, size_precision)?;
+    let ask_size = Quantity::new_checked(ask_amount, size_precision)?;
 
     Ok(Some(QuoteTick::new(
         instrument_id,

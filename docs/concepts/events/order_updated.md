@@ -1,9 +1,9 @@
 # OrderUpdated
 
-`OrderUpdated` records a change to an order's quantity, price, or trigger price. The execution
-pipeline applies it to the order, updates the `Cache`, and publishes it on the `MessageBus`. The
-change can come from a trading venue, simulated matching engine, local order emulator, or
-reconciliation.
+`OrderUpdated` records a change to an order's quantity, price, trigger price, or calculated
+protection price. The execution pipeline applies it to the order, updates the `Cache`, and publishes
+it on the `MessageBus`. The change can come from a trading venue, simulated matching engine, local
+order emulator, or reconciliation.
 
 Typical transition: `PENDING_UPDATE` -> previous status (for example `ACCEPTED`). Handler:
 `on_order_updated`.
@@ -20,6 +20,7 @@ Beyond the [common Python order event fields](index.md#common-python-order-event
 | `quantity`          | `Quantity`               | Required         | The order's current quantity.                               |
 | `price`             | `Price` or `None`        | `None`           | The order's current price.                                  |
 | `trigger_price`     | `Price` or `None`        | `None`           | The order's current trigger price.                          |
+| `protection_price`  | `Price` or `None`        | `None`           | The order's calculated protection price.                    |
 | `is_quote_quantity` | `bool`                   | `False`          | If the order quantity is denominated in the quote currency. |
 | `reconciliation`    | `bool`                   | Required         | If generated during reconciliation.                         |
 

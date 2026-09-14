@@ -96,7 +96,7 @@ identity and emit `OrderAccepted` / `OrderFilled` events.
 ## Component breakdown (`micros.rs`)
 
 Diagnostic benches that decompose the pipeline numbers above. Use these to
-localise where time goes when a pipeline bench regresses. `decode_only` is the
+localize where time goes when a pipeline bench regresses. `decode_only` is the
 raw-bytes -> typed-message cost; `parse_only` is the typed-message -> Nautilus
 domain cost; the two sum to the matching inbound number. `order_report` and
 `fill_report` decompose the inbound execution path that `dispatch` runs
@@ -126,7 +126,7 @@ end-to-end.
   single pass into a typed struct, capturing `params.data` as a
   `serde_json::value::RawValue` (the raw payload bytes); each channel parser
   then decodes those bytes straight into its typed struct. Nothing
-  materialises the frame, or the large `data` subtree, into a `serde_json::Value`
+  materializes the frame, or the large `data` subtree, into a `serde_json::Value`
   tree. This roughly halved every inbound row versus the prior `Value`-based
   decode (e.g. `decode_only/ticker` 3.11 µs -> 1.56 µs, `book_deltas`
   1.06 µs -> 0.47 µs).
@@ -146,10 +146,10 @@ end-to-end.
 - **Exec is signature-bound.** `sign_trade_action` (EIP-712: ABI encode +
   keccak + secp256k1) is 42.0 µs and dominates `submit_limit`/`submit_market`
   and `modify` (all ~42.1 µs); ABI encode (236 ns) and JSON serialize are noise
-  next to it. `cancel` is unsigned and lands at 46 ns. Optimisations that don't
+  next to it. `cancel` is unsigned and lands at 46 ns. Optimizations that don't
   change the signing scheme won't move the signed rows. `rest_auth_headers`
   (EIP-191) costs ~41 µs because it is the same secp256k1 sign.
-- **`signer_from_key` is amortised.** The 31.6 µs secp256k1 key expansion runs
+- **`signer_from_key` is amortized.** The 31.6 µs secp256k1 key expansion runs
   once when the execution client constructs its signer, not per order.
 - **Dispatch runs against a fresh `WsDispatchState` each iteration.** The state
   is rebuilt in the `iter_batched` setup closure (excluded from timing), so the

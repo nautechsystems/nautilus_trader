@@ -13,12 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Per-client WebSocket dispatch state and pure translation helpers.
+//! Per-client WebSocket dispatch state and pure translations.
 //!
 //! Owns the cloid translation tables, the optimistic nonce manager, and the
-//! cached `AccountState` snapshot that backs `query_account` replays. Pure
-//! helpers (cloid translation, terminal-state eviction, tick conversions) live
-//! alongside the state so the execution-client lifecycle code stays focused on
+//! cached `AccountState` snapshot that backs `query_account` replays. Cloid
+//! translation, terminal-state eviction, and tick conversion live alongside
+//! the state so the execution-client lifecycle code stays focused on
 //! `ExecutionClient` trait wiring.
 
 use std::{
@@ -34,7 +34,7 @@ use std::{
 use ahash::{AHashMap, AHashSet, RandomState};
 use anyhow::Context;
 use dashmap::{DashMap, DashSet};
-use nautilus_core::{AtomicTime, UnixNanos};
+use nautilus_core::{AtomicTime, UnixNanos, string::secret::SecretString};
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
     events::AccountState,
@@ -46,6 +46,7 @@ use nautilus_model::{
 };
 use parking_lot::Mutex;
 use rust_decimal::{Decimal, prelude::ToPrimitive};
+use zeroize::Zeroizing;
 
 use crate::{
     common::{
@@ -573,7 +574,7 @@ pub(crate) struct WsDispatchState {
     /// loop diffs incoming `Open` frames against this map to distinguish
     /// a real modify (qty / price / trigger changed) from a venue echo
     /// (snapshot, reconnect replay, partial-fill update). The snapshot
-    /// is initialised on the first emitted `OrderAccepted` and refreshed
+    /// is initialized on the first emitted `OrderAccepted` and refreshed
     /// on every emitted `OrderUpdated`.
     pub(crate) order_snapshots: Arc<DashMap<ClientOrderId, OrderShapeSnapshot>>,
     /// Local lifecycle action that a venue frame or reconciliation report
@@ -919,7 +920,7 @@ impl WsDispatchState {
         std::mem::take(&mut *self.pending_sendtx.lock()).into()
     }
 
-    /// Returns the current pending-sendTx queue length. Test-only helper.
+    /// Returns the current pending-sendTx queue length for tests.
     #[cfg(test)]
     pub(crate) fn pending_sendtx_len(&self) -> usize {
         self.pending_sendtx.lock().len()
@@ -1147,7 +1148,7 @@ impl WsDispatchState {
     /// Reconciliation can turn any non-rejected tracked report into
     /// `OrderAccepted` for a locally submitted order before the typed
     /// WebSocket path receives a cancel, fill, or open frame. Marking here
-    /// keeps that later typed path from synthesising a second `OrderAccepted`.
+    /// keeps that later typed path from synthesizing a second `OrderAccepted`.
     pub(crate) fn seed_accepted_from_report(&self, report: &OrderStatusReport) {
         if !matches!(
             report.order_status,
@@ -1672,7 +1673,7 @@ pub(crate) fn evict_terminal_mappings(
 
 /// Process-global instrument cache used by the HTTP report-gen path.
 ///
-/// Avoids threading the live engine cache through every helper; populated by
+/// Avoids threading the live engine cache through every report parser; populated by
 /// the data and execution clients on bootstrap.
 pub(crate) static LIGHTER_INSTRUMENT_CACHE: LazyLock<DashMap<InstrumentId, InstrumentAny>> =
     LazyLock::new(DashMap::new);
@@ -1740,13 +1741,14 @@ pub(crate) async fn lookup_create_order_status_report(
         .market_index(&instrument_id)
         .ok_or_else(|| anyhow::anyhow!("no Lighter market_index for instrument {instrument_id}"))?;
     let auth = mint_auth_token(credential)?;
+    let query = Zeroizing::new(LighterAccountActiveOrdersQuery {
+        authorization: None,
+        auth: Some(auth.clone()),
+        account_index: credential.account_index(),
+        market_id: market_index,
+    });
     let active = http_client
-        .get_account_active_orders(&LighterAccountActiveOrdersQuery {
-            authorization: None,
-            auth: Some(auth),
-            account_index: credential.account_index(),
-            market_id: market_index,
-        })
+        .get_account_active_orders(&query)
         .await
         .context("failed to fetch Lighter active orders")?;
 
@@ -1785,7 +1787,7 @@ pub(crate) async fn lookup_create_order_status_report(
 /// terminal history where Lighter can reuse client indexes.
 #[expect(
     clippy::too_many_arguments,
-    reason = "translation helper that threads context to the parser without a wrapper struct"
+    reason = "order lookup threads context to the parser without a wrapper struct"
 )]
 pub(crate) async fn lookup_order_status_report(
     http_client: &LighterHttpClient,
@@ -1829,13 +1831,14 @@ pub(crate) async fn lookup_order_status_report(
     };
 
     let auth = mint_auth_token(credential)?;
+    let query = Zeroizing::new(LighterAccountActiveOrdersQuery {
+        authorization: None,
+        auth: Some(auth.clone()),
+        account_index: credential.account_index(),
+        market_id: market_index,
+    });
     let active = http_client
-        .get_account_active_orders(&LighterAccountActiveOrdersQuery {
-            authorization: None,
-            auth: Some(auth.clone()),
-            account_index: credential.account_index(),
-            market_id: market_index,
-        })
+        .get_account_active_orders(&query)
         .await
         .context("failed to fetch Lighter active orders")?;
 
@@ -1904,17 +1907,18 @@ pub(crate) async fn lookup_order_status_report(
             pages <= MAX_RECONCILIATION_PAGES,
             "Lighter inactive-order lookup exceeded {MAX_RECONCILIATION_PAGES} pages",
         );
+        let query = Zeroizing::new(LighterAccountInactiveOrdersQuery {
+            authorization: None,
+            auth: Some(auth.clone()),
+            account_index: credential.account_index(),
+            market_id: Some(market_index),
+            ask_filter: None,
+            between_timestamps: None,
+            cursor: cursor.clone(),
+            limit: LIGHTER_REST_PAGE_SIZE,
+        });
         let inactive = http_client
-            .get_account_inactive_orders(&LighterAccountInactiveOrdersQuery {
-                authorization: None,
-                auth: Some(auth.clone()),
-                account_index: credential.account_index(),
-                market_id: Some(market_index),
-                ask_filter: None,
-                between_timestamps: None,
-                cursor: cursor.clone(),
-                limit: LIGHTER_REST_PAGE_SIZE,
-            })
+            .get_account_inactive_orders(&query)
             .await
             .context("failed to fetch Lighter inactive orders")?;
 
@@ -1951,7 +1955,7 @@ fn order_matches_lookup(
     }
 }
 
-fn mint_auth_token(credential: &Credential) -> anyhow::Result<String> {
+fn mint_auth_token(credential: &Credential) -> anyhow::Result<SecretString> {
     build_auth_token_for(credential).context("failed to mint Lighter auth token for order lookup")
 }
 
@@ -3499,7 +3503,7 @@ mod tests {
         assert!(err.to_string().contains("overflows u32"));
     }
 
-    // Pins `decimal_trunc_to_i64` semantics directly so the helper's trunc
+    // Pins `decimal_trunc_to_i64` semantics directly so its truncation
     // (toward zero) and overflow contract is asserted independently of any
     // caller that happens to feed it integer-valued Decimals.
     #[rstest]

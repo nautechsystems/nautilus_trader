@@ -15,10 +15,7 @@
 
 //! Enumerations for the Databento integration.
 
-use std::str::FromStr;
-
 use nautilus_model::{enum_strum_serde, enums::FromU8};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
 
 /// Represents a Databento statistic type.

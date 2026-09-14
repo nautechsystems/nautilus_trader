@@ -2,6 +2,7 @@
 # ruff: noqa: E501
 
 import datetime
+import decimal
 import enum
 import typing
 
@@ -20,6 +21,9 @@ __all__ = [
     "PolymarketExecutionClientFactory",
     "PolymarketFeeModel",
     "PolymarketInstrumentProviderConfig",
+    "PolymarketPositionClient",
+    "PolymarketPositionOutcome",
+    "PolymarketPositionTransaction",
     "PolymarketRtdsCryptoPrice",
     "PolymarketRtdsCryptoTwap",
     "PolymarketRtdsEquityPrice",
@@ -398,6 +402,41 @@ class PolymarketDataLoader:
         end: datetime.datetime | None = None,
         limit: int | None = None,
     ) -> typing.Any: ...
+
+@typing.final
+class PolymarketPositionClient:
+    def __init__(
+        self,
+        private_key: str | None = None,
+        funder: str | None = None,
+        relayer_api_key: str | None = None,
+        relayer_api_key_address: str | None = None,
+        base_url_relayer: str | None = None,
+        base_url_clob: str | None = None,
+        timeout_secs: int | None = None,
+        proxy_url: str | None = None,
+        base_url_rpc: str | None = None,
+    ) -> None: ...
+    def split_position(self, condition_id: str, amount: decimal.Decimal) -> typing.Any: ...
+    def merge_positions(self, condition_id: str, amount: decimal.Decimal) -> typing.Any: ...
+    def redeem_positions(self, condition_id: str) -> typing.Any: ...
+
+@typing.final
+class PolymarketPositionOutcome:
+    @property
+    def status(self) -> str: ...
+    @property
+    def transaction_id(self) -> str: ...
+    @property
+    def transaction_hash(self) -> str | None: ...
+    @property
+    def error_msg(self) -> str | None: ...
+
+@typing.final
+class PolymarketPositionTransaction:
+    @property
+    def transaction_id(self) -> str: ...
+    def wait(self) -> typing.Any: ...
 
 @typing.final
 class SignatureType(enum.Enum):

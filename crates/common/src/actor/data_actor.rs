@@ -48,6 +48,7 @@ use ustr::Ustr;
 
 use super::{
     Actor,
+    binding::DataActorBinding,
     indicators::{Indicators, SharedActorIndicator},
     registry::try_get_actor_unchecked,
 };
@@ -56,6 +57,8 @@ use crate::defi;
 #[cfg(feature = "defi")]
 #[allow(unused_imports)]
 use crate::defi::data_actor as _; // Brings DeFi impl blocks into scope
+#[cfg(feature = "python")]
+use crate::python::msgbus::PyMessageBusScope;
 use crate::{
     cache::{Cache, CacheApi},
     clock::{Clock, ClockApi},
@@ -93,6 +96,7 @@ use crate::{
             get_option_greeks_topic, get_quotes_topic, get_signal_pattern, get_trades_topic,
         },
     },
+    runner::SystemChannel,
     signal::Signal,
     timer::{TimeEvent, TimeEventCallback},
 };
@@ -236,16 +240,20 @@ pub trait DataActorNative {
 /// Defines lifecycle callbacks, data handlers, and subscription/request
 /// methods for data actors.
 ///
-/// Default methods that read or mutate native runtime state carry explicit
-/// [`DataActorNative`] and [`Component`] bounds. Implementations that only need
-/// behavioral callbacks do not own or implement native runtime state.
+/// Default methods backed only by the native runtime carry explicit
+/// [`DataActorNative`] and [`Component`] bounds. The actor ID and clock facades
+/// use [`DataActorBinding`] to access component state.
 pub trait DataActor {
     /// Returns the actor ID.
+    ///
+    /// # Panics
+    ///
+    /// Panics when a callback-scoped binding is used outside an active callback.
     fn actor_id(&self) -> ActorId
     where
-        Self: DataActorNative,
+        Self: DataActorBinding,
     {
-        self.core().actor_id()
+        self.binding_actor_id()
     }
 
     /// Returns the trader ID this actor is registered to.
@@ -730,11 +738,16 @@ pub trait DataActor {
     }
 
     /// Returns the user-facing clock API.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the native actor is unregistered or a callback-scoped binding is
+    /// used outside an active callback.
     fn clock(&self) -> ClockApi<'_>
     where
-        Self: DataActorNative,
+        Self: DataActorBinding,
     {
-        self.core().clock_api()
+        self.binding_clock()
     }
 
     /// Returns the user-facing cache API.
@@ -1466,10 +1479,12 @@ pub trait DataActor {
 
     /// Subscribes to [`QueueStateChanged`] events.
     ///
+    /// `channel=None` matches all runner channels.
+    ///
     /// `priority` controls dispatch order when multiple actors subscribe to the event. Higher
     /// values receive the event first. Re-subscribing does not update an existing priority; call
     /// [`unsubscribe_queue_state`](Self::unsubscribe_queue_state) first.
-    fn subscribe_queue_state(&mut self, priority: Option<u32>)
+    fn subscribe_queue_state(&mut self, channel: Option<SystemChannel>, priority: Option<u32>)
     where
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
@@ -1483,16 +1498,23 @@ pub trait DataActor {
             }
         });
 
-        DataActorCore::subscribe_queue_state(self.core_mut(), handler, priority);
+        DataActorCore::subscribe_queue_state(self.core_mut(), handler, channel, priority);
     }
 
     /// Subscribes to [`SocketStateChanged`] events.
     ///
+    /// `client_id=None` and `endpoint=None` each match all values of that field.
+    /// Supplied filters match literal values, including dots and wildcard characters.
+    ///
     /// `priority` controls dispatch order when multiple actors subscribe to the event. Higher
     /// values receive the event first. Re-subscribing does not update an existing priority; call
     /// [`unsubscribe_socket_state`](Self::unsubscribe_socket_state) first.
-    fn subscribe_socket_state(&mut self, priority: Option<u32>)
-    where
+    fn subscribe_socket_state(
+        &mut self,
+        client_id: Option<ClientId>,
+        endpoint: Option<&str>,
+        priority: Option<u32>,
+    ) where
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
@@ -1505,7 +1527,13 @@ pub trait DataActor {
             }
         });
 
-        DataActorCore::subscribe_socket_state(self.core_mut(), handler, priority);
+        DataActorCore::subscribe_socket_state(
+            self.core_mut(),
+            handler,
+            client_id,
+            endpoint,
+            priority,
+        );
     }
 
     /// Subscribe to streaming [`QuoteTick`] data for the `instrument_id`.
@@ -2214,22 +2242,26 @@ pub trait DataActor {
         DataActorCore::unsubscribe_signal(self.core_mut(), name);
     }
 
-    /// Unsubscribes from [`QueueStateChanged`] events.
-    fn unsubscribe_queue_state(&mut self)
+    /// Unsubscribes from [`QueueStateChanged`] events for the same subscription filters.
+    ///
+    /// Omitted filters identify the all-values subscription, not every filtered subscription.
+    fn unsubscribe_queue_state(&mut self, channel: Option<SystemChannel>)
     where
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_queue_state(self.core_mut());
+        DataActorCore::unsubscribe_queue_state(self.core_mut(), channel);
     }
 
-    /// Unsubscribes from [`SocketStateChanged`] events.
-    fn unsubscribe_socket_state(&mut self)
+    /// Unsubscribes from [`SocketStateChanged`] events for the same subscription filters.
+    ///
+    /// Omitted filters identify the all-values subscription, not every filtered subscription.
+    fn unsubscribe_socket_state(&mut self, client_id: Option<ClientId>, endpoint: Option<&str>)
     where
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_socket_state(self.core_mut());
+        DataActorCore::unsubscribe_socket_state(self.core_mut(), client_id, endpoint);
     }
 
     /// Unsubscribe from streaming [`InstrumentAny`] data for the `venue`.
@@ -2981,6 +3013,12 @@ where
     fn transition_state(&mut self, trigger: ComponentTrigger) -> anyhow::Result<()> {
         let core = self.core_mut();
         core.state = core.state.transition(&trigger)?;
+
+        #[cfg(feature = "python")]
+        if core.state == ComponentState::Disposed {
+            core.message_bus.invalidate();
+        }
+
         log::info!(
             component = core.actor_id.inner().as_str();
             "{}",
@@ -3056,35 +3094,43 @@ pub struct DataActorCore {
     clock: Option<Rc<RefCell<dyn Clock>>>, // Wired up on registration
     cache: Option<Rc<RefCell<Cache>>>,     // Wired up on registration
     state: ComponentState,
-    topic_handlers: AHashMap<MStr<Pattern>, ShareableMessageHandler>,
-    instrument_handlers: AHashMap<MStr<Pattern>, TypedHandler<InstrumentAny>>,
-    deltas_handlers: AHashMap<MStr<Pattern>, TypedHandler<OrderBookDeltas>>,
-    depth10_handlers: AHashMap<MStr<Pattern>, TypedHandler<OrderBookDepth10>>,
-    book_handlers: AHashMap<MStr<Topic>, TypedHandler<OrderBook>>,
-    quote_handlers: AHashMap<MStr<Topic>, TypedHandler<QuoteTick>>,
-    trade_handlers: AHashMap<MStr<Topic>, TypedHandler<TradeTick>>,
-    bar_handlers: AHashMap<MStr<Topic>, TypedHandler<Bar>>,
-    mark_price_handlers: AHashMap<MStr<Topic>, TypedHandler<MarkPriceUpdate>>,
-    index_price_handlers: AHashMap<MStr<Topic>, TypedHandler<IndexPriceUpdate>>,
-    funding_rate_handlers: AHashMap<MStr<Topic>, TypedHandler<FundingRateUpdate>>,
-    option_greeks_handlers: AHashMap<MStr<Topic>, TypedHandler<OptionGreeks>>,
-    option_chain_handlers: AHashMap<MStr<Topic>, TypedHandler<OptionChainSlice>>,
-    #[cfg(feature = "defi")]
-    block_handlers: AHashMap<MStr<Topic>, TypedHandler<Block>>,
-    #[cfg(feature = "defi")]
-    pool_handlers: AHashMap<MStr<Topic>, TypedHandler<Pool>>,
-    #[cfg(feature = "defi")]
-    pool_swap_handlers: AHashMap<MStr<Topic>, TypedHandler<PoolSwap>>,
-    #[cfg(feature = "defi")]
-    pool_liquidity_handlers: AHashMap<MStr<Topic>, TypedHandler<PoolLiquidityUpdate>>,
-    #[cfg(feature = "defi")]
-    pool_collect_handlers: AHashMap<MStr<Topic>, TypedHandler<PoolFeeCollect>>,
-    #[cfg(feature = "defi")]
-    pool_flash_handlers: AHashMap<MStr<Topic>, TypedHandler<PoolFlash>>,
+    topic_handlers: AHashMap<MStr<Pattern>, Subscription<ShareableMessageHandler>>,
+    instrument_handlers: AHashMap<MStr<Pattern>, Subscription<TypedHandler<InstrumentAny>>>,
+    deltas_handlers: AHashMap<MStr<Pattern>, Subscription<TypedHandler<OrderBookDeltas>>>,
+    depth10_handlers: AHashMap<MStr<Pattern>, Subscription<TypedHandler<OrderBookDepth10>>>,
+    book_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<OrderBook>>>,
+    quote_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<QuoteTick>>>,
+    trade_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<TradeTick>>>,
+    bar_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<Bar>>>,
+    mark_price_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<MarkPriceUpdate>>>,
+    index_price_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<IndexPriceUpdate>>>,
+    funding_rate_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<FundingRateUpdate>>>,
+    option_greeks_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<OptionGreeks>>>,
+    option_chain_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<OptionChainSlice>>>,
+    indicators: Indicators,
     warning_events: AHashSet<String>, // TODO: TBD
     pending_requests: AHashMap<UUID4, Option<RequestCallback>>,
     signal_classes: AHashMap<String, String>,
-    indicators: Indicators,
+    #[cfg(feature = "defi")]
+    block_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<Block>>>,
+    #[cfg(feature = "defi")]
+    pool_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<Pool>>>,
+    #[cfg(feature = "defi")]
+    pool_swap_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<PoolSwap>>>,
+    #[cfg(feature = "defi")]
+    pool_liquidity_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<PoolLiquidityUpdate>>>,
+    #[cfg(feature = "defi")]
+    pool_collect_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<PoolFeeCollect>>>,
+    #[cfg(feature = "defi")]
+    pool_flash_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<PoolFlash>>>,
+    #[cfg(feature = "python")]
+    message_bus: Rc<PyMessageBusScope>,
+}
+
+#[derive(Clone)]
+struct Subscription<T> {
+    handler: T,
+    command: Option<DataCommand>,
 }
 
 impl Debug for DataActorCore {
@@ -3103,35 +3149,53 @@ impl DataActorCore {
     //// Logs a warning if the actor is already subscribed to the topic.
     pub(crate) fn add_subscription_any(
         &mut self,
-        topic: MStr<Topic>,
+        topic: impl Into<MStr<Pattern>>,
         handler: ShareableMessageHandler,
         priority: Option<u32>,
-    ) {
+        command: Option<DataCommand>,
+    ) -> bool {
         let pattern: MStr<Pattern> = topic.into();
-        if self.topic_handlers.contains_key(&pattern) {
+        if let Some(subscription) = self.topic_handlers.get_mut(&pattern) {
+            if subscription.command.is_none() && command.is_some() {
+                subscription.command = command;
+                return true;
+            }
+
             log::warn!(
-                "Actor {} attempted duplicate subscription to topic '{topic}'",
+                "Actor {} attempted duplicate subscription to topic '{pattern}'",
                 self.actor_id,
             );
-            return;
+            return false;
         }
 
-        self.topic_handlers.insert(pattern, handler.clone());
+        self.topic_handlers.insert(
+            pattern,
+            Subscription {
+                handler: handler.clone(),
+                command,
+            },
+        );
         msgbus::subscribe_any(pattern, handler, priority);
+        true
     }
 
     /// Removes a subscription handler for the `topic` if present.
     ///
     /// Logs a warning if the actor is not currently subscribed to the topic.
-    pub(crate) fn remove_subscription_any(&mut self, topic: MStr<Topic>) {
+    pub(crate) fn remove_subscription_any(
+        &mut self,
+        topic: impl Into<MStr<Pattern>>,
+    ) -> Option<DataCommand> {
         let pattern: MStr<Pattern> = topic.into();
-        if let Some(handler) = self.topic_handlers.remove(&pattern) {
-            msgbus::unsubscribe_any(pattern, &handler);
+        if let Some(subscription) = self.topic_handlers.remove(&pattern) {
+            msgbus::unsubscribe_any(pattern, &subscription.handler);
+            subscription.command
         } else {
             log::warn!(
-                "Actor {} attempted to unsubscribe from topic '{topic}' when not subscribed",
+                "Actor {} attempted to unsubscribe from topic '{pattern}' when not subscribed",
                 self.actor_id,
             );
+            None
         }
     }
 
@@ -3139,295 +3203,430 @@ impl DataActorCore {
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<QuoteTick>,
-    ) {
+        command: DataCommand,
+    ) -> bool {
         if self.quote_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate quote subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
-        self.quote_handlers.insert(topic, handler.clone());
+        self.quote_handlers.insert(
+            topic,
+            Subscription {
+                handler: handler.clone(),
+                command: Some(command),
+            },
+        );
         msgbus::subscribe_quotes(topic.into(), handler, None);
+        true
     }
 
     #[allow(dead_code)]
-    pub(crate) fn remove_quote_subscription(&mut self, topic: MStr<Topic>) {
-        if let Some(handler) = self.quote_handlers.remove(&topic) {
-            msgbus::unsubscribe_quotes(topic.into(), &handler);
-        }
+    pub(crate) fn remove_quote_subscription(&mut self, topic: MStr<Topic>) -> Option<DataCommand> {
+        let subscription = self.quote_handlers.remove(&topic)?;
+        msgbus::unsubscribe_quotes(topic.into(), &subscription.handler);
+        subscription.command
     }
 
     pub(crate) fn add_trade_subscription(
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<TradeTick>,
-    ) {
+        command: DataCommand,
+    ) -> bool {
         if self.trade_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate trade subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
-        self.trade_handlers.insert(topic, handler.clone());
+        self.trade_handlers.insert(
+            topic,
+            Subscription {
+                handler: handler.clone(),
+                command: Some(command),
+            },
+        );
         msgbus::subscribe_trades(topic.into(), handler, None);
+        true
     }
 
     #[allow(dead_code)]
-    pub(crate) fn remove_trade_subscription(&mut self, topic: MStr<Topic>) {
-        if let Some(handler) = self.trade_handlers.remove(&topic) {
-            msgbus::unsubscribe_trades(topic.into(), &handler);
-        }
+    pub(crate) fn remove_trade_subscription(&mut self, topic: MStr<Topic>) -> Option<DataCommand> {
+        let subscription = self.trade_handlers.remove(&topic)?;
+        msgbus::unsubscribe_trades(topic.into(), &subscription.handler);
+        subscription.command
     }
 
-    pub(crate) fn add_bar_subscription(&mut self, topic: MStr<Topic>, handler: TypedHandler<Bar>) {
+    pub(crate) fn add_bar_subscription(
+        &mut self,
+        topic: MStr<Topic>,
+        handler: TypedHandler<Bar>,
+        command: DataCommand,
+    ) -> bool {
         if self.bar_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate bar subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
-        self.bar_handlers.insert(topic, handler.clone());
+        self.bar_handlers.insert(
+            topic,
+            Subscription {
+                handler: handler.clone(),
+                command: Some(command),
+            },
+        );
         msgbus::subscribe_bars(topic.into(), handler, None);
+        true
     }
 
     #[allow(dead_code)]
-    pub(crate) fn remove_bar_subscription(&mut self, topic: MStr<Topic>) {
-        if let Some(handler) = self.bar_handlers.remove(&topic) {
-            msgbus::unsubscribe_bars(topic.into(), &handler);
-        }
+    pub(crate) fn remove_bar_subscription(&mut self, topic: MStr<Topic>) -> Option<DataCommand> {
+        let subscription = self.bar_handlers.remove(&topic)?;
+        msgbus::unsubscribe_bars(topic.into(), &subscription.handler);
+        subscription.command
     }
 
     pub(crate) fn add_deltas_subscription(
         &mut self,
         pattern: MStr<Pattern>,
         handler: TypedHandler<OrderBookDeltas>,
-    ) {
+        command: DataCommand,
+    ) -> bool {
         if self.deltas_handlers.contains_key(&pattern) {
             log::warn!(
                 "Actor {} attempted duplicate deltas subscription to '{pattern}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
-        self.deltas_handlers.insert(pattern, handler.clone());
+        self.deltas_handlers.insert(
+            pattern,
+            Subscription {
+                handler: handler.clone(),
+                command: Some(command),
+            },
+        );
         msgbus::subscribe_book_deltas(pattern, handler, None);
+        true
     }
 
     #[allow(dead_code)]
-    pub(crate) fn remove_deltas_subscription(&mut self, pattern: MStr<Pattern>) {
-        if let Some(handler) = self.deltas_handlers.remove(&pattern) {
-            msgbus::unsubscribe_book_deltas(pattern, &handler);
-        }
+    pub(crate) fn remove_deltas_subscription(
+        &mut self,
+        pattern: MStr<Pattern>,
+    ) -> Option<DataCommand> {
+        let subscription = self.deltas_handlers.remove(&pattern)?;
+        msgbus::unsubscribe_book_deltas(pattern, &subscription.handler);
+        subscription.command
     }
 
     pub(crate) fn add_depth10_subscription(
         &mut self,
         pattern: MStr<Pattern>,
         handler: TypedHandler<OrderBookDepth10>,
-    ) {
+        command: DataCommand,
+    ) -> bool {
         if self.depth10_handlers.contains_key(&pattern) {
             log::warn!(
                 "Actor {} attempted duplicate depth10 subscription to '{pattern}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
-        self.depth10_handlers.insert(pattern, handler.clone());
+        self.depth10_handlers.insert(
+            pattern,
+            Subscription {
+                handler: handler.clone(),
+                command: Some(command),
+            },
+        );
         msgbus::subscribe_book_depth10(pattern, handler, None);
+        true
     }
 
-    pub(crate) fn remove_depth10_subscription(&mut self, pattern: MStr<Pattern>) {
-        if let Some(handler) = self.depth10_handlers.remove(&pattern) {
-            msgbus::unsubscribe_book_depth10(pattern, &handler);
-        }
+    pub(crate) fn remove_depth10_subscription(
+        &mut self,
+        pattern: MStr<Pattern>,
+    ) -> Option<DataCommand> {
+        let subscription = self.depth10_handlers.remove(&pattern)?;
+        msgbus::unsubscribe_book_depth10(pattern, &subscription.handler);
+        subscription.command
     }
 
     pub(crate) fn add_instrument_subscription(
         &mut self,
         pattern: MStr<Pattern>,
         handler: TypedHandler<InstrumentAny>,
-    ) {
+        command: DataCommand,
+    ) -> bool {
         if self.instrument_handlers.contains_key(&pattern) {
             log::warn!(
                 "Actor {} attempted duplicate instrument subscription to '{pattern}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
-        self.instrument_handlers.insert(pattern, handler.clone());
+        self.instrument_handlers.insert(
+            pattern,
+            Subscription {
+                handler: handler.clone(),
+                command: Some(command),
+            },
+        );
         msgbus::subscribe_instruments(pattern, handler, None);
+        true
     }
 
     #[allow(dead_code)]
-    pub(crate) fn remove_instrument_subscription(&mut self, pattern: MStr<Pattern>) {
-        if let Some(handler) = self.instrument_handlers.remove(&pattern) {
-            msgbus::unsubscribe_instruments(pattern, &handler);
-        }
+    pub(crate) fn remove_instrument_subscription(
+        &mut self,
+        pattern: MStr<Pattern>,
+    ) -> Option<DataCommand> {
+        let subscription = self.instrument_handlers.remove(&pattern)?;
+        msgbus::unsubscribe_instruments(pattern, &subscription.handler);
+        subscription.command
     }
 
     pub(crate) fn add_instrument_close_subscription(
         &mut self,
         topic: MStr<Topic>,
         handler: ShareableMessageHandler,
-    ) {
+        command: DataCommand,
+    ) -> bool {
         let pattern: MStr<Pattern> = topic.into();
         if self.topic_handlers.contains_key(&pattern) {
             log::warn!(
                 "Actor {} attempted duplicate instrument close subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
-        self.topic_handlers.insert(pattern, handler.clone());
+        self.topic_handlers.insert(
+            pattern,
+            Subscription {
+                handler: handler.clone(),
+                command: Some(command),
+            },
+        );
         msgbus::subscribe_any(pattern, handler, None);
+        true
     }
 
     #[allow(dead_code)]
-    pub(crate) fn remove_instrument_close_subscription(&mut self, topic: MStr<Topic>) {
+    pub(crate) fn remove_instrument_close_subscription(
+        &mut self,
+        topic: MStr<Topic>,
+    ) -> Option<DataCommand> {
         let pattern: MStr<Pattern> = topic.into();
-        if let Some(handler) = self.topic_handlers.remove(&pattern) {
-            msgbus::unsubscribe_any(pattern, &handler);
-        }
+        let subscription = self.topic_handlers.remove(&pattern)?;
+        msgbus::unsubscribe_any(pattern, &subscription.handler);
+        subscription.command
     }
 
     pub(crate) fn add_book_snapshot_subscription(
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<OrderBook>,
-    ) {
+        command: DataCommand,
+    ) -> bool {
         if self.book_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate book snapshot subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
-        self.book_handlers.insert(topic, handler.clone());
+        self.book_handlers.insert(
+            topic,
+            Subscription {
+                handler: handler.clone(),
+                command: Some(command),
+            },
+        );
         msgbus::subscribe_book_snapshots(topic.into(), handler, None);
+        true
     }
 
     #[allow(dead_code)]
-    pub(crate) fn remove_book_snapshot_subscription(&mut self, topic: MStr<Topic>) {
-        if let Some(handler) = self.book_handlers.remove(&topic) {
-            msgbus::unsubscribe_book_snapshots(topic.into(), &handler);
-        }
+    pub(crate) fn remove_book_snapshot_subscription(
+        &mut self,
+        topic: MStr<Topic>,
+    ) -> Option<DataCommand> {
+        let subscription = self.book_handlers.remove(&topic)?;
+        msgbus::unsubscribe_book_snapshots(topic.into(), &subscription.handler);
+        subscription.command
     }
 
     pub(crate) fn add_mark_price_subscription(
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<MarkPriceUpdate>,
-    ) {
+        command: DataCommand,
+    ) -> bool {
         if self.mark_price_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate mark price subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
-        self.mark_price_handlers.insert(topic, handler.clone());
+        self.mark_price_handlers.insert(
+            topic,
+            Subscription {
+                handler: handler.clone(),
+                command: Some(command),
+            },
+        );
         msgbus::subscribe_mark_prices(topic.into(), handler, None);
+        true
     }
 
     #[allow(dead_code)]
-    pub(crate) fn remove_mark_price_subscription(&mut self, topic: MStr<Topic>) {
-        if let Some(handler) = self.mark_price_handlers.remove(&topic) {
-            msgbus::unsubscribe_mark_prices(topic.into(), &handler);
-        }
+    pub(crate) fn remove_mark_price_subscription(
+        &mut self,
+        topic: MStr<Topic>,
+    ) -> Option<DataCommand> {
+        let subscription = self.mark_price_handlers.remove(&topic)?;
+        msgbus::unsubscribe_mark_prices(topic.into(), &subscription.handler);
+        subscription.command
     }
 
     pub(crate) fn add_index_price_subscription(
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<IndexPriceUpdate>,
-    ) {
+        command: DataCommand,
+    ) -> bool {
         if self.index_price_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate index price subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
-        self.index_price_handlers.insert(topic, handler.clone());
+        self.index_price_handlers.insert(
+            topic,
+            Subscription {
+                handler: handler.clone(),
+                command: Some(command),
+            },
+        );
         msgbus::subscribe_index_prices(topic.into(), handler, None);
+        true
     }
 
     #[allow(dead_code)]
-    pub(crate) fn remove_index_price_subscription(&mut self, topic: MStr<Topic>) {
-        if let Some(handler) = self.index_price_handlers.remove(&topic) {
-            msgbus::unsubscribe_index_prices(topic.into(), &handler);
-        }
+    pub(crate) fn remove_index_price_subscription(
+        &mut self,
+        topic: MStr<Topic>,
+    ) -> Option<DataCommand> {
+        let subscription = self.index_price_handlers.remove(&topic)?;
+        msgbus::unsubscribe_index_prices(topic.into(), &subscription.handler);
+        subscription.command
     }
 
     pub(crate) fn add_funding_rate_subscription(
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<FundingRateUpdate>,
-    ) {
+        command: DataCommand,
+    ) -> bool {
         if self.funding_rate_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate funding rate subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
-        self.funding_rate_handlers.insert(topic, handler.clone());
+        self.funding_rate_handlers.insert(
+            topic,
+            Subscription {
+                handler: handler.clone(),
+                command: Some(command),
+            },
+        );
         msgbus::subscribe_funding_rates(topic.into(), handler, None);
+        true
     }
 
     #[allow(dead_code)]
-    pub(crate) fn remove_funding_rate_subscription(&mut self, topic: MStr<Topic>) {
-        if let Some(handler) = self.funding_rate_handlers.remove(&topic) {
-            msgbus::unsubscribe_funding_rates(topic.into(), &handler);
-        }
+    pub(crate) fn remove_funding_rate_subscription(
+        &mut self,
+        topic: MStr<Topic>,
+    ) -> Option<DataCommand> {
+        let subscription = self.funding_rate_handlers.remove(&topic)?;
+        msgbus::unsubscribe_funding_rates(topic.into(), &subscription.handler);
+        subscription.command
     }
 
     pub(crate) fn add_option_greeks_subscription(
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<OptionGreeks>,
-    ) {
+        command: DataCommand,
+    ) -> bool {
         if self.option_greeks_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate option greeks subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
-        self.option_greeks_handlers.insert(topic, handler.clone());
+        self.option_greeks_handlers.insert(
+            topic,
+            Subscription {
+                handler: handler.clone(),
+                command: Some(command),
+            },
+        );
         msgbus::subscribe_option_greeks(topic.into(), handler, None);
+        true
     }
 
     #[allow(dead_code)]
-    pub(crate) fn remove_option_greeks_subscription(&mut self, topic: MStr<Topic>) {
-        if let Some(handler) = self.option_greeks_handlers.remove(&topic) {
-            msgbus::unsubscribe_option_greeks(topic.into(), &handler);
-        }
+    pub(crate) fn remove_option_greeks_subscription(
+        &mut self,
+        topic: MStr<Topic>,
+    ) -> Option<DataCommand> {
+        let subscription = self.option_greeks_handlers.remove(&topic)?;
+        msgbus::unsubscribe_option_greeks(topic.into(), &subscription.handler);
+        subscription.command
     }
 
-    pub(crate) fn add_option_chain_subscription(
+    pub(crate) fn set_option_chain_subscription(
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<OptionChainSlice>,
+        command: DataCommand,
     ) {
-        if self.option_chain_handlers.contains_key(&topic) {
-            log::warn!(
-                "Actor {} attempted duplicate option chain subscription to '{topic}'",
-                self.actor_id
-            );
+        if let Some(subscription) = self.option_chain_handlers.get_mut(&topic) {
+            subscription.command = Some(command);
             return;
         }
-        self.option_chain_handlers.insert(topic, handler.clone());
+
+        self.option_chain_handlers.insert(
+            topic,
+            Subscription {
+                handler: handler.clone(),
+                command: Some(command),
+            },
+        );
         msgbus::subscribe_option_chain(topic.into(), handler, None);
     }
 
-    pub(crate) fn remove_option_chain_subscription(&mut self, topic: MStr<Topic>) {
-        if let Some(handler) = self.option_chain_handlers.remove(&topic) {
-            msgbus::unsubscribe_option_chain(topic.into(), &handler);
-        }
+    pub(crate) fn remove_option_chain_subscription(
+        &mut self,
+        topic: MStr<Topic>,
+    ) -> Option<DataCommand> {
+        let subscription = self.option_chain_handlers.remove(&topic)?;
+        msgbus::unsubscribe_option_chain(topic.into(), &subscription.handler);
+        subscription.command
     }
 
     #[cfg(feature = "defi")]
@@ -3435,24 +3634,32 @@ impl DataActorCore {
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<Block>,
-    ) {
+        command: DataCommand,
+    ) -> bool {
         if self.block_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate block subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
-        self.block_handlers.insert(topic, handler.clone());
+        self.block_handlers.insert(
+            topic,
+            Subscription {
+                handler: handler.clone(),
+                command: Some(command),
+            },
+        );
         msgbus::subscribe_defi_blocks(topic.into(), handler, None);
+        true
     }
 
     #[cfg(feature = "defi")]
     #[allow(dead_code)]
-    pub(crate) fn remove_block_subscription(&mut self, topic: MStr<Topic>) {
-        if let Some(handler) = self.block_handlers.remove(&topic) {
-            msgbus::unsubscribe_defi_blocks(topic.into(), &handler);
-        }
+    pub(crate) fn remove_block_subscription(&mut self, topic: MStr<Topic>) -> Option<DataCommand> {
+        let subscription = self.block_handlers.remove(&topic)?;
+        msgbus::unsubscribe_defi_blocks(topic.into(), &subscription.handler);
+        subscription.command
     }
 
     #[cfg(feature = "defi")]
@@ -3460,24 +3667,32 @@ impl DataActorCore {
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<Pool>,
-    ) {
+        command: DataCommand,
+    ) -> bool {
         if self.pool_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate pool subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
-        self.pool_handlers.insert(topic, handler.clone());
+        self.pool_handlers.insert(
+            topic,
+            Subscription {
+                handler: handler.clone(),
+                command: Some(command),
+            },
+        );
         msgbus::subscribe_defi_pools(topic.into(), handler, None);
+        true
     }
 
     #[cfg(feature = "defi")]
     #[allow(dead_code)]
-    pub(crate) fn remove_pool_subscription(&mut self, topic: MStr<Topic>) {
-        if let Some(handler) = self.pool_handlers.remove(&topic) {
-            msgbus::unsubscribe_defi_pools(topic.into(), &handler);
-        }
+    pub(crate) fn remove_pool_subscription(&mut self, topic: MStr<Topic>) -> Option<DataCommand> {
+        let subscription = self.pool_handlers.remove(&topic)?;
+        msgbus::unsubscribe_defi_pools(topic.into(), &subscription.handler);
+        subscription.command
     }
 
     #[cfg(feature = "defi")]
@@ -3485,24 +3700,35 @@ impl DataActorCore {
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<PoolSwap>,
-    ) {
+        command: DataCommand,
+    ) -> bool {
         if self.pool_swap_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate pool swap subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
-        self.pool_swap_handlers.insert(topic, handler.clone());
+        self.pool_swap_handlers.insert(
+            topic,
+            Subscription {
+                handler: handler.clone(),
+                command: Some(command),
+            },
+        );
         msgbus::subscribe_defi_swaps(topic.into(), handler, None);
+        true
     }
 
     #[cfg(feature = "defi")]
     #[allow(dead_code)]
-    pub(crate) fn remove_pool_swap_subscription(&mut self, topic: MStr<Topic>) {
-        if let Some(handler) = self.pool_swap_handlers.remove(&topic) {
-            msgbus::unsubscribe_defi_swaps(topic.into(), &handler);
-        }
+    pub(crate) fn remove_pool_swap_subscription(
+        &mut self,
+        topic: MStr<Topic>,
+    ) -> Option<DataCommand> {
+        let subscription = self.pool_swap_handlers.remove(&topic)?;
+        msgbus::unsubscribe_defi_swaps(topic.into(), &subscription.handler);
+        subscription.command
     }
 
     #[cfg(feature = "defi")]
@@ -3510,24 +3736,35 @@ impl DataActorCore {
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<PoolLiquidityUpdate>,
-    ) {
+        command: DataCommand,
+    ) -> bool {
         if self.pool_liquidity_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate pool liquidity subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
-        self.pool_liquidity_handlers.insert(topic, handler.clone());
+        self.pool_liquidity_handlers.insert(
+            topic,
+            Subscription {
+                handler: handler.clone(),
+                command: Some(command),
+            },
+        );
         msgbus::subscribe_defi_liquidity(topic.into(), handler, None);
+        true
     }
 
     #[cfg(feature = "defi")]
     #[allow(dead_code)]
-    pub(crate) fn remove_pool_liquidity_subscription(&mut self, topic: MStr<Topic>) {
-        if let Some(handler) = self.pool_liquidity_handlers.remove(&topic) {
-            msgbus::unsubscribe_defi_liquidity(topic.into(), &handler);
-        }
+    pub(crate) fn remove_pool_liquidity_subscription(
+        &mut self,
+        topic: MStr<Topic>,
+    ) -> Option<DataCommand> {
+        let subscription = self.pool_liquidity_handlers.remove(&topic)?;
+        msgbus::unsubscribe_defi_liquidity(topic.into(), &subscription.handler);
+        subscription.command
     }
 
     #[cfg(feature = "defi")]
@@ -3535,24 +3772,35 @@ impl DataActorCore {
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<PoolFeeCollect>,
-    ) {
+        command: DataCommand,
+    ) -> bool {
         if self.pool_collect_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate pool collect subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
-        self.pool_collect_handlers.insert(topic, handler.clone());
+        self.pool_collect_handlers.insert(
+            topic,
+            Subscription {
+                handler: handler.clone(),
+                command: Some(command),
+            },
+        );
         msgbus::subscribe_defi_collects(topic.into(), handler, None);
+        true
     }
 
     #[cfg(feature = "defi")]
     #[allow(dead_code)]
-    pub(crate) fn remove_pool_collect_subscription(&mut self, topic: MStr<Topic>) {
-        if let Some(handler) = self.pool_collect_handlers.remove(&topic) {
-            msgbus::unsubscribe_defi_collects(topic.into(), &handler);
-        }
+    pub(crate) fn remove_pool_collect_subscription(
+        &mut self,
+        topic: MStr<Topic>,
+    ) -> Option<DataCommand> {
+        let subscription = self.pool_collect_handlers.remove(&topic)?;
+        msgbus::unsubscribe_defi_collects(topic.into(), &subscription.handler);
+        subscription.command
     }
 
     #[cfg(feature = "defi")]
@@ -3560,111 +3808,169 @@ impl DataActorCore {
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<PoolFlash>,
-    ) {
+        command: DataCommand,
+    ) -> bool {
         if self.pool_flash_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate pool flash subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
-        self.pool_flash_handlers.insert(topic, handler.clone());
+        self.pool_flash_handlers.insert(
+            topic,
+            Subscription {
+                handler: handler.clone(),
+                command: Some(command),
+            },
+        );
         msgbus::subscribe_defi_flash(topic.into(), handler, None);
+        true
     }
 
     #[cfg(feature = "defi")]
     #[allow(dead_code)]
-    pub(crate) fn remove_pool_flash_subscription(&mut self, topic: MStr<Topic>) {
-        if let Some(handler) = self.pool_flash_handlers.remove(&topic) {
-            msgbus::unsubscribe_defi_flash(topic.into(), &handler);
-        }
+    pub(crate) fn remove_pool_flash_subscription(
+        &mut self,
+        topic: MStr<Topic>,
+    ) -> Option<DataCommand> {
+        let subscription = self.pool_flash_handlers.remove(&topic)?;
+        msgbus::unsubscribe_defi_flash(topic.into(), &subscription.handler);
+        subscription.command
     }
 
-    /// Removes every message bus subscription this actor installed.
+    /// Removes every message bus handler and releases each retained venue subscription.
     ///
     /// Called on disposal so retirement leaves no handler which would resolve an actor that
     /// deregistration has already removed.
     pub(crate) fn unsubscribe_all(&mut self) {
-        for (pattern, handler) in std::mem::take(&mut self.topic_handlers) {
-            msgbus::unsubscribe_any(pattern, &handler);
-        }
+        let mut commands = Vec::new();
 
-        for (pattern, handler) in std::mem::take(&mut self.instrument_handlers) {
-            msgbus::unsubscribe_instruments(pattern, &handler);
-        }
-
-        for (pattern, handler) in std::mem::take(&mut self.deltas_handlers) {
-            msgbus::unsubscribe_book_deltas(pattern, &handler);
-        }
-
-        for (pattern, handler) in std::mem::take(&mut self.depth10_handlers) {
-            msgbus::unsubscribe_book_depth10(pattern, &handler);
-        }
-
-        for (topic, handler) in std::mem::take(&mut self.book_handlers) {
-            msgbus::unsubscribe_book_snapshots(topic.into(), &handler);
-        }
-
-        for (topic, handler) in std::mem::take(&mut self.quote_handlers) {
-            msgbus::unsubscribe_quotes(topic.into(), &handler);
-        }
-
-        for (topic, handler) in std::mem::take(&mut self.trade_handlers) {
-            msgbus::unsubscribe_trades(topic.into(), &handler);
-        }
-
-        for (topic, handler) in std::mem::take(&mut self.bar_handlers) {
-            msgbus::unsubscribe_bars(topic.into(), &handler);
-        }
-
-        for (topic, handler) in std::mem::take(&mut self.mark_price_handlers) {
-            msgbus::unsubscribe_mark_prices(topic.into(), &handler);
-        }
-
-        for (topic, handler) in std::mem::take(&mut self.index_price_handlers) {
-            msgbus::unsubscribe_index_prices(topic.into(), &handler);
-        }
-
-        for (topic, handler) in std::mem::take(&mut self.funding_rate_handlers) {
-            msgbus::unsubscribe_funding_rates(topic.into(), &handler);
-        }
-
-        for (topic, handler) in std::mem::take(&mut self.option_greeks_handlers) {
-            msgbus::unsubscribe_option_greeks(topic.into(), &handler);
-        }
-
-        for (topic, handler) in std::mem::take(&mut self.option_chain_handlers) {
-            msgbus::unsubscribe_option_chain(topic.into(), &handler);
-        }
+        Self::drain_subscriptions(
+            std::mem::take(&mut self.topic_handlers),
+            &mut commands,
+            msgbus::unsubscribe_any,
+        );
+        Self::drain_subscriptions(
+            std::mem::take(&mut self.instrument_handlers),
+            &mut commands,
+            msgbus::unsubscribe_instruments,
+        );
+        Self::drain_subscriptions(
+            std::mem::take(&mut self.deltas_handlers),
+            &mut commands,
+            msgbus::unsubscribe_book_deltas,
+        );
+        Self::drain_subscriptions(
+            std::mem::take(&mut self.depth10_handlers),
+            &mut commands,
+            msgbus::unsubscribe_book_depth10,
+        );
+        Self::drain_subscriptions(
+            std::mem::take(&mut self.book_handlers),
+            &mut commands,
+            |topic, handler| msgbus::unsubscribe_book_snapshots(topic.into(), handler),
+        );
+        Self::drain_subscriptions(
+            std::mem::take(&mut self.quote_handlers),
+            &mut commands,
+            |topic, handler| msgbus::unsubscribe_quotes(topic.into(), handler),
+        );
+        Self::drain_subscriptions(
+            std::mem::take(&mut self.trade_handlers),
+            &mut commands,
+            |topic, handler| msgbus::unsubscribe_trades(topic.into(), handler),
+        );
+        Self::drain_subscriptions(
+            std::mem::take(&mut self.bar_handlers),
+            &mut commands,
+            |topic, handler| msgbus::unsubscribe_bars(topic.into(), handler),
+        );
+        Self::drain_subscriptions(
+            std::mem::take(&mut self.mark_price_handlers),
+            &mut commands,
+            |topic, handler| msgbus::unsubscribe_mark_prices(topic.into(), handler),
+        );
+        Self::drain_subscriptions(
+            std::mem::take(&mut self.index_price_handlers),
+            &mut commands,
+            |topic, handler| msgbus::unsubscribe_index_prices(topic.into(), handler),
+        );
+        Self::drain_subscriptions(
+            std::mem::take(&mut self.funding_rate_handlers),
+            &mut commands,
+            |topic, handler| msgbus::unsubscribe_funding_rates(topic.into(), handler),
+        );
+        Self::drain_subscriptions(
+            std::mem::take(&mut self.option_greeks_handlers),
+            &mut commands,
+            |topic, handler| msgbus::unsubscribe_option_greeks(topic.into(), handler),
+        );
+        Self::drain_subscriptions(
+            std::mem::take(&mut self.option_chain_handlers),
+            &mut commands,
+            |topic, handler| msgbus::unsubscribe_option_chain(topic.into(), handler),
+        );
 
         #[cfg(feature = "defi")]
-        self.unsubscribe_all_defi();
+        self.unsubscribe_all_defi(&mut commands);
+
+        for command in commands {
+            if let Some(command) = command.into_unsubscribe(UUID4::new(), self.timestamp_ns()) {
+                self.send_data_cmd(command);
+            }
+        }
+        #[cfg(feature = "python")]
+        self.message_bus.clear();
     }
 
     #[cfg(feature = "defi")]
-    fn unsubscribe_all_defi(&mut self) {
-        for (topic, handler) in std::mem::take(&mut self.block_handlers) {
-            msgbus::unsubscribe_defi_blocks(topic.into(), &handler);
-        }
+    fn unsubscribe_all_defi(&mut self, commands: &mut Vec<DataCommand>) {
+        Self::drain_subscriptions(
+            std::mem::take(&mut self.block_handlers),
+            commands,
+            |topic, handler| msgbus::unsubscribe_defi_blocks(topic.into(), handler),
+        );
+        Self::drain_subscriptions(
+            std::mem::take(&mut self.pool_handlers),
+            commands,
+            |topic, handler| msgbus::unsubscribe_defi_pools(topic.into(), handler),
+        );
+        Self::drain_subscriptions(
+            std::mem::take(&mut self.pool_swap_handlers),
+            commands,
+            |topic, handler| msgbus::unsubscribe_defi_swaps(topic.into(), handler),
+        );
+        Self::drain_subscriptions(
+            std::mem::take(&mut self.pool_liquidity_handlers),
+            commands,
+            |topic, handler| msgbus::unsubscribe_defi_liquidity(topic.into(), handler),
+        );
+        Self::drain_subscriptions(
+            std::mem::take(&mut self.pool_collect_handlers),
+            commands,
+            |topic, handler| msgbus::unsubscribe_defi_collects(topic.into(), handler),
+        );
+        Self::drain_subscriptions(
+            std::mem::take(&mut self.pool_flash_handlers),
+            commands,
+            |topic, handler| msgbus::unsubscribe_defi_flash(topic.into(), handler),
+        );
+    }
 
-        for (topic, handler) in std::mem::take(&mut self.pool_handlers) {
-            msgbus::unsubscribe_defi_pools(topic.into(), &handler);
-        }
+    fn drain_subscriptions<K, T>(
+        subscriptions: AHashMap<K, Subscription<T>>,
+        commands: &mut Vec<DataCommand>,
+        mut unsubscribe: impl FnMut(K, &T),
+    ) where
+        K: AsRef<str>,
+    {
+        let mut subscriptions = subscriptions.into_iter().collect::<Vec<_>>();
+        subscriptions.sort_unstable_by(|(left, _), (right, _)| left.as_ref().cmp(right.as_ref()));
 
-        for (topic, handler) in std::mem::take(&mut self.pool_swap_handlers) {
-            msgbus::unsubscribe_defi_swaps(topic.into(), &handler);
-        }
-
-        for (topic, handler) in std::mem::take(&mut self.pool_liquidity_handlers) {
-            msgbus::unsubscribe_defi_liquidity(topic.into(), &handler);
-        }
-
-        for (topic, handler) in std::mem::take(&mut self.pool_collect_handlers) {
-            msgbus::unsubscribe_defi_collects(topic.into(), &handler);
-        }
-
-        for (topic, handler) in std::mem::take(&mut self.pool_flash_handlers) {
-            msgbus::unsubscribe_defi_flash(topic.into(), &handler);
+        for (key, subscription) in subscriptions {
+            unsubscribe(key, &subscription.handler);
+            commands.extend(subscription.command);
         }
     }
 
@@ -3692,6 +3998,10 @@ impl DataActorCore {
             funding_rate_handlers: AHashMap::new(),
             option_greeks_handlers: AHashMap::new(),
             option_chain_handlers: AHashMap::new(),
+            indicators: Indicators::default(),
+            warning_events: AHashSet::new(),
+            pending_requests: AHashMap::new(),
+            signal_classes: AHashMap::new(),
             #[cfg(feature = "defi")]
             block_handlers: AHashMap::new(),
             #[cfg(feature = "defi")]
@@ -3704,10 +4014,8 @@ impl DataActorCore {
             pool_collect_handlers: AHashMap::new(),
             #[cfg(feature = "defi")]
             pool_flash_handlers: AHashMap::new(),
-            warning_events: AHashSet::new(),
-            pending_requests: AHashMap::new(),
-            signal_classes: AHashMap::new(),
-            indicators: Indicators::default(),
+            #[cfg(feature = "python")]
+            message_bus: Rc::default(),
         }
     }
 
@@ -3810,7 +4118,7 @@ impl DataActorCore {
         self.clock_ref().timestamp_ns()
     }
 
-    fn clock_api(&self) -> ClockApi<'_> {
+    pub(super) fn clock_api(&self) -> ClockApi<'_> {
         let clock = self.clock.as_ref().unwrap_or_else(|| {
             panic!(
                 "DataActor {} must be registered before calling `clock()` - trader_id: {:?}",
@@ -3871,6 +4179,9 @@ impl DataActorCore {
             let _cache_borrow = cache.borrow();
         }
 
+        #[cfg(feature = "python")]
+        self.message_bus.register();
+
         self.trader_id = Some(trader_id);
         self.clock = Some(clock);
         self.cache = Some(cache);
@@ -3899,6 +4210,12 @@ impl DataActorCore {
         log::debug!("Deregistered event type '{event_type}' from warning logs");
     }
 
+    /// Returns this component's shared Python message-bus state.
+    #[cfg(feature = "python")]
+    pub fn message_bus(&self) -> Rc<PyMessageBusScope> {
+        Rc::clone(&self.message_bus)
+    }
+
     pub fn is_registered(&self) -> bool {
         self.trader_id.is_some()
     }
@@ -3922,6 +4239,20 @@ impl DataActorCore {
 
         let endpoint = MessagingSwitchboard::data_engine_queue_execute();
         msgbus::send_data_command(endpoint, command);
+    }
+
+    pub(crate) fn send_unsubscribe_cmd(
+        &self,
+        retained: Option<DataCommand>,
+        fallback: DataCommand,
+    ) {
+        let Some(retained) = retained else {
+            return;
+        };
+        let command = retained
+            .into_unsubscribe(UUID4::new(), self.timestamp_ns())
+            .unwrap_or(fallback);
+        self.send_data_cmd(command);
     }
 
     #[allow(dead_code)]
@@ -4043,7 +4374,7 @@ impl DataActorCore {
         cache.borrow_mut().add_synthetic(synthetic)
     }
 
-    /// Helper method for registering data subscriptions from the trait.
+    /// Subscribes the actor to data.
     ///
     /// # Panics
     ///
@@ -4065,14 +4396,14 @@ impl DataActorCore {
         );
 
         let topic = get_custom_topic(&data_type);
-        self.add_subscription_any(topic, handler, None);
 
         // If no client ID specified, just subscribe to the topic
         if client_id.is_none() {
+            self.add_subscription_any(topic, handler, None, None);
             return;
         }
 
-        let command = SubscribeCommand::Data(SubscribeCustomData {
+        let command = DataCommand::Subscribe(SubscribeCommand::Data(SubscribeCustomData {
             data_type,
             client_id,
             venue: None,
@@ -4080,12 +4411,14 @@ impl DataActorCore {
             ts_init: self.timestamp_ns(),
             correlation_id: None,
             params,
-        });
+        }));
 
-        self.send_data_cmd(DataCommand::Subscribe(command));
+        if self.add_subscription_any(topic, handler, None, Some(command.clone())) {
+            self.send_data_cmd(command);
+        }
     }
 
-    /// Helper method for registering signal subscriptions from the trait.
+    /// Subscribes the actor to signal.
     ///
     /// An empty `name` subscribes to every signal via the `data.Signal*` wildcard pattern.
     ///
@@ -4108,7 +4441,13 @@ impl DataActorCore {
             );
             return;
         }
-        self.topic_handlers.insert(pattern, handler.clone());
+        self.topic_handlers.insert(
+            pattern,
+            Subscription {
+                handler: handler.clone(),
+                command: None,
+            },
+        );
         msgbus::subscribe_any(pattern, handler, priority);
     }
 
@@ -4120,12 +4459,13 @@ impl DataActorCore {
     pub fn subscribe_queue_state(
         &mut self,
         handler: ShareableMessageHandler,
+        channel: Option<SystemChannel>,
         priority: Option<u32>,
     ) {
         self.check_registered();
 
-        let topic = MessagingSwitchboard::queue_state_changed_topic();
-        self.add_subscription_any(topic, handler, priority);
+        let topic = MessagingSwitchboard::queue_state_changed_pattern(channel);
+        self.add_subscription_any(topic, handler, priority, None);
     }
 
     /// Registers a socket state change subscription from the trait.
@@ -4136,15 +4476,17 @@ impl DataActorCore {
     pub fn subscribe_socket_state(
         &mut self,
         handler: ShareableMessageHandler,
+        client_id: Option<ClientId>,
+        endpoint: Option<&str>,
         priority: Option<u32>,
     ) {
         self.check_registered();
 
-        let topic = MessagingSwitchboard::socket_state_changed_topic();
-        self.add_subscription_any(topic, handler, priority);
+        let topic = MessagingSwitchboard::socket_state_changed_pattern(client_id, endpoint);
+        self.add_subscription_any(topic, handler, priority, None);
     }
 
-    /// Helper method for registering quotes subscriptions from the trait.
+    /// Subscribes the actor to quotes.
     pub fn subscribe_quotes(
         &mut self,
         topic: MStr<Topic>,
@@ -4155,9 +4497,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_quote_subscription(topic, handler);
-
-        let command = SubscribeCommand::Quotes(SubscribeQuotes {
+        let command = DataCommand::Subscribe(SubscribeCommand::Quotes(SubscribeQuotes {
             instrument_id,
             client_id,
             venue: Some(instrument_id.venue),
@@ -4165,12 +4505,14 @@ impl DataActorCore {
             ts_init: self.timestamp_ns(),
             correlation_id: None,
             params,
-        });
+        }));
 
-        self.send_data_cmd(DataCommand::Subscribe(command));
+        if self.add_quote_subscription(topic, handler, command.clone()) {
+            self.send_data_cmd(command);
+        }
     }
 
-    /// Helper method for registering instruments subscriptions from the trait.
+    /// Subscribes the actor to instruments.
     pub fn subscribe_instruments(
         &mut self,
         pattern: MStr<Pattern>,
@@ -4181,21 +4523,21 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_instrument_subscription(pattern, handler);
-
-        let command = SubscribeCommand::Instruments(SubscribeInstruments {
+        let command = DataCommand::Subscribe(SubscribeCommand::Instruments(SubscribeInstruments {
             client_id,
             venue,
             command_id: UUID4::new(),
             ts_init: self.timestamp_ns(),
             correlation_id: None,
             params,
-        });
+        }));
 
-        self.send_data_cmd(DataCommand::Subscribe(command));
+        if self.add_instrument_subscription(pattern, handler, command.clone()) {
+            self.send_data_cmd(command);
+        }
     }
 
-    /// Helper method for registering instrument subscriptions from the trait.
+    /// Subscribes the actor to instrument.
     pub fn subscribe_instrument(
         &mut self,
         topic: MStr<Topic>,
@@ -4206,9 +4548,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_instrument_subscription(topic.into(), handler);
-
-        let command = SubscribeCommand::Instrument(SubscribeInstrument {
+        let command = DataCommand::Subscribe(SubscribeCommand::Instrument(SubscribeInstrument {
             instrument_id,
             client_id,
             venue: Some(instrument_id.venue),
@@ -4216,12 +4556,14 @@ impl DataActorCore {
             ts_init: self.timestamp_ns(),
             correlation_id: None,
             params,
-        });
+        }));
 
-        self.send_data_cmd(DataCommand::Subscribe(command));
+        if self.add_instrument_subscription(topic.into(), handler, command.clone()) {
+            self.send_data_cmd(command);
+        }
     }
 
-    /// Helper method for registering book deltas subscriptions from the trait.
+    /// Subscribes the actor to book deltas.
     #[expect(clippy::too_many_arguments)]
     pub fn subscribe_book_deltas(
         &mut self,
@@ -4236,9 +4578,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_deltas_subscription(pattern, handler);
-
-        let command = SubscribeCommand::BookDeltas(SubscribeBookDeltas {
+        let command = DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas {
             instrument_id,
             book_type,
             client_id,
@@ -4249,12 +4589,14 @@ impl DataActorCore {
             managed,
             correlation_id: None,
             params,
-        });
+        }));
 
-        self.send_data_cmd(DataCommand::Subscribe(command));
+        if self.add_deltas_subscription(pattern, handler, command.clone()) {
+            self.send_data_cmd(command);
+        }
     }
 
-    /// Helper method for registering book depth10 subscriptions from the trait.
+    /// Subscribes the actor to book depth10.
     #[expect(clippy::too_many_arguments)]
     pub fn subscribe_book_depth10(
         &mut self,
@@ -4268,9 +4610,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_depth10_subscription(pattern, handler);
-
-        let command = SubscribeCommand::BookDepth10(SubscribeBookDepth10 {
+        let command = DataCommand::Subscribe(SubscribeCommand::BookDepth10(SubscribeBookDepth10 {
             instrument_id,
             book_type,
             client_id,
@@ -4281,12 +4621,14 @@ impl DataActorCore {
             managed,
             correlation_id: None,
             params,
-        });
+        }));
 
-        self.send_data_cmd(DataCommand::Subscribe(command));
+        if self.add_depth10_subscription(pattern, handler, command.clone()) {
+            self.send_data_cmd(command);
+        }
     }
 
-    /// Helper method for registering book snapshots subscriptions from the trait.
+    /// Subscribes the actor to book snapshots.
     #[expect(clippy::too_many_arguments)]
     pub fn subscribe_book_at_interval(
         &mut self,
@@ -4301,25 +4643,26 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_book_snapshot_subscription(topic, handler);
+        let command =
+            DataCommand::Subscribe(SubscribeCommand::BookSnapshots(SubscribeBookSnapshots {
+                instrument_id,
+                book_type,
+                client_id,
+                venue: Some(instrument_id.venue),
+                command_id: UUID4::new(),
+                ts_init: self.timestamp_ns(),
+                depth,
+                interval_ms,
+                correlation_id: None,
+                params,
+            }));
 
-        let command = SubscribeCommand::BookSnapshots(SubscribeBookSnapshots {
-            instrument_id,
-            book_type,
-            client_id,
-            venue: Some(instrument_id.venue),
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            depth,
-            interval_ms,
-            correlation_id: None,
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::Subscribe(command));
+        if self.add_book_snapshot_subscription(topic, handler, command.clone()) {
+            self.send_data_cmd(command);
+        }
     }
 
-    /// Helper method for registering trades subscriptions from the trait.
+    /// Subscribes the actor to trades.
     pub fn subscribe_trades(
         &mut self,
         topic: MStr<Topic>,
@@ -4330,9 +4673,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_trade_subscription(topic, handler);
-
-        let command = SubscribeCommand::Trades(SubscribeTrades {
+        let command = DataCommand::Subscribe(SubscribeCommand::Trades(SubscribeTrades {
             instrument_id,
             client_id,
             venue: Some(instrument_id.venue),
@@ -4340,12 +4681,14 @@ impl DataActorCore {
             ts_init: self.timestamp_ns(),
             correlation_id: None,
             params,
-        });
+        }));
 
-        self.send_data_cmd(DataCommand::Subscribe(command));
+        if self.add_trade_subscription(topic, handler, command.clone()) {
+            self.send_data_cmd(command);
+        }
     }
 
-    /// Helper method for registering bars subscriptions from the trait.
+    /// Subscribes the actor to bars.
     pub fn subscribe_bars(
         &mut self,
         topic: MStr<Topic>,
@@ -4356,9 +4699,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_bar_subscription(topic, handler);
-
-        let command = SubscribeCommand::Bars(SubscribeBars {
+        let command = DataCommand::Subscribe(SubscribeCommand::Bars(SubscribeBars {
             bar_type,
             client_id,
             venue: Some(bar_type.instrument_id().venue),
@@ -4366,12 +4707,14 @@ impl DataActorCore {
             ts_init: self.timestamp_ns(),
             correlation_id: None,
             params,
-        });
+        }));
 
-        self.send_data_cmd(DataCommand::Subscribe(command));
+        if self.add_bar_subscription(topic, handler, command.clone()) {
+            self.send_data_cmd(command);
+        }
     }
 
-    /// Helper method for registering mark prices subscriptions from the trait.
+    /// Subscribes the actor to mark prices.
     pub fn subscribe_mark_prices(
         &mut self,
         topic: MStr<Topic>,
@@ -4382,9 +4725,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_mark_price_subscription(topic, handler);
-
-        let command = SubscribeCommand::MarkPrices(SubscribeMarkPrices {
+        let command = DataCommand::Subscribe(SubscribeCommand::MarkPrices(SubscribeMarkPrices {
             instrument_id,
             client_id,
             venue: Some(instrument_id.venue),
@@ -4392,12 +4733,14 @@ impl DataActorCore {
             ts_init: self.timestamp_ns(),
             correlation_id: None,
             params,
-        });
+        }));
 
-        self.send_data_cmd(DataCommand::Subscribe(command));
+        if self.add_mark_price_subscription(topic, handler, command.clone()) {
+            self.send_data_cmd(command);
+        }
     }
 
-    /// Helper method for registering index prices subscriptions from the trait.
+    /// Subscribes the actor to index prices.
     pub fn subscribe_index_prices(
         &mut self,
         topic: MStr<Topic>,
@@ -4408,9 +4751,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_index_price_subscription(topic, handler);
-
-        let command = SubscribeCommand::IndexPrices(SubscribeIndexPrices {
+        let command = DataCommand::Subscribe(SubscribeCommand::IndexPrices(SubscribeIndexPrices {
             instrument_id,
             client_id,
             venue: Some(instrument_id.venue),
@@ -4418,12 +4759,14 @@ impl DataActorCore {
             ts_init: self.timestamp_ns(),
             correlation_id: None,
             params,
-        });
+        }));
 
-        self.send_data_cmd(DataCommand::Subscribe(command));
+        if self.add_index_price_subscription(topic, handler, command.clone()) {
+            self.send_data_cmd(command);
+        }
     }
 
-    /// Helper method for registering funding rates subscriptions from the trait.
+    /// Subscribes the actor to funding rates.
     pub fn subscribe_funding_rates(
         &mut self,
         topic: MStr<Topic>,
@@ -4434,22 +4777,23 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_funding_rate_subscription(topic, handler);
+        let command =
+            DataCommand::Subscribe(SubscribeCommand::FundingRates(SubscribeFundingRates {
+                instrument_id,
+                client_id,
+                venue: Some(instrument_id.venue),
+                command_id: UUID4::new(),
+                ts_init: self.timestamp_ns(),
+                correlation_id: None,
+                params,
+            }));
 
-        let command = SubscribeCommand::FundingRates(SubscribeFundingRates {
-            instrument_id,
-            client_id,
-            venue: Some(instrument_id.venue),
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            correlation_id: None,
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::Subscribe(command));
+        if self.add_funding_rate_subscription(topic, handler, command.clone()) {
+            self.send_data_cmd(command);
+        }
     }
 
-    /// Helper method for registering option greeks subscriptions from the trait.
+    /// Subscribes the actor to option greeks.
     pub fn subscribe_option_greeks(
         &mut self,
         topic: MStr<Topic>,
@@ -4460,22 +4804,23 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_option_greeks_subscription(topic, handler);
+        let command =
+            DataCommand::Subscribe(SubscribeCommand::OptionGreeks(SubscribeOptionGreeks {
+                instrument_id,
+                client_id,
+                venue: Some(instrument_id.venue),
+                command_id: UUID4::new(),
+                ts_init: self.timestamp_ns(),
+                correlation_id: None,
+                params,
+            }));
 
-        let command = SubscribeCommand::OptionGreeks(SubscribeOptionGreeks {
-            instrument_id,
-            client_id,
-            venue: Some(instrument_id.venue),
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            correlation_id: None,
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::Subscribe(command));
+        if self.add_option_greeks_subscription(topic, handler, command.clone()) {
+            self.send_data_cmd(command);
+        }
     }
 
-    /// Helper method for registering instrument status subscriptions from the trait.
+    /// Subscribes the actor to instrument status.
     pub fn subscribe_instrument_status(
         &mut self,
         topic: MStr<Topic>,
@@ -4486,22 +4831,24 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_subscription_any(topic, handler, None);
+        let command = DataCommand::Subscribe(SubscribeCommand::InstrumentStatus(
+            SubscribeInstrumentStatus {
+                instrument_id,
+                client_id,
+                venue: Some(instrument_id.venue),
+                command_id: UUID4::new(),
+                ts_init: self.timestamp_ns(),
+                correlation_id: None,
+                params,
+            },
+        ));
 
-        let command = SubscribeCommand::InstrumentStatus(SubscribeInstrumentStatus {
-            instrument_id,
-            client_id,
-            venue: Some(instrument_id.venue),
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            correlation_id: None,
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::Subscribe(command));
+        if self.add_subscription_any(topic, handler, None, Some(command.clone())) {
+            self.send_data_cmd(command);
+        }
     }
 
-    /// Helper method for registering instrument close subscriptions from the trait.
+    /// Subscribes the actor to instrument close.
     pub fn subscribe_instrument_close(
         &mut self,
         topic: MStr<Topic>,
@@ -4512,22 +4859,24 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_instrument_close_subscription(topic, handler);
+        let command = DataCommand::Subscribe(SubscribeCommand::InstrumentClose(
+            SubscribeInstrumentClose {
+                instrument_id,
+                client_id,
+                venue: Some(instrument_id.venue),
+                command_id: UUID4::new(),
+                ts_init: self.timestamp_ns(),
+                correlation_id: None,
+                params,
+            },
+        ));
 
-        let command = SubscribeCommand::InstrumentClose(SubscribeInstrumentClose {
-            instrument_id,
-            client_id,
-            venue: Some(instrument_id.venue),
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            correlation_id: None,
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::Subscribe(command));
+        if self.add_instrument_close_subscription(topic, handler, command.clone()) {
+            self.send_data_cmd(command);
+        }
     }
 
-    /// Helper method for subscribing to option chain snapshots from the trait.
+    /// Subscribes the actor to option chain snapshots.
     #[expect(
         clippy::too_many_arguments,
         reason = "subscription command mirrors the option chain request fields"
@@ -4544,9 +4893,17 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_option_chain_subscription(topic, handler);
+        let correlation_id = self
+            .option_chain_handlers
+            .get(&topic)
+            .and_then(|subscription| match subscription.command.as_ref() {
+                Some(DataCommand::Subscribe(SubscribeCommand::OptionChain(command))) => {
+                    Some(command.correlation_id.unwrap_or(command.command_id))
+                }
+                _ => None,
+            });
 
-        let command = SubscribeCommand::OptionChain(SubscribeOptionChain::new(
+        let mut subscribe = SubscribeOptionChain::new(
             series_id,
             strike_range,
             snapshot_interval_ms,
@@ -4555,12 +4912,15 @@ impl DataActorCore {
             client_id,
             Some(series_id.venue),
             params,
-        ));
+        );
+        subscribe.correlation_id = correlation_id;
+        let command = DataCommand::Subscribe(SubscribeCommand::OptionChain(subscribe));
 
-        self.send_data_cmd(DataCommand::Subscribe(command));
+        self.set_option_chain_subscription(topic, handler, command.clone());
+        self.send_data_cmd(command);
     }
 
-    /// Helper method for unsubscribing from data.
+    /// Unsubscribes the actor from data.
     pub fn unsubscribe_data(
         &mut self,
         data_type: DataType,
@@ -4570,9 +4930,9 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_custom_topic(&data_type);
-        self.remove_subscription_any(topic);
+        let retained = self.remove_subscription_any(topic);
 
-        if client_id.is_none() {
+        if client_id.is_none() && retained.is_none() {
             return;
         }
 
@@ -4586,10 +4946,10 @@ impl DataActorCore {
             params,
         });
 
-        self.send_data_cmd(DataCommand::Unsubscribe(command));
+        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from signals.
+    /// Unsubscribes the actor from signals.
     ///
     /// # Panics
     ///
@@ -4598,8 +4958,8 @@ impl DataActorCore {
         self.check_registered();
 
         let pattern = get_signal_pattern(name);
-        if let Some(handler) = self.topic_handlers.remove(&pattern) {
-            msgbus::unsubscribe_any(pattern, &handler);
+        if let Some(subscription) = self.topic_handlers.remove(&pattern) {
+            msgbus::unsubscribe_any(pattern, &subscription.handler);
         } else {
             log::warn!(
                 "Actor {} attempted to unsubscribe from signal pattern '{pattern}' when not subscribed",
@@ -4613,11 +4973,11 @@ impl DataActorCore {
     /// # Panics
     ///
     /// Panics if the actor is not registered with a trader.
-    pub fn unsubscribe_queue_state(&mut self) {
+    pub fn unsubscribe_queue_state(&mut self, channel: Option<SystemChannel>) {
         self.check_registered();
 
-        let topic = MessagingSwitchboard::queue_state_changed_topic();
-        self.remove_subscription_any(topic);
+        let topic = MessagingSwitchboard::queue_state_changed_pattern(channel);
+        let _ = self.remove_subscription_any(topic);
     }
 
     /// Unsubscribes from socket state changes.
@@ -4625,14 +4985,18 @@ impl DataActorCore {
     /// # Panics
     ///
     /// Panics if the actor is not registered with a trader.
-    pub fn unsubscribe_socket_state(&mut self) {
+    pub fn unsubscribe_socket_state(
+        &mut self,
+        client_id: Option<ClientId>,
+        endpoint: Option<&str>,
+    ) {
         self.check_registered();
 
-        let topic = MessagingSwitchboard::socket_state_changed_topic();
-        self.remove_subscription_any(topic);
+        let topic = MessagingSwitchboard::socket_state_changed_pattern(client_id, endpoint);
+        let _ = self.remove_subscription_any(topic);
     }
 
-    /// Helper method for unsubscribing from instruments.
+    /// Unsubscribes the actor from instruments.
     pub fn unsubscribe_instruments(
         &mut self,
         venue: Venue,
@@ -4642,7 +5006,7 @@ impl DataActorCore {
         self.check_registered();
 
         let pattern = get_instruments_pattern(venue);
-        self.remove_instrument_subscription(pattern);
+        let retained = self.remove_instrument_subscription(pattern);
 
         let command = UnsubscribeCommand::Instruments(UnsubscribeInstruments {
             client_id,
@@ -4653,10 +5017,10 @@ impl DataActorCore {
             params,
         });
 
-        self.send_data_cmd(DataCommand::Unsubscribe(command));
+        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from instrument.
+    /// Unsubscribes the actor from instrument.
     pub fn unsubscribe_instrument(
         &mut self,
         instrument_id: InstrumentId,
@@ -4666,7 +5030,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_instrument_topic(instrument_id);
-        self.remove_instrument_subscription(topic.into());
+        let retained = self.remove_instrument_subscription(topic.into());
 
         let command = UnsubscribeCommand::Instrument(UnsubscribeInstrument {
             instrument_id,
@@ -4678,10 +5042,10 @@ impl DataActorCore {
             params,
         });
 
-        self.send_data_cmd(DataCommand::Unsubscribe(command));
+        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from book deltas.
+    /// Unsubscribes the actor from book deltas.
     pub fn unsubscribe_book_deltas(
         &mut self,
         instrument_id: InstrumentId,
@@ -4695,7 +5059,7 @@ impl DataActorCore {
         } else {
             get_book_deltas_topic(instrument_id).into()
         };
-        self.remove_deltas_subscription(pattern);
+        let retained = self.remove_deltas_subscription(pattern);
 
         let command = UnsubscribeCommand::BookDeltas(UnsubscribeBookDeltas {
             instrument_id,
@@ -4707,10 +5071,10 @@ impl DataActorCore {
             params,
         });
 
-        self.send_data_cmd(DataCommand::Unsubscribe(command));
+        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from book depth10 snapshots.
+    /// Unsubscribes the actor from book depth10 snapshots.
     pub fn unsubscribe_book_depth10(
         &mut self,
         instrument_id: InstrumentId,
@@ -4724,7 +5088,7 @@ impl DataActorCore {
         } else {
             get_book_depth10_topic(instrument_id).into()
         };
-        self.remove_depth10_subscription(pattern);
+        let retained = self.remove_depth10_subscription(pattern);
 
         let command = UnsubscribeCommand::BookDepth10(UnsubscribeBookDepth10 {
             instrument_id,
@@ -4736,10 +5100,10 @@ impl DataActorCore {
             params,
         });
 
-        self.send_data_cmd(DataCommand::Unsubscribe(command));
+        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from book snapshots at interval.
+    /// Unsubscribes the actor from book snapshots at interval.
     pub fn unsubscribe_book_at_interval(
         &mut self,
         instrument_id: InstrumentId,
@@ -4750,7 +5114,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_book_snapshots_topic(instrument_id, interval_ms);
-        self.remove_book_snapshot_subscription(topic);
+        let retained = self.remove_book_snapshot_subscription(topic);
 
         let command = UnsubscribeCommand::BookSnapshots(UnsubscribeBookSnapshots {
             instrument_id,
@@ -4763,10 +5127,10 @@ impl DataActorCore {
             params,
         });
 
-        self.send_data_cmd(DataCommand::Unsubscribe(command));
+        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from quotes.
+    /// Unsubscribes the actor from quotes.
     pub fn unsubscribe_quotes(
         &mut self,
         instrument_id: InstrumentId,
@@ -4776,7 +5140,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_quotes_topic(instrument_id);
-        self.remove_quote_subscription(topic);
+        let retained = self.remove_quote_subscription(topic);
 
         let command = UnsubscribeCommand::Quotes(UnsubscribeQuotes {
             instrument_id,
@@ -4788,10 +5152,10 @@ impl DataActorCore {
             params,
         });
 
-        self.send_data_cmd(DataCommand::Unsubscribe(command));
+        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from trades.
+    /// Unsubscribes the actor from trades.
     pub fn unsubscribe_trades(
         &mut self,
         instrument_id: InstrumentId,
@@ -4801,7 +5165,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_trades_topic(instrument_id);
-        self.remove_trade_subscription(topic);
+        let retained = self.remove_trade_subscription(topic);
 
         let command = UnsubscribeCommand::Trades(UnsubscribeTrades {
             instrument_id,
@@ -4813,10 +5177,10 @@ impl DataActorCore {
             params,
         });
 
-        self.send_data_cmd(DataCommand::Unsubscribe(command));
+        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from bars.
+    /// Unsubscribes the actor from bars.
     pub fn unsubscribe_bars(
         &mut self,
         bar_type: BarType,
@@ -4827,7 +5191,7 @@ impl DataActorCore {
 
         // Match the standard topic used at subscribe time (see `subscribe_bars`)
         let topic = get_bars_topic(bar_type.standard());
-        self.remove_bar_subscription(topic);
+        let retained = self.remove_bar_subscription(topic);
 
         let command = UnsubscribeCommand::Bars(UnsubscribeBars {
             bar_type,
@@ -4839,10 +5203,10 @@ impl DataActorCore {
             params,
         });
 
-        self.send_data_cmd(DataCommand::Unsubscribe(command));
+        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from mark prices.
+    /// Unsubscribes the actor from mark prices.
     pub fn unsubscribe_mark_prices(
         &mut self,
         instrument_id: InstrumentId,
@@ -4852,7 +5216,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_mark_price_topic(instrument_id);
-        self.remove_mark_price_subscription(topic);
+        let retained = self.remove_mark_price_subscription(topic);
 
         let command = UnsubscribeCommand::MarkPrices(UnsubscribeMarkPrices {
             instrument_id,
@@ -4864,10 +5228,10 @@ impl DataActorCore {
             params,
         });
 
-        self.send_data_cmd(DataCommand::Unsubscribe(command));
+        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from index prices.
+    /// Unsubscribes the actor from index prices.
     pub fn unsubscribe_index_prices(
         &mut self,
         instrument_id: InstrumentId,
@@ -4877,7 +5241,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_index_price_topic(instrument_id);
-        self.remove_index_price_subscription(topic);
+        let retained = self.remove_index_price_subscription(topic);
 
         let command = UnsubscribeCommand::IndexPrices(UnsubscribeIndexPrices {
             instrument_id,
@@ -4889,10 +5253,10 @@ impl DataActorCore {
             params,
         });
 
-        self.send_data_cmd(DataCommand::Unsubscribe(command));
+        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from funding rates.
+    /// Unsubscribes the actor from funding rates.
     pub fn unsubscribe_funding_rates(
         &mut self,
         instrument_id: InstrumentId,
@@ -4902,7 +5266,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_funding_rate_topic(instrument_id);
-        self.remove_funding_rate_subscription(topic);
+        let retained = self.remove_funding_rate_subscription(topic);
 
         let command = UnsubscribeCommand::FundingRates(UnsubscribeFundingRates {
             instrument_id,
@@ -4914,10 +5278,10 @@ impl DataActorCore {
             params,
         });
 
-        self.send_data_cmd(DataCommand::Unsubscribe(command));
+        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from option greeks.
+    /// Unsubscribes the actor from option greeks.
     pub fn unsubscribe_option_greeks(
         &mut self,
         instrument_id: InstrumentId,
@@ -4927,7 +5291,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_option_greeks_topic(instrument_id);
-        self.remove_option_greeks_subscription(topic);
+        let retained = self.remove_option_greeks_subscription(topic);
 
         let command = UnsubscribeCommand::OptionGreeks(UnsubscribeOptionGreeks {
             instrument_id,
@@ -4939,10 +5303,10 @@ impl DataActorCore {
             params,
         });
 
-        self.send_data_cmd(DataCommand::Unsubscribe(command));
+        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from instrument status.
+    /// Unsubscribes the actor from instrument status.
     pub fn unsubscribe_instrument_status(
         &mut self,
         instrument_id: InstrumentId,
@@ -4952,7 +5316,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_instrument_status_topic(instrument_id);
-        self.remove_subscription_any(topic);
+        let retained = self.remove_subscription_any(topic);
 
         let command = UnsubscribeCommand::InstrumentStatus(UnsubscribeInstrumentStatus {
             instrument_id,
@@ -4964,10 +5328,10 @@ impl DataActorCore {
             params,
         });
 
-        self.send_data_cmd(DataCommand::Unsubscribe(command));
+        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from instrument close.
+    /// Unsubscribes the actor from instrument close.
     pub fn unsubscribe_instrument_close(
         &mut self,
         instrument_id: InstrumentId,
@@ -4977,7 +5341,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_instrument_close_topic(instrument_id);
-        self.remove_instrument_close_subscription(topic);
+        let retained = self.remove_instrument_close_subscription(topic);
 
         let command = UnsubscribeCommand::InstrumentClose(UnsubscribeInstrumentClose {
             instrument_id,
@@ -4989,10 +5353,10 @@ impl DataActorCore {
             params,
         });
 
-        self.send_data_cmd(DataCommand::Unsubscribe(command));
+        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from option chain snapshots.
+    /// Unsubscribes the actor from option chain snapshots.
     pub fn unsubscribe_option_chain(
         &mut self,
         series_id: OptionSeriesId,
@@ -5001,7 +5365,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_option_chain_topic(series_id);
-        self.remove_option_chain_subscription(topic);
+        let retained = self.remove_option_chain_subscription(topic);
 
         let command = UnsubscribeCommand::OptionChain(UnsubscribeOptionChain::new(
             series_id,
@@ -5011,10 +5375,10 @@ impl DataActorCore {
             Some(series_id.venue),
         ));
 
-        self.send_data_cmd(DataCommand::Unsubscribe(command));
+        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for requesting data.
+    /// Requests data for the actor.
     ///
     /// # Errors
     ///
@@ -5056,7 +5420,7 @@ impl DataActorCore {
         Ok(request_id)
     }
 
-    /// Helper method for requesting instrument.
+    /// Requests instrument for the actor.
     ///
     /// # Errors
     ///
@@ -5095,7 +5459,7 @@ impl DataActorCore {
         Ok(request_id)
     }
 
-    /// Helper method for requesting instruments.
+    /// Requests instruments for the actor.
     ///
     /// # Errors
     ///
@@ -5134,7 +5498,7 @@ impl DataActorCore {
         Ok(request_id)
     }
 
-    /// Helper method for requesting book snapshot.
+    /// Requests book snapshot for the actor.
     ///
     /// # Errors
     ///
@@ -5168,7 +5532,7 @@ impl DataActorCore {
         Ok(request_id)
     }
 
-    /// Helper method for requesting book deltas.
+    /// Requests book deltas for the actor.
     ///
     /// # Errors
     ///
@@ -5254,7 +5618,7 @@ impl DataActorCore {
         Ok(request_id)
     }
 
-    /// Helper method for requesting quotes.
+    /// Requests quotes for the actor.
     ///
     /// # Errors
     ///
@@ -5296,7 +5660,7 @@ impl DataActorCore {
         Ok(request_id)
     }
 
-    /// Helper method for requesting trades.
+    /// Requests trades for the actor.
     ///
     /// # Errors
     ///
@@ -5338,7 +5702,7 @@ impl DataActorCore {
         Ok(request_id)
     }
 
-    /// Helper method for requesting bars.
+    /// Requests bars for the actor.
     ///
     /// # Errors
     ///
@@ -5386,7 +5750,7 @@ impl DataActorCore {
         Ok(request_id)
     }
 
-    /// Helper method for requesting funding rates.
+    /// Requests funding rates for the actor.
     ///
     /// # Errors
     ///

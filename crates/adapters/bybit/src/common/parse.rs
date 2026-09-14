@@ -24,7 +24,7 @@ pub use nautilus_core::serialization::{
 };
 use serde::{Deserialize, de::Error};
 
-/// Serde helper for Bybit `ON`/`OFF` string fields that represent booleans.
+/// Serde adapter for Bybit `ON`/`OFF` string fields that represent booleans.
 ///
 /// Use as `#[serde(with = "on_off_bool")]`. Unknown values deserialize as an
 /// error rather than silently coercing, so field renames surface rather than
@@ -48,7 +48,7 @@ pub mod on_off_bool {
     }
 }
 
-/// Serde helper that accepts `readOnly` as either a bool or `0`/`1` integer.
+/// Serde adapter that accepts `readOnly` as either a bool or `0`/`1` integer.
 ///
 /// Bybit returns `readOnly` as a bool on `/v5/user/list-sub-apikeys` and as an
 /// integer on `/v5/user/query-api` and the two update endpoints. Deserializing
@@ -143,27 +143,28 @@ pub mod opt_bool_as_int {
     }
 }
 
-/// Serde helper that treats the masked secret literal (`"******"`) and empty
+/// Serde adapter that treats the masked secret literal (`"******"`) and empty
 /// strings as `None`, preserving real values as `Some`.
 ///
 /// Bybit responses never expose a usable secret: `list-sub-apikeys` returns
 /// `"******"`, while the update endpoints return `""`. Surfacing `Option<String>`
 /// keeps callers from accidentally treating the sentinel as a real credential.
 pub mod masked_secret {
+    use nautilus_core::string::secret::SecretString;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-    pub fn serialize<S: Serializer>(value: &Option<String>, s: S) -> Result<S::Ok, S::Error> {
+    pub fn serialize<S: Serializer>(value: &Option<SecretString>, s: S) -> Result<S::Ok, S::Error> {
         match value {
             Some(v) => v.serialize(s),
             None => "".serialize(s),
         }
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<SecretString>, D::Error> {
         let raw = Option::<String>::deserialize(d)?;
         Ok(match raw.as_deref() {
             None | Some("" | "******") => None,
-            Some(_) => raw,
+            Some(_) => raw.map(SecretString::from),
         })
     }
 }
@@ -198,9 +199,9 @@ use crate::{
     common::{
         enums::{
             BybitBboSideType, BybitContractType, BybitKlineInterval, BybitMarginTrading,
-            BybitMarketUnit, BybitOptionType, BybitOrderSide, BybitOrderStatus, BybitOrderType,
-            BybitPositionIdx, BybitPositionMode, BybitPositionSide, BybitProductType,
-            BybitStopOrderType, BybitSymbolType, BybitTimeInForce, BybitTpSlMode,
+            BybitMarketUnit, BybitOptionType, BybitOrderSide, BybitOrderSmpType, BybitOrderStatus,
+            BybitOrderType, BybitPositionIdx, BybitPositionMode, BybitPositionSide,
+            BybitProductType, BybitStopOrderType, BybitSymbolType, BybitTimeInForce, BybitTpSlMode,
             BybitTriggerDirection, BybitTriggerType,
         },
         symbol::BybitSymbol,
@@ -1073,7 +1074,7 @@ pub fn parse_fill_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
     let instrument_id = instrument.id();
-    let venue_order_id = VenueOrderId::new(execution.order_id.as_str());
+    let venue_order_id = VenueOrderId::new(execution.order_id);
     let trade_id = TradeId::new_checked(execution.exec_id.as_str())
         .context("invalid execId in Bybit execution payload")?;
 
@@ -1116,7 +1117,7 @@ pub fn parse_fill_report(
     let client_order_id = if execution.order_link_id.is_empty() {
         None
     } else {
-        Some(ClientOrderId::new(execution.order_link_id.as_str()))
+        Some(ClientOrderId::new(execution.order_link_id))
     };
 
     Ok(FillReport::new(
@@ -1342,7 +1343,7 @@ fn resolve_settlement_currency(
         Ok(quote_currency)
     } else {
         Err(anyhow::anyhow!(
-            "unrecognised settlement currency '{settle_coin}'"
+            "unrecognized settlement currency '{settle_coin}'"
         ))
     }
 }
@@ -1455,7 +1456,7 @@ pub fn parse_order_status_report(
         BybitTimeInForce::Gtc => TimeInForce::Gtc,
         BybitTimeInForce::Ioc => TimeInForce::Ioc,
         BybitTimeInForce::Fok => TimeInForce::Fok,
-        BybitTimeInForce::PostOnly => TimeInForce::Gtc,
+        BybitTimeInForce::PostOnly | BybitTimeInForce::Rpi => TimeInForce::Gtc,
     };
 
     let quantity =
@@ -1522,7 +1523,7 @@ pub fn parse_order_status_report(
     );
 
     if !order.order_link_id.is_empty() {
-        report = report.with_client_order_id(ClientOrderId::new(order.order_link_id.as_str()));
+        report = report.with_client_order_id(ClientOrderId::new(order.order_link_id));
     }
 
     if !order.price.is_empty() && order.price != "0" {
@@ -1563,7 +1564,10 @@ pub fn parse_order_status_report(
         report = report.with_reduce_only(true);
     }
 
-    if order.time_in_force == BybitTimeInForce::PostOnly {
+    if matches!(
+        order.time_in_force,
+        BybitTimeInForce::PostOnly | BybitTimeInForce::Rpi
+    ) {
         report = report.with_post_only(true);
     }
 
@@ -1674,6 +1678,7 @@ pub struct BybitTpSlParams {
     pub is_leverage: bool,
     pub order_iv: Option<String>,
     pub mmp: Option<bool>,
+    pub smp_type: Option<BybitOrderSmpType>,
     pub position_idx: Option<BybitPositionIdx>,
     pub bbo_side_type: Option<BybitBboSideType>,
     pub bbo_level: Option<String>,
@@ -1689,8 +1694,8 @@ impl BybitTpSlParams {
     }
 
     /// Projects the native TP/SL and option fields onto the bundle the HTTP `submit_order` entry
-    /// expects. BBO, `position_idx`, and leverage stay separate because they are already
-    /// first-class arguments on the `submit_order` signature.
+    /// expects. BBO, `position_idx`, `smp_type`, and leverage stay separate because they are
+    /// already first-class arguments on the `submit_order` signature.
     #[must_use]
     pub fn to_native_tp_sl(&self) -> BybitNativeTpSlParams {
         BybitNativeTpSlParams {
@@ -1722,6 +1727,41 @@ pub fn get_price_str(params: &Params, key: &str) -> Option<String> {
     } else {
         value.as_u64().map(|n| n.to_string())
     }
+}
+
+/// Parses a Bybit self-match prevention type from an order parameter or configuration value.
+///
+/// # Errors
+///
+/// Returns an error for any value outside the four types Bybit accepts on an order.
+pub fn parse_smp_type(s: &str) -> anyhow::Result<BybitOrderSmpType> {
+    match s.to_ascii_lowercase().as_str() {
+        "none" => Ok(BybitOrderSmpType::None),
+        "cancelmaker" => Ok(BybitOrderSmpType::CancelMaker),
+        "canceltaker" => Ok(BybitOrderSmpType::CancelTaker),
+        "cancelboth" => Ok(BybitOrderSmpType::CancelBoth),
+        _ => anyhow::bail!(
+            "invalid Bybit smp_type: '{s}', expected None, CancelMaker, CancelTaker or CancelBoth"
+        ),
+    }
+}
+
+/// Deserializes an optional self-match prevention type for a client configuration.
+///
+/// Routes the configured text through [`parse_smp_type`] so a serialized config reports an unknown
+/// value instead of carrying it silently.
+///
+/// # Errors
+///
+/// Returns an error for any value outside the four types Bybit accepts on an order.
+pub fn deserialize_optional_smp_type<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<BybitOrderSmpType>, D::Error> {
+    let Some(value) = Option::<String>::deserialize(d)? else {
+        return Ok(None);
+    };
+
+    parse_smp_type(&value).map(Some).map_err(D::Error::custom)
 }
 
 pub fn parse_bbo_side_type(s: &str) -> anyhow::Result<BybitBboSideType> {
@@ -1863,6 +1903,13 @@ pub fn parse_bybit_tp_sl_params(params: Option<&Params>) -> anyhow::Result<Bybit
             Some(b) => result.mmp = Some(b),
             None => anyhow::bail!("invalid type for 'mmp': {value}, expected bool"),
         }
+    }
+
+    if let Some(value) = params.get("smp_type") {
+        let smp_type = value.as_str().ok_or_else(|| {
+            anyhow::anyhow!("invalid type for 'smp_type': {value}, expected string")
+        })?;
+        result.smp_type = Some(parse_smp_type(smp_type)?);
     }
 
     if let Some(value) = params.get("position_idx") {
@@ -2031,8 +2078,8 @@ mod tests {
                 assert_eq!(pair.id.to_string(), "BTCUSDT-SPOT.BYBIT");
                 assert_eq!(pair.price_increment, Price::from_str("0.1").unwrap());
                 assert_eq!(pair.size_increment, Quantity::from_str("0.0001").unwrap());
-                assert_eq!(pair.base_currency.code.as_str(), "BTC");
-                assert_eq!(pair.quote_currency.code.as_str(), "USDT");
+                assert_eq!(pair.base_currency.code, "BTC");
+                assert_eq!(pair.quote_currency.code, "USDT");
                 assert_eq!(
                     pair.min_notional,
                     Some(Money::from_decimal(Decimal::new(10, 0), Currency::USDT()).unwrap()),
@@ -2225,9 +2272,9 @@ mod tests {
         match parsed {
             InstrumentAny::CryptoOption(option) => {
                 assert_eq!(option.id.to_string(), "ETH-26JUN26-16000-P-OPTION.BYBIT");
-                assert_eq!(option.underlying.code.as_str(), "ETH");
-                assert_eq!(option.quote_currency.code.as_str(), "USDC");
-                assert_eq!(option.settlement_currency.code.as_str(), "USDC");
+                assert_eq!(option.underlying.code, "ETH");
+                assert_eq!(option.quote_currency.code, "USDC");
+                assert_eq!(option.settlement_currency.code, "USDC");
                 assert!(!option.is_inverse);
                 assert_eq!(option.option_kind, OptionKind::Put);
                 assert_eq!(option.price_precision, 1);
@@ -2343,7 +2390,7 @@ mod tests {
 
         // Get the short position (ETHUSDT, side="Sell", size="5.0")
         let short_position = &response.result.list[1];
-        assert_eq!(short_position.symbol.as_str(), "ETHUSDT");
+        assert_eq!(short_position.symbol, "ETHUSDT");
         assert_eq!(short_position.side, BybitPositionSide::Sell);
 
         // Create ETHUSDT instrument for parsing
@@ -2609,6 +2656,48 @@ mod tests {
         let err = parse_bybit_tp_sl_params(Some(&p)).unwrap_err();
 
         assert!(err.to_string().contains("invalid Bybit TP/SL mode"));
+    }
+
+    #[rstest]
+    #[case("None", BybitOrderSmpType::None)]
+    #[case("CancelMaker", BybitOrderSmpType::CancelMaker)]
+    #[case("canceltaker", BybitOrderSmpType::CancelTaker)]
+    #[case("CANCELBOTH", BybitOrderSmpType::CancelBoth)]
+    fn test_parse_tp_sl_params_valid_smp_type(
+        #[case] value: &str,
+        #[case] expected: BybitOrderSmpType,
+    ) {
+        let p = params_from(&[("smp_type", json!(value))]);
+        let result = parse_bybit_tp_sl_params(Some(&p)).unwrap();
+
+        assert_eq!(result.smp_type, Some(expected));
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_smp_type_absent_stays_none() {
+        let p = params_from(&[("mmp", json!(true))]);
+        let result = parse_bybit_tp_sl_params(Some(&p)).unwrap();
+
+        assert_eq!(result.smp_type, None);
+    }
+
+    #[rstest]
+    #[case(json!("Other"), "invalid Bybit smp_type: 'Other'")]
+    #[case(json!("cancel_maker"), "invalid Bybit smp_type: 'cancel_maker'")]
+    #[case(json!(""), "invalid Bybit smp_type: ''")]
+    #[case(json!(1), "invalid type for 'smp_type'")]
+    #[case(json!(true), "invalid type for 'smp_type'")]
+    fn test_parse_tp_sl_params_rejects_invalid_smp_type(
+        #[case] value: serde_json::Value,
+        #[case] expected: &str,
+    ) {
+        let p = params_from(&[("smp_type", value)]);
+        let err = parse_bybit_tp_sl_params(Some(&p)).unwrap_err();
+
+        assert!(
+            err.to_string().contains(expected),
+            "expected '{expected}', was '{err}'"
+        );
     }
 
     #[rstest]
@@ -3089,17 +3178,30 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_http_corporate_action_fill_report() {
+    #[case::corporate_action("CorporateAction", BybitExecType::CorporateAction, true)]
+    #[case::forward_split_settle("ForwardSplitSettle", BybitExecType::ForwardSplitSettle, true)]
+    #[case::reverse_split_settle("ReverseSplitSettle", BybitExecType::ReverseSplitSettle, true)]
+    #[case::dividend("Dividend", BybitExecType::Dividend, true)]
+    #[case::unknown_literal("UNKNOWN", BybitExecType::Unknown, false)]
+    #[case::unrecognized("StockMerger", BybitExecType::Unknown, false)]
+    fn test_parse_http_exec_type_fill_report(
+        #[case] exec_type: &str,
+        #[case] expected: BybitExecType,
+        #[case] exchange_generated: bool,
+    ) {
         let instrument = linear_instrument();
         let json = load_test_json("http_get_executions.json");
         let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
-        value["result"]["list"][0]["execType"] = json!("CorporateAction");
+        value["result"]["list"][0]["execType"] = json!(exec_type);
         let response: BybitTradeHistoryResponse = serde_json::from_value(value).unwrap();
         let execution = &response.result.list[0];
         let account_id = AccountId::new("BYBIT-001");
 
-        assert_eq!(execution.exec_type, BybitExecType::CorporateAction);
-        assert!(execution.exec_type.is_exchange_generated());
+        assert_eq!(execution.exec_type, expected);
+        assert_eq!(
+            execution.exec_type.is_exchange_generated(),
+            exchange_generated
+        );
 
         let report = parse_fill_report(execution, account_id, &instrument, TS).unwrap();
 

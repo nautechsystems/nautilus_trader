@@ -299,7 +299,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_counter_increments_via_handle_helpers(
+    fn test_counter_increments_from_market_data_handlers(
         mut indicator_dema_10: DoubleExponentialMovingAverage,
         stub_quote: QuoteTick,
         stub_trade: TradeTick,

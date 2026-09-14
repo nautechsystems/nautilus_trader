@@ -18,11 +18,12 @@
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use nautilus_core::{
-    UnixNanos, collections::AtomicMap, correctness::check_valid_string_ascii,
+    DurationNanos, UnixNanos, collections::AtomicMap, correctness::check_valid_string_ascii,
     datetime::NANOSECONDS_IN_SECOND, time::AtomicTime,
 };
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, PositionSide, TimeInForce},
+    events::OrderEventAny,
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, TradeId, Venue, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
@@ -54,6 +55,43 @@ use crate::{
         query::{GetOrdersParams, GetTradesParams},
     },
 };
+
+pub(crate) fn venue_leg_filled_before_and_quantity(
+    order: &OrderAny,
+    venue_order_id: VenueOrderId,
+    size_precision: u8,
+) -> anyhow::Result<(Quantity, Quantity)> {
+    let mut filled = Decimal::ZERO;
+
+    for event in order.events() {
+        match event {
+            OrderEventAny::Filled(event) if event.venue_order_id == venue_order_id => {
+                filled += event.last_qty.as_decimal();
+            }
+            OrderEventAny::FillVoided(event) if event.venue_order_id == venue_order_id => {
+                filled -= event.voided_qty.as_decimal();
+            }
+            _ => {}
+        }
+    }
+
+    anyhow::ensure!(filled >= Decimal::ZERO, "venue-leg fills are negative");
+    let current_leg_filled = Quantity::from_decimal_dp(filled, size_precision)
+        .context("venue-leg fills exceed quantity precision")?;
+    anyhow::ensure!(
+        current_leg_filled.as_decimal() == filled,
+        "venue-leg fills cannot be represented exactly"
+    );
+    let filled_before = order
+        .filled_qty()
+        .checked_sub(current_leg_filled)
+        .context("current venue-leg fills exceed cumulative fills")?;
+    let leg_quantity = order
+        .quantity()
+        .checked_sub(filled_before)
+        .context("fills before current venue leg exceed logical quantity")?;
+    Ok((filled_before, leg_quantity))
+}
 
 /// Shared context for trade-to-fill-report conversion.
 pub(crate) struct FillContext<'a> {
@@ -219,7 +257,7 @@ fn validate_instrument_binding(
         .outcome
         .context("Polymarket instrument is missing outcome metadata")?;
     anyhow::ensure!(
-        instrument_outcome.as_str() == outcome.as_str(),
+        instrument_outcome == outcome.as_str(),
         "provider outcome {outcome} does not match instrument outcome {instrument_outcome}",
     );
 
@@ -240,6 +278,7 @@ fn validate_quantity_evidence(
     } else {
         anyhow::ensure!(value > Decimal::ZERO, "{field} {value} must be positive");
     }
+
     let quantity = Quantity::from_decimal_dp(value, precision).with_context(|| {
         format!("failed to represent {field} {value} with quantity precision {precision}")
     })?;
@@ -428,13 +467,13 @@ fn resolve_target_instrument(
 
 pub(super) fn validate_client_bound_order_quantity(
     provider_order: &PolymarketOpenOrder,
-    cached_order: &OrderAny,
+    expected_quantity: Quantity,
 ) -> anyhow::Result<()> {
     anyhow::ensure!(
-        cached_order.quantity().as_decimal() == provider_order.original_size,
+        expected_quantity.as_decimal() == provider_order.original_size,
         "provider order quantity {} does not match cached order quantity {}",
         provider_order.original_size,
-        cached_order.quantity(),
+        expected_quantity,
     );
     Ok(())
 }
@@ -442,6 +481,7 @@ pub(super) fn validate_client_bound_order_quantity(
 fn validate_client_bound_order_row(
     provider_order: &PolymarketOpenOrder,
     cached_order: &OrderAny,
+    expected_quantity: Quantity,
     provider_expire_time: Option<UnixNanos>,
 ) -> anyhow::Result<()> {
     anyhow::ensure!(
@@ -456,7 +496,7 @@ fn validate_client_bound_order_row(
         provider_order.order_type,
         cached_order.time_in_force(),
     );
-    validate_client_bound_order_quantity(provider_order, cached_order)?;
+    validate_client_bound_order_quantity(provider_order, expected_quantity)?;
     let cached_price = cached_order
         .price()
         .context("cached Limit order is missing price")?;
@@ -492,20 +532,23 @@ pub(crate) struct TargetOrderReportScope<'a> {
     venue_order_id: VenueOrderId,
     client_order_id: Option<ClientOrderId>,
     cached_order: Option<&'a OrderAny>,
+    expected_quantity: Option<Quantity>,
 }
 
 impl<'a> TargetOrderReportScope<'a> {
-    pub(crate) const fn new(
+    pub(crate) fn new(
         instrument_id: InstrumentId,
         venue_order_id: VenueOrderId,
         client_order_id: Option<ClientOrderId>,
         cached_order: Option<&'a OrderAny>,
+        expected_quantity: Option<Quantity>,
     ) -> Self {
         Self {
             instrument_id,
             venue_order_id,
             client_order_id,
             cached_order,
+            expected_quantity,
         }
     }
 }
@@ -520,6 +563,7 @@ enum OrderEvidenceScope<'a> {
         venue_order_id: VenueOrderId,
         client_order_id: Option<ClientOrderId>,
         cached_order: Option<&'a OrderAny>,
+        expected_quantity: Option<Quantity>,
     },
 }
 
@@ -642,18 +686,26 @@ fn build_order_report_from_order(
         instrument.price_precision(),
         instrument.size_precision(),
     )?;
-    let (client_order_id, cached_order) = match scope {
-        OrderEvidenceScope::Collection { .. } => (None, None),
+    let (client_order_id, cached_order, expected_quantity) = match scope {
+        OrderEvidenceScope::Collection { .. } => (None, None, None),
         OrderEvidenceScope::Target {
             client_order_id,
             cached_order,
+            expected_quantity,
             ..
-        } => (client_order_id, cached_order),
+        } => (client_order_id, cached_order, expected_quantity),
     };
 
     if let Some(cached_order) = cached_order {
-        validate_client_bound_order_row(order, cached_order, validated.expire_time)?;
+        let expected_quantity = expected_quantity.unwrap_or_else(|| cached_order.quantity());
+        validate_client_bound_order_row(
+            order,
+            cached_order,
+            expected_quantity,
+            validated.expire_time,
+        )?;
     }
+
     let report = parse_validated_order_status_report(
         order,
         OrderReportParseContext {
@@ -667,7 +719,7 @@ fn build_order_report_from_order(
             expire_time: validated.expire_time,
             ts_init,
         },
-    );
+    )?;
     Ok(OrderRowResult {
         report: Some(report),
         counted_filtered: false,
@@ -681,7 +733,22 @@ pub(crate) fn build_target_order_report(
     scope: TargetOrderReportScope<'_>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
-    build_order_report_from_order(
+    let logical_fill_offset = match (scope.cached_order, scope.expected_quantity) {
+        (Some(cached_order), None) => {
+            let (filled_before, leg_quantity) = venue_leg_filled_before_and_quantity(
+                cached_order,
+                scope.venue_order_id,
+                cached_order.quantity().precision,
+            )?;
+            Some((cached_order.quantity(), filled_before, leg_quantity))
+        }
+        _ => None,
+    };
+
+    let expected_quantity = scope
+        .expected_quantity
+        .or_else(|| logical_fill_offset.map(|(_, _, leg_quantity)| leg_quantity));
+    let mut report = build_order_report_from_order(
         order,
         instruments,
         ctx,
@@ -690,12 +757,22 @@ pub(crate) fn build_target_order_report(
             venue_order_id: scope.venue_order_id,
             client_order_id: scope.client_order_id,
             cached_order: scope.cached_order,
+            expected_quantity,
         },
         ts_init,
         None,
     )?
     .report
-    .context("target order evidence was unexpectedly ignored")
+    .context("target order evidence was unexpectedly ignored")?;
+
+    if let Some((logical_quantity, filled_before, _)) = logical_fill_offset {
+        report.quantity = logical_quantity;
+        report.filled_qty = filled_before
+            .checked_add(report.filled_qty)
+            .context("logical filled quantity overflow")?;
+    }
+
+    Ok(report)
 }
 
 #[derive(Clone, Copy)]
@@ -909,7 +986,7 @@ fn build_admitted_target_fill(
             trade_id,
         } => {
             let taker_fee_rate = instrument_taker_fee(&admitted.instrument);
-            let fee_exponent = instrument_fee_exponent(&admitted.instrument);
+            let fee_exponent = instrument_fee_exponent(&admitted.instrument)?;
             parse_validated_fill_report(
                 trade,
                 TakerFillParseContext {
@@ -1061,6 +1138,7 @@ pub(crate) fn build_fill_reports_from_trades(
                 if !mo.is_owned_by(ctx.user_address, ctx.api_key) {
                     continue;
                 }
+
                 let token_id = mo.asset_id;
                 let instrument = match instruments.get_cloned(&token_id) {
                     Some(instrument) => instrument,
@@ -1135,6 +1213,7 @@ pub(crate) fn build_fill_reports_from_trades(
             if !admit_selected_trade(&mut selected_trades, trade)? {
                 continue;
             }
+
             let ts_event = require_trade_timestamp(ts_event, trade)?;
 
             for (mo, instrument, identifiers, last_px) in selected_maker_orders {
@@ -1236,11 +1315,12 @@ pub(crate) fn build_fill_reports_from_trades(
             if !admit_selected_trade(&mut selected_trades, trade)? {
                 continue;
             }
+
             let ts_event = require_trade_timestamp(ts_event, trade)?;
             let price_prec = last_px.precision;
             let size_prec = instrument.size_precision();
             let taker_fee_rate = instrument_taker_fee(&instrument);
-            let fee_exponent = instrument_fee_exponent(&instrument);
+            let fee_exponent = instrument_fee_exponent(&instrument)?;
 
             let report = parse_validated_fill_report(
                 trade,
@@ -1328,7 +1408,7 @@ pub(crate) fn apply_fill_time_filters(
 fn build_position_report_from_reportable_position(
     position: &DataApiPosition,
     account_id: AccountId,
-    ts: UnixNanos,
+    ts_init: UnixNanos,
 ) -> Option<PositionStatusReport> {
     let instrument_id = instrument_id_from_market_token(&position.condition_id, &position.asset);
     let quantity = match Quantity::from_decimal_dp(position.size, USDC_DECIMALS as u8) {
@@ -1348,8 +1428,8 @@ fn build_position_report_from_reportable_position(
         instrument_id,
         PositionSide::Long,
         quantity,
-        ts,
-        ts,
+        ts_init,
+        ts_init,
         None,
         None,
         position.avg_price,
@@ -1359,7 +1439,7 @@ fn build_position_report_from_reportable_position(
 pub(crate) fn build_reconciliation_position_reports(
     positions: &[DataApiPosition],
     account_id: AccountId,
-    ts: UnixNanos,
+    ts_init: UnixNanos,
     instruments: &AtomicMap<Ustr, InstrumentAny>,
     instrument_filter: Option<InstrumentId>,
     load_ids: Option<&[InstrumentId]>,
@@ -1371,7 +1451,7 @@ pub(crate) fn build_reconciliation_position_reports(
         if let Some(report) = build_reconciliation_position_report(
             position,
             account_id,
-            ts,
+            ts_init,
             instruments,
             instrument_filter,
             collection_load_ids,
@@ -1386,7 +1466,7 @@ pub(crate) fn build_reconciliation_position_reports(
 fn build_reconciliation_position_report(
     position: &DataApiPosition,
     account_id: AccountId,
-    ts: UnixNanos,
+    ts_init: UnixNanos,
     instruments: &AtomicMap<Ustr, InstrumentAny>,
     instrument_filter: Option<InstrumentId>,
     collection_load_ids: Option<&[InstrumentId]>,
@@ -1418,7 +1498,7 @@ fn build_reconciliation_position_report(
     }
 
     Ok(build_position_report_from_reportable_position(
-        position, account_id, ts,
+        position, account_id, ts_init,
     ))
 }
 
@@ -1436,14 +1516,10 @@ pub(crate) async fn generate_mass_status(
     load_ids: Option<&[InstrumentId]>,
 ) -> anyhow::Result<Option<ExecutionMassStatus>> {
     let ts_init = ctx.clock.get_time_ns();
-    let lookback_start = lookback_mins.map(|mins| {
-        UnixNanos::from(
-            ts_init.as_u64().saturating_sub(
-                mins.saturating_mul(60)
-                    .saturating_mul(NANOSECONDS_IN_SECOND),
-            ),
-        )
-    });
+    let lookback_start = lookback_mins
+        .map(DurationNanos::try_from_mins)
+        .transpose()?
+        .map(|lookback| ts_init.saturating_sub(lookback));
 
     let orders = http_client
         .get_orders(GetOrdersParams::default())
@@ -1548,8 +1624,8 @@ pub(crate) fn trades_params_for_window(
     }
 }
 
-fn unix_secs(ts: UnixNanos) -> u64 {
-    ts.as_u64() / NANOSECONDS_IN_SECOND
+fn unix_secs(timestamp: UnixNanos) -> u64 {
+    timestamp.as_u64() / NANOSECONDS_IN_SECOND
 }
 
 fn instrument_id_from_market_token(market: &str, token_id: &str) -> InstrumentId {
@@ -1576,6 +1652,7 @@ fn polymarket_instrument_ids_equivalent(left: InstrumentId, right: InstrumentId)
     if left.venue != right.venue {
         return false;
     }
+
     let Some((left_condition, left_token)) = left.symbol.as_str().rsplit_once('-') else {
         return false;
     };
@@ -1765,6 +1842,9 @@ mod tests {
             token_id: Ustr::from(TEST_TOKEN_ID),
             condition_id: Ustr::from(TEST_CONDITION_ID),
             market_id: "test-market".to_string(),
+            event_id: None,
+            gamma_market: String::new(),
+            gamma_event: None,
             question_id: None,
             outcome: crate::common::enums::PolymarketOutcome::yes(),
             question: "Test market?".to_string(),
@@ -1822,6 +1902,35 @@ mod tests {
             "../../test_data/data_api_positions_response.json"
         ))
         .expect("valid Data API position fixture")
+    }
+
+    #[rstest]
+    fn test_position_report_preserves_decimal_ingress() {
+        let position: DataApiPosition = serde_json::from_str(include_str!(
+            "../../test_data/decimal_precision_position.json"
+        ))
+        .unwrap();
+        let ts = UnixNanos::from(123_456_789u64);
+        let account_id = AccountId::from("POLYMARKET-001");
+        let report =
+            build_position_report_from_reportable_position(&position, account_id, ts).unwrap();
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(
+            report.instrument_id,
+            instrument_id_from_market_token("0xprecision", "precision-asset")
+        );
+        assert_eq!(report.position_side, PositionSide::Long);
+        assert_eq!(
+            report.quantity.as_decimal(),
+            Decimal::from_str_exact("12345678901.123456").unwrap()
+        );
+        assert_eq!(report.quantity.precision, USDC_DECIMALS as u8);
+        assert_eq!(
+            report.avg_px_open,
+            Some(Decimal::from_str_exact("0.1234567890123456789012345678").unwrap())
+        );
+        assert_eq!(report.ts_last, ts);
+        assert_eq!(report.ts_init, ts);
     }
 
     #[rstest]

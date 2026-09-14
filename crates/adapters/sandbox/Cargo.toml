@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-sandbox"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -91,8 +90,3 @@ name = "databento-cme-sandbox"
 path = "examples/databento_cme.rs"
 required-features = ["example-databento"]
 doc = false
-
-[[test]]
-name = "python"
-path = "tests/python.rs"
-required-features = ["python"]

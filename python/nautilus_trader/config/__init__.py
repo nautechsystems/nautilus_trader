@@ -43,6 +43,8 @@ from nautilus_trader.live import LiveRiskEngineConfig
 from nautilus_trader.live import PluginConfig
 from nautilus_trader.live import QueueMonitorConfig
 from nautilus_trader.live import RoutingConfig
+from nautilus_trader.live.config import ImportableConfig
+from nautilus_trader.live.config import ImportableFactoryConfig
 from nautilus_trader.persistence import DataCatalogConfig
 from nautilus_trader.persistence import StreamingConfig
 from nautilus_trader.portfolio import PortfolioConfig
@@ -69,8 +71,10 @@ __all__ = [
     "ExecutionEngineConfig",
     "FileWriterConfig",
     "ImportableActorConfig",
+    "ImportableConfig",
     "ImportableControllerConfig",
     "ImportableExecutionAlgorithmConfig",
+    "ImportableFactoryConfig",
     "ImportableStrategyConfig",
     "InstrumentProviderConfig",
     "LiveDataEngineConfig",

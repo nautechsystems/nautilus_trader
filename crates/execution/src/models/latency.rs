@@ -18,7 +18,7 @@ use std::{
     rc::Rc,
 };
 
-use nautilus_core::UnixNanos;
+use nautilus_core::DurationNanos;
 
 /// Trait for latency models used in backtesting.
 ///
@@ -26,16 +26,16 @@ use nautilus_core::UnixNanos;
 /// Implementations can provide static or dynamic (jittered) latency values.
 pub trait LatencyModel: Debug {
     /// Returns the latency for order insertion operations.
-    fn get_insert_latency(&self) -> UnixNanos;
+    fn get_insert_latency(&self) -> DurationNanos;
 
     /// Returns the latency for order update/modify operations.
-    fn get_update_latency(&self) -> UnixNanos;
+    fn get_update_latency(&self) -> DurationNanos;
 
     /// Returns the latency for order delete/cancel operations.
-    fn get_delete_latency(&self) -> UnixNanos;
+    fn get_delete_latency(&self) -> DurationNanos;
 
     /// Returns the base latency component.
-    fn get_base_latency(&self) -> UnixNanos;
+    fn get_base_latency(&self) -> DurationNanos;
 }
 
 /// Shared runtime handle for a latency model.
@@ -68,19 +68,19 @@ impl Debug for LatencyModelHandle {
 }
 
 impl LatencyModel for LatencyModelHandle {
-    fn get_insert_latency(&self) -> UnixNanos {
+    fn get_insert_latency(&self) -> DurationNanos {
         self.0.get_insert_latency()
     }
 
-    fn get_update_latency(&self) -> UnixNanos {
+    fn get_update_latency(&self) -> DurationNanos {
         self.0.get_update_latency()
     }
 
-    fn get_delete_latency(&self) -> UnixNanos {
+    fn get_delete_latency(&self) -> DurationNanos {
         self.0.get_delete_latency()
     }
 
-    fn get_base_latency(&self) -> UnixNanos {
+    fn get_base_latency(&self) -> DurationNanos {
         self.0.get_base_latency()
     }
 }
@@ -91,25 +91,25 @@ pub enum LatencyModelAny {
 }
 
 impl LatencyModel for LatencyModelAny {
-    fn get_insert_latency(&self) -> UnixNanos {
+    fn get_insert_latency(&self) -> DurationNanos {
         match self {
             Self::Static(model) => model.get_insert_latency(),
         }
     }
 
-    fn get_update_latency(&self) -> UnixNanos {
+    fn get_update_latency(&self) -> DurationNanos {
         match self {
             Self::Static(model) => model.get_update_latency(),
         }
     }
 
-    fn get_delete_latency(&self) -> UnixNanos {
+    fn get_delete_latency(&self) -> DurationNanos {
         match self {
             Self::Static(model) => model.get_delete_latency(),
         }
     }
 
-    fn get_base_latency(&self) -> UnixNanos {
+    fn get_base_latency(&self) -> DurationNanos {
         match self {
             Self::Static(model) => model.get_base_latency(),
         }
@@ -144,10 +144,10 @@ impl From<LatencyModelAny> for LatencyModelHandle {
     reason = "latency_nanos suffix consistently identifies latency types"
 )]
 pub struct StaticLatencyModel {
-    base_latency_nanos: UnixNanos,
-    insert_latency_nanos: UnixNanos,
-    update_latency_nanos: UnixNanos,
-    delete_latency_nanos: UnixNanos,
+    base_latency_nanos: DurationNanos,
+    insert_latency_nanos: DurationNanos,
+    update_latency_nanos: DurationNanos,
+    delete_latency_nanos: DurationNanos,
 }
 
 impl StaticLatencyModel {
@@ -163,40 +163,34 @@ impl StaticLatencyModel {
     /// * `delete_latency_nanos` - Additional latency for order cancellation
     #[must_use]
     pub fn new(
-        base_latency_nanos: UnixNanos,
-        insert_latency_nanos: UnixNanos,
-        update_latency_nanos: UnixNanos,
-        delete_latency_nanos: UnixNanos,
+        base_latency_nanos: DurationNanos,
+        insert_latency_nanos: DurationNanos,
+        update_latency_nanos: DurationNanos,
+        delete_latency_nanos: DurationNanos,
     ) -> Self {
         Self {
             base_latency_nanos,
-            insert_latency_nanos: UnixNanos::from(
-                base_latency_nanos.as_u64() + insert_latency_nanos.as_u64(),
-            ),
-            update_latency_nanos: UnixNanos::from(
-                base_latency_nanos.as_u64() + update_latency_nanos.as_u64(),
-            ),
-            delete_latency_nanos: UnixNanos::from(
-                base_latency_nanos.as_u64() + delete_latency_nanos.as_u64(),
-            ),
+            insert_latency_nanos: base_latency_nanos + insert_latency_nanos,
+            update_latency_nanos: base_latency_nanos + update_latency_nanos,
+            delete_latency_nanos: base_latency_nanos + delete_latency_nanos,
         }
     }
 }
 
 impl LatencyModel for StaticLatencyModel {
-    fn get_insert_latency(&self) -> UnixNanos {
+    fn get_insert_latency(&self) -> DurationNanos {
         self.insert_latency_nanos
     }
 
-    fn get_update_latency(&self) -> UnixNanos {
+    fn get_update_latency(&self) -> DurationNanos {
         self.update_latency_nanos
     }
 
-    fn get_delete_latency(&self) -> UnixNanos {
+    fn get_delete_latency(&self) -> DurationNanos {
         self.delete_latency_nanos
     }
 
-    fn get_base_latency(&self) -> UnixNanos {
+    fn get_base_latency(&self) -> DurationNanos {
         self.base_latency_nanos
     }
 }
@@ -217,20 +211,20 @@ mod tests {
     struct CustomLatencyModel;
 
     impl LatencyModel for CustomLatencyModel {
-        fn get_insert_latency(&self) -> UnixNanos {
-            UnixNanos::from(11)
+        fn get_insert_latency(&self) -> DurationNanos {
+            DurationNanos::new(11)
         }
 
-        fn get_update_latency(&self) -> UnixNanos {
-            UnixNanos::from(22)
+        fn get_update_latency(&self) -> DurationNanos {
+            DurationNanos::new(22)
         }
 
-        fn get_delete_latency(&self) -> UnixNanos {
-            UnixNanos::from(33)
+        fn get_delete_latency(&self) -> DurationNanos {
+            DurationNanos::new(33)
         }
 
-        fn get_base_latency(&self) -> UnixNanos {
-            UnixNanos::from(44)
+        fn get_base_latency(&self) -> DurationNanos {
+            DurationNanos::new(44)
         }
     }
 
@@ -241,35 +235,35 @@ mod tests {
         let cloned_handle = handle.clone();
         drop(handle);
 
-        assert_eq!(cloned_handle.get_insert_latency(), UnixNanos::from(11));
-        assert_eq!(cloned_handle.get_update_latency(), UnixNanos::from(22));
-        assert_eq!(cloned_handle.get_delete_latency(), UnixNanos::from(33));
-        assert_eq!(cloned_handle.get_base_latency(), UnixNanos::from(44));
+        assert_eq!(cloned_handle.get_insert_latency(), DurationNanos::new(11));
+        assert_eq!(cloned_handle.get_update_latency(), DurationNanos::new(22));
+        assert_eq!(cloned_handle.get_delete_latency(), DurationNanos::new(33));
+        assert_eq!(cloned_handle.get_base_latency(), DurationNanos::new(44));
     }
 
     #[rstest]
     fn test_latency_model_handle_from_any_preserves_model() {
         let model = StaticLatencyModel::new(
-            UnixNanos::from(1),
-            UnixNanos::from(10),
-            UnixNanos::from(20),
-            UnixNanos::from(30),
+            DurationNanos::new(1),
+            DurationNanos::new(10),
+            DurationNanos::new(20),
+            DurationNanos::new(30),
         );
         let handle: LatencyModelHandle = LatencyModelAny::Static(model).into();
 
-        assert_eq!(handle.get_insert_latency(), UnixNanos::from(11));
-        assert_eq!(handle.get_update_latency(), UnixNanos::from(21));
-        assert_eq!(handle.get_delete_latency(), UnixNanos::from(31));
-        assert_eq!(handle.get_base_latency(), UnixNanos::from(1));
+        assert_eq!(handle.get_insert_latency(), DurationNanos::new(11));
+        assert_eq!(handle.get_update_latency(), DurationNanos::new(21));
+        assert_eq!(handle.get_delete_latency(), DurationNanos::new(31));
+        assert_eq!(handle.get_base_latency(), DurationNanos::new(1));
     }
 
     #[rstest]
     fn test_static_latency_model() {
         let model = StaticLatencyModel::new(
-            UnixNanos::from(1_000_000),
-            UnixNanos::from(2_000_000),
-            UnixNanos::from(3_000_000),
-            UnixNanos::from(4_000_000),
+            DurationNanos::from_millis(1),
+            DurationNanos::from_millis(2),
+            DurationNanos::from_millis(3),
+            DurationNanos::from_millis(4),
         );
 
         // Base is added to each operation latency

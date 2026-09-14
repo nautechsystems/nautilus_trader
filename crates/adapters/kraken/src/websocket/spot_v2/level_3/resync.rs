@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Retry helper for Kraken Spot `level3` checksum-driven resync.
+//! Retry policy for Kraken Spot `level3` checksum-driven resync.
 
 use ustr::Ustr;
 

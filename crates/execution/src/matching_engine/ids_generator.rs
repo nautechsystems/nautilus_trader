@@ -144,7 +144,7 @@ impl IdsGenerator {
     ///
     /// # Panics
     ///
-    /// Panics if `generate` is `Some(true)` but no cached position ID is available.
+    /// Panics in hedging mode if `generate` is `Some(false)` and no cached position ID is available.
     pub fn get_position_id(
         &mut self,
         order: &OrderAny,
@@ -297,7 +297,7 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use nautilus_common::cache::{Cache, VenueOrderIdOwnershipError};
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{DurationNanos, UnixNanos};
     use nautilus_model::{
         enums::{OmsType, OrderSide, OrderType},
         events::{OrderFilled, order::spec::OrderFilledSpec},
@@ -655,7 +655,7 @@ mod tests {
 
         let first = generator.generate_trade_id(ts);
         generator.reset();
-        let second = generator.generate_trade_id(ts + UnixNanos::from(1));
+        let second = generator.generate_trade_id(ts + DurationNanos::new(1));
         assert_ne!(
             first, second,
             "distinct ts_init must produce distinct ids across a reset"

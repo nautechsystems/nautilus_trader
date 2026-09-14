@@ -32,6 +32,7 @@ use nautilus_core::{
     AtomicMap,
     consts::NAUTILUS_USER_AGENT,
     nanos::UnixNanos,
+    string::secret::SecretString,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -145,7 +146,7 @@ pub struct AxOrdersWebSocketClient {
     account_id: AccountId,
     trader_id: TraderId,
     transport_backend: TransportBackend,
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
     socket_control: Option<SocketControl>,
 }
 
@@ -231,7 +232,7 @@ impl AxOrdersWebSocketClient {
             account_id,
             trader_id,
             transport_backend,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             socket_control: None,
         }
     }
@@ -474,7 +475,10 @@ impl AxOrdersWebSocketClient {
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|url| url.expose_secret().to_owned()),
         };
 
         let client = WebSocketClient::builder()

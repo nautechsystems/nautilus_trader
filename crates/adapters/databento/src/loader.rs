@@ -525,7 +525,7 @@ impl DatabentoDataLoader {
         self.read_records::<dbn::Mbp10Msg>(filepath, instrument_id, price_precision, false, None)?
             .filter_map(|result| match result {
                 Ok((Some(item1), _)) => {
-                    if let Data::Depth10(depth) = item1 {
+                    if let Data::BookDepth10(depth) = item1 {
                         Some(Ok(*depth))
                     } else {
                         None

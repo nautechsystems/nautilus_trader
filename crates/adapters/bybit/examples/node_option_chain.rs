@@ -20,8 +20,7 @@
 //! 2. Finds the nearest expiry
 //! 3. Builds an `OptionSeriesId` for that expiry
 //! 4. Subscribes to an option chain with `STRIKES_ABOVE` strikes above and `STRIKES_BELOW` below ATM
-//! 5. Uses `ForwardPrice` (auto-resolved default) - the exchange-provided forward
-//!    price embedded in every option ticker update, eliminating spot-forward basis error
+//! 5. Uses the exchange-provided option reference price as the ATM source
 //! 6. Logs received `OptionChainSlice` snapshots in the `on_option_chain` handler
 //!
 //! Edit the constants below to change the underlying, strike range, snapshot interval, and node name.
@@ -132,7 +131,7 @@ impl DataActor for OptionChainTester {
         // Prefer USDT-settled (Bybit BTC options default); fall back to any available settlement
         let settlement_currency = options
             .iter()
-            .find(|(_, _, settlement, exp)| *exp == nearest_expiry && settlement.as_str() == "USDT")
+            .find(|(_, _, settlement, exp)| *exp == nearest_expiry && settlement == "USDT")
             .map_or_else(
                 || {
                     options

@@ -13,6 +13,6 @@ fi
 
 profile="${CARGO_CI_PROFILE:-nextest}"
 
-cargo clippy -p nautilus-network --lib --tests \
+cargo clippy --locked -p nautilus-network --lib --tests \
   --features "python,turmoil" \
   --profile "$profile" -- -D warnings

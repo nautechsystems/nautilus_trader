@@ -22,16 +22,27 @@
 //!   [`DecodeDataFromRecordBatch`] for Parquet-backed custom data decoded at runtime by type name.
 //!   Types must be registered via [`ensure_custom_data_registered::<T>()`] before use.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
-use arrow::record_batch::RecordBatch;
+use arrow::{
+    array::ArrayRef,
+    datatypes::{DataType as ArrowDataType, Field, Schema},
+    record_batch::RecordBatch,
+};
 use nautilus_model::data::{
     ArrowDecoder, ArrowEncoder, CustomData, CustomDataTrait, Data, DataType,
     decode_custom_from_arrow, ensure_arrow_registered, ensure_custom_data_json_registered,
     get_arrow_schema,
 };
 
-use super::{ArrowSchemaProvider, DecodeDataFromRecordBatch, EncodeToRecordBatch};
+use super::{
+    ArrowSchemaProvider, DecodeDataFromRecordBatch, EncodeToRecordBatch, EncodingError,
+    extract_column_string,
+};
+
+const KEY_TYPE_NAME: &str = "type_name";
+const COLUMN_DATA_TYPE: &str = "data_type";
+const FIELD_CUSTOM_DATA: &str = "custom_data";
 
 /// Trait for custom data types that support Arrow schema and record batch encoding.
 /// Used as a type bound by the `#[custom_data]` macro; catalog encoding goes through
@@ -44,7 +55,7 @@ pub trait CustomDataSerialize: CustomDataTrait {
     ///
     /// # Errors
     /// Returns an error if schema construction fails.
-    fn schema(&self) -> anyhow::Result<arrow::datatypes::Schema>;
+    fn schema(&self) -> anyhow::Result<Schema>;
 
     /// Encodes a batch of custom data items to an Arrow RecordBatch.
     ///
@@ -122,37 +133,80 @@ where
 pub struct CustomDataDecoder;
 
 impl ArrowSchemaProvider for CustomDataDecoder {
-    fn get_schema(
-        metadata: Option<std::collections::HashMap<String, String>>,
-    ) -> arrow::datatypes::Schema {
+    fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
         if let Some(metadata) = metadata
-            && let Some(type_name) = metadata.get("type_name")
+            && let Some(type_name) = metadata.get(KEY_TYPE_NAME)
             && let Some(schema) = get_arrow_schema(type_name)
         {
             return (*schema).clone();
         }
 
         // Unknown type - return minimal schema (caller should not use this for decode)
-        arrow::datatypes::Schema::new(vec![arrow::datatypes::Field::new(
-            "dummy",
-            arrow::datatypes::DataType::Int64,
-            true,
-        )])
+        Schema::new(vec![Field::new("dummy", ArrowDataType::Int64, true)])
     }
 }
 
-/// Strips the data_type column from a record batch and returns the parsed DataType.
-/// Returns (batch, None) if there is no data_type column.
+impl DecodeDataFromRecordBatch for CustomDataDecoder {
+    fn decode_data_batch(
+        metadata: &HashMap<String, String>,
+        record_batch: RecordBatch,
+    ) -> Result<Vec<Data>, EncodingError> {
+        let type_name = metadata
+            .get(KEY_TYPE_NAME)
+            .cloned()
+            .unwrap_or_else(|| "Unknown".to_string());
+
+        let (batch, restored_data_type) = strip_data_type_column(&record_batch)?;
+
+        if batch.num_rows() == 0 {
+            return Ok(Vec::new());
+        }
+
+        let data = match decode_custom_from_arrow(&type_name, metadata, batch) {
+            Ok(Some(data)) => data,
+            Ok(None) => {
+                return Err(EncodingError::ParseError(
+                    FIELD_CUSTOM_DATA,
+                    format!(
+                        "unknown custom data type '{type_name}'; only Rust-registered types are supported"
+                    ),
+                ));
+            }
+            Err(e) => {
+                return Err(EncodingError::ParseError(
+                    FIELD_CUSTOM_DATA,
+                    format!("decode_custom_from_arrow: {e}"),
+                ));
+            }
+        };
+
+        let Some(data_type) = restored_data_type else {
+            return Ok(data);
+        };
+
+        Ok(data
+            .into_iter()
+            .map(|item| match item {
+                Data::Custom(custom) => {
+                    Data::Custom(CustomData::new(Arc::clone(&custom.data), data_type.clone()))
+                }
+                other => other,
+            })
+            .collect())
+    }
+}
+
+// Splits the `data_type` column off a batch so the registered decoder sees the schema it
+// registered. Returns the batch unchanged with `None` when the column is absent or the batch
+// is empty.
 fn strip_data_type_column(
     batch: &RecordBatch,
-) -> Result<(RecordBatch, Option<DataType>), super::EncodingError> {
-    use super::extract_column_string;
-
-    let Some(data_type_col_idx) = batch
+) -> Result<(RecordBatch, Option<DataType>), EncodingError> {
+    let Some(column_index) = batch
         .schema()
         .fields()
         .iter()
-        .position(|f| f.name() == "data_type")
+        .position(|field| field.name() == COLUMN_DATA_TYPE)
     else {
         return Ok((batch.clone(), None));
     };
@@ -161,91 +215,73 @@ fn strip_data_type_column(
         return Ok((batch.clone(), None));
     }
 
-    let cols = batch.columns();
-    let data_type = if cols[data_type_col_idx].is_null(0) {
+    let columns = batch.columns();
+    let data_type = if columns[column_index].is_null(0) {
         None
     } else {
-        let string_col =
-            extract_column_string(cols, "data_type", data_type_col_idx).map_err(|e| {
-                super::EncodingError::ParseError("custom_data", format!("data_type column: {e}"))
+        let values =
+            extract_column_string(columns, COLUMN_DATA_TYPE, column_index).map_err(|e| {
+                EncodingError::ParseError(FIELD_CUSTOM_DATA, format!("data_type column: {e}"))
             })?;
-        let first_value = string_col.value(0);
+
         Some(
-            DataType::from_persistence_json(first_value)
-                .map_err(|e| super::EncodingError::ParseError("custom_data", e.to_string()))?,
+            DataType::from_persistence_json(values.value(0))
+                .map_err(|e| EncodingError::ParseError(FIELD_CUSTOM_DATA, e.to_string()))?,
         )
     };
 
-    let new_fields: Vec<_> = batch
-        .schema()
+    let schema = batch.schema();
+    let fields: Vec<_> = schema
         .fields()
         .iter()
         .enumerate()
-        .filter(|(i, _)| *i != data_type_col_idx)
-        .map(|(_, f)| f.clone())
+        .filter(|(index, _)| *index != column_index)
+        .map(|(_, field)| field.clone())
         .collect();
-    let new_columns: Vec<Arc<dyn arrow::array::Array>> = batch
-        .columns()
+    let columns: Vec<ArrayRef> = columns
         .iter()
         .enumerate()
-        .filter(|(i, _)| *i != data_type_col_idx)
-        .map(|(_, c)| Arc::clone(c))
+        .filter(|(index, _)| *index != column_index)
+        .map(|(_, column)| Arc::clone(column))
         .collect();
-    let new_schema =
-        arrow::datatypes::Schema::new_with_metadata(new_fields, batch.schema().metadata().clone());
-    let stripped_batch = RecordBatch::try_new(Arc::new(new_schema), new_columns)
-        .map_err(|e| super::EncodingError::ParseError("custom_data", e.to_string()))?;
+    let stripped = Schema::new_with_metadata(fields, schema.metadata().clone());
 
-    Ok((stripped_batch, data_type))
+    RecordBatch::try_new(Arc::new(stripped), columns)
+        .map(|batch| (batch, data_type))
+        .map_err(|e| EncodingError::ParseError(FIELD_CUSTOM_DATA, e.to_string()))
 }
 
-impl DecodeDataFromRecordBatch for CustomDataDecoder {
-    fn decode_data_batch(
-        metadata: &std::collections::HashMap<String, String>,
-        record_batch: RecordBatch,
-    ) -> Result<Vec<Data>, super::EncodingError> {
-        let type_name = metadata
-            .get("type_name")
-            .cloned()
-            .unwrap_or_else(|| "Unknown".to_string());
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
 
-        let (batch_to_decode, restored_data_type) = strip_data_type_column(&record_batch)?;
+    use arrow::{
+        array::{ArrayRef, Int64Array},
+        datatypes::{DataType as ArrowDataType, Field, Schema},
+    };
+    use rstest::rstest;
 
-        if batch_to_decode.num_rows() == 0 {
-            return Ok(Vec::new());
-        }
+    use super::*;
+    use crate::arrow::EncodingError;
 
-        let data = match decode_custom_from_arrow(&type_name, metadata, batch_to_decode) {
-            Ok(Some(d)) => d,
-            Ok(None) => {
-                return Err(super::EncodingError::ParseError(
-                    "custom_data",
-                    format!(
-                        "unknown custom data type '{type_name}'; only Rust-registered types are supported"
-                    ),
-                ));
-            }
-            Err(e) => {
-                return Err(super::EncodingError::ParseError(
-                    "custom_data",
-                    format!("decode_custom_from_arrow: {e}"),
-                ));
-            }
+    #[rstest]
+    fn test_decode_data_batch_rejects_unregistered_type() {
+        let type_name = "UnregisteredCustomDataForArrowTest";
+        let metadata = HashMap::from([("type_name".to_string(), type_name.to_string())]);
+        let schema = Schema::new(vec![Field::new("value", ArrowDataType::Int64, false)]);
+        let columns: Vec<ArrayRef> = vec![Arc::new(Int64Array::from(vec![7]))];
+        let batch = RecordBatch::try_new(Arc::new(schema), columns).unwrap();
+
+        let error = CustomDataDecoder::decode_data_batch(&metadata, batch)
+            .expect_err("unregistered type must be rejected");
+
+        let EncodingError::ParseError(field, message) = error else {
+            panic!("unexpected error variant: {error:?}");
         };
-
-        if let Some(dt) = restored_data_type {
-            Ok(data
-                .into_iter()
-                .map(|d| {
-                    if let Data::Custom(c) = d {
-                        Data::Custom(CustomData::new(Arc::clone(&c.data), dt.clone()))
-                    } else {
-                        d
-                    }
-                })
-                .collect())
-        } else {
-            Ok(data)
-        }
+        assert_eq!(field, "custom_data");
+        assert_eq!(
+            message,
+            "unknown custom data type 'UnregisteredCustomDataForArrowTest'; only Rust-registered types are supported"
+        );
     }
 }

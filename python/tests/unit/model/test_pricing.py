@@ -21,7 +21,6 @@ import re
 import pytest
 
 from nautilus_trader.model import BlackScholesGreeksResult
-from nautilus_trader.model import ForwardPrice
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import OptionChainSlice
 from nautilus_trader.model import OptionGreeks
@@ -36,25 +35,6 @@ from nautilus_trader.model import black_scholes_greeks
 from nautilus_trader.model import imply_vol
 from nautilus_trader.model import imply_vol_and_greeks
 from nautilus_trader.model import refine_vol_and_greeks
-
-
-def test_forward_price_properties() -> None:
-    """
-    Test forward price properties.
-    """
-    value = ForwardPrice(
-        instrument_id=InstrumentId.from_str("BTCUSDT.BINANCE"),
-        forward_price="50123.4",
-        underlying_index="BTCUSD",
-        ts_event=7,
-        ts_init=8,
-    )
-
-    assert value.instrument_id == InstrumentId.from_str("BTCUSDT.BINANCE")
-    assert value.forward_price == "50123.4"
-    assert value.underlying_index == "BTCUSD"
-    assert value.ts_event == 7
-    assert value.ts_init == 8
 
 
 def test_option_series_id_from_expiry_and_from_str() -> None:

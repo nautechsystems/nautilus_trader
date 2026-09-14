@@ -13,4 +13,4 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Placeholder module for OKX HTTP parsing helpers.
+//! Placeholder module for OKX HTTP parsers.

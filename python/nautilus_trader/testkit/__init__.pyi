@@ -125,7 +125,7 @@ class ExecTesterConfig:
         order_id_tag: str | None = None,
         use_hyphens_in_client_order_ids: bool | None = None,
         use_uuid_client_order_ids: bool | None = None,
-        external_order_claims: typing.Sequence[model.InstrumentId] | None = None,
+        external_order_instrument_ids: typing.Sequence[model.InstrumentId] | None = None,
         instrument_id: model.InstrumentId | None = None,
         client_id: model.ClientId | None = None,
         order_qty: model.Quantity | None = None,
@@ -194,7 +194,7 @@ class ExecTesterConfig:
     @property
     def use_uuid_client_order_ids(self) -> bool: ...
     @property
-    def external_order_claims(self) -> list[model.InstrumentId] | None: ...
+    def external_order_instrument_ids(self) -> list[model.InstrumentId] | None: ...
     @property
     def instrument_id(self) -> model.InstrumentId: ...
     @property

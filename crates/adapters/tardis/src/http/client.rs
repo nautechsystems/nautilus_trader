@@ -17,7 +17,7 @@ use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use ahash::{AHashMap, AHashSet};
 use nautilus_core::{
-    UnixNanos,
+    DurationNanos, UnixNanos,
     consts::NAUTILUS_USER_AGENT,
     string::{parsing::precision_from_str, secret::REDACTED, urlencoding},
 };
@@ -215,7 +215,7 @@ impl TardisHttpClient {
         filter: Option<&InstrumentFilter>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
-        available_offset: Option<UnixNanos>,
+        available_offset: Option<DurationNanos>,
         effective: Option<UnixNanos>,
         ts_init: Option<UnixNanos>,
     ) -> Result<Vec<InstrumentAny>> {

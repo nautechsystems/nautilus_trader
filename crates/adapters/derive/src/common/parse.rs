@@ -343,9 +343,9 @@ fn parse_perp_instrument(
         .as_ref()
         .context("missing perp_details for Derive perp instrument")?;
 
-    let instrument_id = format_instrument_id(instrument.instrument_name.as_str());
-    let raw_symbol = Symbol::new(instrument.instrument_name.as_str());
-    let base_currency = Currency::get_or_create_crypto(instrument.base_currency.as_str());
+    let instrument_id = format_instrument_id(instrument.instrument_name);
+    let raw_symbol = Symbol::new(instrument.instrument_name);
+    let base_currency = Currency::get_or_create_crypto(instrument.base_currency);
     // Wire says "USD" but Derive settles everything in USDC
     let quote_currency = Currency::USDC();
     let settlement_currency = quote_currency;
@@ -390,10 +390,10 @@ fn parse_option_instrument(
         .as_ref()
         .context("missing option_details for Derive option instrument")?;
 
-    let instrument_id = format_instrument_id(instrument.instrument_name.as_str());
-    let raw_symbol = Symbol::new(instrument.instrument_name.as_str());
-    let underlying = Currency::get_or_create_crypto(instrument.base_currency.as_str());
-    let quote_currency = Currency::get_or_create_crypto(instrument.quote_currency.as_str());
+    let instrument_id = format_instrument_id(instrument.instrument_name);
+    let raw_symbol = Symbol::new(instrument.instrument_name);
+    let underlying = Currency::get_or_create_crypto(instrument.base_currency);
+    let quote_currency = Currency::get_or_create_crypto(instrument.quote_currency);
     let settlement_currency = quote_currency;
     let option_kind = parse_option_kind(details.option_type);
     let strike_price = price_from_decimal(details.strike, "option_details.strike")?;
@@ -440,10 +440,10 @@ fn parse_spot_instrument(
     instrument: &DeriveInstrument,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    let instrument_id = format_instrument_id(instrument.instrument_name.as_str());
-    let raw_symbol = Symbol::new(instrument.instrument_name.as_str());
-    let base_currency = Currency::get_or_create_crypto(instrument.base_currency.as_str());
-    let quote_currency = Currency::get_or_create_crypto(instrument.quote_currency.as_str());
+    let instrument_id = format_instrument_id(instrument.instrument_name);
+    let raw_symbol = Symbol::new(instrument.instrument_name);
+    let base_currency = Currency::get_or_create_crypto(instrument.base_currency);
+    let quote_currency = Currency::get_or_create_crypto(instrument.quote_currency);
     let price_increment = price_from_decimal(instrument.tick_size, "tick_size")?;
     let size_increment = quantity_from_decimal(instrument.amount_step, "amount_step")?;
     let multiplier = quantity_from_decimal(Decimal::ONE, "multiplier")?;

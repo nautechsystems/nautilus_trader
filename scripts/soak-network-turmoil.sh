@@ -27,8 +27,8 @@ echo "  count: ${NAUTILUS_TURMOIL_SOAK_COUNT:-unbounded}"
 echo "  progress interval: ${NAUTILUS_TURMOIL_SOAK_PROGRESS_INTERVAL:-100}"
 
 cargo test -p nautilus-network --features turmoil,transport-sockudo \
-  --test turmoil_websocket \
-  test_turmoil_websocket_repeated_drops_backend_pair_soak \
+  --test integration \
+  turmoil_websocket::test_turmoil_websocket_repeated_drops_backend_pair_soak \
   -- \
   --ignored \
   --nocapture \

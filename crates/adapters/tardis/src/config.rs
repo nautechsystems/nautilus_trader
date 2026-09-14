@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
 use parquet::basic::{Compression, ZstdLevel};
 use serde::{Deserialize, Serialize};
 
@@ -66,7 +69,7 @@ impl ParquetCompression {
 #[serde(deny_unknown_fields)]
 pub struct TardisReplayConfig {
     /// The Tardis Machine websocket url.
-    pub tardis_ws_url: Option<String>,
+    pub tardis_ws_url: Option<SecretString>,
     /// If symbols should be normalized with Nautilus conventions.
     pub normalize_symbols: Option<bool>,
     /// The output directory for writing Nautilus format Parquet files.
@@ -77,7 +80,7 @@ pub struct TardisReplayConfig {
     pub options: Vec<ReplayNormalizedRequestOptions>,
     /// Optional proxy URL for the Tardis HTTP API client.
     /// The Tardis Machine WebSocket transport does not yet support proxying.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// The output format for `book_snapshot_*` messages.
     ///
     /// - `deltas`: Convert to `OrderBookDeltas` and write to `order_book_deltas/` (default).
@@ -107,13 +110,13 @@ pub struct TardisReplayConfig {
 pub struct TardisDataClientConfig {
     /// Tardis API key for HTTP instrument fetching.
     /// Falls back to `TARDIS_API_KEY` env var if not set.
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     /// Tardis Machine Server WebSocket URL.
     /// Falls back to `TARDIS_MACHINE_WS_URL` env var if not set.
-    pub tardis_ws_url: Option<String>,
+    pub tardis_ws_url: Option<SecretString>,
     /// Optional proxy URL for the Tardis HTTP API client.
     /// The Tardis Machine WebSocket transport does not yet support proxying.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// Whether to normalize symbols to Nautilus conventions.
     #[builder(default = true)]
     pub normalize_symbols: bool,
@@ -136,7 +139,6 @@ pub struct TardisDataClientConfig {
 
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(TardisDataClientConfig {
-    tardis_ws_url: Option<String>,
     normalize_symbols: bool,
     extract_bbo_as_quotes: bool,
     options: Vec<ReplayNormalizedRequestOptions>,
@@ -169,6 +171,23 @@ mod tests {
         assert!(!config.extract_bbo_as_quotes);
         assert!(config.options.is_empty());
         assert!(config.stream_options.is_empty());
+    }
+
+    #[rstest]
+    fn test_config_debug_redacts_credentials_and_urls() {
+        let config = TardisDataClientConfig {
+            api_key: Some("api-key-value".into()),
+            tardis_ws_url: Some("wss://user:ws-secret@localhost".into()),
+            proxy_url: Some("http://user:proxy-secret@localhost".into()),
+            ..Default::default()
+        };
+
+        let formatted = format!("{config:?}");
+
+        assert_eq!(formatted.matches(REDACTED).count(), 3);
+        assert!(!formatted.contains("api-key-value"));
+        assert!(!formatted.contains("ws-secret"));
+        assert!(!formatted.contains("proxy-secret"));
     }
 
     #[rstest]
@@ -259,7 +278,13 @@ normalize_symbols = false
         .unwrap();
 
         assert!(config.options.is_empty());
-        assert_eq!(config.tardis_ws_url.as_deref(), Some("wss://example.com"));
+        assert_eq!(
+            config
+                .tardis_ws_url
+                .as_ref()
+                .map(SecretString::expose_secret),
+            Some("wss://example.com")
+        );
         assert_eq!(config.normalize_symbols, Some(false));
         assert_eq!(config.extract_bbo_as_quotes, None);
     }

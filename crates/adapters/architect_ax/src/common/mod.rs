@@ -20,7 +20,7 @@
 //! - Shared enums (instrument state, order status, etc.)
 //! - Shared data models
 //! - Credential management and signing utilities
-//! - Parsing helpers
+//! - Parsers
 //! - Test fixtures
 
 pub mod auth;

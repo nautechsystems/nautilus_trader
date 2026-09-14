@@ -15,7 +15,7 @@
 
 //! Python bindings for the BitMEX cancel broadcaster.
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::{python::to_pyvalue_err, string::secret::SecretString};
 use nautilus_model::{
     enums::OrderSide,
     identifiers::{ClientOrderId, InstrumentId, VenueOrderId},
@@ -36,6 +36,8 @@ impl CancelBroadcaster {
     /// This broadcaster fans out cancel requests to multiple pre-warmed HTTP clients
     /// in parallel, short-circuits when the first successful acknowledgement is received,
     /// and handles expected rejection patterns with appropriate log levels.
+    ///
+    /// The client pool must contain `[1, 16]` clients.
     #[new]
     #[pyo3(signature = (
         pool_size,
@@ -78,8 +80,8 @@ impl CancelBroadcaster {
     ) -> PyResult<Self> {
         let config = CancelBroadcasterConfig {
             pool_size,
-            api_key,
-            api_secret,
+            api_key: api_key.map(SecretString::from),
+            api_secret: api_secret.map(SecretString::from),
             base_url,
             environment,
             timeout_secs,
@@ -95,7 +97,11 @@ impl CancelBroadcaster {
                 .unwrap_or_else(|| CancelBroadcasterConfig::default().expected_reject_patterns),
             idempotent_success_patterns: idempotent_success_patterns
                 .unwrap_or_else(|| CancelBroadcasterConfig::default().idempotent_success_patterns),
-            proxy_urls: proxy_urls.unwrap_or_default(),
+            proxy_urls: proxy_urls
+                .unwrap_or_default()
+                .into_iter()
+                .map(|value| value.map(SecretString::from))
+                .collect(),
         };
 
         Self::new(config).map_err(to_pyvalue_err)

@@ -49,7 +49,7 @@ if ! awk '
     sub(/^[[:space:]]*-?[[:space:]]*uses:[[:space:]]*/, "", reference)
     sub(/[[:space:]#].*$/, "", reference)
 
-    if (reference !~ /^\.\// && reference !~ /^docker:\/\//) {
+    if (reference !~ /^[.$]\// && reference !~ /^docker:\/\//) {
       action = reference
       sub(/@.*/, "", action)
       split(action, parts, "/")

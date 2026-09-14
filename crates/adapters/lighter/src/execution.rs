@@ -52,9 +52,10 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    UUID4, UnixNanos,
+    DurationNanos, UUID4, UnixNanos,
     datetime::unix_nanos_to_iso8601,
     params::Params,
+    string::secret::SecretString,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -260,7 +261,7 @@ impl LighterExecutionClient {
         );
 
         let credential = Credential::resolve_for_deployment(
-            config.private_key.clone(),
+            config.private_key.clone().map(SecretString::into_inner),
             config.account_index,
             config.api_key_index,
             config.deployment,
@@ -275,14 +276,17 @@ impl LighterExecutionClient {
         let socket_factory = SocketControlFactory::new(core.client_id, Some(core.venue));
 
         // One transaction limiter shared across the HTTP and WebSocket sendTx
-        // paths so their combined rate honours the single per-account venue bucket.
+        // paths so their combined rate honors the single per-account venue bucket.
         let tx_rate_limiter = build_tx_rate_limiter(config.sendtx_quota_per_min);
 
         let raw_http = LighterRawHttpClient::new_with_quotas(
             config.environment,
             Some(config.http_url()),
             config.http_timeout_secs,
-            config.proxy_url.clone(),
+            config
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
             resolve_quota(config.rest_quota_per_min),
             Some(Arc::clone(&tx_rate_limiter)),
         )
@@ -361,7 +365,10 @@ impl LighterExecutionClient {
             registry,
             config.transport_backend,
             config.ws_timeout_secs,
-            config.proxy_url.clone(),
+            config
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         );
 
         ws_client.with_socket_control(socket_factory.control(USER_STREAMS_ENDPOINT))
@@ -712,18 +719,12 @@ impl LighterExecutionClient {
             "Lighter account detail returned an empty L1 address"
         );
 
-        let auth_token = Zeroizing::new(
-            build_auth_token_for(credential)
-                .context("failed to mint Lighter auth token for referral attribution")?,
-        );
+        let auth_token = build_auth_token_for(credential)
+            .context("failed to mint Lighter auth token for referral attribution")?;
         let referral_code = Zeroizing::new(referral_code.to_string());
 
         self.http_client
-            .use_referral(
-                &detail.l1_address,
-                referral_code.as_str(),
-                auth_token.as_str(),
-            )
+            .use_referral(&detail.l1_address, referral_code.as_str(), &auth_token)
             .await
             .context("failed to apply Lighter referral code")?;
 
@@ -1425,7 +1426,7 @@ impl LighterExecutionClient {
                     &channels,
                     &cancellation_token,
                     AUTH_TOKEN_REFRESH_BACKOFF,
-                    |credential| -> anyhow::Result<String> { build_auth_token_for(credential) },
+                    build_auth_token_for,
                     |channel, token| {
                         let ws_client = ws_client.clone();
                         async move { ws_client.subscribe_account(channel, token).await }
@@ -1982,7 +1983,7 @@ impl LighterExecutionClient {
             instrument.size_precision(),
         );
         let trigger_price_ticks = match new_trigger {
-            Some(trigger) if trigger.raw != 0 => price_to_ticks(&trigger, price_precision)?,
+            Some(trigger) if !trigger.is_zero() => price_to_ticks(&trigger, price_precision)?,
             _ => 0,
         };
 
@@ -2326,8 +2327,8 @@ async fn refresh_auth_token_until_rotated<MintToken, Subscribe, SubscribeFuture>
     mut subscribe: Subscribe,
 ) -> AuthTokenRefreshOutcome
 where
-    MintToken: FnMut(&Credential) -> anyhow::Result<String>,
-    Subscribe: FnMut(LighterWsChannel, String) -> SubscribeFuture,
+    MintToken: FnMut(&Credential) -> anyhow::Result<SecretString>,
+    Subscribe: FnMut(LighterWsChannel, SecretString) -> SubscribeFuture,
     SubscribeFuture: Future<Output = Result<(), crate::websocket::error::LighterWsError>>,
 {
     let retry_started = tokio::time::Instant::now();
@@ -2387,8 +2388,8 @@ async fn rotate_auth_token_once<MintToken, Subscribe, SubscribeFuture>(
     subscribe: &mut Subscribe,
 ) -> anyhow::Result<()>
 where
-    MintToken: FnMut(&Credential) -> anyhow::Result<String>,
-    Subscribe: FnMut(LighterWsChannel, String) -> SubscribeFuture,
+    MintToken: FnMut(&Credential) -> anyhow::Result<SecretString>,
+    Subscribe: FnMut(LighterWsChannel, SecretString) -> SubscribeFuture,
     SubscribeFuture: Future<Output = Result<(), crate::websocket::error::LighterWsError>>,
 {
     let token =
@@ -4686,16 +4687,13 @@ impl ExecutionClient for LighterExecutionClient {
         // the fact that the order is currently live and reconciliation
         // needs to know about it.
         for market_index in market_indices {
-            let active = match self
-                .http_client
-                .get_account_active_orders(&LighterAccountActiveOrdersQuery {
-                    authorization: None,
-                    auth: Some(auth.clone()),
-                    account_index: credential.account_index(),
-                    market_id: market_index,
-                })
-                .await
-            {
+            let query = Zeroizing::new(LighterAccountActiveOrdersQuery {
+                authorization: None,
+                auth: Some(auth.clone()),
+                account_index: credential.account_index(),
+                market_id: market_index,
+            });
+            let active = match self.http_client.get_account_active_orders(&query).await {
                 Ok(response) => response,
                 Err(e) => {
                     let detail = format!(
@@ -4777,20 +4775,18 @@ impl ExecutionClient for LighterExecutionClient {
                         ));
                     }
 
-                    match self
-                        .http_client
-                        .get_account_inactive_orders(&LighterAccountInactiveOrdersQuery {
-                            authorization: None,
-                            auth: Some(auth.clone()),
-                            account_index: credential.account_index(),
-                            market_id: Some(market_id),
-                            ask_filter: None,
-                            between_timestamps: between_timestamps.clone(),
-                            cursor: cursor.clone(),
-                            limit: LIGHTER_REST_PAGE_SIZE,
-                        })
-                        .await
-                    {
+                    let query = Zeroizing::new(LighterAccountInactiveOrdersQuery {
+                        authorization: None,
+                        auth: Some(auth.clone()),
+                        account_index: credential.account_index(),
+                        market_id: Some(market_id),
+                        ask_filter: None,
+                        between_timestamps: between_timestamps.clone(),
+                        cursor: cursor.clone(),
+                        limit: LIGHTER_REST_PAGE_SIZE,
+                    });
+
+                    match self.http_client.get_account_inactive_orders(&query).await {
                         Ok(inactive) => {
                             for order in &inactive.orders {
                                 let Some(report) = parse_http_order_to_report(
@@ -4890,12 +4886,10 @@ impl ExecutionClient for LighterExecutionClient {
 
         // Scope inactive orders at the venue and stop descending trade
         // pagination once it crosses this local lookback boundary.
-        let lookback_start: Option<UnixNanos> = lookback_mins.map(|mins| {
-            let cutoff_ns = ts_init
-                .as_u64()
-                .saturating_sub(mins.saturating_mul(60).saturating_mul(1_000_000_000));
-            UnixNanos::from(cutoff_ns)
-        });
+        let lookback_start = lookback_mins
+            .map(DurationNanos::try_from_mins)
+            .transpose()?
+            .map(|lookback| ts_init.saturating_sub(lookback));
 
         // open_only = false so the inactive-orders fan-out runs and surfaces
         // canceled / rejected / expired / filled orders that the engine
@@ -5245,7 +5239,7 @@ impl LighterExecutionClient {
                 pages <= MAX_RECONCILIATION_PAGES,
                 "Lighter fill reconciliation exceeded {MAX_RECONCILIATION_PAGES} pages",
             );
-            let query = LighterTradesQuery {
+            let query = Zeroizing::new(LighterTradesQuery {
                 authorization: None,
                 auth: Some(auth.clone()),
                 market_id,
@@ -5262,13 +5256,13 @@ impl LighterExecutionClient {
                 trade_type: None,
                 limit: LIGHTER_REST_PAGE_SIZE,
                 aggregate: None,
-            };
+            });
 
             let response = match self.http_client.get_trades(&query).await {
                 Ok(response) => response,
                 Err(e) => {
                     // `{e:#}` preserves the venue's status/body across the
-                    // outer context wrap; `scrub_auth` masks any `auth=`
+                    // outer context wrap; `scrub_auth` redacts any `auth=`
                     // query value the HTTP layer's error included.
                     log::warn!(
                         "Lighter get_trades failed (market_id={:?}, account_index={}, cursor={:?}): {}",
@@ -5559,7 +5553,7 @@ async fn seed_active_markets_from_inactive_orders(
     http_client: &LighterHttpClient,
     dispatch: &WsDispatchState,
     credential: &Credential,
-    auth: &str,
+    auth: &SecretString,
     between_timestamps: Option<String>,
 ) -> anyhow::Result<()> {
     let mut cursor: Option<String> = None;
@@ -5573,17 +5567,18 @@ async fn seed_active_markets_from_inactive_orders(
             pages <= MAX_RECONCILIATION_PAGES,
             "Lighter active-market seed exceeded {MAX_RECONCILIATION_PAGES} pages",
         );
+        let query = Zeroizing::new(LighterAccountInactiveOrdersQuery {
+            authorization: None,
+            auth: Some(auth.clone()),
+            account_index: credential.account_index(),
+            market_id: None,
+            ask_filter: None,
+            between_timestamps: between_timestamps.clone(),
+            cursor: cursor.clone(),
+            limit: LIGHTER_REST_PAGE_SIZE,
+        });
         let response = http_client
-            .get_account_inactive_orders(&LighterAccountInactiveOrdersQuery {
-                authorization: None,
-                auth: Some(auth.to_string()),
-                account_index: credential.account_index(),
-                market_id: None,
-                ask_filter: None,
-                between_timestamps: between_timestamps.clone(),
-                cursor: cursor.clone(),
-                limit: LIGHTER_REST_PAGE_SIZE,
-            })
+            .get_account_inactive_orders(&query)
             .await
             .context("failed to seed Lighter active markets from inactive orders")?;
 
@@ -5771,7 +5766,7 @@ fn dispatch_lighter_order(
         ) {
             Ok(event_opt) => {
                 // Refresh the stored snapshot for any tracked live frame
-                // so a synthesised `OrderAccepted` (fill-before-open or
+                // so a synthesized `OrderAccepted` (fill-before-open or
                 // fresh-trigger path) leaves a baseline behind for the
                 // next diff. Without this seed `shape_changed` would
                 // stay permanently false and a real later modify would
@@ -5940,7 +5935,7 @@ fn dispatch_lighter_trade(
     });
 
     if let Some((cloid, identity)) = identity {
-        // Synthesise an `OrderAccepted` first if one has not been
+        // Synthesize an `OrderAccepted` first if one has not been
         // emitted yet: fills can race ahead of the matching `Open`
         // order frame.
         ensure_accepted_emitted(
@@ -6060,7 +6055,7 @@ fn dispatch_tracked_order_event(
             // Modify-as-restate: the venue echoes the post-modify order as
             // `Open`; `accepted_was_emitted` already gated parsing to
             // produce `Updated` instead of duplicate `Accepted`. No need
-            // to re-synthesise the accept here.
+            // to re-synthesize the accept here.
             dispatch.clear_pending_order_action_if(&cloid, PendingOrderAction::Modify);
             is_terminal = false;
             emitter.send_order_event(OrderEventAny::Updated(e));
@@ -6125,11 +6120,11 @@ fn dispatch_tracked_order_event(
     }
 }
 
-/// Synthesise an `OrderAccepted` event if one has not yet been emitted for
-/// `cloid`. Mirrors the BitMEX dispatch helper of the same name.
+/// Synthesize an `OrderAccepted` event if one has not yet been emitted for
+/// `cloid`. Mirrors the BitMEX dispatch function of the same name.
 #[expect(
     clippy::too_many_arguments,
-    reason = "synthesised events need the full identity context to populate the event"
+    reason = "synthesized events need the full identity context to populate the event"
 )]
 fn ensure_accepted_emitted(
     cloid: ClientOrderId,
@@ -6272,7 +6267,7 @@ mod tests {
             account_id: account_id(),
             account_index: Some(TEST_ACCOUNT_INDEX),
             api_key_index: Some(TEST_API_KEY_INDEX),
-            private_key: Some(TEST_PRIVATE_KEY.to_string()),
+            private_key: Some(TEST_PRIVATE_KEY.into()),
             base_url_http: Some("http://127.0.0.1:1".to_string()),
             base_url_ws: Some("ws://127.0.0.1:1/stream".to_string()),
             proxy_url: None,
@@ -6695,7 +6690,7 @@ mod tests {
         match recv_order_event(rx).await {
             OrderEventAny::ModifyRejected(event) => {
                 assert!(
-                    event.reason.as_str().contains(reason_part),
+                    event.reason.contains(reason_part),
                     "expected modify rejection containing `{reason_part}`, was `{}`",
                     event.reason,
                 );
@@ -6746,7 +6741,7 @@ mod tests {
                         if attempt == 0 {
                             Err(anyhow::anyhow!("mint unavailable"))
                         } else {
-                            Ok(format!("token-{attempt}"))
+                            Ok(format!("token-{attempt}").into())
                         }
                     }
                 },
@@ -6801,7 +6796,7 @@ mod tests {
                     let mint_attempts = Arc::clone(&mint_attempts);
                     move |_| {
                         let attempt = mint_attempts.fetch_add(1, Ordering::AcqRel);
-                        Ok(format!("token-{attempt}"))
+                        Ok(format!("token-{attempt}").into())
                     }
                 },
                 {
@@ -7387,10 +7382,9 @@ mod tests {
                 assert!(
                     event
                         .reason
-                        .as_str()
                         .contains("Lighter submit_order dispatch failed"),
                 );
-                assert!(event.reason.as_str().contains("handler unavailable"));
+                assert!(event.reason.contains("handler unavailable"));
             }
             event => panic!("expected rejected event, was {event:?}"),
         }
@@ -7558,7 +7552,6 @@ mod tests {
                 assert!(
                     event
                         .reason
-                        .as_str()
                         .contains("Lighter submit_order dispatch failed"),
                 );
             }
@@ -7578,13 +7571,7 @@ mod tests {
         let (client, cache, mut rx) = create_execution_client();
         let instrument_id = register_test_instrument(&client, &cache);
         let mut factory = test_order_factory();
-        let expiry = UnixNanos::from(
-            client
-                .clock
-                .get_time_ns()
-                .as_u64()
-                .saturating_add(10 * 60 * 1_000_000_000),
-        );
+        let expiry = client.clock.get_time_ns() + DurationNanos::from_mins(10);
         let order = test_limit_order_with(
             &mut factory,
             instrument_id,
@@ -7617,7 +7604,6 @@ mod tests {
                 assert!(
                     event
                         .reason
-                        .as_str()
                         .contains("Lighter submit_order dispatch failed"),
                 );
             }
@@ -7664,7 +7650,7 @@ mod tests {
         let denied = recv_order_event(&mut rx).await;
         match denied {
             OrderEventAny::Denied(event) => {
-                assert!(event.reason.as_str().contains("at least 5 minutes"));
+                assert!(event.reason.contains("at least 5 minutes"));
             }
             event => panic!("expected denied event, was {event:?}"),
         }
@@ -7710,7 +7696,6 @@ mod tests {
                 assert!(
                     event
                         .reason
-                        .as_str()
                         .contains("Lighter submit_order dispatch failed"),
                 );
             }
@@ -7749,11 +7734,7 @@ mod tests {
             match recv_order_event(&mut rx).await {
                 OrderEventAny::Rejected(e) => {
                     assert_eq!(e.client_order_id, expected);
-                    assert!(
-                        e.reason
-                            .as_str()
-                            .contains("Lighter submit_order dispatch failed"),
-                    );
+                    assert!(e.reason.contains("Lighter submit_order dispatch failed"),);
                 }
                 other => panic!("expected Rejected, was {other:?}"),
             }
@@ -7786,7 +7767,6 @@ mod tests {
                     assert_eq!(e.client_order_id, order.client_order_id());
                     assert!(
                         e.reason
-                            .as_str()
                             .contains("order-list fanout supports at most 15 txs"),
                     );
                 }
@@ -7841,7 +7821,7 @@ mod tests {
         match recv_order_event(&mut rx).await {
             OrderEventAny::Denied(e) => {
                 assert_eq!(e.client_order_id, unsupported.client_order_id());
-                assert!(e.reason.as_str().contains("display_qty"));
+                assert!(e.reason.contains("display_qty"));
             }
             other => panic!("expected Denied, was {other:?}"),
         }
@@ -7854,11 +7834,7 @@ mod tests {
         match recv_order_event(&mut rx).await {
             OrderEventAny::Rejected(e) => {
                 assert_eq!(e.client_order_id, valid.client_order_id());
-                assert!(
-                    e.reason
-                        .as_str()
-                        .contains("Lighter submit_order dispatch failed"),
-                );
+                assert!(e.reason.contains("Lighter submit_order dispatch failed"),);
             }
             other => panic!("expected Rejected, was {other:?}"),
         }
@@ -7885,7 +7861,7 @@ mod tests {
             match recv_order_event(&mut rx).await {
                 OrderEventAny::Denied(e) => {
                     assert_eq!(e.client_order_id, order.client_order_id());
-                    assert!(e.reason.as_str().contains("supports only independent"));
+                    assert!(e.reason.contains("supports only independent"));
                 }
                 other => panic!("expected Denied, was {other:?}"),
             }
@@ -7935,10 +7911,9 @@ mod tests {
                 assert!(
                     event
                         .reason
-                        .as_str()
                         .contains("Lighter cancel_order dispatch failed"),
                 );
-                assert!(event.reason.as_str().contains("handler unavailable"));
+                assert!(event.reason.contains("handler unavailable"));
             }
             event => panic!("expected cancel rejected event, was {event:?}"),
         }
@@ -8027,18 +8002,8 @@ mod tests {
                 assert_eq!(event.client_order_id, client_order_id);
                 assert_eq!(event.instrument_id, instrument_id);
                 assert_eq!(event.venue_order_id, None);
-                assert!(
-                    event
-                        .reason
-                        .as_str()
-                        .contains("Lighter cancel_order failed")
-                );
-                assert!(
-                    event
-                        .reason
-                        .as_str()
-                        .contains("venue order_id not yet known")
-                );
+                assert!(event.reason.contains("Lighter cancel_order failed"));
+                assert!(event.reason.contains("venue order_id not yet known"));
             }
             event => panic!("expected cancel rejected event, was {event:?}"),
         }
@@ -8081,13 +8046,8 @@ mod tests {
                 assert_eq!(event.client_order_id, client_order_id);
                 assert_eq!(event.instrument_id, instrument_id);
                 assert_eq!(event.venue_order_id, Some(venue_order_id));
-                assert!(
-                    event
-                        .reason
-                        .as_str()
-                        .contains("Lighter cancel_order failed")
-                );
-                assert!(event.reason.as_str().contains("order not found in cache"));
+                assert!(event.reason.contains("Lighter cancel_order failed"));
+                assert!(event.reason.contains("order not found in cache"));
             }
             event => panic!("expected cancel rejected event, was {event:?}"),
         }
@@ -8173,13 +8133,8 @@ mod tests {
             OrderEventAny::CancelRejected(event) => {
                 assert_eq!(event.client_order_id, client_order_id);
                 assert_eq!(event.venue_order_id, Some(venue_order_id));
-                assert!(
-                    event
-                        .reason
-                        .as_str()
-                        .contains("failed to allocate Lighter nonce"),
-                );
-                assert!(event.reason.as_str().contains("skip-window exhausted"));
+                assert!(event.reason.contains("failed to allocate Lighter nonce"),);
+                assert!(event.reason.contains("skip-window exhausted"));
             }
             event => panic!("expected cancel rejected event, was {event:?}"),
         }
@@ -8242,11 +8197,7 @@ mod tests {
         let second = recv_order_event(&mut rx).await;
         let rejected_ids = [first, second].map(|event| match event {
             OrderEventAny::CancelRejected(e) => {
-                assert!(
-                    e.reason
-                        .as_str()
-                        .contains("Lighter cancel_order dispatch failed"),
-                );
+                assert!(e.reason.contains("Lighter cancel_order dispatch failed"),);
                 e.client_order_id
             }
             other => panic!("expected CancelRejected, was {other:?}"),
@@ -8309,7 +8260,6 @@ mod tests {
                     assert_eq!(e.client_order_id, cancel.client_order_id);
                     assert!(
                         e.reason
-                            .as_str()
                             .contains("batch-cancel fanout supports at most 15 txs"),
                     );
                 }
@@ -8399,10 +8349,9 @@ mod tests {
                 assert!(
                     event
                         .reason
-                        .as_str()
                         .contains("Lighter modify_order dispatch failed"),
                 );
-                assert!(event.reason.as_str().contains("handler unavailable"));
+                assert!(event.reason.contains("handler unavailable"));
             }
             event => panic!("expected modify rejected event, was {event:?}"),
         }
@@ -8495,13 +8444,8 @@ mod tests {
                 assert_eq!(event.client_order_id, client_order_id);
                 assert_eq!(event.instrument_id, instrument_id);
                 assert_eq!(event.venue_order_id, Some(venue_order_id));
-                assert!(
-                    event
-                        .reason
-                        .as_str()
-                        .contains("Lighter modify_order failed")
-                );
-                assert!(event.reason.as_str().contains("order not found in cache"));
+                assert!(event.reason.contains("Lighter modify_order failed"));
+                assert!(event.reason.contains("order not found in cache"));
             }
             event => panic!("expected modify rejected event, was {event:?}"),
         }
@@ -8553,18 +8497,8 @@ mod tests {
                 assert_eq!(event.client_order_id, client_order_id);
                 assert_eq!(event.instrument_id, instrument_id);
                 assert_eq!(event.venue_order_id, Some(venue_order_id));
-                assert!(
-                    event
-                        .reason
-                        .as_str()
-                        .contains("Lighter modify_order failed")
-                );
-                assert!(
-                    event
-                        .reason
-                        .as_str()
-                        .contains("instrument not found in cache")
-                );
+                assert!(event.reason.contains("Lighter modify_order failed"));
+                assert!(event.reason.contains("instrument not found in cache"));
             }
             event => panic!("expected modify rejected event, was {event:?}"),
         }
@@ -8631,12 +8565,12 @@ mod tests {
         match rejected {
             OrderEventAny::ModifyRejected(event) => {
                 assert!(
-                    !event.reason.as_str().contains("requires a price"),
+                    !event.reason.contains("requires a price"),
                     "trigger-only stop modify must not trip the price guard, was: {}",
                     event.reason,
                 );
                 assert!(
-                    event.reason.as_str().contains("dispatch failed"),
+                    event.reason.contains("dispatch failed"),
                     "expected send-stage failure after a successful prepare, was: {}",
                     event.reason,
                 );
@@ -8799,13 +8733,8 @@ mod tests {
             OrderEventAny::ModifyRejected(event) => {
                 assert_eq!(event.client_order_id, client_order_id);
                 assert_eq!(event.venue_order_id, Some(venue_order_id));
-                assert!(
-                    event
-                        .reason
-                        .as_str()
-                        .contains("failed to allocate Lighter nonce"),
-                );
-                assert!(event.reason.as_str().contains("skip-window exhausted"));
+                assert!(event.reason.contains("failed to allocate Lighter nonce"),);
+                assert!(event.reason.contains("skip-window exhausted"));
             }
             event => panic!("expected modify rejected event, was {event:?}"),
         }
@@ -9114,7 +9043,7 @@ mod tests {
         match event {
             OrderEventAny::Denied(event) => {
                 assert!(
-                    event.reason.as_str().contains("no cached quote"),
+                    event.reason.contains("no cached quote"),
                     "expected no-cached-quote in reason, was {:?}",
                     event.reason,
                 );
@@ -9160,7 +9089,6 @@ mod tests {
                 assert!(
                     event
                         .reason
-                        .as_str()
                         .contains("Lighter submit_order dispatch failed"),
                 );
             }
@@ -9209,7 +9137,7 @@ mod tests {
         match event {
             OrderEventAny::Denied(event) => {
                 assert!(
-                    event.reason.as_str().contains("rounds to 0 ticks"),
+                    event.reason.contains("rounds to 0 ticks"),
                     "expected rounds-to-0 in reason, was {:?}",
                     event.reason,
                 );
@@ -9258,7 +9186,7 @@ mod tests {
         match event {
             OrderEventAny::Denied(event) => {
                 assert!(
-                    event.reason.as_str().contains("min_quote_amount"),
+                    event.reason.contains("min_quote_amount"),
                     "expected min_quote_amount in reason, was {:?}",
                     event.reason,
                 );
@@ -9308,7 +9236,7 @@ mod tests {
         match event {
             OrderEventAny::Denied(event) => {
                 assert!(
-                    event.reason.as_str().contains("rounds to 0 ticks"),
+                    event.reason.contains("rounds to 0 ticks"),
                     "expected rounds-to-0 in reason, was {:?}",
                     event.reason,
                 );
@@ -9447,7 +9375,6 @@ mod tests {
                 assert!(
                     event
                         .reason
-                        .as_str()
                         .contains("Lighter submit_order dispatch failed"),
                 );
             }
@@ -10264,7 +10191,7 @@ mod tests {
     #[rstest]
     fn dispatch_lighter_trade_tracked_synthesizes_accepted_before_filled() {
         // Fill-before-open: the trade arrives before the matching Open
-        // frame. The dispatcher must synthesise `OrderAccepted` first so
+        // frame. The dispatcher must synthesize `OrderAccepted` first so
         // the engine sees the lifecycle in order.
         let mut rig = dispatcher_rig("4");
         register_identity(&rig);
@@ -11113,6 +11040,7 @@ mod tests {
             false,
             Some(venue_order_id),
             Some(account_id()),
+            None,
         ));
         cache.borrow_mut().update_order(&canceled).unwrap();
     }
@@ -11143,7 +11071,7 @@ mod tests {
 
     #[rstest]
     fn dispatch_lighter_order_seeds_snapshot_after_synthesized_accept() {
-        // After a synthesised `OrderAccepted` (fill-before-open), the
+        // After a synthesized `OrderAccepted` (fill-before-open), the
         // next `Open` frame must seed the shape snapshot even when the
         // parser returns None. Without the seed, shape_changed stays
         // permanently false and a later modify is lost.
@@ -11168,7 +11096,7 @@ mod tests {
         assert!(rig.dispatch.accepted_was_emitted(&rig.cloid));
         assert!(
             rig.dispatch.snapshot_for(&rig.cloid).is_none(),
-            "synthesised Accept has no snapshot until the Open frame seeds one",
+            "synthesized Accept has no snapshot until the Open frame seeds one",
         );
 
         // Open frame lands later (matches venue ordering). Parser
@@ -11185,7 +11113,7 @@ mod tests {
         );
         assert!(
             rig.dispatch.snapshot_for(&rig.cloid).is_some(),
-            "Open frame after synthesised accept must seed the snapshot",
+            "Open frame after synthesized accept must seed the snapshot",
         );
 
         // A real modify must now fire Updated.
@@ -12341,7 +12269,7 @@ mod tests {
         match event {
             OrderEventAny::Rejected(e) => {
                 assert_eq!(e.client_order_id, order.client_order_id());
-                assert_eq!(e.reason.as_str(), "LIGHTER_21702: invalid price");
+                assert_eq!(e.reason, "LIGHTER_21702: invalid price");
                 assert!(!e.due_post_only);
             }
             other => panic!("expected Rejected, was {other:?}"),
@@ -12423,7 +12351,7 @@ mod tests {
                 assert_eq!(e.client_order_id, client_order_id);
                 assert_eq!(e.instrument_id, instrument_id);
                 assert_eq!(e.venue_order_id, Some(venue_order_id));
-                assert_eq!(e.reason.as_str(), "LIGHTER_21727: order is not cancelable",);
+                assert_eq!(e.reason, "LIGHTER_21727: order is not cancelable",);
             }
             other => panic!("expected CancelRejected, was {other:?}"),
         }
@@ -12474,7 +12402,7 @@ mod tests {
                 assert_eq!(e.client_order_id, client_order_id);
                 assert_eq!(e.instrument_id, instrument_id);
                 assert_eq!(e.venue_order_id, Some(venue_order_id));
-                assert_eq!(e.reason.as_str(), "LIGHTER_21702: modify rejected by venue",);
+                assert_eq!(e.reason, "LIGHTER_21702: modify rejected by venue",);
             }
             other => panic!("expected ModifyRejected, was {other:?}"),
         }

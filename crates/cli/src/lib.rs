@@ -37,7 +37,8 @@
 //! This crate provides feature flags to control source code inclusion during compilation,
 //! depending on the intended use case:
 //!
-//! - `defi`: Enables DeFi functionality including blockchain data access and pool analysis.
+//! - `defi`: Enables blockchain/DeFi commands including block sync, DEX pool sync, and pool
+//!   analysis.
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]

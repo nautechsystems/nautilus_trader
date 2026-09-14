@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-polymarket"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -59,12 +58,18 @@ nautilus-core = { workspace = true }
 nautilus-execution = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
-nautilus-network = { workspace = true }
+nautilus-network = { workspace = true, features = ["transport-sockudo"] }
 nautilus-persistence-macros = { workspace = true }
 nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
-alloy = { workspace = true, features = ["provider-http", "network", "reqwest"] }
+alloy = { workspace = true, features = [
+  "contract",
+  "signer-local",
+  "provider-http",
+  "reqwest",
+  "reqwest-rustls-tls",
+] }
 alloy-primitives = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
@@ -100,6 +105,7 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-live = { workspace = true, features = ["node", "test-support"] }
 nautilus-sandbox = { workspace = true }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",
@@ -198,8 +204,3 @@ name = "polymarket-new-market-monitor"
 path = "examples/new_market_monitor.rs"
 required-features = ["examples"]
 doc = false
-
-[[test]]
-name = "python"
-path = "tests/python.rs"
-required-features = ["python"]

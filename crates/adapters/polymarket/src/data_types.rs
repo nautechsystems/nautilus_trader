@@ -82,7 +82,7 @@ pub struct PolymarketRtdsCryptoTwap {
 pub struct PolymarketRtdsEquityPrice {
     /// Lowercase venue symbol, e.g. `aapl`, `eurusd`, or `xauusd`.
     pub symbol: String,
-    /// Spot price rounded to the venue's float payload precision.
+    /// Spot price decoded from the venue's decimal number token.
     #[custom_data_field(serde)]
     pub value: Price,
     /// Full-precision spot price when supplied, otherwise the venue's `value`.

@@ -322,7 +322,7 @@ impl<C: Clock> FixedWindowLimiter<C> {
         }
     }
 
-    /// Waits for the buckets a request class draws from, honouring the venue's
+    /// Waits for the buckets a request class draws from, honoring the venue's
     /// per-instrument matching allowance when the request carries an
     /// instrument.
     pub(crate) async fn await_class_ready(

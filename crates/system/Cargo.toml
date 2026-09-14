@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-system"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -52,7 +51,7 @@ nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
 nautilus-data = { workspace = true }
 nautilus-execution = { workspace = true }
-nautilus-model = { workspace = true, features = ["test-support"] }
+nautilus-model = { workspace = true }
 nautilus-portfolio = { workspace = true }
 nautilus-risk = { workspace = true }
 nautilus-trading = { workspace = true }
@@ -64,7 +63,6 @@ anyhow = { workspace = true }
 bon = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }
-jiff = { workspace = true, optional = true }
 log = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
@@ -72,10 +70,12 @@ serde_json = { workspace = true }
 sysinfo = { workspace = true }
 ustr = { workspace = true }
 
+jiff = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-model = { workspace = true, features = ["test-support"] }
 nautilus-serialization = { workspace = true }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",

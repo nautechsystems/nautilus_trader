@@ -47,6 +47,7 @@ use nautilus_model::{
 use nautilus_network::{
     http::{HttpClient, HttpResponse, Method, USER_AGENT},
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
+    retry::{RetryConfig, RetryError, RetryManager},
 };
 use parking_lot::Mutex;
 use rust_decimal::Decimal;
@@ -84,7 +85,8 @@ use crate::{
         bar::BinanceBar,
         consts::{
             BINANCE_API_KEY_HEADER, BINANCE_DAPI_PATH, BINANCE_DAPI_RATE_LIMITS, BINANCE_FAPI_PATH,
-            BINANCE_FAPI_RATE_LIMITS, BINANCE_NAUTILUS_FUTURES_BROKER_ID, BinanceRateLimitQuota,
+            BINANCE_FAPI_RATE_LIMITS, BINANCE_NAUTILUS_FUTURES_BROKER_ID,
+            BINANCE_RETRY_AFTER_HEADER, BinanceRateLimitQuota,
         },
         credential::SigningCredential,
         encoder::encode_broker_id,
@@ -126,7 +128,7 @@ enum BinanceFuturesEndpointScope {
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct BinanceFuturesRequestScope {
     endpoint: BinanceFuturesEndpointScope,
-    proxy_url: Option<String>,
+    proxy_url_digest: Option<[u8; 32]>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -168,6 +170,7 @@ struct BatchCancelParams {
 /// Raw HTTP client for Binance Futures REST API.
 #[derive(Debug, Clone)]
 pub struct BinanceRawFuturesHttpClient {
+    retry_manager: Arc<RetryManager<BinanceFuturesHttpError>>,
     client: HttpClient,
     base_url: String,
     api_path: &'static str,
@@ -233,13 +236,17 @@ impl BinanceRawFuturesHttpClient {
 
         let client = HttpClient::builder()
             .headers(headers)
-            .header_keys(vec![BINANCE_API_KEY_HEADER.to_string()])
+            .header_keys(vec![
+                BINANCE_API_KEY_HEADER.to_string(),
+                BINANCE_RETRY_AFTER_HEADER.to_string(),
+            ])
             .maybe_timeout_secs(timeout_secs)
             .maybe_proxy_url(proxy_url)
             .rate_limiters(rate_limiters)
             .build()?;
 
         Ok(Self {
+            retry_manager: Arc::new(RetryManager::new(crate::common::http::retry_config())),
             client,
             base_url,
             api_path,
@@ -260,7 +267,7 @@ impl BinanceRawFuturesHttpClient {
         let endpoint = Self::endpoint_scope(environment, base_url_override);
         let request_scope = BinanceFuturesRequestScope {
             endpoint: endpoint.clone(),
-            proxy_url: proxy_url.map(ToOwned::to_owned),
+            proxy_url_digest: proxy_url.map(Self::sha256),
         };
         let request_limiter = Self::request_rate_limiter(request_scope, request_quota);
         let mut limiters = vec![request_limiter];
@@ -298,12 +305,14 @@ impl BinanceRawFuturesHttpClient {
     }
 
     fn account_scope(credential: &SigningCredential) -> BinanceFuturesAccountScope {
-        let digest = digest::digest(&digest::SHA256, credential.api_key().as_bytes());
-        let bytes = digest
+        BinanceFuturesAccountScope(Self::sha256(credential.api_key()))
+    }
+
+    fn sha256(value: &str) -> [u8; 32] {
+        digest::digest(&digest::SHA256, value.as_bytes())
             .as_ref()
             .try_into()
-            .expect("SHA-256 digest must contain 32 bytes");
-        BinanceFuturesAccountScope(bytes)
+            .expect("SHA-256 digest must contain 32 bytes")
     }
 
     fn request_rate_limiter(
@@ -507,7 +516,7 @@ impl BinanceRawFuturesHttpClient {
 
         let response = self
             .client
-            .request(
+            .request_with_url_redacted(
                 method,
                 url,
                 None::<&HashMap<String, Vec<String>>>,
@@ -544,6 +553,58 @@ impl BinanceRawFuturesHttpClient {
     }
 
     async fn request<P, T>(
+        &self,
+        method: Method,
+        path: &str,
+        params: Option<&P>,
+        signed: bool,
+        use_order_quota: bool,
+        body: Option<Vec<u8>>,
+    ) -> BinanceFuturesHttpResult<T>
+    where
+        P: Serialize + ?Sized,
+        T: DeserializeOwned,
+    {
+        let operation = || {
+            self.request_once(
+                method.clone(),
+                path,
+                params,
+                signed,
+                use_order_quota,
+                body.clone(),
+            )
+        };
+
+        if method != Method::GET {
+            return operation().await;
+        }
+        self.retry_manager
+            .invocation(
+                path,
+                operation,
+                BinanceFuturesHttpError::is_retryable,
+                |e| match e {
+                    RetryError::Canceled => {
+                        BinanceFuturesHttpError::Canceled("HTTP requests canceled".to_string())
+                    }
+                    RetryError::OperationTimeout { timeout_ms } => {
+                        BinanceFuturesHttpError::Timeout(format!("Request exceeded {timeout_ms}ms"))
+                    }
+                    RetryError::InvalidConfiguration { message } => {
+                        BinanceFuturesHttpError::ValidationError(message)
+                    }
+                    e @ RetryError::ElapsedBudgetExceeded { .. } => {
+                        BinanceFuturesHttpError::RetryBudgetExceeded(e.to_string())
+                    }
+                },
+            )
+            .retry_delay(&BinanceFuturesHttpError::retry_after)
+            .execute()
+            .await
+    }
+
+    async fn request_once<P, T>(
         &self,
         method: Method,
         path: &str,
@@ -597,7 +658,7 @@ impl BinanceRawFuturesHttpClient {
 
         let response = self
             .client
-            .request(
+            .request_with_url_redacted(
                 method,
                 url,
                 None::<&HashMap<String, Vec<String>>>,
@@ -652,15 +713,22 @@ impl BinanceRawFuturesHttpClient {
     fn parse_error_response<T>(&self, response: &HttpResponse) -> BinanceFuturesHttpResult<T> {
         let status = response.status.as_u16();
         let body = String::from_utf8_lossy(&response.body).to_string();
+        let retry_after = crate::common::http::retry_after(&response.headers, Timestamp::now());
 
         if let Ok(err) = serde_json::from_str::<BinanceErrorResponse>(&body) {
             return Err(BinanceFuturesHttpError::BinanceError {
                 code: err.code,
                 message: err.msg,
+                status,
+                retry_after,
             });
         }
 
-        Err(BinanceFuturesHttpError::UnexpectedStatus { status, body })
+        Err(BinanceFuturesHttpError::UnexpectedStatus {
+            status,
+            body,
+            retry_after,
+        })
     }
 
     fn default_headers(credential: &Option<SigningCredential>) -> HashMap<String, String> {
@@ -969,7 +1037,7 @@ impl BinanceRawFuturesHttpClient {
     /// Returns an error if the request fails.
     pub async fn keepalive_listen_key(&self, listen_key: &str) -> BinanceFuturesHttpResult<()> {
         let params = ListenKeyParams {
-            listen_key: listen_key.to_string(),
+            listen_key: listen_key.into(),
         };
         let _: serde_json::Value = self
             .request_put("listenKey", Some(&params), true, false)
@@ -984,7 +1052,7 @@ impl BinanceRawFuturesHttpClient {
     /// Returns an error if the request fails.
     pub async fn close_listen_key(&self, listen_key: &str) -> BinanceFuturesHttpResult<()> {
         let params = ListenKeyParams {
-            listen_key: listen_key.to_string(),
+            listen_key: listen_key.into(),
         };
         let _: serde_json::Value = self
             .request_delete("listenKey", Some(&params), true, false)
@@ -1516,6 +1584,11 @@ impl BinanceFuturesHttpClient {
         })
     }
 
+    pub(crate) fn with_retry_config(mut self, config: RetryConfig) -> Self {
+        Arc::make_mut(&mut self.inner).retry_manager = Arc::new(RetryManager::new(config));
+        self
+    }
+
     /// Returns the product type (UsdM or CoinM).
     #[must_use]
     pub const fn product_type(&self) -> BinanceProductType {
@@ -1548,7 +1621,7 @@ impl BinanceFuturesHttpClient {
         self.inner.has_credentials()
     }
 
-    /// Replaces the raw instrument metadata after a complete catalogue fetch.
+    /// Replaces the raw instrument metadata after a complete catalog fetch.
     fn replace_instruments(
         &self,
         instruments: Vec<(Ustr, BinanceFuturesInstrument)>,
@@ -1558,21 +1631,21 @@ impl BinanceFuturesHttpClient {
             instrument.precisions()?;
             if instrument.symbol() != symbol {
                 return Err(BinanceFuturesHttpError::ValidationError(format!(
-                    "Binance Futures catalogue key {symbol} does not match instrument symbol {}",
+                    "Binance Futures catalog key {symbol} does not match instrument symbol {}",
                     instrument.symbol()
                 )));
             }
             let expected_id = format_instrument_id(&symbol, self.product_type);
             if instrument.id() != expected_id {
                 return Err(BinanceFuturesHttpError::ValidationError(format!(
-                    "Binance Futures catalogue instrument ID {} does not match expected ID {expected_id}",
+                    "Binance Futures catalog instrument ID {} does not match expected ID {expected_id}",
                     instrument.id()
                 )));
             }
 
             if snapshot.insert(symbol, instrument).is_some() {
                 return Err(BinanceFuturesHttpError::ValidationError(format!(
-                    "Duplicate Binance Futures catalogue symbol {symbol}"
+                    "Duplicate Binance Futures catalog symbol {symbol}"
                 )));
             }
         }
@@ -1755,14 +1828,14 @@ impl BinanceFuturesHttpClient {
             .await
     }
 
-    /// Fetches, selects, and parses the configured instrument catalogue.
+    /// Fetches, selects, and parses the configured instrument catalog.
     ///
     /// Account-wide Futures VIP rates provide the fallback when credentials are
     /// present. Exact per-symbol commission queries are opt-in.
     ///
     /// # Errors
     ///
-    /// Returns an error if configuration or the catalogue request is invalid.
+    /// Returns an error if configuration or the catalog request is invalid.
     pub async fn request_instruments_with_config(
         &self,
         config: &BinanceInstrumentProviderConfig,
@@ -2139,6 +2212,7 @@ impl BinanceFuturesHttpClient {
         trigger_price: Option<Price>,
         reduce_only: bool,
         post_only: bool,
+        rpi: bool,
         position_side: Option<BinancePositionSide>,
         price_match: Option<BinancePriceMatch>,
         good_till_date: Option<i64>,
@@ -2148,7 +2222,9 @@ impl BinanceFuturesHttpClient {
 
         let binance_side = BinanceSide::try_from(order_side)?;
         let binance_order_type = order_type_to_binance_futures(order_type)?;
-        let binance_tif = if post_only {
+        let binance_tif = if rpi {
+            BinanceTimeInForce::Rpi
+        } else if post_only {
             BinanceTimeInForce::Gtx
         } else {
             BinanceTimeInForce::try_from(time_in_force)?
@@ -4092,9 +4168,16 @@ mod tests {
         let result: BinanceFuturesHttpResult<()> = client.parse_error_response(&response);
 
         match result {
-            Err(BinanceFuturesHttpError::BinanceError { code, message }) => {
+            Err(BinanceFuturesHttpError::BinanceError {
+                code,
+                message,
+                status,
+                retry_after,
+            }) => {
                 assert_eq!(code, -1121);
                 assert_eq!(message, "Invalid symbol.");
+                assert_eq!(status, 400);
+                assert_eq!(retry_after, None);
             }
             other => panic!("Expected BinanceError, was {other:?}"),
         }

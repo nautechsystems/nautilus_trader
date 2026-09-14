@@ -28,15 +28,13 @@ use nautilus_common::{
     cache::Cache,
     clients::DataClient,
     messages::data::{
-        RequestBars, RequestBookSnapshot, RequestCustomData, RequestForwardPrices,
-        RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
-        SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCustomData, SubscribeIndexPrices,
-        SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
-        SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
-        UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCustomData,
-        UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose,
-        UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
-        UnsubscribeQuotes, UnsubscribeTrades,
+        RequestOptionChainReferencePrice, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
+        SubscribeCustomData, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+        SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
+        SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
+        UnsubscribeCustomData, UnsubscribeIndexPrices, UnsubscribeInstrument,
+        UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+        UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
     },
 };
 use nautilus_model::identifiers::{ClientId, Venue};
@@ -285,47 +283,16 @@ impl DataClient for BacktestDataClient {
         Ok(())
     }
 
-    fn request_data(&self, _request: RequestCustomData) -> anyhow::Result<()> {
-        // No-op in backtest: data is replayed by the engine
-        Ok(())
+    fn request_option_chain_reference_price(
+        &self,
+        _request: RequestOptionChainReferencePrice,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("backtest data client cannot fetch option-chain reference prices")
     }
 
-    fn request_instruments(&self, _request: RequestInstruments) -> anyhow::Result<()> {
-        // No-op in backtest: instruments are pre-loaded
-        Ok(())
-    }
-
-    fn request_instrument(&self, _request: RequestInstrument) -> anyhow::Result<()> {
-        // No-op in backtest: instruments are pre-loaded
-        Ok(())
-    }
-
-    fn request_book_snapshot(&self, _request: RequestBookSnapshot) -> anyhow::Result<()> {
-        // No-op in backtest
-        Ok(())
-    }
-
-    fn request_quotes(&self, _request: RequestQuotes) -> anyhow::Result<()> {
-        // No-op in backtest: quotes are replayed by the engine
-        Ok(())
-    }
-
-    fn request_trades(&self, _request: RequestTrades) -> anyhow::Result<()> {
-        // No-op in backtest: trades are replayed by the engine
-        Ok(())
-    }
-
-    fn request_bars(&self, _request: RequestBars) -> anyhow::Result<()> {
-        // No-op in backtest: bars are replayed by the engine
-        Ok(())
-    }
-
-    fn request_forward_prices(&self, _request: RequestForwardPrices) -> anyhow::Result<()> {
-        // No live ATM source in backtest; return Err so the engine fallback
-        // creates the option-chain manager without an initial ATM price.
-        anyhow::bail!("backtest data client cannot fetch forward prices")
-    }
-
+    // Unlike the other request handlers, this stays silent: the engine itself issues this
+    // request when a DeFi subscription arrives before the pool is cached, and the replayed
+    // snapshot completes that flow. The default handler would warn during a successful backtest.
     #[cfg(feature = "defi")]
     fn request_pool_snapshot(&self, _request: RequestPoolSnapshot) -> anyhow::Result<()> {
         Ok(())
@@ -334,30 +301,114 @@ impl DataClient for BacktestDataClient {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Mutex, MutexGuard};
+
+    use log::{Level, LevelFilter, Log, Metadata, Record};
+    use nautilus_common::messages::data::RequestInstruments;
     use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_model::identifiers::{InstrumentId, OptionSeriesId};
     use rstest::rstest;
     use ustr::Ustr;
 
     use super::*;
 
+    struct RequestWarnCapture {
+        messages: Mutex<Vec<String>>,
+    }
+
+    impl RequestWarnCapture {
+        fn clear(&self) {
+            self.messages.lock().unwrap().clear();
+        }
+
+        fn messages(&self) -> Vec<String> {
+            self.messages.lock().unwrap().clone()
+        }
+    }
+
+    impl Log for RequestWarnCapture {
+        fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+            metadata.level() == Level::Warn
+        }
+
+        fn log(&self, record: &Record<'_>) {
+            if self.enabled(record.metadata()) {
+                self.messages
+                    .lock()
+                    .unwrap()
+                    .push(record.args().to_string());
+            }
+        }
+
+        fn flush(&self) {}
+    }
+
+    static REQUEST_WARN_CAPTURE: RequestWarnCapture = RequestWarnCapture {
+        messages: Mutex::new(Vec::new()),
+    };
+    static REQUEST_WARN_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn start_request_warn_capture() -> MutexGuard<'static, ()> {
+        let guard = REQUEST_WARN_TEST_LOCK.lock().unwrap();
+        let _ = log::set_logger(&REQUEST_WARN_CAPTURE);
+        log::set_max_level(LevelFilter::Warn);
+        REQUEST_WARN_CAPTURE.clear();
+        guard
+    }
+
     #[rstest]
-    fn test_request_forward_prices_returns_err_for_engine_fallback() {
+    fn test_request_instruments_logs_not_implemented_warning() {
+        let _guard = start_request_warn_capture();
+
         let client_id = ClientId::new("BACKTEST");
         let venue = Venue::new("BACKTEST");
         let cache = Rc::new(RefCell::new(Cache::default()));
         let client = BacktestDataClient::new(client_id, venue, cache);
 
-        let request = RequestForwardPrices::new(
+        let request = RequestInstruments::new(
+            None,
+            None,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+
+        let result = client.request_instruments(request);
+
+        assert!(result.is_ok());
+        assert!(
+            REQUEST_WARN_CAPTURE
+                .messages()
+                .iter()
+                .any(|message| message.contains("RequestInstruments")
+                    && message.contains("handler not implemented")),
+        );
+    }
+    #[rstest]
+    fn test_option_chain_reference_price_is_unsupported() {
+        let client_id = ClientId::new("BACKTEST");
+        let venue = Venue::new("BACKTEST");
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let client = BacktestDataClient::new(client_id, venue, cache);
+        let series_id = OptionSeriesId::new(
             venue,
             Ustr::from("BTC"),
-            None,
+            Ustr::from("BTC"),
+            UnixNanos::default(),
+        );
+
+        let request = RequestOptionChainReferencePrice::new(
+            series_id,
+            InstrumentId::from("BTC-TEST-50000-C.BACKTEST"),
             Some(client_id),
             UUID4::new(),
             UnixNanos::default(),
             None,
         );
 
-        let result = client.request_forward_prices(request);
+        let result = client.request_option_chain_reference_price(request);
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("backtest data client"));

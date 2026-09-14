@@ -132,8 +132,8 @@ mod tests {
         let currency = unsafe {
             super::currency_from_py(code.as_ptr(), 4, 0, name.as_ptr(), CurrencyType::Crypto)
         };
-        assert_eq!(currency.code.as_str(), "MYC");
-        assert_eq!(currency.name.as_str(), "My Currency");
+        assert_eq!(currency.code, "MYC");
+        assert_eq!(currency.name, "My Currency");
         assert_eq!(currency.currency_type, CurrencyType::Crypto);
     }
 

@@ -172,7 +172,7 @@ pub fn encode_positions(data: &[Position]) -> Result<RecordBatch, ArrowError> {
         ts_opened.append_value(unix_nanos_to_i64(position.ts_opened.as_u64()));
         ts_last.append_value(unix_nanos_to_i64(position.ts_last.as_u64()));
         ts_closed.append_option(position.ts_closed.map(|v| unix_nanos_to_i64(v.as_u64())));
-        duration_ns.append_value(position.duration_ns);
+        duration_ns.append_value(position.duration_ns.as_u64());
         avg_px_open.append_value(position.avg_px_open);
         avg_px_close.append_option(position.avg_px_close);
         realized_return.append_value(position.realized_return);

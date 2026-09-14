@@ -15,7 +15,9 @@
 
 //! WebSocket message types for the Polymarket CLOB API.
 
-use nautilus_core::serialization::deserialize_empty_string_as_none;
+use nautilus_core::{
+    serialization::deserialize_empty_string_as_none, string::secret::SecretString,
+};
 use rust_decimal::Decimal;
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
@@ -26,6 +28,7 @@ use serde::{
 };
 use serde_json::value::RawValue;
 use ustr::Ustr;
+use zeroize::Zeroize;
 
 use crate::common::{
     enums::{
@@ -635,12 +638,12 @@ pub enum PolymarketWsMessage {
 }
 
 /// Auth payload embedded in user-channel subscribe messages.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Zeroize)]
 pub struct PolymarketWsAuth {
     #[serde(rename = "apiKey")]
-    pub api_key: String,
-    pub secret: String,
-    pub passphrase: String,
+    pub api_key: SecretString,
+    pub secret: SecretString,
+    pub passphrase: SecretString,
 }
 
 /// Initial market-channel subscribe request sent for a fresh WebSocket session.
@@ -684,10 +687,11 @@ pub struct MarketUnsubscribeRequest {
 /// User-channel subscribe request sent on connect.
 ///
 /// Wire format: `{"auth": {...}, "type": "user"}`
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Zeroize)]
 pub struct UserSubscribeRequest {
     pub auth: PolymarketWsAuth,
     #[serde(rename = "type")]
+    #[zeroize(skip)]
     pub msg_type: &'static str,
 }
 
@@ -705,9 +709,9 @@ mod tests {
     fn user_subscribe_request_matches_all_markets_wire_format() {
         let request = UserSubscribeRequest {
             auth: PolymarketWsAuth {
-                api_key: "fixture-key".to_string(),
-                secret: "fixture-secret".to_string(),
-                passphrase: "fixture-passphrase".to_string(),
+                api_key: SecretString::from("fixture-key"),
+                secret: SecretString::from("fixture-secret"),
+                passphrase: SecretString::from("fixture-passphrase"),
             },
             msg_type: "user",
         };
@@ -737,7 +741,7 @@ mod tests {
     }
 
     /// An `auto_redeem` user-channel event as observed from the venue, which is undocumented and
-    /// not modelled by [`UserWsMessage`].
+    /// not modeled by [`UserWsMessage`].
     fn auto_redeem_element() -> serde_json::Value {
         serde_json::json!({
             "event_type": "auto_redeem",
@@ -761,7 +765,7 @@ mod tests {
         let snap: PolymarketBookSnapshot = load("ws_book_snapshot.json");
 
         assert_eq!(
-            snap.asset_id.as_str(),
+            snap.asset_id,
             "71321045679252212594626385532706912750332728571942532289631379312455583992563"
         );
         assert_eq!(snap.bids.len(), 3);
@@ -1066,7 +1070,7 @@ mod tests {
             panic!("expected order message");
         };
         assert_eq!(
-            order.asset_id.as_str(),
+            order.asset_id,
             "10000000000000000000000000000000000000000000000000000000000000000000000000001"
         );
         assert_eq!(order.associate_trades, Some(Vec::new()));
@@ -1081,7 +1085,7 @@ mod tests {
             Some("0x1111111111111111111111111111111111111111")
         );
         assert_eq!(
-            order.market.as_str(),
+            order.market,
             "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
         );
         assert_eq!(
@@ -1094,7 +1098,7 @@ mod tests {
             order.outcome.as_ref().map(PolymarketOutcome::as_str),
             Some("")
         );
-        assert_eq!(order.owner.as_str(), "11111111-2222-3333-4444-555555555555");
+        assert_eq!(order.owner, "11111111-2222-3333-4444-555555555555");
         assert_eq!(order.price, "0.01");
         assert_eq!(order.side, PolymarketOrderSide::Buy);
         assert_eq!(order.size_matched, "");
@@ -1126,18 +1130,18 @@ mod tests {
             panic!("expected order message");
         };
 
-        assert_eq!(order.asset_id.as_str(), "asset-1");
+        assert_eq!(order.asset_id, "asset-1");
         assert!(order.associate_trades.is_none());
         assert!(order.created_at.is_none());
         assert!(order.expiration.is_none());
         assert_eq!(order.id, "order-1");
         assert!(order.maker_address.is_none());
-        assert_eq!(order.market.as_str(), "market-1");
+        assert_eq!(order.market, "market-1");
         assert!(order.order_owner.is_none());
         assert!(order.order_type.is_none());
         assert_eq!(order.original_size, "2");
         assert!(order.outcome.is_none());
-        assert_eq!(order.owner.as_str(), "owner-1");
+        assert_eq!(order.owner, "owner-1");
         assert_eq!(order.price, "0.5");
         assert_eq!(order.side, PolymarketOrderSide::Sell);
         assert_eq!(order.size_matched, "0");
@@ -1313,7 +1317,7 @@ mod tests {
             "Map 1 Rounds Handicap: Sangal (-6.5) vs zeste (+6.5)"
         );
         assert_eq!(
-            nm.market.as_str(),
+            nm.market,
             "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
         );
         assert_eq!(nm.slug, "sanitized-new-market");

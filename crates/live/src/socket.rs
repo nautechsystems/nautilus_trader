@@ -122,6 +122,7 @@ impl SocketReconnectRegistry {
         SOCKET_REGISTRARS.with(|registrars| {
             registrars.borrow_mut().push(self.registrar());
         });
+
         let _scope = SocketRegistryScope;
         f()
     }
@@ -135,6 +136,7 @@ impl SocketReconnectRegistry {
     #[must_use]
     pub fn get(&self, client_id: ClientId, endpoint: Ustr) -> SocketReconnectLookup {
         let inner = self.inner.lock();
+
         let key = SocketEndpoint {
             client_id,
             endpoint,
@@ -188,6 +190,7 @@ struct SocketReconnectRegistrar {
 impl SocketReconnectRegistrar {
     fn owner(&self, client_id: ClientId) -> Option<SocketReconnectOwner> {
         let registry = self.registry.upgrade()?;
+
         let owner_id = {
             let mut inner = registry.lock();
             inner.next_owner = inner.next_owner.wrapping_add(1).max(1);
@@ -217,6 +220,7 @@ impl SocketReconnectOwner {
         let Some(registry) = self.0.registry.upgrade() else {
             return (None, None);
         };
+
         let key = SocketEndpoint {
             client_id: self.0.client_id,
             endpoint,
@@ -227,10 +231,12 @@ impl SocketReconnectOwner {
         let request = Arc::new(Mutex::new(Some(handle)));
         let guarded_request = Arc::clone(&request);
         let registry_ref = Arc::downgrade(&registry);
+
         let guarded_handle = SocketReconnectHandle::new(move || {
             let Some(_registry) = registry_ref.upgrade() else {
                 return ReconnectRequestOutcome::Closed;
             };
+
             let request = guarded_request.lock();
             request
                 .as_ref()
@@ -238,6 +244,7 @@ impl SocketReconnectOwner {
                     handle.request_reconnect()
                 })
         });
+
         let generation = {
             let mut inner = registry.lock();
             inner.next_generation = inner.next_generation.wrapping_add(1).max(1);
@@ -250,6 +257,7 @@ impl SocketReconnectOwner {
                     request,
                 },
             );
+
             generation
         };
 
@@ -266,10 +274,12 @@ impl SocketReconnectOwner {
 
     fn remove(&self, endpoint: Ustr) -> Option<RegistryEntry> {
         let registry = self.0.registry.upgrade()?;
+
         let key = SocketEndpoint {
             client_id: self.0.client_id,
             endpoint,
         };
+
         remove_entry(&registry, key, self.0.owner_id, None)
     }
 }
@@ -286,6 +296,7 @@ impl Drop for SocketReconnectOwnerInner {
         let Some(registry) = self.registry.upgrade() else {
             return;
         };
+
         let removed = {
             let mut inner = registry.lock();
             if let Some(owners) = inner.owners.get_mut(&self.client_id) {
@@ -302,8 +313,10 @@ impl Drop for SocketReconnectOwnerInner {
                 {
                     removed.push(entry);
                 }
+
                 !entries.is_empty()
             });
+
             removed
         };
 
@@ -326,6 +339,7 @@ impl Drop for SocketReconnectRegistration {
         let Some(registry) = self.registry.upgrade() else {
             return;
         };
+
         let entry = remove_entry(&registry, self.key, self.owner_id, Some(self.generation));
         deactivate(entry);
     }
@@ -348,12 +362,14 @@ fn remove_entry(
         if matches {
             entry = entries.remove(&owner_id);
         }
+
         remove_endpoint = entries.is_empty();
     }
 
     if remove_endpoint {
         inner.entries.remove(&key);
     }
+
     entry
 }
 
@@ -413,6 +429,7 @@ impl SocketControlFactory {
             generation: AtomicU64::new(0),
             registration: Mutex::new(None),
         };
+
         controls.insert(endpoint, control.clone());
         control
     }
@@ -447,10 +464,12 @@ impl SocketStatePublisher {
         let Some(sender) = &self.sender else {
             return;
         };
+
         let state = match state {
             SocketState::Connected => SystemSocketState::Connected,
             SocketState::Disconnected => SystemSocketState::Disconnected,
         };
+
         let change = SocketStateChange::new(self.client_id, self.venue, self.endpoint, state);
         if let Err(e) = sender.send(SystemEvent::SocketState(change)) {
             log::error!("Failed to emit socket state change: {e}");
@@ -539,10 +558,12 @@ impl SocketControl {
             let registration = self.registration.lock().take();
             (registration, replaced, generation)
         };
+
         deactivate(replaced);
         drop(registration);
 
         let publisher = self.publisher.clone();
+
         SocketStateSink::new(move |state| {
             publisher.publish_if_current(generation, state, &on_state);
         })
@@ -559,15 +580,18 @@ impl SocketControl {
             if generation == 0 || !self.publisher.is_current(generation) {
                 return;
             }
+
             let (registration, replaced) = if let Some(owner) = &self.owner {
                 owner.register(self.publisher.endpoint, SocketReconnectHandle::new(request))
             } else {
                 (None, None)
             };
+
             let mut current = self.registration.lock();
             let old_registration = std::mem::replace(&mut *current, registration);
             (replaced, old_registration)
         };
+
         deactivate(replaced);
         drop(old_registration);
     }
@@ -579,6 +603,7 @@ impl SocketControl {
             self.generation.store(0, Ordering::Release);
             self.registration.lock().take()
         };
+
         drop(registration);
     }
 }
@@ -632,6 +657,7 @@ mod tests {
         else {
             panic!("test socket endpoint should be registered");
         };
+
         handle
     }
 
@@ -751,6 +777,7 @@ mod tests {
             publisher.publish_if_current(generation, SocketState::Disconnected, &|_| {});
             ReconnectRequestOutcome::Accepted
         });
+
         let stale_handle = handle(&registry);
         let request_handle = stale_handle.clone();
         let request = thread::spawn(move || request_handle.request_reconnect());
@@ -763,6 +790,7 @@ mod tests {
             let _replacement_sink = replacement.sink();
             replaced_tx.send(()).unwrap();
         });
+
         let deadline = Instant::now() + Duration::from_secs(1);
 
         while !matches!(
@@ -804,11 +832,14 @@ mod tests {
             publisher.publish_if_current(generation, SocketState::Disconnected, &|_| {});
             ReconnectRequestOutcome::Accepted
         });
+
         let stale_handle = handle(&registry);
+
         let key = SocketEndpoint {
             client_id: ClientId::from("TEST"),
             endpoint: Ustr::from(ENDPOINT),
         };
+
         let old_generation = registry
             .inner
             .lock()
@@ -828,6 +859,7 @@ mod tests {
             replacement.register(|| ReconnectRequestOutcome::AlreadyReconnecting);
             registered_tx.send(()).unwrap();
         });
+
         let deadline = Instant::now() + Duration::from_secs(1);
 
         loop {
@@ -841,6 +873,7 @@ mod tests {
             if !old_entry_is_registered {
                 break;
             }
+
             assert!(
                 Instant::now() < deadline,
                 "replacement reconnect handle was not registered"
@@ -908,6 +941,7 @@ mod tests {
             first_callback.fetch_add(1, Ordering::SeqCst);
             ReconnectRequestOutcome::Accepted
         });
+
         let second_callback = Arc::clone(&second_count);
         second.register(move || {
             second_callback.fetch_add(1, Ordering::SeqCst);
@@ -946,16 +980,20 @@ mod tests {
     fn scope_restores_the_prior_registry() {
         let outer = SocketReconnectRegistry::default();
         let inner = SocketReconnectRegistry::default();
+
         let (outer_control, inner_control) = outer.scope(|| {
             let outer_control =
                 SocketControl::new(ClientId::from("OUTER"), Some(Venue::from("TEST")), ENDPOINT);
+
             let inner_control = inner.scope(|| {
                 SocketControl::new(ClientId::from("INNER"), Some(Venue::from("TEST")), ENDPOINT)
             });
+
             let _sink = inner_control.sink();
             inner_control.register(|| ReconnectRequestOutcome::Accepted);
             (outer_control, inner_control)
         });
+
         let _sink = outer_control.sink();
         outer_control.register(|| ReconnectRequestOutcome::Accepted);
 

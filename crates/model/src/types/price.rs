@@ -21,6 +21,11 @@
 //!
 //! # Arithmetic behavior
 //!
+//! Adding or subtracting two `Price` values requires matching effective fixed-point scales.
+//! These operations panic on a scale mismatch.
+//! Comparisons and hashes account for scale differences without rounding.
+//! Without the `defi` feature, constructors restrict values to a single storage scale.
+//!
 //! | Operation         | Result    | Notes                              |
 //! |-------------------|-----------|------------------------------------|
 //! | `Price + Price`   | `Price`   | Precision is max of both operands. |
@@ -57,9 +62,12 @@ use nautilus_core::{
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 
+#[cfg(feature = "defi")]
+use super::fixed::compare_raw_signed;
 use super::fixed::{
-    FIXED_PRECISION, FIXED_SCALAR, check_fixed_precision, mantissa_exponent_to_fixed_i128,
-    mantissa_exponent_to_raw_checked, raw_scales_match, scaled_raw_to_decimal,
+    FIXED_PRECISION, FIXED_SCALAR, canonical_raw, check_fixed_precision,
+    mantissa_exponent_to_fixed_i128, mantissa_exponent_to_raw_checked, raw_scales_match,
+    scaled_raw_to_decimal,
 };
 #[cfg(feature = "high-precision")]
 use super::fixed::{PRECISION_DIFF_SCALAR, f64_to_fixed_i128, fixed_i128_to_f64};
@@ -167,8 +175,7 @@ pub const ERROR_PRICE: Price = Price {
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct Price {
-    /// Represents the raw fixed-point value, with `precision` defining the number of decimal places.
-    pub raw: PriceRaw,
+    pub(crate) raw: PriceRaw,
     /// The number of decimal places, with a maximum of [`FIXED_PRECISION`].
     pub precision: u8,
 }
@@ -339,10 +346,12 @@ impl Price {
         if !raw_scales_match(self.precision, rhs.precision) {
             return None;
         }
+
         let raw = self.raw.checked_add(rhs.raw)?;
         if raw < PRICE_RAW_MIN || raw > PRICE_RAW_MAX {
             return None;
         }
+
         Some(Self {
             raw,
             precision: self.precision.max(rhs.precision),
@@ -365,10 +374,12 @@ impl Price {
         if !raw_scales_match(self.precision, rhs.precision) {
             return None;
         }
+
         let raw = self.raw.checked_sub(rhs.raw)?;
         if raw < PRICE_RAW_MIN || raw > PRICE_RAW_MAX {
             return None;
         }
+
         Some(Self {
             raw,
             precision: self.precision.max(rhs.precision),
@@ -389,16 +400,50 @@ impl Price {
         self.raw == PRICE_UNDEF
     }
 
+    /// Returns `true` if the value of this instance is the error sentinel.
+    #[must_use]
+    #[inline]
+    pub fn is_error(&self) -> bool {
+        self.raw == PRICE_ERROR
+    }
+
+    /// Returns the stored fixed-point integer without rescaling.
+    ///
+    /// Use this for serialization and explicit fixed-point conversions. Prefer domain
+    /// operations for calculations; the storage scale can differ from display precision.
+    ///
+    /// Direct field access is restricted to this crate:
+    ///
+    /// ```compile_fail
+    /// use nautilus_model::types::Price;
+    /// let value = Price::from("1");
+    /// let raw = value.raw;
+    /// ```
+    #[must_use]
+    #[inline]
+    pub const fn raw(&self) -> PriceRaw {
+        self.raw
+    }
+
     /// Returns `true` if the value of this instance is zero.
     #[must_use]
+    #[inline]
     pub fn is_zero(&self) -> bool {
         self.raw == 0
     }
 
     /// Returns `true` if the value of this instance is position (> 0).
     #[must_use]
+    #[inline]
     pub fn is_positive(&self) -> bool {
         self.raw != PRICE_UNDEF && self.raw > 0
+    }
+
+    /// Returns `true` if the value of this instance is negative (< 0).
+    #[must_use]
+    #[inline]
+    pub fn is_negative(&self) -> bool {
+        self.raw != PRICE_UNDEF && self.raw < 0
     }
 
     #[cfg(feature = "high-precision")]
@@ -611,41 +656,46 @@ impl From<&Price> for Decimal {
 
 impl Hash for Price {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.raw.hash(state);
+        self.raw.signum().hash(state);
+        if self.raw == PRICE_ERROR {
+            self.raw.hash(state);
+        } else {
+            canonical_raw(self.raw.unsigned_abs(), self.precision).hash(state);
+        }
     }
 }
 
 impl PartialEq for Price {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.raw == other.raw
+        self.cmp(other) == Ordering::Equal
     }
 }
 
 impl PartialOrd for Price {
+    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
-    }
-
-    fn lt(&self, other: &Self) -> bool {
-        self.raw.lt(&other.raw)
-    }
-
-    fn le(&self, other: &Self) -> bool {
-        self.raw.le(&other.raw)
-    }
-
-    fn gt(&self, other: &Self) -> bool {
-        self.raw.gt(&other.raw)
-    }
-
-    fn ge(&self, other: &Self) -> bool {
-        self.raw.ge(&other.raw)
     }
 }
 
 impl Ord for Price {
+    #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
-        self.raw.cmp(&other.raw)
+        // PRICE_ERROR is a precision-independent sentinel below every valid price.
+        if self.raw == PRICE_ERROR || other.raw == PRICE_ERROR {
+            return self.raw.cmp(&other.raw);
+        }
+
+        #[cfg(feature = "defi")]
+        {
+            compare_raw_signed(self.raw, self.precision, other.raw, other.precision)
+        }
+
+        #[cfg(not(feature = "defi"))]
+        {
+            self.raw.cmp(&other.raw)
+        }
     }
 }
 
@@ -673,7 +723,12 @@ impl Neg for Price {
 
 impl Add for Price {
     type Output = Self;
+    #[inline]
     fn add(self, rhs: Self) -> Self::Output {
+        assert!(
+            raw_scales_match(self.precision, rhs.precision),
+            "Cannot add `Price` values with mismatched decimal scales"
+        );
         Self {
             raw: self
                 .raw
@@ -686,7 +741,12 @@ impl Add for Price {
 
 impl Sub for Price {
     type Output = Self;
+    #[inline]
     fn sub(self, rhs: Self) -> Self::Output {
+        assert!(
+            raw_scales_match(self.precision, rhs.precision),
+            "Cannot subtract `Price` values with mismatched decimal scales"
+        );
         Self {
             raw: self
                 .raw
@@ -837,6 +897,18 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+
+    #[rstest]
+    fn test_error_sentinel_comparisons_preserve_raw_zero_semantics() {
+        let zero = Price::zero(FIXED_PRECISION);
+        let positive = Price::from_mantissa_exponent(1, 0, FIXED_PRECISION);
+        let negative = -positive;
+
+        assert_eq!(ERROR_PRICE, zero);
+        assert_eq!(ERROR_PRICE.cmp(&zero), Ordering::Equal);
+        assert_eq!(ERROR_PRICE.cmp(&positive), Ordering::Less);
+        assert_eq!(negative.cmp(&ERROR_PRICE), Ordering::Less);
+    }
 
     #[rstest]
     fn test_extreme_prices_round_trip_through_raw() {
@@ -1320,6 +1392,17 @@ mod tests {
 
         let price = Price::new(0.000_001, 6);
         assert_eq!(price.as_decimal(), dec!(0.000001));
+    }
+
+    #[rstest]
+    #[case(PRICE_ERROR, true)]
+    #[case(PRICE_UNDEF, false)]
+    #[case(-1, false)]
+    #[case(0, false)]
+    #[case(1, false)]
+    fn test_is_error(#[case] raw: PriceRaw, #[case] expected: bool) {
+        let price = Price::from_raw(raw, 0);
+        assert_eq!(price.is_error(), expected);
     }
 
     #[rstest]

@@ -27,7 +27,7 @@ use derive_builder::Builder;
 use indexmap::IndexMap;
 use jiff::{SignedDuration, Timestamp, civil::Date, tz::Offset};
 use nautilus_core::{
-    UnixNanos,
+    DurationNanos, UnixNanos,
     correctness::{FAILED, check_predicate_true},
     datetime::{add_n_months, subtract_n_months},
     serialization::Serializable,
@@ -193,16 +193,14 @@ pub fn get_bar_interval(bar_type: &BarType) -> SignedDuration {
     }
 }
 
-/// Returns the bar interval as `UnixNanos`.
+/// Returns the bar interval as [`DurationNanos`].
 ///
 /// # Panics
 ///
 /// Panics if the aggregation method of the given `bar_type` is not time based.
 #[must_use]
-pub fn get_bar_interval_ns(bar_type: &BarType) -> UnixNanos {
-    let interval_ns = get_bar_interval(bar_type).as_nanos();
-    let interval_ns = u64::try_from(interval_ns).expect("Invalid bar interval");
-    UnixNanos::from(interval_ns)
+pub fn get_bar_interval_ns(bar_type: &BarType) -> DurationNanos {
+    DurationNanos::try_from(get_bar_interval(bar_type)).expect("Invalid bar interval")
 }
 
 /// Returns the time bar start as a timezone-aware `Timestamp`.
@@ -768,19 +766,13 @@ impl BarType {
     /// Returns whether this instance is a standard bar type.
     #[must_use]
     pub fn is_standard(&self) -> bool {
-        match &self {
-            Self::Standard { .. } => true,
-            Self::Composite { .. } => false,
-        }
+        matches!(self, Self::Standard { .. })
     }
 
     /// Returns whether this instance is a composite bar type.
     #[must_use]
     pub fn is_composite(&self) -> bool {
-        match &self {
-            Self::Standard { .. } => false,
-            Self::Composite { .. } => true,
-        }
+        matches!(self, Self::Composite { .. })
     }
 
     /// Returns whether the bar aggregation source is `EXTERNAL`.
@@ -1547,28 +1539,28 @@ mod tests {
     }
 
     #[rstest]
-    #[case(BarAggregation::Millisecond, 1, UnixNanos::from(1_000_000))]
-    #[case(BarAggregation::Millisecond, 10, UnixNanos::from(10_000_000))]
-    #[case(BarAggregation::Second, 1, UnixNanos::from(1_000_000_000))]
-    #[case(BarAggregation::Second, 10, UnixNanos::from(10_000_000_000))]
-    #[case(BarAggregation::Minute, 1, UnixNanos::from(60_000_000_000))]
-    #[case(BarAggregation::Minute, 30, UnixNanos::from(1_800_000_000_000))]
-    #[case(BarAggregation::Hour, 1, UnixNanos::from(3_600_000_000_000))]
-    #[case(BarAggregation::Hour, 4, UnixNanos::from(14_400_000_000_000))]
-    #[case(BarAggregation::Day, 1, UnixNanos::from(86_400_000_000_000))]
-    #[case(BarAggregation::Day, 2, UnixNanos::from(172_800_000_000_000))]
-    #[case(BarAggregation::Week, 1, UnixNanos::from(604_800_000_000_000))]
-    #[case(BarAggregation::Week, 2, UnixNanos::from(1_209_600_000_000_000))]
-    #[case(BarAggregation::Month, 1, UnixNanos::from(2_592_000_000_000_000))]
-    #[case(BarAggregation::Month, 3, UnixNanos::from(7_776_000_000_000_000))]
-    #[case(BarAggregation::Year, 1, UnixNanos::from(31_536_000_000_000_000))]
-    #[case(BarAggregation::Year, 2, UnixNanos::from(63_072_000_000_000_000))]
+    #[case(BarAggregation::Millisecond, 1, DurationNanos::from_millis(1))]
+    #[case(BarAggregation::Millisecond, 10, DurationNanos::from_millis(10))]
+    #[case(BarAggregation::Second, 1, DurationNanos::from_secs(1))]
+    #[case(BarAggregation::Second, 10, DurationNanos::from_secs(10))]
+    #[case(BarAggregation::Minute, 1, DurationNanos::from_mins(1))]
+    #[case(BarAggregation::Minute, 30, DurationNanos::from_mins(30))]
+    #[case(BarAggregation::Hour, 1, DurationNanos::from_hours(1))]
+    #[case(BarAggregation::Hour, 4, DurationNanos::from_hours(4))]
+    #[case(BarAggregation::Day, 1, DurationNanos::from_days(1))]
+    #[case(BarAggregation::Day, 2, DurationNanos::from_hours(48))]
+    #[case(BarAggregation::Week, 1, DurationNanos::from_hours(168))]
+    #[case(BarAggregation::Week, 2, DurationNanos::from_hours(336))]
+    #[case(BarAggregation::Month, 1, DurationNanos::from_hours(720))]
+    #[case(BarAggregation::Month, 3, DurationNanos::from_hours(2_160))]
+    #[case(BarAggregation::Year, 1, DurationNanos::from_hours(8_760))]
+    #[case(BarAggregation::Year, 2, DurationNanos::from_hours(17_520))]
     #[should_panic(expected = "Aggregation not time based")]
-    #[case(BarAggregation::Tick, 1, UnixNanos::from(0))]
+    #[case(BarAggregation::Tick, 1, DurationNanos::ZERO)]
     fn test_get_bar_interval_ns(
         #[case] aggregation: BarAggregation,
         #[case] step: usize,
-        #[case] expected: UnixNanos,
+        #[case] expected: DurationNanos,
     ) {
         let bar_type = BarType::Standard {
             instrument_id: InstrumentId::from("BTCUSDT-PERP.BINANCE"),

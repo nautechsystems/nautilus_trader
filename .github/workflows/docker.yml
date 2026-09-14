@@ -35,7 +35,7 @@ jobs:
       BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
+      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           # Docker Buildx still pulls its Moby BuildKit image from Docker Hub.
@@ -160,7 +160,7 @@ jobs:
       digest_hex: ${{ steps.push.outputs.digest_hex }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
+      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           # Docker Buildx still pulls its Moby BuildKit image from Docker Hub.
@@ -171,8 +171,7 @@ jobs:
             tuf-repo-cdn.sigstore.dev:443
 
       - name: Checkout repository
-        # Required so local ./.github/actions composites resolve at runtime;
-        # merge jobs only download digests otherwise.
+        # Required for the manifest creation and signing scripts
         # https://github.com/actions/checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -239,13 +238,13 @@ jobs:
         run: bash ./scripts/ci/cosign-sign-retry.bash "$IMAGE"
 
       - name: Generate SBOM
-        uses: ./.github/actions/generate-sbom-retry
+        uses: $/.github/actions/generate-sbom-retry
         with:
           image: ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}
           output-file: sbom.spdx.json
 
       - name: Attest SBOM
-        uses: ./.github/actions/attest-sbom-retry
+        uses: $/.github/actions/attest-sbom-retry
         with:
           subject-name: ghcr.io/${{ github.repository_owner }}/nautilus_trader
           subject-digest: ${{ steps.push.outputs.digest }}
@@ -279,7 +278,7 @@ jobs:
       BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
+      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -406,7 +405,7 @@ jobs:
     needs: build-docker-images-jupyterlab
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
+      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -416,8 +415,7 @@ jobs:
             tuf-repo-cdn.sigstore.dev:443
 
       - name: Checkout repository
-        # Required so local ./.github/actions composites resolve at runtime;
-        # merge jobs only download digests otherwise.
+        # Required for the manifest creation and signing scripts
         # https://github.com/actions/checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -484,13 +482,13 @@ jobs:
         run: bash ./scripts/ci/cosign-sign-retry.bash "$IMAGE"
 
       - name: Generate SBOM
-        uses: ./.github/actions/generate-sbom-retry
+        uses: $/.github/actions/generate-sbom-retry
         with:
           image: ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}
           output-file: sbom.spdx.json
 
       - name: Attest SBOM
-        uses: ./.github/actions/attest-sbom-retry
+        uses: $/.github/actions/attest-sbom-retry
         with:
           subject-name: ghcr.io/${{ github.repository_owner }}/jupyterlab
           subject-digest: ${{ steps.push.outputs.digest }}

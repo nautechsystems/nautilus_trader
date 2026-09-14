@@ -416,11 +416,11 @@ mod tests {
             let values: Py<PyDict> = dict.unbind();
             let perp = CryptoPerpetual::py_from_dict(py, values).unwrap();
 
-            assert_eq!(perp.base_currency.code.as_str(), "0G");
+            assert_eq!(perp.base_currency.code, "0G");
             assert_eq!(perp.base_currency.precision, 8);
             assert_eq!(perp.base_currency.currency_type, CurrencyType::Crypto);
-            assert_eq!(perp.quote_currency.code.as_str(), "USDT");
-            assert_eq!(perp.settlement_currency.code.as_str(), "USDT");
+            assert_eq!(perp.quote_currency.code, "USDT");
+            assert_eq!(perp.settlement_currency.code, "USDT");
 
             // Side effect: the unknown code is now in the registry for subsequent strict lookups
             assert!(Currency::try_from_str("0G").is_some());

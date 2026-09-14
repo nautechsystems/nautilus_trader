@@ -26,7 +26,10 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use indexmap::{IndexMap, IndexSet};
-use nautilus_analysis::{analyzer::PortfolioAnalyzer, snapshot::PortfolioStatistics};
+use nautilus_analysis::{
+    analyzer::{PortfolioAnalyzer, Statistic},
+    snapshot::PortfolioStatistics,
+};
 use nautilus_common::{
     cache::{AccountLookupError, AccountRef, Cache},
     clock::Clock,
@@ -34,10 +37,7 @@ use nautilus_common::{
     msgbus::{self, MessagingSwitchboard, TypedHandler, TypedIntoHandler},
     timer::{TimeEvent, TimeEventCallback},
 };
-use nautilus_core::{
-    UUID4, UnixNanos, WeakCell,
-    datetime::{NANOSECONDS_IN_DAY, NANOSECONDS_IN_MILLISECOND},
-};
+use nautilus_core::{DurationNanos, UUID4, UnixNanos, WeakCell};
 use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{Bar, MarkPriceUpdate, QuoteTick},
@@ -79,8 +79,8 @@ struct PortfolioState {
     stale_prices: AHashSet<(InstrumentId, PositionSide)>,
     stale_xrates: AHashSet<(Venue, Currency, Currency)>,
     initialized: bool,
-    last_account_state_log_ts: AHashMap<AccountId, u64>,
-    min_account_state_logging_interval_ns: u64,
+    last_account_state_log_ts: AHashMap<AccountId, UnixNanos>,
+    min_account_state_logging_interval_ns: DurationNanos,
     venues_missing_price: AHashMap<Venue, AHashMap<Option<AccountId>, AHashSet<InstrumentId>>>,
     account_open_positions: AHashMap<AccountId, usize>,
     equity_curve_accounts: AHashSet<AccountId>,
@@ -115,7 +115,8 @@ impl PortfolioState {
     ) -> Self {
         let min_account_state_logging_interval_ns = config
             .min_account_state_logging_interval_ms
-            .map_or(0, |ms| ms * NANOSECONDS_IN_MILLISECOND);
+            .map(DurationNanos::from_millis)
+            .unwrap_or_default();
 
         Self {
             accounts: AccountsManager::new(clock, cache),
@@ -2005,6 +2006,18 @@ impl Portfolio {
     /// should invoke it sparingly.
     #[must_use]
     pub fn statistics(&self) -> PortfolioStatistics {
+        self.analyzer().statistics()
+    }
+
+    /// Builds a [`PortfolioAnalyzer`] populated from the portfolio's current cache state.
+    ///
+    /// Aggregates balances across every account, includes cached positions and their snapshots,
+    /// merges close-time PnLs recorded during processing, and carries the registered statistics
+    /// so custom registrations participate. Every analysis path builds its analyzer here, so a
+    /// new caller cannot omit the registrations. Recomputes on each call; callers on hot paths
+    /// should invoke it sparingly.
+    #[must_use]
+    pub fn analyzer(&self) -> PortfolioAnalyzer {
         let cache = self.cache.borrow();
         let accounts = cache.accounts_all_owned();
         let positions: Vec<Position> = cache
@@ -2024,14 +2037,49 @@ impl Portfolio {
             .values()
             .flat_map(|ring| ring.iter())
             .collect::<Vec<_>>();
-        PortfolioAnalyzer::from_accounts_with_snapshots(
+        let mut analyzer = PortfolioAnalyzer::from_accounts_with_snapshots(
             &accounts,
             &positions,
             &snapshots,
             portfolio_snapshots,
             recorded,
-        )
-        .statistics()
+        );
+        analyzer.replace_statistics(inner.analyzer.statistics.clone());
+
+        analyzer
+    }
+
+    /// Returns the statistics registered for portfolio and backtest analysis.
+    ///
+    /// The set contains the built-in defaults plus any statistic registered through
+    /// [`Self::register_statistic`], minus any deregistered.
+    #[must_use]
+    pub fn registered_statistics(&self) -> AHashMap<String, Statistic> {
+        self.inner.borrow().analyzer.statistics.clone()
+    }
+
+    /// Registers `statistic` for inclusion in portfolio and backtest analysis.
+    ///
+    /// The registration persists across [`Self::statistics`] calls and analyzer state resets.
+    /// Registering a statistic whose name matches an existing one replaces it.
+    pub fn register_statistic(&mut self, statistic: Statistic) {
+        self.inner
+            .borrow_mut()
+            .analyzer
+            .register_statistic(statistic);
+    }
+
+    /// Removes the statistic matching `statistic` by name from analysis.
+    pub fn deregister_statistic(&mut self, statistic: &Statistic) {
+        self.inner
+            .borrow_mut()
+            .analyzer
+            .deregister_statistic(statistic);
+    }
+
+    /// Removes all registered statistics, including the built-in defaults.
+    pub fn deregister_statistics(&mut self) {
+        self.inner.borrow_mut().analyzer.deregister_statistics();
     }
 
     /// Updates portfolio calculations based on a position event.
@@ -3055,7 +3103,7 @@ impl Portfolio {
 
     // Pairs with `calculate_xrate_to_base`, which yields a unit rate when conversion is disabled:
     // the output currency must ignore the account base currency for the same reason, otherwise a
-    // native cost-currency amount is labelled with a currency it was never converted into.
+    // native cost-currency amount is labeled with a currency it was never converted into.
     fn conversion_base_currency(&self, account: &AccountAny) -> Option<Currency> {
         if self.config.convert_to_account_base_currency {
             account.base_currency()
@@ -3508,8 +3556,10 @@ fn update_order(
                     .insert(event.instrument_id(), unrealized_pnl);
             }
             None => {
-                log::error!(
-                    "Failed to calculate unrealized PnL for instrument {}",
+                // The callee already logged the cause and marked the instrument pending; the
+                // usual cause is a book-only run with no price yet, which is not an error
+                log::debug!(
+                    "Failed to calculate unrealized PnL for {}, marking as pending",
                     event.instrument_id()
                 );
             }
@@ -3980,18 +4030,21 @@ fn update_account(
 
     // Throttled logging logic
     let mut inner_ref = inner.borrow_mut();
-    let should_log = if inner_ref.min_account_state_logging_interval_ns > 0 {
-        let current_ts = event.ts_init.as_u64();
+    let should_log = if inner_ref.min_account_state_logging_interval_ns.is_zero() {
+        true
+    } else {
+        let current_ts = event.ts_init;
         let last_ts = inner_ref
             .last_account_state_log_ts
             .get(&event.account_id)
             .copied()
-            .unwrap_or(0);
+            .unwrap_or_default();
 
         // Saturating: an out-of-order event carrying an earlier `ts_init` keeps the throttle
         // engaged rather than wrapping into an interval that always logs.
-        if last_ts == 0
-            || current_ts.saturating_sub(last_ts) >= inner_ref.min_account_state_logging_interval_ns
+        if last_ts.is_zero()
+            || current_ts.saturating_duration_since(last_ts)
+                >= inner_ref.min_account_state_logging_interval_ns
         {
             inner_ref
                 .last_account_state_log_ts
@@ -4000,8 +4053,6 @@ fn update_account(
         } else {
             false
         }
-    } else {
-        true // Throttling disabled, always log
     };
 
     if should_log {
@@ -4051,11 +4102,8 @@ fn arm_equity_curve_timer(
     config: PortfolioConfig,
     account_id: AccountId,
 ) {
-    let ts_now = clock.borrow().timestamp_ns().as_u64();
-    let Some(next_day) = (ts_now / NANOSECONDS_IN_DAY)
-        .checked_add(1)
-        .and_then(|day| day.checked_mul(NANOSECONDS_IN_DAY))
-    else {
+    let day = DurationNanos::from_days(1);
+    let Some(next_day) = clock.borrow().timestamp_ns().floor(day).checked_add(day) else {
         log::error!("Failed to calculate next equity curve sample for {account_id}");
         return;
     };
@@ -4079,8 +4127,8 @@ fn arm_equity_curve_timer(
 
     if let Err(e) = clock.borrow_mut().set_timer_ns(
         &timer_name,
-        NANOSECONDS_IN_DAY,
-        Some(UnixNanos::from(next_day)),
+        day,
+        Some(next_day),
         None,
         Some(TimeEventCallback::from(callback)),
         Some(false),
@@ -4142,7 +4190,10 @@ fn arm_snapshot_timer(
         Some(ms) if ms > 0 => ms,
         _ => return,
     };
-    let interval_ns = interval_ms * NANOSECONDS_IN_MILLISECOND;
+    let Ok(interval_ns) = DurationNanos::try_from_millis(interval_ms) else {
+        log::error!("Failed to calculate portfolio snapshot interval for {account_id}");
+        return;
+    };
     let timer_name = snapshot_timer_name(account_id);
 
     let cache_weak = Rc::downgrade(cache);

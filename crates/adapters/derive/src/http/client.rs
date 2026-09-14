@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! `reqwest`-backed REST client for the Derive API.
+//! REST client for the Derive API using the shared HTTP transport.
 //!
 //! [`DeriveHttpClient`] exposes typed `send_public` / `send_private`
 //! dispatchers plus thin wrappers for the two endpoints that establish the
@@ -31,6 +31,7 @@ use std::{
 
 use ahash::AHashMap;
 use alloy::signers::local::PrivateKeySigner;
+use nautilus_core::string::secret::REDACTED;
 use nautilus_network::{
     http::{HttpClient, HttpClientError, HttpResponse},
     ratelimiter::clock::MonotonicClock,
@@ -100,7 +101,7 @@ impl Debug for DeriveCredentials {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(DeriveCredentials))
             .field("wallet_address", &self.wallet_address)
-            .field("signer", &"***redacted***")
+            .field("signer", &REDACTED)
             .finish()
     }
 }
@@ -687,7 +688,10 @@ impl DeriveHttpClient {
                 let auth = self.build_auth_headers(method)?;
                 headers.insert(HEADER_LYRA_WALLET.to_string(), auth.wallet);
                 headers.insert(HEADER_LYRA_TIMESTAMP.to_string(), auth.timestamp);
-                headers.insert(HEADER_LYRA_SIGNATURE.to_string(), auth.signature);
+                headers.insert(
+                    HEADER_LYRA_SIGNATURE.to_string(),
+                    auth.signature.into_inner(),
+                );
             }
 
             let response = self
@@ -708,9 +712,10 @@ impl DeriveHttpClient {
 
         if retry {
             self.retry_manager
-                .execute_with_retry(method, attempt, should_retry_http_error, |e| {
+                .invocation(method, attempt, should_retry_http_error, |e| {
                     DeriveHttpError::transport(e.to_string())
                 })
+                .execute()
                 .await
         } else {
             attempt().await
@@ -904,7 +909,7 @@ mod tests {
     fn test_credentials_debug_redacts_signer() {
         let creds = DeriveCredentials::new(TEST_WALLET, SESSION_KEY_HEX).unwrap();
         let dbg = format!("{creds:?}");
-        assert!(dbg.contains("***redacted***"));
+        assert!(dbg.contains(REDACTED));
         assert!(dbg.contains(TEST_WALLET));
         assert!(!dbg.contains(SESSION_KEY_HEX));
     }

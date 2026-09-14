@@ -74,18 +74,16 @@ before executable-bar precision checks.
 | `OrderBookDeltas`  | *Ignored*         | Updates book      | Updates book      |
 | `OrderBookDepth10` | Updates book      | Updates book      | Updates book      |
 
-:::note
 The granularity of the data must match the specified order `book_type`. Nautilus cannot generate
 higher granularity data (L2 or L3) from lower-level data such as quotes, trades, or bars.
-:::
 
-:::warning
+:::warning[L2 and L3 book data]
 If you specify `L2_MBP` or `L3_MBO` as the venue's `book_type`, quotes and bars will not update the
 book. Ensure you provide order book delta data, otherwise orders may appear as though they are never
 filled.
 :::
 
-:::warning
+:::warning[L1 ignores order book deltas]
 When using `L1_MBP` (the default), order book deltas are ignored by the matching engine. If you
 subscribe to order book deltas, set the venue `book_type` to `L2_MBP` or `L3_MBO`. This also applies
 to sandbox execution, where the matching engine uses the same `book_type` configuration.

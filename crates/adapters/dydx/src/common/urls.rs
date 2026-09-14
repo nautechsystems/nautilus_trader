@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! URL helpers for dYdX services.
+//! Environment-aware dYdX service URLs.
 
 use super::{
     consts::{

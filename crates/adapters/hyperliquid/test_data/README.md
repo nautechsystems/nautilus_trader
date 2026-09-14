@@ -1,6 +1,6 @@
 # Hyperliquid Test Data
 
-This directory contains real API response samples for testing.
+This directory contains API response samples and documented error messages for testing.
 
 ## Files
 
@@ -16,6 +16,13 @@ This directory contains real API response samples for testing.
 - `ws_trades_sample.json` - Real-time trade message sample
 - `ws_l2_book_sample.json` - Order book update message sample
 - `ws_book_data.json` - Existing book data test sample
+
+### Documented exchange errors
+
+`exchange_error_messages.json` contains the order and cancel error messages listed in the
+[official error reference](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/error-responses).
+These messages are copied from the documentation, including its placeholders, rather than captured
+from live responses. Tests use them in both whole-request and per-order rejection responses.
 
 ## Capturing New Test Data
 

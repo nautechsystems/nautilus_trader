@@ -25,7 +25,7 @@ use nautilus_common::{
     live::get_runtime,
     python::{cache::PyCache, clock::PyClock},
 };
-use nautilus_core::{UnixNanos, datetime::get_timezone};
+use nautilus_core::{DurationNanos, UnixNanos, datetime::get_timezone};
 use nautilus_model::{
     data::{
         Bar, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
@@ -180,7 +180,7 @@ impl PyStreamingFeatherWriter {
             1 => {
                 let interval = rotation_interval_ns.unwrap_or(86_400_000_000_000); // Default 1 day
                 RotationConfig::Interval {
-                    interval_ns: interval,
+                    interval_ns: DurationNanos::new(interval),
                 }
             }
             2 => {
@@ -190,7 +190,7 @@ impl PyStreamingFeatherWriter {
                 })?;
                 let time_ns = rotation_time_ns.unwrap_or(0);
                 RotationConfig::ScheduledDates {
-                    interval_ns: interval,
+                    interval_ns: DurationNanos::new(interval),
                     rotation_time: UnixNanos::from(time_ns),
                     rotation_timezone: tz,
                 }
@@ -304,7 +304,7 @@ impl PyStreamingFeatherWriter {
             let mut writer = self.writer.borrow_mut();
             let runtime = get_runtime();
             return runtime
-                .block_on(async { writer.write_data(Data::Delta(delta)).await })
+                .block_on(async { writer.write_data(Data::BookDelta(delta)).await })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write OrderBookDelta: {e}")));
         }
 
@@ -312,7 +312,7 @@ impl PyStreamingFeatherWriter {
             let mut writer = self.writer.borrow_mut();
             let runtime = get_runtime();
             return runtime
-                .block_on(async { writer.write_data(Data::Depth10(Box::new(depth))).await })
+                .block_on(async { writer.write_data(Data::BookDepth10(Box::new(depth))).await })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write OrderBookDepth10: {e}")));
         }
 

@@ -92,9 +92,10 @@ use crate::common::{
     consts::{BYBIT_NAUTILUS_BROKER_ID, BYBIT_VENUE},
     credential::{Credential, credential_env_vars},
     enums::{
-        BybitAccountType, BybitBboSideType, BybitContractType, BybitEnvironment, BybitMarginMode,
-        BybitOpenOnly, BybitOrderFilter, BybitOrderSide, BybitOrderType, BybitPositionIdx,
-        BybitPositionMode, BybitProductType, BybitRepayStatus, BybitTpSlMode,
+        BybitAccountType, BybitBboSideType, BybitContractType, BybitEnvironment, BybitExecType,
+        BybitMarginMode, BybitOpenOnly, BybitOrderFilter, BybitOrderSide, BybitOrderSmpType,
+        BybitOrderType, BybitPositionIdx, BybitPositionMode, BybitProductType, BybitRepayStatus,
+        BybitTpSlMode,
     },
     models::{BybitCursorListResponse, BybitErrorCheck, BybitResponseCheck},
     parse::{
@@ -609,13 +610,14 @@ impl BybitRawHttpClient {
         let token = self.cancellation_token();
 
         self.retry_manager
-            .execute_with_retry_with_cancel(
+            .invocation(
                 endpoint.as_str(),
                 operation,
                 should_retry_http,
                 create_error,
-                &token,
             )
+            .cancellation_token(&token)
+            .execute()
             .await
     }
 
@@ -2302,7 +2304,7 @@ impl BybitHttpClient {
             .result
             .list
             .first()
-            .and_then(|wallet| wallet.coin.iter().find(|c| c.coin.as_str() == coin))
+            .and_then(|wallet| wallet.coin.iter().find(|c| c.coin == coin))
             .map_or(Decimal::ZERO, |balance| balance.spot_borrow);
 
         Ok(borrow_amount)
@@ -2510,6 +2512,7 @@ impl BybitHttpClient {
         position_idx: Option<BybitPositionIdx>,
         bbo_side_type: Option<BybitBboSideType>,
         bbo_level: Option<String>,
+        smp_type: Option<BybitOrderSmpType>,
         native_tp_sl: Option<&BybitNativeTpSlParams>,
     ) -> anyhow::Result<OrderStatusReport> {
         let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
@@ -2566,6 +2569,7 @@ impl BybitHttpClient {
 
         order_entry.bbo_side_type(bbo_side_type);
         order_entry.bbo_level(bbo_level);
+        order_entry.smp_type(smp_type);
 
         if let Some(tp_sl) = native_tp_sl {
             if let Some(ref tp) = tp_sl.take_profit {
@@ -3711,7 +3715,6 @@ impl BybitHttpClient {
     /// Requests raw option tickers for a given base coin.
     ///
     /// Returns `Vec<BybitTickerOption>` with the raw fields including `underlying_price`.
-    /// Used for fetching forward prices for option chain bootstrap.
     ///
     /// # Errors
     ///
@@ -4627,9 +4630,20 @@ impl BybitHttpClient {
             };
 
             let response = self.inner.get_trade_history(&params).await?;
-            let list_len = response.result.list.len();
-            all_executions.extend(response.result.list);
-            total_executions += list_len;
+            for execution in response.result.list {
+                if execution.exec_type == BybitExecType::Funding {
+                    log::debug!(
+                        "Skipping funding execution: symbol={}, order_id={}, exec_id={}",
+                        execution.symbol,
+                        execution.order_id,
+                        execution.exec_id,
+                    );
+                    continue;
+                }
+
+                all_executions.push(execution);
+                total_executions += 1;
+            }
 
             cursor = response.result.next_page_cursor;
             if cursor.is_none() || cursor.as_ref().is_none_or(|c| c.is_empty()) {

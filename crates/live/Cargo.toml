@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-live"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -68,6 +67,12 @@ simulation = [
   "nautilus-common/simulation",
   "nautilus-execution/simulation",
 ]
+test-support = [
+  "dep:nautilus-portfolio",
+  "dep:nautilus-risk",
+  "dep:nautilus-testkit",
+  "dep:nautilus-trading",
+]
 
 [package.metadata.cargo-machete]
 ignored = [
@@ -83,7 +88,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
 nautilus-execution = { workspace = true }
-nautilus-model = { workspace = true, features = ["test-support"] }
+nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 
 nautilus-data = { workspace = true, optional = true }
@@ -103,7 +108,6 @@ async-trait = { workspace = true }
 bon = { workspace = true }
 futures-util = { workspace = true }
 indexmap = { workspace = true }
-libfuzzer-sys = { workspace = true, optional = true }
 log = { workspace = true }
 parking_lot = { workspace = true }
 rust_decimal = { workspace = true }
@@ -114,10 +118,12 @@ tokio = { workspace = true }
 tokio-util = { workspace = true, features = ["rt"] }
 ustr = { workspace = true }
 
+libfuzzer-sys = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-model = { workspace = true, features = ["test-support"] }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",
 ] }
@@ -125,6 +131,7 @@ nautilus-testkit = { workspace = true, default-features = false, features = [
 bytes = { workspace = true }
 criterion = { workspace = true }
 madsim = { workspace = true }
+proptest = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "macros", "rt"] }
@@ -143,16 +150,6 @@ harness = false
 required-features = ["node"]
 
 [[test]]
-name = "manager"
-path = "tests/manager.rs"
-required-features = ["node"]
-
-[[test]]
-name = "node"
-path = "tests/node.rs"
-required-features = ["node"]
-
-[[test]]
-name = "stress"
-path = "tests/stress.rs"
+name = "integration"
+path = "tests/integration/main.rs"
 required-features = ["node"]

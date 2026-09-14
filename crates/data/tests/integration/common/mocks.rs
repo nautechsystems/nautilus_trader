@@ -1,0 +1,808 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
+//! Mock data client implementations.
+//!
+//! Provides a `MockDataClient` for testing scenarios with an in-memory cache.
+
+// Under development
+#![allow(dead_code)]
+
+use std::{cell::RefCell, rc::Rc};
+
+#[cfg(feature = "defi")]
+use nautilus_common::messages::defi::{
+    DefiRequestCommand, DefiSubscribeCommand, DefiUnsubscribeCommand, RequestPoolSnapshot,
+    SubscribeBlocks, SubscribePool, SubscribePoolFeeCollects, SubscribePoolFlashEvents,
+    SubscribePoolLiquidityUpdates, SubscribePoolSwaps, UnsubscribeBlocks, UnsubscribePool,
+    UnsubscribePoolFeeCollects, UnsubscribePoolFlashEvents, UnsubscribePoolLiquidityUpdates,
+    UnsubscribePoolSwaps,
+};
+use nautilus_common::{
+    cache::Cache,
+    clients::DataClient,
+    clock::Clock,
+    messages::data::{
+        DataCommand, RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot,
+        RequestCommand, RequestCustomData, RequestFundingRates, RequestInstrument,
+        RequestInstruments, RequestOptionChainReferencePrice, RequestQuotes, RequestTrades,
+        SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCommand,
+        SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
+        SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
+        SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
+        UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCommand,
+        UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+        UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
+        UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes,
+        UnsubscribeTrades,
+    },
+};
+use nautilus_model::identifiers::{ClientId, Venue};
+
+/// A mock implementation of [`DataClient`] for testing, with optional generic recorder.
+pub(crate) struct MockDataClient {
+    pub client_id: ClientId,
+    pub venue: Option<Venue>,
+    pub recorder: Option<Rc<RefCell<Vec<DataCommand>>>>,
+    fail_next_custom_subscribe: bool,
+    fail_next_custom_unsubscribe: bool,
+    fail_next_subscribe: Option<MockSubscribeFailure>,
+    #[cfg(feature = "defi")]
+    fail_next_blocks_subscribe: bool,
+    #[cfg(feature = "defi")]
+    fail_next_blocks_unsubscribe: bool,
+    clock: Rc<RefCell<dyn Clock>>,
+    cache: Rc<RefCell<Cache>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MockSubscribeFailure {
+    BookDeltas,
+    BookDepth10,
+    Quotes,
+    Trades,
+}
+
+impl MockDataClient {
+    /// Creates a new [`MockDataClient`] instance with the given cache, client ID, and venue.
+    #[must_use]
+    pub(crate) fn new(
+        clock: Rc<RefCell<dyn Clock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Option<Venue>,
+    ) -> Self {
+        Self {
+            clock,
+            cache,
+            client_id,
+            venue,
+            recorder: None,
+            fail_next_custom_subscribe: false,
+            fail_next_custom_unsubscribe: false,
+            fail_next_subscribe: None,
+            #[cfg(feature = "defi")]
+            fail_next_blocks_subscribe: false,
+            #[cfg(feature = "defi")]
+            fail_next_blocks_unsubscribe: false,
+        }
+    }
+
+    /// Creates a new [`MockDataClient`] that records all `DataCommands` into the given recorder.
+    #[must_use]
+    pub(crate) fn new_with_recorder(
+        clock: Rc<RefCell<dyn Clock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Option<Venue>,
+        recorder: Option<Rc<RefCell<Vec<DataCommand>>>>,
+    ) -> Self {
+        Self {
+            client_id,
+            venue,
+            recorder,
+            fail_next_custom_subscribe: false,
+            fail_next_custom_unsubscribe: false,
+            fail_next_subscribe: None,
+            #[cfg(feature = "defi")]
+            fail_next_blocks_subscribe: false,
+            #[cfg(feature = "defi")]
+            fail_next_blocks_unsubscribe: false,
+            clock,
+            cache,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn with_custom_subscribe_failure(mut self) -> Self {
+        self.fail_next_custom_subscribe = true;
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn with_custom_unsubscribe_failure(mut self) -> Self {
+        self.fail_next_custom_unsubscribe = true;
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn with_subscribe_failure(mut self, failure: MockSubscribeFailure) -> Self {
+        self.fail_next_subscribe = Some(failure);
+        self
+    }
+
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub(crate) fn with_blocks_subscribe_failure(mut self) -> Self {
+        self.fail_next_blocks_subscribe = true;
+        self
+    }
+
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub(crate) fn with_blocks_unsubscribe_failure(mut self) -> Self {
+        self.fail_next_blocks_unsubscribe = true;
+        self
+    }
+}
+
+#[async_trait::async_trait(?Send)]
+impl DataClient for MockDataClient {
+    fn client_id(&self) -> ClientId {
+        self.client_id
+    }
+
+    fn venue(&self) -> Option<Venue> {
+        self.venue
+    }
+
+    fn start(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn stop(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn reset(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn dispose(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn connect(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn disconnect(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn is_connected(&self) -> bool {
+        true
+    }
+
+    fn is_disconnected(&self) -> bool {
+        false
+    }
+
+    // -- SUBSCRIPTION HANDLERS -------------------------------------------------------------------
+
+    fn subscribe(&mut self, cmd: SubscribeCustomData) -> anyhow::Result<()> {
+        if std::mem::take(&mut self.fail_next_custom_subscribe) {
+            anyhow::bail!("test custom subscribe failure");
+        }
+
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Subscribe(SubscribeCommand::Data(cmd)));
+        }
+        Ok(())
+    }
+
+    fn subscribe_instruments(&mut self, cmd: SubscribeInstruments) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Subscribe(SubscribeCommand::Instruments(cmd)));
+        }
+        Ok(())
+    }
+
+    fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Subscribe(SubscribeCommand::Instrument(cmd)));
+        }
+        Ok(())
+    }
+
+    fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
+        if self.fail_next_subscribe == Some(MockSubscribeFailure::BookDeltas) {
+            self.fail_next_subscribe = None;
+            anyhow::bail!("test book deltas subscribe failure");
+        }
+
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Subscribe(SubscribeCommand::BookDeltas(cmd)));
+        }
+        Ok(())
+    }
+
+    fn subscribe_book_depth10(&mut self, cmd: SubscribeBookDepth10) -> anyhow::Result<()> {
+        if self.fail_next_subscribe == Some(MockSubscribeFailure::BookDepth10) {
+            self.fail_next_subscribe = None;
+            anyhow::bail!("test book depth10 subscribe failure");
+        }
+
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Subscribe(SubscribeCommand::BookDepth10(cmd)));
+        }
+        Ok(())
+    }
+
+    fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
+        if self.fail_next_subscribe == Some(MockSubscribeFailure::Quotes) {
+            self.fail_next_subscribe = None;
+            anyhow::bail!("test quotes subscribe failure");
+        }
+
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Subscribe(SubscribeCommand::Quotes(cmd)));
+        }
+        Ok(())
+    }
+
+    fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
+        if self.fail_next_subscribe == Some(MockSubscribeFailure::Trades) {
+            self.fail_next_subscribe = None;
+            anyhow::bail!("test trades subscribe failure");
+        }
+
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Subscribe(SubscribeCommand::Trades(cmd)));
+        }
+        Ok(())
+    }
+
+    fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Subscribe(SubscribeCommand::Bars(cmd)));
+        }
+        Ok(())
+    }
+
+    fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Subscribe(SubscribeCommand::MarkPrices(cmd)));
+        }
+        Ok(())
+    }
+
+    fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Subscribe(SubscribeCommand::IndexPrices(cmd)));
+        }
+        Ok(())
+    }
+
+    fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Subscribe(SubscribeCommand::FundingRates(cmd)));
+        }
+        Ok(())
+    }
+
+    fn subscribe_instrument_status(
+        &mut self,
+        cmd: SubscribeInstrumentStatus,
+    ) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Subscribe(SubscribeCommand::InstrumentStatus(
+                    cmd,
+                )));
+        }
+        Ok(())
+    }
+
+    fn subscribe_instrument_close(&mut self, cmd: SubscribeInstrumentClose) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Subscribe(SubscribeCommand::InstrumentClose(
+                    cmd,
+                )));
+        }
+        Ok(())
+    }
+
+    fn subscribe_option_greeks(&mut self, cmd: SubscribeOptionGreeks) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Subscribe(SubscribeCommand::OptionGreeks(cmd)));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn subscribe_blocks(&mut self, cmd: SubscribeBlocks) -> anyhow::Result<()> {
+        if std::mem::take(&mut self.fail_next_blocks_subscribe) {
+            anyhow::bail!("test blocks subscribe failure");
+        }
+
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::DefiSubscribe(DefiSubscribeCommand::Blocks(
+                    cmd,
+                )));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn subscribe_pool(&mut self, cmd: SubscribePool) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::DefiSubscribe(DefiSubscribeCommand::Pool(cmd)));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn subscribe_pool_swaps(&mut self, cmd: SubscribePoolSwaps) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::DefiSubscribe(DefiSubscribeCommand::PoolSwaps(
+                    cmd,
+                )));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn subscribe_pool_liquidity_updates(
+        &mut self,
+        cmd: SubscribePoolLiquidityUpdates,
+    ) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut().push(DataCommand::DefiSubscribe(
+                DefiSubscribeCommand::PoolLiquidityUpdates(cmd),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn subscribe_pool_fee_collects(&mut self, cmd: SubscribePoolFeeCollects) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut().push(DataCommand::DefiSubscribe(
+                DefiSubscribeCommand::PoolFeeCollects(cmd),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn subscribe_pool_flash_events(&mut self, cmd: SubscribePoolFlashEvents) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut().push(DataCommand::DefiSubscribe(
+                DefiSubscribeCommand::PoolFlashEvents(cmd),
+            ));
+        }
+        Ok(())
+    }
+
+    fn unsubscribe(&mut self, cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
+        if std::mem::take(&mut self.fail_next_custom_unsubscribe) {
+            anyhow::bail!("test custom unsubscribe failure");
+        }
+
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Unsubscribe(UnsubscribeCommand::Data(
+                    cmd.clone(),
+                )));
+        }
+        Ok(())
+    }
+
+    fn unsubscribe_instruments(&mut self, cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Unsubscribe(UnsubscribeCommand::Instruments(
+                    cmd.clone(),
+                )));
+        }
+        Ok(())
+    }
+
+    fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Unsubscribe(UnsubscribeCommand::Instrument(
+                    cmd.clone(),
+                )));
+        }
+        Ok(())
+    }
+
+    fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(
+                    cmd.clone(),
+                )));
+        }
+        Ok(())
+    }
+
+    fn unsubscribe_book_depth10(&mut self, cmd: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Unsubscribe(UnsubscribeCommand::BookDepth10(
+                    cmd.clone(),
+                )));
+        }
+        Ok(())
+    }
+
+    fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(
+                    cmd.clone(),
+                )));
+        }
+        Ok(())
+    }
+
+    fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Unsubscribe(UnsubscribeCommand::Trades(
+                    cmd.clone(),
+                )));
+        }
+        Ok(())
+    }
+
+    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Unsubscribe(UnsubscribeCommand::Bars(
+                    cmd.clone(),
+                )));
+        }
+        Ok(())
+    }
+
+    fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Unsubscribe(UnsubscribeCommand::MarkPrices(
+                    cmd.clone(),
+                )));
+        }
+        Ok(())
+    }
+
+    fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Unsubscribe(UnsubscribeCommand::IndexPrices(
+                    cmd.clone(),
+                )));
+        }
+        Ok(())
+    }
+
+    fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Unsubscribe(UnsubscribeCommand::FundingRates(
+                    cmd.clone(),
+                )));
+        }
+        Ok(())
+    }
+
+    fn unsubscribe_instrument_status(
+        &mut self,
+        cmd: &UnsubscribeInstrumentStatus,
+    ) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut().push(DataCommand::Unsubscribe(
+                UnsubscribeCommand::InstrumentStatus(cmd.clone()),
+            ));
+        }
+        Ok(())
+    }
+
+    fn unsubscribe_instrument_close(
+        &mut self,
+        cmd: &UnsubscribeInstrumentClose,
+    ) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut().push(DataCommand::Unsubscribe(
+                UnsubscribeCommand::InstrumentClose(cmd.clone()),
+            ));
+        }
+        Ok(())
+    }
+
+    fn unsubscribe_option_greeks(&mut self, cmd: &UnsubscribeOptionGreeks) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Unsubscribe(UnsubscribeCommand::OptionGreeks(
+                    cmd.clone(),
+                )));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn unsubscribe_blocks(&mut self, cmd: &UnsubscribeBlocks) -> anyhow::Result<()> {
+        if std::mem::take(&mut self.fail_next_blocks_unsubscribe) {
+            anyhow::bail!("test blocks unsubscribe failure");
+        }
+
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut().push(DataCommand::DefiUnsubscribe(
+                DefiUnsubscribeCommand::Blocks(cmd.clone()),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn unsubscribe_pool(&mut self, cmd: &UnsubscribePool) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::Pool(
+                    cmd.clone(),
+                )));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn unsubscribe_pool_swaps(&mut self, cmd: &UnsubscribePoolSwaps) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut().push(DataCommand::DefiUnsubscribe(
+                DefiUnsubscribeCommand::PoolSwaps(cmd.clone()),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn unsubscribe_pool_liquidity_updates(
+        &mut self,
+        cmd: &UnsubscribePoolLiquidityUpdates,
+    ) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut().push(DataCommand::DefiUnsubscribe(
+                DefiUnsubscribeCommand::PoolLiquidityUpdates(cmd.clone()),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn unsubscribe_pool_fee_collects(
+        &mut self,
+        cmd: &UnsubscribePoolFeeCollects,
+    ) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut().push(DataCommand::DefiUnsubscribe(
+                DefiUnsubscribeCommand::PoolFeeCollects(cmd.clone()),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn unsubscribe_pool_flash_events(
+        &mut self,
+        cmd: &UnsubscribePoolFlashEvents,
+    ) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut().push(DataCommand::DefiUnsubscribe(
+                DefiUnsubscribeCommand::PoolFlashEvents(cmd.clone()),
+            ));
+        }
+        Ok(())
+    }
+
+    // -- REQUEST HANDLERS ------------------------------------------------------------------------
+
+    fn request_data(&self, request: RequestCustomData) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Request(RequestCommand::Data(request)));
+        }
+        Ok(())
+    }
+
+    fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Request(RequestCommand::Instruments(request)));
+        }
+        Ok(())
+    }
+
+    fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Request(RequestCommand::Instrument(request)));
+        }
+        Ok(())
+    }
+
+    fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Request(RequestCommand::BookSnapshot(request)));
+        }
+        Ok(())
+    }
+
+    fn request_quotes(&self, request: RequestQuotes) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Request(RequestCommand::Quotes(request)));
+        }
+        Ok(())
+    }
+
+    fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Request(RequestCommand::Trades(request)));
+        }
+        Ok(())
+    }
+
+    fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Request(RequestCommand::FundingRates(request)));
+        }
+        Ok(())
+    }
+
+    fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Request(RequestCommand::Bars(request)));
+        }
+        Ok(())
+    }
+
+    fn request_book_depth(&self, request: RequestBookDepth) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Request(RequestCommand::BookDepth(request)));
+        }
+        Ok(())
+    }
+
+    fn request_book_deltas(&self, request: RequestBookDeltas) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Request(RequestCommand::BookDeltas(request)));
+        }
+        Ok(())
+    }
+
+    fn request_option_chain_reference_price(
+        &self,
+        request: RequestOptionChainReferencePrice,
+    ) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut().push(DataCommand::Request(
+                RequestCommand::OptionChainReferencePrice(request),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn request_pool_snapshot(&self, request: RequestPoolSnapshot) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::DefiRequest(DefiRequestCommand::PoolSnapshot(
+                    request,
+                )));
+        }
+        Ok(())
+    }
+}
+
+/// A mock data client that fails on connect for testing error propagation.
+pub(crate) struct FailingMockDataClient {
+    pub client_id: ClientId,
+    pub venue: Option<Venue>,
+    pub error_message: String,
+}
+
+impl FailingMockDataClient {
+    /// Creates a new [`FailingMockDataClient`] that will fail with the given error message.
+    #[must_use]
+    pub(crate) fn new(
+        client_id: ClientId,
+        venue: Option<Venue>,
+        error_message: impl Into<String>,
+    ) -> Self {
+        Self {
+            client_id,
+            venue,
+            error_message: error_message.into(),
+        }
+    }
+}
+
+#[async_trait::async_trait(?Send)]
+impl DataClient for FailingMockDataClient {
+    fn client_id(&self) -> ClientId {
+        self.client_id
+    }
+
+    fn venue(&self) -> Option<Venue> {
+        self.venue
+    }
+
+    fn start(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn stop(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn reset(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn dispose(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn connect(&mut self) -> anyhow::Result<()> {
+        anyhow::bail!("{}", self.error_message)
+    }
+
+    async fn disconnect(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn is_connected(&self) -> bool {
+        false
+    }
+
+    fn is_disconnected(&self) -> bool {
+        true
+    }
+}

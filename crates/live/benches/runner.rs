@@ -192,6 +192,7 @@ fn bench_concurrent_channels(c: &mut Criterion) {
                     while rx.try_recv().is_ok() {
                         count += 1;
                     }
+
                     assert_eq!(count, total_events);
                 });
             },
@@ -226,6 +227,7 @@ fn bench_batch_processing(c: &mut Criterion) {
                     while rx.try_recv().is_ok() {
                         received += 1;
                     }
+
                     assert_eq!(received, size);
                 });
             },
@@ -275,7 +277,7 @@ fn bench_memory_usage(c: &mut Criterion) {
 // increment, and a noop handler. Skips the 5-branch `select!` poll cost,
 // which is bounded by `tokio::mpsc::recv` and is small relative to the
 // dispatch shown by this bench. Pair with the `stress_trade_burst` test
-// (`crates/live/tests/stress.rs`) for end-to-end runner+engine numbers.
+// (`crates/live/tests/integration/stress.rs`) for end-to-end runner+engine numbers.
 fn bench_runner_dispatch(c: &mut Criterion) {
     msgbus::set_message_bus(Rc::new(RefCell::new(MessageBus::default())));
 
@@ -305,6 +307,7 @@ fn bench_runner_dispatch(c: &mut Criterion) {
                     for _ in 0..size {
                         tx.send(DataEvent::Data(Data::Trade(trade))).unwrap();
                     }
+
                     drop(tx);
 
                     let start = std::time::Instant::now();
@@ -313,6 +316,7 @@ fn bench_runner_dispatch(c: &mut Criterion) {
                             AsyncRunner::handle_data_event(evt);
                         }
                     });
+
                     total += start.elapsed();
                 }
 

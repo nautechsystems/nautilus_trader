@@ -23,7 +23,9 @@
 //! # Task groups
 //!
 //! [`TaskGroup`] owns related `Future<Output = ()>` tasks for one lifecycle generation.
-//! [`TaskGroup::spawn`] registers each task before its future can poll. Once
+//! [`TaskGroup::spawn`] registers each task before its future can poll. [`TaskGroup::spawn_named`]
+//! additionally returns a read-only [`TaskRef`] that preserves the task's logical name, instance
+//! identity, and terminal state without transferring ownership. Once
 //! [`TaskGroup::begin_shutdown`] closes admission, concurrent and later spawn attempts return
 //! [`TaskSpawnError`].
 //!
@@ -77,7 +79,7 @@ use std::{
     panic::AssertUnwindSafe,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -95,6 +97,88 @@ use tokio_util::{
 };
 
 type TaskState = AtomicU8;
+
+static NEXT_TASK_ID: AtomicU64 = AtomicU64::new(1);
+
+/// A process-unique live task instance identifier.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct TaskId(u64);
+
+impl TaskId {
+    fn next() -> Self {
+        let id = NEXT_TASK_ID
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+            .expect("task ID space exhausted");
+        Self(id)
+    }
+}
+
+impl Display for TaskId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// A read-only reference to one task admitted by a [`TaskGroup`].
+///
+/// The group retains cancellation and join ownership. The task is active from admission until its
+/// wrapper reaches a terminal path; active does not imply that the user future has received its
+/// first poll. A task may finish before [`TaskGroup::spawn_named`] returns.
+#[derive(Clone, Debug)]
+pub struct TaskRef {
+    identity: Arc<TaskIdentity>,
+}
+
+impl TaskRef {
+    /// Returns the task's process-unique instance identifier.
+    #[must_use]
+    pub fn id(&self) -> TaskId {
+        self.identity.id
+    }
+
+    /// Returns the task's logical name.
+    #[must_use]
+    pub fn name(&self) -> &'static str {
+        self.identity.name
+    }
+
+    /// Returns whether the task was admitted and has not reached a terminal path.
+    #[must_use]
+    pub fn is_active(&self) -> bool {
+        !self.is_finished()
+    }
+
+    /// Returns whether the task reached a terminal path.
+    #[must_use]
+    pub fn is_finished(&self) -> bool {
+        self.identity.finished.load(Ordering::Acquire)
+    }
+}
+
+#[derive(Debug)]
+struct TaskIdentity {
+    id: TaskId,
+    name: &'static str,
+    finished: AtomicBool,
+}
+
+impl TaskIdentity {
+    fn new(name: &'static str) -> Self {
+        Self {
+            id: TaskId::next(),
+            name,
+            finished: AtomicBool::new(false),
+        }
+    }
+
+    fn finish(&self) {
+        self.finished.store(true, Ordering::Release);
+    }
+
+    fn failure(&self, failure: &str) -> String {
+        format!("task '{}' ({}) {failure}", self.name, self.id)
+    }
+}
 
 /// Owns a related group of cancellation-aware live tasks, one generation at a time.
 ///
@@ -134,6 +218,7 @@ impl TaskGroup {
         if !generation.is_open() {
             return Err(TaskSpawnError::CLOSED);
         }
+
         Ok(TaskSpawner { generation })
     }
 
@@ -153,6 +238,26 @@ impl TaskGroup {
         F: Future<Output = ()> + Send + 'static,
     {
         self.inner.current().spawn(future)
+    }
+
+    // panics-doc-ok (transitive via task ID allocation)
+    /// Registers a named `future` before allowing it to poll.
+    ///
+    /// The returned reference observes identity and terminal state without owning cancellation or
+    /// joining. The task may reach a terminal state before this method returns.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error after shutdown begins.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the process exhausts the `u64` task identifier space.
+    pub fn spawn_named<F>(&self, name: &'static str, future: F) -> Result<TaskRef, TaskSpawnError>
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.inner.current().spawn_named(name, future)
     }
 
     /// Closes admission and cancels the current generation.
@@ -182,6 +287,7 @@ impl TaskGroup {
         }
 
         let started = time::Instant::now();
+
         let Some(graceful_deadline) = started.checked_add(graceful_timeout) else {
             return Err(generation.timeout_error());
         };
@@ -191,6 +297,7 @@ impl TaskGroup {
         };
 
         let lock_timeout = abort_deadline.saturating_duration_since(time::Instant::now());
+
         let Ok(_drain_lock) = time::timeout(lock_timeout, self.inner.drain_lock.lock()).await
         else {
             return Err(generation.timeout_error());
@@ -222,6 +329,7 @@ impl TaskGroup {
             if incomplete == 0 {
                 return generation.complete_shutdown();
             }
+
             return Err(TaskShutdownError::Timeout {
                 failures: generation.take_failures(),
                 incomplete,
@@ -295,6 +403,26 @@ impl TaskSpawner {
     {
         self.generation.spawn(future)
     }
+
+    // panics-doc-ok (transitive via task ID allocation)
+    /// Registers a named `future` before allowing it to poll.
+    ///
+    /// The returned reference observes identity and terminal state without owning cancellation or
+    /// joining. The task may reach a terminal state before this method returns.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when this spawner no longer belongs to the open generation.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the process exhausts the `u64` task identifier space.
+    pub fn spawn_named<F>(&self, name: &'static str, future: F) -> Result<TaskRef, TaskSpawnError>
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.generation.spawn_named(name, future)
+    }
 }
 
 /// Closes task groups and runs synchronous rollback when dropped while armed.
@@ -337,6 +465,7 @@ impl<F: FnOnce()> Drop for TaskGroupGuard<F> {
             for group in &self.groups {
                 group.begin_shutdown();
             }
+
             rollback();
         }
     }
@@ -412,6 +541,7 @@ impl Display for TaskShutdownError {
                 if !failures.is_empty() {
                     write!(f, ": join failures: {}", failures.join("; "))?;
                 }
+
                 Ok(())
             }
         }
@@ -523,6 +653,7 @@ impl<T> TaskSlot<T> {
             handle.abort();
             panic!("task slot is already occupied");
         }
+
         self.handle = Some(handle);
         self.abort_requested = false;
     }
@@ -541,6 +672,7 @@ impl<T> TaskSlot<T> {
             Err(e) if e.is_cancelled() && self.abort_requested => TaskJoinOutcome::Aborted,
             Err(e) => TaskJoinOutcome::Failed(e),
         };
+
         self.handle.take();
         self.abort_requested = false;
         outcome
@@ -580,6 +712,7 @@ impl<T> SharedTaskState<T> {
         if self.draining {
             return None;
         }
+
         self.draining = true;
         Some((
             std::mem::take(&mut self.slot),
@@ -684,6 +817,7 @@ impl<T> SharedTaskSlot<T> {
         if self.owned.load(Ordering::Acquire) || state.slot.is_some() || state.draining {
             return Err(slot);
         }
+
         self.owned.store(true, Ordering::Release);
         state.slot = slot;
         state.abort = CancellationToken::new();
@@ -704,11 +838,13 @@ impl<T> SharedTaskSlot<T> {
             if moved_slot {
                 state.draining = true;
             }
+
             let slot = if moved_slot {
                 std::mem::take(&mut state.slot)
             } else {
                 TaskSlot::new()
             };
+
             (slot, state.abort.clone(), moved_slot)
         };
 
@@ -736,23 +872,29 @@ impl<T> SharedTaskSlot<T> {
         abort_timeout: Duration,
     ) -> Option<TaskJoinOutcome<T>> {
         let started = time::Instant::now();
+
         let Some(graceful_deadline) = started.checked_add(graceful_timeout) else {
             return self.incomplete_outcome();
         };
+
         let Some(abort_deadline) = graceful_deadline.checked_add(abort_timeout) else {
             return self.incomplete_outcome();
         };
+
         let lock_timeout = abort_deadline.saturating_duration_since(time::Instant::now());
+
         let Ok(_drain_lock) = time::timeout(lock_timeout, self.drain_lock.lock()).await else {
             return self.incomplete_outcome();
         };
 
         let reserve_timeout = abort_deadline.saturating_duration_since(time::Instant::now());
+
         let Ok((slot, abort, abort_requested)) = time::timeout(reserve_timeout, async {
             loop {
                 if let Some(reservation) = self.state.lock().try_reserve_drain() {
                     break reservation;
                 }
+
                 nautilus_common::live::dst::task::yield_now().await;
             }
         })
@@ -775,6 +917,7 @@ impl<T> SharedTaskSlot<T> {
         }
 
         let graceful_remaining = graceful_deadline.saturating_duration_since(time::Instant::now());
+
         let outcome = if aborting {
             let abort_remaining = abort_deadline.saturating_duration_since(time::Instant::now());
             finish_task(&mut draining.slot, Duration::ZERO, abort_remaining).await
@@ -800,6 +943,7 @@ impl<T> SharedTaskSlot<T> {
                 finish_task(&mut draining.slot, Duration::ZERO, abort_remaining).await
             }
         };
+
         drop(draining);
         outcome
     }
@@ -834,6 +978,7 @@ impl<T> Drop for SharedTaskDrain<'_, T> {
                 abort_applied = true;
                 continue;
             }
+
             assert!(
                 state.slot.is_none(),
                 "shared task slot changed while draining"
@@ -866,6 +1011,7 @@ pub async fn finish_task<T>(
         Ok(result) => Some(slot.complete(result)),
         Err(_) => {
             slot.abort();
+
             let abort_result = {
                 let handle = slot.handle.as_mut()?;
                 time::timeout(abort_timeout, handle).await
@@ -930,6 +1076,7 @@ impl TaskGeneration {
 
     fn close_admission(&self) {
         let _guard = self.admission_lock.lock();
+
         let _ = self
             .phase
             .try_update(Ordering::AcqRel, Ordering::Acquire, |phase| match phase {
@@ -953,7 +1100,7 @@ impl TaskGeneration {
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        let registration = match self.register_task() {
+        let registration = match self.register_task(None) {
             Ok(registration) => registration,
             Err(e) => {
                 drop(future);
@@ -961,6 +1108,42 @@ impl TaskGeneration {
             }
         };
 
+        self.spawn_registered(registration, future);
+
+        Ok(())
+    }
+
+    fn spawn_named<F>(
+        self: &Arc<Self>,
+        name: &'static str,
+        future: F,
+    ) -> Result<TaskRef, TaskSpawnError>
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        let identity = Arc::new(TaskIdentity::new(name));
+
+        let task = TaskRef {
+            identity: Arc::clone(&identity),
+        };
+
+        let registration = match self.register_task(Some(identity)) {
+            Ok(registration) => registration,
+            Err(e) => {
+                drop(future);
+                return Err(e);
+            }
+        };
+
+        self.spawn_registered(registration, future);
+
+        Ok(task)
+    }
+
+    fn spawn_registered<F>(&self, registration: TaskRegistration, future: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
         let force = self.force.clone();
 
         spawn(async move {
@@ -973,13 +1156,15 @@ impl TaskGeneration {
             })
             .catch_unwind()
             .await;
+
             registration.complete(result.err());
         });
-
-        Ok(())
     }
 
-    fn register_task(self: &Arc<Self>) -> Result<TaskRegistration, TaskSpawnError> {
+    fn register_task(
+        self: &Arc<Self>,
+        identity: Option<Arc<TaskIdentity>>,
+    ) -> Result<TaskRegistration, TaskSpawnError> {
         let _guard = self.admission_lock.lock();
 
         if !self.is_open() {
@@ -987,7 +1172,7 @@ impl TaskGeneration {
         }
 
         let token = self.tasks.token();
-        Ok(TaskRegistration::new(Arc::clone(self), token))
+        Ok(TaskRegistration::new(Arc::clone(self), token, identity))
     }
 
     fn record_failure(&self, failure: String) {
@@ -1024,32 +1209,55 @@ impl TaskGeneration {
 struct TaskRegistration {
     generation: Arc<TaskGeneration>,
     _token: TaskTrackerToken,
+    identity: Option<Arc<TaskIdentity>>,
     terminal: bool,
 }
 
 impl TaskRegistration {
-    fn new(generation: Arc<TaskGeneration>, token: TaskTrackerToken) -> Self {
+    fn new(
+        generation: Arc<TaskGeneration>,
+        token: TaskTrackerToken,
+        identity: Option<Arc<TaskIdentity>>,
+    ) -> Self {
         Self {
             generation,
             _token: token,
+            identity,
             terminal: false,
         }
     }
 
     fn complete(mut self, panic: Option<Box<dyn Any + Send>>) {
-        if let Some(panic) = panic {
-            self.generation
-                .record_failure(format!("task panicked: {}", panic_message(panic.as_ref())));
-        }
         self.terminal = true;
+        self.finish();
+
+        if let Some(panic) = panic {
+            let failure = format!("panicked: {}", panic_message(panic.as_ref()));
+            self.record_failure(&failure);
+        }
+    }
+
+    fn finish(&self) {
+        if let Some(identity) = &self.identity {
+            identity.finish();
+        }
+    }
+
+    fn record_failure(&self, failure: &str) {
+        let failure = self.identity.as_ref().map_or_else(
+            || format!("task {failure}"),
+            |identity| identity.failure(failure),
+        );
+        self.generation.record_failure(failure);
     }
 }
 
 impl Drop for TaskRegistration {
     fn drop(&mut self) {
+        self.finish();
+
         if !self.terminal && !self.generation.force.is_cancelled() {
-            self.generation
-                .record_failure("task was canceled unexpectedly".to_string());
+            self.record_failure("was canceled unexpectedly");
         }
     }
 }
@@ -1083,6 +1291,7 @@ impl TaskGroupInner {
             generation.close_admission();
             generation
         };
+
         generation.cancel();
         generation
     }
@@ -1105,10 +1314,12 @@ where
     F::Output: Send + 'static,
 {
     let (start, wait) = tokio::sync::oneshot::channel();
+
     let handle = spawn(async move {
         wait.await.expect("task start gate sender dropped");
         future.await
     });
+
     (handle, start)
 }
 
@@ -1147,6 +1358,15 @@ mod tests {
     use super::*;
 
     const TEST_TIMEOUT: Duration = Duration::from_secs(1);
+
+    /// Interval a test waits on while letting an in-flight `finish_*` future make progress.
+    ///
+    /// Sleeping rather than yielding is deliberate. A `yield_now` arm leaves the polling task
+    /// immediately runnable again, so the loop can re-poll without the runtime servicing its
+    /// timer driver, and a zero-duration `time::timeout` inside the raced future may then not
+    /// fire promptly. Sleeping yields to the timer driver before the next poll.
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
     #[rstest]
     fn task_group_guard_closes_all_groups_and_runs_rollback_until_disarmed() {
@@ -1213,12 +1433,288 @@ mod tests {
     #[rstest]
     #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn named_tasks_expose_distinct_identity_without_transferring_ownership() {
+        let group = TaskGroup::new();
+        let first = group
+            .spawn_named("dispatch", std::future::pending())
+            .expect("spawn first task");
+        let second = group
+            .spawner()
+            .expect("task spawner")
+            .spawn_named("dispatch", std::future::pending())
+            .expect("spawn second task");
+        let first_observer = first.clone();
+        drop(first);
+
+        assert_eq!(first_observer.name(), "dispatch");
+        assert_eq!(second.name(), "dispatch");
+        assert_ne!(first_observer.id(), second.id());
+        assert!(first_observer.is_active());
+        assert!(second.is_active());
+        assert!(!first_observer.is_finished());
+        assert!(!second.is_finished());
+        assert_eq!(group.len(), 2);
+
+        group.abort();
+        group
+            .finish_shutdown(TEST_TIMEOUT, TEST_TIMEOUT)
+            .await
+            .expect("shutdown");
+
+        assert!(!first_observer.is_active());
+        assert!(!second.is_active());
+        assert!(first_observer.is_finished());
+        assert!(second.is_finished());
+        assert!(group.is_empty());
+    }
+
+    #[rstest]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn named_task_ids_are_unique_across_groups_and_generations() {
+        let first_group = TaskGroup::new();
+        let first = first_group
+            .spawn_named("dispatch", std::future::pending())
+            .expect("spawn first task");
+        first_group.abort();
+        first_group
+            .finish_shutdown(TEST_TIMEOUT, TEST_TIMEOUT)
+            .await
+            .expect("first generation shutdown");
+        first_group
+            .start_generation()
+            .expect("replacement generation");
+
+        let second = first_group
+            .spawn_named("dispatch", std::future::pending())
+            .expect("spawn replacement task");
+        let second_group = TaskGroup::new();
+        let third = second_group
+            .spawn_named("dispatch", std::future::pending())
+            .expect("spawn other group task");
+
+        first_group.abort();
+        first_group
+            .finish_shutdown(TEST_TIMEOUT, TEST_TIMEOUT)
+            .await
+            .expect("replacement generation shutdown");
+        second_group.abort();
+        second_group
+            .finish_shutdown(TEST_TIMEOUT, TEST_TIMEOUT)
+            .await
+            .expect("other group shutdown");
+
+        assert_ne!(first.id(), second.id());
+        assert_ne!(first.id(), third.id());
+        assert_ne!(second.id(), third.id());
+    }
+
+    #[rstest]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn dropping_named_task_ref_preserves_group_ownership() {
+        let group = TaskGroup::new();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (request_tx, request_rx) = tokio::sync::oneshot::channel();
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+
+        let task = group
+            .spawn_named("dispatch", async move {
+                let _ = started_tx.send(());
+                let _ = request_rx.await;
+                let _ = response_tx.send(());
+                std::future::pending::<()>().await;
+            })
+            .expect("spawn task");
+
+        started_rx.await.expect("task should start");
+
+        drop(task);
+        request_tx.send(()).expect("task should remain owned");
+        time::timeout(TEST_TIMEOUT, response_rx)
+            .await
+            .expect("task should respond")
+            .expect("task should remain active");
+
+        assert_eq!(group.len(), 1);
+
+        group.abort();
+        group
+            .finish_shutdown(TEST_TIMEOUT, TEST_TIMEOUT)
+            .await
+            .expect("shutdown");
+
+        assert!(group.is_empty());
+    }
+
+    #[rstest]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn named_task_observes_normal_completion() {
+        let group = TaskGroup::new();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+
+        let task = group
+            .spawn_named("finite", async move {
+                let _ = release_rx.await;
+            })
+            .expect("spawn task");
+
+        release_tx.send(()).expect("task should be waiting");
+        time::timeout(TEST_TIMEOUT, async {
+            while !task.is_finished() {
+                task::yield_now().await;
+            }
+        })
+        .await
+        .expect("task should finish");
+
+        group.begin_shutdown();
+        group
+            .finish_shutdown(TEST_TIMEOUT, TEST_TIMEOUT)
+            .await
+            .expect("shutdown");
+
+        assert!(!task.is_active());
+        assert!(task.is_finished());
+        assert!(group.is_empty());
+    }
+
+    #[rstest]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn named_task_panic_includes_identity() {
+        let group = TaskGroup::new();
+
+        let task = group
+            .spawn_named("panicking", async {
+                panic!("task panic");
+            })
+            .expect("spawn task");
+
+        group.begin_shutdown();
+        let error = group
+            .finish_shutdown(TEST_TIMEOUT, TEST_TIMEOUT)
+            .await
+            .expect_err("panic should be reported");
+
+        let TaskShutdownError::Join(failures) = error else {
+            panic!("expected join failure");
+        };
+
+        assert_eq!(
+            failures,
+            [format!(
+                "task 'panicking' ({}) panicked: task panic",
+                task.id()
+            )]
+        );
+        assert!(task.is_finished());
+        assert!(group.is_empty());
+    }
+
+    #[rstest]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn named_task_forced_before_first_poll_becomes_finished() {
+        let group = TaskGroup::new();
+        let generation = group.inner.current();
+        let identity = Arc::new(TaskIdentity::new("not-polled"));
+
+        let task = TaskRef {
+            identity: Arc::clone(&identity),
+        };
+
+        let registration = generation
+            .register_task(Some(identity))
+            .expect("registration");
+        let polled = Arc::new(AtomicBool::new(false));
+        let polled_task = Arc::clone(&polled);
+
+        assert!(task.is_active());
+        assert!(!task.is_finished());
+
+        group.abort();
+        generation.spawn_registered(registration, async move {
+            polled_task.store(true, Ordering::Release);
+        });
+
+        group
+            .finish_shutdown(TEST_TIMEOUT, TEST_TIMEOUT)
+            .await
+            .expect("shutdown");
+
+        assert!(!polled.load(Ordering::Acquire));
+        assert!(!task.is_active());
+        assert!(task.is_finished());
+        assert!(group.is_empty());
+    }
+
+    #[rstest]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn named_registration_drop_after_forced_cancellation_is_not_reported() {
+        let group = TaskGroup::new();
+        let generation = group.inner.current();
+        let identity = Arc::new(TaskIdentity::new("canceled"));
+
+        let task = TaskRef {
+            identity: Arc::clone(&identity),
+        };
+
+        let registration = generation
+            .register_task(Some(identity))
+            .expect("registration");
+
+        group.abort();
+        drop(registration);
+        group
+            .finish_shutdown(TEST_TIMEOUT, TEST_TIMEOUT)
+            .await
+            .expect("forced cancellation should not be reported");
+
+        assert!(!task.is_active());
+        assert!(task.is_finished());
+        assert!(group.is_empty());
+    }
+
+    #[rstest]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn rejected_named_task_drops_future_without_polling() {
+        let group = Arc::new(TaskGroup::new());
+        let dropped = Arc::new(AtomicBool::new(false));
+        let polled = Arc::new(AtomicBool::new(false));
+        group.begin_shutdown();
+
+        let result = group.spawn_named(
+            "rejected",
+            ReentrantDropFuture {
+                group: Arc::clone(&group),
+                dropped: Arc::clone(&dropped),
+                polled: Arc::clone(&polled),
+            },
+        );
+
+        assert!(matches!(result, Err(TaskSpawnError::CLOSED)));
+        assert!(dropped.load(Ordering::Acquire));
+        assert!(!polled.load(Ordering::Acquire));
+        group
+            .finish_shutdown(TEST_TIMEOUT, TEST_TIMEOUT)
+            .await
+            .expect("shutdown");
+    }
+
+    #[rstest]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn shutdown_closes_admission_before_future_poll() {
         let group = TaskGroup::new();
         let polled = Arc::new(AtomicBool::new(false));
         let polled_task = Arc::clone(&polled);
 
         group.begin_shutdown();
+
         let result = group.spawn(async move {
             polled_task.store(true, Ordering::Release);
         });
@@ -1238,15 +1734,18 @@ mod tests {
     async fn rejected_future_can_reenter_group_on_drop() {
         let group = Arc::new(TaskGroup::new());
         let dropped = Arc::new(AtomicBool::new(false));
+        let polled = Arc::new(AtomicBool::new(false));
         group.begin_shutdown();
 
         let result = group.spawn(ReentrantDropFuture {
             group: Arc::clone(&group),
             dropped: Arc::clone(&dropped),
+            polled: Arc::clone(&polled),
         });
 
         assert_eq!(result, Err(TaskSpawnError::CLOSED));
         assert!(dropped.load(Ordering::Acquire));
+        assert!(!polled.load(Ordering::Acquire));
         group
             .finish_shutdown(TEST_TIMEOUT, TEST_TIMEOUT)
             .await
@@ -1258,10 +1757,12 @@ mod tests {
         let group = Arc::new(TaskGroup::new());
         let cancellation = group.cancellation_token();
         let woke = Arc::new(AtomicBool::new(false));
+
         let waker = Waker::from(Arc::new(ReentrantWake {
             group: Arc::clone(&group),
             woke: Arc::clone(&woke),
         }));
+
         let mut context = Context::from_waker(&waker);
         let mut cancelled = Box::pin(cancellation.cancelled());
 
@@ -1288,12 +1789,18 @@ mod tests {
             .expect("shutdown");
 
         assert_eq!(old.spawn(async {}), Err(TaskSpawnError::CLOSED));
+        assert!(matches!(
+            old.spawn_named("stale", async {}),
+            Err(TaskSpawnError::CLOSED)
+        ));
         assert!(old_generation.tasks.is_empty());
 
         group.start_generation().expect("new generation");
         let current = group.spawner().expect("current spawner");
 
-        current.spawn(async {}).expect("current spawn");
+        current
+            .spawn_named("current", async {})
+            .expect("current spawn");
 
         group.begin_shutdown();
         group
@@ -1335,14 +1842,10 @@ mod tests {
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn shutdown_forces_abort_and_observes_canceled_join() {
         let group = TaskGroup::new();
-        let dropped = Arc::new(AtomicBool::new(false));
-        let dropped_task = Arc::clone(&dropped);
-        group
-            .spawn(async move {
-                let _drop = DropSignal(dropped_task);
-                std::future::pending::<()>().await;
-            })
-            .expect("spawn");
+        let (future, started_rx, dropped) = pending_with_drop_signal();
+
+        group.spawn(future).expect("spawn");
+        started_rx.await.expect("task should start");
 
         group.begin_shutdown();
         group
@@ -1400,7 +1903,8 @@ mod tests {
         let group = TaskGroup::new();
         group.spawn(std::future::pending()).expect("spawn");
         let generation = group.inner.current();
-        let registration = TaskRegistration::new(Arc::clone(&generation), generation.tasks.token());
+        let registration =
+            TaskRegistration::new(Arc::clone(&generation), generation.tasks.token(), None);
         drop(registration);
         group.begin_shutdown();
 
@@ -1408,10 +1912,51 @@ mod tests {
             .finish_shutdown(Duration::ZERO, TEST_TIMEOUT)
             .await
             .expect_err("unexpected cancellation should be reported");
+
         let TaskShutdownError::Join(failures) = error else {
             panic!("expected join failure");
         };
+
         assert_eq!(failures, ["task was canceled unexpectedly"]);
+        assert!(group.is_empty());
+    }
+
+    #[rstest]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn named_unexpected_cancellation_includes_identity() {
+        let group = TaskGroup::new();
+        group.spawn(std::future::pending()).expect("spawn");
+        let generation = group.inner.current();
+        let identity = Arc::new(TaskIdentity::new("canceled"));
+
+        let task = TaskRef {
+            identity: Arc::clone(&identity),
+        };
+
+        let registration = generation
+            .register_task(Some(identity))
+            .expect("registration");
+        drop(registration);
+        group.begin_shutdown();
+
+        let error = group
+            .finish_shutdown(Duration::ZERO, TEST_TIMEOUT)
+            .await
+            .expect_err("unexpected cancellation should be reported");
+
+        let TaskShutdownError::Join(failures) = error else {
+            panic!("expected join failure");
+        };
+
+        assert_eq!(
+            failures,
+            [format!(
+                "task 'canceled' ({}) was canceled unexpectedly",
+                task.id()
+            )]
+        );
+        assert!(task.is_finished());
         assert!(group.is_empty());
     }
 
@@ -1449,11 +1994,11 @@ mod tests {
     async fn shutdown_drains_accepted_registration_and_rejects_late_registration() {
         let group = TaskGroup::new();
         let generation = group.inner.current();
-        let registration = generation.register_task().expect("registration");
+        let registration = generation.register_task(None).expect("registration");
 
         group.begin_shutdown();
         assert!(matches!(
-            generation.register_task(),
+            generation.register_task(None),
             Err(TaskSpawnError::CLOSED)
         ));
         assert_eq!(group.len(), 1);
@@ -1531,6 +2076,7 @@ mod tests {
         group.spawn(std::future::pending()).expect("spawn");
         group.begin_shutdown();
         let finishing_group = Arc::clone(&group);
+
         let finish = task::spawn(async move {
             finishing_group
                 .finish_shutdown(TEST_TIMEOUT, TEST_TIMEOUT)
@@ -1544,6 +2090,7 @@ mod tests {
         })
         .await
         .expect("finisher should begin draining");
+
         finish.abort();
         let _ = finish.await;
 
@@ -1568,6 +2115,7 @@ mod tests {
                 panic!("task panic");
             })
             .expect("spawn panicking task");
+
         panicking_rx.await.expect("panicking task should start");
         group
             .spawn(std::future::pending())
@@ -1592,9 +2140,11 @@ mod tests {
             .finish_shutdown(Duration::ZERO, TEST_TIMEOUT)
             .await
             .expect_err("panic should remain observable");
+
         let TaskShutdownError::Join(failures) = error else {
             panic!("expected join failure");
         };
+
         assert_eq!(failures.len(), 1);
         assert!(group.is_empty());
     }
@@ -1614,6 +2164,7 @@ mod tests {
                 task::yield_now().await;
             })
             .expect("spawn blocking task");
+
         started_rx.await.expect("blocking task should start");
         group.begin_shutdown();
 
@@ -1624,7 +2175,7 @@ mod tests {
                 tokio::select! {
                     biased;
                     outcome = &mut finish => panic!("finish completed unexpectedly: {outcome:?}"),
-                    () = task::yield_now() => {}
+                    () = time::sleep(POLL_INTERVAL) => {}
                 }
             }
 
@@ -1657,9 +2208,11 @@ mod tests {
                 let _ = release_rx.recv();
             })
             .expect("spawn blocking task");
+
         started_rx.await.expect("blocking task should start");
         group.begin_shutdown();
         let finishing_group = Arc::clone(&group);
+
         let finish = task::spawn(async move {
             finishing_group
                 .finish_shutdown(TEST_TIMEOUT, TEST_TIMEOUT)
@@ -1678,9 +2231,11 @@ mod tests {
             .finish_shutdown(Duration::ZERO, Duration::ZERO)
             .await
             .expect_err("second finisher should exhaust its own bound");
+
         let TaskShutdownError::Timeout { incomplete, .. } = error else {
             panic!("expected shutdown timeout");
         };
+
         assert_eq!(incomplete, 1);
 
         release_tx
@@ -1725,7 +2280,8 @@ mod tests {
     async fn forced_timeout_retains_task_and_in_flight_registration() {
         let group = Arc::new(TaskGroup::new());
         let generation = group.inner.current();
-        let registration = TaskRegistration::new(Arc::clone(&generation), generation.tasks.token());
+        let registration =
+            TaskRegistration::new(Arc::clone(&generation), generation.tasks.token(), None);
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
         let (release_tx, release_rx) = std::sync::mpsc::channel();
         group
@@ -1734,15 +2290,18 @@ mod tests {
                 let _ = release_rx.recv();
             })
             .expect("spawn blocking task");
+
         started_rx.await.expect("blocking task should start");
         group.begin_shutdown();
 
         let finishing_group = Arc::clone(&group);
+
         let finish = task::spawn(async move {
             finishing_group
                 .finish_shutdown(Duration::ZERO, TEST_TIMEOUT)
                 .await
         });
+
         time::timeout(TEST_TIMEOUT, async {
             while !generation.force.is_cancelled() {
                 task::yield_now().await;
@@ -1755,9 +2314,11 @@ mod tests {
             .await
             .expect("finisher should join")
             .expect_err("blocking task should exceed abort deadline");
+
         let TaskShutdownError::Timeout { incomplete, .. } = error else {
             panic!("expected shutdown timeout");
         };
+
         assert_eq!(incomplete, 2);
         assert_eq!(group.len(), 2);
 
@@ -1784,12 +2345,14 @@ mod tests {
                 let _ = release_rx.recv();
             })
             .expect("spawn blocking task");
+
         started_rx.await.expect("blocking task should start");
         group
             .spawn(async {
                 panic!("later task panic");
             })
             .expect("spawn panicking task");
+
         time::timeout(TEST_TIMEOUT, async {
             while generation.lock_failures().is_empty() {
                 task::yield_now().await;
@@ -1797,12 +2360,14 @@ mod tests {
         })
         .await
         .expect("panicking task should finish");
+
         group.begin_shutdown();
 
         let error = group
             .finish_shutdown(Duration::ZERO, Duration::from_millis(10))
             .await
             .expect_err("blocking task should exceed abort deadline");
+
         let TaskShutdownError::Timeout {
             failures,
             incomplete,
@@ -1810,6 +2375,7 @@ mod tests {
         else {
             panic!("expected shutdown timeout");
         };
+
         assert_eq!(failures.len(), 1);
         assert!(failures[0].contains("later task panic"));
         assert_eq!(incomplete, 1);
@@ -1872,6 +2438,7 @@ mod tests {
                 panic!("task panic");
             })
             .expect("spawn");
+
         group.begin_shutdown();
 
         let error = group
@@ -1882,6 +2449,7 @@ mod tests {
         let TaskShutdownError::Join(failures) = error else {
             panic!("expected join failure");
         };
+
         assert_eq!(failures, ["task panicked: task panic"]);
         assert!(group.is_empty());
         group.start_generation().expect("group should reopen");
@@ -1901,6 +2469,7 @@ mod tests {
             42
         })
         .expect("spawn");
+
         started_rx.await.expect("task should start");
 
         assert!(!slot.is_finished());
@@ -1920,9 +2489,11 @@ mod tests {
             .finish(TEST_TIMEOUT, TEST_TIMEOUT)
             .await
             .expect("task should be present");
+
         let TaskJoinOutcome::Completed(value) = outcome else {
             panic!("expected completed task");
         };
+
         assert_eq!(value, 42);
         assert!(slot.is_empty());
     }
@@ -1940,6 +2511,7 @@ mod tests {
         while !slot.state.lock().draining {
             task::yield_now().await;
         }
+
         slot.abort();
 
         let outcome = time::timeout(TEST_TIMEOUT, finish)
@@ -1958,6 +2530,7 @@ mod tests {
         let slot = Arc::new(SharedTaskSlot::new());
         slot.insert(task::spawn(std::future::pending::<u32>()));
         let finishing_slot = Arc::clone(&slot);
+
         let finish = task::spawn(async move {
             finishing_slot
                 .finish(Duration::from_secs(10), TEST_TIMEOUT)
@@ -2035,9 +2608,11 @@ mod tests {
             .finish(TEST_TIMEOUT, TEST_TIMEOUT)
             .await
             .expect("second task");
+
         let TaskJoinOutcome::Completed(value) = second else {
             panic!("expected completed second-generation task");
         };
+
         assert_eq!(value, 42);
         assert!(slot.is_empty());
     }
@@ -2055,6 +2630,7 @@ mod tests {
         while !slot.state.lock().draining {
             task::yield_now().await;
         }
+
         finish.abort();
         let _ = finish.await;
 
@@ -2079,6 +2655,7 @@ mod tests {
             let _ = release_rx.recv();
             42
         }));
+
         started_rx.await.expect("blocking task should start");
 
         let outcome = slot
@@ -2090,6 +2667,7 @@ mod tests {
             let _ = release_tx.send(());
             panic!("expected incomplete task, was {outcome:?}");
         }
+
         assert!(!slot.is_empty());
 
         release_tx
@@ -2099,6 +2677,7 @@ mod tests {
             .finish(TEST_TIMEOUT, TEST_TIMEOUT)
             .await
             .expect("task should be present");
+
         let TaskJoinOutcome::Completed(value) = outcome else {
             panic!("expected completed task after retry, was {outcome:?}");
         };
@@ -2215,6 +2794,7 @@ mod tests {
         let TaskJoinOutcome::Completed(value) = outcome else {
             panic!("expected completed task");
         };
+
         assert_eq!(value, 42);
         assert!(slot.is_none());
     }
@@ -2261,11 +2841,13 @@ mod tests {
             let _ = release_rx.await;
             42
         }));
+
         started_rx.await.expect("original task should start");
 
         let panic = std::panic::catch_unwind(AssertUnwindSafe(|| {
             slot.spawn(std::future::pending::<u32>())
         }));
+
         let _ = release_tx.send(());
         let outcome = finish_task(&mut slot, TEST_TIMEOUT, TEST_TIMEOUT)
             .await
@@ -2276,6 +2858,7 @@ mod tests {
         let TaskJoinOutcome::Completed(value) = outcome else {
             panic!("expected original task to complete, was {outcome:?}");
         };
+
         assert_eq!(
             panic_message(panic.as_ref()),
             "task slot is already occupied"
@@ -2304,6 +2887,7 @@ mod tests {
     async fn singular_task_is_joined_after_forced_abort() {
         let dropped = Arc::new(AtomicBool::new(false));
         let signal = DropSignal(Arc::clone(&dropped));
+
         let mut slot = TaskSlot::from_handle(task::spawn(async move {
             let _signal = signal;
             std::future::pending::<()>().await;
@@ -2338,11 +2922,13 @@ mod tests {
     async fn singular_task_timeout_preserves_owned_typed_result() {
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
         let (release_tx, release_rx) = std::sync::mpsc::channel();
+
         let mut slot = TaskSlot::from_handle(tokio::task::spawn_blocking(move || {
             let _ = started_tx.send(());
             let _ = release_rx.recv();
             42
         }));
+
         started_rx.await.expect("blocking task should start");
 
         let outcome = finish_task(&mut slot, Duration::ZERO, Duration::ZERO)
@@ -2353,6 +2939,7 @@ mod tests {
             let _ = release_tx.send(());
             panic!("expected incomplete task, was {outcome:?}");
         }
+
         assert!(slot.is_some());
 
         release_tx
@@ -2366,6 +2953,7 @@ mod tests {
             TaskJoinOutcome::Completed(value) => value,
             other => panic!("expected completed task after retry, was {other:?}"),
         };
+
         assert_eq!(value, 42);
         assert!(slot.is_none());
     }
@@ -2382,6 +2970,7 @@ mod tests {
             let _ = release_rx.recv();
             task::yield_now().await;
         }));
+
         started_rx.await.expect("blocking task should start");
 
         let outcome = finish_task(&mut slot, Duration::ZERO, Duration::ZERO)
@@ -2416,6 +3005,7 @@ mod tests {
         let TaskJoinOutcome::Failed(error) = outcome else {
             panic!("expected failed task");
         };
+
         assert!(error.is_cancelled());
         assert!(slot.is_none());
     }
@@ -2431,6 +3021,7 @@ mod tests {
         let outcome = finish_task(&mut slot, TEST_TIMEOUT, TEST_TIMEOUT)
             .await
             .expect("task should be present");
+
         let TaskJoinOutcome::Failed(error) = outcome else {
             panic!("expected failed task");
         };
@@ -2468,11 +3059,13 @@ mod tests {
     async fn canceled_singular_abort_wait_preserves_owner_slot() {
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
         let (release_tx, release_rx) = std::sync::mpsc::channel();
+
         let mut slot = TaskSlot::from_handle(tokio::task::spawn_blocking(move || {
             let _ = started_tx.send(());
             let _ = release_rx.recv();
             42
         }));
+
         started_rx.await.expect("blocking task should start");
 
         {
@@ -2495,6 +3088,7 @@ mod tests {
         let TaskJoinOutcome::Completed(value) = outcome else {
             panic!("expected completed task after canceled abort wait, was {outcome:?}");
         };
+
         assert_eq!(value, 42);
         assert!(slot.is_none());
     }
@@ -2511,6 +3105,7 @@ mod tests {
             let _ = release_rx.recv();
             task::yield_now().await;
         }));
+
         started_rx.await.expect("blocking task should start");
 
         while !slot.abort_requested {
@@ -2520,7 +3115,7 @@ mod tests {
                 tokio::select! {
                     biased;
                     outcome = &mut finish => panic!("finish completed unexpectedly: {outcome:?}"),
-                    () = task::yield_now() => {}
+                    () = time::sleep(POLL_INTERVAL) => {}
                 }
             }
         }
@@ -2545,6 +3140,7 @@ mod tests {
         let dropped = Arc::new(AtomicBool::new(false));
         let dropped_task = Arc::clone(&dropped);
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+
         let future = async move {
             let _drop = DropSignal(dropped_task);
             let _ = started_tx.send(());
@@ -2575,6 +3171,7 @@ mod tests {
     struct ReentrantDropFuture {
         group: Arc<TaskGroup>,
         dropped: Arc<AtomicBool>,
+        polled: Arc<AtomicBool>,
     }
 
     struct ReentrantWake {
@@ -2596,6 +3193,7 @@ mod tests {
             self: std::pin::Pin<&mut Self>,
             _cx: &mut std::task::Context<'_>,
         ) -> std::task::Poll<Self::Output> {
+            self.polled.store(true, Ordering::Release);
             std::task::Poll::Pending
         }
     }

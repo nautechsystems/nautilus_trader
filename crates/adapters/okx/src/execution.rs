@@ -15,11 +15,7 @@
 
 //! Live execution client implementation for the OKX adapter.
 
-use std::{
-    future::Future,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{future::Future, sync::Arc};
 
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
@@ -27,7 +23,10 @@ use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::ExecutionClient,
-    live::runner::get_exec_event_sender,
+    live::{
+        dst::time::{self, Duration, Instant},
+        runner::get_exec_event_sender,
+    },
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
@@ -37,7 +36,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    UnixNanos,
+    DurationNanos, UnixNanos,
     params::Params,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -46,6 +45,7 @@ use nautilus_live::{
     execution::{
         context::{OrderContext, OrderIdentity},
         failure::CommandFailure,
+        reports::retain_order_status_reports,
     },
     task::{TaskGroup, TaskGroupGuard},
 };
@@ -71,7 +71,8 @@ use crate::{
         consts::{
             OKX_CONDITIONAL_ORDER_TYPES, OKX_RECONCILIATION_LOOKBACK_DEFAULT_MINS,
             OKX_RECONCILIATION_LOOKBACK_MAX_MINS, OKX_SUCCESS_CODE, OKX_VENUE,
-            OKX_WS_HEARTBEAT_SECS, resolve_instrument_families, validate_okx_client_order_id,
+            OKX_WS_HEARTBEAT_SECS, okx_reduce_only_wire_value, resolve_instrument_families,
+            validate_okx_client_order_id,
         },
         enums::{OKXInstrumentType, OKXMarginMode, OKXTradeMode, is_advance_algo_order},
         failure::{classify_okx_http_failure, classify_okx_venue_code, classify_okx_ws_failure},
@@ -83,7 +84,10 @@ use crate::{
     },
     config::OKXExecutionClientConfig,
     http::{
-        client::{AlgoOrderReportSweep, FillHistory, OKXHttpClient, ReportInstrumentScope},
+        client::{
+            AlgoOrderReportSweep, FillHistory, OKXHttpClient, OKXPendingAlgoOrderReportsError,
+            ReportInstrumentScope,
+        },
         models::OKXCancelAlgoOrderRequest,
     },
     websocket::{
@@ -121,31 +125,47 @@ impl OKXExecutionClient {
         core: ExecutionClientCore,
         config: OKXExecutionClientConfig,
     ) -> anyhow::Result<Self> {
+        let api_key = config
+            .api_key
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let api_secret = config
+            .api_secret
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let api_passphrase = config
+            .api_passphrase
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
         let http_client = OKXHttpClient::with_credentials(
-            config.api_key.clone(),
-            config.api_secret.clone(),
-            config.api_passphrase.clone(),
+            api_key.clone(),
+            api_secret.clone(),
+            api_passphrase.clone(),
             Some(config.http_base_url()),
             config.http_timeout_secs,
             config.max_retries,
             config.retry_delay_initial_ms,
             config.retry_delay_max_ms,
             config.environment,
-            config.proxy_url.clone(),
+            proxy_url.clone(),
         )?;
 
         let account_id = core.account_id;
 
         let ws_private = OKXWebSocketClient::with_credentials(
             Some(config.ws_private_url()),
-            config.api_key.clone(),
-            config.api_secret.clone(),
-            config.api_passphrase.clone(),
+            api_key.clone(),
+            api_secret.clone(),
+            api_passphrase.clone(),
             Some(account_id),
             Some(OKX_WS_HEARTBEAT_SECS),
             config.auth_timeout_secs,
             config.transport_backend,
-            config.proxy_url.clone(),
+            proxy_url.clone(),
         )
         .context("failed to construct OKX private websocket client")?
         .with_socket_control(SocketControl::new(
@@ -156,14 +176,14 @@ impl OKXExecutionClient {
 
         let ws_business = OKXWebSocketClient::with_credentials(
             Some(config.ws_business_url()),
-            config.api_key.clone(),
-            config.api_secret.clone(),
-            config.api_passphrase.clone(),
+            api_key,
+            api_secret,
+            api_passphrase,
             Some(account_id),
             Some(OKX_WS_HEARTBEAT_SECS),
             config.auth_timeout_secs,
             config.transport_backend,
-            config.proxy_url.clone(),
+            proxy_url,
         )
         .context("failed to construct OKX business websocket client")?
         .with_socket_control(SocketControl::new(
@@ -171,6 +191,10 @@ impl OKXExecutionClient {
             Some(*OKX_VENUE),
             "okx-business-user-streams",
         ));
+
+        http_client.set_spot_trade_quote_ccy(config.spot_trade_quote_ccy.clone());
+        ws_private.set_spot_trade_quote_ccy(config.spot_trade_quote_ccy.clone());
+        ws_business.set_spot_trade_quote_ccy(config.spot_trade_quote_ccy.clone());
 
         let trade_mode = Self::derive_default_trade_mode(core.account_type, &config);
         let clock = get_atomic_clock_realtime();
@@ -230,7 +254,7 @@ impl OKXExecutionClient {
     fn trade_mode_for_order(
         &self,
         instrument_id: InstrumentId,
-        params: &Option<Params>,
+        params: Option<&Params>,
     ) -> OKXTradeMode {
         if let Some(td_mode_str) = get_param_as_string(params, "td_mode") {
             match td_mode_str.parse::<OKXTradeMode>() {
@@ -269,6 +293,7 @@ impl OKXExecutionClient {
     async fn collect_order_status_reports(
         &self,
         cmd: &GenerateOrderStatusReports,
+        require_complete_active_coverage: bool,
     ) -> anyhow::Result<OrderReportSweep> {
         let instrument_types = self.instrument_types();
         let routing_types = order_routing_instrument_types(&instrument_types);
@@ -322,6 +347,7 @@ impl OKXExecutionClient {
                         None,
                         start,
                         end,
+                        require_complete_active_coverage,
                     )
                     .await
                 {
@@ -332,6 +358,13 @@ impl OKXExecutionClient {
                             &mut ambiguous_triggered_child_ids,
                             &mut complete,
                         );
+                    }
+                    Err(e)
+                        if require_complete_active_coverage
+                            && e.downcast_ref::<OKXPendingAlgoOrderReportsError>()
+                                .is_some() =>
+                    {
+                        return Err(e);
                     }
                     Err(e) if is_instrument_cache_miss(&e) => return Err(e),
                     Err(e) => {
@@ -381,6 +414,7 @@ impl OKXExecutionClient {
                             None,
                             start,
                             end,
+                            require_complete_active_coverage,
                         )
                         .await
                     {
@@ -391,6 +425,13 @@ impl OKXExecutionClient {
                                 &mut ambiguous_triggered_child_ids,
                                 &mut complete,
                             );
+                        }
+                        Err(e)
+                            if require_complete_active_coverage
+                                && e.downcast_ref::<OKXPendingAlgoOrderReportsError>()
+                                    .is_some() =>
+                        {
+                            return Err(e);
                         }
                         Err(e) if is_instrument_cache_miss(&e) => return Err(e),
                         Err(e) => {
@@ -431,19 +472,7 @@ impl OKXExecutionClient {
             }
         }
 
-        if cmd.open_only {
-            reports.retain(|r| r.order_status.is_open());
-        }
-
-        if let Some(start) = cmd.start {
-            // Open orders are authoritative regardless of age; only closed
-            // history respects the report window.
-            reports.retain(|r| r.ts_last >= start || r.order_status.is_open());
-        }
-
-        if let Some(end) = cmd.end {
-            reports.retain(|r| r.ts_last <= end || r.order_status.is_open());
-        }
+        retain_order_status_reports(&mut reports, cmd);
 
         Ok(OrderReportSweep {
             reports,
@@ -676,7 +705,7 @@ impl OKXExecutionClient {
             cache.try_order_owned(&cmd.client_order_id)?
         };
         let ws_private = self.ws_private.clone();
-        let trade_mode = self.trade_mode_for_order(cmd.instrument_id, &cmd.params);
+        let trade_mode = self.trade_mode_for_order(cmd.instrument_id, cmd.params.as_ref());
 
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -699,14 +728,13 @@ impl OKXExecutionClient {
         let is_reduce_only = context.is_reduce_only;
         let is_quote_quantity = context.is_quote_quantity;
 
-        let px_usd = get_param_as_string(&cmd.params, "px_usd");
-        let px_vol = get_param_as_string(&cmd.params, "px_vol");
-        let speed_bump = get_param_as_string(&cmd.params, "speed_bump");
-        let outcome = get_param_as_string(&cmd.params, "outcome");
-        let slippage_pct = get_param_as_string(&cmd.params, "slippage_pct");
-        let rpi = get_param_as_bool(&cmd.params, "rpi");
-        let rpi_taker_access = get_param_as_bool(&cmd.params, "rpi_taker_access");
-        let rpi_px_round = get_param_as_bool(&cmd.params, "rpi_px_round");
+        let px_usd = get_param_as_string(cmd.params.as_ref(), "px_usd");
+        let px_vol = get_param_as_string(cmd.params.as_ref(), "px_vol");
+        let outcome = get_param_as_string(cmd.params.as_ref(), "outcome");
+        let slippage_pct = get_param_as_string(cmd.params.as_ref(), "slippage_pct");
+        let rpi = get_param_as_bool(cmd.params.as_ref(), "rpi");
+        let rpi_taker_access = get_param_as_bool(cmd.params.as_ref(), "rpi_taker_access");
+        let rpi_px_round = get_param_as_bool(cmd.params.as_ref(), "rpi_px_round");
 
         self.spawn_task("submit_order", async move {
             let result = ws_private
@@ -729,7 +757,6 @@ impl OKXExecutionClient {
                     None,
                     px_usd,
                     px_vol,
-                    speed_bump,
                     outcome,
                     slippage_pct,
                     rpi,
@@ -762,7 +789,7 @@ impl OKXExecutionClient {
             cache.try_order_owned(&cmd.client_order_id)?
         };
         let http_client = self.http_client.clone();
-        let trade_mode = self.trade_mode_for_order(cmd.instrument_id, &cmd.params);
+        let trade_mode = self.trade_mode_for_order(cmd.instrument_id, cmd.params.as_ref());
 
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -780,9 +807,9 @@ impl OKXExecutionClient {
         let time_in_force = context.time_in_force;
         let price = context.price;
         let is_post_only = context.is_post_only;
-        let rpi = get_param_as_bool(&cmd.params, "rpi");
-        let rpi_taker_access = get_param_as_bool(&cmd.params, "rpi_taker_access");
-        let rpi_px_round = get_param_as_bool(&cmd.params, "rpi_px_round");
+        let rpi = get_param_as_bool(cmd.params.as_ref(), "rpi");
+        let rpi_taker_access = get_param_as_bool(cmd.params.as_ref(), "rpi_taker_access");
+        let rpi_px_round = get_param_as_bool(cmd.params.as_ref(), "rpi_px_round");
 
         self.spawn_task("submit_order_http", async move {
             let result = http_client
@@ -796,7 +823,6 @@ impl OKXExecutionClient {
                     Some(time_in_force),
                     price,
                     Some(is_post_only),
-                    None,
                     None,
                     None,
                     None,
@@ -835,7 +861,7 @@ impl OKXExecutionClient {
             cache.try_order_owned(&cmd.client_order_id)?
         };
         let http_client = self.http_client.clone();
-        let trade_mode = self.trade_mode_for_order(cmd.instrument_id, &cmd.params);
+        let trade_mode = self.trade_mode_for_order(cmd.instrument_id, cmd.params.as_ref());
 
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -856,7 +882,8 @@ impl OKXExecutionClient {
         let trailing_offset_type = order.trailing_offset_type();
         let activation_price = order.activation_price();
 
-        let close_fraction = get_param_as_string(&cmd.params, "close_fraction");
+        let close_fraction = get_param_as_string(cmd.params.as_ref(), "close_fraction");
+
         let reduce_only = if close_fraction.is_some() {
             Some(true)
         } else {
@@ -1255,7 +1282,7 @@ impl OKXExecutionClient {
         let interval = Duration::from_millis(10);
 
         loop {
-            tokio::time::sleep(interval).await;
+            time::sleep(interval).await;
 
             if self.core.cache().account(&account_id).is_some() {
                 log::info!("Account {account_id} registered");
@@ -1323,8 +1350,10 @@ impl OKXExecutionClient {
                         })?;
 
                     if instruments.is_empty() {
-                        log::warn!("No instruments returned for {instrument_type:?}");
-                        continue;
+                        anyhow::bail!(
+                            "No usable instruments for {instrument_type:?}, \
+                             cannot initialize execution client"
+                        );
                     }
 
                     log::debug!(
@@ -1348,10 +1377,10 @@ impl OKXExecutionClient {
                             })?;
 
                         if instruments.is_empty() {
-                            log::warn!(
-                                "No instruments returned for {instrument_type:?} family {family}"
+                            anyhow::bail!(
+                                "No usable instruments for {instrument_type:?} family {family}, \
+                                 cannot initialize execution client"
                             );
-                            continue;
                         }
 
                         log::debug!(
@@ -1373,11 +1402,25 @@ impl OKXExecutionClient {
                 );
             }
 
+            if instrument_types.contains(&OKXInstrumentType::Spot)
+                && let Err(e) = self
+                    .http_client
+                    .refresh_account_trade_quote_ccy_lists(OKXInstrumentType::Spot, None)
+                    .await
+            {
+                log::warn!("Failed to refresh account tradeQuoteCcyList: {e}");
+            }
+
+            let trade_quote_ccy_lists = self.http_client.trade_quote_ccy_lists_snapshot();
             self.ws_private.cache_instruments(&all_instruments);
             self.ws_private
                 .cache_inst_id_codes(all_inst_id_codes.clone());
+            self.ws_private
+                .cache_trade_quote_ccy_lists(trade_quote_ccy_lists.clone());
             self.ws_business.cache_instruments(&all_instruments);
             self.ws_business.cache_inst_id_codes(all_inst_id_codes);
+            self.ws_business
+                .cache_trade_quote_ccy_lists(trade_quote_ccy_lists);
             self.core.set_instruments_initialized();
         }
 
@@ -2113,7 +2156,7 @@ impl ExecutionClient for OKXExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        Ok(self.collect_order_status_reports(cmd).await?.reports)
+        Ok(self.collect_order_status_reports(cmd, false).await?.reports)
     }
 
     async fn generate_fill_reports(
@@ -2146,8 +2189,8 @@ impl ExecutionClient for OKXExecutionClient {
         } else {
             FillHistory::Extended
         };
-        let lookback_ns = lookback_mins * 60 * 1_000_000_000;
-        let start = Some(UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns)));
+        let lookback = DurationNanos::try_from_mins(lookback_mins)?;
+        let start = Some(ts_now.saturating_sub(lookback));
 
         let order_cmd = GenerateOrderStatusReportsBuilder::default()
             .ts_init(ts_now)
@@ -2173,7 +2216,7 @@ impl ExecutionClient for OKXExecutionClient {
             (fill_reports, fills_complete),
             (mut position_reports, positions_complete),
         ) = tokio::try_join!(
-            self.collect_order_status_reports(&order_cmd),
+            self.collect_order_status_reports(&order_cmd, true),
             self.collect_fill_reports(fill_cmd, fill_history),
             self.collect_position_status_reports(&position_cmd),
         )?;
@@ -2230,9 +2273,9 @@ impl ExecutionClient for OKXExecutionClient {
                 return Ok(());
             }
 
-            if let Err(reason) = validate_okx_client_order_id(cmd.client_order_id.as_str()) {
-                let denied = OrderDeniedReason::InvalidClientOrderId { detail: reason };
-                self.emitter.emit_order_denied(&order, &denied.to_string());
+            let trade_mode = self.trade_mode_for_order(cmd.instrument_id, cmd.params.as_ref());
+            if let Err(reason) = validate_order(&*order, trade_mode, OrderSubmission::Single) {
+                self.emitter.emit_order_denied(&order, &reason.to_string());
                 return Ok(());
             }
 
@@ -2268,70 +2311,52 @@ impl ExecutionClient for OKXExecutionClient {
         }
 
         let inst_type = okx_instrument_type_from_symbol(cmd.instrument_id.symbol.as_str());
+        let trade_mode = self.trade_mode_for_order(cmd.instrument_id, cmd.params.as_ref());
 
         // Validate all orders before emitting any submitted events
-        let cache = self.core.cache();
+        let orders = self.core.get_orders_for_list(&cmd.order_list)?;
 
-        // Pre-validate every clOrdId so an invalid leg denies the whole list atomically;
+        // Pre-validate every order so an invalid leg denies the whole list atomically;
         // otherwise sibling legs would be left in the cache without a terminal event.
-        let invalid: Vec<(ClientOrderId, String)> = cmd
-            .order_list
-            .client_order_ids
+        let invalid: Vec<(ClientOrderId, OrderDeniedReason)> = orders
             .iter()
-            .filter_map(|cid| {
-                validate_okx_client_order_id(cid.as_str())
+            .filter_map(|order| {
+                validate_order(order, trade_mode, OrderSubmission::List)
                     .err()
-                    .map(|r| (*cid, r))
+                    .map(|reason| (order.client_order_id(), reason))
             })
             .collect();
 
         if !invalid.is_empty() {
             let order_list_id = cmd.order_list.id;
-            for client_order_id in &cmd.order_list.client_order_ids {
-                let order = cache.try_order(client_order_id)?;
+
+            for order in &orders {
                 let denied = invalid
                     .iter()
-                    .find(|(cid, _)| cid == client_order_id)
+                    .find(|(client_order_id, _)| client_order_id == &order.client_order_id())
                     .map_or_else(
                         || OrderDeniedReason::OrderListDenied { order_list_id },
-                        |(_, r)| OrderDeniedReason::InvalidClientOrderId { detail: r.clone() },
+                        |(_, reason)| reason.clone(),
                     );
-                self.emitter.emit_order_denied(&order, &denied.to_string());
+                self.emitter.emit_order_denied(order, &denied.to_string());
             }
             return Ok(());
         }
 
-        for client_order_id in &cmd.order_list.client_order_ids {
-            let order = cache.try_order(client_order_id)?;
-
-            if self.is_conditional_order(order.order_type()) {
-                anyhow::bail!("Conditional orders not supported in order lists: {client_order_id}");
-            }
-
-            if order.time_in_force() != TimeInForce::Gtc {
-                anyhow::bail!(
-                    "Only GTC orders supported in order lists: {client_order_id} has {:?}",
-                    order.time_in_force()
-                );
-            }
-        }
-
         // Build batch payload and emit submitted events
         let mut batch_orders = Vec::new();
-        let speed_bump = get_param_as_string(&cmd.params, "speed_bump");
-        let outcome = get_param_as_string(&cmd.params, "outcome");
-        let rpi = get_param_as_bool(&cmd.params, "rpi");
-        let rpi_taker_access = get_param_as_bool(&cmd.params, "rpi_taker_access");
-        let rpi_px_round = get_param_as_bool(&cmd.params, "rpi_px_round");
+        let outcome = get_param_as_string(cmd.params.as_ref(), "outcome");
+        let rpi = get_param_as_bool(cmd.params.as_ref(), "rpi");
+        let rpi_taker_access = get_param_as_bool(cmd.params.as_ref(), "rpi_taker_access");
+        let rpi_px_round = get_param_as_bool(cmd.params.as_ref(), "rpi_px_round");
 
-        for client_order_id in &cmd.order_list.client_order_ids {
-            let order = cache.order(client_order_id).expect("validated above");
-            let context = OrderContext::from(order.as_ref());
+        for order in &orders {
+            let context = OrderContext::from(order);
 
             batch_orders.push((
                 inst_type,
                 cmd.instrument_id,
-                self.trade_mode_for_order(cmd.instrument_id, &cmd.params),
+                trade_mode,
                 context.identity.client_order_id,
                 context.identity.order_side,
                 None, // position_side: WS client defaults to Net for derivatives
@@ -2341,7 +2366,6 @@ impl ExecutionClient for OKXExecutionClient {
                 context.trigger_price,
                 Some(context.is_post_only),
                 Some(context.is_reduce_only),
-                speed_bump.clone(),
                 outcome.clone(),
                 rpi,
                 rpi_taker_access,
@@ -2353,10 +2377,8 @@ impl ExecutionClient for OKXExecutionClient {
                 .insert(context.identity.client_order_id, context.identity);
 
             log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
-            self.emitter.emit_order_submitted(&order);
+            self.emitter.emit_order_submitted(order);
         }
-
-        drop(cache);
 
         let ws_private = self.ws_private.clone();
         let emitter = self.emitter.clone();
@@ -2427,11 +2449,10 @@ impl ExecutionClient for OKXExecutionClient {
             .map(|(venue_order_id, _)| venue_order_id)
             .or(cmd.venue_order_id);
 
-        let new_px_usd = get_param_as_string(&cmd.params, "px_usd");
-        let new_px_vol = get_param_as_string(&cmd.params, "px_vol");
-        let speed_bump = get_param_as_string(&cmd.params, "speed_bump");
-        let rpi_taker_access = get_param_as_bool(&cmd.params, "rpi_taker_access");
-        let rpi_px_round = get_param_as_bool(&cmd.params, "rpi_px_round");
+        let new_px_usd = get_param_as_string(cmd.params.as_ref(), "px_usd");
+        let new_px_vol = get_param_as_string(cmd.params.as_ref(), "px_vol");
+        let rpi_taker_access = get_param_as_bool(cmd.params.as_ref(), "rpi_taker_access");
+        let rpi_px_round = get_param_as_bool(cmd.params.as_ref(), "rpi_px_round");
 
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -2448,7 +2469,6 @@ impl ExecutionClient for OKXExecutionClient {
                     command.venue_order_id,
                     new_px_usd,
                     new_px_vol,
-                    speed_bump,
                     rpi_taker_access,
                     rpi_px_round,
                 )
@@ -2973,6 +2993,56 @@ impl OKXExecutionClient {
     }
 }
 
+fn validate_order(
+    order: &impl Order,
+    trade_mode: OKXTradeMode,
+    submission: OrderSubmission,
+) -> Result<(), OrderDeniedReason> {
+    if let Err(detail) = validate_okx_client_order_id(order.client_order_id().as_str()) {
+        return Err(OrderDeniedReason::InvalidClientOrderId { detail });
+    }
+
+    if is_spread_instrument(order.instrument_id()) && order.is_reduce_only() {
+        return Err(OrderDeniedReason::UnsupportedReduceOnly);
+    }
+
+    if order.is_reduce_only()
+        && okx_reduce_only_wire_value(
+            okx_instrument_type_from_symbol(order.instrument_id().symbol.as_str()),
+            trade_mode,
+            order.order_side(),
+            None,
+            Some(true),
+        )
+        .is_err()
+    {
+        return Err(OrderDeniedReason::UnsupportedReduceOnly);
+    }
+
+    if matches!(submission, OrderSubmission::List) {
+        if OKX_CONDITIONAL_ORDER_TYPES.contains(&order.order_type()) {
+            return Err(OrderDeniedReason::UnsupportedOrderList {
+                detail: format!(
+                    "conditional order {} is not supported",
+                    order.client_order_id()
+                ),
+            });
+        }
+
+        if order.time_in_force() != TimeInForce::Gtc {
+            return Err(OrderDeniedReason::UnsupportedOrderList {
+                detail: format!(
+                    "order {} has unsupported time in force {}",
+                    order.client_order_id(),
+                    order.time_in_force()
+                ),
+            });
+        }
+    }
+
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OrderCommandRoute {
     RegularWs,
@@ -3000,6 +3070,12 @@ enum CancelAllOrdersRoute {
     BatchWs,
     MassCancelHttp,
     SpreadHttp,
+}
+
+#[derive(Clone, Copy)]
+enum OrderSubmission {
+    Single,
+    List,
 }
 
 fn emit_submit_failure(
@@ -3142,8 +3218,8 @@ fn log_algo_batch_cancel_failure(failure: CommandFailure, contexts: &[AlgoCancel
     }
 }
 
-fn get_param_as_string(params: &Option<Params>, key: &str) -> Option<String> {
-    params.as_ref().and_then(|p| {
+fn get_param_as_string(params: Option<&Params>, key: &str) -> Option<String> {
+    params.and_then(|p| {
         p.get(key).and_then(|v| {
             v.as_str()
                 .map(ToString::to_string)
@@ -3152,8 +3228,8 @@ fn get_param_as_string(params: &Option<Params>, key: &str) -> Option<String> {
     })
 }
 
-fn get_param_as_bool(params: &Option<Params>, key: &str) -> Option<bool> {
-    params.as_ref().and_then(|params| params.get_bool(key))
+fn get_param_as_bool(params: Option<&Params>, key: &str) -> Option<bool> {
+    params.and_then(|params| params.get_bool(key))
 }
 
 fn supports_algo_orders(instrument_type: OKXInstrumentType) -> bool {
@@ -3385,6 +3461,82 @@ mod tests {
         );
     }
 
+    #[rstest]
+    fn test_validate_order_allows_conditional_single_submission() {
+        let order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(InstrumentId::from("ETH-USDT-SWAP.OKX"))
+            .client_order_id(ClientOrderId::from("OCONDITIONALSINGLE"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1"))
+            .trigger_price(Price::from("1000.00"))
+            .build();
+
+        assert_eq!(
+            validate_order(&order, OKXTradeMode::Cross, OrderSubmission::Single),
+            Ok(())
+        );
+    }
+
+    #[rstest]
+    fn test_validate_order_denies_conditional_order_in_list() {
+        let order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(InstrumentId::from("ETH-USDT-SWAP.OKX"))
+            .client_order_id(ClientOrderId::from("OCONDITIONALLIST"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("2"))
+            .trigger_price(Price::from("900.00"))
+            .build();
+
+        assert_eq!(
+            validate_order(&order, OKXTradeMode::Cross, OrderSubmission::List),
+            Err(OrderDeniedReason::UnsupportedOrderList {
+                detail: "conditional order OCONDITIONALLIST is not supported".to_string(),
+            })
+        );
+    }
+
+    #[rstest]
+    fn test_validate_order_denies_non_gtc_order_in_list() {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("ETH-USDT-SWAP.OKX"))
+            .client_order_id(ClientOrderId::from("OIOCLIST"))
+            .side(OrderSide::Buy)
+            .price(Price::from("2000.00"))
+            .quantity(Quantity::from("3"))
+            .time_in_force(TimeInForce::Ioc)
+            .build();
+
+        assert_eq!(
+            validate_order(&order, OKXTradeMode::Cross, OrderSubmission::List),
+            Err(OrderDeniedReason::UnsupportedOrderList {
+                detail: "order OIOCLIST has unsupported time in force IOC".to_string(),
+            })
+        );
+    }
+
+    #[rstest]
+    #[case::cash("BTC-USDT.OKX", OKXTradeMode::Cash)]
+    #[case::option("BTC-USD-241217-92000-C.OKX", OKXTradeMode::Cross)]
+    #[case::event("BTC-ABOVE-DAILY-260224-1600-65000.OKX", OKXTradeMode::Cross)]
+    fn test_validate_order_denies_unsupported_reduce_only(
+        #[case] instrument_id: &str,
+        #[case] trade_mode: OKXTradeMode,
+    ) {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from(instrument_id))
+            .client_order_id(ClientOrderId::from("OREDUCEUNSUPPORTED"))
+            .side(OrderSide::Sell)
+            .price(Price::from("2000.00"))
+            .quantity(Quantity::from("1"))
+            .reduce_only(true)
+            .build();
+
+        assert_eq!(
+            validate_order(&order, trade_mode, OrderSubmission::Single),
+            Err(OrderDeniedReason::UnsupportedReduceOnly)
+        );
+    }
+
     fn build_config(
         margin_mode: Option<OKXMarginMode>,
         use_spot_margin: bool,
@@ -3538,7 +3690,7 @@ mod tests {
             Value::String(td_mode_value.to_string()),
         );
 
-        let result = get_param_as_string(&Some(params), "td_mode")
+        let result = get_param_as_string(Some(&params), "td_mode")
             .and_then(|s| s.parse::<OKXTradeMode>().ok());
 
         assert_eq!(result, Some(expected));
@@ -3549,7 +3701,7 @@ mod tests {
         let mut params = Params::new();
         params.insert("td_mode".to_string(), Value::String("invalid".to_string()));
 
-        let result = get_param_as_string(&Some(params), "td_mode")
+        let result = get_param_as_string(Some(&params), "td_mode")
             .and_then(|s| s.parse::<OKXTradeMode>().ok());
 
         assert_eq!(result, None);
@@ -3557,7 +3709,7 @@ mod tests {
 
     #[rstest]
     fn test_td_mode_param_absent_falls_through() {
-        let result = get_param_as_string(&None, "td_mode");
+        let result = get_param_as_string(None, "td_mode");
 
         assert_eq!(result, None);
     }
@@ -3568,7 +3720,7 @@ mod tests {
         params.insert("close_fraction".to_string(), Value::String("1".to_string()));
         let params = Some(params);
 
-        let close_fraction = get_param_as_string(&params, "close_fraction");
+        let close_fraction = get_param_as_string(params.as_ref(), "close_fraction");
         let is_reduce_only = false;
         let reduce_only = if close_fraction.is_some() {
             Some(true)
@@ -3584,7 +3736,7 @@ mod tests {
     fn test_close_fraction_absent_preserves_reduce_only() {
         let params: Option<Params> = None;
 
-        let close_fraction = get_param_as_string(&params, "close_fraction");
+        let close_fraction = get_param_as_string(params.as_ref(), "close_fraction");
         let is_reduce_only = false;
         let reduce_only = if close_fraction.is_some() {
             Some(true)
@@ -3600,7 +3752,7 @@ mod tests {
     fn test_close_fraction_absent_with_reduce_only_true() {
         let params: Option<Params> = None;
 
-        let close_fraction = get_param_as_string(&params, "close_fraction");
+        let close_fraction = get_param_as_string(params.as_ref(), "close_fraction");
         let is_reduce_only = true;
         let reduce_only = if close_fraction.is_some() {
             Some(true)
@@ -3836,9 +3988,9 @@ mod tests {
 
     fn build_test_exec_client_with_cache() -> (OKXExecutionClient, Rc<RefCell<Cache>>) {
         let config = OKXExecutionClientConfig {
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            api_passphrase: Some("test_pass".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
+            api_passphrase: Some("test_pass".into()),
             ..OKXExecutionClientConfig::default()
         };
 
@@ -3950,9 +4102,9 @@ mod tests {
         });
 
         let config = OKXExecutionClientConfig {
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            api_passphrase: Some("test_pass".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
+            api_passphrase: Some("test_pass".into()),
             base_url_http: Some(base_url_http),
             ..OKXExecutionClientConfig::default()
         };
@@ -4192,11 +4344,11 @@ mod tests {
             Some(instrument.id()),
         );
         assert_eq!(
-            private_cache.load().get(&symbol).map(|i| i.id()),
+            private_cache.load().get(&symbol).map(Instrument::id),
             Some(instrument.id()),
         );
         assert_eq!(
-            business_cache.load().get(&symbol).map(|i| i.id()),
+            business_cache.load().get(&symbol).map(Instrument::id),
             Some(instrument.id()),
         );
     }

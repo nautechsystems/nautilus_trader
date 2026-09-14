@@ -255,9 +255,6 @@ impl Hash for Cfd {
 }
 
 impl Instrument for Cfd {
-    fn tick_scheme(&self) -> Option<Ustr> {
-        self.tick_scheme
-    }
     fn into_any(self) -> InstrumentAny {
         InstrumentAny::Cfd(self)
     }
@@ -384,6 +381,14 @@ impl Instrument for Cfd {
 
     fn taker_fee(&self) -> Decimal {
         self.taker_fee
+    }
+
+    fn tick_scheme(&self) -> Option<Ustr> {
+        self.tick_scheme
+    }
+
+    fn info(&self) -> Option<&Params> {
+        self.info.as_ref()
     }
 
     fn ts_event(&self) -> UnixNanos {

@@ -234,6 +234,12 @@ impl OrderFilled {
         self.order_type
     }
 
+    #[getter]
+    #[pyo3(name = "causation_id")]
+    fn py_causation_id(&self) -> Option<UUID4> {
+        self.causation_id
+    }
+
     /// Constructs an [`OrderFilled`] from a Python dict.
     ///
     /// # Errors

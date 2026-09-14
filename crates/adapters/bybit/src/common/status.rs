@@ -27,7 +27,7 @@ use super::enums::BybitInstrumentStatus;
 impl From<BybitInstrumentStatus> for MarketStatusAction {
     fn from(status: BybitInstrumentStatus) -> Self {
         match status {
-            BybitInstrumentStatus::PreLaunch => Self::PreOpen,
+            BybitInstrumentStatus::PreLaunch | BybitInstrumentStatus::PendingOpen => Self::PreOpen,
             BybitInstrumentStatus::Trading => Self::Trading,
             BybitInstrumentStatus::Delivering => Self::PreClose,
             BybitInstrumentStatus::Closed => Self::Close,
@@ -124,6 +124,7 @@ mod tests {
     #[rstest]
     #[case(BybitInstrumentStatus::Trading, MarketStatusAction::Trading)]
     #[case(BybitInstrumentStatus::PreLaunch, MarketStatusAction::PreOpen)]
+    #[case(BybitInstrumentStatus::PendingOpen, MarketStatusAction::PreOpen)]
     #[case(BybitInstrumentStatus::Delivering, MarketStatusAction::PreClose)]
     #[case(BybitInstrumentStatus::Closed, MarketStatusAction::Close)]
     #[case(

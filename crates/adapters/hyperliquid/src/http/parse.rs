@@ -38,7 +38,7 @@ use super::models::{
 };
 use crate::{
     common::{
-        consts::HYPERLIQUID_VENUE,
+        consts::{ASSET_INDEX_INFO_KEY, HYPERLIQUID_VENUE},
         converters::hyperliquid_time_in_force_to_nautilus,
         enums::{
             HyperliquidFillDirection, HyperliquidOrderStatus as HyperliquidOrderStatusEnum,
@@ -759,6 +759,18 @@ fn is_outcome_side_token(symbol: &str) -> bool {
 // https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/error-responses
 const HYPERLIQUID_MIN_ORDER_NOTIONAL: Decimal = Decimal::TEN;
 
+/// Returns `info` with the venue asset index added under [`ASSET_INDEX_INFO_KEY`].
+///
+/// Hyperliquid signs orders with the numeric asset index rather than the symbol,
+/// and `InstrumentAny` is the only instrument shape published on the message bus.
+/// Carrying the index here lets the execution client register a market discovered
+/// after its own bootstrap without refetching venue metadata.
+fn info_with_asset_index(info: Option<Params>, asset_index: u32) -> Params {
+    let mut info = info.unwrap_or_default();
+    info.insert(ASSET_INDEX_INFO_KEY.to_string(), json!(asset_index));
+    info
+}
+
 /// Converts a single Hyperliquid instrument definition into a Nautilus `InstrumentAny`.
 ///
 /// Returns `None` if the conversion fails (e.g., unsupported market type).
@@ -789,6 +801,7 @@ pub fn create_instrument_from_def(
             let quote_currency = get_currency(&def.quote);
             let min_notional = Some(min_order_notional(quote_currency)?);
             let info = serde_json::from_str::<Params>(&def.raw_data).ok();
+            let info = info_with_asset_index(info, def.asset_index);
 
             Some(InstrumentAny::CurrencyPair(
                 CurrencyPair::builder()
@@ -801,7 +814,7 @@ pub fn create_instrument_from_def(
                     .price_increment(price_increment)
                     .size_increment(size_increment)
                     .maybe_min_notional(min_notional)
-                    .maybe_info(info)
+                    .info(info)
                     // Identical to ts_init for now
                     .ts_event(ts_init)
                     .ts_init(ts_init)
@@ -836,6 +849,7 @@ pub fn create_instrument_from_def(
                     .price_increment(price_increment)
                     .size_increment(size_increment)
                     .maybe_min_notional(min_notional)
+                    .info(info_with_asset_index(None, def.asset_index))
                     // Identical to ts_init for now
                     .ts_event(ts_init)
                     .ts_init(ts_init)
@@ -861,7 +875,7 @@ pub fn create_instrument_from_def(
                     .size_increment(size_increment)
                     .maybe_outcome(outcome.side_name)
                     .maybe_description(outcome.description)
-                    .maybe_info(outcome.info.clone())
+                    .info(info_with_asset_index(outcome.info.clone(), def.asset_index))
                     .ts_event(ts_init)
                     .ts_init(ts_init)
                     .build()
@@ -1365,7 +1379,7 @@ mod tests {
         assert_eq!(btc.symbol, "BTC-USD-PERP");
         assert_eq!(btc.base, "BTC");
         assert_eq!(btc.quote, "USD");
-        assert_eq!(btc.settlement.as_ref().unwrap().as_str(), "USDC");
+        assert_eq!(btc.settlement.as_ref().unwrap(), "USDC");
         assert_eq!(btc.market_type, HyperliquidMarketType::Perp);
         assert_eq!(btc.price_decimals, 1); // 6 - 5 = 1
         assert_eq!(btc.size_decimals, 5);
@@ -1397,7 +1411,7 @@ mod tests {
         assert_eq!(btc.symbol, "BTC-USD-PERP");
         assert_eq!(btc.base, "BTC");
         assert_eq!(btc.quote, "USD");
-        assert_eq!(btc.settlement.as_ref().unwrap().as_str(), "USDC");
+        assert_eq!(btc.settlement.as_ref().unwrap(), "USDC");
         assert_eq!(btc.market_type, HyperliquidMarketType::Perp);
         assert_eq!(btc.size_decimals, 5);
         assert_eq!(btc.max_leverage, Some(40));
@@ -1471,9 +1485,53 @@ mod tests {
                 let min_notional = perp.min_notional.unwrap();
                 assert_eq!(min_notional.currency, Currency::USD());
                 assert_eq!(min_notional.as_decimal(), dec!(10));
-                assert_eq!(perp.settlement_currency.code.as_str(), "USDC");
+                assert_eq!(perp.settlement_currency.code, "USDC");
             }
             other => panic!("Expected CryptoPerpetual, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_create_instrument_from_def_carries_asset_index_on_info() {
+        // The execution client resolves a market listed after its own bootstrap
+        // from the instrument published on the message bus, so every market type
+        // must carry its signing asset index on `info`.
+        let perp_meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
+        let outcome_meta = OutcomeMeta {
+            outcomes: vec![OutcomeMarket {
+                outcome: 2,
+                name: "Recurring BTC".to_string(),
+                description: "Daily settlement".to_string(),
+                side_specs: vec![
+                    OutcomeSideSpec {
+                        name: "Yes".to_string(),
+                    },
+                    OutcomeSideSpec {
+                        name: "No".to_string(),
+                    },
+                ],
+            }],
+            questions: vec![],
+        };
+
+        let mut defs = parse_perp_instruments(&perp_meta, 0).unwrap();
+        defs.extend(parse_perp_instruments(&perp_meta, 110_000).unwrap());
+        defs.extend(parse_outcome_instruments(&outcome_meta).unwrap());
+
+        assert!(defs.iter().any(|def| def.is_hip3));
+
+        for def in &defs {
+            let instrument = create_instrument_from_def(def, UnixNanos::default()).unwrap();
+            let info = instrument
+                .info()
+                .unwrap_or_else(|| panic!("info missing for {}", def.symbol));
+
+            assert_eq!(
+                info.get_u64(ASSET_INDEX_INFO_KEY),
+                Some(u64::from(def.asset_index)),
+                "asset index mismatch for {}",
+                def.symbol,
+            );
         }
     }
 
@@ -1494,18 +1552,18 @@ mod tests {
             settlement_currency.as_str(),
         );
 
-        assert_eq!(settlement_currency.as_str(), "USDH");
+        assert_eq!(settlement_currency, "USDH");
         assert_eq!(defs.len(), 1);
-        assert_eq!(defs[0].symbol.as_str(), "km:US500-USD-PERP");
-        assert_eq!(defs[0].quote.as_str(), "USD");
-        assert_eq!(defs[0].settlement.as_ref().unwrap().as_str(), "USDH");
+        assert_eq!(defs[0].symbol, "km:US500-USD-PERP");
+        assert_eq!(defs[0].quote, "USD");
+        assert_eq!(defs[0].settlement.as_ref().unwrap(), "USDH");
 
         let instrument = create_instrument_from_def(&defs[0], UnixNanos::default()).unwrap();
         match instrument {
             InstrumentAny::CryptoPerpetual(perp) => {
-                assert_eq!(perp.quote_currency.code.as_str(), "USD");
-                assert_eq!(perp.settlement_currency.code.as_str(), "USDH");
-                assert_eq!(perp.settlement_currency.name.as_str(), "Hyperliquid USD");
+                assert_eq!(perp.quote_currency.code, "USD");
+                assert_eq!(perp.settlement_currency.code, "USDH");
+                assert_eq!(perp.settlement_currency.name, "Hyperliquid USD");
             }
             other => panic!("Expected CryptoPerpetual, was {other:?}"),
         }
@@ -1518,17 +1576,17 @@ mod tests {
             settlement_currency.as_str(),
         );
 
-        assert_eq!(settlement_currency.as_str(), "USDE");
+        assert_eq!(settlement_currency, "USDE");
         assert_eq!(defs.len(), 1);
-        assert_eq!(defs[0].symbol.as_str(), "hyna:BTC-USD-PERP");
-        assert_eq!(defs[0].quote.as_str(), "USD");
-        assert_eq!(defs[0].settlement.as_ref().unwrap().as_str(), "USDE");
+        assert_eq!(defs[0].symbol, "hyna:BTC-USD-PERP");
+        assert_eq!(defs[0].quote, "USD");
+        assert_eq!(defs[0].settlement.as_ref().unwrap(), "USDE");
 
         let instrument = create_instrument_from_def(&defs[0], UnixNanos::default()).unwrap();
         match instrument {
             InstrumentAny::CryptoPerpetual(perp) => {
-                assert_eq!(perp.quote_currency.code.as_str(), "USD");
-                assert_eq!(perp.settlement_currency.code.as_str(), "USDE");
+                assert_eq!(perp.quote_currency.code, "USD");
+                assert_eq!(perp.settlement_currency.code, "USDE");
             }
             other => panic!("Expected CryptoPerpetual, was {other:?}"),
         }
@@ -1544,8 +1602,8 @@ mod tests {
 
         match instrument {
             InstrumentAny::CryptoPerpetual(perp) => {
-                assert_eq!(perp.quote_currency.code.as_str(), "USD");
-                assert_eq!(perp.settlement_currency.code.as_str(), "USDC");
+                assert_eq!(perp.quote_currency.code, "USD");
+                assert_eq!(perp.settlement_currency.code, "USDC");
             }
             other => panic!("Expected CryptoPerpetual, was {other:?}"),
         }
@@ -1560,8 +1618,8 @@ mod tests {
         let legacy_settlement = resolve_perp_settlement_currency(&legacy_meta, None).unwrap();
         let token_zero_settlement = resolve_perp_settlement_currency(&all_metas[0], None).unwrap();
 
-        assert_eq!(legacy_settlement.as_str(), "USDC");
-        assert_eq!(token_zero_settlement.as_str(), "USDC");
+        assert_eq!(legacy_settlement, "USDC");
+        assert_eq!(token_zero_settlement, "USDC");
     }
 
     #[rstest]
@@ -1700,11 +1758,15 @@ mod tests {
                 let info = pair.info.unwrap();
                 assert_eq!(min_notional.currency, Currency::USDC());
                 assert_eq!(min_notional.as_decimal(), dec!(10));
-                assert_eq!(info.len(), 4);
+                assert_eq!(info.len(), 5);
                 assert_eq!(info.get_str("name"), Some("PURR/USDC"));
                 assert_eq!(info.get("tokens"), Some(&json!([1, 0])));
                 assert_eq!(info.get_u64("index"), Some(0));
                 assert_eq!(info.get_bool("isCanonical"), Some(true));
+                assert_eq!(
+                    info.get_u64(ASSET_INDEX_INFO_KEY),
+                    Some(u64::from(purr_usdc.asset_index)),
+                );
             }
             other => panic!("Expected CurrencyPair, was {other:?}"),
         }
@@ -1714,11 +1776,15 @@ mod tests {
         match instrument {
             InstrumentAny::CurrencyPair(pair) => {
                 let info = pair.info.unwrap();
-                assert_eq!(info.len(), 4);
+                assert_eq!(info.len(), 5);
                 assert_eq!(info.get_str("name"), Some("ALIAS"));
                 assert_eq!(info.get("tokens"), Some(&json!([1, 0])));
                 assert_eq!(info.get_u64("index"), Some(1));
                 assert_eq!(info.get_bool("isCanonical"), Some(false));
+                assert_eq!(
+                    info.get_u64(ASSET_INDEX_INFO_KEY),
+                    Some(u64::from(alias.asset_index)),
+                );
             }
             other => panic!("Expected CurrencyPair, was {other:?}"),
         }
@@ -1923,8 +1989,8 @@ mod tests {
         let defs = parse_perp_instruments(&meta, 110_000).unwrap();
         assert_eq!(defs.len(), 1);
         assert_eq!(defs[0].symbol, "dex:STREAMABCDxxxx-USD-PERP");
-        assert_eq!(defs[0].raw_symbol.as_str(), "dex:STREAMABCD****");
-        assert_eq!(defs[0].base.as_str(), "dex:STREAMABCD****");
+        assert_eq!(defs[0].raw_symbol, "dex:STREAMABCD****");
+        assert_eq!(defs[0].base, "dex:STREAMABCD****");
     }
 
     #[rstest]
@@ -1950,34 +2016,34 @@ mod tests {
         assert_eq!(defs.len(), 2);
 
         let yes = &defs[0];
-        assert_eq!(yes.symbol.as_str(), "1-YES-OUTCOME");
-        assert_eq!(yes.raw_symbol.as_str(), "#10");
+        assert_eq!(yes.symbol, "1-YES-OUTCOME");
+        assert_eq!(yes.raw_symbol, "#10");
         assert_eq!(yes.market_type, HyperliquidMarketType::Outcome);
         assert_eq!(yes.asset_index, 100_000_010);
         assert_eq!(yes.price_decimals, OUTCOME_PRICE_DECIMALS);
         assert_eq!(yes.size_decimals, OUTCOME_SIZE_DECIMALS);
         assert_eq!(yes.tick_size, dec!(0.0001));
         assert_eq!(yes.lot_size, dec!(0.01));
-        assert_eq!(yes.quote.as_str(), "USDH");
+        assert_eq!(yes.quote, "USDH");
         assert!(yes.active);
 
         let yes_meta = yes.outcome.as_ref().unwrap();
         assert_eq!(yes_meta.outcome_index, 1);
         assert_eq!(yes_meta.outcome_side, 0);
-        assert_eq!(yes_meta.market_name.as_str(), "BTC daily");
-        assert_eq!(yes_meta.side_name.unwrap().as_str(), "Yes");
+        assert_eq!(yes_meta.market_name, "BTC daily");
+        assert_eq!(yes_meta.side_name.unwrap(), "Yes");
         assert_eq!(
-            yes_meta.description.unwrap().as_str(),
+            yes_meta.description.unwrap(),
             "BTC settles above strike at 06:00 UTC"
         );
 
         let no = &defs[1];
-        assert_eq!(no.symbol.as_str(), "1-NO-OUTCOME");
-        assert_eq!(no.raw_symbol.as_str(), "#11");
+        assert_eq!(no.symbol, "1-NO-OUTCOME");
+        assert_eq!(no.raw_symbol, "#11");
         assert_eq!(no.asset_index, 100_000_011);
         let no_meta = no.outcome.as_ref().unwrap();
         assert_eq!(no_meta.outcome_side, 1);
-        assert_eq!(no_meta.side_name.unwrap().as_str(), "No");
+        assert_eq!(no_meta.side_name.unwrap(), "No");
     }
 
     #[rstest]
@@ -1998,26 +2064,8 @@ mod tests {
         // Even when the venue omits `sideSpecs`, the parser falls back to the
         // canonical HIP-4 labels ("Yes" / "No") so downstream `BinaryOption`
         // instruments always carry a meaningful side label.
-        assert_eq!(
-            defs[0]
-                .outcome
-                .as_ref()
-                .unwrap()
-                .side_name
-                .unwrap()
-                .as_str(),
-            "Yes"
-        );
-        assert_eq!(
-            defs[1]
-                .outcome
-                .as_ref()
-                .unwrap()
-                .side_name
-                .unwrap()
-                .as_str(),
-            "No"
-        );
+        assert_eq!(defs[0].outcome.as_ref().unwrap().side_name.unwrap(), "Yes");
+        assert_eq!(defs[1].outcome.as_ref().unwrap().side_name.unwrap(), "No");
 
         for def in &defs {
             assert!(def.outcome.as_ref().unwrap().description.is_none());
@@ -2030,7 +2078,7 @@ mod tests {
     #[rstest]
     fn test_get_usdh_currency_registers_with_explicit_precision() {
         let currency = get_usdh_currency();
-        assert_eq!(currency.code.as_str(), "USDH");
+        assert_eq!(currency.code, "USDH");
         assert_eq!(currency.precision, 8);
         assert_eq!(currency.currency_type, CurrencyType::Crypto);
 
@@ -2067,11 +2115,11 @@ mod tests {
                 assert_eq!(bo.id.symbol.as_str(), "2-YES-OUTCOME");
                 assert_eq!(bo.raw_symbol.as_str(), "#20");
                 assert_eq!(bo.asset_class, AssetClass::Alternative);
-                assert_eq!(bo.currency.code.as_str(), "USDH");
+                assert_eq!(bo.currency.code, "USDH");
                 assert_eq!(bo.price_precision, OUTCOME_PRICE_DECIMALS as u8);
                 assert_eq!(bo.size_precision, OUTCOME_SIZE_DECIMALS as u8);
-                assert_eq!(bo.outcome.unwrap().as_str(), "Yes");
-                assert_eq!(bo.description.unwrap().as_str(), "Daily settlement");
+                assert_eq!(bo.outcome.unwrap(), "Yes");
+                assert_eq!(bo.description.unwrap(), "Daily settlement");
 
                 let info = bo.info.expect("info should be populated for outcomes");
                 assert_eq!(info.get_u64("outcome_index"), Some(2));
@@ -2235,7 +2283,7 @@ mod tests {
         // Zero-fee outcome fills resolve commission to the instrument's quote
         // currency (USDH) rather than the side token, so downstream OrderFilled
         // events and persistence carry a registered currency.
-        assert_eq!(report.commission.currency.code.as_str(), "USDH");
+        assert_eq!(report.commission.currency.code, "USDH");
         assert!(report.commission.as_decimal().is_zero());
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
@@ -2284,7 +2332,7 @@ mod tests {
 
         let currency = resolve_fee_currency("+880", Decimal::ZERO, &yes)
             .expect("zero-fee outcome side token must resolve to quote currency");
-        assert_eq!(currency.code.as_str(), "USDH");
+        assert_eq!(currency.code, "USDH");
 
         let err = resolve_fee_currency("+880", dec!(0.01), &yes).unwrap_err();
         let err_msg = err.to_string();
@@ -2322,11 +2370,11 @@ mod tests {
         let defs = parse_outcome_instruments(&meta).unwrap();
         let no = create_instrument_from_def(&defs[1], UnixNanos::default()).unwrap();
 
-        // Use a token that the venue would not normally emit; the helper must still
+        // Use a token that the venue would not normally emit; resolve_fee_currency must still
         // return the instrument's quote currency on a zero-fee fill.
         let currency = resolve_fee_currency("+UNREGISTERED-TOKEN", Decimal::ZERO, &no)
             .expect("zero-fee fallback should succeed");
-        assert_eq!(currency.code.as_str(), "USDH");
+        assert_eq!(currency.code, "USDH");
 
         let err = resolve_fee_currency("+UNREGISTERED-TOKEN", dec!(0.01), &no).unwrap_err();
         assert!(err.to_string().contains("non-zero fee"));

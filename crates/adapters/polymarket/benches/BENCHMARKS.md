@@ -109,7 +109,7 @@ covers the L2 HMAC path used by every authenticated REST call.
 ## Component breakdown (`micros.rs`)
 
 Diagnostic benches that decompose the pipeline numbers above. Use these
-to localise where time goes when a pipeline bench regresses.
+to localize where time goes when a pipeline bench regresses.
 
 | Bench                             | Median  |
 | --------------------------------- | ------- |

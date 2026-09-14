@@ -30,8 +30,6 @@ use nautilus_model::{
 };
 use nautilus_serialization::capnp::{FromCapnp, ToCapnp, market_capnp};
 
-// Helper functions to create test data
-
 fn create_quote_tick() -> QuoteTick {
     QuoteTick {
         instrument_id: InstrumentId::from("AAPL.XNAS"),

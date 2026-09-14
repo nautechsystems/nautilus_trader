@@ -39,6 +39,7 @@ sequenceDiagram
     BL->>Exch: process_quote_tick / process_bar
     Exch->>ME: update book + iterate()
     note right of ME: Matches existing orders<br/>against new market state
+    note right of ME: Option expiry cancels open orders<br/>Settlement waits for the expiry timer
     end
 
     rect rgb(245, 255, 245)
@@ -57,7 +58,6 @@ sequenceDiagram
     note right of ME: Matches newly added orders<br/>against current market state
     note right of ME: Fills may trigger strategy callbacks<br/>that enqueue further commands,<br/>repeats until no eligible commands
     BL->>Exch: run simulation modules
-    BL->>Exch: check instrument expirations
     end
 ```
 
@@ -67,6 +67,20 @@ Timer events use the same settle mechanism but batch by timestamp: all callbacks
 execute first, then venues are settled for T before advancing to T+1. For timer behavior used by
 internally aggregated bars, see
 [internal bar aggregation timing](bar-execution.md#internal-bar-aggregation-timing).
+
+### Deferred option settlement
+
+At an option's expiration timestamp, automatic expiry checks close its market, cancel open orders,
+and reject new orders. Position settlement waits until all market data at that timestamp has been
+processed, so settlement sees the latest underlying price available for that timestamp. An explicit
+`InstrumentClose` with `InstrumentCloseType::ContractExpired` attempts settlement immediately.
+Streaming batches must keep **all data for a timestamp together**; `BacktestNode` does this automatically.
+
+`SimulatedVenueConfig.defer_option_settlement` defaults to `true`. The backtest engine schedules
+settlement after all market data at the expiry timestamp, without waiting for the next timestamp.
+When driving `SimulatedExchange` directly, schedule expiry processing after that timestamp's data,
+or explicitly set `defer_option_settlement` to `false` for immediate settlement. Immediate settlement
+can use an older underlying price if an update with the same timestamp has yet to be processed.
 
 ### Command settling
 
@@ -93,6 +107,51 @@ command is due, the settlement point determines whether the engine releases it:
 Market data for another instrument does not activate an older command against stale market state.
 Commands with a future arrival timestamp remain in the inflight queue.
 
+### Sandbox inbound latency
+
+`SandboxExecutionClientConfig.latency_model` accepts a `StaticLatencyModel`, mirroring the existing
+`fee_model` field. A submit, modify, or cancel is deferred by the model's insert, update, or delete
+leg before it reaches the matching engine. Venue-generated events (accepts, fills, cancels,
+expirations) are not delayed, so the model covers the inbound leg only. Without a latency model the
+client is unchanged and its events take the runner's execution channel as before.
+
+```python
+from nautilus_trader.adapters.sandbox import SandboxExecutionClientConfig
+from nautilus_trader.execution import StaticLatencyModel
+from nautilus_trader.model import Money
+from nautilus_trader.model import Venue
+
+config = SandboxExecutionClientConfig(
+    venue=Venue("BINANCE"),
+    starting_balances=[Money.from_str("10_000 USDT")],
+    latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
+)
+```
+
+Every event the client emits takes the runner's execution channel exactly as it does without a
+latency model, in emission order: an order's `OrderSubmitted` precedes its venue events, and a
+fill from market data precedes the response to any command released after it. A command is
+applied before any market data processed after its due time, since the client drains its queue
+ahead of each tick it receives, and the client's clock alert releases a queue no data is flowing
+to. A command whose latency leg is zero is applied on arrival, unless a command is already due
+and not yet released, in which case it joins the queue behind it. A cancel-all reaching the venue
+cancels only orders the venue has received: an order whose submit is still in transit is left
+alone until the venue processes its submit.
+
+In both backtest and sandbox, contingent actions also respect venue receipt. Fills, updates,
+expirations, and cancellations cannot activate, amend, or cancel a linked order the venue has
+not yet received. Each submit list arrives as a unit. An OTO child already received by the venue
+can still activate when its parent fills. A late submit is checked against the current state of
+its linked orders and may be rejected if a linked order has already closed.
+Contingent quantity changes skipped before receipt are not replayed when the submit arrives;
+the order retains its submitted quantity unless another applicable rule changes it.
+
+Stopping the client discards anything still in flight. A discarded submit, modify, or targeted
+cancel is rejected (`OrderRejected`, `OrderModifyRejected`, `OrderCancelRejected`) so its order
+does not stay `SUBMITTED` or pending forever; the sandbox generates no order status reports, so
+nothing else would resolve it. A discarded `CancelAllOrders` is dropped, since the strategy marks
+no order `PENDING_CANCEL` for it and so there is no pending state to release.
+
 ### Shutdown semantics
 
 `BacktestEngine::end()` is separate from the `shutdown_on_error` configuration in [backtest APIs and
@@ -100,7 +159,7 @@ repeated runs](apis-and-runs.md#shutdown-on-error). It invokes each strategy's `
 drains and settles any commands it emits (e.g. `close_all_positions`, `cancel_all_orders`), then
 stops the engines.
 
-- `on_stop` commands use normal venue queueing and latency. They do not get priority over earlier
+- `on_stop` commands use normal venue queuing and latency. They do not get priority over earlier
   inflight commands.
 - If a pre-stop order reaches the venue before an `on_stop` cancel, it may still fill. A later
   reduce-only close can then reject if the fill changed net exposure.
@@ -129,14 +188,14 @@ fills at the same `ts_init` (e.g. several legs of a bar-driven fill).
 
 Deterministic trade IDs have these properties:
 
-- Deterministic across runs: the same replayed data produces the same
+- **Deterministic across runs**: the same replayed data produces the same
   `TradeId` every time, so downstream dedup and golden-output comparisons stay
   stable.
-- Collision-safe across resets: `ts_init` is pinned in backtest data and
+- **Collision-safe across resets**: `ts_init` is pinned in backtest data and
   monotonic in live/sandbox, so a `BacktestEngine.reset()` (or an in-memory
   `IdsGenerator` reset in a sandbox with persisted orders) cannot mint a
   `TradeId` that collides with one already in the cache.
-- Bounded length: the hash keeps the identifier under the 36-character
+- **Bounded length**: the hash keeps the identifier under the 36-character
   `TradeId` cap regardless of venue name length.
 
 The `use_random_ids` venue flag still governs `VenueOrderId` and `PositionId` generation, but

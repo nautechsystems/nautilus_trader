@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-trader"
-readme = "README.md"
 rust-version.workspace = true
 version.workspace = true
 edition.workspace = true
@@ -19,6 +18,10 @@ workspace = true
 [lib]
 path = "lib.rs"
 
+[features]
+default = []
+test-support = ["nautilus-model/test-support"]
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
@@ -26,4 +29,4 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
-nautilus-model = { workspace = true, features = ["test-support"] }
+nautilus-model = { workspace = true }

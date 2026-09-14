@@ -62,7 +62,7 @@ A run starts when the kernel starts and ends when the process stops cleanly or c
 Streamed market-data observations stay in the data catalog. The event store records the command
 stream, raw reports, generated events, and metadata needed to replay how the engine reacted to that
 world. Data responses are the exception: every response to an engine request is captured, including
-book, forward-price, and custom-data responses. Only some of them, listed under
+book, option-chain reference price, and custom-data responses. Only some of them, listed under
 [Cache replay](#cache-replay), carry a rule that applies them back to cache state; the rest are
 inspection records.
 
@@ -94,7 +94,7 @@ flowchart LR
 Capture branches off the same dispatch that feeds downstream handlers, and readers only ever reach
 the durable backend.
 
-Capture is asynchronous, not an acceptance gate on dispatch. A successful capture enqueues the entry
+Capture is **asynchronous**, not an acceptance gate on dispatch. A successful capture enqueues the entry
 to the writer; the writer thread then assigns the next `seq`, commits a batch, and advances the
 high-watermark once the backend acknowledges durability. Readers scan sealed or running backends
 over a surface that exposes no append operations.
@@ -348,7 +348,7 @@ live engines, clients, startup, and venue reconciliation. Quarantined runs are r
 requires `load_state=true`: with it disabled the kernel logs an error and returns without restoring
 the cache or opening a child run.
 
-The cache replay loader is state-only. It restores the cache-owned snapshot, scans the event-store
+The cache replay loader is **state-only**. It restores the cache-owned snapshot, scans the event-store
 tail in `seq` order, decodes supported cache-affecting payloads, and applies them directly to
 `Cache`. Supported payloads include:
 

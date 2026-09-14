@@ -48,13 +48,13 @@ As additional fills occur, the position:
 
 ### Closure
 
-A position closes when the net quantity becomes zero (`FLAT`). At closure:
+A position closes when the **net quantity becomes zero** (`FLAT`). At closure:
 
 - The closing order ID is recorded.
 - Duration is calculated from open to close.
 - Final realized PnL is computed.
-- In `NETTING` OMS, when the position later reopens, the engine snapshots the closed state to
-  preserve historical PnL (see [Position snapshotting](#position-snapshotting)).
+- In either OMS type, when the position later reopens under the same ID, the engine snapshots
+  the closed state to preserve historical PnL (see [Position snapshotting](#position-snapshotting)).
 
 ## Order fill aggregation
 
@@ -98,6 +98,28 @@ signed_qty = -50  # Closes the LONG cycle and opens a SHORT cycle
 # Final BUY 50 units at $52
 signed_qty = 0  # Position FLAT (closed)
 ```
+
+### Reversal accounting
+
+An opposite-side fill larger than the open quantity closes the existing exposure and opens the
+residual in the other direction. The execution engine splits this fill into a close and a new
+opening, with closed-state retention governed by [Position snapshotting](#position-snapshotting).
+
+When an unsplit reversal fill is applied directly to one `Position`, including during fill-void
+replay, the position starts a new accounting episode for the residual exposure:
+
+- `avg_px_open` becomes the reversal fill price.
+- `avg_px_close` becomes `None`, and `realized_return` becomes zero until a subsequent closing fill.
+- `buy_qty` and `sell_qty` restart with only the opening residual on the new entry side and zero on
+  the other side. Later close averages therefore exclude volume from the previous direction.
+
+**Only the closing portion** realizes PnL against the previous entry price. The object's `realized_pnl` and commission
+totals remain cumulative across this reversal, with the fill's commission counted once. The reset
+does not clear fill history, opening timestamps, or peak quantity. If the position instead reaches
+`FLAT` and a later fill reopens it, the full cycle resets, including realized PnL and commissions.
+
+These episode resets apply to fill-driven reversals; a quantity adjustment that changes the
+position's side does not perform the same reset.
 
 ## Position adjustments
 
@@ -143,7 +165,7 @@ The position exposes its retained adjustments:
 
 NautilusTrader supports two position management modes. A strategy configured with
 `OmsType.UNSPECIFIED` uses the venue's OMS type. For configuration details and position ID rules,
-see the [Execution guide](execution.md#order-management-system-oms).
+see the [Execution guide](execution/index.md#order-management-system-oms).
 
 ### `NETTING`
 
@@ -163,7 +185,9 @@ In `HEDGING` mode, multiple positions can exist for the same instrument:
 - Positions are tracked independently.
 - No automatic netting across positions.
 - A fill with a new position ID creates a separate position. If a later fill reuses a closed
-  position ID, it replaces the cached state without creating a closed-cycle snapshot.
+  position ID, the engine archives the closed cycle before replacing the cached state.
+- A virtual position flip creates a new ID and keeps the original closed position in the cache,
+  so that path does not need a closed-cycle snapshot.
 
 :::warning
 `HEDGING` can increase margin requirements when a venue maintains long and short positions
@@ -189,18 +213,23 @@ integration guide for the venue's position-mode configuration.
 
 ## Position snapshotting
 
-Position snapshotting preserves closed `NETTING` cycles for PnL tracking and reporting.
+Position snapshotting preserves closed cycles for PnL tracking and reporting when a later fill
+reopens a closed position.
 
 ### Why snapshotting matters
 
-In a `NETTING` system, when a position closes (becomes `FLAT`) and then reopens with a new trade,
+When a position closes (becomes `FLAT`) and then reopens under the same ID with a new trade,
 the position object is reset to track the new exposure. Without snapshotting, the historical
 realized PnL from the previous position cycle would be lost.
 
 ### How it works
 
-When a closed `NETTING` position receives another fill for the same instrument and strategy, the
-execution engine archives the closed state before opening the next cycle. The snapshot preserves:
+When a fill reopens a closed position under the same ID, the execution engine archives the closed
+state before opening the next cycle. This applies to both `NETTING` and `HEDGING` OMS.
+A `HEDGING` flip using a non-virtual ID follows a separate path: it reuses the ID without
+archiving the closed cycle.
+
+The snapshot preserves:
 
 - Final quantities and prices.
 - Realized PnL.
@@ -214,7 +243,7 @@ totals.
 A fill void that corrects a fill from an earlier cycle is the one exception. The correction moves the
 cycle boundaries the stored snapshots describe, so the engine replaces them with the cycles the
 corrected history actually closes, keeping each counted once. See
-[Position replay across NETTING cycles](execution.md#position-replay-across-netting-cycles).
+[Position replay across NETTING cycles](execution/index.md#position-replay-across-netting-cycles).
 
 :::note
 This closed-cycle archive differs from optional position state snapshots. Setting
@@ -312,10 +341,12 @@ notional = position.notional_value(current_price)
 # Returns Money in quote (linear), base (inverse), or settlement currency (quanto)
 ```
 
+:::warning
 In Python, `notional_value()` raises `ValueError` if an inverse position lacks a base currency, the
 supplied inverse price is not positive, or the result cannot be represented as `Money`.
 Rust callers can use `try_notional_value()` to handle these calculation errors; `notional_value()`
 panics if the calculation fails.
+:::
 
 ## Position properties and state
 
@@ -332,7 +363,7 @@ panics if the calculation fails.
 ### Position state
 
 - `side`: Current position side (`LONG`, `SHORT`, or `FLAT`).
-- `entry`: Opening side for the current cycle (`Buy` for `LONG`, `Sell` for `SHORT`). Updates when
+- `entry`: Opening side for the current cycle (`BUY` for `LONG`, `SELL` for `SHORT`). Updates when
   the position reverses direction.
 - `quantity`: Current absolute position size.
 - `signed_qty`: Signed position size (positive for `LONG`, negative for `SHORT`).
@@ -351,6 +382,9 @@ panics if the calculation fails.
 - `quote_currency`: Quote currency of the instrument.
 - `base_currency`: Base currency if applicable.
 - `settlement_currency`: Currency for PnL settlement.
+
+See [Reversal accounting](#reversal-accounting) for how price averages and returns reset while
+realized PnL remains cumulative when an unsplit fill reverses one position.
 
 ### Instrument specifications
 
@@ -404,7 +438,7 @@ This data supports:
 :::tip
 Use `position.events()` to access the current cycle's retained fills for reconciliation.
 The `position.trade_ids()` result helps match against broker statements.
-See the [Execution guide](execution.md) for reconciliation best practices.
+See the [Execution guide](execution/) for reconciliation best practices.
 :::
 
 ## Numerical precision
@@ -448,7 +482,7 @@ Positions interact with several key components:
 - **Cache**: Stores current position state and closed-cycle snapshots.
 - **RiskEngine**: Reads open positions when it checks whether an order reduces exposure.
 
-:::note
+:::info
 Positions are not created for spread instruments. Contingent orders can still trigger for spreads,
 but they operate without position linkage. The engine handles spread instruments separately from
 regular positions.
@@ -458,5 +492,5 @@ regular positions.
 
 - [Events](events/): How fills produce position events.
 - [Orders](orders/): Orders that create and modify positions.
-- [Execution](execution.md): Fill handling that updates positions.
+- [Execution](execution/): Fill handling that updates positions.
 - [Portfolio](portfolio.md): Portfolio-level position aggregation.

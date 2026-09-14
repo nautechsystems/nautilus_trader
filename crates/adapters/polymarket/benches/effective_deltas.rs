@@ -153,7 +153,7 @@ fn delta(
     price_mantissa: i64,
     size_mantissa: i64,
     flags: u8,
-    ts: UnixNanos,
+    ts_init: UnixNanos,
 ) -> OrderBookDelta {
     let price = Price::from_decimal_dp(
         Decimal::new(price_mantissa, u32::from(PRICE_PRECISION)),
@@ -167,7 +167,7 @@ fn delta(
     .unwrap();
     let order = BookOrder::new(side, price, size, 0);
 
-    OrderBookDelta::new(instrument_id, action, order, flags, 0, ts, ts)
+    OrderBookDelta::new(instrument_id, action, order, flags, 0, ts_init, ts_init)
 }
 
 criterion_group!(benches, bench_snapshots);

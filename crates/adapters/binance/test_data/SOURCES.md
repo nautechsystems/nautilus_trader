@@ -47,7 +47,7 @@ for cases where a docs example is missing or stale.
   now accepts both wrapped docs payloads and legacy top-level event payloads.
 - The low-level Spot user-data message structs still deserialize the inner
   event object directly, so wrapped docs fixtures should use the shared
-  `load_event_fixture` helper in tests.
+  `load_event_fixture` loader in tests.
 - For SBE coverage, the docs define the expected fields. Live capture supplies
   the canonical wire bytes.
 - As of March 12, 2026, Binance does not appear to publish a separate USD-M

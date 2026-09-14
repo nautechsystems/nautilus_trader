@@ -30,12 +30,7 @@ use nautilus_common::{
     msgbus::MessageBusConfig,
     throttler::RateLimit,
 };
-use nautilus_core::{
-    UUID4,
-    datetime::{
-        NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND, checked_mins_to_nanos, secs_to_nanos,
-    },
-};
+use nautilus_core::{DurationNanos, UUID4, datetime::secs_to_nanos};
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::{
     engine::config::ExecutionEngineConfig, order_emulator::config::OrderEmulatorConfig,
@@ -232,6 +227,7 @@ impl From<LiveRiskEngineConfig> for RiskEngineConfig {
                 (instrument_id, notional)
             })
             .collect::<AHashMap<_, _>>();
+
         let full_position_exit_venues = config.full_position_exit_venues.into_iter().collect();
 
         Self {
@@ -264,6 +260,7 @@ pub(crate) fn parse_rate_limit(field: impl Into<String>, input: &str) -> ConfigR
         .map_err(|e| ConfigError::invalid_format(field.clone(), format!("limit: {e}")))?;
 
     let mut parts = interval.split(':');
+
     let mut next = |label: &str| -> ConfigResult<u64> {
         parts
             .next()
@@ -280,11 +277,18 @@ pub(crate) fn parse_rate_limit(field: impl Into<String>, input: &str) -> ConfigR
 
     check_valid_format(field.clone(), parts.next().is_none(), RATE_LIMIT_FORMAT)?;
 
-    let interval_ns = hours
-        .saturating_mul(3_600)
-        .saturating_add(minutes.saturating_mul(60))
-        .saturating_add(seconds)
-        .saturating_mul(NANOSECONDS_IN_SECOND);
+    let interval_secs = hours
+        .checked_mul(3_600)
+        .and_then(|total| {
+            minutes
+                .checked_mul(60)
+                .and_then(|mins| total.checked_add(mins))
+        })
+        .and_then(|total| total.checked_add(seconds))
+        .ok_or_else(|| ConfigError::range(field.clone(), "interval exceeds the supported range"))?;
+
+    let interval_ns = DurationNanos::try_from_secs(interval_secs)
+        .map_err(|e| ConfigError::range(field.clone(), e.to_string()))?;
 
     RateLimit::new_checked(limit, interval_ns).map_err(|e| ConfigError::range(field, e.to_string()))
 }
@@ -570,30 +574,26 @@ impl From<&LiveExecutionEngineConfig> for ExecutionManagerConfig {
             .collect();
 
         let open_check_threshold_ns =
-            u64::from(config.open_check_threshold_ms) * NANOSECONDS_IN_MILLISECOND;
+            DurationNanos::from_millis(u64::from(config.open_check_threshold_ms));
         let position_check_threshold_ns =
-            u64::from(config.position_check_threshold_ms) * NANOSECONDS_IN_MILLISECOND;
+            DurationNanos::from_millis(u64::from(config.position_check_threshold_ms));
 
         Self {
             trader_id: TraderId::default(),
-            reconciliation: config.reconciliation,
             lookback_mins: config.reconciliation_lookback_mins.map(u64::from),
             reconciliation_instrument_ids,
             filter_unclaimed_external: config.filter_unclaimed_external_orders,
             filter_position_reports: config.filter_position_reports,
             filtered_client_order_ids,
             generate_missing_orders: config.generate_missing_orders,
-            inflight_check_interval_ms: config.inflight_check_interval_ms,
             inflight_threshold_ms: u64::from(config.inflight_check_threshold_ms),
             inflight_max_retries: config.inflight_check_retries,
-            open_check_interval_secs: config.open_check_interval_secs,
             open_check_lookback_mins: config.open_check_lookback_mins.map(u64::from),
             open_check_threshold_ns,
             open_check_missing_retries: config.open_check_missing_retries,
             open_check_open_only: config.open_check_open_only,
             max_single_order_queries_per_cycle: config.max_single_order_queries_per_cycle,
             single_order_query_delay_ms: config.single_order_query_delay_ms,
-            position_check_interval_secs: config.position_check_interval_secs,
             position_check_lookback_mins: u64::from(config.position_check_lookback_mins),
             position_check_threshold_ns,
             position_check_retries: config.position_check_retries,
@@ -660,7 +660,7 @@ impl Default for InstrumentProviderConfig {
 /// Shared configuration for data clients registered with a live node.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", subclass, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -683,7 +683,7 @@ pub struct DataClientConfig {
 /// Shared configuration for execution clients registered with a live node.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", subclass, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -735,7 +735,7 @@ impl Default for PluginConfig {
 /// Configuration for live Nautilus system nodes.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", dict, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -870,6 +870,7 @@ impl LiveNodeConfig {
         if let Some(queue_monitor) = &self.queue_monitor {
             collector.collect(queue_monitor.validate());
         }
+
         collector.collect(self.validate_plugin_configs());
 
         collector.into_result()
@@ -1039,7 +1040,7 @@ impl LiveExecutionEngineConfig {
             if let Some(mins) = value {
                 collector.collect(check_range(
                     field,
-                    checked_mins_to_nanos(u64::from(mins)).is_some(),
+                    DurationNanos::try_from_mins(u64::from(mins)).is_ok(),
                     format!("{mins} minutes (must fit in `u64` nanoseconds)"),
                 ));
             }
@@ -1508,7 +1509,6 @@ mean_dispatch_ns_clear = 700
 
         let converted = ExecutionManagerConfig::from(&config);
 
-        assert!(!converted.reconciliation);
         assert_eq!(converted.lookback_mins, Some(45));
         assert_eq!(converted.reconciliation_instrument_ids.len(), 2);
         assert!(
@@ -1535,24 +1535,21 @@ mean_dispatch_ns_clear = 700
                 .contains(&ClientOrderId::from("O-002"))
         );
         assert!(!converted.generate_missing_orders);
-        assert_eq!(converted.inflight_check_interval_ms, 321);
         assert_eq!(converted.inflight_threshold_ms, 654);
         assert_eq!(converted.inflight_max_retries, 7);
-        assert_eq!(converted.open_check_interval_secs, Some(1.5));
         assert_eq!(converted.open_check_lookback_mins, Some(9));
         assert_eq!(
             converted.open_check_threshold_ns,
-            234 * NANOSECONDS_IN_MILLISECOND
+            DurationNanos::from_millis(234)
         );
         assert_eq!(converted.open_check_missing_retries, 4);
         assert!(!converted.open_check_open_only);
         assert_eq!(converted.max_single_order_queries_per_cycle, 8);
         assert_eq!(converted.single_order_query_delay_ms, 76);
-        assert_eq!(converted.position_check_interval_secs, Some(2.5));
         assert_eq!(converted.position_check_lookback_mins, 11);
         assert_eq!(
             converted.position_check_threshold_ns,
-            345 * NANOSECONDS_IN_MILLISECOND
+            DurationNanos::from_millis(345)
         );
         assert_eq!(converted.position_check_retries, 6);
         assert_eq!(converted.purge_closed_orders_buffer_mins, Some(12));
@@ -1581,9 +1578,12 @@ mean_dispatch_ns_clear = 700
         assert!(converted.bypass);
         assert_eq!(
             converted.max_order_submit,
-            RateLimit::new(12, 3_000_000_000)
+            RateLimit::new(12, DurationNanos::from_secs(3))
         );
-        assert_eq!(converted.max_order_modify, RateLimit::new(7, 5_000_000_000));
+        assert_eq!(
+            converted.max_order_modify,
+            RateLimit::new(7, DurationNanos::from_secs(5))
+        );
         assert_eq!(
             converted.max_notional_per_order[&"ETHUSDT.BINANCE".parse::<InstrumentId>().unwrap()],
             Decimal::from_str("1000.5").unwrap(),
@@ -1690,9 +1690,11 @@ mean_dispatch_ns_clear = 700
         };
 
         let error = config.validate_runtime_support().unwrap_err();
+
         let ConfigError::Multiple { errors } = error else {
             panic!("Expected multiple config errors, received {error:?}");
         };
+
         assert_eq!(errors.len(), 3);
 
         for field in [
@@ -1889,7 +1891,15 @@ mean_dispatch_ns_clear = 700
     #[rstest]
     fn test_parse_rate_limit_happy_path() {
         let limit = parse_rate_limit("test.rate_limit", "150/00:00:02").unwrap();
-        assert_eq!(limit, RateLimit::new(150, 2_000_000_000));
+        assert_eq!(limit, RateLimit::new(150, DurationNanos::from_secs(2)));
+    }
+
+    #[rstest]
+    fn test_parse_rate_limit_rejects_interval_overflow() {
+        let err = parse_rate_limit("test.rate_limit", &format!("10/{:02}:00:00", u64::MAX))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("interval exceeds the supported range"));
     }
 
     #[rstest]
@@ -2225,6 +2235,7 @@ config = { strategy_id = "ExampleStrategy-001", threshold = 10 }
             }),
             ..Default::default()
         };
+
         let json = serde_json::to_string(&config).expect("serialize");
         let restored: LiveNodeConfig = serde_json::from_str(&json).expect("deserialize");
 

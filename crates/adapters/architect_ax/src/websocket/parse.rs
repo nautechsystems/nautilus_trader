@@ -23,7 +23,9 @@ use serde::de::Error;
 
 use super::{
     error::AxWsErrorResponse,
-    messages::{AxMdErrorResponse, AxMdMessage, AxOrdersWsFrame, AxWsOrderResponse},
+    messages::{
+        AxMdErrorResponse, AxMdMessage, AxOrdersWsFrame, AxWsOrderEvent, AxWsOrderResponse,
+    },
 };
 
 #[inline]
@@ -120,7 +122,7 @@ pub fn parse_md_message(raw: &str) -> Result<AxMdMessage, serde_json::Error> {
 pub(crate) fn parse_order_message(raw: &str) -> Result<AxOrdersWsFrame, serde_json::Error> {
     // Fast path: event messages start with {"t":"
     if has_type_tag_prefix(raw.as_bytes()) {
-        return serde_json::from_str(raw).map(|e| AxOrdersWsFrame::Event(Box::new(e)));
+        return parse_order_event(raw).map(|e| AxOrdersWsFrame::Event(Box::new(e)));
     }
 
     // Slow path: responses and errors (infrequent, use Value dispatch)
@@ -158,12 +160,30 @@ pub(crate) fn parse_order_message(raw: &str) -> Result<AxOrdersWsFrame, serde_js
 
     // Fallback: may be an event with "t" not at position 0
     if value.get("t").is_some() {
-        return serde_json::from_value(value).map(|e| AxOrdersWsFrame::Event(Box::new(e)));
+        return parse_order_event(raw).map(|e| AxOrdersWsFrame::Event(Box::new(e)));
     }
 
     Err(serde_json::Error::custom(
         "order WS message has no 't', 'err', or 'res' field",
     ))
+}
+
+fn parse_order_event(raw: &str) -> Result<AxWsOrderEvent, serde_json::Error> {
+    match serde_json::from_str(raw) {
+        Ok(event) => Ok(event),
+        Err(e) => {
+            // Live orders WS sends undocumented `{"t":"pu"}` about every 2s.
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {
+                return Err(e);
+            };
+
+            if value.get("t").and_then(|v| v.as_str()) == Some("pu") {
+                return Ok(AxWsOrderEvent::Heartbeat);
+            }
+
+            Err(e)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -233,6 +253,21 @@ mod tests {
         let raw = r#"{"foo":"bar"}"#;
         let err = parse_order_message(raw).expect_err("unknown shape should error");
         assert!(err.to_string().contains("no 't', 'err', or 'res' field"));
+    }
+
+    #[rstest]
+    fn test_parse_order_message_pu_keep_alive() {
+        let msg = parse_order_message(r#"{"t":"pu"}"#).expect("should parse keep-alive");
+        assert!(matches!(
+            msg,
+            AxOrdersWsFrame::Event(event) if matches!(*event, AxWsOrderEvent::Heartbeat)
+        ));
+    }
+
+    #[rstest]
+    fn test_parse_order_message_unknown_tag_errors() {
+        let err = parse_order_message(r#"{"t":"zz"}"#).expect_err("unknown tag should error");
+        assert!(err.to_string().contains("unknown variant `zz`"));
     }
 
     #[rstest]

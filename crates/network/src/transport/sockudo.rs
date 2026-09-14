@@ -74,7 +74,6 @@ pub(crate) async fn client_handshake_with_headers<S>(
     stream: &mut S,
     host: &str,
     path: &str,
-    protocol: Option<&str>,
     extra_headers: &[(String, String)],
 ) -> Result<HandshakeResult, TransportError>
 where
@@ -83,7 +82,7 @@ where
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let key = handshake::generate_key();
-    let request = build_request_with_headers(host, path, &key, protocol, None, extra_headers);
+    let request = build_request_with_headers(host, path, &key, extra_headers);
 
     stream
         .write_all(&request)
@@ -182,8 +181,6 @@ fn build_request_with_headers(
     host: &str,
     path: &str,
     key: &str,
-    protocol: Option<&str>,
-    extensions: Option<&str>,
     extra_headers: &[(String, String)],
 ) -> Bytes {
     let mut buf = BytesMut::with_capacity(512);
@@ -200,18 +197,6 @@ fn build_request_with_headers(
     buf.put_slice(key.as_bytes());
     buf.put_slice(b"\r\n");
     buf.put_slice(b"Sec-WebSocket-Version: 13\r\n");
-
-    if let Some(proto) = protocol {
-        buf.put_slice(b"Sec-WebSocket-Protocol: ");
-        buf.put_slice(proto.as_bytes());
-        buf.put_slice(b"\r\n");
-    }
-
-    if let Some(ext) = extensions {
-        buf.put_slice(b"Sec-WebSocket-Extensions: ");
-        buf.put_slice(ext.as_bytes());
-        buf.put_slice(b"\r\n");
-    }
 
     for (name, value) in extra_headers {
         buf.put_slice(name.as_bytes());
@@ -578,7 +563,6 @@ mod tests {
             &mut client,
             "ws.okx.com:8443",
             "/ws/v5/public-sbe?instId=BTC-USDT",
-            None,
             &headers,
         )
         .await
@@ -629,7 +613,7 @@ mod tests {
                 .unwrap();
         });
 
-        let err = client_handshake_with_headers(&mut client, "example.com", "/ws", None, &[])
+        let err = client_handshake_with_headers(&mut client, "example.com", "/ws", &[])
             .await
             .unwrap_err();
 
@@ -650,7 +634,7 @@ mod tests {
             server.write_all(b"HTTP/1.1 429\r\n\r\n").await.unwrap();
         });
 
-        let err = client_handshake_with_headers(&mut client, "example.com", "/ws", None, &[])
+        let err = client_handshake_with_headers(&mut client, "example.com", "/ws", &[])
             .await
             .unwrap_err();
 
@@ -672,7 +656,7 @@ mod tests {
             server.write_all(&response).await.unwrap();
         });
 
-        let handshake = client_handshake_with_headers(&mut client, "example.com", "/ws", None, &[])
+        let handshake = client_handshake_with_headers(&mut client, "example.com", "/ws", &[])
             .await
             .unwrap();
 

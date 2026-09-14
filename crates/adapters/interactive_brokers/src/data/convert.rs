@@ -23,7 +23,7 @@ use ibapi::market_data::{
     realtime::WhatToShow as RealtimeWhatToShow,
 };
 use jiff::Timestamp;
-use nautilus_core::UnixNanos;
+use nautilus_core::{DurationNanos, UnixNanos};
 use nautilus_model::{
     data::{Bar, BarSpecification, BarType},
     enums::{BarAggregation, PriceType},
@@ -239,19 +239,19 @@ pub fn ib_bar_to_nautilus_bar(
 #[must_use]
 pub fn bar_close_from_open(open: UnixNanos, spec: &BarSpecification) -> UnixNanos {
     let is_day = spec.aggregation == BarAggregation::Day;
-    let duration_ns = match spec.aggregation {
+    let duration = match spec.aggregation {
         BarAggregation::Second
         | BarAggregation::Minute
         | BarAggregation::Hour
-        | BarAggregation::Day => spec.timedelta().as_nanos(),
+        | BarAggregation::Day => spec.timedelta(),
         _ => return open,
     };
-    let Ok(duration_ns) = u64::try_from(duration_ns) else {
+    let Ok(duration) = DurationNanos::try_from(duration) else {
         return open;
     };
-    let close = open.saturating_add_ns(duration_ns);
+    let close = open.saturating_add(duration);
     if is_day {
-        close.saturating_sub_ns(1_u64)
+        close.saturating_sub(DurationNanos::new(1))
     } else {
         close
     }

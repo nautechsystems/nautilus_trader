@@ -89,7 +89,7 @@ class MinimalStrategyConfig(StrategyConfig):
 
     def __init__(self, instrument_id: InstrumentId, bar_type: BarType) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -103,7 +103,7 @@ class MinimalStrategy(Strategy):
 
     def __init__(self, config: MinimalStrategyConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._config = config

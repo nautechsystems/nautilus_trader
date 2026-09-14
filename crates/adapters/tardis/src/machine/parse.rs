@@ -39,6 +39,7 @@ use super::{
 use crate::{
     common::parse::{
         derive_trade_id, normalize_amount, parse_aggressor_side, parse_bar_spec, parse_book_action,
+        validate_non_zero_amount,
     },
     config::BookSnapshotOutput,
 };
@@ -70,7 +71,7 @@ pub fn parse_tardis_ws_message(
                 info.size_precision,
                 info.instrument_id,
             ) {
-                Ok(deltas) => Some(Data::Deltas(Box::new(deltas))),
+                Ok(deltas) => Some(Data::BookDeltas(Box::new(deltas))),
                 Err(e) => {
                     log::error!("Failed to parse book change message: {e}");
                     None
@@ -100,7 +101,7 @@ pub fn parse_tardis_ws_message(
                         info.size_precision,
                         info.instrument_id,
                     ) {
-                        Ok(depth10) => Some(Data::Depth10(Box::new(depth10))),
+                        Ok(depth10) => Some(Data::BookDepth10(Box::new(depth10))),
                         Err(e) => {
                             log::error!("Failed to parse book snapshot as depth10: {e}");
                             None
@@ -114,7 +115,7 @@ pub fn parse_tardis_ws_message(
                         info.size_precision,
                         info.instrument_id,
                     ) {
-                        Ok(deltas) => Some(Data::Deltas(Box::new(deltas))),
+                        Ok(deltas) => Some(Data::BookDeltas(Box::new(deltas))),
                         Err(e) => {
                             log::error!("Failed to parse book snapshot as deltas: {e}");
                             None
@@ -254,9 +255,13 @@ pub fn parse_option_summary_msg_as_quote(
         .with_context(|| format!("invalid option summary bid price for message: {msg:?}"))?;
     let ask_price = Price::new_checked(best_ask_price, price_precision)
         .with_context(|| format!("invalid option summary ask price for message: {msg:?}"))?;
-    let bid_size = Quantity::non_zero_checked(best_bid_amount, size_precision)
+    validate_non_zero_amount(best_bid_amount, size_precision)
         .with_context(|| format!("invalid option summary bid size for message: {msg:?}"))?;
-    let ask_size = Quantity::non_zero_checked(best_ask_amount, size_precision)
+    let bid_size = Quantity::new_checked(best_bid_amount, size_precision)
+        .with_context(|| format!("invalid option summary bid size for message: {msg:?}"))?;
+    validate_non_zero_amount(best_ask_amount, size_precision)
+        .with_context(|| format!("invalid option summary ask size for message: {msg:?}"))?;
+    let ask_size = Quantity::new_checked(best_ask_amount, size_precision)
         .with_context(|| format!("invalid option summary ask size for message: {msg:?}"))?;
 
     Ok(Some(QuoteTick::new(
@@ -526,7 +531,9 @@ pub fn parse_book_snapshot_msg_as_quote(
         .first()
         .context("missing best bid level for quote message")?;
     let bid_price = Price::new(best_bid.price, price_precision);
-    let bid_size = Quantity::non_zero_checked(best_bid.amount, size_precision)
+    validate_non_zero_amount(best_bid.amount, size_precision)
+        .with_context(|| format!("Invalid bid size for message: {msg:?}"))?;
+    let bid_size = Quantity::new_checked(best_bid.amount, size_precision)
         .with_context(|| format!("Invalid bid size for message: {msg:?}"))?;
 
     let best_ask = msg
@@ -534,7 +541,9 @@ pub fn parse_book_snapshot_msg_as_quote(
         .first()
         .context("missing best ask level for quote message")?;
     let ask_price = Price::new(best_ask.price, price_precision);
-    let ask_size = Quantity::non_zero_checked(best_ask.amount, size_precision)
+    validate_non_zero_amount(best_ask.amount, size_precision)
+        .with_context(|| format!("Invalid ask size for message: {msg:?}"))?;
+    let ask_size = Quantity::new_checked(best_ask.amount, size_precision)
         .with_context(|| format!("Invalid ask size for message: {msg:?}"))?;
 
     Ok(QuoteTick::new(
@@ -561,7 +570,9 @@ pub fn parse_trade_msg(
     instrument_id: InstrumentId,
 ) -> anyhow::Result<TradeTick> {
     let price = Price::new(msg.price, price_precision);
-    let size = Quantity::non_zero_checked(msg.amount, size_precision)
+    validate_non_zero_amount(msg.amount, size_precision)
+        .with_context(|| format!("Invalid trade size in message: {msg:?}"))?;
+    let size = Quantity::new_checked(msg.amount, size_precision)
         .with_context(|| format!("Invalid trade size in message: {msg:?}"))?;
     let aggressor_side = parse_aggressor_side(&msg.side);
     let ts_event = UnixNanos::from(msg.timestamp);
@@ -592,7 +603,8 @@ pub fn parse_trade_msg(
 ///
 /// # Errors
 ///
-/// Returns an error if the bar specification cannot be parsed.
+/// Returns an error if the bar specification cannot be parsed, the volume is invalid
+/// or rounds to zero, or the size precision is invalid.
 pub fn parse_bar_msg(
     msg: &BarMsg,
     price_precision: u8,
@@ -606,7 +618,8 @@ pub fn parse_bar_msg(
     let high = Price::new(msg.high, price_precision);
     let low = Price::new(msg.low, price_precision);
     let close = Price::new(msg.close, price_precision);
-    let volume = Quantity::non_zero(msg.volume, size_precision);
+    validate_non_zero_amount(msg.volume, size_precision)?;
+    let volume = Quantity::new_checked(msg.volume, size_precision)?;
     let ts_event = UnixNanos::from(msg.timestamp);
     let ts_init = UnixNanos::from(msg.local_timestamp);
 
@@ -987,7 +1000,7 @@ mod tests {
         let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Depth10);
 
         assert!(result.is_some());
-        assert!(matches!(result.unwrap(), Data::Depth10(_)));
+        assert!(matches!(result.unwrap(), Data::BookDepth10(_)));
     }
 
     #[rstest]
@@ -1019,7 +1032,7 @@ mod tests {
         let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Depth10);
 
         assert!(result.is_some());
-        assert!(matches!(result.unwrap(), Data::Depth10(_)));
+        assert!(matches!(result.unwrap(), Data::BookDepth10(_)));
     }
 
     #[rstest]
@@ -1040,7 +1053,7 @@ mod tests {
         let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Deltas);
 
         assert!(result.is_some());
-        assert!(matches!(result.unwrap(), Data::Deltas(_)));
+        assert!(matches!(result.unwrap(), Data::BookDeltas(_)));
     }
 
     #[rstest]
@@ -1060,8 +1073,8 @@ mod tests {
 
         let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Deltas);
 
-        let Some(Data::Deltas(deltas)) = result else {
-            panic!("Expected Data::Deltas, was {result:?}");
+        let Some(Data::BookDeltas(deltas)) = result else {
+            panic!("Expected Data::BookDeltas, was {result:?}");
         };
         assert_eq!(deltas.instrument_id, instrument_id);
         assert_eq!(deltas.deltas.len(), 7);

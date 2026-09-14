@@ -78,7 +78,7 @@ fn compute_tx_hash_fp5<T: LighterTx>(tx: &T, chain_id: u32) -> Fp5 {
 
 /// Hash the attribute table into an `Fp5` digest.
 ///
-/// Mirrors `txtypes.L2TxAttributes.Hash`: emit the normalised
+/// Mirrors `txtypes.L2TxAttributes.Hash`: emit the normalized
 /// `(type, value)` pairs over [`NB_ATTRIBUTES_PER_TX`] slots, then run the
 /// length-2N preimage through [`hash_to_quintic_extension`].
 fn hash_attributes(attrs: &L2TxAttributes) -> Fp5 {
@@ -140,7 +140,7 @@ impl SignedTx {
 
 /// JSON renderer for the L2 tx_info wire payload.
 ///
-/// Field order and base64-encoded `Sig` match the upstream Go marshalling so
+/// Field order and base64-encoded `Sig` match the upstream Go marshaling so
 /// the resulting string is byte-equivalent (modulo the random `Sig`) to what
 /// the closed signer emits, and is what the sequencer expects on `sendTx`.
 #[derive(Debug)]
@@ -318,7 +318,7 @@ fn write_sig(out: &mut String, signed: &SignedTx) {
     out.push_str("\",");
 }
 
-// Match upstream marshalling: nil-valued attributes are omitted, and a fully
+// Match upstream marshaling: nil-valued attributes are omitted, and a fully
 // empty Create/Modify attribute map is encoded as null.
 fn write_attributes_with_integrator(out: &mut String, attrs: &L2TxAttributes) {
     if attrs.is_empty() {
@@ -347,7 +347,7 @@ fn write_attributes_with_integrator(out: &mut String, attrs: &L2TxAttributes) {
 }
 
 // Cancel/CancelAll/Withdraw/etc.: the FFI wrapper passes only `skip_nonce`,
-// so the marshalled value is `null` when nothing is set, otherwise a single
+// so the marshaled value is `null` when nothing is set, otherwise a single
 // `{"4":1}` entry.
 fn write_attributes_skip_nonce_only(out: &mut String, attrs: &L2TxAttributes) {
     if attrs.skip_nonce == 0 {
@@ -563,7 +563,7 @@ mod tests {
         let sk = PrivateKey::from_le_bytes_reduce(decode_scalar_bytes(&v.sk));
         // Pick a nonzero, fixture-derived `k` - any non-zero canonical scalar
         // is valid. Guarding against `k == 0` and non-canonical limbs makes
-        // the helper fail loudly on the test scaffold rather than producing
+        // the assertion fail loudly on the test scaffold rather than producing
         // an undefined signature if the XOR happens to land on a bad value.
         let mut k_bytes = decode_scalar_bytes(&v.sk);
         k_bytes[0] ^= 0x01;
@@ -1191,7 +1191,7 @@ mod tests {
 
     #[rstest]
     fn cancel_order_json_emits_skip_nonce_only_attribute() {
-        // Synthesised case: skip_nonce=1, no integrator slots
+        // Synthesized case: skip_nonce=1, no integrator slots
         let tx = CancelOrderTxInfo {
             context: TxContext {
                 account_index: 1,

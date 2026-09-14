@@ -25,7 +25,7 @@ use crate::{
     spot::http::client::BinanceSpotHttpClient,
 };
 
-/// Loads the configured Binance instrument catalogue for the Python async facade.
+/// Loads the configured Binance instrument catalog for the Python async facade.
 ///
 /// The public `load_binance_instruments` coroutine runs this blocking boundary in a Python worker
 /// thread. The request uses the same domain-level HTTP paths and
@@ -34,7 +34,7 @@ use crate::{
 /// # Errors
 ///
 /// Returns an error if the configuration is invalid, the product type is unsupported, the
-/// catalogue request fails, or an instrument cannot be converted to Python.
+/// catalog request fails, or an instrument cannot be converted to Python.
 #[pyfunction]
 #[pyo3(name = "_load_binance_instruments")]
 pub(super) fn py_load_binance_instruments<'py>(
@@ -46,6 +46,19 @@ pub(super) fn py_load_binance_instruments<'py>(
     let instruments = py
         .detach(|| {
             get_runtime().block_on(async move {
+                let api_key = config
+                    .api_key
+                    .as_ref()
+                    .map(|value| value.expose_secret().to_owned());
+                let api_secret = config
+                    .api_secret
+                    .as_ref()
+                    .map(|value| value.expose_secret().to_owned());
+                let proxy_url = config
+                    .proxy_url
+                    .as_ref()
+                    .map(|value| value.expose_secret().to_owned());
+
                 match config.product_type {
                     BinanceProductType::Spot => {
                         let base_url_http = config.base_url_http.clone().or_else(|| {
@@ -61,12 +74,12 @@ pub(super) fn py_load_binance_instruments<'py>(
                         let client = BinanceSpotHttpClient::new_with_json_responses(
                             config.environment,
                             get_atomic_clock_realtime(),
-                            config.api_key.clone(),
-                            config.api_secret.clone(),
+                            api_key.clone(),
+                            api_secret.clone(),
                             base_url_http,
                             Some(config.recv_window_ms),
                             None,
-                            config.proxy_url.clone(),
+                            proxy_url.clone(),
                             config.us,
                         )
                         .map_err(|e| e.to_string())?;
@@ -84,12 +97,12 @@ pub(super) fn py_load_binance_instruments<'py>(
                             config.product_type,
                             config.environment,
                             get_atomic_clock_realtime(),
-                            config.api_key.clone(),
-                            config.api_secret.clone(),
+                            api_key,
+                            api_secret,
                             config.base_url_http.clone(),
                             Some(config.recv_window_ms),
                             None,
-                            config.proxy_url.clone(),
+                            proxy_url,
                             false,
                         )
                         .map_err(|e| e.to_string())?;

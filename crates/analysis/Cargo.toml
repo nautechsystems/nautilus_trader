@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-analysis"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -41,15 +40,18 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 nautilus-core = { workspace = true }
-nautilus-model = { workspace = true, features = ["test-support"] }
+nautilus-model = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
 indexmap = { workspace = true }
+log = { workspace = true }
 rust_decimal = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-model = { workspace = true, features = ["test-support"] }
+
 rstest = { workspace = true }

@@ -65,7 +65,7 @@ Databento's
 ## Prerequisites
 
 - Python 3.12+
-- [NautilusTrader](https://pypi.org/project/nautilus_trader/) installed.
+- [NautilusTrader installed](../getting_started/installation.md).
 - A Databento API key:
 
 ```bash
@@ -251,7 +251,7 @@ The runnable example is at
 
 Replaying 2024-11-15 GC.v.0 mbp-1 (one trading day) through
 `OrderBookImbalance(0.10, 1.0, 5s)` prints 2,378 FOK fills net into 5 closed
-position cycles. Cumulative realised pnl ends at **-4,170 USD**: the
+position cycles. Cumulative realized pnl ends at **-4,170 USD**: the
 strategy bleeds steadily across the day, mostly through spread cost on
 incremental FOK fills that add to existing positions.
 
@@ -274,9 +274,9 @@ threshold is the addressable trigger region.*
 across the trading day. Top-of-book sizes flicker between roughly two and
 fifty contracts; the mid traverses about a fifteen-dollar range.*
 
-![Cumulative realised pnl per closed position](./assets/gold_book_imbalance_ax/panel_d_pnl.png)
+![Cumulative realized pnl per closed position](./assets/gold_book_imbalance_ax/panel_d_pnl.png)
 
-**Figure 4.** *Cumulative realised USD pnl across the five closed position
+**Figure 4.** *Cumulative realized USD pnl across the five closed position
 cycles. The slope is consistently negative and the per-cycle pnl is
 dominated by spread.*
 
@@ -286,10 +286,13 @@ A self-contained renderer re-runs the backtest with a quote-sampling actor
 and writes PNGs to the asset directory using the `nautilus_dark` tearsheet
 theme.
 
+After building NautilusTrader from source, run these commands from the repository root:
+
 ```bash
-uv sync --extra visualization
+make sync
 GC_DBN=test_data/local/Databento/gc_gold_quotes.dbn.zst \
-    python3 docs/tutorials/assets/gold_book_imbalance_ax/render_panels.py
+    uv run --project python --no-sync \
+        python docs/tutorials/assets/gold_book_imbalance_ax/render_panels.py
 ```
 
 ## Next steps

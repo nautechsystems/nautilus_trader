@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::{UUID4, UnixNanos};
+use ustr::Ustr;
 
 use crate::{
     events::OrderCanceled,
@@ -47,6 +48,7 @@ pub struct OrderCanceledSpec {
     pub reconciliation: bool,
     pub venue_order_id: Option<VenueOrderId>,
     pub account_id: Option<AccountId>,
+    pub reason: Option<Ustr>,
 }
 
 impl<S: order_canceled_spec_builder::IsComplete> OrderCanceledSpecBuilder<S> {
@@ -65,6 +67,7 @@ impl<S: order_canceled_spec_builder::IsComplete> OrderCanceledSpecBuilder<S> {
             spec.reconciliation,
             spec.venue_order_id,
             spec.account_id,
+            spec.reason,
         )
     }
 }
@@ -90,6 +93,7 @@ mod tests {
         assert!(!event.reconciliation);
         assert_eq!(event.venue_order_id, None);
         assert_eq!(event.account_id, None);
+        assert_eq!(event.reason, None);
     }
 
     #[rstest]
@@ -98,11 +102,13 @@ mod tests {
             .venue_order_id(VenueOrderId::from("V-1"))
             .account_id(AccountId::from("SIM-002"))
             .reconciliation(true)
+            .reason(Ustr::from("not-enough-liquidity"))
             .build();
 
         assert_eq!(event.venue_order_id, Some(VenueOrderId::from("V-1")));
         assert_eq!(event.account_id, Some(AccountId::from("SIM-002")));
         assert!(event.reconciliation);
+        assert_eq!(event.reason, Some(Ustr::from("not-enough-liquidity")));
         assert_eq!(event.trader_id, TraderId::test_default());
     }
 

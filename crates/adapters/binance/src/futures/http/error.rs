@@ -15,9 +15,11 @@
 
 //! Binance Futures HTTP error types.
 
-use std::fmt::Display;
+use std::{fmt::Display, time::Duration};
 
 use nautilus_network::http::error::HttpClientError;
+
+use crate::common::error::{is_retryable_http_status, is_retryable_venue_code};
 
 /// Binance Futures HTTP client error type.
 #[derive(Debug)]
@@ -30,6 +32,10 @@ pub enum BinanceFuturesHttpError {
         code: i64,
         /// Error message from Binance.
         message: String,
+        /// HTTP status of the error response.
+        status: u16,
+        /// Venue-advertised minimum retry delay from the `Retry-After` header.
+        retry_after: Option<Duration>,
     },
     /// JSON parsing or serialization error.
     JsonError(String),
@@ -41,28 +47,67 @@ pub enum BinanceFuturesHttpError {
     Timeout(String),
     /// Request was canceled.
     Canceled(String),
+    /// The retry elapsed budget was exhausted.
+    RetryBudgetExceeded(String),
     /// Unexpected HTTP status code.
     UnexpectedStatus {
         /// HTTP status code.
         status: u16,
         /// Response body.
         body: String,
+        /// Venue-advertised minimum retry delay from the `Retry-After` header.
+        retry_after: Option<Duration>,
     },
+}
+
+impl BinanceFuturesHttpError {
+    /// Returns `true` if the error is transient and the operation can be retried.
+    ///
+    /// Retryability is independent of command-outcome classification: a retryable error on a
+    /// state-changing command still leaves an unknown outcome at the execution boundary.
+    #[must_use]
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            Self::NetworkError(_) | Self::Timeout(_) => true,
+            Self::BinanceError { code, status, .. } => {
+                is_retryable_venue_code(*code) || is_retryable_http_status(*status)
+            }
+            Self::UnexpectedStatus { status, .. } => is_retryable_http_status(*status),
+            _ => false,
+        }
+    }
+
+    /// Returns the venue-advertised minimum retry delay, when present.
+    #[must_use]
+    pub fn retry_after(&self) -> Option<Duration> {
+        match self {
+            Self::BinanceError { retry_after, .. } | Self::UnexpectedStatus { retry_after, .. } => {
+                *retry_after
+            }
+            _ => None,
+        }
+    }
 }
 
 impl Display for BinanceFuturesHttpError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::MissingCredentials => write!(f, "Missing API credentials"),
-            Self::BinanceError { code, message } => {
-                write!(f, "Binance error {code}: {message}")
+            Self::BinanceError {
+                code,
+                message,
+                status,
+                ..
+            } => {
+                write!(f, "Binance error {code} (HTTP {status}): {message}")
             }
             Self::JsonError(msg) => write!(f, "JSON error: {msg}"),
             Self::ValidationError(msg) => write!(f, "Validation error: {msg}"),
             Self::NetworkError(msg) => write!(f, "Network error: {msg}"),
             Self::Timeout(msg) => write!(f, "Timeout: {msg}"),
             Self::Canceled(msg) => write!(f, "Canceled: {msg}"),
-            Self::UnexpectedStatus { status, body } => {
+            Self::RetryBudgetExceeded(msg) => write!(f, "Retry budget exceeded: {msg}"),
+            Self::UnexpectedStatus { status, body, .. } => {
                 write!(f, "Unexpected status {status}: {body}")
             }
         }
@@ -90,10 +135,82 @@ impl From<HttpClientError> for BinanceFuturesHttpError {
             HttpClientError::InvalidProxy(msg) | HttpClientError::ClientBuildError(msg) => {
                 Self::NetworkError(msg)
             }
-            HttpClientError::Error(msg) => Self::NetworkError(msg),
+            HttpClientError::Error(msg) | HttpClientError::TransportError(msg) => {
+                Self::NetworkError(msg)
+            }
         }
     }
 }
 
 /// Result type for Binance Futures HTTP operations.
 pub type BinanceFuturesHttpResult<T> = Result<T, BinanceFuturesHttpError>;
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    fn venue_error(code: i64, status: u16) -> BinanceFuturesHttpError {
+        BinanceFuturesHttpError::BinanceError {
+            code,
+            message: "venue message".to_string(),
+            status,
+            retry_after: None,
+        }
+    }
+
+    #[rstest]
+    #[case::network(BinanceFuturesHttpError::NetworkError("connection reset".to_string()), true)]
+    #[case::timeout(BinanceFuturesHttpError::Timeout("timed out".to_string()), true)]
+    #[case::missing_credentials(BinanceFuturesHttpError::MissingCredentials, false)]
+    #[case::validation(BinanceFuturesHttpError::ValidationError("bad param".to_string()), false)]
+    #[case::canceled(BinanceFuturesHttpError::Canceled("shutdown".to_string()), false)]
+    #[case::budget(
+        BinanceFuturesHttpError::RetryBudgetExceeded("exceeded".to_string()),
+        false
+    )]
+    fn test_is_retryable_transport_and_local(
+        #[case] error: BinanceFuturesHttpError,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(error.is_retryable(), expected);
+    }
+
+    #[rstest]
+    #[case::rate_limit_code(venue_error(-1003, 429), true)]
+    #[case::order_rate_limit_code(venue_error(-1015, 400), true)]
+    #[case::status_500(venue_error(-1000, 500), true)]
+    #[case::status_418(venue_error(-1003, 418), true)]
+    #[case::permanent_venue_code(venue_error(-1100, 400), false)]
+    #[case::auth_code(venue_error(-2015, 401), false)]
+    fn test_is_retryable_venue_errors(
+        #[case] error: BinanceFuturesHttpError,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(error.is_retryable(), expected);
+    }
+
+    #[rstest]
+    fn test_retry_after_accessor() {
+        let delay = Duration::from_secs(5);
+        let error = BinanceFuturesHttpError::UnexpectedStatus {
+            status: 429,
+            body: "rate limited".to_string(),
+            retry_after: Some(delay),
+        };
+        assert_eq!(error.retry_after(), Some(delay));
+        assert_eq!(
+            BinanceFuturesHttpError::JsonError("x".to_string()).retry_after(),
+            None
+        );
+    }
+
+    #[rstest]
+    fn test_display_includes_status() {
+        let err = venue_error(-1100, 400);
+        let msg = err.to_string();
+        assert!(msg.contains("-1100"));
+        assert!(msg.contains("400"));
+    }
+}

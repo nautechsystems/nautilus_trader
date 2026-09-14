@@ -18,7 +18,7 @@
 pub mod order_builder;
 pub mod parse;
 
-pub(crate) mod identity;
+pub(crate) mod context;
 pub(crate) mod order_fill_tracker;
 pub(crate) mod pending;
 pub(crate) mod reconciliation;
@@ -33,6 +33,7 @@ mod responses;
 
 use std::sync::{Arc, atomic::AtomicBool};
 
+use ahash::AHashMap;
 use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
@@ -69,7 +70,7 @@ use ustr::Ustr;
 
 pub(crate) use self::reports::get_pusd_currency;
 use self::{
-    identity::OrderIdentityRegistry,
+    context::OrderContextRegistry,
     order_builder::PolymarketOrderBuilder,
     order_fill_tracker::OrderFillTrackerMap,
     pending::{PendingCancelTracker, PendingSubmitTracker},
@@ -108,7 +109,8 @@ pub struct PolymarketExecutionClient {
     neg_risk_index: Arc<AtomicMap<InstrumentId, bool>>,
     pending_submits: PendingSubmitTracker,
     pending_cancels: PendingCancelTracker,
-    order_identities: Arc<OrderIdentityRegistry>,
+    order_contexts: Arc<OrderContextRegistry>,
+    order_reservations: Arc<Mutex<AHashMap<ClientOrderId, Money>>>,
     fill_tracker: Arc<OrderFillTrackerMap>,
     ws_dispatch_state: Arc<Mutex<WsDispatchState>>,
 }
@@ -125,7 +127,7 @@ impl PolymarketExecutionClient {
     ) -> anyhow::Result<Self> {
         let proxy_url = config.validated_proxy_url()?;
         let secrets = Secrets::resolve(
-            config.private_key.as_deref(),
+            config.private_key.clone(),
             config.api_key.clone(),
             config.api_secret.clone(),
             config.passphrase.clone(),
@@ -225,7 +227,8 @@ impl PolymarketExecutionClient {
             neg_risk_index: Arc::new(AtomicMap::new()),
             pending_submits: PendingSubmitTracker::default(),
             pending_cancels: PendingCancelTracker::default(),
-            order_identities: Arc::new(OrderIdentityRegistry::default()),
+            order_contexts: Arc::new(OrderContextRegistry::default()),
+            order_reservations: Arc::new(Mutex::new(AHashMap::new())),
             fill_tracker: Arc::new(OrderFillTrackerMap::new()),
             ws_dispatch_state: Arc::new(Mutex::new(WsDispatchState::default())),
         })

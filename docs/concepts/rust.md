@@ -89,11 +89,11 @@ The Nautilus crates are published to
 
 ```toml
 [dependencies]
-nautilus-backtest = "0.62"
-nautilus-common = "0.62"
-nautilus-execution = "0.62"
-nautilus-model = { version = "0.62", features = ["test-support"] }
-nautilus-trading = { version = "0.62", features = ["examples"] }
+nautilus-backtest = "0.63"
+nautilus-common = "0.63"
+nautilus-execution = "0.63"
+nautilus-model = { version = "0.63", features = ["test-support"] }
+nautilus-trading = { version = "0.63", features = ["examples"] }
 
 anyhow = "1"
 log = "0.4"
@@ -103,8 +103,8 @@ For live trading, add the live crate and the adapter for your venue:
 
 ```toml
 [dependencies]
-nautilus-live = "0.62"
-nautilus-okx = "0.62"
+nautilus-live = "0.63"
+nautilus-okx = "0.63"
 ```
 
 To track the latest development branch, point all Nautilus dependencies at the
@@ -119,22 +119,22 @@ nautilus-model = { git = "https://github.com/nautechsystems/nautilus_trader.git"
 nautilus-trading = { git = "https://github.com/nautechsystems/nautilus_trader.git", branch = "develop", features = ["examples"] }
 ```
 
-The minimum supported Rust version (MSRV) is **1.98.0**.
+The minimum supported Rust version (MSRV) is **1.98.1**.
 
 ### Feature flags
 
-| Flag             | Crate               | Effect                                                        |
-| ---------------- | ------------------- | ------------------------------------------------------------- |
-| `high-precision` | `nautilus-model`    | 16-digit fixed precision (default is 9). Required for crypto. |
-| `test-support`   | `nautilus-model`    | Test fixtures, builders, specs, and defaults.                 |
-| `examples`       | `nautilus-trading`  | Example strategies (`EmaCross`, `GridMarketMaker`).           |
-| `streaming`      | `nautilus-backtest` | Catalog-based data streaming via `BacktestNode`.              |
-| `defi`           | `nautilus-model`    | DeFi data types. Implies `high-precision`.                    |
+| Flag             | Crate               | Effect                                              |
+| ---------------- | ------------------- | --------------------------------------------------- |
+| `high-precision` | `nautilus-model`    | 16-digit fixed precision (default is 9).            |
+| `test-support`   | `nautilus-model`    | Test fixtures, builders, specs, and defaults.       |
+| `examples`       | `nautilus-trading`  | Example strategies (`EmaCross`, `GridMarketMaker`). |
+| `streaming`      | `nautilus-backtest` | Catalog-based data streaming via `BacktestNode`.    |
+| `defi`           | `nautilus-model`    | DeFi data types. Implies `high-precision`.          |
 
 :::tip
 Standard 9-digit precision handles most traditional finance instruments.
-Enable `high-precision` for crypto venues where prices can have many decimal
-places (e.g. `0.00000001`).
+Enable `high-precision` for crypto venues where prices or quantities need more than nine decimal
+places.
 :::
 
 ### Memory allocator
@@ -161,10 +161,10 @@ fn main() {
 
 Declaring `GLOBAL` selects mimalloc. Call `register_allocator_mimalloc` at the start of `main`,
 before constructing a Nautilus node, so the version header reports `allocator: mimalloc <version>`.
-Registration only updates the header metadata; it does not select the allocator.
+Registration **only updates the header metadata**; it does not select the allocator.
 
-The default system allocator also works, but backtest throughput drops materially,
-especially on Windows, where allocator overhead can reach half of hot-loop run time.
+The default system allocator also works. Measure throughput and resident memory on your workload
+and platform when comparing allocator choices.
 See the [architecture guide](architecture.md#memory-allocation) for background.
 
 ## Actors

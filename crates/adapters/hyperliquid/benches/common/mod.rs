@@ -20,7 +20,7 @@
 //! parser correctness tests.
 //!
 //! Each criterion bench is a separate compilation unit that pulls in this
-//! module, but uses only a subset of the helpers and fixtures. Without the
+//! module, but uses only a subset of the benchmark routines and fixtures. Without the
 //! module-level `allow`, the unused subset in any given bench triggers
 //! per-crate dead-code warnings.
 

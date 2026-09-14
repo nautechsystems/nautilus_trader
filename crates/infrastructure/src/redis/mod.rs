@@ -19,6 +19,8 @@ pub mod cache;
 pub mod msgbus;
 pub mod queries;
 
+mod stream_fields;
+
 use std::{fmt::Write as _, time::Duration};
 
 use nautilus_common::{logging::log_task_awaiting, msgbus::MessageBusConfig};

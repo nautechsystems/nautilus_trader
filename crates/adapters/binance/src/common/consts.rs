@@ -161,6 +161,9 @@ pub const BINANCE_FUTURES_COIN_TESTNET_WS_URL: &str = "wss://dstream.binancefutu
 /// HTTP header name for the Binance API key.
 pub const BINANCE_API_KEY_HEADER: &str = "X-MBX-APIKEY";
 
+/// HTTP response header carrying the venue's minimum retry delay on HTTP 429 and 418 responses.
+pub const BINANCE_RETRY_AFTER_HEADER: &str = "Retry-After";
+
 /// Binance Spot API version path.
 pub const BINANCE_SPOT_API_PATH: &str = "/api/v3";
 

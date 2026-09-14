@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
-# Update Cargo dependencies, then enforce the release cooldown transactionally
+# Update Cargo dependencies, then enforce the release cooldown and record the
+# publication-date database transactionally
+#
+# The final recording step is a full-scope check of every resolved registry
+# version, matching the compilation gate, so a version that already violated
+# the cooldown when it was committed also fails this update and restores the
+# pre-update lockfiles.
 
 set -euo pipefail
 
 main() {
-  local script_dir repo_root lock manifest status seen
-  local -a check_args
+  local script_dir repo_root lock manifest status seen locks_explicit=false
+  local -a check_args update_args
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   repo_root="$(cd "${script_dir}/.." && pwd)"
   LOCKS=()
@@ -22,6 +28,7 @@ main() {
           return 2
         }
         LOCKS+=("$2")
+        locks_explicit=true
         shift 2
         ;;
       -h | --help)
@@ -103,6 +110,22 @@ main() {
   else
     status=$?
     echo "Cargo cooldown repair failed." >&2
+    return "$status"
+  fi
+
+  # A restricted lock selection must not prune database entries owned by the
+  # other lockfiles, so it passes the explicit selection through.
+  update_args=(--update-db)
+  if [[ "$locks_explicit" == true ]]; then
+    for lock in "${LOCKS[@]}"; do
+      update_args+=("--lock" "$lock")
+    done
+  fi
+  if bash scripts/check-cargo-cooldown.sh "${update_args[@]}"; then
+    :
+  else
+    status=$?
+    echo "Cargo cooldown database update failed." >&2
     return "$status"
   fi
 

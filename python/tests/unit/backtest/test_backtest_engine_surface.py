@@ -90,8 +90,10 @@ from nautilus_trader.trading import ImportableExecutionAlgorithmConfig
 from nautilus_trader.trading import ImportableStrategyConfig
 from tests.providers import TestInstrumentProvider
 from tests.unit.common.actor import ActorLifecycleController
+from tests.unit.common.actor import ConfiguredIdProbeStrategy
 from tests.unit.common.actor import ControllerCreatedActor
 from tests.unit.common.actor import ControllerCreatedStrategy
+from tests.unit.common.actor import CustomFieldStrategyCreatingController
 from tests.unit.common.actor import NonStartingStrategyCreatingController
 from tests.unit.common.actor import StrategyCreatingController
 from tests.unit.common.actor import StrategyLifecycleController
@@ -529,6 +531,59 @@ def test_importable_controller_creates_strategy_on_start() -> None:
     assert StrategyCreatingController.started == 1
     assert str(StrategyCreatingController.created_strategy_id) == "ControllerCreatedStrategy-001"
     assert ControllerCreatedStrategy.started == 1
+    engine.dispose()
+
+
+def test_importable_controller_creates_strategy_with_string_id() -> None:
+    """
+    Test importable controller creates a strategy from a string strategy ID.
+    """
+    CustomFieldStrategyCreatingController.reset()
+    ConfiguredIdProbeStrategy.reset()
+    engine = BacktestEngine(
+        BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+            controller=ImportableControllerConfig(
+                controller_path="tests.unit.common.actor:CustomFieldStrategyCreatingController",
+                config_path="tests.unit.common.actor:TestControllerConfig",
+                config={"actor_id": "Controller-001"},
+            ),
+        ),
+    )
+
+    engine.run()
+
+    created_strategy_id = CustomFieldStrategyCreatingController.created_strategy_id
+    assert str(created_strategy_id) == "ConfiguredIdProbeStrategy-001"
+    assert ConfiguredIdProbeStrategy.config_strategy_id == StrategyId(
+        "ConfiguredIdProbeStrategy-001",
+    )
+    assert ConfiguredIdProbeStrategy.started_strategy_id == StrategyId(
+        "ConfiguredIdProbeStrategy-001",
+    )
+    engine.dispose()
+
+
+def test_importable_controller_create_strategy_with_unsettable_field_raises() -> None:
+    """
+    Test importable controller surfaces a config field that cannot be set.
+    """
+    engine = BacktestEngine(
+        BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+            controller=ImportableControllerConfig(
+                controller_path="tests.unit.common.actor:UnsettableFieldStrategyCreatingController",
+                config_path="tests.unit.common.actor:TestControllerConfig",
+                config={"actor_id": "Controller-001"},
+            ),
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="Failed to set attribute log_events"):
+        engine.run()
+
     engine.dispose()
 
 

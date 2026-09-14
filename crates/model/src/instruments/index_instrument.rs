@@ -172,9 +172,6 @@ impl Hash for IndexInstrument {
 }
 
 impl Instrument for IndexInstrument {
-    fn tick_scheme(&self) -> Option<Ustr> {
-        self.tick_scheme
-    }
     fn into_any(self) -> InstrumentAny {
         InstrumentAny::IndexInstrument(self)
     }
@@ -285,6 +282,14 @@ impl Instrument for IndexInstrument {
 
     fn min_price(&self) -> Option<Price> {
         None
+    }
+
+    fn tick_scheme(&self) -> Option<Ustr> {
+        self.tick_scheme
+    }
+
+    fn info(&self) -> Option<&Params> {
+        self.info.as_ref()
     }
 
     fn ts_event(&self) -> UnixNanos {

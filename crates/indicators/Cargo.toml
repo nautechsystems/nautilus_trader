@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-indicators"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -41,7 +40,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 nautilus-core = { workspace = true }
-nautilus-model = { workspace = true, features = ["test-support"] }
+nautilus-model = { workspace = true }
 
 anyhow = { workspace = true }
 arraydeque = { workspace = true }
@@ -51,5 +50,7 @@ pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-model = { workspace = true, features = ["test-support"] }
+
 proptest = { workspace = true }
 rstest = { workspace = true }

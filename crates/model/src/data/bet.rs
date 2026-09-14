@@ -411,13 +411,8 @@ impl BetPosition {
     pub fn add_bet(&mut self, bet: Bet) {
         match self.side() {
             None => self.position_increase(&bet),
-            Some(current_side) => {
-                if current_side == bet.side {
-                    self.position_increase(&bet);
-                } else {
-                    self.position_decrease(&bet);
-                }
-            }
+            Some(current_side) if current_side == bet.side => self.position_increase(&bet),
+            Some(_) => self.position_decrease(&bet),
         }
         self.bets.push(bet);
     }
@@ -590,9 +585,6 @@ impl BetPosition {
     ///
     /// Returns an error if flattening or marking the position overflows or divides by zero.
     pub fn unrealized_pnl_checked(&self, price: Decimal) -> anyhow::Result<Decimal> {
-        if self.side().is_none() {
-            return Ok(Decimal::ZERO);
-        }
         let Some(flattening_bet) = self.flattening_bet_checked(price)? else {
             return Ok(Decimal::ZERO);
         };
@@ -665,7 +657,7 @@ impl Display for BetPosition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "BetPosition(price: {:.2}, exposure: {:.2}, realized_pnl: {:.2})",
+            "BetPosition(price={:.2}, exposure={:.2}, realized_pnl={:.2})",
             self.price, self.exposure, self.realized_pnl
         )
     }
@@ -752,11 +744,7 @@ pub fn inverse_probability_to_bet(
 ) -> anyhow::Result<Bet> {
     check_probability_invertible(probability)?;
     let inverse_probability = checked_sub(Decimal::ONE, probability)?;
-    let inverse_side = match side {
-        OrderSide::Buy => OrderSide::Sell,
-        OrderSide::Sell => OrderSide::Buy,
-    };
-    probability_to_bet(inverse_probability, volume, inverse_side)
+    probability_to_bet(inverse_probability, volume, side.opposite())
 }
 
 fn check_odds_gt_one(price: Decimal) -> anyhow::Result<()> {
@@ -932,11 +920,11 @@ mod tests {
         let mut position = BetPosition::default();
         let bet = Bet::new(dec!(2.0), dec!(100.0), BetSide::Back);
         position.add_bet(bet);
-        let formatted = format!("{position}");
 
-        assert!(formatted.contains("price"));
-        assert!(formatted.contains("exposure"));
-        assert!(formatted.contains("realized_pnl"));
+        assert_eq!(
+            format!("{position}"),
+            "BetPosition(price=2.00, exposure=200.00, realized_pnl=0.00)"
+        );
     }
 
     #[rstest]

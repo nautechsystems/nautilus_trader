@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Provides an ergonomic wrapper around the **dYdX v4 Indexer REST API**:
-//! <https://docs.dydx.xyz/api_integration-indexer/indexer_api>.
+//! <https://docs.dydx.xyz/indexer-client/http>.
 //!
 //! This module exports two complementary HTTP clients following the standardized
 //! two-layer architecture pattern established in OKX, Bybit, and BitMEX adapters:
@@ -46,9 +46,9 @@
 //!
 //! | Endpoint          | Reference                                                                 |
 //! |-------------------|---------------------------------------------------------------------------|
-//! | Market data       | <https://docs.dydx.xyz/api_integration-indexer/indexer_api#markets>  |
-//! | Account data      | <https://docs.dydx.xyz/api_integration-indexer/indexer_api#accounts> |
-//! | Utility endpoints | <https://docs.dydx.xyz/api_integration-indexer/indexer_api#utility>  |
+//! | Market data       | <https://docs.dydx.xyz/indexer-client/http/markets>  |
+//! | Account data      | <https://docs.dydx.xyz/indexer-client/http/accounts> |
+//! | Utility endpoints | <https://docs.dydx.xyz/indexer-client/http>  |
 
 use std::{
     collections::HashMap,
@@ -172,7 +172,7 @@ pub struct DydxResponse<T> {
     pub data: T,
 }
 
-/// Provides a raw HTTP client for interacting with the [dYdX v4](https://dydx.exchange) Indexer REST API.
+/// Provides a raw HTTP client for interacting with the [dYdX v4](https://dydx.trade) Indexer REST API.
 ///
 /// This client wraps the underlying [`HttpClient`] to handle functionality
 /// specific to dYdX Indexer API, such as rate-limiting, forming request URLs,
@@ -337,13 +337,9 @@ impl DydxRawHttpClient {
 
         let response = self
             .retry_manager
-            .execute_with_retry_with_cancel(
-                endpoint,
-                operation,
-                should_retry,
-                create_retry_error,
-                &self.cancellation_token,
-            )
+            .invocation(endpoint, operation, should_retry, create_retry_error)
+            .cancellation_token(&self.cancellation_token)
+            .execute()
             .await?;
 
         serde_json::from_slice(&response.body).map_err(|e| DydxHttpError::Deserialization {
@@ -415,13 +411,9 @@ impl DydxRawHttpClient {
 
         let response = self
             .retry_manager
-            .execute_with_retry_with_cancel(
-                endpoint,
-                operation,
-                should_retry,
-                create_retry_error,
-                &self.cancellation_token,
-            )
+            .invocation(endpoint, operation, should_retry, create_retry_error)
+            .cancellation_token(&self.cancellation_token)
+            .execute()
             .await?;
 
         serde_json::from_slice(&response.body).map_err(|e| DydxHttpError::Deserialization {
@@ -690,7 +682,7 @@ impl DydxRawHttpClient {
     }
 }
 
-/// Provides a higher-level HTTP client for the [dYdX v4](https://dydx.exchange) Indexer REST API.
+/// Provides a higher-level HTTP client for the [dYdX v4](https://dydx.trade) Indexer REST API.
 ///
 /// This client wraps the underlying `DydxRawHttpClient` to handle conversions
 /// into the Nautilus domain model, following the two-layer pattern established

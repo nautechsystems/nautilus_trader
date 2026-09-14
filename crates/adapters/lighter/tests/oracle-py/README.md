@@ -9,7 +9,7 @@ trading-critical L2 transaction types, and dumps the canonical `tx_info`,
 with the official signer outputs.
 
 This is the "Layer 2" gate from the signing plan: open-source Go reference
-behaviour is verified by the field/curve/hash/Schnorr fixture vectors, and the
+behavior is verified by the field/curve/hash/Schnorr fixture vectors, and the
 official compiled signer is checked here as an SDK oracle. Live round-trip
 testing remains the final gate for what the venue's sequencer accepts.
 
@@ -46,7 +46,7 @@ against the same recomputed digest.
 
 The signer `.so` ships inside the `lighter-python` package; on macOS use
 `lighter-signer-darwin-arm64.dylib`. The script seeds the signer with a fixed
-private key and synthesises a fixed `ExpiredAt` so successive runs produce
+private key and synthesizes a fixed `ExpiredAt` so successive runs produce
 identical files.
 
 ## Vector shape

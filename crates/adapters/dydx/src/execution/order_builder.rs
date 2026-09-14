@@ -194,6 +194,31 @@ impl OrderMessageBuilder {
         quantity: Quantity,
         block_height: u32,
     ) -> Result<Any, DydxError> {
+        self.build_market_order_with_reduce_only(
+            instrument_id,
+            client_order_id,
+            client_metadata,
+            side,
+            quantity,
+            false,
+            block_height,
+        )
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors build_market_order with an explicit reduce-only flag"
+    )]
+    pub(crate) fn build_market_order_with_reduce_only(
+        &self,
+        instrument_id: InstrumentId,
+        client_order_id: u32,
+        client_metadata: u32,
+        side: OrderSide,
+        quantity: Quantity,
+        reduce_only: bool,
+        block_height: u32,
+    ) -> Result<Any, DydxError> {
         let market_params = self.get_market_params(instrument_id)?;
 
         let builder = OrderBuilder::new(
@@ -204,6 +229,7 @@ impl OrderMessageBuilder {
             client_metadata,
         )
         .market(order_side_to_proto(side), quantity.as_decimal())
+        .reduce_only(reduce_only)
         .short_term()
         .until(OrderGoodUntil::Block(
             block_height + SHORT_TERM_ORDER_MAXIMUM_LIFETIME,
@@ -925,12 +951,70 @@ impl OrderMessageBuilder {
 
 #[cfg(test)]
 mod tests {
+    use cosmrs::proto::traits::Message;
+    use nautilus_core::UnixNanos;
+    use nautilus_model::instruments::Instrument;
     use rstest::rstest;
 
     use super::*;
+    use crate::{
+        common::testing::load_json_result_fixture,
+        http::{models::MarketsResponse, parse::parse_instrument_any},
+        proto::OrderTimeInForce,
+    };
 
     // Use 10 seconds as test value (20 blocks * 0.5s)
     const TEST_MAX_SHORT_TERM_SECS: f64 = 10.0;
+
+    fn test_order_builder_with_market() -> (OrderMessageBuilder, InstrumentId) {
+        let json = load_json_result_fixture("http_get_perpetual_markets.json");
+        let mut response: MarketsResponse =
+            serde_json::from_value(json).expect("failed to parse markets fixture");
+        let market = response
+            .markets
+            .remove("BTC-USD")
+            .expect("BTC-USD market missing from fixture");
+        let instrument = parse_instrument_any(&market, None, None, UnixNanos::default())
+            .expect("failed to parse BTC-USD instrument");
+        let instrument_id = instrument.id();
+        let http_client = DydxHttpClient::default();
+        http_client.instrument_cache.insert(instrument, market);
+
+        (
+            OrderMessageBuilder::new(
+                http_client,
+                "dydx1testwalletaddress".to_string(),
+                0,
+                Arc::new(BlockTimeMonitor::new()),
+            ),
+            instrument_id,
+        )
+    }
+
+    #[rstest]
+    #[case::reduce_only(true)]
+    #[case::not_reduce_only(false)]
+    fn test_build_market_order_encodes_reduce_only(#[case] reduce_only: bool) {
+        let (builder, instrument_id) = test_order_builder_with_market();
+
+        let message = builder
+            .build_market_order_with_reduce_only(
+                instrument_id,
+                42,
+                7,
+                OrderSide::Sell,
+                Quantity::from("0.001"),
+                reduce_only,
+                100,
+            )
+            .expect("failed to build market order");
+        let message = MsgPlaceOrder::decode(message.value.as_slice())
+            .expect("failed to decode MsgPlaceOrder");
+        let order = message.order.expect("MsgPlaceOrder missing order");
+
+        assert_eq!(order.reduce_only, reduce_only);
+        assert_eq!(order.time_in_force, OrderTimeInForce::Ioc as i32);
+    }
 
     #[rstest]
     fn test_get_market_params_missing_cache_returns_canonical_error() {

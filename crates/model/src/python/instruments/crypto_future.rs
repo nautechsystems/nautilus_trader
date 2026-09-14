@@ -423,7 +423,7 @@ mod tests {
             values.bind(py).set_item("underlying", "NEWFUT").unwrap();
 
             let new_future = CryptoFuture::py_from_dict(py, values).unwrap();
-            assert_eq!(new_future.underlying.code.as_str(), "NEWFUT");
+            assert_eq!(new_future.underlying.code, "NEWFUT");
             assert_eq!(new_future.underlying.precision, 8);
             assert_eq!(new_future.underlying.currency_type, CurrencyType::Crypto);
             assert!(Currency::try_from_str("NEWFUT").is_some());

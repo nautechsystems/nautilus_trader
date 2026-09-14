@@ -4,7 +4,7 @@ set -euo pipefail
 # Extract a tool version from the shared catalog or a consumer-local tools.toml
 #
 # Usage: tool-version.sh <tool-name>
-# Example: tool-version.sh prek  ->  0.5.0
+# Example: tool-version.sh prek  ->  0.5.2
 
 if (($# != 1)); then
   echo "Usage: tool-version.sh <tool-name>" >&2

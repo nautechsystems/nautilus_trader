@@ -561,13 +561,17 @@ set to ~16 blocks ahead, giving the eight-second expiry.*
 
 ### Regenerate the panels
 
+After building NautilusTrader from source, run these commands from the repository root:
+
 ```bash
+make sync
+
 # Capture a 35-second mainnet run.
 timeout 35 ./target/release/examples/dydx-grid-mm > /tmp/dydx_main.log 2>&1
 
-uv sync --extra visualization
 DYDX_LOG=/tmp/dydx_main.log \
-    python3 docs/tutorials/assets/grid_market_maker_dydx/render_panels.py
+    uv run --project python --no-sync \
+        python docs/tutorials/assets/grid_market_maker_dydx/render_panels.py
 ```
 
 ## Monitoring and understanding output
@@ -582,7 +586,7 @@ DYDX_LOG=/tmp/dydx_main.log \
 | `benign cancel error, treating as success`          | Cancel for an already-filled or expired order (normal). |
 | `Sequence mismatch detected, will resync and retry` | Cosmos SDK sequence error, auto-recovering.             |
 
-### Expected behaviour patterns
+### Expected behavior patterns
 
 1. **Startup**: instruments load, WebSocket connects, first quote
    triggers initial grid.

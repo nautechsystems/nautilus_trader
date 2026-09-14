@@ -126,7 +126,7 @@ impl FeedHandler {
     ) -> Result<(), DydxWsError> {
         let keys_owned: Option<Vec<Ustr>> = rate_limit_keys.map(|k| k.to_vec());
         self.retry_manager
-            .execute_with_retry(
+            .invocation(
                 "websocket_send",
                 || {
                     let payload = payload.clone();
@@ -141,6 +141,7 @@ impl FeedHandler {
                 should_retry_dydx_error,
                 |e| create_dydx_timeout_error(e.to_string()),
             )
+            .execute()
             .await
     }
 

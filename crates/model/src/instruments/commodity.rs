@@ -247,9 +247,6 @@ impl Hash for Commodity {
 }
 
 impl Instrument for Commodity {
-    fn tick_scheme(&self) -> Option<Ustr> {
-        self.tick_scheme
-    }
     fn into_any(self) -> InstrumentAny {
         InstrumentAny::Commodity(self)
     }
@@ -381,6 +378,14 @@ impl Instrument for Commodity {
 
     fn taker_fee(&self) -> Decimal {
         self.taker_fee
+    }
+
+    fn tick_scheme(&self) -> Option<Ustr> {
+        self.tick_scheme
+    }
+
+    fn info(&self) -> Option<&Params> {
+        self.info.as_ref()
     }
 
     fn ts_event(&self) -> UnixNanos {

@@ -840,7 +840,7 @@ mod tests {
         simple_types::{Block as HypersyncBlock, Log},
     };
     use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
-    use nautilus_model::defi::{Chain, PoolIdentifier};
+    use nautilus_model::defi::Chain;
     use rstest::rstest;
 
     use super::*;
@@ -1028,65 +1028,5 @@ mod tests {
         assert!(terminated);
         assert_eq!(stream_task.next_from_block.load(Ordering::Relaxed), 99);
         assert!(stream_task.task.is_none());
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "requires ENVIO_API_TOKEN and live HyperSync access"]
-    async fn live_hypersync_dex_event_stream_follows_tip_and_stops() {
-        std::env::var("ENVIO_API_TOKEN").expect("ENVIO_API_TOKEN must be set");
-
-        let chain = Arc::new(
-            Chain::from_chain_id(42161)
-                .expect("Arbitrum chain should exist")
-                .clone(),
-        );
-        let dex_extended = get_dex_extended(chain.name, &DexType::UniswapV3)
-            .expect("Arbitrum UniswapV3 should be registered");
-        let pool_addresses = vec![
-            Address::from_str("0xC31E54c7A869B9FcBEcc14363CF510d1c41fa443").unwrap(),
-            Address::from_str("0x641C00A822e8b671738d32a431a4Fb6074E5c79d").unwrap(),
-            Address::from_str("0x4CEf551255EC96d89feC975446301b5C4e164C59").unwrap(),
-        ];
-        let expected_pool_ids = pool_addresses
-            .iter()
-            .map(|address| PoolIdentifier::from_address(*address))
-            .collect::<Vec<_>>();
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut client =
-            HyperSyncClient::new(chain, Some(tx), tokio_util::sync::CancellationToken::new());
-
-        client
-            .update_dex_event_stream(
-                DexType::UniswapV3,
-                pool_addresses,
-                vec![dex_extended.swap_created_event.to_string()],
-            )
-            .await;
-
-        let event = tokio::time::timeout(Duration::from_secs(240), async {
-            loop {
-                let msg = rx
-                    .recv()
-                    .await
-                    .expect("HyperSync live stream channel should stay open");
-
-                if let BlockchainMessage::SwapEvent(event) = msg
-                    && expected_pool_ids.contains(&event.pool_identifier)
-                {
-                    break event;
-                }
-            }
-        })
-        .await
-        .expect("expected a live Arbitrum UniswapV3 swap within 240s");
-
-        client
-            .update_dex_event_stream(DexType::UniswapV3, Vec::new(), Vec::new())
-            .await;
-        client.disconnect().await;
-
-        assert!(event.block_number > 0);
-        assert!(expected_pool_ids.contains(&event.pool_identifier));
-        assert!(client.dex_event_tasks.is_empty());
     }
 }

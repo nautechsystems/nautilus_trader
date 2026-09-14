@@ -1,0 +1,2639 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
+//! Integration tests for the Kraken execution client.
+
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    net::SocketAddr,
+    path::PathBuf,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
+
+use axum::{
+    Router,
+    body::{Body, to_bytes},
+    extract::{
+        Query, Request, State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
+    },
+    http::StatusCode,
+    response::Response,
+    routing::{any, get},
+};
+use nautilus_common::{
+    cache::Cache,
+    clients::ExecutionClient,
+    live::runner::set_exec_event_sender,
+    messages::{
+        ExecutionEvent,
+        execution::{
+            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateOrderStatusReport,
+            GenerateOrderStatusReports, ModifyOrder, SubmitOrder, SubmitOrderList,
+        },
+    },
+    testing::wait_until_async,
+};
+use nautilus_core::{UUID4, UnixNanos};
+use nautilus_kraken::{
+    common::{
+        consts::{KRAKEN_CLIENT_ID, KRAKEN_VENUE},
+        enums::{KrakenEnvironment, KrakenProductType},
+    },
+    config::KrakenExecutionClientConfig,
+    execution::{KrakenFuturesExecutionClient, KrakenSpotExecutionClient},
+};
+use nautilus_live::ExecutionClientCore;
+use nautilus_model::{
+    accounts::{AccountAny, CashAccount, MarginAccount},
+    enums::{AccountType, OmsType, OrderSide, OrderStatus, TimeInForce},
+    events::{AccountState, OrderAccepted, OrderEventAny},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, VenueOrderId,
+    },
+    orders::{LimitOrder, Order, OrderAny, OrderList},
+    types::{AccountBalance, Money, Price, Quantity},
+};
+use nautilus_network::http::HttpClient;
+use rstest::rstest;
+use serde_json::{Value, json};
+
+#[derive(Debug, Clone, Copy, Default)]
+enum SingleCancelResponse {
+    #[default]
+    Success,
+    AmbiguousFailure,
+    NonOrderApiError,
+    StructuredReject,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+enum BatchCancelResponse {
+    #[default]
+    Success,
+    WholeFailure,
+    Mixed,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+enum OrderCommandResponse {
+    #[default]
+    Success,
+    AmbiguousFailure,
+    StructuredReject,
+    UnknownStatus,
+    IocWouldNotExecute,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+enum BatchSubmitResponse {
+    #[default]
+    Success,
+    WholeFailure,
+    Mixed,
+    UnknownStatus,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct CommandResponses {
+    submit: OrderCommandResponse,
+    modify: OrderCommandResponse,
+    batch_submit: BatchSubmitResponse,
+    single_cancel: SingleCancelResponse,
+    batch_cancel: BatchCancelResponse,
+    cancel_all: BatchCancelResponse,
+}
+
+#[derive(Clone)]
+struct TestServerState {
+    command_responses: Arc<tokio::sync::Mutex<CommandResponses>>,
+    submit_request_count: Arc<AtomicUsize>,
+    modify_request_count: Arc<AtomicUsize>,
+    batch_submit_request_count: Arc<AtomicUsize>,
+    cancel_request_count: Arc<AtomicUsize>,
+    batch_cancel_request_count: Arc<AtomicUsize>,
+    cancel_all_request_count: Arc<AtomicUsize>,
+    orders_status_response: Arc<tokio::sync::Mutex<Option<String>>>,
+    orders_status_request_body: Arc<tokio::sync::Mutex<Option<String>>>,
+    fills_response: Arc<tokio::sync::Mutex<Option<String>>>,
+    ws_message_tx: tokio::sync::broadcast::Sender<String>,
+}
+
+impl Default for TestServerState {
+    fn default() -> Self {
+        let (ws_message_tx, _) = tokio::sync::broadcast::channel(8);
+        Self {
+            command_responses: Arc::new(tokio::sync::Mutex::new(CommandResponses::default())),
+            submit_request_count: Arc::new(AtomicUsize::new(0)),
+            modify_request_count: Arc::new(AtomicUsize::new(0)),
+            batch_submit_request_count: Arc::new(AtomicUsize::new(0)),
+            cancel_request_count: Arc::new(AtomicUsize::new(0)),
+            batch_cancel_request_count: Arc::new(AtomicUsize::new(0)),
+            cancel_all_request_count: Arc::new(AtomicUsize::new(0)),
+            orders_status_response: Arc::new(tokio::sync::Mutex::new(None)),
+            orders_status_request_body: Arc::new(tokio::sync::Mutex::new(None)),
+            fills_response: Arc::new(tokio::sync::Mutex::new(None)),
+            ws_message_tx,
+        }
+    }
+}
+
+fn data_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data")
+}
+
+fn load_test_data(filename: &str) -> String {
+    std::fs::read_to_string(data_path().join(filename))
+        .unwrap_or_else(|e| panic!("failed to read {filename}: {e}"))
+}
+
+async fn handle_ws_upgrade(ws: WebSocketUpgrade, State(state): State<TestServerState>) -> Response {
+    ws.on_upgrade(move |socket| handle_socket(socket, state))
+}
+
+async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
+    let mut ws_message_rx = state.ws_message_tx.subscribe();
+
+    loop {
+        let message = tokio::select! {
+            message = socket.recv() => {
+                let Some(Ok(message)) = message else { break };
+                message
+            }
+            message = ws_message_rx.recv() => {
+                let Ok(message) = message else { continue };
+                if socket.send(Message::Text(message.into())).await.is_err() {
+                    break;
+                }
+                continue;
+            }
+        };
+
+        match message {
+            Message::Text(text) => {
+                let Ok(payload) = serde_json::from_str::<Value>(&text) else {
+                    continue;
+                };
+
+                if payload.get("event").and_then(|v| v.as_str()) == Some("challenge") {
+                    let response = json!({
+                        "event": "challenge",
+                        "message": "server-challenge",
+                    });
+
+                    if socket
+                        .send(Message::Text(response.to_string().into()))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            }
+            Message::Ping(data) => {
+                let sent = socket.send(Message::Pong(data)).await;
+                if sent.is_err() {
+                    break;
+                }
+            }
+            Message::Close(_) => break,
+            _ => {}
+        }
+    }
+}
+
+async fn handle_http_request(State(state): State<TestServerState>, req: Request) -> Response {
+    let path = req.uri().path().to_string();
+    match path.as_str() {
+        "/health" => Response::builder()
+            .status(StatusCode::OK)
+            .body(Body::from("OK"))
+            .unwrap(),
+        "/derivatives/api/v3/instruments" => {
+            let mut data: Value =
+                serde_json::from_str(&load_test_data("http_futures_instruments.json")).unwrap();
+
+            if !cfg!(feature = "high-precision") {
+                data["instruments"]
+                    .as_array_mut()
+                    .unwrap()
+                    .retain(|instrument| instrument["symbol"] != "PF_PEPEUSD");
+            }
+            json_response(data.to_string())
+        }
+        "/derivatives/api/v3/accounts" => {
+            json_response(r#"{"result":"success","accounts":{}}"#.to_string())
+        }
+        "/derivatives/api/v3/openorders" => {
+            json_response(r#"{"result":"success","openOrders":[]}"#.to_string())
+        }
+        "/derivatives/api/v3/orders/status" => {
+            let body = to_bytes(req.into_body(), 1024 * 1024).await.unwrap();
+            *state.orders_status_request_body.lock().await =
+                Some(String::from_utf8_lossy(&body).to_string());
+            let response = state.orders_status_response.lock().await;
+            json_response(
+                response
+                    .clone()
+                    .unwrap_or_else(|| r#"{"result":"success","orders":[]}"#.to_string()),
+            )
+        }
+        "/derivatives/api/v3/openpositions" => {
+            json_response(r#"{"result":"success","openPositions":[]}"#.to_string())
+        }
+        "/derivatives/api/v3/fills" => {
+            let response = state.fills_response.lock().await;
+            json_response(
+                response
+                    .clone()
+                    .unwrap_or_else(|| r#"{"result":"success","fills":[]}"#.to_string()),
+            )
+        }
+        "/api/history/v2/orders" => json_response(r#"{"orderEvents":[]}"#.to_string()),
+        "/derivatives/api/v3/sendorder" => {
+            state.submit_request_count.fetch_add(1, Ordering::Relaxed);
+            match state.command_responses.lock().await.submit {
+                OrderCommandResponse::Success => json_response(
+                    r#"{"result":"success","sendStatus":{"status":"placed","order_id":"F-SUBMIT"}}"#
+                        .to_string(),
+                ),
+                OrderCommandResponse::AmbiguousFailure => Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::from("submit failed"))
+                    .unwrap(),
+                OrderCommandResponse::StructuredReject => json_response(
+                    r#"{"result":"error","error":"insufficientAvailableFunds","sendStatus":{"status":"insufficientAvailableFunds"}}"#
+                        .to_string(),
+                ),
+                OrderCommandResponse::UnknownStatus => json_response(
+                    r#"{"result":"success","sendStatus":{"status":"processing","order_id":"F-SUBMIT"}}"#
+                        .to_string(),
+                ),
+                OrderCommandResponse::IocWouldNotExecute => json_response(
+                    r#"{"result":"success","sendStatus":{"status":"iocWouldNotExecute"}}"#
+                        .to_string(),
+                ),
+            }
+        }
+        "/derivatives/api/v3/editorder" => {
+            state.modify_request_count.fetch_add(1, Ordering::Relaxed);
+            match state.command_responses.lock().await.modify {
+                OrderCommandResponse::Success => json_response(
+                    r#"{"result":"success","editStatus":{"status":"edited","order_id":"F-MODIFY"}}"#
+                        .to_string(),
+                ),
+                OrderCommandResponse::AmbiguousFailure => Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::from("modify failed"))
+                    .unwrap(),
+                OrderCommandResponse::StructuredReject => json_response(
+                    r#"{"result":"error","editStatus":{"status":"notFound","order_id":"F-MODIFY"}}"#
+                        .to_string(),
+                ),
+                OrderCommandResponse::UnknownStatus
+                | OrderCommandResponse::IocWouldNotExecute => json_response(
+                    r#"{"result":"success","editStatus":{"status":"processing","order_id":"F-MODIFY"}}"#
+                        .to_string(),
+                ),
+            }
+        }
+        "/derivatives/api/v3/cancelorder" => {
+            state.cancel_request_count.fetch_add(1, Ordering::Relaxed);
+            match state.command_responses.lock().await.single_cancel {
+                SingleCancelResponse::Success => json_response(
+                    r#"{"result":"success","cancelStatus":{"status":"cancelled","order_id":"V-SINGLE"}}"#
+                        .to_string(),
+                ),
+                SingleCancelResponse::AmbiguousFailure => Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::from("cancel failed"))
+                    .unwrap(),
+                SingleCancelResponse::NonOrderApiError => Response::builder()
+                    .status(StatusCode::TOO_MANY_REQUESTS)
+                    .body(Body::from("rate limit exceeded"))
+                    .unwrap(),
+                SingleCancelResponse::StructuredReject => json_response(
+                    r#"{"result":"error","cancelStatus":{"status":"notFound","order_id":"V-SINGLE"}}"#
+                        .to_string(),
+                ),
+            }
+        }
+        "/derivatives/api/v3/batchorder" => {
+            let body = to_bytes(req.into_body(), 1024 * 1024).await.unwrap();
+            if String::from_utf8_lossy(&body).contains(r#""order":"send""#) {
+                state
+                    .batch_submit_request_count
+                    .fetch_add(1, Ordering::Relaxed);
+                return match state.command_responses.lock().await.batch_submit {
+                    BatchSubmitResponse::Success => json_response(
+                        r#"{"result":"success","batchStatus":[{"order_tag":"0","status":"placed","order_id":"F-BATCH-0"},{"order_tag":"1","status":"placed","order_id":"F-BATCH-1"}]}"#
+                            .to_string(),
+                    ),
+                    BatchSubmitResponse::WholeFailure => Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(Body::from("batch submit failed"))
+                        .unwrap(),
+                    BatchSubmitResponse::Mixed => json_response(
+                        r#"{"result":"success","batchStatus":[{"order_tag":"1","status":"insufficientAvailableFunds"},{"order_tag":"0","status":"placed","order_id":"F-BATCH-0"}]}"#
+                            .to_string(),
+                    ),
+                    BatchSubmitResponse::UnknownStatus => json_response(
+                        r#"{"result":"success","batchStatus":[{"order_tag":"0","status":"processing"},{"order_tag":"1","status":"processing"}]}"#
+                            .to_string(),
+                    ),
+                };
+            }
+
+            state
+                .batch_cancel_request_count
+                .fetch_add(1, Ordering::Relaxed);
+
+            match state.command_responses.lock().await.batch_cancel {
+                BatchCancelResponse::Success => json_response(
+                    r#"{"result":"success","batchStatus":[{"orderId":"V-BATCH-1","status":"cancelled"},{"orderId":"V-BATCH-2","status":"cancelled"}]}"#
+                        .to_string(),
+                ),
+                BatchCancelResponse::WholeFailure => json_response(
+                    r#"{"result":"error","error":"batch failed","batchStatus":[]}"#.to_string(),
+                ),
+                BatchCancelResponse::Mixed => json_response(
+                    r#"{"result":"success","batchStatus":[{"orderId":"V-BATCH-OK","status":"cancelled"},{"orderId":"V-BATCH-REJECT","status":"notFound"}]}"#
+                        .to_string(),
+                ),
+            }
+        }
+        "/derivatives/api/v3/cancelallorders" => {
+            state
+                .cancel_all_request_count
+                .fetch_add(1, Ordering::Relaxed);
+
+            match state.command_responses.lock().await.cancel_all {
+                BatchCancelResponse::Success | BatchCancelResponse::Mixed => json_response(
+                    r#"{"result":"success","cancelStatus":{"status":"cancelled","cancelledOrders":[]}}"#
+                        .to_string(),
+                ),
+                BatchCancelResponse::WholeFailure => json_response(
+                    r#"{"result":"error","cancelStatus":{"status":"noOrdersToCancel","cancelledOrders":[]}}"#
+                        .to_string(),
+                ),
+            }
+        }
+        "/0/public/AssetPairs" => {
+            let query = Query::<HashMap<String, String>>::try_from_uri(req.uri())
+                .unwrap_or_default();
+            let filename = match query.get("aclass_base").map(String::as_str) {
+                Some("tokenized_asset") => "http_asset_pairs_tokenized.json",
+                _ => "http_asset_pairs.json",
+            };
+            json_response(load_test_data(filename))
+        }
+        "/0/private/TradeVolume" => json_response(
+            r#"{"error":[],"result":{"fees":{"XBTUSDT":{"fee":"0.2900"},"AAPLZUSD.EQ":{"fee":"0.1900"}},"fees_maker":{"XBTUSDT":{"fee":"0.1700"},"AAPLZUSD.EQ":{"fee":"0.0300"}}}}"#
+                .to_string(),
+        ),
+        "/0/private/GetWebSocketsToken" => json_response(
+            r#"{"error":[],"result":{"token":"TEST-TOKEN","expires":900}}"#.to_string(),
+        ),
+        "/0/private/Balance" => json_response(load_test_data("http_spot_balance.json")),
+        "/0/private/BalanceEx" => json_response(load_test_data("http_spot_balance_ex.json")),
+        "/0/private/AddOrder" => {
+            state.submit_request_count.fetch_add(1, Ordering::Relaxed);
+            match state.command_responses.lock().await.submit {
+                OrderCommandResponse::Success => {
+                    json_response(r#"{"error":[],"result":{"txid":["S-SUBMIT"]}}"#.to_string())
+                }
+                OrderCommandResponse::AmbiguousFailure => Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::from("submit failed"))
+                    .unwrap(),
+                OrderCommandResponse::StructuredReject => {
+                    json_response(r#"{"error":["EOrder:Insufficient funds"]}"#.to_string())
+                }
+                OrderCommandResponse::UnknownStatus
+                | OrderCommandResponse::IocWouldNotExecute => {
+                    json_response(r#"{"error":[],"result":{"txid":[]}}"#.to_string())
+                }
+            }
+        }
+        "/0/private/AmendOrder" => {
+            state.modify_request_count.fetch_add(1, Ordering::Relaxed);
+            match state.command_responses.lock().await.modify {
+                OrderCommandResponse::Success => {
+                    json_response(r#"{"error":[],"result":{"amend_id":"S-MODIFY"}}"#.to_string())
+                }
+                OrderCommandResponse::AmbiguousFailure => Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::from("modify failed"))
+                    .unwrap(),
+                OrderCommandResponse::StructuredReject => {
+                    json_response(r#"{"error":["EOrder:Unknown order"]}"#.to_string())
+                }
+                OrderCommandResponse::UnknownStatus
+                | OrderCommandResponse::IocWouldNotExecute => {
+                    json_response(r#"{"error":[],"result":{}}"#.to_string())
+                }
+            }
+        }
+        "/0/private/AddOrderBatch" => {
+            state
+                .batch_submit_request_count
+                .fetch_add(1, Ordering::Relaxed);
+
+            match state.command_responses.lock().await.batch_submit {
+                BatchSubmitResponse::Success => json_response(
+                    r#"{"error":[],"result":{"orders":[{"txid":"S-BATCH-0"},{"txid":"S-BATCH-1"}]}}"#
+                        .to_string(),
+                ),
+                BatchSubmitResponse::WholeFailure => {
+                    Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(Body::from("batch submit failed"))
+                        .unwrap()
+                }
+                BatchSubmitResponse::Mixed => json_response(
+                    r#"{"error":[],"result":{"orders":[{"txid":"S-BATCH-0"},{"error":"EOrder:Insufficient funds"}]}}"#
+                        .to_string(),
+                ),
+                BatchSubmitResponse::UnknownStatus => json_response(
+                    r#"{"error":[],"result":{"orders":[{},{}]}}"#.to_string(),
+                ),
+            }
+        }
+        "/0/private/CancelOrder" => {
+            state.cancel_request_count.fetch_add(1, Ordering::Relaxed);
+            match state.command_responses.lock().await.single_cancel {
+                SingleCancelResponse::Success => {
+                    json_response(r#"{"error":[],"result":{"count":1}}"#.to_string())
+                }
+                SingleCancelResponse::AmbiguousFailure => Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::from("cancel failed"))
+                    .unwrap(),
+                SingleCancelResponse::NonOrderApiError => {
+                    json_response(r#"{"error":["EAPI:Rate limit exceeded"]}"#.to_string())
+                }
+                SingleCancelResponse::StructuredReject => {
+                    json_response(r#"{"error":["EOrder:Unknown order"]}"#.to_string())
+                }
+            }
+        }
+        "/0/private/CancelOrderBatch" => {
+            state
+                .batch_cancel_request_count
+                .fetch_add(1, Ordering::Relaxed);
+
+            match state.command_responses.lock().await.batch_cancel {
+                BatchCancelResponse::Success => {
+                    json_response(r#"{"error":[],"result":{"count":2}}"#.to_string())
+                }
+                BatchCancelResponse::WholeFailure => {
+                    json_response(r#"{"error":["EOrder:Batch failed"]}"#.to_string())
+                }
+                BatchCancelResponse::Mixed => {
+                    json_response(r#"{"error":[],"result":{"count":1}}"#.to_string())
+                }
+            }
+        }
+        "/0/private/CancelAll" => {
+            state
+                .cancel_all_request_count
+                .fetch_add(1, Ordering::Relaxed);
+
+            match state.command_responses.lock().await.cancel_all {
+                BatchCancelResponse::Success | BatchCancelResponse::Mixed => {
+                    json_response(r#"{"error":[],"result":{"count":1}}"#.to_string())
+                }
+                BatchCancelResponse::WholeFailure => {
+                    json_response(r#"{"error":["EOrder:Cancel all failed"]}"#.to_string())
+                }
+            }
+        }
+        _ => Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::from("not found"))
+            .unwrap(),
+    }
+}
+
+fn json_response(body: String) -> Response {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(body))
+        .unwrap()
+}
+
+fn create_test_router(state: TestServerState) -> Router {
+    Router::new()
+        .route("/ws", get(handle_ws_upgrade))
+        .fallback(any(handle_http_request))
+        .with_state(state)
+}
+
+async fn start_test_server()
+-> Result<(SocketAddr, TestServerState), Box<dyn std::error::Error + Send + Sync>> {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
+    let state = TestServerState::default();
+    let router = create_test_router(state.clone());
+
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+
+    wait_for_server(addr).await;
+
+    Ok((addr, state))
+}
+
+async fn wait_for_server(addr: SocketAddr) {
+    let health_url = format!("http://{addr}/health");
+    let http_client = HttpClient::builder().build().unwrap();
+    wait_until_async(
+        || {
+            let url = health_url.clone();
+            let client = http_client.clone();
+            async move { client.get(url, None, None, Some(1), None).await.is_ok() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
+fn create_test_exec_config(addr: SocketAddr) -> KrakenExecutionClientConfig {
+    KrakenExecutionClientConfig {
+        account_id: test_account_id(),
+        api_key: "test_key".into(),
+        api_secret: "c2VjcmV0".into(),
+        product_type: KrakenProductType::Futures,
+        environment: KrakenEnvironment::Live,
+        base_url: Some(format!("http://{addr}")),
+        ws_url: Some(format!("ws://{addr}/ws")),
+        timeout_secs: 2,
+        ..Default::default()
+    }
+}
+
+fn create_test_spot_exec_config(addr: SocketAddr) -> KrakenExecutionClientConfig {
+    KrakenExecutionClientConfig {
+        account_id: test_account_id(),
+        api_key: "test_key".into(),
+        api_secret: "c2VjcmV0".into(),
+        product_type: KrakenProductType::Spot,
+        environment: KrakenEnvironment::Live,
+        base_url: Some(format!("http://{addr}")),
+        ws_url: Some(format!("ws://{addr}/ws")),
+        timeout_secs: 2,
+        spot_account_type: AccountType::Cash,
+        use_ws_trade: false,
+        ..Default::default()
+    }
+}
+
+fn create_test_execution_client(
+    addr: SocketAddr,
+) -> (
+    KrakenFuturesExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let core = ExecutionClientCore::new(
+        test_trader_id(),
+        *KRAKEN_CLIENT_ID,
+        *KRAKEN_VENUE,
+        OmsType::Netting,
+        test_account_id(),
+        AccountType::Margin,
+        None,
+        cache.clone(),
+    );
+    let config = create_test_exec_config(addr);
+
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    set_exec_event_sender(tx);
+
+    let mut client = KrakenFuturesExecutionClient::new(core, config).unwrap();
+    client.start().unwrap();
+
+    (client, rx, cache)
+}
+
+fn create_test_spot_execution_client(
+    addr: SocketAddr,
+) -> (
+    KrakenSpotExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let core = ExecutionClientCore::new(
+        test_trader_id(),
+        *KRAKEN_CLIENT_ID,
+        *KRAKEN_VENUE,
+        OmsType::Netting,
+        test_account_id(),
+        AccountType::Cash,
+        None,
+        cache.clone(),
+    );
+    let config = create_test_spot_exec_config(addr);
+
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    set_exec_event_sender(tx);
+
+    let mut client = KrakenSpotExecutionClient::new(core, config).unwrap();
+    client.start().unwrap();
+
+    (client, rx, cache)
+}
+
+async fn connected_client_with_command_responses(
+    responses: CommandResponses,
+) -> (
+    KrakenFuturesExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+    TestServerState,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.command_responses.lock().await = responses;
+
+    let (mut client, rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache);
+    client.connect().await.unwrap();
+
+    (client, rx, cache, state)
+}
+
+async fn connected_spot_client_with_command_responses(
+    responses: CommandResponses,
+) -> (
+    KrakenSpotExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+    TestServerState,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.command_responses.lock().await = responses;
+
+    let (mut client, rx, cache) = create_test_spot_execution_client(addr);
+    add_test_spot_account_to_cache(&cache);
+    client.connect().await.unwrap();
+
+    (client, rx, cache, state)
+}
+
+fn add_test_account_to_cache(cache: &Rc<RefCell<Cache>>) {
+    let account_state = AccountState::new(
+        test_account_id(),
+        AccountType::Margin,
+        vec![AccountBalance::new(
+            Money::from("1.0 BTC"),
+            Money::from("0 BTC"),
+            Money::from("1.0 BTC"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    );
+
+    let account = AccountAny::Margin(MarginAccount::new(account_state, true));
+    cache.borrow_mut().add_account(account).unwrap();
+}
+
+fn add_test_spot_account_to_cache(cache: &Rc<RefCell<Cache>>) {
+    let account_state = AccountState::new(
+        test_account_id(),
+        AccountType::Cash,
+        vec![
+            AccountBalance::new(
+                Money::from("10000 USDT"),
+                Money::from("0 USDT"),
+                Money::from("10000 USDT"),
+            ),
+            AccountBalance::new(
+                Money::from("1 BTC"),
+                Money::from("0 BTC"),
+                Money::from("1 BTC"),
+            ),
+        ],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    );
+
+    let account = AccountAny::Cash(CashAccount::new(account_state, true, false));
+    cache.borrow_mut().add_account(account).unwrap();
+}
+
+fn add_limit_order_to_cache(
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: ClientOrderId,
+) -> OrderAny {
+    let order = LimitOrder::new(
+        test_trader_id(),
+        test_strategy_id(),
+        test_instrument_id(),
+        client_order_id,
+        OrderSide::Buy,
+        Quantity::from("1"),
+        Price::from("50000"),
+        TimeInForce::Gtc,
+        None,
+        true,
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    let order_any = OrderAny::Limit(order);
+    cache
+        .borrow_mut()
+        .add_order(order_any.clone(), None, None, false)
+        .unwrap();
+    order_any
+}
+
+fn add_spot_limit_order_to_cache(
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: ClientOrderId,
+) -> OrderAny {
+    add_spot_limit_order_on_instrument_to_cache(cache, client_order_id, test_spot_instrument_id())
+}
+
+fn add_spot_limit_order_on_instrument_to_cache(
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: ClientOrderId,
+    instrument_id: InstrumentId,
+) -> OrderAny {
+    let order = LimitOrder::new(
+        test_trader_id(),
+        test_strategy_id(),
+        instrument_id,
+        client_order_id,
+        OrderSide::Buy,
+        Quantity::from("0.1"),
+        Price::from("50000"),
+        TimeInForce::Gtc,
+        None,
+        true,
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    let order_any = OrderAny::Limit(order);
+    cache
+        .borrow_mut()
+        .add_order(order_any.clone(), None, None, false)
+        .unwrap();
+    order_any
+}
+
+fn submit_order_command(order: &OrderAny) -> SubmitOrder {
+    SubmitOrder::new(
+        test_trader_id(),
+        Some(*KRAKEN_CLIENT_ID),
+        test_strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    )
+}
+
+fn modify_order_command(order: &OrderAny, venue_order_id: VenueOrderId) -> ModifyOrder {
+    ModifyOrder::new(
+        test_trader_id(),
+        Some(*KRAKEN_CLIENT_ID),
+        test_strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        Some(venue_order_id),
+        Some(Quantity::from("0.2")),
+        Some(Price::from("49000")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+fn submit_order_list_command(
+    order_list_id: &str,
+    instrument_id: InstrumentId,
+    orders: &[OrderAny],
+) -> SubmitOrderList {
+    let order_list = OrderList::new(
+        OrderListId::from(order_list_id),
+        instrument_id,
+        test_strategy_id(),
+        orders.iter().map(Order::client_order_id).collect(),
+        UnixNanos::default(),
+    );
+    let order_inits = orders
+        .iter()
+        .map(|order| order.init_event().clone())
+        .collect();
+
+    SubmitOrderList::new(
+        test_trader_id(),
+        Some(*KRAKEN_CLIENT_ID),
+        test_strategy_id(),
+        order_list,
+        order_inits,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    )
+}
+
+fn test_trader_id() -> TraderId {
+    TraderId::from("TESTER-001")
+}
+
+fn test_strategy_id() -> StrategyId {
+    StrategyId::from("S-001")
+}
+
+fn test_account_id() -> AccountId {
+    AccountId::from("KRAKEN-001")
+}
+
+fn test_instrument_id() -> InstrumentId {
+    InstrumentId::from("PI_XBTUSD.KRAKEN")
+}
+
+fn test_spot_instrument_id() -> InstrumentId {
+    InstrumentId::from("BTC/USDT.KRAKEN")
+}
+
+fn cancel_order_command(
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+) -> CancelOrder {
+    CancelOrder::new(
+        test_trader_id(),
+        Some(*KRAKEN_CLIENT_ID),
+        test_strategy_id(),
+        test_instrument_id(),
+        client_order_id,
+        Some(venue_order_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+fn spot_cancel_order_command(
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+) -> CancelOrder {
+    CancelOrder::new(
+        test_trader_id(),
+        Some(*KRAKEN_CLIENT_ID),
+        test_strategy_id(),
+        test_spot_instrument_id(),
+        client_order_id,
+        Some(venue_order_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+fn batch_cancel_command(cancels: Vec<CancelOrder>) -> BatchCancelOrders {
+    BatchCancelOrders::new(
+        test_trader_id(),
+        Some(*KRAKEN_CLIENT_ID),
+        test_strategy_id(),
+        test_instrument_id(),
+        cancels,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+fn spot_batch_cancel_command(cancels: Vec<CancelOrder>) -> BatchCancelOrders {
+    BatchCancelOrders::new(
+        test_trader_id(),
+        Some(*KRAKEN_CLIENT_ID),
+        test_strategy_id(),
+        test_spot_instrument_id(),
+        cancels,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+fn cancel_all_orders_command() -> CancelAllOrders {
+    CancelAllOrders::new(
+        test_trader_id(),
+        Some(*KRAKEN_CLIENT_ID),
+        test_strategy_id(),
+        test_instrument_id(),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+fn spot_cancel_all_orders_command() -> CancelAllOrders {
+    CancelAllOrders::new(
+        test_trader_id(),
+        Some(*KRAKEN_CLIENT_ID),
+        test_strategy_id(),
+        test_spot_instrument_id(),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+async fn wait_for_count(count: &AtomicUsize, expected: usize) {
+    wait_until_async(
+        || async { count.load(Ordering::Relaxed) >= expected },
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
+async fn assert_no_order_event_matching<F>(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    predicate: F,
+) where
+    F: Fn(&OrderEventAny) -> bool,
+{
+    let unexpected = tokio::time::timeout(Duration::from_millis(500), async {
+        loop {
+            let event = rx.recv().await.expect("Execution event channel closed");
+            if let ExecutionEvent::Order(order_event) = &event
+                && predicate(order_event)
+            {
+                return event;
+            }
+        }
+    })
+    .await;
+
+    if let Ok(event) = unexpected {
+        panic!("Unexpected order event: {event:?}");
+    }
+}
+
+async fn recv_until<F>(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    predicate: F,
+) -> ExecutionEvent
+where
+    F: Fn(&ExecutionEvent) -> bool,
+{
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let event = rx.recv().await.expect("Execution event channel closed");
+            if predicate(&event) {
+                return event;
+            }
+        }
+    })
+    .await
+    .expect("Timed out waiting for execution event")
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_local_submit_failure_emits_rejected_without_request() {
+    let (client, mut rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+    let client_order_id = ClientOrderId::new("spot-submit-local-001");
+    let order = add_spot_limit_order_on_instrument_to_cache(
+        &cache,
+        client_order_id,
+        InstrumentId::from("UNKNOWN.KRAKEN"),
+    );
+
+    client.submit_order(submit_order_command(&order)).unwrap();
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Rejected(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+            assert!(event.reason.contains("not found"));
+        }
+        other => panic!("Expected OrderRejected event, was {other:?}"),
+    }
+    assert_eq!(state.submit_request_count.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_ambiguous_submit_failure_does_not_emit_rejected() {
+    let (client, mut rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses {
+            submit: OrderCommandResponse::AmbiguousFailure,
+            ..Default::default()
+        })
+        .await;
+    let client_order_id = ClientOrderId::new("spot-submit-ambiguous-001");
+    let order = add_spot_limit_order_to_cache(&cache, client_order_id);
+
+    client.submit_order(submit_order_command(&order)).unwrap();
+    wait_for_count(&state.submit_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(event, OrderEventAny::Rejected(event) if event.client_order_id == client_order_id)
+    })
+    .await;
+    assert_eq!(state.submit_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_structured_submit_rejection_emits_rejected() {
+    let (client, mut rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses {
+            submit: OrderCommandResponse::StructuredReject,
+            ..Default::default()
+        })
+        .await;
+    let client_order_id = ClientOrderId::new("spot-submit-rejected-001");
+    let order = add_spot_limit_order_to_cache(&cache, client_order_id);
+
+    client.submit_order(submit_order_command(&order)).unwrap();
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Rejected(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+            assert!(event.reason.contains("EOrder:Insufficient funds"));
+        }
+        other => panic!("Expected OrderRejected event, was {other:?}"),
+    }
+    assert_eq!(state.submit_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_post_submit_lookup_failure_is_resolved_by_later_stream_acceptance() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            submit: OrderCommandResponse::Success,
+            ..Default::default()
+        })
+        .await;
+    let client_order_id = ClientOrderId::new("futures-submit-ambiguous-001");
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+
+    client.submit_order(submit_order_command(&order)).unwrap();
+    wait_for_count(&state.submit_request_count, 1).await;
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(event, OrderEventAny::Rejected(event) if event.client_order_id == client_order_id)
+    })
+    .await;
+
+    state
+        .ws_message_tx
+        .send(
+            json!({
+                "feed": "open_orders",
+                "order": {
+                    "instrument": "PI_XBTUSD",
+                    "time": 1_567_702_877_410_i64,
+                    "last_update_time": 1_567_702_877_410_i64,
+                    "qty": 1,
+                    "filled": 0,
+                    "limit_price": 50_000,
+                    "stop_price": 0,
+                    "type": "limit",
+                    "order_id": "F-LATER-ACCEPT",
+                    "cli_ord_id": client_order_id.as_str(),
+                    "direction": 0,
+                    "reduce_only": false
+                },
+                "is_cancel": false,
+                "reason": "new_placed_order_by_user"
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Accepted(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::Accepted(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+            assert_eq!(event.venue_order_id, VenueOrderId::from("F-LATER-ACCEPT"));
+        }
+        other => panic!("Expected OrderAccepted event, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_structured_submit_rejection_emits_rejected() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            submit: OrderCommandResponse::StructuredReject,
+            ..Default::default()
+        })
+        .await;
+    let client_order_id = ClientOrderId::new("futures-submit-rejected-001");
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+
+    client.submit_order(submit_order_command(&order)).unwrap();
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Rejected(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+            assert!(event.reason.contains("insufficientAvailableFunds"));
+        }
+        other => panic!("Expected OrderRejected event, was {other:?}"),
+    }
+    assert_eq!(state.submit_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_unknown_submit_status_does_not_emit_rejected() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            submit: OrderCommandResponse::UnknownStatus,
+            ..Default::default()
+        })
+        .await;
+    let client_order_id = ClientOrderId::new("futures-submit-unknown-001");
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+
+    client.submit_order(submit_order_command(&order)).unwrap();
+    wait_for_count(&state.submit_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(event, OrderEventAny::Rejected(event) if event.client_order_id == client_order_id)
+    })
+    .await;
+    assert_eq!(state.submit_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_ioc_would_not_execute_submit_emits_rejected() {
+    // Maker Protection outcome: `iocWouldNotExecute` is the venue's terminal
+    // answer for an order that cannot trade (including a converted hold that
+    // finds no liquidity at release). It must reject the order, not leave it
+    // ambiguous like an unknown status.
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            submit: OrderCommandResponse::IocWouldNotExecute,
+            ..Default::default()
+        })
+        .await;
+
+    let client_order_id = ClientOrderId::new("futures-submit-ioc-001");
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+
+    client.submit_order(submit_order_command(&order)).unwrap();
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Rejected(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+            assert!(event.reason.contains("iocWouldNotExecute"));
+        }
+        other => panic!("Expected OrderRejected event, was {other:?}"),
+    }
+
+    assert_eq!(state.submit_request_count.load(Ordering::Relaxed), 1);
+}
+
+/// Applies an `OrderAccepted` carrying the venue order ID, mirroring how the
+/// engine records a venue ID on a cached order once the venue acknowledges it.
+fn set_venue_order_id_on_cached_order(
+    cache: &Rc<RefCell<Cache>>,
+    order: &OrderAny,
+    venue_order_id: &str,
+) {
+    let accepted = OrderAccepted::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        VenueOrderId::from(venue_order_id),
+        test_account_id(),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+    );
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Accepted(accepted))
+        .unwrap();
+}
+
+const ORDERS_STATUS_PART_FILLED_CANCEL: &str = r#"{
+    "result": "success",
+    "orders": [
+        {
+            "order": {
+                "type": "ORDER",
+                "orderId": "V-HELD-001",
+                "cliOrdId": "futures-held-001",
+                "symbol": "PI_XBTUSD",
+                "side": "buy",
+                "quantity": 5,
+                "filled": 2,
+                "limitPrice": 50000.0,
+                "reduceOnly": false,
+                "timestamp": "2026-09-12T04:05:06.100Z",
+                "lastUpdateTimestamp": "2026-09-12T04:05:06.300Z",
+                "algoId": null,
+                "priceTriggerOptions": null,
+                "triggerTime": null
+            },
+            "status": "CANCELLED",
+            "updateReason": "PARTIAL_FILL",
+            "error": null
+        }
+    ]
+}"#;
+
+const ORDERS_STATUS_ENTERED_BOOK: &str = r#"{
+    "result": "success",
+    "orders": [
+        {
+            "order": {
+                "type": "ORDER",
+                "orderId": "V-HELD-002",
+                "cliOrdId": "futures-held-002",
+                "symbol": "PI_XBTUSD",
+                "side": "buy",
+                "quantity": 1,
+                "filled": 0,
+                "limitPrice": 50000.0,
+                "reduceOnly": false,
+                "timestamp": "2026-09-12T04:05:06.100Z",
+                "lastUpdateTimestamp": "2026-09-12T04:05:06.100Z",
+                "algoId": null,
+                "priceTriggerOptions": null,
+                "triggerTime": null
+            },
+            "status": "ENTERED_BOOK",
+            "updateReason": null,
+            "error": null
+        },
+        {
+            "order": {
+                "type": "ORDER",
+                "orderId": "V-HELD-004",
+                "cliOrdId": "futures-held-004",
+                "symbol": "PI_XBTUSD",
+                "side": "buy",
+                "quantity": 2,
+                "filled": 1,
+                "limitPrice": 50100.0,
+                "reduceOnly": false,
+                "timestamp": "2026-09-12T04:05:06.100Z",
+                "lastUpdateTimestamp": "2026-09-12T04:05:06.200Z",
+                "algoId": null,
+                "priceTriggerOptions": null,
+                "triggerTime": null
+            },
+            "status": "ENTERED_BOOK",
+            "updateReason": "PARTIAL_FILL",
+            "error": null
+        }
+    ]
+}"#;
+
+const ORDERS_STATUS_HELD_BY_CLIENT_ID: &str = r#"{
+    "result": "success",
+    "orders": [
+        {
+            "order": {
+                "type": "ORDER",
+                "orderId": "V-HELD-003",
+                "cliOrdId": "cli+ord&id=001",
+                "symbol": "PI_XBTUSD",
+                "side": "buy",
+                "quantity": 1,
+                "filled": 0,
+                "limitPrice": 50000.0,
+                "reduceOnly": false,
+                "timestamp": "2026-09-12T04:05:06.100Z",
+                "lastUpdateTimestamp": "2026-09-12T04:05:06.100Z",
+                "algoId": null,
+                "priceTriggerOptions": null,
+                "triggerTime": null
+            },
+            "status": "ENTERED_BOOK",
+            "updateReason": null,
+            "error": null
+        }
+    ]
+}"#;
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_converges_part_filled_hold_from_orders_status() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let order = add_limit_order_to_cache(&cache, ClientOrderId::new("futures-held-001"));
+    set_venue_order_id_on_cached_order(&cache, &order, "V-HELD-001");
+    *state.orders_status_response.lock().await = Some(ORDERS_STATUS_PART_FILLED_CANCEL.to_string());
+
+    let mass_status = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status available");
+
+    let order_reports = mass_status.order_reports();
+    let report = order_reports
+        .get(&VenueOrderId::from("V-HELD-001"))
+        .expect("held order resolved from the orders-status window");
+
+    assert_eq!(report.order_status, OrderStatus::Canceled);
+    assert_eq!(report.filled_qty, Quantity::from("2"));
+    assert_eq!(report.cancel_reason.as_deref(), Some("PARTIAL_FILL"));
+    assert_eq!(
+        report.client_order_id,
+        Some(ClientOrderId::from("futures-held-001"))
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_open_order_reports_include_orders_status_window() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let order = add_limit_order_to_cache(&cache, ClientOrderId::new("futures-held-002"));
+    set_venue_order_id_on_cached_order(&cache, &order, "V-HELD-002");
+    *state.orders_status_response.lock().await = Some(ORDERS_STATUS_ENTERED_BOOK.to_string());
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+
+    let report = reports
+        .iter()
+        .find(|report| report.venue_order_id == VenueOrderId::from("V-HELD-002"))
+        .expect("held order reported from the orders-status window");
+
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert_eq!(report.filled_qty, Quantity::from("0"));
+
+    // Same window also reports a part-filled open order, not a fresh accept
+    let part_filled = reports
+        .iter()
+        .find(|report| report.venue_order_id == VenueOrderId::from("V-HELD-004"))
+        .expect("part-filled order reported from the orders-status window");
+
+    assert_eq!(part_filled.order_status, OrderStatus::PartiallyFilled);
+    assert_eq!(part_filled.filled_qty, Quantity::from("1"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_targeted_order_status_resolves_held_order_by_client_id() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    add_limit_order_to_cache(&cache, ClientOrderId::new("cli+ord&id=001"));
+    *state.orders_status_response.lock().await = Some(ORDERS_STATUS_HELD_BY_CLIENT_ID.to_string());
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(InstrumentId::from("PI_XBTUSD.KRAKEN")),
+        Some(ClientOrderId::new("cli+ord&id=001")),
+        None,
+        None,
+        None,
+    );
+
+    let report = client.generate_order_status_report(&cmd).await.unwrap();
+
+    let report = report.expect("held order resolved by client order ID");
+    assert_eq!(report.venue_order_id, VenueOrderId::from("V-HELD-003"));
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert_eq!(
+        report.client_order_id,
+        Some(ClientOrderId::from("cli+ord&id=001"))
+    );
+
+    // Reserved characters in the client order ID must stay inside one param
+    let body = state
+        .orders_status_request_body
+        .lock()
+        .await
+        .clone()
+        .expect("orders-status request recorded");
+    assert_eq!(body, "cliOrdIds=cli%2Bord%26id%3D001");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_orders_status_failure_fails_report_generation() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let order = add_limit_order_to_cache(&cache, ClientOrderId::new("futures-held-005"));
+    set_venue_order_id_on_cached_order(&cache, &order, "V-HELD-005");
+    *state.orders_status_response.lock().await =
+        Some(r#"{"result":"error","error":"maintenance"}"#.to_string());
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let result = client.generate_order_status_reports(&cmd).await;
+
+    let error = result.expect_err("orders-status failure must propagate");
+    assert!(
+        error.to_string().contains("maintenance"),
+        "unexpected error: {error}"
+    );
+}
+
+const ORDERS_STATUS_FULLY_EXECUTED: &str = r#"{
+    "result": "success",
+    "orders": [
+        {
+            "order": {
+                "type": "ORDER",
+                "orderId": "V-HELD-006",
+                "cliOrdId": "futures-filled-006",
+                "symbol": "PI_XBTUSD",
+                "side": "buy",
+                "quantity": 1,
+                "filled": 1,
+                "limitPrice": 50000.0,
+                "reduceOnly": false,
+                "timestamp": "2026-09-12T04:05:06.100Z",
+                "lastUpdateTimestamp": "2026-09-12T04:05:06.200Z",
+                "algoId": null,
+                "priceTriggerOptions": null,
+                "triggerTime": null
+            },
+            "status": "FULLY_EXECUTED",
+            "updateReason": "FULL_FILL",
+            "error": null
+        }
+    ]
+}"#;
+
+fn fills_fully_executed_now() -> String {
+    let fill_time = jiff::Timestamp::now() - jiff::Span::new().seconds(1);
+    format!(
+        r#"{{"result":"success","fills":[{{"fill_id":"f-006-1","symbol":"PI_XBTUSD","side":"buy","order_id":"V-HELD-006","fillTime":"{fill_time}","size":1,"price":50000.5,"fillType":"taker","cli_ord_id":"futures-filled-006","fee_paid":0.0,"fee_currency":"USD"}}]}}"#
+    )
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_targeted_fully_executed_prefers_fill_pricing() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    add_limit_order_to_cache(&cache, ClientOrderId::new("futures-filled-006"));
+    *state.orders_status_response.lock().await = Some(ORDERS_STATUS_FULLY_EXECUTED.to_string());
+    *state.fills_response.lock().await = Some(fills_fully_executed_now());
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(InstrumentId::from("PI_XBTUSD.KRAKEN")),
+        Some(ClientOrderId::new("futures-filled-006")),
+        None,
+        None,
+        None,
+    );
+
+    let report = client.generate_order_status_report(&cmd).await.unwrap();
+
+    let report = report.expect("fully executed order resolved");
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(report.filled_qty, Quantity::from("1"));
+    assert_eq!(
+        report.avg_px,
+        Some(rust_decimal::Decimal::from_str_exact("50000.5").unwrap()),
+        "the fills-derived report must price the execution, was {:?}",
+        report.avg_px
+    );
+}
+
+const ORDERS_STATUS_OPEN_AND_FILLED: &str = r#"{
+    "result": "success",
+    "orders": [
+        {
+            "order": {
+                "type": "ORDER",
+                "orderId": "V-HELD-007",
+                "cliOrdId": "futures-held-007",
+                "symbol": "PI_XBTUSD",
+                "side": "buy",
+                "quantity": 1,
+                "filled": 0,
+                "limitPrice": 50000.0,
+                "reduceOnly": false,
+                "timestamp": "2026-09-12T04:05:06.100Z",
+                "lastUpdateTimestamp": "2026-09-12T04:05:06.100Z",
+                "algoId": null,
+                "priceTriggerOptions": null,
+                "triggerTime": null
+            },
+            "status": "ENTERED_BOOK",
+            "updateReason": null,
+            "error": null
+        },
+        {
+            "order": {
+                "type": "ORDER",
+                "orderId": "V-HELD-008",
+                "cliOrdId": "futures-filled-008",
+                "symbol": "PI_XBTUSD",
+                "side": "buy",
+                "quantity": 1,
+                "filled": 1,
+                "limitPrice": 50000.0,
+                "reduceOnly": false,
+                "timestamp": "2026-09-12T04:05:06.100Z",
+                "lastUpdateTimestamp": "2026-09-12T04:05:06.200Z",
+                "algoId": null,
+                "priceTriggerOptions": null,
+                "triggerTime": null
+            },
+            "status": "FULLY_EXECUTED",
+            "updateReason": "FULL_FILL",
+            "error": null
+        }
+    ]
+}"#;
+
+const ORDERS_STATUS_UNPARSABLE_QUANTITY: &str = r#"{
+    "result": "success",
+    "orders": [
+        {
+            "order": {
+                "type": "ORDER",
+                "orderId": "V-HELD-009",
+                "cliOrdId": "futures-held-009",
+                "symbol": "PI_XBTUSD",
+                "side": "buy",
+                "quantity": null,
+                "filled": 0,
+                "limitPrice": 50000.0,
+                "reduceOnly": false,
+                "timestamp": "2026-09-12T04:05:06.100Z",
+                "lastUpdateTimestamp": "2026-09-12T04:05:06.100Z",
+                "algoId": null,
+                "priceTriggerOptions": null,
+                "triggerTime": null
+            },
+            "status": "ENTERED_BOOK",
+            "updateReason": null,
+            "error": null
+        }
+    ]
+}"#;
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_open_order_reports_exclude_unpriced_filled() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let open_order = add_limit_order_to_cache(&cache, ClientOrderId::new("futures-held-007"));
+    set_venue_order_id_on_cached_order(&cache, &open_order, "V-HELD-007");
+    let filled_order = add_limit_order_to_cache(&cache, ClientOrderId::new("futures-filled-008"));
+    set_venue_order_id_on_cached_order(&cache, &filled_order, "V-HELD-008");
+    *state.orders_status_response.lock().await = Some(ORDERS_STATUS_OPEN_AND_FILLED.to_string());
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+
+    assert!(
+        reports
+            .iter()
+            .any(|report| report.venue_order_id == VenueOrderId::from("V-HELD-007")),
+        "open order reported from the orders-status window, was {reports:?}"
+    );
+    assert!(
+        reports
+            .iter()
+            .all(|report| report.venue_order_id != VenueOrderId::from("V-HELD-008")),
+        "fully executed entry must defer to the fills-paired targeted path"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_targeted_fully_executed_without_fills_defers() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    add_limit_order_to_cache(&cache, ClientOrderId::new("futures-filled-006"));
+    *state.orders_status_response.lock().await = Some(ORDERS_STATUS_FULLY_EXECUTED.to_string());
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(InstrumentId::from("PI_XBTUSD.KRAKEN")),
+        Some(ClientOrderId::new("futures-filled-006")),
+        None,
+        None,
+        None,
+    );
+
+    let result = client.generate_order_status_report(&cmd).await;
+
+    let error = result.expect_err("unpriced fully executed order must defer");
+    assert!(
+        error.to_string().contains("without visible fills"),
+        "unexpected error: {error}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_orders_status_parse_failure_fails_lookup() {
+    // Ok(None) would let recon close an order that is live at the venue
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    add_limit_order_to_cache(&cache, ClientOrderId::new("futures-held-009"));
+    *state.orders_status_response.lock().await =
+        Some(ORDERS_STATUS_UNPARSABLE_QUANTITY.to_string());
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(InstrumentId::from("PI_XBTUSD.KRAKEN")),
+        Some(ClientOrderId::new("futures-held-009")),
+        None,
+        None,
+        None,
+    );
+
+    let result = client.generate_order_status_report(&cmd).await;
+
+    let error = result.expect_err("unparsable entry must fail the lookup");
+    assert!(
+        error
+            .to_string()
+            .contains("rather than the order as absent"),
+        "unexpected error: {error}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_targeted_absent_order_returns_none() {
+    let (client, _rx, cache, _state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    add_limit_order_to_cache(&cache, ClientOrderId::new("futures-absent-010"));
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(InstrumentId::from("PI_XBTUSD.KRAKEN")),
+        Some(ClientOrderId::new("futures-absent-010")),
+        None,
+        None,
+        None,
+    );
+
+    let report = client.generate_order_status_report(&cmd).await.unwrap();
+
+    assert_eq!(report, None, "venue absence must surface as Ok(None)");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_excludes_unpriced_filled() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let order = add_limit_order_to_cache(&cache, ClientOrderId::new("futures-filled-006"));
+    set_venue_order_id_on_cached_order(&cache, &order, "V-HELD-006");
+    *state.orders_status_response.lock().await = Some(ORDERS_STATUS_FULLY_EXECUTED.to_string());
+
+    let mass_status = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status available");
+
+    assert!(
+        !mass_status
+            .order_reports()
+            .contains_key(&VenueOrderId::from("V-HELD-006")),
+        "fully executed entry must defer to fills-paired pricing"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_ambiguous_modify_failure_does_not_emit_modify_rejected() {
+    let (client, mut rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses {
+            modify: OrderCommandResponse::AmbiguousFailure,
+            ..Default::default()
+        })
+        .await;
+    let client_order_id = ClientOrderId::new("spot-modify-ambiguous-001");
+    let order = add_spot_limit_order_to_cache(&cache, client_order_id);
+
+    client
+        .modify_order(modify_order_command(&order, VenueOrderId::from("S-MODIFY")))
+        .unwrap();
+    wait_for_count(&state.modify_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::ModifyRejected(event) if event.client_order_id == client_order_id
+        )
+    })
+    .await;
+    assert_eq!(state.modify_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_structured_modify_rejection_emits_modify_rejected() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            modify: OrderCommandResponse::StructuredReject,
+            ..Default::default()
+        })
+        .await;
+    let client_order_id = ClientOrderId::new("futures-modify-rejected-001");
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+
+    client
+        .modify_order(modify_order_command(&order, VenueOrderId::from("F-MODIFY")))
+        .unwrap();
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::ModifyRejected(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+            assert!(event.reason.contains("notFound"));
+        }
+        other => panic!("Expected ModifyRejected event, was {other:?}"),
+    }
+    assert_eq!(state.modify_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_ambiguous_modify_failure_does_not_emit_modify_rejected() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            modify: OrderCommandResponse::AmbiguousFailure,
+            ..Default::default()
+        })
+        .await;
+    let client_order_id = ClientOrderId::new("futures-modify-ambiguous-001");
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+
+    client
+        .modify_order(modify_order_command(&order, VenueOrderId::from("F-MODIFY")))
+        .unwrap();
+    wait_for_count(&state.modify_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::ModifyRejected(event) if event.client_order_id == client_order_id
+        )
+    })
+    .await;
+    assert_eq!(state.modify_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_unknown_modify_status_does_not_emit_modify_rejected() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            modify: OrderCommandResponse::UnknownStatus,
+            ..Default::default()
+        })
+        .await;
+    let client_order_id = ClientOrderId::new("futures-modify-unknown-001");
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+
+    client
+        .modify_order(modify_order_command(&order, VenueOrderId::from("F-MODIFY")))
+        .unwrap();
+    wait_for_count(&state.modify_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::ModifyRejected(event) if event.client_order_id == client_order_id
+        )
+    })
+    .await;
+    assert_eq!(state.modify_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_whole_batch_submit_failure_does_not_reject_children() {
+    let (client, mut rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses {
+            batch_submit: BatchSubmitResponse::WholeFailure,
+            ..Default::default()
+        })
+        .await;
+    let first_id = ClientOrderId::new("spot-batch-ambiguous-001");
+    let second_id = ClientOrderId::new("spot-batch-ambiguous-002");
+    let orders = vec![
+        add_spot_limit_order_to_cache(&cache, first_id),
+        add_spot_limit_order_to_cache(&cache, second_id),
+    ];
+
+    client
+        .submit_order_list(submit_order_list_command(
+            "SPOT-BATCH-AMBIGUOUS",
+            test_spot_instrument_id(),
+            &orders,
+        ))
+        .unwrap();
+    wait_for_count(&state.batch_submit_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| matches!(event, OrderEventAny::Rejected(_)))
+        .await;
+    assert_eq!(state.batch_submit_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_mixed_batch_submit_rejects_only_affected_child() {
+    let (client, mut rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses {
+            batch_submit: BatchSubmitResponse::Mixed,
+            ..Default::default()
+        })
+        .await;
+    let placed_id = ClientOrderId::new("spot-batch-placed-001");
+    let rejected_id = ClientOrderId::new("spot-batch-rejected-001");
+    let orders = vec![
+        add_spot_limit_order_to_cache(&cache, placed_id),
+        add_spot_limit_order_to_cache(&cache, rejected_id),
+    ];
+
+    client
+        .submit_order_list(submit_order_list_command(
+            "SPOT-BATCH-MIXED",
+            test_spot_instrument_id(),
+            &orders,
+        ))
+        .unwrap();
+    wait_for_count(&state.batch_submit_request_count, 1).await;
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Rejected(event))
+                if event.client_order_id == rejected_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+            assert_eq!(event.client_order_id, rejected_id);
+            assert!(event.reason.contains("Insufficient funds"));
+        }
+        other => panic!("Expected OrderRejected event, was {other:?}"),
+    }
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(event, OrderEventAny::Rejected(event) if event.client_order_id == placed_id)
+    })
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_whole_batch_submit_failure_does_not_reject_children() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            batch_submit: BatchSubmitResponse::WholeFailure,
+            ..Default::default()
+        })
+        .await;
+    let first_id = ClientOrderId::new("futures-batch-ambiguous-001");
+    let second_id = ClientOrderId::new("futures-batch-ambiguous-002");
+    let orders = vec![
+        add_limit_order_to_cache(&cache, first_id),
+        add_limit_order_to_cache(&cache, second_id),
+    ];
+
+    client
+        .submit_order_list(submit_order_list_command(
+            "FUTURES-BATCH-AMBIGUOUS",
+            test_instrument_id(),
+            &orders,
+        ))
+        .unwrap();
+    wait_for_count(&state.batch_submit_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| matches!(event, OrderEventAny::Rejected(_)))
+        .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_failed_batch_chunk_rejects_only_unsent_tail() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            batch_submit: BatchSubmitResponse::WholeFailure,
+            ..Default::default()
+        })
+        .await;
+    let mut orders = Vec::new();
+    let mut sent_ids = Vec::new();
+
+    for index in 0..10 {
+        let client_order_id = ClientOrderId::new(format!("futures-batch-sent-{index:02}"));
+        sent_ids.push(client_order_id);
+        orders.push(add_limit_order_to_cache(&cache, client_order_id));
+    }
+    let unsent_id = ClientOrderId::new("futures-batch-unsent-10");
+    orders.push(add_limit_order_to_cache(&cache, unsent_id));
+
+    client
+        .submit_order_list(submit_order_list_command(
+            "FUTURES-BATCH-CHUNK-FAILURE",
+            test_instrument_id(),
+            &orders,
+        ))
+        .unwrap();
+    wait_for_count(&state.batch_submit_request_count, 1).await;
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Rejected(event))
+                if event.client_order_id == unsent_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+            assert_eq!(event.client_order_id, unsent_id);
+            assert!(event.reason.contains("not sent after an earlier chunk"));
+        }
+        other => panic!("Expected OrderRejected event, was {other:?}"),
+    }
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(event, OrderEventAny::Rejected(event) if sent_ids.contains(&event.client_order_id))
+    })
+    .await;
+    assert_eq!(state.batch_submit_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_mixed_batch_submit_correlates_rejection_by_order_tag() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            batch_submit: BatchSubmitResponse::Mixed,
+            ..Default::default()
+        })
+        .await;
+    let placed_id = ClientOrderId::new("futures-batch-placed-001");
+    let rejected_id = ClientOrderId::new("futures-batch-rejected-001");
+    let orders = vec![
+        add_limit_order_to_cache(&cache, placed_id),
+        add_limit_order_to_cache(&cache, rejected_id),
+    ];
+
+    client
+        .submit_order_list(submit_order_list_command(
+            "FUTURES-BATCH-MIXED",
+            test_instrument_id(),
+            &orders,
+        ))
+        .unwrap();
+    wait_for_count(&state.batch_submit_request_count, 1).await;
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Rejected(event))
+                if event.client_order_id == rejected_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+            assert_eq!(event.client_order_id, rejected_id);
+            assert!(event.reason.contains("insufficientAvailableFunds"));
+        }
+        other => panic!("Expected OrderRejected event, was {other:?}"),
+    }
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(event, OrderEventAny::Rejected(event) if event.client_order_id == placed_id)
+    })
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_unknown_batch_status_does_not_reject_children() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            batch_submit: BatchSubmitResponse::UnknownStatus,
+            ..Default::default()
+        })
+        .await;
+    let first_id = ClientOrderId::new("futures-batch-unknown-001");
+    let second_id = ClientOrderId::new("futures-batch-unknown-002");
+    let orders = vec![
+        add_limit_order_to_cache(&cache, first_id),
+        add_limit_order_to_cache(&cache, second_id),
+    ];
+
+    client
+        .submit_order_list(submit_order_list_command(
+            "FUTURES-BATCH-UNKNOWN",
+            test_instrument_id(),
+            &orders,
+        ))
+        .unwrap();
+    wait_for_count(&state.batch_submit_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| matches!(event, OrderEventAny::Rejected(_)))
+        .await;
+    assert_eq!(state.batch_submit_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_local_cancel_validation_failure_does_not_emit_cancel_rejected() {
+    let (client, mut rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+
+    let client_order_id = ClientOrderId::new("spot-local-cancel-invalid-test-001");
+    add_spot_limit_order_to_cache(&cache, client_order_id);
+
+    let command = CancelOrder::new(
+        test_trader_id(),
+        Some(*KRAKEN_CLIENT_ID),
+        test_strategy_id(),
+        InstrumentId::from("UNKNOWN.KRAKEN"),
+        client_order_id,
+        Some(VenueOrderId::from("SPOT-SINGLE")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    client.cancel_order(command).unwrap();
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::CancelRejected(event) if event.client_order_id == client_order_id
+        )
+    })
+    .await;
+
+    assert_eq!(state.cancel_request_count.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_ambiguous_single_cancel_failure_does_not_emit_cancel_rejected() {
+    let (client, mut rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses {
+            single_cancel: SingleCancelResponse::AmbiguousFailure,
+            ..Default::default()
+        })
+        .await;
+
+    let client_order_id = ClientOrderId::new("spot-ambiguous-cancel-test-001");
+    add_spot_limit_order_to_cache(&cache, client_order_id);
+
+    client
+        .cancel_order(spot_cancel_order_command(
+            client_order_id,
+            VenueOrderId::from("SPOT-SINGLE"),
+        ))
+        .unwrap();
+
+    wait_for_count(&state.cancel_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::CancelRejected(event) if event.client_order_id == client_order_id
+        )
+    })
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_non_order_api_cancel_failure_does_not_emit_cancel_rejected() {
+    let (client, mut rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses {
+            single_cancel: SingleCancelResponse::NonOrderApiError,
+            ..Default::default()
+        })
+        .await;
+
+    let client_order_id = ClientOrderId::new("spot-rate-limit-cancel-test-001");
+    add_spot_limit_order_to_cache(&cache, client_order_id);
+
+    client
+        .cancel_order(spot_cancel_order_command(
+            client_order_id,
+            VenueOrderId::from("SPOT-SINGLE"),
+        ))
+        .unwrap();
+
+    wait_for_count(&state.cancel_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::CancelRejected(event) if event.client_order_id == client_order_id
+        )
+    })
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_explicit_single_cancel_api_error_emits_cancel_rejected() {
+    let (client, mut rx, cache, _state) =
+        connected_spot_client_with_command_responses(CommandResponses {
+            single_cancel: SingleCancelResponse::StructuredReject,
+            ..Default::default()
+        })
+        .await;
+
+    let client_order_id = ClientOrderId::new("spot-venue-cancel-reject-test-001");
+    add_spot_limit_order_to_cache(&cache, client_order_id);
+
+    client
+        .cancel_order(spot_cancel_order_command(
+            client_order_id,
+            VenueOrderId::from("SPOT-SINGLE"),
+        ))
+        .unwrap();
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::CancelRejected(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+            assert!(event.reason.contains("Unknown order"));
+        }
+        other => panic!("Expected CancelRejected event, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_whole_batch_cancel_failure_does_not_emit_one_reject_per_order() {
+    let (client, mut rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses {
+            batch_cancel: BatchCancelResponse::WholeFailure,
+            ..Default::default()
+        })
+        .await;
+
+    let first_client_order_id = ClientOrderId::new("spot-batch-cancel-whole-fail-001");
+    let second_client_order_id = ClientOrderId::new("spot-batch-cancel-whole-fail-002");
+    add_spot_limit_order_to_cache(&cache, first_client_order_id);
+    add_spot_limit_order_to_cache(&cache, second_client_order_id);
+
+    client
+        .batch_cancel_orders(spot_batch_cancel_command(vec![
+            spot_cancel_order_command(first_client_order_id, VenueOrderId::from("SPOT-BATCH-1")),
+            spot_cancel_order_command(second_client_order_id, VenueOrderId::from("SPOT-BATCH-2")),
+        ]))
+        .unwrap();
+
+    wait_for_count(&state.batch_cancel_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(event, OrderEventAny::CancelRejected(_))
+    })
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_whole_cancel_all_failure_does_not_emit_cancel_rejected() {
+    let (client, mut rx, _cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses {
+            cancel_all: BatchCancelResponse::WholeFailure,
+            ..Default::default()
+        })
+        .await;
+
+    client
+        .cancel_all_orders(spot_cancel_all_orders_command())
+        .unwrap();
+
+    wait_for_count(&state.cancel_all_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(event, OrderEventAny::CancelRejected(_))
+    })
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_ambiguous_single_cancel_failure_does_not_emit_cancel_rejected() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            single_cancel: SingleCancelResponse::AmbiguousFailure,
+            ..Default::default()
+        })
+        .await;
+
+    let client_order_id = ClientOrderId::new("ambiguous-cancel-test-001");
+    add_limit_order_to_cache(&cache, client_order_id);
+
+    client
+        .cancel_order(cancel_order_command(
+            client_order_id,
+            VenueOrderId::from("V-SINGLE"),
+        ))
+        .unwrap();
+
+    wait_for_count(&state.cancel_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::CancelRejected(event) if event.client_order_id == client_order_id
+        )
+    })
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_explicit_structured_single_cancel_rejection_emits_cancel_rejected() {
+    let (client, mut rx, cache, _state) =
+        connected_client_with_command_responses(CommandResponses {
+            single_cancel: SingleCancelResponse::StructuredReject,
+            ..Default::default()
+        })
+        .await;
+
+    let client_order_id = ClientOrderId::new("venue-cancel-reject-test-001");
+    add_limit_order_to_cache(&cache, client_order_id);
+
+    client
+        .cancel_order(cancel_order_command(
+            client_order_id,
+            VenueOrderId::from("V-SINGLE"),
+        ))
+        .unwrap();
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::CancelRejected(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+            assert!(event.reason.contains("notFound"));
+        }
+        other => panic!("Expected CancelRejected event, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_local_cancel_validation_failure_does_not_emit_cancel_rejected() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    let client_order_id = ClientOrderId::new("local-cancel-invalid-test-001");
+    add_limit_order_to_cache(&cache, client_order_id);
+
+    let command = CancelOrder::new(
+        test_trader_id(),
+        Some(*KRAKEN_CLIENT_ID),
+        test_strategy_id(),
+        InstrumentId::from("UNKNOWN.KRAKEN"),
+        client_order_id,
+        Some(VenueOrderId::from("V-SINGLE")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    client.cancel_order(command).unwrap();
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::CancelRejected(event) if event.client_order_id == client_order_id
+        )
+    })
+    .await;
+
+    assert_eq!(state.cancel_request_count.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_batch_cancel_local_validation_failure_does_not_emit_cancel_rejected() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    let client_order_id = ClientOrderId::new("batch-local-cancel-invalid-test-001");
+    add_limit_order_to_cache(&cache, client_order_id);
+
+    let command = CancelOrder::new(
+        test_trader_id(),
+        Some(*KRAKEN_CLIENT_ID),
+        test_strategy_id(),
+        InstrumentId::from("UNKNOWN.KRAKEN"),
+        client_order_id,
+        Some(VenueOrderId::from("V-BATCH-LOCAL")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    client
+        .batch_cancel_orders(BatchCancelOrders::new(
+            test_trader_id(),
+            Some(*KRAKEN_CLIENT_ID),
+            test_strategy_id(),
+            test_instrument_id(),
+            vec![command],
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::CancelRejected(event) if event.client_order_id == client_order_id
+        )
+    })
+    .await;
+
+    assert_eq!(state.batch_cancel_request_count.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_whole_batch_cancel_failure_does_not_emit_one_reject_per_order() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            batch_cancel: BatchCancelResponse::WholeFailure,
+            ..Default::default()
+        })
+        .await;
+
+    let first_client_order_id = ClientOrderId::new("batch-cancel-whole-fail-001");
+    let second_client_order_id = ClientOrderId::new("batch-cancel-whole-fail-002");
+    add_limit_order_to_cache(&cache, first_client_order_id);
+    add_limit_order_to_cache(&cache, second_client_order_id);
+
+    client
+        .batch_cancel_orders(batch_cancel_command(vec![
+            cancel_order_command(first_client_order_id, VenueOrderId::from("V-BATCH-1")),
+            cancel_order_command(second_client_order_id, VenueOrderId::from("V-BATCH-2")),
+        ]))
+        .unwrap();
+
+    wait_for_count(&state.batch_cancel_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(event, OrderEventAny::CancelRejected(_))
+    })
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_mixed_per_item_batch_cancel_result_rejects_only_failed_item() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            batch_cancel: BatchCancelResponse::Mixed,
+            ..Default::default()
+        })
+        .await;
+
+    let ok_client_order_id = ClientOrderId::new("batch-cancel-ok-001");
+    let reject_client_order_id = ClientOrderId::new("batch-cancel-reject-001");
+    add_limit_order_to_cache(&cache, ok_client_order_id);
+    add_limit_order_to_cache(&cache, reject_client_order_id);
+
+    client
+        .batch_cancel_orders(batch_cancel_command(vec![
+            cancel_order_command(ok_client_order_id, VenueOrderId::from("V-BATCH-OK")),
+            cancel_order_command(reject_client_order_id, VenueOrderId::from("V-BATCH-REJECT")),
+        ]))
+        .unwrap();
+
+    wait_for_count(&state.batch_cancel_request_count, 1).await;
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::CancelRejected(event))
+                if event.client_order_id == reject_client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
+            assert_eq!(event.client_order_id, reject_client_order_id);
+            assert!(event.reason.contains("notFound"));
+        }
+        other => panic!("Expected CancelRejected event, was {other:?}"),
+    }
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::CancelRejected(event) if event.client_order_id == ok_client_order_id
+        )
+    })
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_whole_cancel_all_failure_does_not_emit_cancel_rejected() {
+    let (client, mut rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            cancel_all: BatchCancelResponse::WholeFailure,
+            ..Default::default()
+        })
+        .await;
+
+    client
+        .cancel_all_orders(cancel_all_orders_command())
+        .unwrap();
+
+    wait_for_count(&state.cancel_all_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(event, OrderEventAny::CancelRejected(_))
+    })
+    .await;
+}

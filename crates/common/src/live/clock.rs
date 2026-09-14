@@ -18,7 +18,8 @@
 use std::{collections::BTreeMap, ops::Deref, sync::Arc};
 
 use nautilus_core::{
-    AtomicTime, UnixNanos, correctness::check_predicate_true, time::get_atomic_clock_realtime,
+    AtomicTime, DurationNanos, UnixNanos, correctness::check_predicate_true,
+    time::get_atomic_clock_realtime,
 };
 use ustr::Ustr;
 
@@ -168,7 +169,7 @@ impl Clock for LiveClock {
         };
 
         // Safe to calculate interval now that we've ensured alert_time_ns >= ts_now
-        let interval_ns = create_valid_interval((alert_time_ns - ts_now).into());
+        let interval_ns = create_valid_interval(alert_time_ns - ts_now);
         let fire_immediately = alert_time_ns == ts_now;
         let sender = self.resolve_time_event_sender();
 
@@ -193,7 +194,7 @@ impl Clock for LiveClock {
     fn set_timer_ns(
         &mut self,
         name: &str,
-        interval_ns: u64,
+        interval_ns: DurationNanos,
         start_time_ns: Option<UnixNanos>,
         stop_time_ns: Option<UnixNanos>,
         callback: Option<TimeEventCallback>,
@@ -298,7 +299,7 @@ mod tests {
         time::Duration,
     };
 
-    use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
+    use nautilus_core::{DurationNanos, UnixNanos, time::get_atomic_clock_realtime};
     use parking_lot::Mutex;
     use rstest::rstest;
     use ustr::Ustr;
@@ -385,7 +386,7 @@ mod tests {
         let mut clock = LiveClock::new(Some(sender));
         clock.register_default_handler(TimeEventCallback::from(|_| {}));
 
-        let fast_interval = Duration::from_millis(10).as_nanos() as u64;
+        let fast_interval = DurationNanos::from_millis(10);
         clock
             .set_timer_ns("replace", fast_interval, None, None, None, None, None)
             .unwrap();
@@ -395,7 +396,7 @@ mod tests {
             .expect("fast timer send should pause");
         events.lock().clear();
 
-        let slow_interval = Duration::from_millis(30).as_nanos() as u64;
+        let slow_interval = DurationNanos::from_millis(30);
         clock
             .set_timer_ns("replace", slow_interval, None, None, None, None, None)
             .unwrap();
@@ -404,9 +405,9 @@ mod tests {
         wait_for_events(&events, 3, Duration::from_secs(2));
 
         let snapshot = events.lock().clone();
-        let diffs: Vec<u64> = snapshot
+        let diffs: Vec<DurationNanos> = snapshot
             .array_windows()
-            .map(|[a, b]| b.0.ts_event.as_u64() - a.0.ts_event.as_u64())
+            .map(|[a, b]| b.0.ts_event - a.0.ts_event)
             .collect();
 
         assert!(!diffs.is_empty());
@@ -426,7 +427,7 @@ mod tests {
         clock.register_default_handler(TimeEventCallback::from(|_| {}));
 
         let now = clock.timestamp_ns();
-        let alert_time = now + Duration::from_mins(1).as_nanos() as u64;
+        let alert_time = now + DurationNanos::from_mins(1);
 
         clock
             .set_time_alert_ns("alert-callback", alert_time, None, None)
@@ -483,7 +484,7 @@ mod tests {
         clock
             .set_timer_ns(
                 "reset-test",
-                Duration::from_millis(15).as_nanos() as u64,
+                DurationNanos::from_millis(15),
                 None,
                 None,
                 Some(TimeEventCallback::from(|_| {})),
@@ -520,9 +521,9 @@ mod tests {
         clock.register_default_handler(TimeEventCallback::from(|_| {}));
 
         let name = Ustr::from("expiring");
-        let interval_ns = Duration::from_millis(10).as_nanos() as u64;
+        let interval_ns = DurationNanos::from_millis(10);
         let start_time = clock.timestamp_ns();
-        let stop_time = start_time + Duration::from_millis(30).as_nanos() as u64;
+        let stop_time = start_time + DurationNanos::from_millis(30);
 
         clock
             .set_timer_ns(
@@ -565,7 +566,7 @@ mod tests {
         let mut clock = LiveClock::new(Some(sender));
 
         let now = clock.timestamp_ns();
-        let alert_time = now + Duration::from_mins(1).as_nanos() as u64;
+        let alert_time = now + DurationNanos::from_mins(1);
 
         clock
             .set_time_alert_ns(
@@ -583,7 +584,7 @@ mod tests {
         // Rescheduling without a callback fails the predicate check; the error
         // return must not have destroyed the previously scheduled alert
         let err = clock
-            .set_time_alert_ns("alert", alert_time + 1000u64, None, None)
+            .set_time_alert_ns("alert", alert_time + DurationNanos::new(1000), None, None)
             .unwrap_err();
         assert!(
             err.to_string().contains("No callbacks provided"),

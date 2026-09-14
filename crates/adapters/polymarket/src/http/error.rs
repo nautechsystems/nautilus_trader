@@ -17,7 +17,8 @@
 
 use std::time::Duration;
 
-use nautilus_network::http::{HttpClientError, ReqwestError, StatusCode};
+use nautilus_network::http::{HttpClientError, HttpResponse, StatusCode};
+use serde::de::DeserializeOwned;
 use thiserror::Error;
 
 const ORDER_VERSION_MISMATCH: &str = "order_version_mismatch";
@@ -169,24 +170,6 @@ impl Error {
         }
     }
 
-    /// Classifies a reqwest error into the appropriate error variant.
-    #[expect(clippy::needless_pass_by_value)]
-    pub fn from_reqwest(error: ReqwestError) -> Self {
-        if error.is_timeout() {
-            Self::Timeout
-        } else if let Some(status) = error.status() {
-            let status_code = status.as_u16();
-            match status_code {
-                429 => Self::rate_limit("unknown", 0, None),
-                _ => Self::http(status_code, format!("HTTP error: {error}")),
-            }
-        } else if error.is_connect() || error.is_request() {
-            Self::transport(format!("Request error: {error}"))
-        } else {
-            Self::transport(format!("Unknown reqwest error: {error}"))
-        }
-    }
-
     pub fn from_http_client(error: HttpClientError) -> Self {
         match error {
             HttpClientError::TimeoutError(_) => Self::Timeout,
@@ -268,6 +251,17 @@ impl Error {
             | Self::Exchange(message) => strategy_rejection_reason(message),
             _ => strategy_rejection_reason(&self.to_string()),
         }
+    }
+}
+
+pub(crate) fn decode_response<T: DeserializeOwned>(response: &HttpResponse) -> Result<T> {
+    if response.status.is_success() {
+        serde_json::from_slice(&response.body).map_err(Error::Serde)
+    } else {
+        Err(Error::from_status_code(
+            response.status.as_u16(),
+            &response.body,
+        ))
     }
 }
 

@@ -21,18 +21,18 @@ instrument must resolve each order individually.
 
 Caveats for mixed-instrument lists:
 
-- Pre-trade checks for price precision, quantity precision, and GTD expiry use each order's own
+- **Pre-trade checks**: Price precision, quantity precision, and GTD expiry use each order's own
   instrument.
-- The cumulative risk check for free balance, notional bounds, position-reducing exposure, and
-  market data uses the list's representative instrument. For a mixed list, this produces a
-  single-instrument bound rather than per-instrument accuracy.
-- Cache lookups like `cache.order_lists(instrument_id=...)` filter against the representative
+- **Cumulative risk check**: Free balance, notional bounds, position-reducing exposure, and market
+  data use the list's representative instrument. For a mixed list, this produces a single-instrument
+  bound rather than per-instrument accuracy.
+- **Cache lookups**: `cache.order_lists(instrument_id=...)` filters against the representative
   `instrument_id`; lists containing other instruments will not match queries for those other
   instruments.
-- The execution engine denies mixed-instrument lists when a `position_id` is supplied
-  (a position belongs to a single instrument, regardless of OMS).
-- Adapter `submit_order_list` implementations vary. Some iterate orders per leg and resolve
-  each order's own `instrument_id` against the venue API; others still build the batch
+- **Position IDs**: The execution engine denies mixed-instrument lists when a `position_id` is
+  supplied (a position belongs to a single instrument, regardless of OMS).
+- **Adapter batching**: `submit_order_list` implementations vary. Some iterate orders per leg and
+  resolve each order's own `instrument_id` against the venue API; others still build the batch
   request around the list's representative `instrument_id` and will misroute non-first
   orders. Treat mixed-instrument lists as adapter-specific; verify the target adapter's
   behavior before relying on it. Backtesting and strategy-managed routing avoid relying on an
@@ -40,10 +40,10 @@ Caveats for mixed-instrument lists:
 
 ## Contingency types
 
-- **OTO (One-Triggers-Other):** A parent order releases one or more child orders after a configured
+- **OTO (One-Triggers-Other)**: A parent order releases one or more child orders after a configured
   fill condition.
-- **OCO (One-Cancels-Other):** A fill in one linked order requests cancellation of the others.
-- **OUO (One-Updates-Other):** A fill in one linked order requests a quantity update for the others.
+- **OCO (One-Cancels-Other)**: A fill in one linked order requests cancellation of the others.
+- **OUO (One-Updates-Other)**: A fill in one linked order requests a quantity update for the others.
 
 :::info
 These types correspond to FIX
@@ -73,12 +73,56 @@ The handler determines where the children wait. The backtest engine can hold the
 live adapter may send native venue instructions, submit all legs, reject the list, or require the
 strategy to manage the relationship.
 
+#### Child sizing
+
 Before the parent's first fill, strategy management propagates parent quantity updates to open,
-non-active-local OTO children. After filling starts, parent events keep each child quantity equal to
-the parent's cumulative filled quantity. A child fill or update waits for the next parent event to
-refresh that target. Parent processing cancels an open child if the parent closes without a fill or
-if the child's cumulative fills meet or exceed the refreshed target. The active-local emulator
-remains responsible for submitting a child held locally.
+non-active-local OTO children.
+
+After filling starts, each parent event starts the child target at the parent's cumulative filled
+quantity. For an execution spawn, this quantity includes fills from every order in the spawn.
+
+For a parent linked to a position, the manager then adjusts the target in order:
+
+1. For a non-spread parent with a reduce-only child, cap the total target at the child's filled
+   quantity plus the current [commission-adjusted](../positions.md#base-currency-commissions)
+   position quantity. This keeps the child's remaining quantity within the open position.
+1. Round the total target down to a multiple of the child instrument's size increment.
+1. When configured, treat a rounded target below the child instrument's minimum quantity as zero.
+
+The calculation does not round position or account state. A remaining position too small to meet
+the child instrument's size increment and optional minimum quantity stays open without reduce-only
+child coverage. Spread parents skip the position cap because the execution engine does not create
+positions for them. Non-reduce-only children also skip the cap. Both still use the child
+instrument's size rules.
+
+#### Required sizing state
+
+When a fill event, cached parent, or filled execution-spawn sibling identifies a position, sizing
+requires:
+
+- The parent and child instruments in the cache.
+- A positive size increment for the child instrument.
+- The linked position in the cache for a non-spread parent with a reduce-only child.
+- Matching fill-event and cached position IDs when both are present.
+
+A fill-event position ID that conflicts with cached ownership stops processing for that parent
+event. Other missing sizing state leaves the affected child unchanged, and processing continues
+with the remaining linked children.
+
+#### Child lifecycle
+
+Parent events apply the validated target according to the child and parent state:
+
+| Condition                                                | Action                                                     |
+| -------------------------------------------------------- | ---------------------------------------------------------- |
+| Managed child has a different positive target            | Update its total quantity.                                 |
+| Target is zero; parent or execution spawn remains active | Keep the child unchanged and wait for executable quantity. |
+| Target is zero; parent or execution spawn closes         | Cancel the child.                                          |
+| Child fills meet or exceed the positive target           | Cancel any remaining quantity.                             |
+| Active-local child reaches an executable positive target | The active-local emulator submits it once.                 |
+
+A child fill or update does not recalculate the target immediately. The next parent event refreshes
+it.
 
 #### Trigger models
 
@@ -119,12 +163,44 @@ Another sibling can fill before cancellation completes.
 
 ### One-Updates-Other (OUO)
 
+#### Updates after a sibling fill
+
 In backtest local matching, a fill in one OUO order uses that order's remaining quantity as the
-target for each open sibling. The engine cancels a sibling when the target is zero or its filled
-quantity already meets the target; otherwise, it updates the sibling when needed. This behavior
-suits equal-sized peers and does not preserve a ratio between unequal starting quantities. With
-strategy management enabled, the strategy applies the same update or cancellation behavior to
-open, non-active-local siblings. Otherwise, live behavior depends on adapter and venue support.
+target for each open sibling:
+
+- If the target is zero or the sibling's filled quantity already meets the target, cancel the sibling.
+- Otherwise, update the sibling's quantity when needed.
+
+This behavior suits equal-sized peers and does not preserve a ratio between unequal starting
+quantities. With strategy management enabled, the strategy applies the same update or cancellation
+behavior to open, non-active-local siblings. Otherwise, live behavior depends on adapter and venue
+support.
+
+#### Backtest reduce-only resizing
+
+With reduce-only enforcement enabled, a fill can resize resting reduce-only orders to the available
+position quantity, subject to parent caps. When contingent-order support is also enabled, a resized
+OUO order propagates its remaining quantity to siblings that are:
+
+- Open and not active local.
+- Passive orders resting on the same instrument's book.
+
+Siblings do not need to be `reduce_only`. Each sibling's quantity update follows these rules:
+
+- Add the sibling's prior fills to the propagated remaining quantity to obtain its total quantity.
+- Apply the sibling's own cached parent's filled-quantity cap, when available.
+- Never reduce the total below the sibling's prior fills.
+
+The order already being filled retains its active fill loop's quantity rules. This propagation does
+not trigger matching itself.
+
+#### Backtest cancellation at zero capacity
+
+With reduce-only enforcement and contingent-order support enabled:
+
+- When the reduce-only order has no remaining capacity, cancel it and its eligible siblings without
+  resizing the siblings. This also covers siblings whose acceptance event is still awaiting delivery.
+- When a sibling exhausts only its own parent allowance, resize it to its filled quantity, then cancel it.
 
 ## Constructing contingent orders
 
@@ -214,4 +290,4 @@ rejection after the entry fills.
 
 - [Orders](index.md) - Order concepts, execution instructions, and the order factory.
 - [Emulated orders](emulated.md) - Emulating order types on venues without native support.
-- [Execution](../execution.md) - Order execution and fill handling.
+- [Execution](../execution/) - Order execution and fill handling.

@@ -32,12 +32,14 @@ use nautilus_common::{
     msgbus::{self, MessagingSwitchboard, TypedHandler, switchboard},
 };
 use nautilus_core::{
-    UUID4, UnixNanos,
+    DurationNanos, UUID4, UnixNanos,
     correctness::{CorrectnessResultExt, FAILED, check_equal},
 };
 use nautilus_execution::{
     matching_core::RestingOrder,
-    matching_engine::{OrderMatchingEngine, config::OrderMatchingEngineConfig},
+    matching_engine::{
+        OrderMatchingEngine, config::OrderMatchingEngineConfig, inflight::InflightOrders,
+    },
     models::{
         fee::FeeModelHandle,
         fill::FillModelHandle,
@@ -170,6 +172,7 @@ pub struct SimulatedExchange {
     cache: Rc<RefCell<Cache>>,
     message_queue: VecDeque<TradingCommand>,
     inflight_queue: BinaryHeap<InflightCommand>,
+    inflight_orders: InflightOrders,
     inflight_counter: AHashMap<UnixNanos, u32>,
     bar_execution: bool,
     bar_adaptive_high_low_ordering: bool,
@@ -187,6 +190,7 @@ pub struct SimulatedExchange {
     frozen_account: bool,
     queue_position: bool,
     oto_full_trigger: bool,
+    defer_option_settlement: bool,
     price_protection_points: u32,
     liquidation_enabled: bool,
     liquidation_trigger_ratio: f64,
@@ -258,6 +262,7 @@ impl SimulatedExchange {
             cache,
             message_queue: VecDeque::new(),
             inflight_queue: BinaryHeap::new(),
+            inflight_orders: InflightOrders::default(),
             inflight_counter: AHashMap::new(),
             bar_execution: config.bar_execution,
             bar_adaptive_high_low_ordering: config.bar_adaptive_high_low_ordering,
@@ -275,6 +280,7 @@ impl SimulatedExchange {
             frozen_account: config.frozen_account,
             queue_position: config.queue_position,
             oto_full_trigger: config.oto_full_trigger,
+            defer_option_settlement: config.defer_option_settlement,
             price_protection_points: config.price_protection_points,
             liquidation_enabled: config.liquidation_enabled,
             liquidation_trigger_ratio: config.liquidation_trigger_ratio,
@@ -434,7 +440,8 @@ impl SimulatedExchange {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The exchange account type is `Cash` and the instrument is a `CryptoPerpetual` or `CryptoFuture`.
+    /// - The exchange account type is `Cash` and the instrument is a `CryptoPerpetual`,
+    ///   `CryptoFuture`, `FuturesContract`, or `PerpetualContract`.
     /// - The matching engine raw ID is exhausted.
     ///
     /// # Panics
@@ -452,6 +459,7 @@ impl SimulatedExchange {
         if self.account_type == AccountType::Cash
             && (matches!(instrument, InstrumentAny::CryptoPerpetual(_))
                 || matches!(instrument, InstrumentAny::CryptoFuture(_))
+                || matches!(instrument, InstrumentAny::FuturesContract(_))
                 || matches!(instrument, InstrumentAny::PerpetualContract(_)))
         {
             anyhow::bail!("Cash account cannot trade futures or perpetuals")
@@ -477,6 +485,7 @@ impl SimulatedExchange {
             .use_market_order_acks(self.use_market_order_acks)
             .queue_position(self.queue_position)
             .oto_full_trigger(self.oto_full_trigger)
+            .defer_option_settlement(self.defer_option_settlement)
             .maybe_price_protection_points(price_protection)
             .build();
         let instrument_id = instrument.id();
@@ -502,6 +511,7 @@ impl SimulatedExchange {
             matching_engine.set_event_handler(Rc::clone(handler));
         }
         self.instruments.insert(instrument_id, instrument);
+        matching_engine.set_inflight_orders(self.inflight_orders.clone());
         self.matching_engines.insert(instrument_id, matching_engine);
 
         log::info!("Added instrument {instrument_id} and created matching engine");
@@ -827,6 +837,10 @@ impl SimulatedExchange {
             return;
         }
 
+        if self.use_message_queue {
+            self.inflight_orders.insert(&command);
+        }
+
         if !self.use_message_queue {
             let _guard = DeferEventsGuard::new(Rc::clone(&self.deferring_events));
             self.process_trading_command(command);
@@ -874,7 +888,7 @@ impl SimulatedExchange {
     ///
     /// Returns an error if module pre-processing or matching engine processing fails.
     pub fn process_order_book_delta(&mut self, delta: OrderBookDelta) -> anyhow::Result<()> {
-        self.pre_process_modules(&Data::Delta(delta))?;
+        self.pre_process_modules(&Data::BookDelta(delta))?;
 
         if !self.matching_engines.contains_key(&delta.instrument_id) {
             let instrument = {
@@ -906,7 +920,7 @@ impl SimulatedExchange {
     ///
     /// Returns an error if module pre-processing or matching engine processing fails.
     pub fn process_order_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
-        self.pre_process_modules(&Data::Deltas(Box::new(deltas.clone())))?;
+        self.pre_process_modules(&Data::BookDeltas(Box::new(deltas.clone())))?;
 
         if !self.matching_engines.contains_key(&deltas.instrument_id) {
             let instrument = {
@@ -938,7 +952,7 @@ impl SimulatedExchange {
     ///
     /// Returns an error if module pre-processing or matching engine processing fails.
     pub fn process_order_book_depth10(&mut self, depth: &OrderBookDepth10) -> anyhow::Result<()> {
-        self.pre_process_modules(&Data::Depth10(Box::new(*depth)))?;
+        self.pre_process_modules(&Data::BookDepth10(Box::new(*depth)))?;
 
         if !self.matching_engines.contains_key(&depth.instrument_id) {
             let instrument = {
@@ -1551,8 +1565,11 @@ impl SimulatedExchange {
         let Some(interval_mins) = funding_rate.interval else {
             return false;
         };
-        let interval_ns = u64::from(interval_mins) * 60 * 1_000_000_000;
-        interval_ns > 0 && funding_rate.ts_event.as_u64().is_multiple_of(interval_ns)
+        let Ok(interval) = DurationNanos::try_from_mins(u64::from(interval_mins)) else {
+            return false;
+        };
+
+        !interval.is_zero() && funding_rate.ts_event.floor(interval) == funding_rate.ts_event
     }
 
     fn funding_boundary(funding_rate: &FundingRateUpdate) -> Option<UnixNanos> {
@@ -1701,6 +1718,7 @@ impl SimulatedExchange {
         self.funding_settlements.clear();
         self.message_queue.clear();
         self.inflight_queue.clear();
+        self.inflight_orders.clear();
         self.inflight_counter.clear();
 
         log::info!("Resetting exchange state");
@@ -1836,6 +1854,7 @@ impl SimulatedExchange {
     }
 
     fn process_trading_command(&mut self, command: TradingCommand) {
+        self.inflight_orders.remove(&command);
         let instrument_id = command.instrument_id();
         assert!(
             self.matching_engines.contains_key(&instrument_id),
@@ -2073,6 +2092,7 @@ impl Drop for DeferEventsGuard {
 #[cfg(test)]
 mod tests {
     use nautilus_common::messages::execution::{QueryAccount, QueryOrder, SubmitOrder};
+    use nautilus_core::DurationNanos;
     use nautilus_execution::models::latency::{LatencyModelHandle, StaticLatencyModel};
     use nautilus_model::{
         accounts::MarginAccount,
@@ -2114,10 +2134,10 @@ mod tests {
         match dispatch {
             Dispatch::Latency => {
                 config.latency_model = Some(LatencyModelHandle::new(StaticLatencyModel::new(
-                    UnixNanos::default(),
-                    UnixNanos::default(),
-                    UnixNanos::default(),
-                    UnixNanos::default(),
+                    DurationNanos::default(),
+                    DurationNanos::default(),
+                    DurationNanos::default(),
+                    DurationNanos::default(),
                 )));
             }
             Dispatch::Queued => {} // Defaults: use_message_queue = true, no latency

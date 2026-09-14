@@ -71,7 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let token = client
         .authenticate(&api_key, &api_secret, AX_AUTH_TOKEN_TTL_SECS)
         .await?;
-    client.set_session_token(token.token);
+    client.set_session_token(token.into_token());
     log::info!("Authenticated");
 
     // Cancel all open orders

@@ -89,16 +89,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (api_key, api_secret) = credential.into_parts();
 
     let data_config = KrakenDataClientConfig {
-        api_key: Some(api_key.clone()),
-        api_secret: Some(api_secret.clone()),
+        api_key: Some(api_key.clone().into()),
+        api_secret: Some(api_secret.clone().into()),
         product_type,
         ..Default::default()
     };
 
     let exec_config = KrakenExecutionClientConfig {
         account_id,
-        api_key,
-        api_secret,
+        api_key: api_key.into(),
+        api_secret: api_secret.into(),
         product_type,
         ..Default::default()
     };
@@ -122,7 +122,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from(STRATEGY_ID)),
-            external_order_claims: Some(vec![instrument_id]),
+            external_order_instrument_ids: Some(vec![instrument_id]),
             // Kraken truncates non-UUID client order IDs to 18 chars,
             // which can cause collisions across sessions at the same time of day.
             use_uuid_client_order_ids: true,

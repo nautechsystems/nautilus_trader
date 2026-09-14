@@ -238,11 +238,24 @@ pub(crate) async fn fetch_instrument_definitions(
     currency: &str,
     expired: bool,
 ) -> anyhow::Result<Vec<DeriveInstrument>> {
-    let (mut definitions, options, erc20s) = tokio::try_join!(
-        fetch_instruments_if_listed(http_client, currency, DeriveInstrumentType::Perp, expired),
-        fetch_instruments_if_listed(http_client, currency, DeriveInstrumentType::Option, expired,),
-        fetch_instruments_if_listed(http_client, currency, DeriveInstrumentType::Erc20, expired,),
-    )?;
+    let (mut definitions, options, erc20s) = Box::pin(async {
+        tokio::try_join!(
+            fetch_instruments_if_listed(http_client, currency, DeriveInstrumentType::Perp, expired),
+            fetch_instruments_if_listed(
+                http_client,
+                currency,
+                DeriveInstrumentType::Option,
+                expired,
+            ),
+            fetch_instruments_if_listed(
+                http_client,
+                currency,
+                DeriveInstrumentType::Erc20,
+                expired,
+            ),
+        )
+    })
+    .await?;
     definitions.extend(options);
     definitions.extend(erc20s);
 

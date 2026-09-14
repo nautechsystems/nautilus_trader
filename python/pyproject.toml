@@ -1,6 +1,6 @@
 [project]
 name = "nautilus-trader"
-version = "2.0.0rc4"
+version = "2.0.0rc5"
 description = "Production-grade Rust-native trading engine with deterministic event-driven architecture"
 authors = [{ name = "Nautech Systems", email = "info@nautechsystems.io" }]
 classifiers = [
@@ -28,9 +28,9 @@ dependencies = []
 [project.optional-dependencies]
 visualization = [
   "pandas>=2.3.3,<4.0.0",
-  "plotly>=6.9.0,<7.0.0",
-  "kaleido>=1.3.0,<2.0.0",
-  "simplejson>=4.1.1,<5.0.0",
+  "plotly>=7.0.0,<8.0.0",
+  "kaleido>=1.4.0,<2.0.0",
+  "simplejson>=4.1.2,<5.0.0",
 ]
 
 [project.urls]
@@ -67,8 +67,7 @@ include = ["**/*.pyi"]
 required-version = ">=0.12,<0.13"
 environments = ["sys_platform != 'win32' or platform_machine == 'AMD64'"]
 exclude-newer = "7 days"
-# Remove after maturin 1.15.0 clears the global release cooldown
-exclude-newer-package = { maturin = "2026-08-24T12:12:00Z" }
+exclude-newer-package = { ruff = "2026-09-11T00:00:00Z" }
 # Block sdist builds for every third-party package in python/uv.lock so
 # unexpected loss of wheel publishing fails `uv lock` instead of silently
 # building from source. Kept in sync with python/uv.lock by
@@ -142,14 +141,13 @@ no-build-package = [
   "ty",
   "typing-extensions",
   "tzdata",
-  "uc-micro-py",
   "urllib3",
   "uvicorn",
   "uvloop",
 ]
 
 [dependency-groups]
-dev = ["maturin==1.15.0", "ruff>=0.16.4", "ty>=0.0.74"]
+dev = ["maturin==1.15.0", "ruff>=0.16.7", "ty>=0.0.78"]
 test = [
   "pytest>=9.1.1",
   "pytest-asyncio>=1.4.0",
@@ -182,7 +180,10 @@ exclude = [
 ]
 
 [tool.ruff.lint]
+preview = true
+explicit-preview-rules = true
 select = ["ALL"]
+extend-select = ["PLW1514"]
 
 ignore = [
   "COM812", # Ruff formatter controls trailing commas
@@ -395,12 +396,6 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
   "TC001",
   "TC003",
 ] # Root-relative form used by repository-wide checks
-"memray_tests/**/*.py" = [
-  "S101",
-] # Memory tests use assertions like the main test suite
-"python/memray_tests/**/*.py" = [
-  "S101",
-] # Root-relative form used by repository-wide checks
 "tests/unit/persistence/test_option_greeks_replay.py" = ["ERA001"]
 "python/tests/unit/persistence/test_option_greeks_replay.py" = [
   "ERA001",
@@ -432,6 +427,7 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 ".pre-commit-hooks/check_pyo3_names.py" = ["PLR0912", "PLR0915", "S603", "T201"]
 "scripts/check-example-imports.py" = ["T201"]
 "scripts/check-markdown-tables.py" = ["INP001"]
+"scripts/extract-doc-links.py" = ["INP001"]
 "scripts/security-audit.py" = ["INP001"]
 "scripts/ci/check_commit_message.py" = ["S603", "T201"]
 "scripts/ci/test_*.py" = [
@@ -469,4 +465,13 @@ testpaths = ["tests"]
 addopts = "-ra --new-first --failed-first"
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "session"
-filterwarnings = ["ignore::UserWarning", "ignore::DeprecationWarning"]
+filterwarnings = [
+  "ignore::UserWarning",
+  "ignore::DeprecationWarning",
+  "error::EncodingWarning",
+  # Plotly reads its bundled validator JSON without an explicit encoding
+  'ignore::EncodingWarning:^plotly\.validator_cache$',
+  # pytest-memray opens binary Memray captures through Python
+  'ignore::EncodingWarning:^pytest_memray\.plugin$',
+  'ignore::EncodingWarning:^pytest_memray\.marks$',
+]

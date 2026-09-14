@@ -25,7 +25,6 @@ use arrow::{
     error::ArrowError,
     record_batch::RecordBatch,
 };
-#[allow(unused_imports)]
 use nautilus_core::Params;
 use nautilus_model::{
     enums::AssetClass,
@@ -33,47 +32,15 @@ use nautilus_model::{
     instruments::binary_option::BinaryOption,
     types::{money::Money, price::Price, quantity::Quantity},
 };
-#[allow(unused)]
 use rust_decimal::Decimal;
-#[allow(unused)]
-use serde_json::Value;
 use ustr::Ustr;
 
+use super::KEY_CLASS;
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
     KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, extract_column, extract_column_by_name_or_index,
     extract_optional_string_column_by_name, optional_ustr_value,
 };
-
-// Helper function to convert AssetClass to string
-fn asset_class_to_string(ac: AssetClass) -> String {
-    match ac {
-        AssetClass::FX => "FX".to_string(),
-        AssetClass::Equity => "Equity".to_string(),
-        AssetClass::Commodity => "Commodity".to_string(),
-        AssetClass::Debt => "Debt".to_string(),
-        AssetClass::Index => "Index".to_string(),
-        AssetClass::Cryptocurrency => "Cryptocurrency".to_string(),
-        AssetClass::Alternative => "Alternative".to_string(),
-    }
-}
-
-// Helper function to parse AssetClass from string
-fn asset_class_from_str(s: &str) -> Result<AssetClass, EncodingError> {
-    match s {
-        "FX" => Ok(AssetClass::FX),
-        "Equity" => Ok(AssetClass::Equity),
-        "Commodity" => Ok(AssetClass::Commodity),
-        "Debt" => Ok(AssetClass::Debt),
-        "Index" => Ok(AssetClass::Index),
-        "Cryptocurrency" => Ok(AssetClass::Cryptocurrency),
-        "Alternative" => Ok(AssetClass::Alternative),
-        _ => Err(EncodingError::ParseError(
-            "asset_class",
-            format!("Unknown asset class: {s}"),
-        )),
-    }
-}
 
 impl ArrowSchemaProvider for BinaryOption {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
@@ -104,10 +71,11 @@ impl ArrowSchemaProvider for BinaryOption {
             Field::new("info", DataType::Binary, true), // nullable
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
+            Field::new("event_id", DataType::Utf8, true),
         ];
 
         let mut final_metadata = HashMap::new();
-        final_metadata.insert("class".to_string(), "BinaryOption".to_string());
+        final_metadata.insert(KEY_CLASS.to_string(), "BinaryOption".to_string());
 
         if let Some(meta) = metadata {
             final_metadata.extend(meta);
@@ -133,6 +101,7 @@ impl EncodeToRecordBatch for BinaryOption {
         let mut activation_ns_builder = UInt64Array::builder(data.len());
         let mut expiration_ns_builder = UInt64Array::builder(data.len());
         let mut outcome_builder = StringBuilder::new();
+        let mut event_id_builder = StringBuilder::new();
         let mut description_builder = StringBuilder::new();
         let mut max_quantity_builder = StringBuilder::new();
         let mut min_quantity_builder = StringBuilder::new();
@@ -152,7 +121,7 @@ impl EncodeToRecordBatch for BinaryOption {
         for bo in data {
             id_builder.append_value(bo.id.to_string());
             raw_symbol_builder.append_value(bo.raw_symbol);
-            asset_class_builder.append_value(asset_class_to_string(bo.asset_class));
+            asset_class_builder.append_value(bo.asset_class);
             currency_builder.append_value(bo.currency.to_string());
             price_precision_builder.append_value(bo.price_precision);
             size_precision_builder.append_value(bo.size_precision);
@@ -220,6 +189,8 @@ impl EncodeToRecordBatch for BinaryOption {
                 tick_scheme_builder.append_null();
             }
 
+            event_id_builder.append_option(bo.event_id.as_ref().map(Ustr::as_str));
+
             // Encode info dict as JSON bytes (matching Python's msgspec.json.encode)
             if let Some(ref info) = bo.info {
                 match serde_json::to_vec(info) {
@@ -241,7 +212,7 @@ impl EncodeToRecordBatch for BinaryOption {
         }
 
         let mut final_metadata = metadata.clone();
-        final_metadata.insert("class".to_string(), "BinaryOption".to_string());
+        final_metadata.insert(KEY_CLASS.to_string(), "BinaryOption".to_string());
 
         RecordBatch::try_new(
             Self::get_schema(Some(final_metadata)).into(),
@@ -272,6 +243,7 @@ impl EncodeToRecordBatch for BinaryOption {
                 Arc::new(info_builder.finish()),
                 Arc::new(ts_event_builder.finish()),
                 Arc::new(ts_init_builder.finish()),
+                Arc::new(event_id_builder.finish()),
             ],
         )
     }
@@ -291,16 +263,20 @@ impl EncodeToRecordBatch for BinaryOption {
     }
 }
 
-/// Helper function to decode BinaryOption from RecordBatch
-/// (Cannot implement DecodeFromRecordBatch trait due to `Into<Data>` bound)
+/// Decodes [`BinaryOption`] instruments from a record batch.
+///
+/// Not a [`DecodeFromRecordBatch`] implementation because that trait requires `Into<Data>`.
 ///
 /// # Errors
 ///
-/// Returns an `EncodingError` if the RecordBatch cannot be decoded.
+/// Returns an `EncodingError` if the record batch cannot be decoded.
+///
+/// [`DecodeFromRecordBatch`]: crate::arrow::DecodeFromRecordBatch
 pub fn decode_binary_option_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
     record_batch: &RecordBatch,
 ) -> Result<Vec<BinaryOption>, EncodingError> {
+    let event_id_values = extract_optional_string_column_by_name(record_batch, "event_id")?;
     let cols = record_batch.columns();
     let num_rows = record_batch.num_rows();
 
@@ -364,7 +340,8 @@ pub fn decode_binary_option_batch(
         let id = InstrumentId::from_str(id_values.value(i))
             .map_err(|e| EncodingError::ParseError("id", format!("row {i}: {e}")))?;
         let raw_symbol = Symbol::from(raw_symbol_values.value(i));
-        let asset_class = asset_class_from_str(asset_class_values.value(i))?;
+        let asset_class = AssetClass::from_str(asset_class_values.value(i))
+            .map_err(|e| EncodingError::ParseError("asset_class", format!("row {i}: {e}")))?;
         let currency = super::decode_currency(
             currency_values.value(i),
             "currency",
@@ -525,6 +502,7 @@ pub fn decode_binary_option_batch(
             .maker_fee(maker_fee)
             .taker_fee(taker_fee)
             .maybe_tick_scheme(tick_scheme)
+            .maybe_event_id(optional_ustr_value(event_id_values, i))
             .maybe_info(info)
             .ts_event(ts_event)
             .ts_init(ts_init)

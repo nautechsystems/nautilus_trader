@@ -35,7 +35,10 @@ use arc_swap::ArcSwap;
 use dashmap::DashMap;
 #[cfg(test)]
 use nautilus_common::live::get_runtime;
-use nautilus_core::UUID4;
+use nautilus_core::{
+    UUID4,
+    string::secret::{REDACTED, SecretString},
+};
 use nautilus_live::{
     SocketControl,
     task::{SharedTaskSlot, TaskJoinOutcome, TaskSlot, finish_task},
@@ -50,6 +53,7 @@ use nautilus_network::{
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use ustr::Ustr;
+use zeroize::Zeroizing;
 
 use super::{
     error::{DeriveWsError, Result},
@@ -123,7 +127,7 @@ impl Debug for DeriveWsCredentials {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(DeriveWsCredentials))
             .field("wallet_address", &self.wallet_address)
-            .field("signer", &"***redacted***")
+            .field("signer", &REDACTED)
             .finish()
     }
 }
@@ -146,7 +150,7 @@ pub(super) const UNAUTHENTICATED_CONNECTION_EPOCH: u64 = u64::MAX;
 pub struct DeriveWebSocketClient {
     url: String,
     transport_backend: TransportBackend,
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     connection_epoch: Arc<ArcSwap<AtomicU64>>,
     signal: Arc<AtomicBool>,
@@ -307,7 +311,7 @@ impl DeriveWebSocketClient {
         Self {
             url,
             transport_backend,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             connection_mode,
             connection_epoch,
             signal: Arc::new(AtomicBool::new(false)),
@@ -411,7 +415,10 @@ impl DeriveWebSocketClient {
             heartbeat_timeout_secs: Some(WS_HEARTBEAT_TIMEOUT.as_secs()),
             idle_timeout_ms: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         };
         // Rate limiting runs caller-side via `self.rate_limiter` before frames
         // are enqueued, so the network client's own limiter is left unconfigured
@@ -1538,7 +1545,7 @@ async fn send_raw_with_rate_limit<P>(
 where
     P: Serialize + ?Sized,
 {
-    let params = serde_json::to_value(params)?;
+    let params = SecretString::from(serde_json::to_string(params)?);
 
     if let RequestRateLimit::Await(instrument_name) = rate_limit {
         rate_limiter
@@ -1766,16 +1773,16 @@ async fn send_login_request(
     connection_epoch: u64,
 ) -> Result<()> {
     let login = build_ws_login(&creds.wallet_address, &creds.signer)?;
-    let params = WsLoginParams {
+    let params = Zeroizing::new(WsLoginParams {
         wallet: login.wallet,
         timestamp: login.timestamp,
         signature: login.signature,
-    };
+    });
     let result = send_request_on_connection::<_, WsLoginResult>(
         rate_limiter,
         cmd_tx,
         methods::PUBLIC_LOGIN,
-        &params,
+        &*params,
         timeout,
         connection_epoch,
     )

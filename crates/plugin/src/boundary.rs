@@ -292,7 +292,7 @@ impl Drop for OwnedBytes {
 }
 
 /// Default `drop_fn` used by [`OwnedBytes::from_vec`]. Plug-ins that build
-/// `OwnedBytes` via `from_vec` get matching free behaviour automatically.
+/// `OwnedBytes` via `from_vec` get matching free behavior automatically.
 ///
 /// # Safety
 ///

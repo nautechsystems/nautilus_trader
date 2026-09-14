@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// 1. THE HIGH-PRECISION MATHEMATICAL TRAIT
 pub trait BlackScholesReal:
     Sized
     + Copy
@@ -53,7 +52,6 @@ pub trait BlackScholesReal:
     fn signum(self) -> Self;
 }
 
-// 2. SCALAR IMPLEMENTATION (f32) - Manual Minimax for 1e-7 Precision
 impl BlackScholesReal for f32 {
     type Mask = bool;
     #[inline(always)]
@@ -192,7 +190,6 @@ impl BlackScholesReal for f32 {
     }
 }
 
-// 3. DATA STRUCTURES & CORE KERNEL
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Greeks<T> {
     pub price: T,
@@ -267,7 +264,6 @@ fn pricing_kernel<T: BlackScholesReal>(
     }
 }
 
-// 5. SOLVERS: STANDALONE GREEKS & IV SEARCH
 #[inline(always)]
 pub fn compute_greeks<T: BlackScholesReal>(
     s: T,
@@ -338,15 +334,13 @@ pub fn compute_iv_and_greeks<T: BlackScholesReal>(
     is_call: T::Mask,
     initial_guess: T,
 ) -> Greeks<T> {
-    // PRE-CALCULATION (Hoisted outside iteration)
     let sqrt_t = t.sqrt();
     let inv_sqrt_t = sqrt_t.recip_precise();
-    let ln_sk_bt = (s.ln() - k.ln()) + (b * t); // Numerical Idea 1: Merged constant with b
-    let half_t = T::splat(0.5) * t; // Numerical Idea 2: Hoisted half-time
+    let ln_sk_bt = (s.ln() - k.ln()) + (b * t);
+    let half_t = T::splat(0.5) * t;
     let df_r = (-r * t).exp();
-    let mut vol = initial_guess;
+    let vol = initial_guess;
 
-    // SINGLE HALLEY PASS
     let inv_vol = vol.recip_precise();
     let inv_scaled_vol = inv_vol * inv_sqrt_t;
     let d1 = (ln_sk_bt + half_t * vol * vol) * inv_scaled_vol;
@@ -360,22 +354,21 @@ pub fn compute_iv_and_greeks<T: BlackScholesReal>(
     let volga = (vega * d1 * d2) * inv_vol;
     let num = T::splat(2.0) * diff * vega;
     let den = T::splat(2.0) * vega * vega - diff * volga;
-    // Clamp denominator magnitude while preserving sig
+
+    // Clamp denominator magnitude while preserving sign
     let den_safe = den.signum() * den.abs().max(T::splat(1e-9));
-    vol = vol - (num * den_safe.recip_precise());
 
-    // Clamp volatility to reasonable bounds to prevent negative or infinite values
-    // Lower bound: 1e-6 (0.0001% annualized), Upper bound: 10.0 (1000% annualized)
-    // Using max/min compiles to single instructions for f32
-    vol = vol.max(T::splat(1e-6)).min(T::splat(10.0));
+    // Clamp volatility between 0.0001% and 1000% annualized to keep outputs finite
+    let vol = (vol - (num * den_safe.recip_precise()))
+        .max(T::splat(1e-6))
+        .min(T::splat(10.0));
 
-    // FINAL RE-SYNC
     let inv_vol_f = vol.recip_precise();
     let inv_scaled_vol_f = inv_vol_f * inv_sqrt_t;
     let scaled_vol_f = vol * sqrt_t;
     let d1_f = (ln_sk_bt + half_t * vol * vol) * inv_scaled_vol_f;
     let d2_f = d1_f - scaled_vol_f;
-    let mut g_final = pricing_kernel(
+    pricing_kernel(
         s_forward,
         k,
         df_r,
@@ -389,10 +382,7 @@ pub fn compute_iv_and_greeks<T: BlackScholesReal>(
         b,
         s,
         phi,
-    );
-    g_final.vol = vol;
-
-    g_final
+    )
 }
 
 /// Returns `ln(value)` for the inputs outside the positive normal range: zeros, negatives,
@@ -428,7 +418,6 @@ fn ln_f32_outside_normal_range(value: f32) -> f32 {
     <f32 as BlackScholesReal>::ln(value * 8_388_608.0) - 23.0 * std::f32::consts::LN_2
 }
 
-// 4. UNIT TESTS
 #[cfg(test)]
 mod tests {
     use rstest::*;

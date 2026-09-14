@@ -26,11 +26,11 @@ integration.
 
 | Target                     | What it stresses                                                        |
 | -------------------------- | ----------------------------------------------------------------------- |
-| `fuzz_ws_decode`           | `DeriveWsFrame::parse` plus public/private subscription payload decode. |
-| `fuzz_decimal_decode`      | Derive decimal normalization across strings, numbers, and nulls.        |
-| `fuzz_trade_module_encode` | Trade module 1e18 scaling and seven-word ABI encoding.                  |
-| `fuzz_action_hash`         | EIP-712 action hash and typed-data hash assembly.                       |
-| `fuzz_nonce_sequence`      | Shared wallet/subaccount nonce uniqueness, ordering, and exhaustion.    |
+| `fuzz-ws-decode`           | `DeriveWsFrame::parse` plus public/private subscription payload decode. |
+| `fuzz-decimal-decode`      | Derive decimal normalization across strings, numbers, and nulls.        |
+| `fuzz-trade-module-encode` | Trade module 1e18 scaling and seven-word ABI encoding.                  |
+| `fuzz-action-hash`         | EIP-712 action hash and typed-data hash assembly.                       |
+| `fuzz-nonce-sequence`      | Shared wallet/subaccount nonce uniqueness, ordering, and exhaustion.    |
 
 ## Running
 
@@ -41,10 +41,10 @@ From the repository root:
 
 ```bash
 cargo +nightly fuzz list --fuzz-dir crates/adapters/derive
-CARGO_PROFILE_RELEASE_LTO=false cargo +nightly fuzz run fuzz_ws_decode \
+CARGO_PROFILE_RELEASE_LTO=false cargo +nightly fuzz run fuzz-ws-decode \
   --fuzz-dir crates/adapters/derive \
   --features fuzz
-CARGO_PROFILE_RELEASE_LTO=false cargo +nightly fuzz run fuzz_ws_decode \
+CARGO_PROFILE_RELEASE_LTO=false cargo +nightly fuzz run fuzz-ws-decode \
   --fuzz-dir crates/adapters/derive \
   --features fuzz \
   -- \
@@ -73,13 +73,13 @@ The JSON target benefits from real venue payloads. Seed it with Derive fixtures 
 corpus:
 
 ```bash
-CARGO_PROFILE_RELEASE_LTO=false cargo +nightly fuzz run fuzz_ws_decode \
+CARGO_PROFILE_RELEASE_LTO=false cargo +nightly fuzz run fuzz-ws-decode \
   crates/adapters/derive/test_data/perps/ws_orderbook_eth.json \
   --fuzz-dir crates/adapters/derive \
   --features fuzz
 ```
 
-The structured targets (`fuzz_trade_module_encode`, `fuzz_action_hash`, `fuzz_nonce_sequence`) unpack
+The structured targets (`fuzz-trade-module-encode`, `fuzz-action-hash`, `fuzz-nonce-sequence`) unpack
 bytes directly, so they get useful coverage without JSON seeds.
 
 ## Adding a target

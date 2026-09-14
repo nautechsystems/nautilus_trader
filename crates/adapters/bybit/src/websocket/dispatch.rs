@@ -57,7 +57,7 @@ use super::{
 };
 use crate::{
     common::{
-        enums::{BybitOrderSide, BybitOrderStatus, BybitProductType},
+        enums::{BybitExecType, BybitOrderSide, BybitOrderStatus, BybitProductType},
         parse::{
             bybit_rejection_due_post_only, get_currency, make_bybit_symbol, parse_millis_timestamp,
             parse_price_with_precision, parse_quantity_with_precision,
@@ -310,7 +310,7 @@ fn dispatch_order_update(
     let client_order_id = if order.order_link_id.is_empty() {
         None
     } else {
-        Some(ClientOrderId::new(order.order_link_id.as_str()))
+        Some(ClientOrderId::new(order.order_link_id))
     };
 
     let identity = client_order_id
@@ -318,7 +318,7 @@ fn dispatch_order_update(
         .and_then(|cid| state.order_identities.get(cid).map(|r| r.clone()));
 
     if let (Some(client_order_id), Some(identity)) = (client_order_id, identity) {
-        let venue_order_id = VenueOrderId::new(order.order_id.as_str());
+        let venue_order_id = VenueOrderId::new(order.order_id);
 
         match order.order_status {
             BybitOrderStatus::Created | BybitOrderStatus::New | BybitOrderStatus::Untriggered => {
@@ -473,6 +473,7 @@ fn dispatch_order_update(
                         false,
                         Some(venue_order_id),
                         Some(account_id),
+                        None,
                     );
                     cleanup_terminal(client_order_id, state);
                     emitter.send_order_event(OrderEventAny::Canceled(canceled));
@@ -622,6 +623,7 @@ fn dispatch_order_update(
                         false,
                         Some(venue_order_id),
                         Some(account_id),
+                        None,
                     );
                     cleanup_terminal(client_order_id, state);
                     emitter.send_order_event(OrderEventAny::Canceled(canceled));
@@ -649,6 +651,16 @@ fn dispatch_execution_fill(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) {
+    if exec.exec_type == BybitExecType::Funding {
+        log::debug!(
+            "Skipping funding execution: symbol={}, order_id={}, exec_id={}",
+            exec.symbol,
+            exec.order_id,
+            exec.exec_id,
+        );
+        return;
+    }
+
     if exec.exec_type.is_exchange_generated() {
         log::warn!(
             "Exchange-generated execution: exec_type={:?}, symbol={}, order_id={}, order_link_id={}, side={:?}, qty={}, price={}",
@@ -665,7 +677,7 @@ fn dispatch_execution_fill(
     let client_order_id = if exec.order_link_id.is_empty() {
         None
     } else {
-        Some(ClientOrderId::new(exec.order_link_id.as_str()))
+        Some(ClientOrderId::new(exec.order_link_id))
     };
 
     let identity = client_order_id
@@ -673,7 +685,7 @@ fn dispatch_execution_fill(
         .and_then(|cid| state.order_identities.get(cid).map(|r| r.clone()));
 
     if let (Some(client_order_id), Some(identity)) = (client_order_id, identity) {
-        let venue_order_id = VenueOrderId::new(exec.order_id.as_str());
+        let venue_order_id = VenueOrderId::new(exec.order_id);
 
         ensure_accepted_emitted(
             client_order_id,
@@ -733,7 +745,7 @@ fn dispatch_execution_fill_fast(
     let client_order_id = if exec.order_link_id.is_empty() {
         None
     } else {
-        Some(ClientOrderId::new(exec.order_link_id.as_str()))
+        Some(ClientOrderId::new(exec.order_link_id))
     };
 
     let mut venue_position_id = None;
@@ -742,7 +754,7 @@ fn dispatch_execution_fill_fast(
         && let Some(identity) = state.order_identities.get(cid).map(|r| r.clone())
     {
         venue_position_id = identity.venue_position_id;
-        let venue_order_id = VenueOrderId::new(exec.order_id.as_str());
+        let venue_order_id = VenueOrderId::new(exec.order_id);
         ensure_accepted_emitted(
             *cid,
             account_id,
@@ -769,8 +781,8 @@ fn parse_order_filled(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderFilled> {
-    let client_order_id = ClientOrderId::new(exec.order_link_id.as_str());
-    let venue_order_id = VenueOrderId::new(exec.order_id.as_str());
+    let client_order_id = ClientOrderId::new(exec.order_link_id);
+    let venue_order_id = VenueOrderId::new(exec.order_id);
     let trade_id =
         TradeId::new_checked(exec.exec_id.as_str()).context("invalid execId in Bybit execution")?;
 
@@ -1390,7 +1402,7 @@ mod tests {
 
         let first: crate::websocket::messages::BybitWsAccountExecutionMsg =
             serde_json::from_value(value.clone()).unwrap();
-        let client_order_id = ClientOrderId::new(first.data[0].order_link_id.as_str());
+        let client_order_id = ClientOrderId::new(first.data[0].order_link_id);
         state.order_identities.insert(
             client_order_id,
             OrderIdentity {
@@ -1427,7 +1439,7 @@ mod tests {
         );
 
         let repay = repay_rx.try_recv().expect("expected a repay request");
-        assert_eq!(repay.coin.as_str(), "BTC");
+        assert_eq!(repay.coin, "BTC");
         assert_eq!(repay.quantity, Quantity::from("0.0040"));
         assert_eq!(
             repay.base_fee,
@@ -1453,7 +1465,7 @@ mod tests {
         if let Some(order) = msg.data.first()
             && !order.order_link_id.is_empty()
         {
-            let cid = ClientOrderId::new(order.order_link_id.as_str());
+            let cid = ClientOrderId::new(order.order_link_id);
             state.order_identities.insert(cid, default_identity());
         }
 
@@ -1501,7 +1513,7 @@ mod tests {
         let order = msg.data.first_mut().expect("fixture has an order");
         order.reject_reason = Ustr::from(BYBIT_POST_ONLY_REJECT_REASON);
         order.cum_exec_qty = "0".to_string();
-        let cid = ClientOrderId::new(order.order_link_id.as_str());
+        let cid = ClientOrderId::new(order.order_link_id);
         state.order_identities.insert(cid, default_identity());
 
         let ws_msg = BybitWsMessage::AccountOrder(msg);
@@ -1519,7 +1531,7 @@ mod tests {
             panic!("Expected Rejected, found {event:?}");
         };
         assert!(rejected.due_post_only);
-        assert_eq!(rejected.reason.as_str(), BYBIT_POST_ONLY_REJECT_REASON);
+        assert_eq!(rejected.reason, BYBIT_POST_ONLY_REJECT_REASON);
         assert_eq!(rejected.client_order_id, cid);
         assert!(rx.try_recv().is_err(), "expected only a single event");
     }
@@ -1570,7 +1582,7 @@ mod tests {
         if let Some(exec) = msg.data.first()
             && !exec.order_link_id.is_empty()
         {
-            let cid = ClientOrderId::new(exec.order_link_id.as_str());
+            let cid = ClientOrderId::new(exec.order_link_id);
             state.order_identities.insert(cid, default_identity());
         }
 
@@ -1626,7 +1638,7 @@ mod tests {
         .unwrap();
 
         let commission = filled.commission.expect("commission present");
-        assert_eq!(commission.currency.code.as_str(), "BTC");
+        assert_eq!(commission.currency.code, "BTC");
     }
 
     #[rstest]
@@ -1645,7 +1657,7 @@ mod tests {
         if let Some(exec) = msg.data.first()
             && !exec.order_link_id.is_empty()
         {
-            let cid = ClientOrderId::new(exec.order_link_id.as_str());
+            let cid = ClientOrderId::new(exec.order_link_id);
             state.order_identities.insert(
                 cid,
                 OrderIdentity {
@@ -1707,7 +1719,7 @@ mod tests {
 
         // Taker fast fill (orderLinkId populated) so the identity lookup hits.
         let msg = fast_execution_msg(false, "link-1");
-        let cid = ClientOrderId::new(msg.data[0].order_link_id.as_str());
+        let cid = ClientOrderId::new(msg.data[0].order_link_id);
         state.order_identities.insert(
             cid,
             OrderIdentity {
@@ -1808,7 +1820,53 @@ mod tests {
     }
 
     #[rstest]
-    fn test_dispatch_corporate_action_execution_emits_only_fill_report() {
+    #[case::untracked("")]
+    #[case::tracked("test-order-link-001")]
+    fn test_dispatch_funding_execution_emits_no_event(#[case] order_link_id: &str) {
+        let instrument = linear_instrument();
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (emitter, mut rx) = create_emitter();
+        let clock = get_atomic_clock_realtime();
+        let state = WsDispatchState::default();
+
+        let json = load_test_json("ws_account_execution_funding.json");
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        value["data"][0]["orderLinkId"] = serde_json::Value::String(order_link_id.to_string());
+        let msg: crate::websocket::messages::BybitWsAccountExecutionMsg =
+            serde_json::from_value(value).unwrap();
+        let execution = &msg.data[0];
+
+        assert_eq!(execution.exec_type, BybitExecType::Funding);
+
+        if !execution.order_link_id.is_empty() {
+            state.order_identities.insert(
+                ClientOrderId::new(execution.order_link_id),
+                default_identity(),
+            );
+        }
+
+        dispatch_ws_message(
+            &BybitWsMessage::AccountExecution(msg),
+            &emitter,
+            &state,
+            test_account_id(),
+            &instruments,
+            clock,
+        );
+
+        assert!(matches!(
+            rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+    }
+
+    #[rstest]
+    #[case::corporate_action("CorporateAction")]
+    #[case::forward_split_settle("ForwardSplitSettle")]
+    #[case::reverse_split_settle("ReverseSplitSettle")]
+    #[case::dividend("Dividend")]
+    #[case::unrecognized("StockMerger")]
+    fn test_dispatch_venue_initiated_execution_emits_only_fill_report(#[case] exec_type: &str) {
         let instrument = linear_instrument();
         let instruments = build_instruments(std::slice::from_ref(&instrument));
         let (emitter, mut rx) = create_emitter();
@@ -1817,13 +1875,11 @@ mod tests {
 
         let json = load_test_json("ws_account_execution_adl.json");
         let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
-        value["data"][0]["execType"] = serde_json::Value::String("CorporateAction".to_string());
+        value["data"][0]["execType"] = serde_json::Value::String(exec_type.to_string());
         let msg: crate::websocket::messages::BybitWsAccountExecutionMsg =
             serde_json::from_value(value).unwrap();
         let execution = &msg.data[0];
 
-        assert_eq!(execution.exec_type, BybitExecType::CorporateAction);
-        assert!(execution.exec_type.is_exchange_generated());
         assert!(execution.order_link_id.is_empty());
 
         dispatch_ws_message(
@@ -1915,7 +1971,7 @@ mod tests {
         if let Some(order) = msg.data.first()
             && !order.order_link_id.is_empty()
         {
-            let cid = ClientOrderId::new(order.order_link_id.as_str());
+            let cid = ClientOrderId::new(order.order_link_id);
             state.order_identities.insert(cid, default_identity());
         }
 
@@ -1989,9 +2045,9 @@ mod tests {
                 && !self
                     .state
                     .order_identities
-                    .contains_key(&ClientOrderId::new(order.order_link_id.as_str()))
+                    .contains_key(&ClientOrderId::new(order.order_link_id))
             {
-                let cid = ClientOrderId::new(order.order_link_id.as_str());
+                let cid = ClientOrderId::new(order.order_link_id);
                 self.state.order_identities.insert(cid, default_identity());
             }
 
@@ -2213,7 +2269,7 @@ mod tests {
         assert!(
             matches!(event, ExecutionEvent::Order(OrderEventAny::Rejected(ref rejected))
                 if rejected.client_order_id == cid
-                    && rejected.reason.as_str() == "Order command was not written"),
+                    && rejected.reason == "Order command was not written"),
             "Expected OrderRejected for {cid}, found {event:?}"
         );
         assert!(!ctx.state.order_identities.contains_key(&cid));

@@ -45,7 +45,7 @@ impl Money {
 
     fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {
         let from_raw = py.get_type::<Self>().getattr("from_raw")?;
-        let args = (self.raw, self.currency).into_py_any(py)?;
+        let args = (self.raw(), self.currency).into_py_any(py)?;
         (from_raw, args).into_py_any(py)
     }
 
@@ -381,13 +381,13 @@ impl Money {
     }
 
     fn __abs__(&self) -> Self {
-        if self.raw < 0 { -*self } else { *self }
+        self.abs()
     }
 
     fn __int__(&self) -> MoneyRaw {
         let scale = MoneyRaw::try_from(raw_scale(self.currency.precision))
             .expect("effective raw scale should fit in MoneyRaw");
-        self.raw / scale
+        self.raw() / scale
     }
 
     fn __float__(&self) -> f64 {
@@ -408,9 +408,21 @@ impl Money {
         self.to_string()
     }
 
-    #[getter]
-    fn raw(&self) -> MoneyRaw {
-        self.raw
+    /// Returns the stored fixed-point integer without rescaling.
+    ///
+    /// Use this for serialization and explicit fixed-point conversions. Prefer domain
+    /// operations for calculations; the storage scale can differ from display precision.
+    ///
+    /// Direct field access is restricted to this crate:
+    ///
+    /// ```compile_fail
+    /// use nautilus_model::types::Money;
+    /// let value = Money::from("1 USD");
+    /// let raw = value.raw;
+    /// ```
+    #[getter(raw)]
+    fn py_raw(&self) -> MoneyRaw {
+        self.raw()
     }
 
     #[getter]
@@ -421,8 +433,8 @@ impl Money {
     /// Creates a new `Money` instance with a value of zero with the given `Currency`.
     #[staticmethod]
     #[pyo3(name = "zero")]
-    fn py_zero(currency: Currency) -> Self {
-        Self::new(0.0, currency)
+    fn py_zero(currency: Currency) -> PyResult<Self> {
+        Self::from_raw_checked(0, currency).map_err(correctness_error_to_pyvalue_err)
     }
 
     /// Creates a new `Money` instance from the given `raw` fixed-point value and the specified `currency`.
@@ -605,6 +617,44 @@ mod tests {
                 error.to_string(),
                 format!(
                     "ValueError: `raw` value {raw} exceeded bounds [{MONEY_RAW_MIN}, {MONEY_RAW_MAX}] for Money"
+                )
+            );
+        });
+    }
+
+    #[rstest]
+    fn test_py_zero_handles_currency_precision() {
+        Python::initialize();
+        Python::attach(|_| {
+            #[cfg(feature = "defi")]
+            let max_precision = crate::defi::WEI_PRECISION;
+            #[cfg(not(feature = "defi"))]
+            let max_precision = FIXED_PRECISION;
+
+            let currency = Currency::new(
+                "TST",
+                max_precision,
+                0,
+                "Test currency",
+                CurrencyType::Crypto,
+            );
+            let money = Money::py_zero(currency).unwrap();
+            let invalid_precision = max_precision + 1;
+            let mut invalid_currency = currency;
+            invalid_currency.precision = invalid_precision;
+            let precision_error = Money::py_zero(invalid_currency).unwrap_err();
+            let precision_name = if cfg!(feature = "defi") {
+                "WEI_PRECISION"
+            } else {
+                "FIXED_PRECISION"
+            };
+
+            assert_eq!(money.raw(), 0);
+            assert_eq!(money.currency, currency);
+            assert_eq!(
+                precision_error.to_string(),
+                format!(
+                    "ValueError: `precision` exceeded maximum `{precision_name}` ({max_precision}), was {invalid_precision}"
                 )
             );
         });

@@ -17,6 +17,8 @@
 
 use std::{fmt::Display, time::Instant};
 
+use nautilus_core::string::secret::SecretString;
+
 use super::{
     consts::{
         AX_AUTH_TOKEN_REFRESH_INTERVAL, AX_AUTH_TOKEN_REFRESH_RETRY_DELAY,
@@ -33,7 +35,7 @@ use crate::http::client::AxHttpClient;
 pub async fn run_auth_token_refresh<E>(
     http_client: AxHttpClient,
     credential: Credential,
-    update_token: impl Fn(String) -> Result<(), E> + Send + 'static,
+    update_token: impl Fn(SecretString) -> Result<(), E> + Send + 'static,
 ) where
     E: Display + Send + 'static,
 {

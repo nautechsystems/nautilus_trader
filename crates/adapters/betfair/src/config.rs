@@ -15,9 +15,12 @@
 
 //! Configuration structures for the Betfair adapter.
 
-use std::any::Any;
+use std::{any::Any, fmt::Debug};
 
 use nautilus_common::factories::ClientConfig;
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::{
     identifiers::AccountId,
     types::{Currency, Money},
@@ -57,11 +60,15 @@ fn validate_market_start_time(label: &str, value: &Option<String>) -> anyhow::Re
 }
 
 fn resolve_credential(
-    username: Option<String>,
-    password: Option<String>,
-    app_key: Option<String>,
+    username: Option<SecretString>,
+    password: Option<SecretString>,
+    app_key: Option<SecretString>,
 ) -> anyhow::Result<BetfairCredential> {
-    match BetfairCredential::resolve(username, password, app_key) {
+    match BetfairCredential::resolve(
+        username.map(SecretString::into_inner),
+        password.map(SecretString::into_inner),
+        app_key.map(SecretString::into_inner),
+    ) {
         Ok(Some(credential)) => Ok(credential),
         Ok(None) => anyhow::bail!("Missing Betfair credentials in config and environment"),
         Err(e) => Err(match e {
@@ -116,13 +123,13 @@ pub struct BetfairDataClientConfig {
     #[builder(default = "GBP".to_string())]
     pub account_currency: String,
     /// Optional Betfair username.
-    pub username: Option<String>,
+    pub username: Option<SecretString>,
     /// Optional Betfair password.
-    pub password: Option<String>,
+    pub password: Option<SecretString>,
     /// Optional Betfair application key.
-    pub app_key: Option<String>,
+    pub app_key: Option<SecretString>,
     /// Optional proxy URL for HTTP requests.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// General HTTP request rate limit per second.
     #[builder(default = 5)]
     pub request_rate_per_second: u32,
@@ -178,7 +185,6 @@ pub struct BetfairDataClientConfig {
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(BetfairDataClientConfig {
     account_currency: String,
-    username: Option<String>,
     request_rate_per_second: u32,
     default_min_notional: Option<Decimal>,
     event_type_ids: Option<Vec<String>>,
@@ -315,13 +321,13 @@ pub struct BetfairExecutionClientConfig {
     #[builder(default = "GBP".to_string())]
     pub account_currency: String,
     /// Optional Betfair username.
-    pub username: Option<String>,
+    pub username: Option<SecretString>,
     /// Optional Betfair password.
-    pub password: Option<String>,
+    pub password: Option<SecretString>,
     /// Optional Betfair application key.
-    pub app_key: Option<String>,
+    pub app_key: Option<SecretString>,
     /// Optional proxy URL for HTTP requests.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// General HTTP request rate limit per second.
     #[builder(default = 5)]
     pub request_rate_per_second: u32,
@@ -376,7 +382,6 @@ pub struct BetfairExecutionClientConfig {
 nautilus_core::impl_pyo3_config_getters!(BetfairExecutionClientConfig {
     account_id: AccountId,
     account_currency: String,
-    username: Option<String>,
     request_rate_per_second: u32,
     order_request_rate_per_second: u32,
     stream_host: Option<String>,
@@ -474,6 +479,41 @@ mod tests {
     use super::*;
 
     #[rstest]
+    fn test_config_debug_redacts_credentials() {
+        let data = BetfairDataClientConfig {
+            username: Some("data-username".into()),
+            password: Some("data-password".into()),
+            app_key: Some("data-app-key".into()),
+            proxy_url: Some("http://user:data-proxy@localhost".into()),
+            ..Default::default()
+        };
+        let execution = BetfairExecutionClientConfig {
+            username: Some("exec-username".into()),
+            password: Some("exec-password".into()),
+            app_key: Some("exec-app-key".into()),
+            proxy_url: Some("http://user:exec-proxy@localhost".into()),
+            ..Default::default()
+        };
+
+        let formatted = format!("{data:?} {execution:?}");
+
+        assert_eq!(formatted.matches(REDACTED).count(), 8);
+
+        for secret in [
+            "data-username",
+            "data-password",
+            "data-app-key",
+            "data-proxy",
+            "exec-username",
+            "exec-password",
+            "exec-app-key",
+            "exec-proxy",
+        ] {
+            assert!(!formatted.contains(secret));
+        }
+    }
+
+    #[rstest]
     fn test_data_config_default() {
         let config = BetfairDataClientConfig::default();
 
@@ -542,7 +582,7 @@ mod tests {
     #[rstest]
     fn test_data_config_credential_rejects_partial_credentials() {
         let config = BetfairDataClientConfig {
-            username: Some("testuser".to_string()),
+            username: Some("testuser".into()),
             ..Default::default()
         };
 

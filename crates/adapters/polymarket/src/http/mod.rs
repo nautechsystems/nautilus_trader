@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! HTTP client implementation for the Polymarket CLOB and Gamma APIs.
+//! HTTP client implementation for the Polymarket CLOB, Gamma, and Relayer APIs.
 
 pub mod auth;
 pub mod clob;
@@ -24,5 +24,6 @@ pub mod models;
 pub mod parse;
 pub mod query;
 pub mod rate_limits;
+pub mod relayer;
 
 pub(crate) mod pagination;

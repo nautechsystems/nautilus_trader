@@ -181,7 +181,7 @@ class SubscribingActor(DataActor):
 
     def __init__(self, config: object = None) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self.received = []

@@ -7,7 +7,7 @@
 #  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
 # -------------------------------------------------------------------------------------------------
 """
-Example of IB shared helpers.
+Shared setup for Interactive Brokers examples.
 """
 
 from __future__ import annotations

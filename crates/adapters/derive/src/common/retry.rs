@@ -16,7 +16,7 @@
 //! Retry classification for the Derive adapter.
 //!
 //! Splits [`DeriveHttpError`] and [`DeriveWsError`] into retryable, terminal,
-//! and fatal categories. The HTTP client routes errors through these helpers
+//! and fatal categories. The HTTP client routes errors through these classifiers
 //! when driving [`nautilus_network::retry::RetryManager`]; the adapter-level
 //! [`crate::common::error::DeriveError`] reuses them for `is_retryable` /
 //! `is_fatal`.

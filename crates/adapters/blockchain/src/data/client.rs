@@ -1438,83 +1438,17 @@ impl DataClient for BlockchainDataClient {
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc, time::Duration};
+    use std::sync::Arc;
 
     use alloy::primitives::{I256, U160, U256, address};
-    use nautilus_common::defi::RequestPoolSnapshot;
-    use nautilus_core::{UUID4, UnixNanos};
-    use nautilus_model::{
-        defi::{Block, Blockchain, Chain, DexType, Pool, PoolIdentifier, Token},
-        identifiers::{ClientId, InstrumentId},
-    };
+    use nautilus_core::UnixNanos;
+    use nautilus_model::defi::{Block, Blockchain, Chain, DexType, Pool, PoolIdentifier, Token};
     use rstest::rstest;
-    use tokio_util::sync::CancellationToken;
 
     use super::*;
     use crate::events::{flash::FlashEvent, swap::SwapEvent};
 
     const WETH_USDT_CREATION_BLOCK: u64 = 12_375_326;
-
-    #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "requires ENVIO_API_TOKEN and live HyperSync access"]
-    async fn pool_snapshot_request_does_not_emit_snapshot_when_bootstrap_fails() {
-        std::env::var("ENVIO_API_TOKEN").expect("ENVIO_API_TOKEN must be set");
-
-        let pool = weth_usdt_pool();
-        let instrument_id = pool.instrument_id;
-        let (hypersync_tx, _hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
-        let (data_tx, mut data_rx) = tokio::sync::mpsc::unbounded_channel();
-        let config = BlockchainDataClientConfig::builder()
-            .chain(pool.chain.clone())
-            .dex_ids(vec![DexType::UniswapV3])
-            .http_rpc_url("http://127.0.0.1:9".to_string())
-            .use_hypersync_for_live_data(true)
-            .maybe_from_block(Some(WETH_USDT_CREATION_BLOCK))
-            .build();
-        let mut core = BlockchainDataClientCore::new(
-            config,
-            Some(hypersync_tx),
-            Some(data_tx),
-            CancellationToken::new(),
-        );
-        core.cache
-            .add_pool(pool.as_ref().clone())
-            .await
-            .expect("Pool should be added to in-memory cache");
-
-        let request = RequestPoolSnapshot::new(
-            instrument_id,
-            Some(ClientId::new("BLOCKCHAIN")),
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-        );
-
-        BlockchainDataClient::handle_request_command(
-            DefiRequestCommand::PoolSnapshot(request),
-            &mut core,
-        )
-        .await
-        .expect("Bootstrap failure should not fail the request handler");
-
-        let mut events = Vec::new();
-        while let Ok(event) = data_rx.try_recv() {
-            events.push(event);
-        }
-
-        assert_eq!(events.len(), 1);
-        match &events[0] {
-            DataEvent::DeFi(DefiData::Pool(pool)) => {
-                assert_eq!(pool.instrument_id, instrument_id);
-            }
-            _ => panic!("expected only the pool definition event"),
-        }
-        assert!(
-            events
-                .iter()
-                .all(|event| !matches!(event, DataEvent::DeFi(DefiData::PoolSnapshot(_))))
-        );
-    }
 
     #[rstest]
     fn pool_event_missing_block_metadata_clears_after_block_cache_update() {
@@ -1658,101 +1592,6 @@ mod tests {
             Some(42)
         );
         assert!(pending.is_empty());
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "requires ENVIO_API_TOKEN and live HyperSync access"]
-    async fn live_hypersync_pool_swap_subscription_receives_tip_event_and_unsubscribes() {
-        std::env::var("ENVIO_API_TOKEN").expect("ENVIO_API_TOKEN must be set");
-
-        let chain = Arc::new(
-            Chain::from_chain_id(42161)
-                .expect("Arbitrum chain should exist")
-                .clone(),
-        );
-        let dex_extended = get_dex_extended(chain.name, &DexType::UniswapV3)
-            .expect("Arbitrum UniswapV3 should be registered");
-        let pool_address = address!("C31E54c7A869B9FcBEcc14363CF510d1c41fa443");
-        let instrument_id_value = format!("{}.Arbitrum:UniswapV3", pool_address.to_checksum(None));
-        let instrument_id = InstrumentId::from(instrument_id_value.as_str());
-        let expected_pool_id = PoolIdentifier::from_address(pool_address);
-        let (hypersync_tx, mut hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
-        let config = BlockchainDataClientConfig::builder()
-            .chain(chain)
-            .dex_ids(vec![DexType::UniswapV3])
-            .http_rpc_url("http://127.0.0.1:9".to_string())
-            .use_hypersync_for_live_data(true)
-            .build();
-        let mut core = BlockchainDataClientCore::new(
-            config,
-            Some(hypersync_tx),
-            None,
-            CancellationToken::new(),
-        );
-        core.cache
-            .add_dex(dex_extended.dex.clone())
-            .await
-            .expect("DEX should be added to in-memory cache");
-        core.subscription_manager.register_dex_for_subscriptions(
-            DexType::UniswapV3,
-            dex_extended.swap_created_event.as_ref(),
-            dex_extended.mint_created_event.as_ref(),
-            dex_extended.burn_created_event.as_ref(),
-            dex_extended.collect_created_event.as_ref(),
-            dex_extended.flash_created_event.as_deref(),
-        );
-        core.subscription_manager.register_dex_fee_protocol_events(
-            DexType::UniswapV3,
-            dex_extended.fee_protocol_update_event.as_deref(),
-            dex_extended.fee_protocol_collect_event.as_deref(),
-        );
-
-        BlockchainDataClient::handle_subscribe_command(
-            DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps::new(
-                instrument_id,
-                Some(ClientId::new("BLOCKCHAIN")),
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-            )),
-            &mut core,
-        )
-        .await
-        .expect("live HyperSync pool swap subscribe should succeed");
-
-        let event = tokio::time::timeout(Duration::from_secs(240), async {
-            loop {
-                let msg = hypersync_rx
-                    .recv()
-                    .await
-                    .expect("HyperSync live stream channel should stay open");
-
-                if let BlockchainMessage::SwapEvent(event) = msg
-                    && event.pool_identifier == expected_pool_id
-                {
-                    break event;
-                }
-            }
-        })
-        .await
-        .expect("expected a live Arbitrum UniswapV3 swap within 240s");
-
-        BlockchainDataClient::handle_unsubscribe_command(
-            DefiUnsubscribeCommand::PoolSwaps(UnsubscribePoolSwaps::new(
-                instrument_id,
-                Some(ClientId::new("BLOCKCHAIN")),
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-            )),
-            &mut core,
-        )
-        .await
-        .expect("live HyperSync pool swap unsubscribe should succeed");
-        core.disconnect().await;
-
-        assert_eq!(event.pool_identifier, expected_pool_id);
-        assert!(event.block_number > 0);
     }
 
     fn swap_message(block_number: u64) -> BlockchainMessage {

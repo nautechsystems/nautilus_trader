@@ -42,13 +42,13 @@ pub const PARAMS_IS_PARENT: &str = "is_parent";
 // Re-exports
 pub use request::{
     RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot, RequestCustomData,
-    RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments, RequestJoin,
-    RequestQuotes, RequestTrades,
+    RequestFundingRates, RequestInstrument, RequestInstruments, RequestJoin,
+    RequestOptionChainReferencePrice, RequestQuotes, RequestTrades,
 };
 pub use response::{
     BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
-    ForwardPricesResponse, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
-    QuotesResponse, TradesResponse,
+    FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
+    OptionChainReferencePriceResponse, QuotesResponse, TradesResponse,
 };
 pub use subscribe::{
     SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
@@ -86,6 +86,22 @@ impl DataCommand {
     pub fn as_any(&self) -> &dyn Any {
         self
     }
+
+    /// Converts a subscribe variant into its matching unsubscribe variant.
+    ///
+    /// Returns `None` for request and unsubscribe variants.
+    pub(crate) fn into_unsubscribe(self, command_id: UUID4, ts_init: UnixNanos) -> Option<Self> {
+        match self {
+            Self::Subscribe(command) => Some(Self::Unsubscribe(
+                command.into_unsubscribe(command_id, ts_init, None),
+            )),
+            #[cfg(feature = "defi")]
+            Self::DefiSubscribe(command) => Some(Self::DefiUnsubscribe(
+                command.into_unsubscribe(command_id, ts_init),
+            )),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -118,6 +134,178 @@ impl SubscribeCommand {
     /// Converts the command to a dyn Any trait object for messaging.
     pub fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    /// Converts this subscribe command into its matching unsubscribe command.
+    ///
+    /// Preserves the subscribed data identity and client route while replacing the command ID and
+    /// initialization timestamp. It also preserves parameters and sets the supplied correlation ID
+    /// when the matching unsubscribe command supports those fields.
+    #[must_use]
+    pub fn into_unsubscribe(
+        self,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+        correlation_id: Option<UUID4>,
+    ) -> UnsubscribeCommand {
+        match self {
+            Self::Data(cmd) => UnsubscribeCommand::Data(UnsubscribeCustomData::new(
+                cmd.client_id,
+                cmd.venue,
+                cmd.data_type,
+                command_id,
+                ts_init,
+                correlation_id,
+                cmd.params,
+            )),
+            Self::Instrument(cmd) => UnsubscribeCommand::Instrument(UnsubscribeInstrument::new(
+                cmd.instrument_id,
+                cmd.client_id,
+                cmd.venue,
+                command_id,
+                ts_init,
+                correlation_id,
+                cmd.params,
+            )),
+            Self::Instruments(cmd) => UnsubscribeCommand::Instruments(UnsubscribeInstruments::new(
+                cmd.client_id,
+                cmd.venue,
+                command_id,
+                ts_init,
+                correlation_id,
+                cmd.params,
+            )),
+            Self::BookDeltas(cmd) => UnsubscribeCommand::BookDeltas(UnsubscribeBookDeltas::new(
+                cmd.instrument_id,
+                cmd.client_id,
+                cmd.venue,
+                command_id,
+                ts_init,
+                correlation_id,
+                cmd.params,
+            )),
+            Self::BookDepth10(cmd) => UnsubscribeCommand::BookDepth10(UnsubscribeBookDepth10::new(
+                cmd.instrument_id,
+                cmd.client_id,
+                cmd.venue,
+                command_id,
+                ts_init,
+                correlation_id,
+                cmd.params,
+            )),
+            Self::BookSnapshots(cmd) => {
+                UnsubscribeCommand::BookSnapshots(UnsubscribeBookSnapshots::new(
+                    cmd.instrument_id,
+                    cmd.interval_ms,
+                    cmd.client_id,
+                    cmd.venue,
+                    command_id,
+                    ts_init,
+                    correlation_id,
+                    cmd.params,
+                ))
+            }
+            Self::Quotes(cmd) => UnsubscribeCommand::Quotes(UnsubscribeQuotes::new(
+                cmd.instrument_id,
+                cmd.client_id,
+                cmd.venue,
+                command_id,
+                ts_init,
+                correlation_id,
+                cmd.params,
+            )),
+            Self::Trades(cmd) => UnsubscribeCommand::Trades(UnsubscribeTrades::new(
+                cmd.instrument_id,
+                cmd.client_id,
+                cmd.venue,
+                command_id,
+                ts_init,
+                correlation_id,
+                cmd.params,
+            )),
+            Self::Bars(cmd) => UnsubscribeCommand::Bars(UnsubscribeBars::new(
+                cmd.bar_type,
+                cmd.client_id,
+                cmd.venue,
+                command_id,
+                ts_init,
+                correlation_id,
+                cmd.params,
+            )),
+            Self::MarkPrices(cmd) => UnsubscribeCommand::MarkPrices(UnsubscribeMarkPrices::new(
+                cmd.instrument_id,
+                cmd.client_id,
+                cmd.venue,
+                command_id,
+                ts_init,
+                correlation_id,
+                cmd.params,
+            )),
+            Self::IndexPrices(cmd) => UnsubscribeCommand::IndexPrices(UnsubscribeIndexPrices::new(
+                cmd.instrument_id,
+                cmd.client_id,
+                cmd.venue,
+                command_id,
+                ts_init,
+                correlation_id,
+                cmd.params,
+            )),
+            Self::FundingRates(cmd) => {
+                UnsubscribeCommand::FundingRates(UnsubscribeFundingRates::new(
+                    cmd.instrument_id,
+                    cmd.client_id,
+                    cmd.venue,
+                    command_id,
+                    ts_init,
+                    correlation_id,
+                    cmd.params,
+                ))
+            }
+            Self::InstrumentStatus(cmd) => {
+                UnsubscribeCommand::InstrumentStatus(UnsubscribeInstrumentStatus::new(
+                    cmd.instrument_id,
+                    cmd.client_id,
+                    cmd.venue,
+                    command_id,
+                    ts_init,
+                    correlation_id,
+                    cmd.params,
+                ))
+            }
+            Self::InstrumentClose(cmd) => {
+                UnsubscribeCommand::InstrumentClose(UnsubscribeInstrumentClose::new(
+                    cmd.instrument_id,
+                    cmd.client_id,
+                    cmd.venue,
+                    command_id,
+                    ts_init,
+                    correlation_id,
+                    cmd.params,
+                ))
+            }
+            Self::OptionGreeks(cmd) => {
+                UnsubscribeCommand::OptionGreeks(UnsubscribeOptionGreeks::new(
+                    cmd.instrument_id,
+                    cmd.client_id,
+                    cmd.venue,
+                    command_id,
+                    ts_init,
+                    correlation_id,
+                    cmd.params,
+                ))
+            }
+            Self::OptionChain(cmd) => {
+                let mut unsubscribe = UnsubscribeOptionChain::new(
+                    cmd.series_id,
+                    command_id,
+                    ts_init,
+                    cmd.client_id,
+                    cmd.venue,
+                );
+                unsubscribe.params = cmd.params;
+                UnsubscribeCommand::OptionChain(unsubscribe)
+            }
+        }
     }
 
     pub fn command_id(&self) -> UUID4 {
@@ -221,7 +409,7 @@ impl SubscribeCommand {
             Self::InstrumentStatus(cmd) => cmd.correlation_id,
             Self::InstrumentClose(cmd) => cmd.correlation_id,
             Self::OptionGreeks(cmd) => cmd.correlation_id,
-            Self::OptionChain(_) => None,
+            Self::OptionChain(cmd) => cmd.correlation_id,
         }
     }
 
@@ -407,7 +595,7 @@ pub enum RequestCommand {
     Quotes(RequestQuotes),
     Trades(RequestTrades),
     FundingRates(RequestFundingRates),
-    ForwardPrices(RequestForwardPrices),
+    OptionChainReferencePrice(RequestOptionChainReferencePrice),
     Bars(RequestBars),
     Join(RequestJoin),
 }
@@ -435,7 +623,7 @@ impl RequestCommand {
             Self::Quotes(cmd) => &cmd.request_id,
             Self::Trades(cmd) => &cmd.request_id,
             Self::FundingRates(cmd) => &cmd.request_id,
-            Self::ForwardPrices(cmd) => &cmd.request_id,
+            Self::OptionChainReferencePrice(cmd) => &cmd.request_id,
             Self::Bars(cmd) => &cmd.request_id,
             Self::Join(cmd) => &cmd.request_id,
         }
@@ -452,7 +640,7 @@ impl RequestCommand {
             Self::Quotes(cmd) => cmd.client_id.as_ref(),
             Self::Trades(cmd) => cmd.client_id.as_ref(),
             Self::FundingRates(cmd) => cmd.client_id.as_ref(),
-            Self::ForwardPrices(cmd) => cmd.client_id.as_ref(),
+            Self::OptionChainReferencePrice(cmd) => cmd.client_id.as_ref(),
             Self::Bars(cmd) => cmd.client_id.as_ref(),
             Self::Join(_) => None,
         }
@@ -469,7 +657,7 @@ impl RequestCommand {
             Self::Quotes(cmd) => Some(&cmd.instrument_id.venue),
             Self::Trades(cmd) => Some(&cmd.instrument_id.venue),
             Self::FundingRates(cmd) => Some(&cmd.instrument_id.venue),
-            Self::ForwardPrices(cmd) => Some(&cmd.venue),
+            Self::OptionChainReferencePrice(cmd) => Some(&cmd.series_id.venue),
             // TODO: Extract the below somewhere
             Self::Bars(cmd) => match &cmd.bar_type {
                 BarType::Standard { instrument_id, .. } => Some(&instrument_id.venue),
@@ -490,7 +678,7 @@ impl RequestCommand {
             Self::Quotes(cmd) => cmd.ts_init,
             Self::Trades(cmd) => cmd.ts_init,
             Self::FundingRates(cmd) => cmd.ts_init,
-            Self::ForwardPrices(cmd) => cmd.ts_init,
+            Self::OptionChainReferencePrice(cmd) => cmd.ts_init,
             Self::Bars(cmd) => cmd.ts_init,
             Self::Join(cmd) => cmd.ts_init,
         }
@@ -508,7 +696,7 @@ pub enum DataResponse {
     Quotes(QuotesResponse),
     Trades(TradesResponse),
     FundingRates(FundingRatesResponse),
-    ForwardPrices(ForwardPricesResponse),
+    OptionChainReferencePrice(OptionChainReferencePriceResponse),
     Bars(BarsResponse),
 }
 
@@ -529,7 +717,7 @@ impl DataResponse {
             Self::Quotes(resp) => &resp.correlation_id,
             Self::Trades(resp) => &resp.correlation_id,
             Self::FundingRates(resp) => &resp.correlation_id,
-            Self::ForwardPrices(resp) => &resp.correlation_id,
+            Self::OptionChainReferencePrice(resp) => &resp.correlation_id,
             Self::Bars(resp) => &resp.correlation_id,
         }
     }
@@ -547,7 +735,7 @@ impl DataResponse {
             Self::Quotes(_) => "Quotes",
             Self::Trades(_) => "Trades",
             Self::FundingRates(_) => "FundingRates",
-            Self::ForwardPrices(_) => "ForwardPrices",
+            Self::OptionChainReferencePrice(_) => "OptionChainReferencePrice",
             Self::Bars(_) => "Bars",
         }
     }
@@ -566,7 +754,7 @@ impl DataResponse {
             Self::Quotes(resp) => Some(resp.data.len()),
             Self::Trades(resp) => Some(resp.data.len()),
             Self::FundingRates(resp) => Some(resp.data.len()),
-            Self::ForwardPrices(resp) => Some(resp.data.len()),
+            Self::OptionChainReferencePrice(_) => None,
             Self::Bars(resp) => Some(resp.data.len()),
         }
     }
@@ -577,7 +765,7 @@ impl DataResponse {
     /// (`BookDeltas`, `BookDepth`, `Quotes`, `Trades`, `FundingRates`,
     /// `Bars`, `Instruments`). Other variants are untouched: singular payloads
     /// (`Instrument`, `Book`),
-    /// `ForwardPrices` (no per-item `ts_init`), and the opaque custom
+    /// `OptionChainReferencePrice` (singular), and the opaque custom
     /// `Data` variant.
     pub fn trim_to_bounds(&mut self) {
         match self {
@@ -588,7 +776,10 @@ impl DataResponse {
             Self::Instruments(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
             Self::BookDeltas(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
             Self::BookDepth(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
-            Self::Data(_) | Self::Instrument(_) | Self::Book(_) | Self::ForwardPrices(_) => {}
+            Self::Data(_)
+            | Self::Instrument(_)
+            | Self::Book(_)
+            | Self::OptionChainReferencePrice(_) => {}
         }
     }
 }

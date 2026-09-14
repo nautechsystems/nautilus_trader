@@ -20,6 +20,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+use nautilus_core::string::secret::SecretString;
 use nautilus_network::{
     RECONNECTED,
     retry::{RetryManager, create_websocket_retry_manager},
@@ -41,7 +42,7 @@ pub enum HandlerCommand {
     /// Disconnect the WebSocket connection.
     Disconnect,
     /// Send authentication payload to the WebSocket.
-    Authenticate { payload: String },
+    Authenticate { payload: SecretString },
     /// Subscribe to the given topics.
     Subscribe { topics: Vec<String> },
     /// Unsubscribe from the given topics.
@@ -91,21 +92,29 @@ impl BitmexWsFeedHandler {
 
     /// Sends a WebSocket message with retry logic.
     async fn send_with_retry(&self, payload: String) -> anyhow::Result<()> {
+        self.send_secret_with_retry(payload.into()).await
+    }
+
+    async fn send_secret_with_retry(&self, payload: SecretString) -> anyhow::Result<()> {
         if let Some(client) = &self.inner {
             self.retry_manager
-                .execute_with_retry(
+                .invocation(
                     "websocket_send",
                     || {
                         let payload = payload.clone();
                         async move {
-                            client.send_text(payload, None).await.map_err(|e| {
-                                BitmexWsError::ClientError(format!("Send failed: {e}"))
-                            })
+                            client
+                                .send_text(payload.expose_secret().to_owned(), None)
+                                .await
+                                .map_err(|e| {
+                                    BitmexWsError::ClientError(format!("Send failed: {e}"))
+                                })
                         }
                     },
                     should_retry_bitmex_error,
                     |e| create_bitmex_timeout_error(e.to_string()),
                 )
+                .execute()
                 .await
                 .map_err(|e| anyhow::anyhow!("{e}"))
         } else {
@@ -132,7 +141,7 @@ impl BitmexWsFeedHandler {
                         HandlerCommand::Authenticate { payload } => {
                             log::debug!("Authenticate command received");
 
-                            if let Err(e) = self.send_with_retry(payload).await {
+                            if let Err(e) = self.send_secret_with_retry(payload).await {
                                 log::error!("Failed to send authentication after retries: {e}");
                             }
                         }
@@ -491,6 +500,7 @@ pub(crate) fn create_bitmex_timeout_error(msg: String) -> BitmexWsError {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::string::secret::REDACTED;
     use rstest::rstest;
 
     use super::*;
@@ -515,6 +525,19 @@ mod tests {
             AuthTracker::new(),
             SubscriptionState::new(':'),
         )
+    }
+
+    #[rstest]
+    fn test_authenticate_command_debug_redacts_payload() {
+        let payload = "authentication-secret";
+        let command = HandlerCommand::Authenticate {
+            payload: SecretString::from(payload.to_string()),
+        };
+
+        let debug = format!("{command:?}");
+
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains(payload));
     }
 
     #[rstest]

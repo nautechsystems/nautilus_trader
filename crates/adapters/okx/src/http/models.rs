@@ -17,7 +17,7 @@
 
 use nautilus_core::serialization::deserialize_optional_decimal;
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de::IntoDeserializer};
 use ustr::Ustr;
 
 use crate::common::{
@@ -51,7 +51,7 @@ pub struct OKXTrade {
 }
 
 /// Represents a candlestick from the GET /api/v5/market/history-candles endpoint.
-/// The tuple contains [timestamp(ms), open, high, low, close, volume, turnover, base_volume, count].
+/// The tuple contains [timestamp(ms), open, high, low, close, volume, turnover, `base_volume`, count].
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OKXCandlestick(
     /// Timestamp in milliseconds.
@@ -76,9 +76,10 @@ pub struct OKXCandlestick(
 
 use crate::common::{
     enums::{
-        OKXAlgoOrderStatus, OKXAlgoOrderType, OKXExecType, OKXInstrumentType, OKXMarginMode,
-        OKXOrderCategory, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide, OKXSpreadState,
-        OKXSpreadType, OKXTargetCurrency, OKXTradeMode, OKXTriggerType, OKXVipLevel,
+        OKXAccountLevel, OKXAlgoOrderStatus, OKXAlgoOrderType, OKXApiKeyPermission, OKXExecType,
+        OKXFeeType, OKXInstrumentType, OKXMarginMode, OKXOrderCategory, OKXOrderStatus,
+        OKXOrderType, OKXPositionMode, OKXPositionSide, OKXSide, OKXSpreadState, OKXSpreadType,
+        OKXTargetCurrency, OKXTradeMode, OKXTriggerType, OKXVipLevel,
     },
     parse::deserialize_string_to_u64,
 };
@@ -441,16 +442,16 @@ pub struct OKXIndexTicker {
 }
 
 /// Represents an order book level from the GET /api/v5/market/books endpoint.
-/// Each entry is a 4-element tuple: [price, size, liquidated_orders, num_orders].
+/// Each entry is a 4-element tuple: [price, size, `liquidated_orders`, `num_orders`].
 pub type OKXOrderBookLevel = (String, String, String, String);
 
 /// Represents an order book snapshot from the GET /api/v5/market/books endpoint.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OKXOrderBookSnapshot {
-    /// Ask levels [price, size, liquidated_orders_count, orders_count].
+    /// Ask levels [price, size, `liquidated_orders_count`, `orders_count`].
     pub asks: Vec<OKXOrderBookLevel>,
-    /// Bid levels [price, size, liquidated_orders_count, orders_count].
+    /// Bid levels [price, size, `liquidated_orders_count`, `orders_count`].
     pub bids: Vec<OKXOrderBookLevel>,
     /// Timestamp in milliseconds.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
@@ -520,6 +521,32 @@ pub struct OKXPositionTier {
     pub quote_max_loan: String,
     /// Base currency borrowing amount.
     pub base_max_loan: String,
+}
+
+/// Represents configuration evidence from `GET /api/v5/account/config`.
+///
+/// The configuration fields are required and unknown enum values are rejected.
+/// Account-mode and API-key-permission policy remains the caller's responsibility.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXAccountConfiguration {
+    /// Account mode.
+    #[serde(rename = "acctLv", deserialize_with = "deserialize_configuration_enum")]
+    pub account_level: OKXAccountLevel,
+    /// Position mode.
+    #[serde(
+        rename = "posMode",
+        deserialize_with = "deserialize_configuration_enum"
+    )]
+    pub position_mode: OKXPositionMode,
+    /// Whether automatic borrowing is enabled.
+    pub auto_loan: bool,
+    /// Configured fee-charging currency.
+    #[serde(deserialize_with = "deserialize_configuration_enum")]
+    pub fee_type: OKXFeeType,
+    /// Permissions of the requesting API key or access token, in response order.
+    #[serde(rename = "perm", with = "account_permissions")]
+    pub permissions: Vec<OKXApiKeyPermission>,
 }
 
 /// Represents an account balance snapshot from `GET /api/v5/account/balance`.
@@ -936,12 +963,12 @@ pub struct OKXPlaceOrderRequest {
     /// Target currency for spot market orders.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tgt_ccy: Option<OKXTargetCurrency>,
+    /// Quote currency used for trading. Only applicable to SPOT.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trade_quote_ccy: Option<Ustr>,
     /// Attached TP/SL OCO instructions.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attach_algo_ords: Option<Vec<OKXAttachAlgoOrdRequest>>,
-    /// Event contract speed bump flag. Use "1" for non-post-only EVENTS orders.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub speed_bump: Option<String>,
     /// Event contract market outcome: yes or no.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub outcome: Option<String>,
@@ -1358,7 +1385,7 @@ pub struct OKXPlaceAlgoOrderRequest {
     pub td_mode: OKXTradeMode,
     /// Order side (buy, sell).
     pub side: OKXSide,
-    /// Algo order type (trigger, conditional, move_order_stop, etc.).
+    /// Algo order type (trigger, conditional, `move_order_stop`, etc.).
     #[serde(rename = "ordType")]
     pub ord_type: OKXAlgoOrderType,
     /// Order size. Omitted for `closeFraction` close orders.
@@ -1394,7 +1421,7 @@ pub struct OKXPlaceAlgoOrderRequest {
     /// Take-profit trigger type (last, mark, index).
     #[serde(rename = "tpTriggerPxType", skip_serializing_if = "Option::is_none")]
     pub tp_trigger_px_type: Option<OKXTriggerType>,
-    /// Target currency (base_ccy or quote_ccy).
+    /// Target currency (`base_ccy` or `quote_ccy`).
     #[serde(rename = "tgtCcy", skip_serializing_if = "Option::is_none")]
     pub tgt_ccy: Option<OKXTargetCurrency>,
     /// Position side (net, long, short).
@@ -1596,6 +1623,47 @@ pub struct OKXFeeRate {
     /// Data return timestamp (Unix timestamp in milliseconds).
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub ts: u64,
+}
+
+fn deserialize_configuration_enum<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    let value = String::deserialize(deserializer)?;
+    T::deserialize(value.into_deserializer())
+}
+
+mod account_permissions {
+    use serde::{Deserialize, Deserializer, Serializer, de::IntoDeserializer};
+
+    use crate::common::enums::OKXApiKeyPermission;
+
+    pub(super) fn serialize<S>(
+        permissions: &[OKXApiKeyPermission],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let value = permissions
+            .iter()
+            .map(AsRef::as_ref)
+            .collect::<Vec<_>>()
+            .join(",");
+        serializer.serialize_str(&value)
+    }
+
+    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Vec<OKXApiKeyPermission>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        value
+            .split(',')
+            .map(|permission| OKXApiKeyPermission::deserialize(permission.into_deserializer()))
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -2153,8 +2221,8 @@ mod tests {
             px_vol: None,
             reduce_only: None,
             tgt_ccy: None,
+            trade_quote_ccy: None,
             attach_algo_ords: None,
-            speed_bump: None,
             outcome: None,
             slippage_pct: None,
             rpi_taker_access: None,
@@ -2185,8 +2253,8 @@ mod tests {
             px_vol: Some("0.55".to_string()),
             reduce_only: None,
             tgt_ccy: None,
+            trade_quote_ccy: None,
             attach_algo_ords: None,
-            speed_bump: None,
             outcome: None,
             slippage_pct: None,
             rpi_taker_access: None,
@@ -2216,8 +2284,8 @@ mod tests {
             px_vol: None,
             reduce_only: None,
             tgt_ccy: None,
+            trade_quote_ccy: None,
             attach_algo_ords: None,
-            speed_bump: None,
             outcome: None,
             slippage_pct: Some("0.005".to_string()),
             rpi_taker_access: None,
@@ -2245,8 +2313,8 @@ mod tests {
             px_vol: None,
             reduce_only: Some(false),
             tgt_ccy: None,
+            trade_quote_ccy: None,
             attach_algo_ords: None,
-            speed_bump: None,
             outcome: None,
             slippage_pct: None,
             rpi_taker_access: Some(true),
@@ -2448,8 +2516,8 @@ mod tests {
             px_vol: None,
             reduce_only: None,
             tgt_ccy: None,
+            trade_quote_ccy: None,
             attach_algo_ords: None,
-            speed_bump: Some("1".to_string()),
             outcome: Some("yes".to_string()),
             slippage_pct: None,
             rpi_taker_access: None,
@@ -2458,8 +2526,68 @@ mod tests {
 
         let json: serde_json::Value = serde_json::to_value(&request).unwrap();
 
-        assert_eq!(json["speedBump"], "1");
+        assert!(json.get("speedBump").is_none());
         assert_eq!(json["outcome"], "yes");
+        assert!(json.get("tradeQuoteCcy").is_none());
+    }
+
+    #[rstest]
+    fn test_place_order_request_serializes_trade_quote_ccy_usd() {
+        let request = OKXPlaceOrderRequest {
+            inst_id: "BTC-USDC".to_string(),
+            td_mode: OKXTradeMode::Cash,
+            ccy: None,
+            cl_ord_id: Some("usd-quote-1".to_string()),
+            tag: None,
+            side: OKXSide::Buy,
+            pos_side: None,
+            ord_type: OKXOrderType::Limit,
+            sz: "0.01".to_string(),
+            px: Some("100000".to_string()),
+            px_usd: None,
+            px_vol: None,
+            reduce_only: None,
+            tgt_ccy: None,
+            trade_quote_ccy: Some(Ustr::from("USD")),
+            attach_algo_ords: None,
+            outcome: None,
+            slippage_pct: None,
+            rpi_taker_access: None,
+            rpi_px_round: None,
+        };
+
+        let json: serde_json::Value = serde_json::to_value(&request).unwrap();
+        assert_eq!(json["instId"], "BTC-USDC");
+        assert_eq!(json["tradeQuoteCcy"], "USD");
+    }
+
+    #[rstest]
+    fn test_place_order_request_omits_trade_quote_ccy_when_unset() {
+        let request = OKXPlaceOrderRequest {
+            inst_id: "BTC-USDC".to_string(),
+            td_mode: OKXTradeMode::Cash,
+            ccy: None,
+            cl_ord_id: Some("usdc-default-1".to_string()),
+            tag: None,
+            side: OKXSide::Buy,
+            pos_side: None,
+            ord_type: OKXOrderType::Limit,
+            sz: "0.01".to_string(),
+            px: Some("100000".to_string()),
+            px_usd: None,
+            px_vol: None,
+            reduce_only: None,
+            tgt_ccy: None,
+            trade_quote_ccy: None,
+            attach_algo_ords: None,
+            outcome: None,
+            slippage_pct: None,
+            rpi_taker_access: None,
+            rpi_px_round: None,
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(!json.contains("tradeQuoteCcy"));
     }
 
     #[rstest]

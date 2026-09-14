@@ -110,7 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let mut client = AxMdWebSocketClient::new(
         environment.ws_md_url().to_string(),
-        auth_response.token,
+        auth_response.into_token(),
         30,
         TransportBackend::default(),
         None,

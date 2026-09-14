@@ -26,15 +26,18 @@
 //! The system spans research, deterministic simulation, and live execution within a single
 //! event-driven architecture, providing research-to-live semantic parity.
 //!
-//! # Feature flags
+//! # Feature Flags
 //!
+//! This crate provides feature flags to control source code inclusion during compilation:
+//!
+//! - `extension-module`: Builds as a Python extension module.
 //! - `python`: Exposes the `TransportBackend` enum through [PyO3](https://pyo3.rs).
-//! - `extension-module`: Builds the crate as a Python extension module.
+//! - `simulation`: Enables deterministic simulation testing with
+//!   [MadSim](https://crates.io/crates/madsim).
+//! - `transport-sockudo` (default): Adds the [sockudo-ws](https://crates.io/crates/sockudo-ws)
+//!   WebSocket backend, selectable through `WebSocketConfig.backend`.
 //! - `turmoil`: Enables deterministic network simulation testing with
-//!   [turmoil](https://github.com/tokio-rs/turmoil).
-//! - `transport-sockudo`: Adds the [sockudo-ws](https://crates.io/crates/sockudo-ws)
-//!   WebSocket backend, selectable through `WebSocketConfig.backend`. This feature is enabled by
-//!   default; use `default-features = false` to omit the dependency.
+//!   [turmoil](https://crates.io/crates/turmoil).
 //!
 //! # Testing
 //!
@@ -89,11 +92,16 @@
 // macro expansion; an item-level `allow` cannot reach the expansion
 #![allow(clippy::clone_on_copy)]
 
+#[cfg(all(feature = "simulation", madsim, feature = "turmoil"))]
+compile_error!("madsim simulation and turmoil must run in separate builds");
+
 pub mod backoff;
 pub mod dst;
+pub mod error;
 pub mod http;
 pub mod mode;
 pub mod net;
+pub mod ratelimiter;
 pub mod retry;
 pub mod socket;
 pub mod transport;
@@ -106,9 +114,6 @@ mod tls;
 
 #[cfg(feature = "python")]
 pub mod python;
-
-pub mod error;
-pub mod ratelimiter;
 
 pub use sink::{SocketState, SocketStateSink};
 pub use transport::{Message, TransportError};

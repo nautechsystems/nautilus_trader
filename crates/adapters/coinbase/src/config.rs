@@ -15,6 +15,9 @@
 
 //! Configuration structures for the Coinbase adapter.
 
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::{enums::AccountType, identifiers::AccountId};
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
@@ -37,15 +40,15 @@ use crate::common::{
 )]
 pub struct CoinbaseDataClientConfig {
     /// CDP API key name (falls back to `COINBASE_API_KEY` env var).
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     /// CDP API secret in PEM format (falls back to `COINBASE_API_SECRET` env var).
-    pub api_secret: Option<String>,
+    pub api_secret: Option<SecretString>,
     /// Override for the REST API base URL.
     pub base_url_rest: Option<String>,
     /// Override for the WebSocket market data URL.
     pub base_url_ws: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// The Coinbase environment to connect to.
     #[builder(default)]
     pub environment: CoinbaseEnvironment,
@@ -98,11 +101,13 @@ impl CoinbaseDataClientConfig {
     #[must_use]
     pub fn has_credentials(&self) -> bool {
         self.api_key
-            .as_deref()
+            .as_ref()
+            .map(SecretString::expose_secret)
             .is_some_and(|s| !s.trim().is_empty())
             && self
                 .api_secret
-                .as_deref()
+                .as_ref()
+                .map(SecretString::expose_secret)
                 .is_some_and(|s| !s.trim().is_empty())
     }
 
@@ -139,15 +144,15 @@ pub struct CoinbaseExecutionClientConfig {
     #[builder(default = AccountId::from("COINBASE-001"))]
     pub account_id: AccountId,
     /// CDP API key name (falls back to `COINBASE_API_KEY` env var).
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     /// CDP API secret in PEM format (falls back to `COINBASE_API_SECRET` env var).
-    pub api_secret: Option<String>,
+    pub api_secret: Option<SecretString>,
     /// Override for the REST API base URL.
     pub base_url_rest: Option<String>,
     /// Override for the WebSocket user data URL.
     pub base_url_ws: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// The Coinbase environment to connect to.
     #[builder(default)]
     pub environment: CoinbaseEnvironment,
@@ -217,11 +222,13 @@ impl CoinbaseExecutionClientConfig {
     #[must_use]
     pub fn has_credentials(&self) -> bool {
         self.api_key
-            .as_deref()
+            .as_ref()
+            .map(SecretString::expose_secret)
             .is_some_and(|s| !s.trim().is_empty())
             && self
                 .api_secret
-                .as_deref()
+                .as_ref()
+                .map(SecretString::expose_secret)
                 .is_some_and(|s| !s.trim().is_empty())
     }
 
@@ -249,6 +256,37 @@ mod tests {
     use super::*;
 
     #[rstest]
+    fn test_config_debug_redacts_credentials() {
+        let data = CoinbaseDataClientConfig {
+            api_key: Some("data-api-key".into()),
+            api_secret: Some("data-api-secret".into()),
+            proxy_url: Some("http://user:data-proxy@localhost".into()),
+            ..Default::default()
+        };
+        let execution = CoinbaseExecutionClientConfig {
+            api_key: Some("exec-api-key".into()),
+            api_secret: Some("exec-api-secret".into()),
+            proxy_url: Some("http://user:exec-proxy@localhost".into()),
+            ..Default::default()
+        };
+
+        let formatted = format!("{data:?} {execution:?}");
+
+        assert_eq!(formatted.matches(REDACTED).count(), 6);
+
+        for secret in [
+            "data-api-key",
+            "data-api-secret",
+            "data-proxy",
+            "exec-api-key",
+            "exec-api-secret",
+            "exec-proxy",
+        ] {
+            assert!(!formatted.contains(secret));
+        }
+    }
+
+    #[rstest]
     fn test_data_config_defaults() {
         let config = CoinbaseDataClientConfig::default();
         assert_eq!(config.environment, CoinbaseEnvironment::Live);
@@ -261,8 +299,8 @@ mod tests {
     #[rstest]
     fn test_data_config_has_credentials() {
         let config = CoinbaseDataClientConfig {
-            api_key: Some("key".to_string()),
-            api_secret: Some("secret".to_string()),
+            api_key: Some("key".into()),
+            api_secret: Some("secret".into()),
             ..CoinbaseDataClientConfig::default()
         };
         assert!(config.has_credentials());
@@ -271,8 +309,8 @@ mod tests {
     #[rstest]
     fn test_data_config_empty_credentials() {
         let config = CoinbaseDataClientConfig {
-            api_key: Some("  ".to_string()),
-            api_secret: Some("secret".to_string()),
+            api_key: Some("  ".into()),
+            api_secret: Some("secret".into()),
             ..CoinbaseDataClientConfig::default()
         };
         assert!(!config.has_credentials());

@@ -19,7 +19,6 @@
 //! handles live market data subscriptions, and provides access to historical data on demand.
 
 use std::{
-    fmt::Debug,
     path::PathBuf,
     str::FromStr,
     sync::{
@@ -48,9 +47,8 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, Params, UnixNanos,
-    datetime::{NANOSECONDS_IN_DAY, datetime_to_unix_nanos},
-    string::secret::REDACTED,
+    AtomicMap, DurationNanos, Params, UnixNanos,
+    datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::task::TaskGroup;
@@ -93,7 +91,7 @@ const TRADE_SCHEMAS: &[dbn::Schema] = &[
 ];
 
 /// Configuration for the Databento data client.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.adapters.databento", from_py_object)
@@ -124,19 +122,6 @@ nautilus_core::impl_pyo3_config_getters!(DatabentoDataClientConfig {
     bars_timestamp_on_close: bool,
     venue_dataset_map: IndexMap<String, String>,
 });
-
-impl Debug for DatabentoDataClientConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(DatabentoDataClientConfig))
-            .field("credential", &REDACTED)
-            .field("publishers_filepath", &self.publishers_filepath)
-            .field("venue_dataset_map", &self.venue_dataset_map)
-            .field("use_exchange_as_venue", &self.use_exchange_as_venue)
-            .field("bars_timestamp_on_close", &self.bars_timestamp_on_close)
-            .field("reconnect_timeout_mins", &self.reconnect_timeout_mins)
-            .finish()
-    }
-}
 
 impl DatabentoDataClientConfig {
     /// Creates a new [`DatabentoDataClientConfig`] instance.
@@ -1326,10 +1311,10 @@ fn resolve_request_time_range(
     }
 
     if start == end {
-        if end.as_u64() > 0 {
-            start = UnixNanos::from(end.as_u64() - 1);
+        if end.is_zero() {
+            end += DurationNanos::new(1);
         } else {
-            end = UnixNanos::from(1);
+            start -= DurationNanos::new(1);
         }
     }
 
@@ -1337,7 +1322,7 @@ fn resolve_request_time_range(
 }
 
 fn start_of_utc_day(timestamp: UnixNanos) -> UnixNanos {
-    UnixNanos::from((timestamp.as_u64() / NANOSECONDS_IN_DAY) * NANOSECONDS_IN_DAY)
+    timestamp.floor(DurationNanos::from_days(1))
 }
 
 async fn seed_price_precision_if_needed(
@@ -1663,7 +1648,7 @@ mod tests {
 
         let (start, resolved_end) = resolve_request_time_range(Some(end), Some(end));
 
-        assert_eq!(start, UnixNanos::from(end.as_u64() - 1));
+        assert_eq!(start, end - DurationNanos::new(1));
         assert_eq!(resolved_end, Some(end));
     }
 

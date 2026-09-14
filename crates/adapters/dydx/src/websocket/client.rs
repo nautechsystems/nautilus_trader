@@ -62,6 +62,7 @@ pub const DEFAULT_MAX_WS_CONNECTIONS: usize = 8;
 pub const DEFAULT_PER_CHANNEL_SUBSCRIPTION_LIMIT: usize = 32;
 
 use std::{
+    fmt::Debug,
     num::NonZeroU32,
     sync::{
         Arc, LazyLock,
@@ -73,6 +74,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
+use nautilus_core::string::secret::SecretString;
 use nautilus_live::{
     SocketControl, SocketControlFactory,
     task::{TaskJoinOutcome, TaskSlot, finish_task},
@@ -170,7 +172,7 @@ pub struct DydxWebSocketClient {
     bars_timestamp_on_close: Arc<AtomicBool>,
     ws_dispatch_state: Arc<DydxWsDispatchState>,
     transport_backend: TransportBackend,
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
     max_ws_connections: usize,
     per_channel_limit: usize,
     socket_factory: Option<SocketControlFactory>,
@@ -357,7 +359,7 @@ impl DydxWebSocketClient {
             bars_timestamp_on_close: Arc::new(AtomicBool::new(true)),
             ws_dispatch_state: Arc::new(DydxWsDispatchState::default()),
             transport_backend,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             max_ws_connections: max_ws_connections.max(1),
             per_channel_limit: per_channel_limit.max(1),
             socket_factory: None,
@@ -755,7 +757,10 @@ impl DydxWebSocketClient {
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         };
 
         let socket_control = self.socket_factory.as_ref().map(|factory| {
@@ -1445,9 +1450,25 @@ pub(crate) fn candle_ids_from_topics(topics: &[String]) -> AHashSet<String> {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::string::secret::REDACTED;
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_debug_redacts_proxy_url() {
+        let proxy_url = "http://user:password@proxy.example:8080";
+        let client = DydxWebSocketClient::new_public(
+            "wss://test".to_string(),
+            None,
+            Some(proxy_url.to_string()),
+        );
+
+        let debug = format!("{client:?}");
+
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains(proxy_url));
+    }
 
     #[rstest]
     fn test_candle_ids_from_topics_extracts_only_candle_ids() {

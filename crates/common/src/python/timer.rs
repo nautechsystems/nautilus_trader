@@ -134,8 +134,8 @@ mod tests {
     use std::{num::NonZeroU64, sync::Arc, time::Duration};
 
     use nautilus_core::{
-        UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND, python::IntoPyObjectNautilusExt,
-        time::get_atomic_clock_realtime,
+        DurationNanos, UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND,
+        python::IntoPyObjectNautilusExt, time::get_atomic_clock_realtime,
     };
     use pyo3::prelude::*;
 
@@ -213,7 +213,7 @@ mod tests {
         let clock = get_atomic_clock_realtime();
         let start_time = clock.get_time_ns();
         let interval_ns = NonZeroU64::new(100 * NANOSECONDS_IN_MILLISECOND).unwrap();
-        let stop_time = start_time + 500 * NANOSECONDS_IN_MILLISECOND;
+        let stop_time = start_time + DurationNanos::from_millis(500);
 
         let test_sender = Arc::new(TestTimeEventSender);
         let mut timer = LiveTimer::new(

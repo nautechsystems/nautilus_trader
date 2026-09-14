@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Helpers for resolving Bybit REST and WebSocket base URLs at runtime.
+//! Runtime resolution of Bybit REST and WebSocket base URLs.
 
 use super::enums::{BybitEnvironment, BybitProductType};
 

@@ -33,7 +33,7 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl CashAccount {
-    /// Creates a new `CashAccount` instance.
+    /// Represents a cash account that cannot hold leveraged positions.
     #[new]
     #[pyo3(signature = (event, calculate_account_state, allow_borrowing = false))]
     #[must_use]
@@ -189,7 +189,7 @@ impl CashAccount {
     #[pyo3(name = "calculate_balance_locked")]
     #[pyo3(signature = (instrument, side, quantity, price, use_quote_for_inverse=None))]
     fn py_calculate_balance_locked(
-        &mut self,
+        &self,
         instrument: Py<PyAny>,
         side: OrderSide,
         quantity: Quantity,

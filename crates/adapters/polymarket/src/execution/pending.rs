@@ -48,8 +48,8 @@ pub(crate) struct PendingCancelTracker {
 }
 
 impl PendingCancelTracker {
-    pub(crate) fn insert(&self, client_order_id: ClientOrderId) {
-        self.client_order_ids.lock().insert(client_order_id);
+    pub(crate) fn insert(&self, client_order_id: ClientOrderId) -> bool {
+        self.client_order_ids.lock().insert(client_order_id)
     }
 
     pub(crate) fn remove(&self, client_order_id: &ClientOrderId) -> bool {

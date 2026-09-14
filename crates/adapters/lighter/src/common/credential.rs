@@ -23,11 +23,7 @@
 use std::{fmt::Debug, str};
 
 use anyhow::Context;
-use nautilus_core::{
-    env::get_or_env_var_opt,
-    hex,
-    string::secret::{REDACTED, mask_api_key},
-};
+use nautilus_core::{env::get_or_env_var_opt, hex, string::secret::REDACTED};
 use zeroize::ZeroizeOnDrop;
 
 use crate::{
@@ -234,7 +230,7 @@ impl Credential {
     }
 }
 
-/// Replaces any `auth=<token>` substring with a masked token for logs.
+/// Replaces any `auth=<token>` substring with the common redaction marker for logs.
 #[must_use]
 pub(crate) fn scrub_auth(text: &str) -> String {
     let needle = "auth=";
@@ -251,8 +247,9 @@ pub(crate) fn scrub_auth(text: &str) -> String {
             let end = text[abs_start..]
                 .find(|c: char| c == '&' || c.is_whitespace())
                 .map_or(text.len(), |p| abs_start + p);
-            let token = &text[abs_start..end];
-            out.push_str(&mask_api_key(token));
+            if abs_start < end {
+                out.push_str(REDACTED);
+            }
             idx = end;
         } else {
             out.push_str(&text[idx..]);
@@ -501,18 +498,18 @@ mod tests {
 
     #[rstest]
     #[case::no_auth("no auth here", "no auth here")]
-    #[case::short_token("auth=abc", "auth=***")]
-    #[case::long_token("auth=abcdefghijklmnop", "auth=abcd...mnop")]
-    #[case::url_with_ampersand("url?auth=abcdefghijklmnop&other=x", "url?auth=abcd...mnop&other=x")]
+    #[case::short_token("auth=abc", "auth=<redacted>")]
+    #[case::long_token("auth=abcdefghijklmnop", "auth=<redacted>")]
+    #[case::url_with_ampersand("url?auth=abcdefghijklmnop&other=x", "url?auth=<redacted>&other=x")]
     #[case::empty_token_value("url?auth=&other=x", "url?auth=&other=x")]
     #[case::multiple_auth(
         "first auth=token1 mid auth=token2 end",
-        "first auth=****** mid auth=****** end"
+        "first auth=<redacted> mid auth=<redacted> end"
     )]
-    #[case::trailing_whitespace("auth=tok end", "auth=*** end")]
+    #[case::trailing_whitespace("auth=tok end", "auth=<redacted> end")]
     #[case::newline_boundary(
         "first auth=token1\nsecond auth=token2",
-        "first auth=******\nsecond auth=******"
+        "first auth=<redacted>\nsecond auth=<redacted>"
     )]
     fn scrub_auth_redacts_token(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(scrub_auth(input), expected);

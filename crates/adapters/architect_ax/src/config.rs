@@ -15,6 +15,9 @@
 
 //! Configuration structures for the AX Exchange adapter.
 
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
@@ -34,9 +37,9 @@ use crate::common::{credential::credential_env_vars, enums::AxEnvironment};
 #[serde(default, deny_unknown_fields)]
 pub struct AxDataClientConfig {
     /// Optional API key for authenticated REST/WebSocket requests.
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     /// Optional API secret for authenticated REST/WebSocket requests.
-    pub api_secret: Option<String>,
+    pub api_secret: Option<SecretString>,
     /// Trading environment (Sandbox or Production).
     #[builder(default)]
     pub environment: AxEnvironment,
@@ -47,7 +50,7 @@ pub struct AxDataClientConfig {
     /// Optional override for the private WebSocket URL.
     pub base_url_ws_private: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// REST timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
@@ -159,9 +162,9 @@ pub struct AxExecutionClientConfig {
     #[builder(default = AccountId::from("AX-001"))]
     pub account_id: AccountId,
     /// API key for authenticated requests.
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     /// API secret for authenticated requests.
-    pub api_secret: Option<String>,
+    pub api_secret: Option<SecretString>,
     /// Trading environment (Sandbox or Production).
     #[builder(default)]
     pub environment: AxEnvironment,
@@ -172,7 +175,7 @@ pub struct AxExecutionClientConfig {
     /// Optional override for the private WebSocket URL.
     pub base_url_ws_private: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// REST timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
@@ -382,5 +385,36 @@ update_instruments_interval_mins = 5
         assert_eq!(config.recv_window_ms, expected.recv_window_ms);
         assert_eq!(config.cancel_on_disconnect, expected.cancel_on_disconnect);
         assert_eq!(config.transport_backend, expected.transport_backend);
+    }
+
+    #[rstest]
+    fn test_config_debug_redacts_credentials() {
+        let data = AxDataClientConfig {
+            api_key: Some("data-key".into()),
+            api_secret: Some("data-secret".into()),
+            proxy_url: Some("http://user:data-proxy@localhost".into()),
+            ..Default::default()
+        };
+        let execution = AxExecutionClientConfig {
+            api_key: Some("exec-key".into()),
+            api_secret: Some("exec-secret".into()),
+            proxy_url: Some("http://user:exec-proxy@localhost".into()),
+            ..Default::default()
+        };
+
+        let formatted = format!("{data:?} {execution:?}");
+
+        assert_eq!(formatted.matches(REDACTED).count(), 6);
+
+        for secret in [
+            "data-key",
+            "data-secret",
+            "data-proxy",
+            "exec-key",
+            "exec-secret",
+            "exec-proxy",
+        ] {
+            assert!(!formatted.contains(secret));
+        }
     }
 }

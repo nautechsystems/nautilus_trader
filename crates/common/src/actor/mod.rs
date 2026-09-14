@@ -25,15 +25,23 @@ use std::{any::Any, fmt::Debug};
 
 use ustr::Ustr;
 
+#[doc(hidden)]
+pub mod binding;
 pub mod data_actor;
 pub mod indicators;
 pub mod registry;
+
+mod access;
+mod dispatch;
+mod invocation;
+mod storage;
 
 #[cfg(test)]
 pub(crate) mod tests;
 
 // Re-exports
 pub use data_actor::{DataActor, DataActorConfig, DataActorCore, DataActorNative};
+pub(crate) use dispatch::ChainContext;
 
 pub use crate::component::Component;
 

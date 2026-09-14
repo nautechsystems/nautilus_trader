@@ -36,8 +36,8 @@ fn intern_type_name_static(name: String) -> &'static str {
     let set = INTERNER.get_or_init(|| RwLock::new(HashSet::new()));
 
     let guard = set.read();
-    if guard.contains(name.as_str()) {
-        return guard.get(name.as_str()).copied().unwrap();
+    if let Some(&existing) = guard.get(name.as_str()) {
+        return existing;
     }
     drop(guard);
 

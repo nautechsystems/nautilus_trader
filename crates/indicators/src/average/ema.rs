@@ -244,7 +244,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_period_one_behaviour() {
+    fn test_period_one_behavior() {
         let mut ema = ExponentialMovingAverage::new(1, None);
         assert_eq!(ema.alpha, 1.0, "α must be 1 when period = 1");
 

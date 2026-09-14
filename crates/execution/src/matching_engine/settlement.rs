@@ -19,7 +19,7 @@ use nautilus_model::{
         LiquiditySide, OptionKind, OrderSide, OrderType, PositionSide, PriceType, TimeInForce,
     },
     events::{OrderEventAny, OrderFilled},
-    identifiers::{ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
+    identifiers::{ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orders::{MarketOrder, Order, OrderAny, OrderCore},
     position::Position,
@@ -29,17 +29,6 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use super::OrderMatchingEngine;
-
-struct OptionSettlementLeg {
-    order: OrderAny,
-    venue_order_id: VenueOrderId,
-    position_id: Option<PositionId>,
-    fill: OrderFilled,
-}
-
-struct OptionSettlementPlan {
-    legs: Vec<OptionSettlementLeg>,
-}
 
 impl OrderMatchingEngine {
     pub(super) fn process_option_expiry(&mut self, ts_now: UnixNanos) -> anyhow::Result<bool> {
@@ -161,27 +150,6 @@ impl OrderMatchingEngine {
         OptionSettlementPlan { legs }
     }
 
-    fn option_register_settlement_plan(&self, plan: &OptionSettlementPlan) -> anyhow::Result<()> {
-        for leg in &plan.legs {
-            let client_order_id = leg.order.client_order_id();
-            let mut cache = self.cache.borrow_mut();
-            cache
-                .add_order(leg.order.clone(), leg.position_id, None, false)
-                .map_err(|e| {
-                    anyhow::anyhow!("cannot add settlement order {client_order_id}: {e}")
-                })?;
-            cache
-                .add_venue_order_id(&client_order_id, &leg.venue_order_id, false)
-                .map_err(|e| {
-                    anyhow::anyhow!(
-                        "cannot claim venue order ID {} for settlement order {client_order_id}: {e}",
-                        leg.venue_order_id
-                    )
-                })?;
-        }
-        Ok(())
-    }
-
     fn option_apply_settlement_plan(&mut self, plan: OptionSettlementPlan) -> anyhow::Result<()> {
         self.option_register_settlement_plan(&plan)?;
 
@@ -195,13 +163,34 @@ impl OrderMatchingEngine {
         }
 
         for leg in &plan.legs {
-            self.generate_order_accepted(&leg.order, leg.venue_order_id);
+            self.generate_order_accepted(&leg.order, leg.fill.venue_order_id);
         }
 
         for leg in plan.legs {
             self.dispatch_order_event(OrderEventAny::Filled(leg.fill));
         }
 
+        Ok(())
+    }
+
+    fn option_register_settlement_plan(&self, plan: &OptionSettlementPlan) -> anyhow::Result<()> {
+        for leg in &plan.legs {
+            let client_order_id = leg.order.client_order_id();
+            let mut cache = self.cache.borrow_mut();
+            cache
+                .add_order(leg.order.clone(), leg.fill.position_id, None, false)
+                .map_err(|e| {
+                    anyhow::anyhow!("cannot add settlement order {client_order_id}: {e}")
+                })?;
+            cache
+                .add_venue_order_id(&client_order_id, &leg.fill.venue_order_id, false)
+                .map_err(|e| {
+                    anyhow::anyhow!(
+                        "cannot claim venue order ID {} for settlement order {client_order_id}: {e}",
+                        leg.fill.venue_order_id
+                    )
+                })?;
+        }
         Ok(())
     }
 
@@ -295,12 +284,7 @@ impl OrderMatchingEngine {
             trade_id,
             ts_now,
         );
-        OptionSettlementLeg {
-            order,
-            venue_order_id,
-            position_id: Some(position.id),
-            fill,
-        }
+        OptionSettlementLeg { order, fill }
     }
 
     fn option_plan_physical_settlement(
@@ -390,14 +374,10 @@ impl OrderMatchingEngine {
         [
             OptionSettlementLeg {
                 order: close_order,
-                venue_order_id: close_venue_order_id,
-                position_id: Some(position.id),
                 fill: option_fill,
             },
             OptionSettlementLeg {
                 order: open_order,
-                venue_order_id: open_venue_order_id,
-                position_id: None,
                 fill: underlying_fill,
             },
         ]
@@ -434,12 +414,7 @@ impl OrderMatchingEngine {
             trade_id,
             ts_now,
         );
-        OptionSettlementLeg {
-            order,
-            venue_order_id,
-            position_id: Some(position.id),
-            fill,
-        }
+        OptionSettlementLeg { order, fill }
     }
 
     #[expect(clippy::too_many_arguments)]
@@ -555,4 +530,13 @@ impl OrderMatchingEngine {
             None,
         )
     }
+}
+
+struct OptionSettlementLeg {
+    order: OrderAny,
+    fill: OrderFilled,
+}
+
+struct OptionSettlementPlan {
+    legs: Vec<OptionSettlementLeg>,
 }

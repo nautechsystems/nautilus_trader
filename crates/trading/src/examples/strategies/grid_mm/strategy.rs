@@ -19,6 +19,7 @@ use std::fmt::Debug;
 
 use ahash::AHashSet;
 use nautilus_common::actor::DataActor;
+use nautilus_core::DurationNanos;
 use nautilus_model::{
     data::QuoteTick,
     enums::{OrderSide, TimeInForce},
@@ -315,8 +316,7 @@ impl DataActor for GridMarketMaker {
 
         let (tif, expire_time) = match self.config.expire_time_secs {
             Some(secs) => {
-                let now_ns = self.clock().timestamp_ns();
-                let expire_ns = now_ns + secs * 1_000_000_000;
+                let expire_ns = self.clock().timestamp_ns() + DurationNanos::try_from_secs(secs)?;
                 (Some(TimeInForce::Gtd), Some(expire_ns))
             }
             None => (None, None),

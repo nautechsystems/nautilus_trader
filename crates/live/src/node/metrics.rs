@@ -829,6 +829,7 @@ mod tests {
             },
             Duration::from_nanos(50),
         );
+
         metrics.reset();
 
         assert_eq!(metrics.snapshot(), RunnerMetricsSnapshot::default());
@@ -845,6 +846,7 @@ mod tests {
         let metrics = RunnerMetrics::default();
 
         time_tx.send(stub_time_event_handler()).unwrap();
+
         for _ in 0..2 {
             exec_evt_tx.send(stub_exec_event()).unwrap();
         }

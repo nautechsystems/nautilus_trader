@@ -15,6 +15,7 @@
 
 //! Python bindings for Derive configuration.
 
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use pyo3::pymethods;
@@ -61,7 +62,7 @@ impl DeriveDataClientConfig {
         Self {
             base_url_rest,
             base_url_ws,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             ws_timeout_secs,
@@ -143,11 +144,11 @@ impl DeriveExecutionClientConfig {
         Self {
             account_id: account_id.unwrap_or(defaults.account_id),
             wallet_address,
-            session_key,
+            session_key: session_key.map(SecretString::from),
             subaccount_id,
             base_url_rest,
             base_url_ws,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             max_retries: max_retries.unwrap_or(defaults.max_retries),

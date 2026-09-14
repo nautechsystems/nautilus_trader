@@ -4,12 +4,6 @@
 
 set -euo pipefail
 
-# Exit cleanly if ripgrep is not installed
-if ! command -v rg &> /dev/null; then
-  echo "WARNING: ripgrep not found, skipping formatting checks (Rust)"
-  exit 0
-fi
-
 # Color output
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
@@ -18,945 +12,252 @@ NC='\033[0m' # No Color
 VIOLATIONS=0
 
 # ---------------------------------------------------------------------------
-# Check: blank line above `if` statements
+# Check: blank line above control flow
 #
-# An `if` must have a blank line above unless:
+# An `if`, `match`, `for`, `while`, `loop`, or `spawn` line must have a blank
+# line above unless:
 # a) It is the first expression in a block (preceded by line ending with `{`)
-# b) An identifier from the `if` condition appears on the line directly above
-# c) It is part of an `else if` chain
-# d) The line above is a comment or attribute (attached to the `if`)
-# e) The `if` is an expression or continuation (assignment, argument, match guard)
+# b) An identifier from the line or its first body line appears on the line
+#    directly above
+# c) The line above is a comment or attribute (attached to the statement)
+# d) The line above ends with `\` (string continuation)
+# e) `if` and `match` are expressions or arguments: the line above ends with
+#    `=`, `,`, `(`, or `|`; `if` also after `)`, a leading `|`, a
+#    multi-alternative match pattern, an `else`, or as a match arm guard
+# f) `for`, `while`, and `loop` follow a loop label
+# g) `spawn` continues a method chain
+#
+# One awk pass reads each changed file and applies the rules; bash filters the
+# diagnostics to changed boundaries and formats the violations it reports.
 # ---------------------------------------------------------------------------
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+cd "$REPO_ROOT"
+
+if [[ -n "${CHANGED_BASE_SHA:-}" ]]; then
+  if ! base=$(git merge-base "$CHANGED_BASE_SHA" HEAD 2> /dev/null); then
+    echo "Cannot resolve CHANGED_BASE_SHA; checking all tracked Rust files"
+    base=$(git hash-object -t tree /dev/null)
+  fi
+elif git rev-parse --verify HEAD > /dev/null 2>&1; then
+  base=HEAD
+else
+  base=$(git hash-object -t tree /dev/null)
+fi
+
+scope_dir=$(mktemp -d)
+trap 'rm -rf "$scope_dir"' EXIT
+scope_file="$scope_dir/lines"
+: > "$scope_file"
+
+# Read full changed files for context, but report only boundaries touched by the diff
+rust_files=""
+git diff --no-color --no-ext-diff --no-textconv --no-renames --name-only --diff-filter=ACM -z "$base" -- \
+  crates examples docs > "$scope_dir/files"
+while IFS= read -r -d '' file; do
+  [[ "$file" == *.rs ]] || continue
+  rust_files+="$file"$'\n'
+  git diff --no-color --no-ext-diff --no-textconv --no-renames --unified=0 "$base" -- "$file" > "$scope_dir/diff"
+  MATCH_FILE="$file" awk '
+    /^@@ / {
+      range = $3
+      sub(/^\+/, "", range)
+      count = split(range, parts, ",")
+      first = parts[1] + 0
+      span_length = count == 1 ? 1 : parts[2] + 0
+      if (span_length == 0) first++
+      last = span_length == 0 ? first : first + span_length - 1
+      printf "%d\t%d\t%s\n", first, last, ENVIRON["MATCH_FILE"]
+    }
+  ' "$scope_dir/diff" >> "$scope_file"
+done < "$scope_dir/files"
+rust_files=${rust_files%$'\n'}
+
+boundary_changed() {
+  MATCH_FILE="$1" MATCH_LINE="$2" MATCH_START="${3:-$(($2 - 1))}" awk '
+    BEGIN {
+      first = ENVIRON["MATCH_START"] + 0
+      last = ENVIRON["MATCH_LINE"] + 0
+    }
+    {
+      start = $1
+      end = $2
+      path = $0
+      sub(/^[^\t]*\t[^\t]*\t/, "", path)
+      if (path == ENVIRON["MATCH_FILE"] && start <= last && end >= first) found = 1
+    }
+    END { exit !found }
+  ' "$scope_file"
+}
+
+control_flow_output=""
+if [[ -n "$rust_files" ]]; then
+  control_flow_output=$(LC_ALL=C awk '
+    function is_match_guard(start,    j) {
+      for (j = start; j <= total; j++) {
+        if (j > inspected_end) inspected_end = j
+        if (j > start && lines[j] ~ /^[[:space:]]*if[[:space:]]/) return 0
+        if (lines[j] ~ /=>[[:space:]]*$/) return 1
+        if (lines[j] ~ /[{;]/) return 0
+      }
+      return 0
+    }
+
+    function condition_text(keyword, trimmed,    rest, label_end) {
+      rest = trimmed
+      if (keyword == "for" || keyword == "while" || keyword == "loop") {
+        if (substr(rest, 1, 1) == quote) {
+          label_end = index(rest, ": ")
+          if (label_end > 0) rest = substr(rest, label_end + 2)
+        }
+      }
+      if (keyword != "spawn") sub("^" keyword " ", "", rest)
+      return rest
+    }
+
+    function shares_identifier(keyword, text, previous,    count, parts, p, present, rest, ident) {
+      count = split(previous, parts, /[^a-zA-Z0-9_]+/)
+      for (p = 1; p <= count; p++) {
+        if (parts[p] != "") present[parts[p]] = 1
+      }
+
+      rest = text
+      while (match(rest, /[a-zA-Z_][a-zA-Z0-9_]*/)) {
+        ident = substr(rest, RSTART, RLENGTH)
+        rest = substr(rest, RSTART + RLENGTH)
+        if (ident in reserved) continue
+        if (keyword == "spawn" && (ident == "spawn" || ident == "tokio")) continue
+        if (ident in present) return 1
+      }
+      return 0
+    }
+
+    function is_exempt(keyword, i, trimmed, previous, prev_trimmed) {
+      if (prev_trimmed == "") return 1
+      if (prev_trimmed ~ /\{[[:space:]]*$/) return 1
+      if (prev_trimmed ~ /^\/\// || prev_trimmed ~ /^\*[[:space:]]/ || prev_trimmed ~ /^\*\//) return 1
+      if (prev_trimmed ~ /^\/\*/ || prev_trimmed ~ /^#\[/) return 1
+      if (prev_trimmed ~ /\\[[:space:]]*$/) return 1
+
+      if (keyword == "if") {
+        if (prev_trimmed ~ /\}[[:space:]]*else[[:space:]]*$/ || prev_trimmed ~ /^else[[:space:]]*$/) return 1
+        if (prev_trimmed ~ /=[[:space:]]*$/ && prev_trimmed !~ /[=!<>]=[[:space:]]*$/) return 1
+        if (prev_trimmed ~ /[,()|][[:space:]]*$/ || prev_trimmed ~ /^\|/) return 1
+        if (prev_trimmed ~ /[[:alnum:]][[:space:]]*\|[[:space:]]*[[:alnum:]]/ && prev_trimmed !~ /\|\|/) return 1
+        if (is_match_guard(i)) return 1
+      } else if (keyword == "match") {
+        if (prev_trimmed ~ /=[[:space:]]*$/ && prev_trimmed !~ /[=!<>]=[[:space:]]*$/) return 1
+        if (prev_trimmed ~ /[,(|][[:space:]]*$/) return 1
+      } else if (keyword == "spawn") {
+        if (trimmed ~ /^\./) return 1
+      } else if (prev_trimmed ~ label_line) {
+        return 1
+      }
+
+      if (shares_identifier(keyword, condition_text(keyword, trimmed), previous)) return 1
+      if (i < total && shares_identifier(keyword, lines[i + 1], previous)) return 1
+      return 0
+    }
+
+    BEGIN {
+      quote = sprintf("%c", 39)
+      # Bytes above 0x7F admit the non-ASCII identifier continuations that
+      # ripgrep matched with \w under LC_ALL=C.
+      label = "(" quote "[a-zA-Z_][a-zA-Z0-9_\200-\377]*:[[:space:]]*)?"
+      label_line = "^" quote "[a-zA-Z_]"
+      prefilter = "^(if|match|for|while|loop|" quote ")"
+      keyword_count = split("if match for while loop spawn", keywords, " ")
+      patterns["if"] = "^if[[:space:]]"
+      patterns["match"] = "^match[[:space:]]"
+      patterns["for"] = "^" label "for[[:space:]]"
+      patterns["while"] = "^" label "while[[:space:]]"
+      patterns["loop"] = "^" label "loop[[:space:]]"
+      patterns["spawn"] = "^spawn\\(|\\.spawn\\(|::spawn\\("
+
+      reserved_words = "if else let mut ref true false return break continue match"
+      reserved_words = reserved_words " as in for while loop fn struct enum impl trait pub"
+      reserved_words = reserved_words " use mod const static type where async await move unsafe"
+      reserved_words = reserved_words " extern crate super dyn self Self"
+      word_count = split(reserved_words, words, " ")
+      for (w = 1; w <= word_count; w++) reserved[words[w]] = 1
+    }
+
+    {
+      file = $0
+      total = 0
+      while ((status = (getline line < file)) > 0) lines[++total] = line
+      close(file)
+      if (status < 0) {
+        print "ERROR: cannot read " file > "/dev/stderr"
+        exit 1
+      }
+
+      for (i = 2; i <= total; i++) {
+        trimmed = lines[i]
+        sub(/^[[:space:]]+/, "", trimmed)
+        if (trimmed !~ prefilter && index(trimmed, "spawn(") == 0) continue
+        for (k = 1; k <= keyword_count; k++) {
+          keyword = keywords[k]
+          if (trimmed !~ patterns[keyword]) continue
+          previous = lines[i - 1]
+          prev_trimmed = previous
+          sub(/^[[:space:]]+/, "", prev_trimmed)
+          inspected_end = i < total ? i + 1 : i
+          if (is_exempt(keyword, i, trimmed, previous, prev_trimmed)) continue
+          violations[keyword]++
+          records[keyword, violations[keyword]] = keyword "\t" i "\t" inspected_end "\t" file "\n" trimmed "\n" prev_trimmed
+        }
+      }
+      split("", lines)
+    }
+
+    END {
+      for (k = 1; k <= keyword_count; k++) {
+        keyword = keywords[k]
+        for (n = 1; n <= violations[keyword] + 0; n++) print records[keyword, n]
+      }
+    }
+  ' <<< "$rust_files")
+fi
+
+# Each violation records its location, inspected end line, and path, followed by the offending
+# line and the line above on their own lines, so source text never splits fields
+# and the path, as the last field, keeps any tab it contains.
+report_control_flow() {
+  local keyword="$1"
+  local record_keyword line_num inspected_end file current previous
+
+  while IFS=$'\t' read -r record_keyword line_num inspected_end file &&
+    IFS= read -r current &&
+    IFS= read -r previous; do
+    [[ "$record_keyword" == "$keyword" ]] || continue
+    boundary_changed "$file" "$inspected_end" "$((line_num - 1))" || continue
+
+    echo -e "${RED}Error:${NC} Missing blank line above \`$keyword\` in $file:$line_num"
+    echo "  ${current:0:100}"
+    echo "  Line above: ${previous:0:100}"
+    echo
+    VIOLATIONS=$((VIOLATIONS + 1))
+  done <<< "$control_flow_output"
+}
 
 echo "Checking for blank line above \`if\` statements (Rust)..."
-
-# rg exits 0 (matches), 1 (no matches), or 2+ (error)
-rg_exit=0
-output=$(rg -n -B 1 --no-heading '^\s*if\s' crates examples docs --type rust 2> /dev/null) || rg_exit=$?
-if [ $rg_exit -gt 1 ]; then
-  echo "ERROR: ripgrep failed with exit code $rg_exit"
-  exit 1
-fi
-
-if [[ -n "$output" ]]; then
-
-  match_guard_locations=$(
-    rg -0 -l --no-messages '^\s*if\s' crates examples docs --type rust |
-      xargs -0 awk '
-        FNR == 1 { in_if = 0 }
-        /^[[:space:]]*if[[:space:]]/ {
-          start = FNR
-          in_if = 1
-        }
-        in_if && /=>[[:space:]]*$/ {
-          printf "|%s:%d|", FILENAME, start
-          in_if = 0
-          next
-        }
-        in_if && /[{;]/ { in_if = 0 }
-      '
-  )
-
-  has_prev=false
-  prev_content=""
-
-  while IFS= read -r line; do
-
-    # Separator between match groups
-    if [[ "$line" == "--" ]]; then
-      has_prev=false
-      prev_content=""
-      continue
-    fi
-
-    # Context line (line before match)
-    if [[ "$line" =~ ^([^:]+)-([0-9]+)-(.*)$ ]]; then
-      prev_content="${BASH_REMATCH[3]}"
-      has_prev=true
-      continue
-    fi
-
-    # Match line
-    if [[ "$line" =~ ^([^:]+):([0-9]+):(.*)$ ]]; then
-      file="${BASH_REMATCH[1]}"
-      line_num="${BASH_REMATCH[2]}"
-      content="${BASH_REMATCH[3]}"
-      trimmed="${content#"${content%%[![:space:]]*}"}"
-
-      # No preceding line (first line of file or first in group)
-      if ! $has_prev; then
-        prev_content="$content"
-        has_prev=true
-        continue
-      fi
-
-      prev_trimmed="${prev_content#"${prev_content%%[![:space:]]*}"}"
-
-      # Exempt: else if chain
-      if [[ "$prev_trimmed" =~ \}[[:space:]]*else[[:space:]]*$ ]] ||
-        [[ "$prev_trimmed" =~ ^else[[:space:]]*$ ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: blank line above
-      if [[ -z "$prev_trimmed" ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: first expression in block (prev line opens a block)
-      if [[ "$prev_trimmed" == "{" ]] || [[ "$prev_trimmed" =~ \{[[:space:]]*$ ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: comment or attribute above (attached to the `if`)
-      if [[ "$prev_trimmed" =~ ^// ]] || [[ "$prev_trimmed" =~ ^\*[[:space:]] ]] ||
-        [[ "$prev_trimmed" =~ ^\*/ ]] || [[ "$prev_trimmed" =~ ^/\* ]] ||
-        [[ "$prev_trimmed" =~ ^#\[ ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: string continuation (prev line ends with `\`)
-      if [[ "$prev_trimmed" =~ \\[[:space:]]*$ ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: `if` used as expression (assignment, argument, or continuation)
-      if [[ "$prev_trimmed" =~ =[[:space:]]*$ ]] &&
-        ! [[ "$prev_trimmed" =~ [=!\<\>]=[[:space:]]*$ ]]; then
-        prev_content="$content"
-        continue
-      fi
-      if [[ "$prev_trimmed" =~ [,\(\)|][[:space:]]*$ ]] ||
-        [[ "$prev_trimmed" =~ ^[|] ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: match arm guard after a multi-alternative pattern
-      if [[ "$prev_trimmed" =~ [[:alnum:]][[:space:]]*\|[[:space:]]*[[:alnum:]] ]] &&
-        ! [[ "$prev_trimmed" =~ \|\| ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: match arm guard (`=>` terminates the condition before a block opens)
-      match_guard_location="|${file}:${line_num}|"
-      if [[ "$match_guard_locations" == *"$match_guard_location"* ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: shared identifier with line above
-      condition="${trimmed#if }"
-      has_shared=false
-      rest="$condition"
-      while [[ "$rest" =~ ([a-zA-Z_][a-zA-Z0-9_]*)(.*) ]]; do
-        ident="${BASH_REMATCH[1]}"
-        rest="${BASH_REMATCH[2]}"
-        case "$ident" in
-          if | else | let | mut | ref | true | false | return | break | continue | match) ;;
-          as | in | for | while | loop | fn | struct | enum | impl | trait | pub) ;;
-          use | mod | const | static | type | where | async | await | move | unsafe) ;;
-          extern | crate | super | dyn | self | Self) ;;
-          *)
-            if [[ "$prev_content" =~ (^|[^a-zA-Z0-9_])${ident}([^a-zA-Z0-9_]|$) ]]; then
-              has_shared=true
-              break
-            fi
-            ;;
-        esac
-      done
-
-      if ! $has_shared; then
-        # Check first body line for shared identifiers with line above
-        body_lines=$(sed -n "$((line_num + 1))p" "$file")
-        body_rest="$body_lines"
-        while [[ "$body_rest" =~ ([a-zA-Z_][a-zA-Z0-9_]*)(.*) ]]; do
-          ident="${BASH_REMATCH[1]}"
-          body_rest="${BASH_REMATCH[2]}"
-          case "$ident" in
-            if | else | let | mut | ref | true | false | return | break | continue | match) ;;
-            as | in | for | while | loop | fn | struct | enum | impl | trait | pub) ;;
-            use | mod | const | static | type | where | async | await | move | unsafe) ;;
-            extern | crate | super | dyn | self | Self) ;;
-            *)
-              if [[ "$prev_content" =~ (^|[^a-zA-Z0-9_])${ident}([^a-zA-Z0-9_]|$) ]]; then
-                has_shared=true
-                break
-              fi
-              ;;
-          esac
-        done
-      fi
-
-      if ! $has_shared; then
-        echo -e "${RED}Error:${NC} Missing blank line above \`if\` in $file:$line_num"
-        echo "  ${trimmed:0:100}"
-        echo "  Line above: ${prev_trimmed:0:100}"
-        echo
-        VIOLATIONS=$((VIOLATIONS + 1))
-      fi
-
-      prev_content="$content"
-    fi
-  done <<< "$output"
-
-fi
-
-# ---------------------------------------------------------------------------
-# Check: blank line above `match` blocks
-#
-# A `match` must have a blank line above unless:
-# a) It is the first expression in a block (preceded by line ending with `{`)
-# b) An identifier from the `match` expression appears on the line above
-# c) The line above is a comment or attribute
-# d) The `match` is an expression or continuation (assignment, argument)
-# ---------------------------------------------------------------------------
+report_control_flow if
 
 echo "Checking for blank line above \`match\` blocks (Rust)..."
-
-rg_exit=0
-output=$(rg -n -B 1 --no-heading '^\s*match\s' crates examples docs --type rust 2> /dev/null) || rg_exit=$?
-if [ $rg_exit -gt 1 ]; then
-  echo "ERROR: ripgrep failed with exit code $rg_exit"
-  exit 1
-fi
-
-if [[ -n "$output" ]]; then
-
-  has_prev=false
-  prev_content=""
-
-  while IFS= read -r line; do
-
-    # Separator between match groups
-    if [[ "$line" == "--" ]]; then
-      has_prev=false
-      prev_content=""
-      continue
-    fi
-
-    # Context line (line before match)
-    if [[ "$line" =~ ^([^:]+)-([0-9]+)-(.*)$ ]]; then
-      prev_content="${BASH_REMATCH[3]}"
-      has_prev=true
-      continue
-    fi
-
-    # Match line
-    if [[ "$line" =~ ^([^:]+):([0-9]+):(.*)$ ]]; then
-      file="${BASH_REMATCH[1]}"
-      line_num="${BASH_REMATCH[2]}"
-      content="${BASH_REMATCH[3]}"
-      trimmed="${content#"${content%%[![:space:]]*}"}"
-
-      # No preceding line (first line of file or first in group)
-      if ! $has_prev; then
-        prev_content="$content"
-        has_prev=true
-        continue
-      fi
-
-      prev_trimmed="${prev_content#"${prev_content%%[![:space:]]*}"}"
-
-      # Exempt: blank line above
-      if [[ -z "$prev_trimmed" ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: first expression in block (prev line opens a block)
-      if [[ "$prev_trimmed" == "{" ]] || [[ "$prev_trimmed" =~ \{[[:space:]]*$ ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: comment or attribute above
-      if [[ "$prev_trimmed" =~ ^// ]] || [[ "$prev_trimmed" =~ ^\*[[:space:]] ]] ||
-        [[ "$prev_trimmed" =~ ^\*/ ]] || [[ "$prev_trimmed" =~ ^/\* ]] ||
-        [[ "$prev_trimmed" =~ ^#\[ ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: string continuation (prev line ends with `\`)
-      if [[ "$prev_trimmed" =~ \\[[:space:]]*$ ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: `match` used as expression (prev line ends with `=` but not `==`/`!=`/`<=`/`>=`)
-      if [[ "$prev_trimmed" =~ =[[:space:]]*$ ]] &&
-        ! [[ "$prev_trimmed" =~ [=!\<\>]=[[:space:]]*$ ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: `match` as argument (prev line ends with `(`, `,`, `|`)
-      if [[ "$prev_trimmed" =~ [,\(\|][[:space:]]*$ ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: shared identifier with line above
-      expression="${trimmed#match }"
-      has_shared=false
-      rest="$expression"
-      while [[ "$rest" =~ ([a-zA-Z_][a-zA-Z0-9_]*)(.*) ]]; do
-        ident="${BASH_REMATCH[1]}"
-        rest="${BASH_REMATCH[2]}"
-        case "$ident" in
-          if | else | let | mut | ref | true | false | return | break | continue | match) ;;
-          as | in | for | while | loop | fn | struct | enum | impl | trait | pub) ;;
-          use | mod | const | static | type | where | async | await | move | unsafe) ;;
-          extern | crate | super | dyn | self | Self) ;;
-          *)
-            if [[ "$prev_content" =~ (^|[^a-zA-Z0-9_])${ident}([^a-zA-Z0-9_]|$) ]]; then
-              has_shared=true
-              break
-            fi
-            ;;
-        esac
-      done
-
-      if ! $has_shared; then
-        # Check first body line for shared identifiers with line above
-        body_lines=$(sed -n "$((line_num + 1))p" "$file")
-        body_rest="$body_lines"
-        while [[ "$body_rest" =~ ([a-zA-Z_][a-zA-Z0-9_]*)(.*) ]]; do
-          ident="${BASH_REMATCH[1]}"
-          body_rest="${BASH_REMATCH[2]}"
-          case "$ident" in
-            if | else | let | mut | ref | true | false | return | break | continue | match) ;;
-            as | in | for | while | loop | fn | struct | enum | impl | trait | pub) ;;
-            use | mod | const | static | type | where | async | await | move | unsafe) ;;
-            extern | crate | super | dyn | self | Self) ;;
-            *)
-              if [[ "$prev_content" =~ (^|[^a-zA-Z0-9_])${ident}([^a-zA-Z0-9_]|$) ]]; then
-                has_shared=true
-                break
-              fi
-              ;;
-          esac
-        done
-      fi
-
-      if ! $has_shared; then
-        echo -e "${RED}Error:${NC} Missing blank line above \`match\` in $file:$line_num"
-        echo "  ${trimmed:0:100}"
-        echo "  Line above: ${prev_trimmed:0:100}"
-        echo
-        VIOLATIONS=$((VIOLATIONS + 1))
-      fi
-
-      prev_content="$content"
-    fi
-  done <<< "$output"
-
-fi
-
-# ---------------------------------------------------------------------------
-# Check: blank line above `for` loops
-#
-# A `for` must have a blank line above unless:
-# a) It is the first expression in a block (preceded by line ending with `{`)
-# b) An identifier from the `for` line appears on the line above
-# c) The line above is a comment or attribute
-# d) The previous line is a loop label
-# ---------------------------------------------------------------------------
+report_control_flow match
 
 echo "Checking for blank line above \`for\` loops (Rust)..."
-
-rg_exit=0
-output=$(rg -n -B 1 --no-heading "^\s*('[a-zA-Z_]\w*:\s*)?for\s" crates examples docs --type rust 2> /dev/null) || rg_exit=$?
-if [ $rg_exit -gt 1 ]; then
-  echo "ERROR: ripgrep failed with exit code $rg_exit"
-  exit 1
-fi
-
-if [[ -n "$output" ]]; then
-
-  has_prev=false
-  prev_content=""
-
-  while IFS= read -r line; do
-
-    # Separator between match groups
-    if [[ "$line" == "--" ]]; then
-      has_prev=false
-      prev_content=""
-      continue
-    fi
-
-    # Context line (line before match)
-    if [[ "$line" =~ ^([^:]+)-([0-9]+)-(.*)$ ]]; then
-      prev_content="${BASH_REMATCH[3]}"
-      has_prev=true
-      continue
-    fi
-
-    # Match line
-    if [[ "$line" =~ ^([^:]+):([0-9]+):(.*)$ ]]; then
-      file="${BASH_REMATCH[1]}"
-      line_num="${BASH_REMATCH[2]}"
-      content="${BASH_REMATCH[3]}"
-      trimmed="${content#"${content%%[![:space:]]*}"}"
-
-      # No preceding line (first line of file or first in group)
-      if ! $has_prev; then
-        prev_content="$content"
-        has_prev=true
-        continue
-      fi
-
-      prev_trimmed="${prev_content#"${prev_content%%[![:space:]]*}"}"
-
-      # Exempt: blank line above
-      if [[ -z "$prev_trimmed" ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: first expression in block (prev line opens a block)
-      if [[ "$prev_trimmed" == "{" ]] || [[ "$prev_trimmed" =~ \{[[:space:]]*$ ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: comment or attribute above
-      if [[ "$prev_trimmed" =~ ^// ]] || [[ "$prev_trimmed" =~ ^\*[[:space:]] ]] ||
-        [[ "$prev_trimmed" =~ ^\*/ ]] || [[ "$prev_trimmed" =~ ^/\* ]] ||
-        [[ "$prev_trimmed" =~ ^#\[ ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: string continuation (prev line ends with `\`)
-      if [[ "$prev_trimmed" =~ \\[[:space:]]*$ ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: loop label on previous line
-      label_pattern="^'[a-zA-Z_]"
-      if [[ "$prev_trimmed" =~ $label_pattern ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: shared identifier with line above
-      # Strip optional loop label ('label: for ...)
-      keyword_part="$trimmed"
-      if [[ "$keyword_part" == \'* ]]; then
-        keyword_part="${keyword_part#*: }"
-      fi
-      for_rest="${keyword_part#for }"
-      has_shared=false
-      rest="$for_rest"
-      while [[ "$rest" =~ ([a-zA-Z_][a-zA-Z0-9_]*)(.*) ]]; do
-        ident="${BASH_REMATCH[1]}"
-        rest="${BASH_REMATCH[2]}"
-        case "$ident" in
-          if | else | let | mut | ref | true | false | return | break | continue | match) ;;
-          as | in | for | while | loop | fn | struct | enum | impl | trait | pub) ;;
-          use | mod | const | static | type | where | async | await | move | unsafe) ;;
-          extern | crate | super | dyn | self | Self) ;;
-          *)
-            if [[ "$prev_content" =~ (^|[^a-zA-Z0-9_])${ident}([^a-zA-Z0-9_]|$) ]]; then
-              has_shared=true
-              break
-            fi
-            ;;
-        esac
-      done
-
-      if ! $has_shared; then
-        # Check first body line for shared identifiers with line above
-        body_lines=$(sed -n "$((line_num + 1))p" "$file")
-        body_rest="$body_lines"
-        while [[ "$body_rest" =~ ([a-zA-Z_][a-zA-Z0-9_]*)(.*) ]]; do
-          ident="${BASH_REMATCH[1]}"
-          body_rest="${BASH_REMATCH[2]}"
-          case "$ident" in
-            if | else | let | mut | ref | true | false | return | break | continue | match) ;;
-            as | in | for | while | loop | fn | struct | enum | impl | trait | pub) ;;
-            use | mod | const | static | type | where | async | await | move | unsafe) ;;
-            extern | crate | super | dyn | self | Self) ;;
-            *)
-              if [[ "$prev_content" =~ (^|[^a-zA-Z0-9_])${ident}([^a-zA-Z0-9_]|$) ]]; then
-                has_shared=true
-                break
-              fi
-              ;;
-          esac
-        done
-      fi
-
-      if ! $has_shared; then
-        echo -e "${RED}Error:${NC} Missing blank line above \`for\` in $file:$line_num"
-        echo "  ${trimmed:0:100}"
-        echo "  Line above: ${prev_trimmed:0:100}"
-        echo
-        VIOLATIONS=$((VIOLATIONS + 1))
-      fi
-
-      prev_content="$content"
-    fi
-  done <<< "$output"
-
-fi
-
-# ---------------------------------------------------------------------------
-# Check: blank line above `while` loops
-#
-# A `while` must have a blank line above unless:
-# a) It is the first expression in a block (preceded by line ending with `{`)
-# b) An identifier from the `while` condition appears on the line above
-# c) The line above is a comment or attribute
-# d) The previous line is a loop label
-# ---------------------------------------------------------------------------
+report_control_flow for
 
 echo "Checking for blank line above \`while\` loops (Rust)..."
-
-rg_exit=0
-output=$(rg -n -B 1 --no-heading "^\s*('[a-zA-Z_]\w*:\s*)?while\s" crates examples docs --type rust 2> /dev/null) || rg_exit=$?
-if [ $rg_exit -gt 1 ]; then
-  echo "ERROR: ripgrep failed with exit code $rg_exit"
-  exit 1
-fi
-
-if [[ -n "$output" ]]; then
-
-  has_prev=false
-  prev_content=""
-
-  while IFS= read -r line; do
-
-    # Separator between match groups
-    if [[ "$line" == "--" ]]; then
-      has_prev=false
-      prev_content=""
-      continue
-    fi
-
-    # Context line (line before match)
-    if [[ "$line" =~ ^([^:]+)-([0-9]+)-(.*)$ ]]; then
-      prev_content="${BASH_REMATCH[3]}"
-      has_prev=true
-      continue
-    fi
-
-    # Match line
-    if [[ "$line" =~ ^([^:]+):([0-9]+):(.*)$ ]]; then
-      file="${BASH_REMATCH[1]}"
-      line_num="${BASH_REMATCH[2]}"
-      content="${BASH_REMATCH[3]}"
-      trimmed="${content#"${content%%[![:space:]]*}"}"
-
-      # No preceding line (first line of file or first in group)
-      if ! $has_prev; then
-        prev_content="$content"
-        has_prev=true
-        continue
-      fi
-
-      prev_trimmed="${prev_content#"${prev_content%%[![:space:]]*}"}"
-
-      # Exempt: blank line above
-      if [[ -z "$prev_trimmed" ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: first expression in block (prev line opens a block)
-      if [[ "$prev_trimmed" == "{" ]] || [[ "$prev_trimmed" =~ \{[[:space:]]*$ ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: comment or attribute above
-      if [[ "$prev_trimmed" =~ ^// ]] || [[ "$prev_trimmed" =~ ^\*[[:space:]] ]] ||
-        [[ "$prev_trimmed" =~ ^\*/ ]] || [[ "$prev_trimmed" =~ ^/\* ]] ||
-        [[ "$prev_trimmed" =~ ^#\[ ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: string continuation (prev line ends with `\`)
-      if [[ "$prev_trimmed" =~ \\[[:space:]]*$ ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: loop label on previous line
-      label_pattern="^'[a-zA-Z_]"
-      if [[ "$prev_trimmed" =~ $label_pattern ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: shared identifier with line above
-      # Strip optional loop label ('label: while ...)
-      keyword_part="$trimmed"
-      if [[ "$keyword_part" == \'* ]]; then
-        keyword_part="${keyword_part#*: }"
-      fi
-      while_rest="${keyword_part#while }"
-      has_shared=false
-      rest="$while_rest"
-      while [[ "$rest" =~ ([a-zA-Z_][a-zA-Z0-9_]*)(.*) ]]; do
-        ident="${BASH_REMATCH[1]}"
-        rest="${BASH_REMATCH[2]}"
-        case "$ident" in
-          if | else | let | mut | ref | true | false | return | break | continue | match) ;;
-          as | in | for | while | loop | fn | struct | enum | impl | trait | pub) ;;
-          use | mod | const | static | type | where | async | await | move | unsafe) ;;
-          extern | crate | super | dyn | self | Self) ;;
-          *)
-            if [[ "$prev_content" =~ (^|[^a-zA-Z0-9_])${ident}([^a-zA-Z0-9_]|$) ]]; then
-              has_shared=true
-              break
-            fi
-            ;;
-        esac
-      done
-
-      if ! $has_shared; then
-        # Check first body line for shared identifiers with line above
-        body_lines=$(sed -n "$((line_num + 1))p" "$file")
-        body_rest="$body_lines"
-        while [[ "$body_rest" =~ ([a-zA-Z_][a-zA-Z0-9_]*)(.*) ]]; do
-          ident="${BASH_REMATCH[1]}"
-          body_rest="${BASH_REMATCH[2]}"
-          case "$ident" in
-            if | else | let | mut | ref | true | false | return | break | continue | match) ;;
-            as | in | for | while | loop | fn | struct | enum | impl | trait | pub) ;;
-            use | mod | const | static | type | where | async | await | move | unsafe) ;;
-            extern | crate | super | dyn | self | Self) ;;
-            *)
-              if [[ "$prev_content" =~ (^|[^a-zA-Z0-9_])${ident}([^a-zA-Z0-9_]|$) ]]; then
-                has_shared=true
-                break
-              fi
-              ;;
-          esac
-        done
-      fi
-
-      if ! $has_shared; then
-        echo -e "${RED}Error:${NC} Missing blank line above \`while\` in $file:$line_num"
-        echo "  ${trimmed:0:100}"
-        echo "  Line above: ${prev_trimmed:0:100}"
-        echo
-        VIOLATIONS=$((VIOLATIONS + 1))
-      fi
-
-      prev_content="$content"
-    fi
-  done <<< "$output"
-
-fi
-
-# ---------------------------------------------------------------------------
-# Check: blank line above `loop` blocks
-#
-# A `loop` must have a blank line above unless:
-# a) It is the first expression in a block (preceded by line ending with `{`)
-# b) An identifier from the `loop` line appears on the line above
-# c) The line above is a comment or attribute
-# d) The previous line is a loop label
-# ---------------------------------------------------------------------------
+report_control_flow while
 
 echo "Checking for blank line above \`loop\` blocks (Rust)..."
-
-rg_exit=0
-output=$(rg -n -B 1 --no-heading "^\s*('[a-zA-Z_]\w*:\s*)?loop\s" crates examples docs --type rust 2> /dev/null) || rg_exit=$?
-if [ $rg_exit -gt 1 ]; then
-  echo "ERROR: ripgrep failed with exit code $rg_exit"
-  exit 1
-fi
-
-if [[ -n "$output" ]]; then
-
-  has_prev=false
-  prev_content=""
-
-  while IFS= read -r line; do
-
-    # Separator between match groups
-    if [[ "$line" == "--" ]]; then
-      has_prev=false
-      prev_content=""
-      continue
-    fi
-
-    # Context line (line before match)
-    if [[ "$line" =~ ^([^:]+)-([0-9]+)-(.*)$ ]]; then
-      prev_content="${BASH_REMATCH[3]}"
-      has_prev=true
-      continue
-    fi
-
-    # Match line
-    if [[ "$line" =~ ^([^:]+):([0-9]+):(.*)$ ]]; then
-      file="${BASH_REMATCH[1]}"
-      line_num="${BASH_REMATCH[2]}"
-      content="${BASH_REMATCH[3]}"
-      trimmed="${content#"${content%%[![:space:]]*}"}"
-
-      # No preceding line (first line of file or first in group)
-      if ! $has_prev; then
-        prev_content="$content"
-        has_prev=true
-        continue
-      fi
-
-      prev_trimmed="${prev_content#"${prev_content%%[![:space:]]*}"}"
-
-      # Exempt: blank line above
-      if [[ -z "$prev_trimmed" ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: first expression in block (prev line opens a block)
-      if [[ "$prev_trimmed" == "{" ]] || [[ "$prev_trimmed" =~ \{[[:space:]]*$ ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: comment or attribute above
-      if [[ "$prev_trimmed" =~ ^// ]] || [[ "$prev_trimmed" =~ ^\*[[:space:]] ]] ||
-        [[ "$prev_trimmed" =~ ^\*/ ]] || [[ "$prev_trimmed" =~ ^/\* ]] ||
-        [[ "$prev_trimmed" =~ ^#\[ ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: string continuation (prev line ends with `\`)
-      if [[ "$prev_trimmed" =~ \\[[:space:]]*$ ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: loop label on previous line
-      label_pattern="^'[a-zA-Z_]"
-      if [[ "$prev_trimmed" =~ $label_pattern ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: shared identifier with line above
-      # Strip optional loop label ('label: loop ...)
-      keyword_part="$trimmed"
-      if [[ "$keyword_part" == \'* ]]; then
-        keyword_part="${keyword_part#*: }"
-      fi
-      loop_rest="${keyword_part#loop }"
-      has_shared=false
-      rest="$loop_rest"
-      while [[ "$rest" =~ ([a-zA-Z_][a-zA-Z0-9_]*)(.*) ]]; do
-        ident="${BASH_REMATCH[1]}"
-        rest="${BASH_REMATCH[2]}"
-        case "$ident" in
-          if | else | let | mut | ref | true | false | return | break | continue | match) ;;
-          as | in | for | while | loop | fn | struct | enum | impl | trait | pub) ;;
-          use | mod | const | static | type | where | async | await | move | unsafe) ;;
-          extern | crate | super | dyn | self | Self) ;;
-          *)
-            if [[ "$prev_content" =~ (^|[^a-zA-Z0-9_])${ident}([^a-zA-Z0-9_]|$) ]]; then
-              has_shared=true
-              break
-            fi
-            ;;
-        esac
-      done
-
-      if ! $has_shared; then
-        # Check first body line for shared identifiers with line above
-        body_lines=$(sed -n "$((line_num + 1))p" "$file")
-        body_rest="$body_lines"
-        while [[ "$body_rest" =~ ([a-zA-Z_][a-zA-Z0-9_]*)(.*) ]]; do
-          ident="${BASH_REMATCH[1]}"
-          body_rest="${BASH_REMATCH[2]}"
-          case "$ident" in
-            if | else | let | mut | ref | true | false | return | break | continue | match) ;;
-            as | in | for | while | loop | fn | struct | enum | impl | trait | pub) ;;
-            use | mod | const | static | type | where | async | await | move | unsafe) ;;
-            extern | crate | super | dyn | self | Self) ;;
-            *)
-              if [[ "$prev_content" =~ (^|[^a-zA-Z0-9_])${ident}([^a-zA-Z0-9_]|$) ]]; then
-                has_shared=true
-                break
-              fi
-              ;;
-          esac
-        done
-      fi
-
-      if ! $has_shared; then
-        echo -e "${RED}Error:${NC} Missing blank line above \`loop\` in $file:$line_num"
-        echo "  ${trimmed:0:100}"
-        echo "  Line above: ${prev_trimmed:0:100}"
-        echo
-        VIOLATIONS=$((VIOLATIONS + 1))
-      fi
-
-      prev_content="$content"
-    fi
-  done <<< "$output"
-
-fi
-
-# ---------------------------------------------------------------------------
-# Check: blank line above `spawn` calls
-#
-# A `spawn` call must have a blank line above unless:
-# a) It is the first expression in a block (preceded by line ending with `{`)
-# b) An identifier from the `spawn` line appears on the line above
-# c) The line above is a comment or attribute
-# ---------------------------------------------------------------------------
+report_control_flow loop
 
 echo "Checking for blank line above \`spawn\` calls (Rust)..."
-
-rg_exit=0
-output=$(rg -n -B 1 --no-heading -e '^\s*spawn\(' -e '\.spawn\(' -e '::spawn\(' crates examples docs --type rust 2> /dev/null) || rg_exit=$?
-if [ $rg_exit -gt 1 ]; then
-  echo "ERROR: ripgrep failed with exit code $rg_exit"
-  exit 1
-fi
-
-if [[ -n "$output" ]]; then
-
-  has_prev=false
-  prev_content=""
-
-  while IFS= read -r line; do
-
-    # Separator between match groups
-    if [[ "$line" == "--" ]]; then
-      has_prev=false
-      prev_content=""
-      continue
-    fi
-
-    # Context line (line before match)
-    if [[ "$line" =~ ^([^:]+)-([0-9]+)-(.*)$ ]]; then
-      prev_content="${BASH_REMATCH[3]}"
-      has_prev=true
-      continue
-    fi
-
-    # Match line
-    if [[ "$line" =~ ^([^:]+):([0-9]+):(.*)$ ]]; then
-      file="${BASH_REMATCH[1]}"
-      line_num="${BASH_REMATCH[2]}"
-      content="${BASH_REMATCH[3]}"
-      trimmed="${content#"${content%%[![:space:]]*}"}"
-
-      # No preceding line (first line of file or first in group)
-      if ! $has_prev; then
-        prev_content="$content"
-        has_prev=true
-        continue
-      fi
-
-      prev_trimmed="${prev_content#"${prev_content%%[![:space:]]*}"}"
-
-      # Exempt: blank line above
-      if [[ -z "$prev_trimmed" ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: first expression in block (prev line opens a block)
-      if [[ "$prev_trimmed" == "{" ]] || [[ "$prev_trimmed" =~ \{[[:space:]]*$ ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: comment or attribute above
-      if [[ "$prev_trimmed" =~ ^// ]] || [[ "$prev_trimmed" =~ ^\*[[:space:]] ]] ||
-        [[ "$prev_trimmed" =~ ^\*/ ]] || [[ "$prev_trimmed" =~ ^/\* ]] ||
-        [[ "$prev_trimmed" =~ ^#\[ ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: string continuation (prev line ends with `\`)
-      if [[ "$prev_trimmed" =~ \\[[:space:]]*$ ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: method chain continuation (`.spawn` as part of a builder chain)
-      if [[ "$trimmed" =~ ^\. ]]; then
-        prev_content="$content"
-        continue
-      fi
-
-      # Exempt: shared identifier with line above
-      has_shared=false
-      rest="$trimmed"
-      while [[ "$rest" =~ ([a-zA-Z_][a-zA-Z0-9_]*)(.*) ]]; do
-        ident="${BASH_REMATCH[1]}"
-        rest="${BASH_REMATCH[2]}"
-        case "$ident" in
-          if | else | let | mut | ref | true | false | return | break | continue | match) ;;
-          as | in | for | while | loop | fn | struct | enum | impl | trait | pub) ;;
-          use | mod | const | static | type | where | async | await | move | unsafe) ;;
-          extern | crate | super | dyn | self | Self) ;;
-          spawn | tokio) ;;
-          *)
-            if [[ "$prev_content" =~ (^|[^a-zA-Z0-9_])${ident}([^a-zA-Z0-9_]|$) ]]; then
-              has_shared=true
-              break
-            fi
-            ;;
-        esac
-      done
-
-      if ! $has_shared; then
-        # Check first body line for shared identifiers with line above
-        body_lines=$(sed -n "$((line_num + 1))p" "$file")
-        body_rest="$body_lines"
-        while [[ "$body_rest" =~ ([a-zA-Z_][a-zA-Z0-9_]*)(.*) ]]; do
-          ident="${BASH_REMATCH[1]}"
-          body_rest="${BASH_REMATCH[2]}"
-          case "$ident" in
-            if | else | let | mut | ref | true | false | return | break | continue | match) ;;
-            as | in | for | while | loop | fn | struct | enum | impl | trait | pub) ;;
-            use | mod | const | static | type | where | async | await | move | unsafe) ;;
-            extern | crate | super | dyn | self | Self) ;;
-            spawn | tokio) ;;
-            *)
-              if [[ "$prev_content" =~ (^|[^a-zA-Z0-9_])${ident}([^a-zA-Z0-9_]|$) ]]; then
-                has_shared=true
-                break
-              fi
-              ;;
-          esac
-        done
-      fi
-
-      if ! $has_shared; then
-        echo -e "${RED}Error:${NC} Missing blank line above \`spawn\` in $file:$line_num"
-        echo "  ${trimmed:0:100}"
-        echo "  Line above: ${prev_trimmed:0:100}"
-        echo
-        VIOLATIONS=$((VIOLATIONS + 1))
-      fi
-
-      prev_content="$content"
-    fi
-  done <<< "$output"
-
-fi
+report_control_flow spawn
 
 # Check: module declaration ordering in `mod.rs`
 #
@@ -970,8 +271,10 @@ CONTROL_FLOW_VIOLATIONS=$VIOLATIONS
 MODULE_ORDER_VIOLATIONS=0
 
 while IFS= read -r file; do
+  [[ "$file" == */mod.rs && "$file" != */generated/* ]] || continue
   module_output=$(LC_ALL=C awk '
     function reset_block() {
+      previous_line = 0
       previous_category = -1
       highest_category = -1
       previous_name = ""
@@ -991,7 +294,7 @@ while IFS= read -r file; do
     }
 
     function report(message) {
-      printf "%d\t%s\n", FNR, message
+      printf "%d\t%d\t%s\n", FNR, previous_line, message
     }
 
     function has_direct_test(attributes, start, rest, position, character, depth, token) {
@@ -1119,6 +422,7 @@ while IFS= read -r file; do
           report(message category_name(category) " section")
         }
 
+        previous_line = FNR
         previous_category = category
         previous_name = name
         blank_lines = 0
@@ -1138,12 +442,13 @@ while IFS= read -r file; do
     continue
   fi
 
-  while IFS=$'\t' read -r line_num message; do
+  while IFS=$'\t' read -r line_num previous_line message; do
+    boundary_changed "$file" "$line_num" "$previous_line" || continue
     echo -e "${RED}Error:${NC} $message in $file:$line_num"
     echo
     MODULE_ORDER_VIOLATIONS=$((MODULE_ORDER_VIOLATIONS + 1))
   done <<< "$module_output"
-done < <(rg --files crates examples docs -g 'mod.rs' -g '!**/generated/**' 2> /dev/null)
+done <<< "$rust_files"
 
 VIOLATIONS=$((VIOLATIONS + MODULE_ORDER_VIOLATIONS))
 

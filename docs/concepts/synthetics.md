@@ -1,6 +1,6 @@
 # Synthetics
 
-Synthetic instruments are locally defined instruments whose prices derive from other instruments.
+**Synthetic instruments** are locally defined instruments whose prices derive from other instruments.
 They can combine components from one venue or many venues and expose the result as a standard
 Nautilus instrument with the synthetic venue code `SYNTH`.
 
@@ -10,9 +10,11 @@ Synthetic instruments are useful for:
 - Triggering emulated orders from derived prices.
 - Constructing bars from synthetic quotes or trades.
 
+:::info
 Synthetic instruments cannot be traded directly. They exist locally within the platform and serve
 as analytical tools. In the future, Nautilus may support trading component instruments based
 on synthetic instrument behavior.
+:::
 
 ## Formula language
 
@@ -126,8 +128,8 @@ component's quote or trade feed as well as the synthetic's. Synthetic quotes der
 component quotes, and synthetic trades only from component trades.
 
 When a component tick arrives, the engine combines it with the latest cached prices of the other
-components to calculate the synthetic price. Until every component has produced at least one
-tick, the synthetic publishes nothing.
+components to calculate the synthetic price. Until **every component has produced at least one
+tick**, the synthetic publishes nothing.
 
 The following example creates a synthetic instrument with an actor or strategy. This synthetic
 represents a simple spread between Bitcoin and Ethereum spot prices on Binance. It assumes that
