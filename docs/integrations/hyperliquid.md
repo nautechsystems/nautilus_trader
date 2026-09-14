@@ -1349,6 +1349,20 @@ Live data and execution clients publish `SocketStateChanged` on `hyperliquid-dat
 `hyperliquid-user-streams`. Both endpoints register a reconnect handle, so `reconnect_socket` can
 target them without cycling the containing client.
 
+### Execution gap recovery
+
+Resubscribing to `orderUpdates` and `userEvents` replays no snapshot, so an accept, cancel, or
+fill that lands while the execution socket is down would otherwise never reach the engine. On
+each `Reconnected` event the execution client sweeps `userFills` and `historicalOrders` over REST,
+keeps the reports that fall inside a five-minute window and belong to an order it tracks, and
+replays them through the same per-report path live WebSocket reports take. Duplicate fills are
+dropped by their deterministic trade id, so overlap with live events is harmless.
+
+The sweep needs no configuration and runs independently of the engine's periodic
+`open_check_interval_secs`. A failed sweep is retried with exponential backoff, and a burst of
+reconnects collapses into one sweep with a minimum interval of 20 seconds to stay inside the
+venue's 1,200/min IP weight budget.
+
 ### Stream health and recovery
 
 The data client tracks receive freshness for order book deltas, depth-10 snapshots, and BBO
