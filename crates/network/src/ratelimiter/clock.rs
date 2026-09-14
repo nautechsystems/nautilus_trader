@@ -178,10 +178,7 @@ impl Clock for MonotonicClock {
     }
 
     async fn sleep(&self, duration: Duration) {
-        #[cfg(not(all(feature = "simulation", madsim)))]
-        tokio::time::sleep(duration).await;
-        #[cfg(all(feature = "simulation", madsim))]
-        madsim::time::sleep(duration).await;
+        crate::dst::time::sleep(duration).await;
     }
 }
 
