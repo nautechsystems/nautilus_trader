@@ -128,9 +128,8 @@ use crate::{
         client::LiveExecutionClient,
         manager::{
             ExecutionManager, ExecutionManagerConfig, InstrumentAccountKey, OpenOrderReportCheck,
-            PositionFillReportPreparation, PositionFillReportQuery, PositionReportCheck,
-            SourcedOrderStatusReport, TargetedOrderQuery, TargetedOrderReportResult,
-            request_targeted_order_reports,
+            PositionReportCheck, SourcedOrderStatusReport, TargetedOrderQuery,
+            TargetedOrderReportResult, request_targeted_order_reports,
         },
     },
     runner::{AsyncRunner, AsyncRunnerChannels, PendingRunnerEvent},
@@ -145,6 +144,7 @@ pub mod plugin;
 
 mod metrics;
 mod queue;
+mod reconciliation;
 mod state;
 
 use builder::ExternalMessageBusIngress;
@@ -153,6 +153,7 @@ use config::{LiveNodeConfig, PluginConfig, validate_live_environment};
 pub use metrics::{RunnerChannelMetricsSnapshot, RunnerMetricsDelta, RunnerMetricsSnapshot};
 use metrics::{RunnerChannelQueueDepths, RunnerMetrics};
 use queue::{QueueMonitor, QueueStateTransition};
+use reconciliation::{PositionFillReportPreparation, PositionFillReportQuery};
 use state::{EngineConnectionStatus, RunningTransition};
 pub use state::{LiveNodeHandle, NodeRunMode, NodeState};
 

@@ -101,18 +101,11 @@ pub(crate) struct OpenOrderReconciliationResult {
 
 #[derive(Debug, Clone)]
 pub(crate) struct TargetedOrderQuery {
-    pub(super) client_order_id: ClientOrderId,
+    pub(crate) client_order_id: ClientOrderId,
     pub(super) responsible_clients: IndexSet<ClientId>,
     pub(super) command: GenerateOrderStatusReport,
     pub(super) report: Option<OrderStatusReport>,
     pub(super) filled_qty: Quantity,
-}
-
-impl TargetedOrderQuery {
-    #[cfg(feature = "node")]
-    pub(crate) const fn client_order_id(&self) -> ClientOrderId {
-        self.client_order_id
-    }
 }
 
 #[derive(Debug)]
@@ -147,30 +140,7 @@ pub(crate) struct PositionReportCheck {
     pub activity_revisions: IndexMap<InstrumentAccountKey, u64>,
 }
 
-#[cfg(feature = "node")]
-#[derive(Debug)]
-pub(crate) struct PositionFillReportQuery {
-    pub key: InstrumentAccountKey,
-    pub client_id: ClientId,
-    pub command: GenerateFillReports,
-}
-
-#[cfg(feature = "node")]
-#[derive(Debug)]
-pub(crate) struct PositionFillReportPlan {
-    pub queries: Vec<PositionFillReportQuery>,
-    pub discrepancy_keys: IndexSet<InstrumentAccountKey>,
-}
-
-#[cfg(feature = "node")]
-#[derive(Debug)]
-pub(crate) enum PositionFillReportPreparation {
-    Ready,
-    InferredOverlap,
-    Unattributed,
-}
-
-pub(super) struct PositionQuantityComparison {
+pub(crate) struct PositionQuantityComparison {
     pub(super) cached_positions: Vec<Position>,
     pub(super) cached_signed_qty: Decimal,
     pub(super) cached_long_qty: Decimal,
@@ -184,7 +154,7 @@ pub(super) struct PositionQuantityComparison {
 }
 
 impl PositionQuantityComparison {
-    pub(super) fn quantities_match(&self, tolerance: Decimal) -> bool {
+    pub(crate) fn quantities_match(&self, tolerance: Decimal) -> bool {
         let net_qty_matches = (self.cached_signed_qty - self.venue_signed_qty).abs() <= tolerance;
         let side_qty_matches = (self.cached_long_qty - self.venue_long_qty).abs() <= tolerance
             && (self.cached_short_qty - self.venue_short_qty).abs() <= tolerance;
@@ -192,7 +162,7 @@ impl PositionQuantityComparison {
         net_qty_matches && (!self.venue_has_side_reports || side_qty_matches)
     }
 
-    pub(super) fn report_shape(&self) -> PositionReportShape {
+    pub(crate) fn report_shape(&self) -> PositionReportShape {
         if self.nonflat_count > 1 || self.venue_has_side_reports {
             PositionReportShape::MultiLeg
         } else {
@@ -256,15 +226,15 @@ pub(super) struct InflightCheck {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum PositionReportShape {
+pub(crate) enum PositionReportShape {
     Unambiguous,
     MultiLeg,
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct PositionReconciliationState {
-    pub(super) report_shape: PositionReportShape,
-    pub(super) retries: u32,
+pub(crate) struct PositionReconciliationState {
+    pub(crate) report_shape: PositionReportShape,
+    pub(crate) retries: u32,
 }
 
 pub(crate) async fn request_targeted_order_reports(
