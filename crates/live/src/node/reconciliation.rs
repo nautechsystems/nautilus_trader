@@ -15,8 +15,6 @@
 
 //! Position fill reconciliation for the live node.
 
-use std::time::Duration;
-
 use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
     clients::ExecutionClient, enums::LogLevel, messages::execution::GenerateFillReports,
@@ -39,11 +37,13 @@ use crate::execution::manager::{
 };
 
 impl TargetedOrderQuery {
+    /// Returns the order identifier for the targeted query.
     pub(crate) const fn client_order_id(&self) -> ClientOrderId {
         self.client_order_id
     }
 }
 
+/// Fill report request for one instrument, account, and execution client.
 #[derive(Debug)]
 pub(crate) struct PositionFillReportQuery {
     pub key: InstrumentAccountKey,
@@ -51,6 +51,7 @@ pub(crate) struct PositionFillReportQuery {
     pub command: GenerateFillReports,
 }
 
+/// Fill queries and discrepancy keys for a position reconciliation check.
 #[derive(Debug)]
 pub(crate) struct PositionFillReportPlan {
     pub queries: Vec<PositionFillReportQuery>,
@@ -65,6 +66,7 @@ pub(crate) enum PositionFillReportPreparation {
 }
 
 impl ExecutionManager {
+    /// Plans fill queries for settled position discrepancies with complete client coverage.
     pub(crate) fn prepare_position_fill_report_plan(
         &mut self,
         check: &mut PositionReportCheck,
@@ -98,8 +100,8 @@ impl ExecutionManager {
             .collect::<IndexSet<_>>();
 
         let active_keys = keys.clone();
-        let query_end = self.clock.borrow().timestamp_ns();
-        let lookback = DurationNanos::try_from_mins(self.config.position_check_lookback_mins)
+        let query_end = self.timestamp_ns();
+        let lookback = DurationNanos::try_from_mins(self.config().position_check_lookback_mins)
             .expect("position lookback validated at construction");
         let query_start = query_end.saturating_sub(lookback);
         let mut discrepancy_keys = IndexSet::new();
@@ -119,28 +121,21 @@ impl ExecutionManager {
             let tolerance = self.position_reconciliation_tolerance(key.1);
 
             if comparison.quantities_match(tolerance) {
-                self.position_reconciliation_states.shift_remove(&key);
+                self.clear_position_reconciliation(&key);
                 continue;
             }
 
             discrepancy_keys.insert(key);
 
             if self.position_activity_revision(&key) > prepared_revision
-                || self.position_local_activity.within(
-                    &key,
-                    Duration::from(self.config.position_check_threshold_ns),
-                )
+                || self.position_activity_is_recent(&key)
             {
                 continue;
             }
 
             let report_shape = comparison.report_shape();
-            let retries = self
-                .position_reconciliation_states
-                .get(&key)
-                .filter(|state| state.report_shape == report_shape)
-                .map_or(0, |state| state.retries);
-            if retries >= self.config.position_check_retries {
+            let retries = self.position_reconciliation_retries(&key, report_shape);
+            if retries >= self.config().position_check_retries {
                 continue;
             }
 
@@ -185,8 +180,7 @@ impl ExecutionManager {
             }
         }
 
-        self.position_reconciliation_states
-            .retain(|key, _| active_keys.contains(key));
+        self.retain_position_reconciliation(&active_keys);
 
         PositionFillReportPlan {
             queries,
@@ -194,6 +188,7 @@ impl ExecutionManager {
         }
     }
 
+    /// Checks whether position activity is unchanged since the check was prepared.
     pub(crate) fn position_report_check_key_is_stable(
         &self,
         check: &PositionReportCheck,
@@ -205,12 +200,18 @@ impl ExecutionManager {
             .is_some_and(|revision| self.position_activity_revision(key) == *revision)
     }
 
+    /// Validates fill attribution and supplies a cached position ID when unambiguous.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if cached order or position state conflicts with the fill,
+    /// or inferred-fill history cannot be evaluated.
     pub(crate) fn prepare_position_fill_report(
         &self,
         report: &mut FillReport,
         venue_reports: &[PositionStatusReport],
     ) -> anyhow::Result<PositionFillReportPreparation> {
-        let cache = self.cache.borrow();
+        let cache = self.cache();
         let venue_client_order_id = cache.client_order_id(&report.venue_order_id).copied();
         if let (Some(report_client_order_id), Some(venue_client_order_id)) =
             (report.client_order_id, venue_client_order_id)
@@ -363,8 +364,9 @@ impl ExecutionManager {
         Ok(false)
     }
 
+    /// Checks whether cached position fills match the report, including quantity and commission.
     pub(crate) fn position_contains_fill_report(&self, report: &FillReport) -> bool {
-        let cache = self.cache.borrow();
+        let cache = self.cache();
         let client_order_id = report
             .client_order_id
             .or_else(|| cache.client_order_id(&report.venue_order_id).copied());
@@ -432,9 +434,10 @@ impl ExecutionManager {
         matched && quantity == report.last_qty && commission == report.commission
     }
 
+    /// Clears pending targeted queries for the supplied orders.
     pub(crate) fn remove_targeted_order_queries(&mut self, client_order_ids: &[ClientOrderId]) {
         for client_order_id in client_order_ids {
-            self.targeted_order_queries.shift_remove(client_order_id);
+            self.remove_targeted_order_query(*client_order_id);
         }
     }
 }

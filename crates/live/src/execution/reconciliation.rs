@@ -93,12 +93,14 @@ pub struct InflightCheckResult {
     pub queries: Vec<TradingCommand>,
 }
 
+/// Events and targeted queries produced by open-order reconciliation.
 #[derive(Debug, Default)]
 pub(crate) struct OpenOrderReconciliationResult {
     pub events: Vec<OrderEventAny>,
     pub targeted_queries: Vec<TargetedOrderQuery>,
 }
 
+/// Order snapshot and client coverage for a targeted status query.
 #[derive(Debug, Clone)]
 pub(crate) struct TargetedOrderQuery {
     pub(crate) client_order_id: ClientOrderId,
@@ -108,6 +110,7 @@ pub(crate) struct TargetedOrderQuery {
     pub(super) filled_qty: Quantity,
 }
 
+/// Targeted status query result with fills and coverage completeness.
 #[derive(Debug)]
 pub(crate) struct TargetedOrderReportResult {
     pub(super) client_order_id: ClientOrderId,
@@ -117,6 +120,7 @@ pub(crate) struct TargetedOrderReportResult {
     pub(super) coverage_complete: bool,
 }
 
+/// Order status report paired with its source execution client.
 #[derive(Debug)]
 pub(crate) struct SourcedOrderStatusReport {
     pub client_id: ClientId,
@@ -140,6 +144,7 @@ pub(crate) struct PositionReportCheck {
     pub activity_revisions: IndexMap<InstrumentAccountKey, u64>,
 }
 
+/// Cached and venue position quantities and report shape for comparison.
 pub(crate) struct PositionQuantityComparison {
     pub(super) cached_positions: Vec<Position>,
     pub(super) cached_signed_qty: Decimal,
@@ -154,6 +159,7 @@ pub(crate) struct PositionQuantityComparison {
 }
 
 impl PositionQuantityComparison {
+    /// Checks net quantities and, when both venue sides are reported, side quantities.
     pub(crate) fn quantities_match(&self, tolerance: Decimal) -> bool {
         let net_qty_matches = (self.cached_signed_qty - self.venue_signed_qty).abs() <= tolerance;
         let side_qty_matches = (self.cached_long_qty - self.venue_long_qty).abs() <= tolerance
@@ -162,6 +168,7 @@ impl PositionQuantityComparison {
         net_qty_matches && (!self.venue_has_side_reports || side_qty_matches)
     }
 
+    /// Classifies venue reports as a single unambiguous position or multiple legs.
     pub(crate) fn report_shape(&self) -> PositionReportShape {
         if self.nonflat_count > 1 || self.venue_has_side_reports {
             PositionReportShape::MultiLeg
@@ -171,6 +178,7 @@ impl PositionQuantityComparison {
     }
 }
 
+/// Cached fill identities, missing orders, and netting lifecycle boundaries.
 pub(super) struct RetainedFillState {
     pub(super) fill_keys: IndexSet<(AccountId, InstrumentId, TradeId)>,
     pub(super) missing_order_ids: IndexSet<(AccountId, InstrumentId, ClientOrderId)>,
@@ -178,6 +186,7 @@ pub(super) struct RetainedFillState {
     pub(super) netting_lifecycle_starts: IndexMap<AccountInstrumentStrategyKey, UnixNanos>,
 }
 
+/// Historical fills grouped for a synthetic reconciliation order.
 pub(super) struct HistoricalFillGroup {
     pub(super) venue_order_id: VenueOrderId,
     pub(super) account_id: AccountId,
@@ -190,6 +199,7 @@ pub(super) struct HistoricalFillGroup {
     pub(super) ts_last: UnixNanos,
 }
 
+/// Tracks pending fill identities and their generated reconciliation events.
 #[derive(Default)]
 pub(super) struct ReconciliationFillQueue {
     pub(super) pending_fill_keys: IndexSet<FillKey>,
@@ -197,6 +207,11 @@ pub(super) struct ReconciliationFillQueue {
 }
 
 impl ReconciliationFillQueue {
+    /// Queues a fill event and records its identity for deduplication.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the event is not a fill.
     pub(super) fn push(
         &mut self,
         events: &mut Vec<OrderEventAny>,
@@ -225,18 +240,20 @@ pub(super) struct InflightCheck {
     pub last_query_at: Option<dst::time::Instant>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PositionReportShape {
     Unambiguous,
     MultiLeg,
 }
 
-#[derive(Clone, Copy)]
-pub(crate) struct PositionReconciliationState {
-    pub(crate) report_shape: PositionReportShape,
-    pub(crate) retries: u32,
+/// Retry count and report shape for position reconciliation.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct PositionReconciliationState {
+    pub(super) report_shape: PositionReportShape,
+    pub(super) retries: u32,
 }
 
+/// Requests targeted order status and missing fills from responsible clients.
 pub(crate) async fn request_targeted_order_reports(
     clients: &[&dyn ExecutionClient],
     queries: Vec<TargetedOrderQuery>,
@@ -351,6 +368,9 @@ pub(crate) async fn request_targeted_order_reports(
     results
 }
 
+/// Builds a filled market-order report for one leg of a position reversal.
+///
+/// Returns `None` if the quantity cannot be represented at instrument precision.
 #[expect(clippy::too_many_arguments)]
 pub(super) fn build_cross_zero_leg_report(
     instrument: &InstrumentAny,
@@ -417,6 +437,7 @@ fn targeted_report_matches(query: &TargetedOrderQuery, report: &OrderStatusRepor
     instrument_matches && order_matches
 }
 
+/// Checks whether a canceled or expired report has more fills than the cached order.
 pub(super) fn terminal_report_has_missing_fills(
     report: &OrderStatusReport,
     filled_qty: Quantity,
