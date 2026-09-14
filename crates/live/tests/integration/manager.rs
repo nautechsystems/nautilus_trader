@@ -2287,7 +2287,20 @@ async fn test_canonical_duplicate_reconciliation_fill_is_committed() {
             ctx.exec_engine.clone(),
         )
         .await;
-    assert!(duplicate.events.is_empty());
+
+    let [OrderEventAny::Filled(residual)] = duplicate.events.as_slice() else {
+        panic!(
+            "Expected one residual fill, received {:?}",
+            duplicate.events
+        );
+    };
+
+    assert_eq!(residual.client_order_id, client_order_id);
+    assert_eq!(residual.last_qty, Quantity::from("1.0"));
+    assert_ne!(residual.trade_id, trade_id);
+    let reconciled = ctx.get_order(&client_order_id).unwrap();
+    assert_eq!(reconciled.status(), OrderStatus::Filled);
+    assert_eq!(reconciled.filled_qty(), Quantity::from("2.0"));
 
     ctx.add_order(create_accepted_order(
         retry_client_order_id.as_str(),
@@ -6301,12 +6314,16 @@ async fn test_no_inferred_fill_when_already_in_sync() {
     assert!(result.events.is_empty());
 }
 
+#[rstest]
+#[case(false)]
+#[case(true)]
 #[tokio::test]
-async fn test_fill_qty_mismatch_venue_less_generates_fill_void() {
+async fn test_fill_qty_mismatch_venue_less_generates_fill_void(#[case] echo_cached_fill: bool) {
     let mut ctx = TestContext::new();
     let instrument_id = test_instrument_id();
     let client_order_id = ClientOrderId::from("O-MISMATCH");
     let venue_order_id = VenueOrderId::from("V-MISMATCH");
+    let trade_id = TradeId::from("T-MISMATCH");
 
     ctx.add_instrument(test_instrument());
 
@@ -6320,6 +6337,8 @@ async fn test_fill_qty_mismatch_venue_less_generates_fill_void() {
         venue_order_id,
     );
     let fill = OrderFilledTestBuilder::new(&order, &test_instrument())
+        .trade_id(trade_id)
+        .account_id(test_account_id())
         .last_qty(Quantity::from("5.0"))
         .without_position_id()
         .build();
@@ -6344,6 +6363,15 @@ async fn test_fill_qty_mismatch_venue_less_generates_fill_void() {
         Quantity::from("3.0"), // Less than our 5
     );
     mass_status.add_order_reports(vec![report]);
+    if echo_cached_fill {
+        mass_status.add_fill_reports(vec![create_fill_report(
+            client_order_id,
+            venue_order_id,
+            instrument_id,
+            trade_id,
+            "5.0",
+        )]);
+    }
 
     let result = ctx
         .manager
@@ -6360,6 +6388,9 @@ async fn test_fill_qty_mismatch_venue_less_generates_fill_void() {
     let OrderEventAny::FillVoided(voided) = &result.events[0] else {
         panic!("expected OrderFillVoided event");
     };
+
+    assert_eq!(voided.client_order_id, client_order_id);
+    assert_eq!(voided.trade_id, trade_id);
     assert_eq!(voided.voided_qty, Quantity::from("2.0"));
     assert!(voided.is_reopened);
     assert_eq!(order.status(), OrderStatus::PartiallyFilled);
@@ -10526,6 +10557,113 @@ async fn test_partially_filled_order_has_fills_applied() {
         order.filled_qty() >= Quantity::from("5.0"),
         "Order should have at least 5.0 filled"
     );
+}
+
+#[rstest]
+#[case(OrderStatus::PartiallyFilled, "7.0", true)]
+#[case(OrderStatus::Filled, "10.0", true)]
+#[case(OrderStatus::PartiallyFilled, "7.0", false)]
+#[case(OrderStatus::Filled, "10.0", false)]
+#[tokio::test]
+async fn test_cached_fill_echo_preserves_mass_status_projection(
+    #[case] status: OrderStatus,
+    #[case] filled_qty: &str,
+    #[case] has_new_fill: bool,
+) {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let client_order_id = ClientOrderId::from("O-CACHED-ECHO");
+    let venue_order_id = VenueOrderId::from("V-CACHED-ECHO");
+    let cached_trade_id = TradeId::from("T-CACHED-ECHO");
+    let new_trade_id = TradeId::from("T-NEW-ECHO");
+    ctx.add_instrument(instrument.clone());
+    let mut order = create_accepted_order(
+        client_order_id.as_str(),
+        instrument_id,
+        OrderSide::Buy,
+        "10.0",
+        "3000.00",
+        venue_order_id,
+    );
+    let cached_fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(cached_trade_id),
+        None,
+        Some(Price::from("3000.00")),
+        Some(Quantity::from("3.0")),
+        Some(LiquiditySide::Maker),
+        None,
+        None,
+        Some(test_account_id()),
+    );
+    order.apply(cached_fill).unwrap();
+    ctx.add_order(order);
+
+    let filled_qty = Quantity::from(filled_qty);
+    let remaining_qty = filled_qty - Quantity::from("3.0");
+    let report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument_id,
+        status,
+        Quantity::from("10.0"),
+        filled_qty,
+    )
+    .with_avg_px(dec!(3000));
+    let mut fills = vec![create_fill_report(
+        client_order_id,
+        venue_order_id,
+        instrument_id,
+        cached_trade_id,
+        "3.0",
+    )];
+
+    if has_new_fill {
+        let mut fill = create_fill_report(
+            client_order_id,
+            venue_order_id,
+            instrument_id,
+            new_trade_id,
+            &remaining_qty.to_string(),
+        );
+        fill.ts_event = UnixNanos::from(2_000_000);
+        fills.push(fill);
+    }
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(
+            create_mass_status(vec![report], fills),
+            ctx.exec_engine.clone(),
+        )
+        .await;
+
+    let [OrderEventAny::Filled(fill)] = result.events.as_slice() else {
+        panic!(
+            "Expected one incremental fill, received {:?}",
+            result.events
+        );
+    };
+
+    assert_eq!(fill.client_order_id, client_order_id);
+    assert_eq!(fill.venue_order_id, venue_order_id);
+    assert_eq!(fill.account_id, test_account_id());
+    assert_eq!(fill.instrument_id, instrument_id);
+    assert_eq!(fill.last_qty, remaining_qty);
+    assert_eq!(fill.last_px, Price::from("3000.00"));
+
+    if has_new_fill {
+        assert_eq!(fill.trade_id, new_trade_id);
+    } else {
+        assert_ne!(fill.trade_id, cached_trade_id);
+    }
+
+    let order = ctx.get_order(&client_order_id).unwrap();
+    assert_eq!(order.status(), status);
+    assert_eq!(order.filled_qty(), filled_qty);
+    assert_eq!(order.trade_ids(), vec![&cached_trade_id, &fill.trade_id]);
 }
 
 #[tokio::test]

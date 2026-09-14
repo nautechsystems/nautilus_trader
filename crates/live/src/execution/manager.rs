@@ -3919,7 +3919,7 @@ impl ExecutionManager {
 
         let ts_now = self.clock.borrow().timestamp_ns();
 
-        // Grace window measured on the monotonic `dst::time` clock; see `record_position_activity`.
+        // Grace window measured on the monotonic `dst::time` clock; see `record_position_activity`
         if self.position_local_activity.within(
             &key,
             Duration::from(self.config.position_check_threshold_ns),
@@ -4830,21 +4830,16 @@ impl ExecutionManager {
                         && self.is_fill_applied(fill, fill_key)
                     {
                         self.processed_fills.mark(fill_key);
-
-                        if matches!(
-                            report.order_status,
-                            OrderStatus::Canceled | OrderStatus::Expired
-                        ) {
-                            continue;
-                        }
-                    } else {
-                        log::warn!(
-                            "Cannot project reconciliation fill for {}: {e}",
-                            order.client_order_id()
-                        );
+                        continue;
                     }
+
+                    log::warn!(
+                        "Cannot project reconciliation fill for {}: {e}",
+                        order.client_order_id()
+                    );
                     return events;
                 }
+
                 fill_queue.push(&mut events, event, fill_key);
             }
         }
