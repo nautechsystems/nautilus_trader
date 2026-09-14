@@ -1456,7 +1456,7 @@ pub fn parse_order_status_report(
         BybitTimeInForce::Gtc => TimeInForce::Gtc,
         BybitTimeInForce::Ioc => TimeInForce::Ioc,
         BybitTimeInForce::Fok => TimeInForce::Fok,
-        BybitTimeInForce::PostOnly => TimeInForce::Gtc,
+        BybitTimeInForce::PostOnly | BybitTimeInForce::Rpi => TimeInForce::Gtc,
     };
 
     let quantity =
@@ -1564,7 +1564,10 @@ pub fn parse_order_status_report(
         report = report.with_reduce_only(true);
     }
 
-    if order.time_in_force == BybitTimeInForce::PostOnly {
+    if matches!(
+        order.time_in_force,
+        BybitTimeInForce::PostOnly | BybitTimeInForce::Rpi
+    ) {
         report = report.with_post_only(true);
     }
 
