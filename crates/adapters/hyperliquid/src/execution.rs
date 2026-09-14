@@ -51,6 +51,7 @@ use nautilus_model::{
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
+    instruments::{Instrument, InstrumentAny},
     orders::{Order, any::OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Quantity},
@@ -702,6 +703,23 @@ impl ExecutionClient for HyperliquidExecutionClient {
         self.emitter
             .emit_account_state(balances, margins, reported, ts_event, info);
         Ok(())
+    }
+
+    /// Registers an instrument published by the data client so a market listed
+    /// after this client bootstrapped becomes submittable without a restart.
+    ///
+    /// The HTTP client takes the venue asset index from the instrument's `info`
+    /// map. WebSocket submissions sign through `&self.http_client`, so that one
+    /// write serves both submission paths.
+    fn on_instrument(&mut self, instrument: InstrumentAny) {
+        // this is the only step that makes a market listed after our bootstrap
+        // submittable, so it is traceable rather than silent
+        log::debug!(
+            "Applying instrument update: instrument_id={}",
+            instrument.id()
+        );
+        self.http_client.cache_instrument(&instrument);
+        self.ws_client.cache_instrument(instrument);
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
@@ -3599,11 +3617,13 @@ use crate::common::parse::determine_order_list_grouping;
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{cell::RefCell, rc::Rc, sync::Arc};
 
     use alloy::signers::local::PrivateKeySigner;
-    use nautilus_common::messages::ExecutionEvent;
-    use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
+    use nautilus_common::{cache::Cache, messages::ExecutionEvent};
+    use nautilus_core::{
+        UUID4, UnixNanos, string::secret::SecretString, time::get_atomic_clock_realtime,
+    };
     use nautilus_live::{
         ExecutionEventEmitter,
         execution::{
@@ -3614,8 +3634,8 @@ mod tests {
     };
     use nautilus_model::{
         enums::{
-            AccountType, ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType,
-            TimeInForce, TriggerType,
+            AccountType, ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus,
+            OrderType, TimeInForce, TriggerType,
         },
         events::OrderEventAny,
         identifiers::{
@@ -3632,19 +3652,28 @@ mod tests {
     use zeroize::Zeroizing;
 
     use super::{
-        CancelEntry, ExecutionReport, FifoCache, HyperliquidHttpClient, HyperliquidWebSocketClient,
-        PostRejectionRoute, StagedBracketChild, StagedBracketState, WsDispatchState,
-        attach_known_client_order_id, build_ouo_resize_request, can_fast_cancel_order,
-        classify_post_failure, determine_order_list_grouping, handle_execution_report,
-        register_order_context_into, split_fast_cancel_requests, validate_order_for_hyperliquid,
+        CancelEntry, ExecutionClient, ExecutionClientCore, ExecutionReport, FifoCache,
+        HyperliquidExecutionClient, HyperliquidExecutionClientConfig, HyperliquidHttpClient,
+        HyperliquidWebSocketClient, PostRejectionRoute, StagedBracketChild, StagedBracketState,
+        WsDispatchState, attach_known_client_order_id, build_ouo_resize_request,
+        can_fast_cancel_order, classify_post_failure, determine_order_list_grouping,
+        handle_execution_report, register_order_context_into, split_fast_cancel_requests,
+        validate_order_for_hyperliquid,
     };
     use crate::{
-        common::enums::HyperliquidEnvironment,
-        http::models::{
-            Cloid, HyperliquidExchangeAction, HyperliquidExchangeCancelOrderRequest,
-            HyperliquidExchangeGrouping, HyperliquidExchangeLimitParams,
-            HyperliquidExchangeOrderKind, HyperliquidExchangePlaceOrderRequest,
-            HyperliquidExchangeTif,
+        common::{
+            consts::{HYPERLIQUID_CLIENT_ID, HYPERLIQUID_VENUE},
+            enums::HyperliquidEnvironment,
+            testing::load_test_data,
+        },
+        http::{
+            models::{
+                Cloid, HyperliquidExchangeAction, HyperliquidExchangeCancelOrderRequest,
+                HyperliquidExchangeGrouping, HyperliquidExchangeLimitParams,
+                HyperliquidExchangeOrderKind, HyperliquidExchangePlaceOrderRequest,
+                HyperliquidExchangeTif, PerpMeta,
+            },
+            parse::{create_instrument_from_def, parse_perp_instruments},
         },
     };
 
@@ -3694,6 +3723,27 @@ mod tests {
         HyperliquidHttpClient::new(HyperliquidEnvironment::Testnet, 1, None).unwrap()
     }
 
+    fn make_execution_client() -> HyperliquidExecutionClient {
+        let wallet = PrivateKeySigner::random();
+        let key = Zeroizing::new(format!("{:#x}", wallet.to_bytes()));
+        let core = ExecutionClientCore::new(
+            TraderId::from("TESTER-001"),
+            *HYPERLIQUID_CLIENT_ID,
+            *HYPERLIQUID_VENUE,
+            OmsType::Netting,
+            AccountId::from("HYPERLIQUID-001"),
+            AccountType::Margin,
+            None,
+            Rc::new(RefCell::new(Cache::default())),
+        );
+        let config = HyperliquidExecutionClientConfig::builder()
+            .private_key(SecretString::from(key.to_string()))
+            .environment(HyperliquidEnvironment::Testnet)
+            .build();
+
+        HyperliquidExecutionClient::new(core, config).unwrap()
+    }
+
     // Matches the order built by `limit_order_with_flags` so registration
     // tests can assert the stored context by equality.
     fn test_context(client_order_id: ClientOrderId) -> OrderContext {
@@ -3714,6 +3764,29 @@ mod tests {
             is_reduce_only: false,
             is_quote_quantity: false,
         }
+    }
+
+    #[rstest]
+    fn test_on_instrument_registers_asset_index_for_a_new_market() {
+        // A market listed after the client bootstrapped arrives through the
+        // message bus, and must become submittable without a restart.
+        let mut client = make_execution_client();
+        let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
+        let defs = parse_perp_instruments(&meta, 0).unwrap();
+        let def = &defs[1];
+        let instrument = create_instrument_from_def(def, UnixNanos::default()).unwrap();
+
+        assert_eq!(
+            client.http_client.get_asset_index(def.symbol.as_str()),
+            None
+        );
+
+        client.on_instrument(instrument);
+
+        assert_eq!(
+            client.http_client.get_asset_index(def.symbol.as_str()),
+            Some(def.asset_index),
+        );
     }
 
     #[rstest]

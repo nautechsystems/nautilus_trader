@@ -99,6 +99,8 @@ pub struct HyperliquidDataClient {
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     coin_to_instrument_id: Arc<AtomicMap<Ustr, InstrumentId>>,
+    // serializes instrument fetch-and-apply passes, see `refresh_instruments`
+    instrument_update_lock: Arc<tokio::sync::Mutex<()>>,
     stream_health: Arc<Mutex<MarketDataStreamHealthMonitor>>,
 }
 
@@ -198,6 +200,7 @@ impl HyperliquidDataClient {
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
             coin_to_instrument_id: Arc::new(AtomicMap::new()),
+            instrument_update_lock: Arc::new(tokio::sync::Mutex::new(())),
             stream_health,
         })
     }
@@ -373,46 +376,23 @@ impl HyperliquidDataClient {
     }
 
     async fn bootstrap_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
+        // a pass that fetched before the bootstrap must not apply over its universe
+        let _update_guard = self.instrument_update_lock.lock().await;
+
         let instruments = self
             .http_client
             .request_instruments()
             .await
             .context("failed to fetch instruments during bootstrap")?;
 
-        self.instruments.rcu(|m| {
-            for instrument in &instruments {
-                m.insert(instrument.id(), instrument.clone());
-            }
-        });
-
-        self.coin_to_instrument_id.rcu(|m| {
-            for instrument in &instruments {
-                m.insert(instrument.raw_symbol().inner(), instrument.id());
-            }
-        });
-
-        for instrument in &instruments {
-            self.http_client.cache_instrument(instrument);
-            self.ws_client.cache_instrument(instrument.clone());
-        }
-
-        match self
-            .http_client
-            .build_all_dex_asset_ctxs_instrument_ids()
-            .await
-        {
-            Ok(mapping) => {
-                let mapping = mapping
-                    .into_iter()
-                    .map(|(dex, instrument_ids)| (Ustr::from(dex.as_str()), instrument_ids))
-                    .collect();
-                self.ws_client
-                    .cache_all_dex_asset_ctxs_instrument_ids(mapping);
-            }
-            Err(e) => {
-                log::warn!("Failed to build Hyperliquid allDexsAssetCtxs mapping: {e}");
-            }
-        }
+        cache_instruments(
+            &instruments,
+            &self.instruments,
+            &self.coin_to_instrument_id,
+            &self.http_client,
+            &self.ws_client,
+        );
+        rebuild_all_dex_asset_ctxs_mapping(&self.http_client, &self.ws_client).await;
 
         log::debug!(
             "Bootstrapped {} instruments with {} coin mappings",
@@ -420,6 +400,72 @@ impl HyperliquidDataClient {
             self.coin_to_instrument_id.len()
         );
         Ok(instruments)
+    }
+
+    /// Spawns the periodic instrument refresh task, disabled when the configured
+    /// interval is zero. The task is tracked in `self.session_tasks`, so the
+    /// cancellation token stops it on disconnect, failed connect, and dispose.
+    fn spawn_instrument_refresh(&self) -> anyhow::Result<()> {
+        let minutes = self.config.update_instruments_interval_mins;
+
+        if minutes == 0 {
+            log::debug!(
+                "Hyperliquid instrument refresh disabled (update_instruments_interval_mins=0)"
+            );
+            return Ok(());
+        }
+
+        let interval = Duration::from_secs(minutes.saturating_mul(60));
+        let cancellation_token = self.cancellation_token.clone();
+        let http_client = self.http_client.clone();
+        let ws_client = self.ws_client.clone();
+        let instruments = Arc::clone(&self.instruments);
+        let coin_to_instrument_id = Arc::clone(&self.coin_to_instrument_id);
+        let instrument_update_lock = Arc::clone(&self.instrument_update_lock);
+        let data_sender = self.data_sender.clone();
+        let client_id = self.client_id;
+
+        self.session_tasks.spawn(async move {
+            log::info!("Hyperliquid instrument refresh started, interval={interval:?}");
+
+            loop {
+                tokio::select! {
+                    () = cancellation_token.cancelled() => {
+                        log::debug!("Hyperliquid instrument refresh cancelled");
+                        break;
+                    }
+                    () = tokio::time::sleep(interval) => {}
+                }
+
+                // The refresh performs several REST calls, so cancellation is
+                // also raced against the pass itself rather than only the sleep
+                let result = tokio::select! {
+                    () = cancellation_token.cancelled() => {
+                        log::debug!("Hyperliquid instrument refresh cancelled");
+                        break;
+                    }
+                    result = refresh_instruments(
+                        &instrument_update_lock,
+                        &http_client,
+                        &ws_client,
+                        &instruments,
+                        &coin_to_instrument_id,
+                        &data_sender,
+                    ) => result,
+                };
+
+                match result {
+                    Ok(summary) => summary.log(client_id),
+                    Err(e) => log::warn!(
+                        "Failed to refresh Hyperliquid instruments: client_id={client_id}, error={e:?}"
+                    ),
+                }
+            }
+
+            log::debug!("Hyperliquid instrument refresh stopped");
+        })?;
+
+        Ok(())
     }
 
     async fn spawn_ws(&self) -> anyhow::Result<()> {
@@ -670,6 +716,7 @@ impl DataClient for HyperliquidDataClient {
                 .await
                 .context("failed to spawn WebSocket client")?;
             self.spawn_stream_health_monitor()?;
+            self.spawn_instrument_refresh()?;
             Ok::<(), anyhow::Error>(())
         }
         .await;
@@ -1135,10 +1182,11 @@ impl DataClient for HyperliquidDataClient {
         log::debug!("Requesting all instruments");
 
         let http = self.http_client.clone();
+        let ws = self.ws_client.clone();
         let sender = self.data_sender.clone();
         let instruments_cache = self.instruments.clone();
         let coin_map = self.coin_to_instrument_id.clone();
-        let ws_instruments = self.ws_client.instruments_cache();
+        let update_lock = Arc::clone(&self.instrument_update_lock);
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let venue = self.venue();
@@ -1148,22 +1196,20 @@ impl DataClient for HyperliquidDataClient {
         let clock = self.clock;
 
         self.spawn_task("request_instruments", async move {
-            let instruments = http
-                .request_instruments()
-                .await
-                .context("failed to fetch instruments from Hyperliquid")?;
-
-            instruments_cache.rcu(|instruments_map| {
-                coin_map.rcu(|coin_to_id| {
-                    for instrument in &instruments {
-                        let instrument_id = instrument.id();
-                        instruments_map.insert(instrument_id, instrument.clone());
-                        let coin = instrument.raw_symbol().inner();
-                        coin_to_id.insert(coin, instrument_id);
-                        ws_instruments.insert(coin, instrument.clone());
-                    }
-                });
-            });
+            // the fetched universe also feeds the cache the periodic refresh diffs
+            // against, so it must be published like a refresh pass or a market first
+            // seen here would never reach execution
+            let refresh = refresh_instruments(
+                &update_lock,
+                &http,
+                &ws,
+                &instruments_cache,
+                &coin_map,
+                &sender,
+            )
+            .await?;
+            refresh.log(client_id);
+            let instruments = refresh.fetched;
 
             let response = DataResponse::Instruments(InstrumentsResponse::new(
                 request_id,
@@ -1189,10 +1235,11 @@ impl DataClient for HyperliquidDataClient {
         log::debug!("Requesting instrument: {}", request.instrument_id);
 
         let http = self.http_client.clone();
+        let ws = self.ws_client.clone();
         let sender = self.data_sender.clone();
         let instruments_cache = self.instruments.clone();
         let coin_map = self.coin_to_instrument_id.clone();
-        let ws_instruments = self.ws_client.instruments_cache();
+        let update_lock = Arc::clone(&self.instrument_update_lock);
         let instrument_id = request.instrument_id;
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
@@ -1202,22 +1249,19 @@ impl DataClient for HyperliquidDataClient {
         let clock = self.clock;
 
         self.spawn_task("request_instrument", async move {
-            let all_instruments = http
-                .request_instruments()
-                .await
-                .context("failed to fetch instruments from Hyperliquid")?;
-
-            instruments_cache.rcu(|instruments_map| {
-                coin_map.rcu(|coin_to_id| {
-                    for instrument in &all_instruments {
-                        let id = instrument.id();
-                        instruments_map.insert(id, instrument.clone());
-                        let coin = instrument.raw_symbol().inner();
-                        coin_to_id.insert(coin, id);
-                        ws_instruments.insert(coin, instrument.clone());
-                    }
-                });
-            });
+            // the venue only serves the whole universe, so a single-instrument request
+            // can discover other new markets and must publish them like a refresh pass
+            let refresh = refresh_instruments(
+                &update_lock,
+                &http,
+                &ws,
+                &instruments_cache,
+                &coin_map,
+                &sender,
+            )
+            .await?;
+            refresh.log(client_id);
+            let all_instruments = refresh.fetched;
 
             if let Some(instrument) = all_instruments
                 .into_iter()
@@ -1551,6 +1595,231 @@ impl DataClient for HyperliquidDataClient {
         });
 
         Ok(())
+    }
+}
+
+/// Applies fetched instruments to the client caches and both transports.
+fn cache_instruments(
+    instruments: &[InstrumentAny],
+    instruments_by_id: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    coin_to_instrument_id: &Arc<AtomicMap<Ustr, InstrumentId>>,
+    http_client: &HyperliquidHttpClient,
+    ws_client: &HyperliquidWebSocketClient,
+) {
+    instruments_by_id.rcu(|m| {
+        for instrument in instruments {
+            m.insert(instrument.id(), instrument.clone());
+        }
+    });
+
+    coin_to_instrument_id.rcu(|m| {
+        for instrument in instruments {
+            m.insert(instrument.raw_symbol().inner(), instrument.id());
+        }
+    });
+
+    for instrument in instruments {
+        http_client.cache_instrument(instrument);
+        ws_client.cache_instrument(instrument.clone());
+    }
+}
+
+/// Rebuilds the `allDexsAssetCtxs` mapping from the HTTP client's cached instruments.
+///
+/// Callers rebuild on every pass rather than only when a definition changed. The
+/// mapping is positional over each perp dex universe, so a listing or delisting
+/// shifts the entries of coins whose own definitions are unchanged, and a stale
+/// mapping would misattribute incoming `ctxs` arrays. Rebuilding unconditionally
+/// also retries a build that failed or fell back on an earlier pass.
+async fn rebuild_all_dex_asset_ctxs_mapping(
+    http_client: &HyperliquidHttpClient,
+    ws_client: &HyperliquidWebSocketClient,
+) {
+    match http_client.build_all_dex_asset_ctxs_instrument_ids().await {
+        Ok(mapping) => {
+            let mapping = mapping
+                .into_iter()
+                .map(|(dex, instrument_ids)| (Ustr::from(dex.as_str()), instrument_ids))
+                .collect();
+            ws_client.cache_all_dex_asset_ctxs_instrument_ids(mapping);
+        }
+        Err(e) => {
+            log::warn!("Failed to build Hyperliquid allDexsAssetCtxs mapping: {e}");
+        }
+    }
+}
+
+/// Summary of a single instrument refresh pass.
+#[derive(Debug)]
+struct InstrumentRefresh {
+    /// Instruments returned by the venue.
+    fetched: Vec<InstrumentAny>,
+    /// Symbols of the definitions that were new to the cache.
+    added: Vec<Ustr>,
+    /// New or materially changed definitions published downstream.
+    changed: usize,
+}
+
+impl InstrumentRefresh {
+    fn log(&self, client_id: ClientId) {
+        // a quiet pass every interval would be noise, but a market becoming
+        // tradable mid-session is the event an operator needs to see
+        if self.added.is_empty() {
+            log::debug!(
+                "Hyperliquid instruments refreshed: client_id={client_id}, fetched={}, changed={}",
+                self.fetched.len(),
+                self.changed,
+            );
+        } else {
+            log::info!(
+                "Hyperliquid instruments refreshed: client_id={client_id}, fetched={}, changed={}, added={:?}",
+                self.fetched.len(),
+                self.changed,
+                self.added,
+            );
+        }
+    }
+}
+
+/// Fetches the instrument universe and reconciles it against the caches.
+///
+/// Holds `update_lock` across the fetch and the reconcile so concurrent passes
+/// apply in the order they fetched. The diff only asks whether a definition
+/// differs from the cached one, not whether it is newer, so without the lock a
+/// pass that fetched before another but finished after it would republish the
+/// older definition.
+async fn refresh_instruments(
+    update_lock: &tokio::sync::Mutex<()>,
+    http_client: &HyperliquidHttpClient,
+    ws_client: &HyperliquidWebSocketClient,
+    instruments_by_id: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    coin_to_instrument_id: &Arc<AtomicMap<Ustr, InstrumentId>>,
+    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+) -> anyhow::Result<InstrumentRefresh> {
+    let _update_guard = update_lock.lock().await;
+
+    let fetched = http_client
+        .request_instruments()
+        .await
+        .context("failed to fetch Hyperliquid instruments")?;
+
+    Ok(reconcile_instruments(
+        fetched,
+        http_client,
+        ws_client,
+        instruments_by_id,
+        coin_to_instrument_id,
+        data_sender,
+    )
+    .await)
+}
+
+/// Reconciles the instrument caches against a fetched instrument universe.
+///
+/// Caches and publishes new or materially changed definitions as
+/// [`DataEvent::Instrument`]. Unchanged definitions are not republished. Cached
+/// instruments absent from `fetched` are retained because they may still back
+/// open subscriptions.
+///
+/// `instruments_by_id` is the baseline later passes diff against, so every path
+/// that writes fetched instruments into it must come through here, under the
+/// update lock taken by [`refresh_instruments`]. A market cached without being
+/// published would compare as unchanged on every later pass, and the execution
+/// client would never receive its asset index.
+async fn reconcile_instruments(
+    fetched: Vec<InstrumentAny>,
+    http_client: &HyperliquidHttpClient,
+    ws_client: &HyperliquidWebSocketClient,
+    instruments_by_id: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    coin_to_instrument_id: &Arc<AtomicMap<Ustr, InstrumentId>>,
+    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+) -> InstrumentRefresh {
+    let changed = changed_definitions(&fetched, instruments_by_id);
+    let added = added_symbols(&changed, instruments_by_id);
+
+    cache_instruments(
+        &changed,
+        instruments_by_id,
+        coin_to_instrument_id,
+        http_client,
+        ws_client,
+    );
+
+    // publish before awaiting the mapping rebuild, so a pass cancelled during the
+    // rebuild cannot leave these definitions cached but unpublished
+    for instrument in &changed {
+        if let Err(e) = data_sender.send(DataEvent::Instrument(instrument.clone())) {
+            log::warn!("Failed to send instrument: {e}");
+        }
+    }
+
+    rebuild_all_dex_asset_ctxs_mapping(http_client, ws_client).await;
+
+    InstrumentRefresh {
+        added,
+        changed: changed.len(),
+        fetched,
+    }
+}
+
+/// Returns the fetched instruments that are new or materially changed.
+fn changed_definitions(
+    fetched: &[InstrumentAny],
+    instruments_by_id: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+) -> Vec<InstrumentAny> {
+    fetched
+        .iter()
+        .filter(|instrument| {
+            instruments_by_id
+                .get_cloned(&instrument.id())
+                .is_none_or(|cached| !instrument_definitions_match(&cached, instrument))
+        })
+        .cloned()
+        .collect()
+}
+
+/// Returns the symbols of the changed definitions the cache has never held.
+///
+/// A market listed after startup is the case the refresh exists for, so a pass
+/// reports which symbols became tradable rather than only how many definitions
+/// moved. Callers pass the changed set, so a definition that merely moved its
+/// tick size is not reported as new.
+fn added_symbols(
+    changed: &[InstrumentAny],
+    instruments_by_id: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+) -> Vec<Ustr> {
+    changed
+        .iter()
+        .filter(|instrument| instruments_by_id.get_cloned(&instrument.id()).is_none())
+        .map(|instrument| instrument.symbol().inner())
+        .collect()
+}
+
+/// Returns `true` when two instruments carry the same tradable definition,
+/// ignoring event timestamps.
+///
+/// Comparison runs on the serialized form so every venue field, including the
+/// free-form `info` metadata, participates without listing each field.
+fn instrument_definitions_match(a: &InstrumentAny, b: &InstrumentAny) -> bool {
+    fn normalized(instrument: &InstrumentAny) -> Option<serde_json::Value> {
+        let mut value = serde_json::to_value(instrument).ok()?;
+
+        if let Some(definition) = value
+            .as_object_mut()
+            .and_then(|obj| obj.values_mut().next())
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            definition.remove("ts_event");
+            definition.remove("ts_init");
+        }
+
+        Some(value)
+    }
+
+    // A serialization failure compares as changed so updates are never suppressed
+    match (normalized(a), normalized(b)) {
+        (Some(a), Some(b)) => a == b,
+        _ => false,
     }
 }
 
@@ -2164,15 +2433,17 @@ mod tests {
             QuoteTick,
             stubs::{stub_deltas, stub_depth10},
         },
-        enums::AggressorSide,
-        identifiers::TradeId,
+        enums::{AggressorSide, CurrencyType},
+        identifiers::{Symbol, TradeId},
+        instruments::CryptoPerpetual,
+        types::Currency,
     };
     use rstest::rstest;
     use rust_decimal_macros::dec;
     use ustr::Ustr;
 
     use super::*;
-    use crate::common::testing::load_test_data;
+    use crate::common::{consts::HYPERLIQUID_CLIENT_ID, testing::load_test_data};
 
     fn btc_perp_id() -> InstrumentId {
         InstrumentId::from("BTC-PERP.HYPERLIQUID")
@@ -2996,5 +3267,140 @@ mod tests {
 
         let ts: Vec<u64> = filtered.iter().map(|t| t.ts_event.as_u64()).collect();
         assert_eq!(ts, vec![2000, 3000]);
+    }
+
+    fn perp_instrument(symbol: &str, tick_size: &str, ts_init: UnixNanos) -> InstrumentAny {
+        let base = Currency::new("BTC", 8, 0, "BTC", CurrencyType::Crypto);
+        let usd = Currency::new("USD", 8, 0, "USD", CurrencyType::Crypto);
+        let usdc = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
+
+        InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(InstrumentId::new(Symbol::new(symbol), *HYPERLIQUID_VENUE))
+                .raw_symbol(Symbol::new("BTC"))
+                .base_currency(base)
+                .quote_currency(usd)
+                .settlement_currency(usdc)
+                .is_inverse(false)
+                .price_precision(1)
+                .size_precision(3)
+                .price_increment(Price::from(tick_size))
+                .size_increment(Quantity::from("0.001"))
+                .ts_event(ts_init)
+                .ts_init(ts_init)
+                .build()
+                .unwrap(),
+        )
+    }
+
+    fn cached(instruments: &[InstrumentAny]) -> Arc<AtomicMap<InstrumentId, InstrumentAny>> {
+        let map = AtomicMap::new();
+        map.rcu(|m| {
+            for instrument in instruments {
+                m.insert(instrument.id(), instrument.clone());
+            }
+        });
+        Arc::new(map)
+    }
+
+    fn data_client_with_refresh_interval(minutes: u64) -> HyperliquidDataClient {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(tx);
+
+        HyperliquidDataClient::new(
+            *HYPERLIQUID_CLIENT_ID,
+            HyperliquidDataClientConfig {
+                update_instruments_interval_mins: minutes,
+                ..HyperliquidDataClientConfig::default()
+            },
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_spawn_instrument_refresh_skipped_when_interval_zero() {
+        let client = data_client_with_refresh_interval(0);
+
+        client.spawn_instrument_refresh().unwrap();
+
+        assert!(client.session_tasks.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_spawn_instrument_refresh_registers_task() {
+        let client = data_client_with_refresh_interval(60);
+
+        client.spawn_instrument_refresh().unwrap();
+
+        assert_eq!(client.session_tasks.len(), 1);
+
+        client.cancellation_token.cancel();
+        client.await_session_tasks().await.unwrap();
+    }
+
+    #[rstest]
+    fn test_changed_definitions_reports_a_newly_listed_market() {
+        let cached_instruments =
+            cached(&[perp_instrument("BTC-USD-PERP", "0.1", UnixNanos::from(1))]);
+        let fetched = vec![
+            perp_instrument("BTC-USD-PERP", "0.1", UnixNanos::from(1)),
+            perp_instrument("NEW-USD-PERP", "0.1", UnixNanos::from(1)),
+        ];
+
+        let changed = changed_definitions(&fetched, &cached_instruments);
+
+        assert_eq!(changed.len(), 1);
+        assert_eq!(changed[0].id().symbol.as_str(), "NEW-USD-PERP");
+    }
+
+    #[rstest]
+    fn test_added_symbols_names_only_the_market_the_cache_never_held() {
+        let cached_instruments =
+            cached(&[perp_instrument("BTC-USD-PERP", "0.1", UnixNanos::from(1))]);
+        // BTC moved its tick size, so it is changed but not new
+        let changed = vec![
+            perp_instrument("BTC-USD-PERP", "0.5", UnixNanos::from(1)),
+            perp_instrument("NEW-USD-PERP", "0.1", UnixNanos::from(1)),
+        ];
+
+        let added = added_symbols(&changed, &cached_instruments);
+
+        assert_eq!(added, vec![Ustr::from("NEW-USD-PERP")]);
+    }
+
+    #[rstest]
+    fn test_added_symbols_is_empty_when_every_change_is_a_known_market() {
+        let cached_instruments =
+            cached(&[perp_instrument("BTC-USD-PERP", "0.1", UnixNanos::from(1))]);
+        let changed = vec![perp_instrument("BTC-USD-PERP", "0.5", UnixNanos::from(1))];
+
+        assert!(added_symbols(&changed, &cached_instruments).is_empty());
+    }
+
+    #[rstest]
+    fn test_changed_definitions_ignores_a_later_ts_init_alone() {
+        // Every pass restamps `ts_init` from the clock, so comparing it would
+        // republish the whole universe on every tick.
+        let cached_instruments =
+            cached(&[perp_instrument("BTC-USD-PERP", "0.1", UnixNanos::from(1))]);
+        let fetched = vec![perp_instrument(
+            "BTC-USD-PERP",
+            "0.1",
+            UnixNanos::from(2_000_000_000),
+        )];
+
+        assert!(changed_definitions(&fetched, &cached_instruments).is_empty());
+    }
+
+    #[rstest]
+    fn test_changed_definitions_reports_a_changed_tick_size() {
+        let cached_instruments =
+            cached(&[perp_instrument("BTC-USD-PERP", "0.1", UnixNanos::from(1))]);
+        let fetched = vec![perp_instrument("BTC-USD-PERP", "0.5", UnixNanos::from(1))];
+
+        let changed = changed_definitions(&fetched, &cached_instruments);
+
+        assert_eq!(changed.len(), 1);
+        assert_eq!(changed[0].price_increment(), Price::from("0.5"));
     }
 }

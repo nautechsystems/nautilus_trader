@@ -497,7 +497,9 @@ impl FeedHandler {
                             }
                         }
                         HandlerCommand::CacheAllDexAssetCtxsInstrumentIds(mappings) => {
-                            self.all_dex_asset_ctxs_instrument_ids = mappings;
+                            // merge by dex to match the client cache, so a partial
+                            // mapping keeps the entries of dexes it did not cover
+                            self.all_dex_asset_ctxs_instrument_ids.extend(mappings);
                         }
                         HandlerCommand::CacheSpotFillCoins(_) => {
                             // No longer needed - raw_symbol now contains the proper format
@@ -1260,10 +1262,11 @@ impl FeedHandler {
             };
 
             if ctxs.len() != instrument_ids.len() {
-                // Mapping is built once at bootstrap, so a count change means the universe
-                // drifted and positional alignment can no longer be trusted.
+                // Mapping is rebuilt on each instrument refresh, instrument request, and data
+                // client connect, so a count change means the universe drifted since the last
+                // build and positional alignment can no longer be trusted until the next one.
                 log::warn!(
-                    "Hyperliquid allDexsAssetCtxs count mismatch for dex='{dex}': received {} contexts but cached {} instrument IDs (reconnect to refresh)",
+                    "Hyperliquid allDexsAssetCtxs count mismatch for dex='{dex}': received {} contexts but cached {} instrument IDs (the next instrument refresh, instrument request, or data client connect rebuilds the mapping)",
                     ctxs.len(),
                     instrument_ids.len()
                 );
