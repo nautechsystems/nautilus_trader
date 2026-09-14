@@ -39,6 +39,8 @@ use std::{
 
 use parking_lot::Mutex;
 
+use crate::dst;
+
 pub type AuthResultSender = tokio::sync::oneshot::Sender<Result<(), String>>;
 pub type AuthResultReceiver = tokio::sync::oneshot::Receiver<Result<(), String>>;
 
@@ -241,7 +243,7 @@ impl AuthTracker {
     where
         E: From<String>,
     {
-        match tokio::time::timeout(timeout, receiver).await {
+        match dst::time::timeout(timeout, receiver).await {
             Ok(Ok(Ok(()))) => Ok(()),
             Ok(Ok(Err(msg))) => Err(E::from(msg)),
             Ok(Err(_)) => Err(E::from("Authentication channel closed".to_string())),
@@ -272,7 +274,7 @@ impl AuthTracker {
             return true;
         }
 
-        tokio::time::timeout(timeout, async {
+        dst::time::timeout(timeout, async {
             loop {
                 // Enable before the state check: an unpolled Notified is unregistered and misses notifies
                 let mut notified = pin!(self.state_notify.notified());
@@ -297,6 +299,7 @@ impl Default for AuthTracker {
 }
 
 #[cfg(test)]
+#[cfg(not(all(feature = "simulation", madsim)))]
 mod tests {
     use std::{
         sync::atomic::{AtomicBool, Ordering},
@@ -1209,6 +1212,7 @@ mod tests {
 }
 
 #[cfg(test)]
+#[cfg(not(all(feature = "simulation", madsim)))]
 mod proptest_tests {
     use std::{sync::Arc, time::Duration};
 
@@ -1534,5 +1538,42 @@ mod proptest_tests {
                 "wait_for_authenticated took {elapsed:?} for auth_result={auth_result}"
             );
         }
+    }
+}
+
+#[cfg(all(test, feature = "simulation", madsim))]
+mod simulation_tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    #[madsim::test]
+    async fn test_wait_for_result_succeeds_without_tokio_reactor() {
+        let tracker = AuthTracker::new();
+        let rx = tracker.begin();
+        tracker.succeed();
+        let result: Result<(), String> = tracker.wait_for_result(Duration::from_secs(1), rx).await;
+        assert_eq!(result, Ok(()));
+    }
+
+    #[madsim::test]
+    async fn test_wait_for_result_times_out_on_virtual_clock() {
+        let tracker = AuthTracker::new();
+        let rx = tracker.begin();
+        let result: Result<(), String> =
+            tracker.wait_for_result(Duration::from_millis(10), rx).await;
+        assert_eq!(result, Err("Authentication timed out".to_string()));
+    }
+
+    #[madsim::test]
+    async fn test_wait_for_authenticated_succeeds_without_tokio_reactor() {
+        let tracker = AuthTracker::new();
+        let pending = tracker.clone();
+
+        madsim::task::spawn(async move {
+            madsim::time::sleep(Duration::from_millis(1)).await;
+            pending.succeed();
+        });
+        assert!(tracker.wait_for_authenticated(Duration::from_secs(1)).await);
     }
 }
