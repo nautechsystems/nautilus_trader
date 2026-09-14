@@ -1227,7 +1227,11 @@ pub fn parse_fill_report(
         last_px,
         commission,
         liquidity_side,
-        None, // client_order_id - to be linked by execution engine
+        // the venue cloid, not the Nautilus client order id: the cloid is a one-way
+        // hash of it, so only the WebSocket client's cloid cache maps it back
+        fill.cloid
+            .as_ref()
+            .map(|cloid| ClientOrderId::new(cloid.as_str())),
         None, // venue_position_id
         ts_event,
         ts_init,
@@ -2275,6 +2279,7 @@ mod tests {
             tid: 77_001,
             fee_token: Ustr::from("+420"),
             builder_fee: Some(dec!(0.0001)),
+            cloid: Some("0x5bdd47600dea461f36c8378cd7b4150c".to_string()),
         };
 
         let account_id = AccountId::from("HYPERLIQUID-001");
@@ -2289,6 +2294,10 @@ mod tests {
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
         assert_eq!(report.last_qty.as_decimal(), dec!(1000));
         assert_eq!(report.last_px.as_decimal(), dec!(0.55));
+        assert_eq!(
+            report.client_order_id,
+            Some(ClientOrderId::new("0x5bdd47600dea461f36c8378cd7b4150c")),
+        );
     }
 
     #[rstest]
@@ -2308,6 +2317,20 @@ mod tests {
                 HyperliquidFillDirection::SpotDustConversion,
                 HyperliquidFillDirection::NetChildVaults,
             ],
+        );
+    }
+
+    #[rstest]
+    fn test_deserialize_user_fills_with_cloid() {
+        // userFills carries the venue cloid whenever the order was submitted with
+        // one, so reconciliation can link a REST fill back to its client order id.
+        // Fixture is real mainnet wire data.
+        let fills: Vec<HyperliquidFill> = load_test_data("http_user_fills_with_cloid.json");
+
+        assert!(
+            fills
+                .iter()
+                .all(|fill| fill.cloid.as_deref() == Some("0x5bdd47600dea461f36c8378cd7b4150c")),
         );
     }
 
