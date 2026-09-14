@@ -13,6 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Execution state, reconciliation decisions, and adapter-facing dispatch support.
+//!
+//! [`manager`] owns cached execution reconciliation and its activity and retry state.
+//! Internal reconciliation operations build and validate reports and collect targeted reports.
+//! [`context`], [`failure`], [`reports`], and [`emitter`] provide the shared adapter interfaces.
+//! The manager coordinates individual reconciliation operations; the live node schedules them.
+
 pub mod config;
 pub mod context;
 pub mod emitter;

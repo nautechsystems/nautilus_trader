@@ -14,7 +14,8 @@ recommended values, see
 
 ## Reconciliation model
 
-Only the `LiveExecutionEngine` performs reconciliation, since backtesting controls both sides.
+Live execution reconciles local state against venue reports. Backtesting controls both order
+execution and the resulting state, so it does not need venue reconciliation.
 
 Two scenarios:
 
@@ -26,6 +27,70 @@ Persist all execution events to the cache database. This reduces reliance on ven
 and gives reconciliation the retained order and position state needed to interpret short history
 windows.
 :::
+
+### Component responsibilities
+
+`LiveNode` owns the `ExecutionManager` and schedules recurring reconciliation. The manager tracks
+activity, retries, and fill identities, interprets cached state, and prepares reconciliation events.
+`ExecutionEngine` applies events to orders and positions and handles individual execution reports.
+
+The UML diagram shows ownership and dependencies. A filled diamond denotes ownership; dashed arrows
+point from a caller to a component it uses. The kernel owns the engine and shared cache; it is omitted
+here to focus on reconciliation.
+
+```mermaid
+classDiagram
+    direction LR
+
+    namespace nautilus_live {
+        class LiveNode
+        class ExecutionManager
+    }
+    namespace nautilus_execution {
+        class ExecutionEngine
+    }
+    namespace nautilus_common {
+        class ExecutionClient {
+            <<interface>>
+        }
+        class Cache
+    }
+
+    LiveNode *-- ExecutionManager : owns
+    LiveNode ..> ExecutionClient : requests recurring reports
+    LiveNode ..> ExecutionEngine : dispatches through kernel
+    ExecutionManager ..> ExecutionClient : polls reports for standalone checks
+    ExecutionManager ..> ExecutionEngine : applies startup events
+    ExecutionManager ..> Cache : reads state and registers external orders
+    ExecutionEngine ..> ExecutionClient : routes commands and requests reports
+    ExecutionEngine ..> Cache : updates orders and positions
+```
+
+The live client facade shares one adapter instance between the node and engine. Pending report
+requests can retain client borrows while the event loop handles other work. Instrument updates are
+deferred until those borrows are released, then flushed on request completion or cancellation.
+
+Within `nautilus-live`, the source modules divide these responsibilities as follows:
+
+| Module                        | Responsibility                                                           |
+| ----------------------------- | ------------------------------------------------------------------------ |
+| `node/mod.rs`                 | Node lifecycle, event loop, and event dispatch.                          |
+| `node/reconciliation.rs`      | Recurring report tasks, deadlines, cancellation, and result handling.    |
+| `execution/manager.rs`        | Reconciliation state, decisions, and individual reconciliation checks.   |
+| `execution/reconciliation.rs` | Shared types, state-independent decisions, and targeted report requests. |
+
+The separate `nautilus_execution::reconciliation` module supplies report-to-event and arithmetic
+operations shared with the execution engine.
+
+At startup, the manager publishes raw reports, applies order and fill events, verifies historical
+fill application, and then evaluates positions against the updated cache. During continuous
+position checks, the node coordinates authoritative fill queries and dispatch before asking the
+manager to generate synthetic events. Activity revisions detect local changes during requests or
+callbacks; applying authoritative fills defers synthetic reconciliation until a fresh position report.
+
+The manager remains available without the `node` feature. Standalone callers can use its individual
+polling methods and apply the returned events themselves. Standalone position polling directly
+returns synthetic discrepancy events; the node adds the authoritative-fill recovery sequence.
 
 ### Execution-client origins
 
@@ -182,9 +247,11 @@ it repairs order history without changing the position.
 
 ## Reconciliation configuration
 
-Unless `reconciliation` is set to false, the execution engine reconciles state for each
-venue at startup. The `reconciliation_lookback_mins` parameter controls how far back the
-engine requests history.
+Unless `reconciliation` is set to false, the live node runs startup reconciliation for each
+execution client. The `reconciliation_lookback_mins` parameter controls how far back it requests
+history through the execution engine. Startup enablement and polling intervals belong to the node's
+`LiveExecutionEngineConfig`; the manager receives the thresholds, retry limits, filters, and lookbacks
+used to make reconciliation decisions.
 
 :::tip
 Leave `reconciliation_lookback_mins` unset to use the adapter's documented default. Many adapters

@@ -13,6 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Adapter-side filtering of venue order reports by query status and time bounds.
+//!
+//! Filtering shapes the response to a request; cache comparison and reconciliation decisions
+//! belong to [`super::manager`].
+
 use nautilus_common::messages::execution::GenerateOrderStatusReports;
 use nautilus_model::reports::OrderStatusReport;
 

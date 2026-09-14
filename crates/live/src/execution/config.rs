@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Execution manager configuration.
+//! Configuration for execution reconciliation decisions and cache retention.
+//!
+//! Thresholds, retry limits, filters, and lookbacks govern manager decisions. Startup enablement
+//! and polling intervals belong to the live node's execution-engine configuration.
 
 use indexmap::IndexSet;
 use nautilus_common::config::{ConfigError, ConfigErrorCollector, ConfigResult};
@@ -29,8 +32,6 @@ use nautilus_model::identifiers::{ClientOrderId, InstrumentId, TraderId};
 pub struct ExecutionManagerConfig {
     /// The trader ID for generated orders.
     pub trader_id: TraderId,
-    /// If reconciliation is active at start-up.
-    pub reconciliation: bool,
     /// Number of minutes to look back during reconciliation.
     pub lookback_mins: Option<u64>,
     /// Instrument IDs to include during reconciliation (empty => all).
@@ -43,14 +44,10 @@ pub struct ExecutionManagerConfig {
     pub filtered_client_order_ids: IndexSet<ClientOrderId>,
     /// Whether to generate missing orders from reports.
     pub generate_missing_orders: bool,
-    /// The interval (milliseconds) between checking whether in-flight orders have exceeded their threshold.
-    pub inflight_check_interval_ms: u32,
     /// Threshold in milliseconds for inflight order checks.
     pub inflight_threshold_ms: u64,
     /// Maximum number of retries for inflight checks.
     pub inflight_max_retries: u32,
-    /// The interval (seconds) between checks for open orders at the venue.
-    pub open_check_interval_secs: Option<f64>,
     /// The lookback minutes for open order checks.
     pub open_check_lookback_mins: Option<u64>,
     /// Threshold before acting on venue discrepancies for open orders.
@@ -63,8 +60,6 @@ pub struct ExecutionManagerConfig {
     pub max_single_order_queries_per_cycle: u32,
     /// The delay (milliseconds) between consecutive single-order queries.
     pub single_order_query_delay_ms: u32,
-    /// The interval (seconds) between checks for open positions at the venue.
-    pub position_check_interval_secs: Option<f64>,
     /// The lookback minutes for position consistency checks.
     pub position_check_lookback_mins: u64,
     /// Threshold before acting on venue discrepancies for positions.
@@ -85,24 +80,20 @@ impl Default for ExecutionManagerConfig {
     fn default() -> Self {
         Self {
             trader_id: TraderId::default(),
-            reconciliation: true,
             lookback_mins: Some(60),
             reconciliation_instrument_ids: IndexSet::new(),
             filter_unclaimed_external: false,
             filter_position_reports: false,
             filtered_client_order_ids: IndexSet::new(),
             generate_missing_orders: true,
-            inflight_check_interval_ms: 2_000,
             inflight_threshold_ms: 5_000,
             inflight_max_retries: 5,
-            open_check_interval_secs: None,
             open_check_lookback_mins: Some(60),
             open_check_threshold_ns: DurationNanos::from_secs(5),
             open_check_missing_retries: 5,
             open_check_open_only: true,
             max_single_order_queries_per_cycle: 5,
             single_order_query_delay_ms: 100,
-            position_check_interval_secs: None,
             position_check_lookback_mins: 60,
             position_check_threshold_ns: DurationNanos::from_mins(1),
             position_check_retries: 3,

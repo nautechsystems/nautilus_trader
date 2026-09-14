@@ -725,8 +725,7 @@ async fn test_reconcile_mass_status_with_empty_reports() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert!(result.events.is_empty());
 }
@@ -759,8 +758,7 @@ async fn test_reconcile_mass_status_creates_external_order_accepted() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert_eq!(result.events.len(), 1);
     assert!(matches!(result.events[0], OrderEventAny::Accepted(_)));
@@ -816,8 +814,7 @@ async fn test_reconcile_mass_status_materializes_restored_close_position_order()
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
     let order = ctx.get_order(&client_order_id).unwrap();
 
     assert_eq!(
@@ -859,8 +856,7 @@ async fn test_reconcile_mass_status_rejects_external_order_with_zero_quantity() 
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert!(result.events.is_empty());
     assert!(result.external_orders.is_empty());
@@ -930,8 +926,7 @@ async fn test_reconcile_mass_status_warns_on_untrusted_cached_client_origin(
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     msgbus::unsubscribe_any(raw_pattern, &raw_handler);
 
@@ -1006,8 +1001,7 @@ async fn test_reconcile_mass_status_warns_on_venue_only_fill_from_other_client()
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     msgbus::unsubscribe_any(raw_pattern, &raw_handler);
 
@@ -1104,8 +1098,7 @@ async fn test_reconcile_mass_status_publishes_external_order_initialized() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     msgbus::unsubscribe_order_events(topic.into(), &handler);
 
@@ -1281,8 +1274,7 @@ async fn test_reconcile_mass_status_creates_external_order_canceled() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert_eq!(result.events.len(), 2);
     assert!(matches!(result.events[0], OrderEventAny::Accepted(_)));
@@ -1340,8 +1332,7 @@ async fn test_external_order_canceled_with_partial_fill() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Should have: Accepted, Filled, Canceled (in ts_event order)
     assert_eq!(result.events.len(), 3);
@@ -1416,8 +1407,7 @@ async fn test_external_terminal_order_with_incomplete_real_fills_infers_residual
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert_eq!(result.events.len(), 4);
     assert!(matches!(result.events[0], OrderEventAny::Accepted(_)));
@@ -1511,8 +1501,7 @@ async fn test_cached_order_canceled_with_fills() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Should have: Filled, Canceled (order already accepted)
     assert_eq!(result.events.len(), 2);
@@ -1573,8 +1562,7 @@ async fn test_triggered_event_generated_before_canceled() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Should have: Triggered, Canceled
     assert_eq!(result.events.len(), 2);
@@ -1610,8 +1598,7 @@ async fn test_reconcile_mass_status_creates_external_order_filled() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert_eq!(result.events.len(), 2);
     assert!(matches!(result.events[0], OrderEventAny::Accepted(_)));
@@ -1691,8 +1678,7 @@ async fn test_external_order_filled_uses_real_fills() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status.clone(), ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Should have: Accepted, Fill1, Fill2 (real fills, not inferred)
     assert_eq!(result.events.len(), 3);
@@ -1731,8 +1717,7 @@ async fn test_external_order_filled_uses_real_fills() {
     .expect("valid config");
     let replay = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
     let cache = ctx.cache.borrow();
 
     assert!(replay.events.is_empty());
@@ -1796,8 +1781,7 @@ async fn test_external_order_filled_with_partial_fills_generates_inferred() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Should have: Accepted, RealFill (2.0), InferredFill (1.0)
     assert_eq!(result.events.len(), 3);
@@ -1867,8 +1851,7 @@ async fn test_reconcile_mass_status_skips_external_when_filtered(
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert!(result.events.is_empty());
     assert!(
@@ -1913,8 +1896,7 @@ async fn test_synthetic_orders_bypass_filter_unclaimed_external() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert!(!result.events.is_empty());
     assert!(
@@ -1984,8 +1966,7 @@ async fn test_reconcile_mass_status_uses_claimed_strategy(
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert_eq!(result.events.len(), 1);
 
@@ -2037,28 +2018,24 @@ async fn test_claimed_terminal_order_defers_unexplained_fills(#[case] partial: b
         TradeId::from("T-CLAIMED-2"),
         "1.0",
     );
-    ctx.manager
-        .reconcile_execution_mass_status(
-            create_mass_status(
-                vec![report.clone()],
-                if partial {
-                    vec![first.clone()]
-                } else {
-                    Vec::new()
-                },
-            ),
-            ctx.exec_engine.clone(),
-        )
-        .await;
+    ctx.manager.reconcile_execution_mass_status(
+        &create_mass_status(
+            vec![report.clone()],
+            if partial {
+                vec![first.clone()]
+            } else {
+                Vec::new()
+            },
+        ),
+        &ctx.exec_engine,
+    );
 
     let deferred = ctx.get_order(&client_order_id);
 
-    ctx.manager
-        .reconcile_execution_mass_status(
-            create_mass_status(vec![report], vec![first.clone(), second.clone()]),
-            ctx.exec_engine.clone(),
-        )
-        .await;
+    ctx.manager.reconcile_execution_mass_status(
+        &create_mass_status(vec![report], vec![first.clone(), second.clone()]),
+        &ctx.exec_engine,
+    );
     ctx.exec_engine.borrow_mut().reconcile_fill_report(&first);
     ctx.exec_engine.borrow_mut().reconcile_fill_report(&second);
     let recovered = ctx.get_order(&client_order_id).unwrap();
@@ -2134,8 +2111,7 @@ async fn test_claim_external_orders_duplicate_fails_without_overwriting() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert_eq!(result.events.len(), 1);
 
@@ -2183,8 +2159,7 @@ async fn test_reconcile_mass_status_processes_fills_for_cached_order() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert_eq!(result.events.len(), 1);
     assert!(matches!(result.events[0], OrderEventAny::Filled(_)));
@@ -2231,8 +2206,7 @@ async fn test_reconcile_mass_status_deduplicates_fills() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Only one fill should be processed
     assert_eq!(result.events.len(), 1);
@@ -2293,13 +2267,10 @@ async fn test_canonical_duplicate_reconciliation_fill_is_committed() {
         trade_id,
         "1.0",
     );
-    let duplicate = ctx
-        .manager
-        .reconcile_execution_mass_status(
-            create_mass_status(vec![duplicate_report], vec![duplicate_fill]),
-            ctx.exec_engine.clone(),
-        )
-        .await;
+    let duplicate = ctx.manager.reconcile_execution_mass_status(
+        &create_mass_status(vec![duplicate_report], vec![duplicate_fill]),
+        &ctx.exec_engine,
+    );
 
     let [OrderEventAny::Filled(residual)] = duplicate.events.as_slice() else {
         panic!(
@@ -2330,13 +2301,10 @@ async fn test_canonical_duplicate_reconciliation_fill_is_committed() {
         trade_id,
         "1.0",
     );
-    let retry = ctx
-        .manager
-        .reconcile_execution_mass_status(
-            create_mass_status(vec![], vec![retry_fill]),
-            ctx.exec_engine.clone(),
-        )
-        .await;
+    let retry = ctx.manager.reconcile_execution_mass_status(
+        &create_mass_status(vec![], vec![retry_fill]),
+        &ctx.exec_engine,
+    );
 
     assert!(retry.events.is_empty());
     assert!(
@@ -2403,13 +2371,10 @@ async fn test_rejected_reconciliation_fill_is_retried() {
         trade_id,
         "1.0",
     );
-    let rejected = ctx
-        .manager
-        .reconcile_execution_mass_status(
-            create_mass_status(vec![rejected_report], vec![rejected_fill]),
-            ctx.exec_engine.clone(),
-        )
-        .await;
+    let rejected = ctx.manager.reconcile_execution_mass_status(
+        &create_mass_status(vec![rejected_report], vec![rejected_fill]),
+        &ctx.exec_engine,
+    );
 
     assert!(rejected.events.is_empty());
     let rejected_order = ctx.get_order(&client_order_id).unwrap();
@@ -2430,13 +2395,10 @@ async fn test_rejected_reconciliation_fill_is_retried() {
         trade_id,
         "1.0",
     );
-    let retry = ctx
-        .manager
-        .reconcile_execution_mass_status(
-            create_mass_status(vec![], vec![retry_fill]),
-            ctx.exec_engine.clone(),
-        )
-        .await;
+    let retry = ctx.manager.reconcile_execution_mass_status(
+        &create_mass_status(vec![], vec![retry_fill]),
+        &ctx.exec_engine,
+    );
 
     assert_eq!(retry.events.len(), 1);
     assert!(matches!(retry.events[0], OrderEventAny::Filled(_)));
@@ -2474,13 +2436,10 @@ async fn test_reconciliation_fill_dispatch_rejection_does_not_commit() {
         "1.0",
     );
     // An orphan report queues without the order-report working.apply projection.
-    let rejected = ctx
-        .manager
-        .reconcile_execution_mass_status(
-            create_mass_status(vec![], vec![fill.clone()]),
-            ctx.exec_engine.clone(),
-        )
-        .await;
+    let rejected = ctx.manager.reconcile_execution_mass_status(
+        &create_mass_status(vec![], vec![fill.clone()]),
+        &ctx.exec_engine,
+    );
 
     assert_eq!(
         rejected
@@ -2505,11 +2464,7 @@ async fn test_reconciliation_fill_dispatch_rejection_does_not_commit() {
 
     let retry = ctx
         .manager
-        .reconcile_execution_mass_status(
-            create_mass_status(vec![], vec![fill]),
-            ctx.exec_engine.clone(),
-        )
-        .await;
+        .reconcile_execution_mass_status(&create_mass_status(vec![], vec![fill]), &ctx.exec_engine);
 
     assert_eq!(
         retry
@@ -2560,40 +2515,34 @@ async fn test_applied_reconciliation_fill_is_committed() {
         second_venue_order_id,
     ));
 
-    let first = ctx
-        .manager
-        .reconcile_execution_mass_status(
-            create_mass_status(
-                vec![],
-                vec![create_fill_report(
-                    first_client_order_id,
-                    first_venue_order_id,
-                    instrument_id,
-                    trade_id,
-                    "1.0",
-                )],
-            ),
-            ctx.exec_engine.clone(),
-        )
-        .await;
+    let first = ctx.manager.reconcile_execution_mass_status(
+        &create_mass_status(
+            vec![],
+            vec![create_fill_report(
+                first_client_order_id,
+                first_venue_order_id,
+                instrument_id,
+                trade_id,
+                "1.0",
+            )],
+        ),
+        &ctx.exec_engine,
+    );
     assert_eq!(first.events.len(), 1);
 
-    let duplicate = ctx
-        .manager
-        .reconcile_execution_mass_status(
-            create_mass_status(
-                vec![],
-                vec![create_fill_report(
-                    second_client_order_id,
-                    second_venue_order_id,
-                    instrument_id,
-                    trade_id,
-                    "1.0",
-                )],
-            ),
-            ctx.exec_engine.clone(),
-        )
-        .await;
+    let duplicate = ctx.manager.reconcile_execution_mass_status(
+        &create_mass_status(
+            vec![],
+            vec![create_fill_report(
+                second_client_order_id,
+                second_venue_order_id,
+                instrument_id,
+                trade_id,
+                "1.0",
+            )],
+        ),
+        &ctx.exec_engine,
+    );
 
     assert!(duplicate.events.is_empty());
     assert!(
@@ -2637,31 +2586,28 @@ async fn test_same_cycle_cross_order_fill_is_queued_once() {
         second_venue_order_id,
     ));
 
-    let result = ctx
-        .manager
-        .reconcile_execution_mass_status(
-            create_mass_status(
-                vec![],
-                vec![
-                    create_fill_report(
-                        first_client_order_id,
-                        first_venue_order_id,
-                        instrument_id,
-                        trade_id,
-                        "1.0",
-                    ),
-                    create_fill_report(
-                        second_client_order_id,
-                        second_venue_order_id,
-                        instrument_id,
-                        trade_id,
-                        "1.0",
-                    ),
-                ],
-            ),
-            ctx.exec_engine.clone(),
-        )
-        .await;
+    let result = ctx.manager.reconcile_execution_mass_status(
+        &create_mass_status(
+            vec![],
+            vec![
+                create_fill_report(
+                    first_client_order_id,
+                    first_venue_order_id,
+                    instrument_id,
+                    trade_id,
+                    "1.0",
+                ),
+                create_fill_report(
+                    second_client_order_id,
+                    second_venue_order_id,
+                    instrument_id,
+                    trade_id,
+                    "1.0",
+                ),
+            ],
+        ),
+        &ctx.exec_engine,
+    );
 
     assert_eq!(
         result
@@ -2707,22 +2653,19 @@ async fn test_inferred_fill_is_not_committed_as_reported_fill() {
     )
     .with_avg_px(dec!(3000.0));
     let real_trade_id = TradeId::from("T-INFERRED-SOURCE");
-    let source = ctx
-        .manager
-        .reconcile_execution_mass_status(
-            create_mass_status(
-                vec![order_report],
-                vec![create_fill_report(
-                    ClientOrderId::from(external_venue_order_id.as_str()),
-                    external_venue_order_id,
-                    instrument_id,
-                    real_trade_id,
-                    "1.0",
-                )],
-            ),
-            ctx.exec_engine.clone(),
-        )
-        .await;
+    let source = ctx.manager.reconcile_execution_mass_status(
+        &create_mass_status(
+            vec![order_report],
+            vec![create_fill_report(
+                ClientOrderId::from(external_venue_order_id.as_str()),
+                external_venue_order_id,
+                instrument_id,
+                real_trade_id,
+                "1.0",
+            )],
+        ),
+        &ctx.exec_engine,
+    );
 
     let inferred_trade_id = source
         .events
@@ -2743,22 +2686,19 @@ async fn test_inferred_fill_is_not_committed_as_reported_fill() {
         "3000.00",
         venue_order_id,
     ));
-    let reused = ctx
-        .manager
-        .reconcile_execution_mass_status(
-            create_mass_status(
-                vec![],
-                vec![create_fill_report(
-                    client_order_id,
-                    venue_order_id,
-                    instrument_id,
-                    inferred_trade_id,
-                    "1.0",
-                )],
-            ),
-            ctx.exec_engine.clone(),
-        )
-        .await;
+    let reused = ctx.manager.reconcile_execution_mass_status(
+        &create_mass_status(
+            vec![],
+            vec![create_fill_report(
+                client_order_id,
+                venue_order_id,
+                instrument_id,
+                inferred_trade_id,
+                "1.0",
+            )],
+        ),
+        &ctx.exec_engine,
+    );
 
     assert_eq!(reused.events.len(), 1);
     assert!(matches!(reused.events[0], OrderEventAny::Filled(_)));
@@ -2809,63 +2749,54 @@ async fn test_processed_fill_retention(
         second_venue_order_id,
     ));
 
-    let first = ctx
-        .manager
-        .reconcile_execution_mass_status(
-            create_mass_status(
-                vec![],
-                vec![create_fill_report(
-                    first_client_order_id,
-                    first_venue_order_id,
-                    instrument_id,
-                    trade_id,
-                    "1.0",
-                )],
-            ),
-            ctx.exec_engine.clone(),
-        )
-        .await;
+    let first = ctx.manager.reconcile_execution_mass_status(
+        &create_mass_status(
+            vec![],
+            vec![create_fill_report(
+                first_client_order_id,
+                first_venue_order_id,
+                instrument_id,
+                trade_id,
+                "1.0",
+            )],
+        ),
+        &ctx.exec_engine,
+    );
     assert_eq!(first.events.len(), 1);
 
     ctx.advance_both(dst::time::Duration::from_secs(horizon_secs))
         .await;
     ctx.manager.prune_processed_fills();
-    let at_horizon = ctx
-        .manager
-        .reconcile_execution_mass_status(
-            create_mass_status(
-                vec![],
-                vec![create_fill_report(
-                    second_client_order_id,
-                    second_venue_order_id,
-                    instrument_id,
-                    trade_id,
-                    "1.0",
-                )],
-            ),
-            ctx.exec_engine.clone(),
-        )
-        .await;
+    let at_horizon = ctx.manager.reconcile_execution_mass_status(
+        &create_mass_status(
+            vec![],
+            vec![create_fill_report(
+                second_client_order_id,
+                second_venue_order_id,
+                instrument_id,
+                trade_id,
+                "1.0",
+            )],
+        ),
+        &ctx.exec_engine,
+    );
     assert!(at_horizon.events.is_empty());
 
     ctx.advance_both(dst::time::Duration::from_nanos(1)).await;
     ctx.manager.prune_processed_fills();
-    let past_horizon = ctx
-        .manager
-        .reconcile_execution_mass_status(
-            create_mass_status(
-                vec![],
-                vec![create_fill_report(
-                    second_client_order_id,
-                    second_venue_order_id,
-                    instrument_id,
-                    trade_id,
-                    "1.0",
-                )],
-            ),
-            ctx.exec_engine.clone(),
-        )
-        .await;
+    let past_horizon = ctx.manager.reconcile_execution_mass_status(
+        &create_mass_status(
+            vec![],
+            vec![create_fill_report(
+                second_client_order_id,
+                second_venue_order_id,
+                instrument_id,
+                trade_id,
+                "1.0",
+            )],
+        ),
+        &ctx.exec_engine,
+    );
     assert_eq!(past_horizon.events.len(), usize::from(prunes_past_horizon));
 }
 
@@ -3000,8 +2931,7 @@ async fn test_retained_fill_projects_missing_order_without_reapplying(
     mass_status.add_position_reports(vec![position_report]);
 
     ctx.manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     let cache = ctx.cache.borrow();
 
@@ -3117,8 +3047,7 @@ async fn test_inferred_delta_for_retained_order_applies_new_economics(
     mass_status.add_order_reports(vec![report]);
 
     ctx.manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     let cache = ctx.cache.borrow();
     let order = cache.order(&client_order_id).unwrap();
@@ -3199,8 +3128,7 @@ async fn test_missing_venue_order_id_collision_is_scoped_by_instrument() {
     mass_status.add_order_reports(vec![report]);
 
     ctx.manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     let new_position_id = PositionId::new(format!("{new_instrument_id}-{strategy_id}"));
     let cache = ctx.cache.borrow();
@@ -3346,8 +3274,7 @@ async fn test_partially_known_fills_apply_only_new_economics(
     mass_status.add_position_reports(vec![position_report]);
 
     ctx.manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     let cache = ctx.cache.borrow();
     let order = cache.order(&client_order_id).unwrap();
@@ -3441,7 +3368,7 @@ async fn test_partial_window_known_fill_does_not_reapply_economics(
         Some(UnixNanos::from(2_000_000)),
         Some(test_account_id()),
     );
-    position.apply(&closing_fill.clone().into());
+    position.apply(&closing_fill.into());
     ctx.cache
         .borrow_mut()
         .add_position(&position, OmsType::Netting)
@@ -3498,8 +3425,7 @@ async fn test_partial_window_known_fill_does_not_reapply_economics(
     mass_status.add_position_reports(vec![position_report]);
 
     ctx.manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     let cache = ctx.cache.borrow();
     let order = cache.order(&closing_order_id).unwrap();
@@ -3597,8 +3523,7 @@ async fn test_split_lighter_reduce_only_lifecycle_does_not_apply_economics() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     msgbus::deregister_any(portfolio_endpoint);
 
@@ -3766,8 +3691,7 @@ async fn test_bounded_complete_lifecycle_applies_beside_split_close() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     msgbus::deregister_any(portfolio_endpoint);
 
@@ -3907,8 +3831,7 @@ async fn test_bounded_hedge_fill_applies_economics_once() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     msgbus::deregister_any(portfolio_endpoint);
 
@@ -4129,8 +4052,7 @@ async fn test_bounded_reduce_only_fill_requires_sufficient_correlated_position(
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     msgbus::deregister_any(portfolio_endpoint);
 
@@ -4261,8 +4183,7 @@ async fn test_incomplete_bounded_reports_project_fills_order_only(#[case] has_fi
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     msgbus::deregister_any(portfolio_endpoint);
 
@@ -4360,8 +4281,7 @@ async fn test_bounded_active_partial_order_keeps_order_without_economics() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     msgbus::deregister_any(portfolio_endpoint);
 
@@ -4460,8 +4380,7 @@ async fn test_bounded_nonflat_position_requires_coherent_historical_fill(
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     msgbus::deregister_any(portfolio_endpoint);
 
@@ -4573,8 +4492,7 @@ async fn test_bounded_complete_reports_require_unambiguous_position_coverage(
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     msgbus::deregister_any(portfolio_endpoint);
 
@@ -4690,8 +4608,7 @@ async fn test_bounded_interleaved_multi_fill_orders_project_economics_order_only
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     msgbus::deregister_any(portfolio_endpoint);
 
@@ -4805,8 +4722,7 @@ async fn test_bounded_same_timestamp_orders_project_economics_order_only() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     msgbus::deregister_any(portfolio_endpoint);
 
@@ -5033,8 +4949,7 @@ async fn test_fill_before_retained_netting_lifecycle_projects_order_only() {
     mass_status.add_position_reports(vec![position_report]);
 
     ctx.manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     let cache = ctx.cache.borrow();
     let old_order = cache.order(&old_order_id).unwrap();
@@ -5102,8 +5017,7 @@ async fn test_filled_report_with_reduced_quantity_closes_partially_filled_order(
     mass_status.add_order_reports(vec![report]);
 
     ctx.manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     let order = ctx.get_order(&client_order_id).unwrap();
     assert_eq!(order.status(), OrderStatus::Filled);
@@ -5136,8 +5050,7 @@ async fn test_reconcile_mass_status_skips_order_without_instrument() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert!(result.events.is_empty());
 }
@@ -5199,8 +5112,7 @@ async fn test_reconcile_mass_status_sorts_events_chronologically() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert_eq!(result.events.len(), 2);
 
@@ -5319,12 +5231,10 @@ async fn test_inflight_check_skips_filtered_order_ids() {
 fn test_config_default_values() {
     let config = ExecutionManagerConfig::default();
 
-    assert!(config.reconciliation);
     assert_eq!(config.lookback_mins, Some(60));
     assert!(!config.filter_unclaimed_external);
     assert!(!config.filter_position_reports);
     assert!(config.generate_missing_orders);
-    assert_eq!(config.inflight_check_interval_ms, 2_000);
     assert_eq!(config.inflight_threshold_ms, 5_000);
     assert_eq!(config.inflight_max_retries, 5);
 }
@@ -5393,8 +5303,7 @@ async fn test_reconcile_mass_status_accepted_order_canceled_at_venue() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert_eq!(result.events.len(), 1);
     assert!(matches!(result.events[0], OrderEventAny::Canceled(_)));
@@ -5443,8 +5352,7 @@ async fn test_reconcile_mass_status_accepted_order_expired_at_venue() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert_eq!(result.events.len(), 1);
     assert!(matches!(result.events[0], OrderEventAny::Expired(_)));
@@ -5951,8 +5859,7 @@ async fn test_reconcile_mass_status_external_order_partially_filled() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // External orders get: Accepted + Filled (for the partial fill)
     assert_eq!(result.events.len(), 2);
@@ -6007,8 +5914,7 @@ async fn test_reconcile_mass_status_order_already_in_sync() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // No events needed - already in sync
     assert!(result.events.is_empty());
@@ -6169,8 +6075,7 @@ async fn test_inferred_fill_generated_when_venue_reports_filled() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Should generate an inferred fill
     assert_eq!(result.events.len(), 1);
@@ -6236,8 +6141,7 @@ async fn test_mass_status_retries_missing_fill_data(
 
     let failed = ctx
         .manager
-        .reconcile_execution_mass_status(failed_mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&failed_mass_status, &ctx.exec_engine);
 
     assert!(failed.events.is_empty());
     let order = ctx
@@ -6268,8 +6172,7 @@ async fn test_mass_status_retries_missing_fill_data(
     let retry_mass_status = create_mass_status(vec![report.clone()], fills);
     let retry = ctx
         .manager
-        .reconcile_execution_mass_status(retry_mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&retry_mass_status, &ctx.exec_engine);
 
     assert_eq!(retry.events.len(), event_count);
 
@@ -6298,13 +6201,10 @@ async fn test_mass_status_retries_missing_fill_data(
         Some(&commission)
     );
 
-    let repeated = ctx
-        .manager
-        .reconcile_execution_mass_status(
-            create_mass_status(vec![report], Vec::new()),
-            ctx.exec_engine.clone(),
-        )
-        .await;
+    let repeated = ctx.manager.reconcile_execution_mass_status(
+        &create_mass_status(vec![report], Vec::new()),
+        &ctx.exec_engine,
+    );
 
     assert!(repeated.events.is_empty());
 }
@@ -6349,8 +6249,7 @@ async fn test_inferred_fill_uses_avg_px_for_first_fill() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert_eq!(result.events.len(), 1);
 
@@ -6416,8 +6315,7 @@ async fn test_no_inferred_fill_when_already_in_sync() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // No events needed - already in sync
     assert!(result.events.is_empty());
@@ -6484,8 +6382,7 @@ async fn test_fill_qty_mismatch_venue_less_generates_fill_void(#[case] echo_cach
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     let order = ctx
         .cache
@@ -6559,8 +6456,7 @@ async fn test_market_order_inferred_fill_is_taker() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert_eq!(result.events.len(), 1);
 
@@ -6608,8 +6504,7 @@ async fn test_pending_cancel_status_no_event() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Pending states don't generate events
     assert!(result.events.is_empty());
@@ -6673,8 +6568,7 @@ async fn test_incremental_fill_calculates_weighted_price() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert_eq!(result.events.len(), 1);
 
@@ -6728,8 +6622,7 @@ async fn test_mass_status_skips_exact_duplicate_orders() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert!(result.events.is_empty());
 }
@@ -6782,8 +6675,7 @@ async fn test_mass_status_deduplicates_within_batch() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert_eq!(result.events.len(), 1);
     assert!(matches!(result.events[0], OrderEventAny::Accepted(_)));
@@ -6828,8 +6720,7 @@ async fn test_mass_status_reconciles_when_status_differs() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert_eq!(result.events.len(), 1);
     assert!(matches!(result.events[0], OrderEventAny::Canceled(_)));
@@ -6877,8 +6768,7 @@ async fn test_mass_status_reconciles_when_filled_qty_differs() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert_eq!(result.events.len(), 1);
 
@@ -6935,8 +6825,7 @@ async fn test_mass_status_matches_order_by_venue_order_id() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert_eq!(result.events.len(), 1);
     assert!(matches!(result.events[0], OrderEventAny::Canceled(_)));
@@ -6995,8 +6884,7 @@ async fn test_mass_status_matches_order_by_venue_order_id_with_mismatched_client
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert_eq!(result.events.len(), 1);
     assert!(matches!(result.events[0], OrderEventAny::Canceled(_)));
@@ -7013,7 +6901,7 @@ async fn test_reconcile_mass_status_indexes_venue_order_id_for_accepted_orders()
     let mut ctx = TestContext::new();
     let instrument_id = test_instrument_id();
     let instrument = test_instrument();
-    ctx.add_instrument(instrument.clone());
+    ctx.add_instrument(instrument);
 
     let client_order_id = ClientOrderId::from("O-TEST");
     let venue_order_id = VenueOrderId::from("V-123");
@@ -7052,8 +6940,7 @@ async fn test_reconcile_mass_status_indexes_venue_order_id_for_accepted_orders()
 
     let _events = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert_eq!(
         ctx.cache.borrow().client_order_id(&venue_order_id),
@@ -7069,7 +6956,7 @@ async fn test_reconcile_mass_status_indexes_venue_order_id_for_external_orders()
     let mut ctx = TestContext::new();
     let instrument_id = test_instrument_id();
     let instrument = test_instrument();
-    ctx.add_instrument(instrument.clone());
+    ctx.add_instrument(instrument);
 
     let venue_order_id = VenueOrderId::from("V-EXT-001");
 
@@ -7093,8 +6980,7 @@ async fn test_reconcile_mass_status_indexes_venue_order_id_for_external_orders()
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert!(
         !result.events.is_empty(),
@@ -7170,8 +7056,7 @@ async fn test_reconcile_mass_status_indexes_venue_order_id_for_filled_orders() {
 
     let _events = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     let cache_borrow = ctx.cache.borrow();
     assert_eq!(
@@ -7188,7 +7073,7 @@ async fn test_reconcile_mass_status_skips_orders_without_loaded_instruments() {
     let mut ctx = TestContext::new();
     let loaded_instrument_id = test_instrument_id();
     let loaded_instrument = test_instrument();
-    ctx.add_instrument(loaded_instrument.clone());
+    ctx.add_instrument(loaded_instrument);
 
     let unloaded_instrument_id = InstrumentId::from("BTCUSDT.SIM");
 
@@ -7224,8 +7109,7 @@ async fn test_reconcile_mass_status_skips_orders_without_loaded_instruments() {
 
     let _events = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     let cache_borrow = ctx.cache.borrow();
     let loaded_client_id = cache_borrow.client_order_id(&loaded_venue_order_id);
@@ -7271,8 +7155,7 @@ async fn test_reconcile_mass_status_creates_position_from_position_report() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Should generate Accepted + Filled events to create the position
     assert_eq!(result.events.len(), 2);
@@ -7316,8 +7199,7 @@ async fn test_reconcile_mass_status_skips_flat_position_report() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // No events should be generated for flat position
     assert!(result.events.is_empty());
@@ -7357,8 +7239,7 @@ async fn test_reconcile_mass_status_skips_position_report_when_filtered() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Position reports should be filtered
     assert!(result.events.is_empty());
@@ -7394,8 +7275,7 @@ async fn test_reconcile_mass_status_creates_short_position_from_report() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert_eq!(result.events.len(), 2);
     assert!(matches!(result.events[0], OrderEventAny::Accepted(_)));
@@ -7469,8 +7349,7 @@ async fn test_reconcile_mass_status_skips_position_report_when_fills_exist() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Should only have 1 fill event from the fill report, not additional events
     // from the position report (which would double-count)
@@ -7592,8 +7471,7 @@ async fn test_reconcile_mass_status_iterates_all_position_reports() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Both position reports should be processed, not just the first
     let fill_events: Vec<_> = result
@@ -7650,8 +7528,7 @@ async fn test_reconcile_mass_status_routes_to_hedging_with_venue_position_id() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Should create position since position doesn't exist in cache
     assert!(!result.events.is_empty());
@@ -7687,8 +7564,7 @@ async fn test_reconcile_mass_status_routes_to_netting_without_venue_position_id(
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Should create position since no position exists for instrument
     assert!(!result.events.is_empty());
@@ -7750,8 +7626,7 @@ async fn test_reconcile_mass_status_reconciles_partial_hedge_fill_to_position_re
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert_eq!(result.events.len(), 3);
 
@@ -7834,8 +7709,7 @@ async fn test_reconcile_mass_status_projects_partial_closing_hedge_history() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert_eq!(result.events.len(), 3);
 
@@ -7922,8 +7796,7 @@ async fn test_reconcile_mass_status_skips_only_position_with_fill_position_id_co
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     let [
         OrderEventAny::Filled(conflicting_fill),
@@ -8008,8 +7881,7 @@ async fn test_reconcile_mass_status_does_not_duplicate_matching_hedge_filled_ord
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     let filled_count = result
         .events
@@ -8077,8 +7949,7 @@ async fn test_reconcile_mass_status_skips_hedge_position_when_fills_lack_positio
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Should only have fill event, position report skipped due to instrument-level fill
     assert_eq!(result.events.len(), 1);
@@ -8160,8 +8031,7 @@ async fn test_reconcile_hedge_does_not_skip_unrelated_positions() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Should have:
     // - 1 fill event for P-HEDGE-001 (from fill report)
@@ -8216,8 +8086,7 @@ async fn test_reconcile_hedge_position_matching_quantities() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // No events needed since positions match
     assert!(
@@ -8269,8 +8138,7 @@ async fn test_reconcile_hedge_position_discrepancy_generates_order() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Should generate reconciliation order to fix the discrepancy
     assert!(
@@ -8315,8 +8183,7 @@ async fn test_reconcile_missing_hedge_position_generates_order() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Should generate order to create the missing position
     assert!(
@@ -8367,8 +8234,7 @@ async fn test_reconcile_hedge_position_discrepancy_disabled() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // No events since generate_missing_orders is disabled
     assert!(
@@ -8408,8 +8274,7 @@ async fn test_reconcile_hedge_position_both_flat() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // No events needed - position doesn't exist in cache and report is flat
     assert!(result.events.is_empty());
@@ -8451,8 +8316,7 @@ async fn test_reconcile_hedge_short_position() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Should create short position
     assert!(!result.events.is_empty());
@@ -8514,8 +8378,7 @@ async fn test_reconcile_mass_status_deduplicates_netting_reports_same_instrument
 
     let _result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Deduplication: only ONE position should be created from duplicate netting reports
     let cache = ctx.cache.borrow();
@@ -8579,8 +8442,7 @@ async fn test_reconcile_mass_status_deduplicates_hedge_reports_same_position_id(
 
     let _result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Deduplication: only ONE position should be created from duplicate hedge reports
     let cache = ctx.cache.borrow();
@@ -8667,8 +8529,7 @@ async fn test_adjust_fills_creates_synthetic_for_partial_window() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // The adjustment should create a synthetic fill for the missing 3.0
     // (position=5.0, fills=2.0, so synthetic opening of 3.0 is needed)
@@ -8755,8 +8616,7 @@ async fn test_missing_orders_disabled_skips_synthetic_fill_recovery(#[case] hedg
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     let cache = ctx.cache.borrow();
 
@@ -8795,8 +8655,7 @@ async fn test_external_order_has_venue_tag() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert!(!result.events.is_empty());
 
@@ -8869,8 +8728,7 @@ async fn test_external_order_with_fills_but_no_avg_px_applies_real_fills_only() 
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Should have events including Accepted and the real fill
     let accepted_count = result
@@ -8942,8 +8800,7 @@ async fn test_position_reconciliation_order_has_reconciliation_tag() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert!(!result.events.is_empty());
 
@@ -9022,8 +8879,7 @@ async fn test_closed_reconciliation_orders_skipped_on_restart() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Should skip the closed reconciliation order - no new events generated
     assert!(
@@ -9271,8 +9127,7 @@ async fn test_netting_position_cross_zero_long_to_short() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Should have 2 fills: close (sell 5.0) + open (sell 3.0)
     let fill_events: Vec<_> = result
@@ -9350,8 +9205,7 @@ async fn test_netting_position_cross_zero_short_to_long() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Should have 2 fills: close (buy 4.0) + open (buy 2.0)
     let fill_events: Vec<_> = result
@@ -9429,8 +9283,7 @@ async fn test_netting_position_flat_report_closes_cached_position() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Should have 1 fill: close (sell 5.0)
     let fill_events: Vec<_> = result
@@ -9463,7 +9316,7 @@ async fn test_expired_order_applies_fills_before_terminal_event() {
     let mut ctx = TestContext::new();
     let instrument_id = test_instrument_id();
     let instrument = test_instrument();
-    ctx.add_instrument(instrument.clone());
+    ctx.add_instrument(instrument);
 
     let client_order_id = ClientOrderId::from("O-EXPIRE-TEST");
     let venue_order_id = VenueOrderId::from("V-EXPIRE-001");
@@ -9527,8 +9380,7 @@ async fn test_expired_order_applies_fills_before_terminal_event() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Should have Fill event BEFORE Expired event
     let fill_count = result
@@ -9570,7 +9422,7 @@ async fn test_partial_window_adjustment_skips_hedge_mode_instruments() {
     let mut ctx = TestContext::new();
     let instrument_id = test_instrument_id();
     let instrument = test_instrument();
-    ctx.add_instrument(instrument.clone());
+    ctx.add_instrument(instrument);
 
     let venue_order_id = VenueOrderId::from("V-HEDGE-001");
 
@@ -9629,8 +9481,7 @@ async fn test_partial_window_adjustment_skips_hedge_mode_instruments() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // The fill should be preserved (not modified by partial-window adjustment)
     // and external order should be created
@@ -9822,8 +9673,7 @@ async fn test_adjust_fills_multi_instrument_preserves_all_fills() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     let fill_events: Vec<_> = result
         .events
@@ -9944,8 +9794,7 @@ async fn test_mass_status_preserves_symbol_scoped_trade_ids() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     let fill_instruments: HashSet<_> = result
         .events
@@ -10247,8 +10096,7 @@ async fn test_cross_zero_with_missing_cached_avg_px_returns_none() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // With zero cached price, cross-zero should still attempt reconciliation
     // but may produce different behavior - verify no panic at minimum
@@ -10298,8 +10146,7 @@ async fn test_cross_zero_with_missing_venue_avg_px_closes_only() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Should generate close fill only (not open fill due to missing venue avg_px)
     let fill_events: Vec<_> = result
@@ -10330,7 +10177,7 @@ async fn test_hedge_mode_multiple_positions_same_instrument() {
     let mut ctx = TestContext::new();
     let instrument = test_instrument();
     let instrument_id = test_instrument_id();
-    ctx.add_instrument(instrument.clone());
+    ctx.add_instrument(instrument);
 
     let mut mass_status = ExecutionMassStatus::new(
         test_client_id(),
@@ -10368,8 +10215,7 @@ async fn test_hedge_mode_multiple_positions_same_instrument() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     let fill_events: Vec<_> = result
         .events
@@ -10405,7 +10251,7 @@ async fn test_hedge_mode_with_filter_unclaimed_external_allows_synthetic() {
     let mut ctx = TestContext::with_config(config);
     let instrument = test_instrument();
     let instrument_id = test_instrument_id();
-    ctx.add_instrument(instrument.clone());
+    ctx.add_instrument(instrument);
 
     let mut mass_status = ExecutionMassStatus::new(
         test_client_id(),
@@ -10430,8 +10276,7 @@ async fn test_hedge_mode_with_filter_unclaimed_external_allows_synthetic() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert!(
         !result.events.is_empty(),
@@ -10529,8 +10374,7 @@ async fn test_duplicate_order_reports_reconciles_last_report() {
 
     let _result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     let order = ctx.get_order(&client_order_id).expect("Order should exist");
     assert_eq!(
@@ -10605,8 +10449,7 @@ async fn test_reconciliation_order_skipped_on_restart() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert!(
         result.events.is_empty(),
@@ -10679,8 +10522,7 @@ async fn test_partially_filled_order_has_fills_applied() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     let has_fills = result
         .events
@@ -10768,13 +10610,10 @@ async fn test_cached_fill_echo_preserves_mass_status_projection(
         fills.push(fill);
     }
 
-    let result = ctx
-        .manager
-        .reconcile_execution_mass_status(
-            create_mass_status(vec![report], fills),
-            ctx.exec_engine.clone(),
-        )
-        .await;
+    let result = ctx.manager.reconcile_execution_mass_status(
+        &create_mass_status(vec![report], fills),
+        &ctx.exec_engine,
+    );
 
     let [OrderEventAny::Filled(fill)] = result.events.as_slice() else {
         panic!(
@@ -10883,8 +10722,7 @@ async fn test_working_order_with_new_fills_updates_correctly() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     let has_fills = result
         .events
@@ -10957,8 +10795,7 @@ async fn test_orphan_fills_without_order_reports_processed() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert_eq!(result.events.len(), 3);
     assert!(matches!(result.events[0], OrderEventAny::Accepted(_)));
@@ -10979,8 +10816,7 @@ async fn test_orphan_fills_without_order_reports_processed() {
 
     let replay = ctx
         .manager
-        .reconcile_execution_mass_status(replay_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&replay_status, &ctx.exec_engine);
 
     assert!(replay.events.is_empty());
 }
@@ -11041,8 +10877,7 @@ async fn test_orphan_fill_group_validates_when_later_fill_has_position_id() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     let messages = MANAGER_LOG_CAPTURE.messages.lock().clone();
     let cache = ctx.cache.borrow();
@@ -11097,8 +10932,7 @@ async fn test_orphan_fills_for_unknown_instrument_skipped() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     let messages = MANAGER_LOG_CAPTURE.messages.lock().clone();
     let cache = ctx.cache.borrow();
@@ -11150,8 +10984,7 @@ async fn test_filtered_client_order_ids_skips_matching_orders() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // No events should be generated for filtered order
     assert!(
@@ -11223,8 +11056,7 @@ async fn test_filtered_client_order_ids_skips_orphan_fills() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // No fill events should be generated for filtered order
     assert!(
@@ -11293,8 +11125,7 @@ async fn test_filtered_client_order_ids_skips_orphan_fills_via_venue_order_id_lo
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // No fill events should be generated for filtered order
     assert!(
@@ -11322,7 +11153,7 @@ async fn test_reconciliation_instrument_ids_filters_other_instruments() {
     // Add a second instrument that's NOT in the filter list
     let excluded_instrument = test_instrument2();
     let excluded_instrument_id = test_instrument_id2();
-    ctx.add_instrument(excluded_instrument.clone());
+    ctx.add_instrument(excluded_instrument);
 
     let mut mass_status = ExecutionMassStatus::new(
         test_client_id(),
@@ -11356,8 +11187,7 @@ async fn test_reconciliation_instrument_ids_filters_other_instruments() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // Only included instrument should have generated events
     let included_order = ctx.get_order(&ClientOrderId::from("O-INCLUDED-001"));
@@ -11401,7 +11231,7 @@ async fn test_reconciliation_instrument_ids_filters_position_reports() {
     // Add excluded instrument
     let excluded_instrument = test_instrument2();
     let excluded_instrument_id = test_instrument_id2();
-    ctx.add_instrument(excluded_instrument.clone());
+    ctx.add_instrument(excluded_instrument);
 
     let mut mass_status = ExecutionMassStatus::new(
         test_client_id(),
@@ -11427,8 +11257,7 @@ async fn test_reconciliation_instrument_ids_filters_position_reports() {
 
     let _result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     // No position should be created for excluded instrument
     let cache = ctx.cache.borrow();
@@ -12319,12 +12148,10 @@ async fn test_terminal_reconciliation_and_stream_fill_apply_once(
     }
 
     if route == "startup" {
-        ctx.manager
-            .reconcile_execution_mass_status(
-                create_mass_status(vec![report.clone()], vec![fill.clone()]),
-                ctx.exec_engine.clone(),
-            )
-            .await;
+        ctx.manager.reconcile_execution_mass_status(
+            &create_mass_status(vec![report.clone()], vec![fill.clone()]),
+            &ctx.exec_engine,
+        );
     } else {
         let events = ctx.manager.check_open_orders(&[&client]).await;
 
@@ -12502,12 +12329,10 @@ async fn test_terminal_reconciliation_defers_unexplained_fill_gap(
     client.fail_fill_reports.set(response == "failed");
 
     if route == "startup" {
-        ctx.manager
-            .reconcile_execution_mass_status(
-                create_mass_status(vec![report.clone()], initial_fills),
-                ctx.exec_engine.clone(),
-            )
-            .await;
+        ctx.manager.reconcile_execution_mass_status(
+            &create_mass_status(vec![report.clone()], initial_fills),
+            &ctx.exec_engine,
+        );
     } else {
         let events = ctx.manager.check_open_orders(&[&client]).await;
 
@@ -12531,12 +12356,10 @@ async fn test_terminal_reconciliation_defers_unexplained_fill_gap(
     .with_fill_reports(vec![first.clone(), second.clone()]);
 
     if route == "startup" {
-        ctx.manager
-            .reconcile_execution_mass_status(
-                create_mass_status(vec![report], vec![first, second]),
-                ctx.exec_engine.clone(),
-            )
-            .await;
+        ctx.manager.reconcile_execution_mass_status(
+            &create_mass_status(vec![report], vec![first, second]),
+            &ctx.exec_engine,
+        );
     } else {
         let events = ctx.manager.check_open_orders(&[&retry]).await;
 
@@ -14836,8 +14659,7 @@ async fn test_mass_status_netting_uses_routing_client_tolerance() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert!(result.events.is_empty());
 }
@@ -16481,8 +16303,7 @@ async fn test_reconcile_mass_status_publishes_raw_reports_for_capture() {
 
     let _ = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     msgbus::unsubscribe_any(order_pattern, &order_handler);
     msgbus::unsubscribe_any(fill_pattern, &fill_handler);
@@ -16585,8 +16406,7 @@ async fn test_reconcile_mass_status_does_not_capture_synthetic_reports() {
 
     let _ = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     msgbus::unsubscribe_any(order_pattern, &order_handler);
     msgbus::unsubscribe_any(fill_pattern, &fill_handler);
@@ -16670,8 +16490,7 @@ async fn test_mass_status_zero_quantity_fill_does_not_consume_trade_id(#[case] b
 
     let rejected = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status.clone(), ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert!(rejected.events.is_empty());
     assert_eq!(ctx.get_order(&client_order_id), Some(order));
@@ -16685,8 +16504,7 @@ async fn test_mass_status_zero_quantity_fill_does_not_consume_trade_id(#[case] b
     mass_status.add_fill_reports(vec![valid]);
     let accepted = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     assert_eq!(accepted.events.len(), 1);
 
@@ -16781,8 +16599,7 @@ async fn test_zero_quantity_fill_does_not_suppress_hedge_position_report() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
-        .await;
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
 
     let fills: Vec<_> = result
         .events

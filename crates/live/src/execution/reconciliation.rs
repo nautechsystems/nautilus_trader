@@ -13,7 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Report operations and supporting state for live execution reconciliation.
+//! Reconciliation snapshots, outcomes, state-independent decisions, and targeted report collection.
+//!
+//! Shared types describe prepared checks and report results. Functions compare reports,
+//! validate fill groups, replay inferred-fill history, and calculate reconciliation quantities.
+//! Targeted requests collect order status and missing fills for the manager and live node.
+//! The manager owns cache-dependent decisions; the live node owns recurring task lifecycles.
 
 use std::{str::FromStr, time::Duration};
 
@@ -32,7 +37,8 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_execution::reconciliation::{
-    create_position_reconciliation_venue_order_id, should_reconciliation_update,
+    create_inferred_reconciliation_trade_id, create_position_reconciliation_venue_order_id,
+    should_reconciliation_update,
 };
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
@@ -61,9 +67,12 @@ pub(super) type FillKey = (AccountId, InstrumentId, TradeId);
 
 /// Execution clients responsible for reporting one cached entity.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ReportClientCoverage {
+pub enum ReportClientCoverage {
+    /// Every identified client provides the required report coverage.
     Resolved(IndexSet<ClientId>),
+    /// Identified clients cannot provide the required report coverage.
     Unavailable(IndexSet<ClientId>),
+    /// No responsible client could be identified.
     Unresolved,
 }
 
@@ -105,11 +114,18 @@ pub(crate) struct OpenOrderReconciliationResult {
 /// Order snapshot and client coverage for a targeted status query.
 #[derive(Debug, Clone)]
 pub(crate) struct TargetedOrderQuery {
-    pub(crate) client_order_id: ClientOrderId,
+    pub(super) client_order_id: ClientOrderId,
     pub(super) responsible_clients: IndexSet<ClientId>,
     pub(super) command: GenerateOrderStatusReport,
     pub(super) report: Option<OrderStatusReport>,
     pub(super) filled_qty: Quantity,
+}
+
+impl TargetedOrderQuery {
+    /// Returns the order identifier for the targeted query.
+    pub(crate) const fn client_order_id(&self) -> ClientOrderId {
+        self.client_order_id
+    }
 }
 
 /// Targeted status query result with fills and coverage completeness.
@@ -135,15 +151,48 @@ pub(crate) struct OpenOrderReportCheck {
     pub command: GenerateOrderStatusReports,
     pub filtered_orders: Vec<OrderAny>,
     pub client_coverage: IndexMap<ClientOrderId, ReportClientCoverage>,
-    pub start: Option<UnixNanos>,
 }
 
 /// Prepare-time state and command for one continuous position reconciliation check.
 #[derive(Debug, Clone)]
-pub(crate) struct PositionReportCheck {
+pub struct PositionReportCheck {
+    /// The bulk position query.
     pub command: GeneratePositionStatusReports,
+    /// Responsible clients by instrument and account.
     pub client_coverage: IndexMap<InstrumentAccountKey, ReportClientCoverage>,
+    /// Activity revisions captured before the query.
     pub activity_revisions: IndexMap<InstrumentAccountKey, u64>,
+}
+
+/// Fill report request for one instrument, account, and execution client.
+#[derive(Debug)]
+pub struct PositionFillReportQuery {
+    /// The instrument and account to reconcile.
+    pub key: InstrumentAccountKey,
+    /// The responsible execution client.
+    pub client_id: ClientId,
+    /// The authoritative fill query.
+    pub command: GenerateFillReports,
+}
+
+/// Fill queries and discrepancy keys for a position reconciliation check.
+#[derive(Debug)]
+pub struct PositionFillReportPlan {
+    /// Authoritative fill queries that are safe to run.
+    pub queries: Vec<PositionFillReportQuery>,
+    /// Position keys that still differ from the venue snapshot.
+    pub discrepancy_keys: IndexSet<InstrumentAccountKey>,
+}
+
+/// Whether a fill is attributable and free of active inferred-fill overlap.
+#[derive(Debug)]
+pub enum PositionFillReportPreparation {
+    /// The report can be applied to the cached execution state.
+    Ready,
+    /// An active inferred fill prevents authoritative replay.
+    InferredOverlap,
+    /// A hedge fill cannot be assigned to an unambiguous position.
+    Unattributed,
 }
 
 /// Cached and venue position quantities and report shape for comparison.
@@ -210,31 +259,21 @@ pub(super) struct ReconciliationFillQueue {
 
 impl ReconciliationFillQueue {
     /// Queues a fill event and records its identity for deduplication.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the event is not a fill.
     pub(super) fn push(
         &mut self,
         events: &mut Vec<OrderEventAny>,
-        event: OrderEventAny,
+        fill: OrderFilled,
         fill_key: FillKey,
     ) {
-        let OrderEventAny::Filled(fill) = &event else {
-            unreachable!("reported fills always create filled events");
-        };
-
         self.pending_fill_keys.insert(fill_key);
         self.event_fill_keys.insert(fill.event_id, fill_key);
-        events.push(event);
+        events.push(OrderEventAny::Filled(fill));
     }
 }
 
 /// Information about an inflight order check.
 #[derive(Debug, Clone)]
 pub(super) struct InflightCheck {
-    #[allow(dead_code)]
-    pub client_order_id: ClientOrderId,
     pub submitted_at: dst::time::Instant,
     pub retry_count: u32,
     // `Instant` debug output is runtime-specific and intentionally only useful
@@ -253,13 +292,6 @@ pub(crate) enum PositionReportShape {
 pub(super) struct PositionReconciliationState {
     pub(super) report_shape: PositionReportShape,
     pub(super) retries: u32,
-}
-
-/// Checks whether cached order status, filled quantity, and report fields match.
-pub(super) fn is_exact_order_match(order: &OrderAny, report: &OrderStatusReport) -> bool {
-    order.status() == report.order_status
-        && order.filled_qty() == report.filled_qty
-        && !should_reconciliation_update(order, report)
 }
 
 /// Requests targeted order status and missing fills from responsible clients.
@@ -366,7 +398,7 @@ pub(crate) async fn request_targeted_order_reports(
         }
 
         results.push(TargetedOrderReportResult {
-            client_order_id: query.client_order_id,
+            client_order_id: query.client_order_id(),
             client_id: report_client_id,
             report,
             fills,
@@ -375,6 +407,13 @@ pub(crate) async fn request_targeted_order_reports(
     }
 
     results
+}
+
+/// Checks whether cached order status, filled quantity, and report fields match.
+pub(super) fn is_exact_order_match(order: &OrderAny, report: &OrderStatusReport) -> bool {
+    order.status() == report.order_status
+        && order.filled_qty() == report.filled_qty
+        && !should_reconciliation_update(order, report)
 }
 
 fn targeted_report_matches(query: &TargetedOrderQuery, report: &OrderStatusReport) -> bool {
@@ -557,6 +596,69 @@ pub(super) fn should_project_fill(
         .netting_lifecycle_starts
         .get(&(fill.account_id, fill.instrument_id, fill.strategy_id))
         .is_some_and(|ts_opened| fill.ts_event < *ts_opened)
+}
+
+/// Checks active fill history for deterministic inferred reconciliation IDs.
+///
+/// # Errors
+///
+/// Returns an error if the cached order history cannot be replayed.
+pub(super) fn has_active_inferred_fill(order: &OrderAny) -> anyhow::Result<bool> {
+    let events = order.events();
+    let trade_ids = order.trade_ids();
+
+    let Some((first, remaining)) = events.split_first() else {
+        return Ok(false);
+    };
+
+    let mut projected = OrderAny::from_events(vec![(*first).clone()]).map_err(|e| {
+        anyhow::anyhow!(
+            "cannot replay order {} for inferred fill detection: {e}",
+            order.client_order_id(),
+        )
+    })?;
+
+    for event in remaining {
+        projected.apply((*event).clone()).map_err(|e| {
+            anyhow::anyhow!(
+                "cannot replay order {} for inferred fill detection: {e}",
+                order.client_order_id(),
+            )
+        })?;
+
+        let OrderEventAny::Filled(fill) = event else {
+            continue;
+        };
+
+        if !fill.reconciliation || !trade_ids.contains(&&fill.trade_id) {
+            continue;
+        }
+
+        let external_position_id = PositionId::new(format!("{}-EXTERNAL", fill.instrument_id));
+        let position_ids = [fill.position_id, Some(external_position_id)];
+
+        let inferred = position_ids.into_iter().flatten().any(|position_id| {
+            create_inferred_reconciliation_trade_id(
+                fill.account_id,
+                fill.instrument_id,
+                fill.client_order_id,
+                Some(fill.venue_order_id),
+                fill.order_side,
+                fill.order_type,
+                projected.filled_qty(),
+                fill.last_qty,
+                fill.last_px,
+                position_id,
+                fill.ts_event,
+            ) == fill.trade_id
+        });
+
+        if inferred {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
 /// Calculates inferred-fill commission using the responsible execution client.

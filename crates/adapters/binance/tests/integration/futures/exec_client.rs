@@ -5616,9 +5616,7 @@ async fn test_startup_reconciliation_preserves_both_hedge_legs(
     engine.register_oms_type(StrategyId::from("EXTERNAL"), OmsType::Hedging);
     let engine = Rc::new(RefCell::new(engine));
 
-    let result = manager
-        .reconcile_execution_mass_status(mass_status, engine.clone())
-        .await;
+    let result = manager.reconcile_execution_mass_status(&mass_status, &engine);
 
     let long_position_id = PositionId::from("BTCUSDT-PERP.BINANCE-LONG");
     let short_position_id = PositionId::from("BTCUSDT-PERP.BINANCE-SHORT");
@@ -5656,9 +5654,7 @@ async fn test_startup_reconciliation_preserves_both_hedge_legs(
         assert_eq!(short_position.avg_px_open, 52000.0);
     }
 
-    let replay = manager
-        .reconcile_execution_mass_status(replay_status, engine)
-        .await;
+    let replay = manager.reconcile_execution_mass_status(&replay_status, &engine);
 
     assert!(replay.events.is_empty());
     assert_eq!(
@@ -5782,9 +5778,8 @@ async fn test_position_report_failures_warn_with_count_and_mass_status_counts_he
     let mut engine = ExecutionEngine::new(clock, count_cache, None);
     engine.register_client(Box::new(client)).unwrap();
     engine.register_oms_type(StrategyId::from("EXTERNAL"), OmsType::Hedging);
-    let result = manager
-        .reconcile_execution_mass_status(mass_status, Rc::new(RefCell::new(engine)))
-        .await;
+    let result =
+        manager.reconcile_execution_mass_status(&mass_status, &Rc::new(RefCell::new(engine)));
     let records = logger.take_records();
 
     assert_eq!(result.events.len(), 4);

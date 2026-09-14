@@ -13,431 +13,797 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Position fill reconciliation for the live node.
+//! Recurring reconciliation tasks and event dispatch for the live node.
+//!
+//! The node schedules order and position checks, owns collection deadlines and cancellation,
+//! and sequences authoritative fills before synthetic fallback. It rechecks manager activity
+//! state around requests and dispatch because local callbacks can invalidate prepared work.
+//! [`ExecutionManager`](crate::execution::manager::ExecutionManager) owns cache-dependent
+//! validation and individual reconciliation operations. This module owns recurring task lifecycles
+//! and leaves activity and retry state with the manager.
+
+use std::{future::Future, pin::Pin, time::Duration};
 
 use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
-    clients::ExecutionClient, enums::LogLevel, messages::execution::GenerateFillReports,
+    clients::ExecutionClient,
+    live::dst,
+    messages::{
+        ExecutionEvent, ExecutionReport,
+        execution::{
+            GenerateFillReports, GenerateOrderStatusReports, GeneratePositionStatusReports,
+        },
+    },
 };
-use nautilus_core::{DurationNanos, UUID4};
-use nautilus_execution::reconciliation::create_inferred_reconciliation_trade_id;
+use nautilus_core::UUID4;
 use nautilus_model::{
-    events::OrderEventAny,
-    identifiers::{ClientId, ClientOrderId, PositionId},
-    orders::{Order, OrderAny},
-    position::PositionReplayEvent,
+    identifiers::{ClientId, ClientOrderId},
     reports::{FillReport, PositionStatusReport},
-    types::{Money, Quantity},
-};
-use rust_decimal::Decimal;
-
-use crate::execution::manager::{
-    ExecutionManager, InstrumentAccountKey, PositionReportCheck, ReportClientCoverage,
-    TargetedOrderQuery, resolve_position_report_client_coverage,
 };
 
-impl TargetedOrderQuery {
-    /// Returns the order identifier for the targeted query.
-    pub(crate) const fn client_order_id(&self) -> ClientOrderId {
-        self.client_order_id
-    }
-}
+use super::{DISPATCHES_PER_YIELD, LiveNode, NodeState};
+use crate::{
+    execution::{
+        client::LiveExecutionClient,
+        manager::{
+            InstrumentAccountKey, OpenOrderReportCheck, PositionFillReportPreparation,
+            PositionFillReportQuery, PositionReportCheck, SourcedOrderStatusReport,
+            TargetedOrderQuery, TargetedOrderReportResult, request_targeted_order_reports,
+        },
+    },
+    runner::AsyncRunner,
+};
 
-/// Fill report request for one instrument, account, and execution client.
-#[derive(Debug)]
-pub(crate) struct PositionFillReportQuery {
-    pub key: InstrumentAccountKey,
-    pub client_id: ClientId,
-    pub command: GenerateFillReports,
-}
-
-/// Fill queries and discrepancy keys for a position reconciliation check.
-#[derive(Debug)]
-pub(crate) struct PositionFillReportPlan {
-    pub queries: Vec<PositionFillReportQuery>,
-    pub discrepancy_keys: IndexSet<InstrumentAccountKey>,
-}
-
-#[derive(Debug)]
-pub(crate) enum PositionFillReportPreparation {
-    Ready,
-    InferredOverlap,
-    Unattributed,
-}
-
-impl ExecutionManager {
-    /// Plans fill queries for settled position discrepancies with complete client coverage.
-    pub(crate) fn prepare_position_fill_report_plan(
+impl LiveNode {
+    /// Runs due checks while serializing order and position reconciliation.
+    pub(super) fn run_reconciliation_checks(
         &mut self,
-        check: &mut PositionReportCheck,
-        reports: &[PositionStatusReport],
-        queried_clients: &IndexSet<ClientId>,
-        failed_clients: &IndexSet<ClientId>,
-        clients: &[&dyn ExecutionClient],
-    ) -> PositionFillReportPlan {
-        let mut venue_positions: IndexMap<InstrumentAccountKey, Vec<PositionStatusReport>> =
-            IndexMap::new();
-
-        for report in reports {
-            if self.should_reconcile_instrument(&report.instrument_id) {
-                venue_positions
-                    .entry((report.instrument_id, report.account_id))
-                    .or_default()
-                    .push(report.clone());
+        now: dst::time::Instant,
+        intervals: ReconciliationCheckIntervals,
+        state: &mut ReconciliationCheckState<'_>,
+    ) {
+        if reconciliation_check_due(now, *state.last_inflight_check, intervals.inflight) {
+            if self.state() == NodeState::ShuttingDown {
+                return;
             }
+
+            let result = self.exec_manager.check_inflight_orders();
+            self.process_reconciliation_events(&result.events);
+            for cmd in result.queries {
+                AsyncRunner::handle_exec_command(cmd);
+            }
+
+            *state.last_inflight_check = now;
         }
 
-        let keys = check
-            .client_coverage
-            .keys()
-            .copied()
-            .chain(venue_positions.iter().filter_map(|(key, reports)| {
-                reports
+        let open_due = reconciliation_check_due(now, *state.last_open_check, intervals.open);
+        let position_due =
+            reconciliation_check_due(now, *state.last_position_check, intervals.position);
+
+        if (open_due || position_due) && self.state() == NodeState::ShuttingDown {
+            return;
+        }
+
+        if state.open_order_report_task.is_some() || state.targeted_order_report_task.is_some() {
+            if open_due {
+                log::debug!("Open-order reconciliation already in progress");
+                *state.last_open_check = now;
+            }
+
+            if position_due {
+                log::debug!(
+                    "Position reconciliation delayed: open-order reconciliation in progress"
+                );
+            }
+
+            return;
+        }
+
+        if state.position_report_task.is_some() {
+            if position_due {
+                log::debug!("Position reconciliation already in progress");
+                *state.last_position_check = now;
+            }
+
+            if open_due {
+                log::debug!(
+                    "Open-order reconciliation delayed: position reconciliation in progress"
+                );
+            }
+
+            return;
+        }
+
+        if position_due && (!open_due || *state.last_position_check < *state.last_open_check) {
+            *state.position_report_task = self.start_position_report_check();
+            *state.last_position_check = now;
+        } else if open_due {
+            *state.open_order_report_task = self.start_open_order_report_check();
+            *state.last_open_check = now;
+        }
+    }
+
+    fn start_open_order_report_check(&mut self) -> Option<OpenOrderReportTask> {
+        if self.exec_clients.is_empty() {
+            log::debug!("No execution clients to check orders consistency");
+            return None;
+        }
+
+        let client_refs = self
+            .exec_clients
+            .iter()
+            .map(|client| client as &dyn ExecutionClient)
+            .collect::<Vec<_>>();
+        let check = self
+            .exec_manager
+            .prepare_open_order_report_check(UUID4::new(), &client_refs);
+        let command = check.command.clone();
+        let clients = self.exec_clients.clone();
+        let deadline = dst::time::Instant::now() + self.config.timeout_reconciliation;
+
+        Some(OpenOrderReportTask {
+            future: Box::pin(async move {
+                let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
+                match dst::time::timeout(remaining, request_open_order_reports(clients, command))
+                    .await
+                {
+                    Ok(result) => ReportTaskOutcome::Completed(OpenOrderReportResult {
+                        check,
+                        reports: result.reports,
+                        queried_clients: result.queried_clients,
+                        failed_clients: result.failed_clients,
+                    }),
+                    Err(_) => ReportTaskOutcome::TimedOut,
+                }
+            }),
+        })
+    }
+
+    /// Starts targeted queries and retains their order IDs for cancellation.
+    pub(super) fn start_targeted_order_report_check(
+        &self,
+        queries: Vec<TargetedOrderQuery>,
+    ) -> TargetedOrderReportTask {
+        let clients = self.exec_clients.clone();
+        let query_delay = Duration::from_millis(u64::from(
+            self.config.exec_engine.single_order_query_delay_ms,
+        ));
+        let planned_client_order_ids = queries
+            .iter()
+            .map(TargetedOrderQuery::client_order_id)
+            .collect();
+        let deadline = dst::time::Instant::now() + self.config.timeout_reconciliation;
+
+        TargetedOrderReportTask {
+            future: Box::pin(async move {
+                let client_refs = clients
                     .iter()
-                    .any(|report| report.signed_decimal_qty != Decimal::ZERO)
-                    .then_some(*key)
-            }))
-            .collect::<IndexSet<_>>();
+                    .map(|client| client as &dyn ExecutionClient)
+                    .collect::<Vec<_>>();
+                let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
+                match dst::time::timeout(
+                    remaining,
+                    request_targeted_order_reports(queries, &client_refs, query_delay),
+                )
+                .await
+                {
+                    Ok(result) => ReportTaskOutcome::Completed(result),
+                    Err(_) => ReportTaskOutcome::TimedOut,
+                }
+            }),
+            planned_client_order_ids,
+        }
+    }
 
-        let active_keys = keys.clone();
-        let query_end = self.timestamp_ns();
-        let lookback = DurationNanos::try_from_mins(self.config().position_check_lookback_mins)
-            .expect("position lookback validated at construction");
-        let query_start = query_end.saturating_sub(lookback);
-        let mut discrepancy_keys = IndexSet::new();
-        let mut queries = Vec::new();
+    fn start_position_report_check(&self) -> Option<PositionReportTask> {
+        if self.exec_clients.is_empty() {
+            log::debug!("No execution clients to check positions consistency");
+            return None;
+        }
 
-        for key in keys {
-            let coverage = check
-                .client_coverage
-                .entry(key)
-                .or_insert_with(|| resolve_position_report_client_coverage(key, clients));
-            let prepared_revision = *check.activity_revisions.entry(key).or_default();
-            let venue_reports = venue_positions
+        let client_refs = self
+            .exec_clients
+            .iter()
+            .map(|client| client as &dyn ExecutionClient)
+            .collect::<Vec<_>>();
+        let check = self
+            .exec_manager
+            .prepare_position_report_check(UUID4::new(), &client_refs);
+        let command = check.command.clone();
+        let clients = self.exec_clients.clone();
+        let deadline = dst::time::Instant::now() + self.config.timeout_reconciliation;
+
+        Some(PositionReportTask {
+            future: Box::pin(async move {
+                let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
+                match dst::time::timeout(remaining, request_position_reports(clients, command))
+                    .await
+                {
+                    Ok(result) => ReportTaskOutcome::Completed(
+                        PositionReportTaskResult::Positions(PositionReportResult {
+                            check,
+                            reports: result.reports,
+                            queried_clients: result.queried_clients,
+                            failed_clients: result.failed_clients,
+                        }),
+                    ),
+                    Err(_) => ReportTaskOutcome::TimedOut,
+                }
+            }),
+        })
+    }
+
+    fn start_position_fill_report_check(
+        &self,
+        position_result: PositionReportResult,
+        queries: Vec<PositionFillReportQuery>,
+    ) -> PositionReportTask {
+        let clients = self.exec_clients.clone();
+        let deadline = dst::time::Instant::now() + self.config.timeout_reconciliation;
+
+        PositionReportTask {
+            future: Box::pin(async move {
+                let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
+                match dst::time::timeout(remaining, request_position_fill_reports(clients, queries))
+                    .await
+                {
+                    Ok(result) => ReportTaskOutcome::Completed(PositionReportTaskResult::Fills(
+                        PositionFillReportResult {
+                            position_result,
+                            reports: result.reports,
+                            successful_keys: result.successful_keys,
+                        },
+                    )),
+                    Err(_) => ReportTaskOutcome::TimedOut,
+                }
+            }),
+        }
+    }
+
+    /// Plans authoritative fill queries for reported position discrepancies.
+    pub(super) fn handle_position_report_result(
+        &mut self,
+        mut result: PositionReportResult,
+    ) -> Option<PositionReportTask> {
+        let client_refs = self
+            .exec_clients
+            .iter()
+            .map(|client| client as &dyn ExecutionClient)
+            .collect::<Vec<_>>();
+        let plan = self.exec_manager.plan_position_fill_reports(
+            &mut result.check,
+            &result.reports,
+            &result.queried_clients,
+            &result.failed_clients,
+            &client_refs,
+        );
+
+        if plan.queries.is_empty() {
+            if !plan.discrepancy_keys.is_empty() {
+                log::debug!(
+                    "Position discrepancies remain deferred because no authoritative fill query is currently safe"
+                );
+            }
+
+            return None;
+        }
+
+        Some(self.start_position_fill_report_check(result, plan.queries))
+    }
+
+    /// Applies authoritative fills before considering synthetic reconciliation.
+    pub(super) fn handle_position_fill_report_result(&mut self, result: PositionFillReportResult) {
+        let PositionFillReportResult {
+            mut position_result,
+            mut reports,
+            successful_keys,
+        } = result;
+        let mut venue_reports = IndexMap::new();
+        for report in &position_result.reports {
+            venue_reports
+                .entry((report.instrument_id, report.account_id))
+                .or_insert_with(Vec::new)
+                .push(report.clone());
+        }
+
+        let mut fallback_keys = IndexSet::new();
+        let mut dispatches = 0;
+
+        for key in successful_keys {
+            if !self
+                .exec_manager
+                .position_report_check_is_current(&position_result.check, &key)
+            {
+                log::debug!(
+                    "Deferring position reconciliation for {}/{}: local activity occurred before fill reports were applied",
+                    key.0,
+                    key.1,
+                );
+                continue;
+            }
+
+            let mut expected_revision = self.exec_manager.position_activity_revision(&key);
+            let key_venue_reports = venue_reports
                 .get(&key)
                 .map(Vec::as_slice)
                 .unwrap_or_default();
-            let comparison = self.position_quantity_comparison(key, venue_reports);
-            let tolerance = self.position_reconciliation_tolerance(key.1);
+            let mut applied_fill = false;
+            let mut blocked = false;
 
-            if comparison.quantities_match(tolerance) {
-                self.clear_position_reconciliation(&key);
-                continue;
-            }
+            for mut report in reports.shift_remove(&key).unwrap_or_default() {
+                if self.exec_manager.position_activity_revision(&key) != expected_revision {
+                    blocked = true;
+                    break;
+                }
 
-            discrepancy_keys.insert(key);
-
-            if self.position_activity_revision(&key) > prepared_revision
-                || self.position_activity_is_recent(&key)
-            {
-                continue;
-            }
-
-            let report_shape = comparison.report_shape();
-            let retries = self.position_reconciliation_retries(&key, report_shape);
-            if retries >= self.config().position_check_retries {
-                continue;
-            }
-
-            let ReportClientCoverage::Resolved(responsible_clients) = coverage else {
-                log::warn!(
-                    "Skipping fill report query for {}/{}: responsible execution client coverage is unavailable",
-                    key.0,
-                    key.1,
-                );
-                continue;
-            };
-
-            if responsible_clients.is_empty()
-                || !responsible_clients.is_subset(queried_clients)
-                || !responsible_clients.is_disjoint(failed_clients)
-            {
-                log::warn!(
-                    "Skipping fill report query for {}/{}: responsible position report coverage is incomplete",
-                    key.0,
-                    key.1,
-                );
-                continue;
-            }
-
-            for client_id in responsible_clients.iter() {
-                let mut command = GenerateFillReports::new(
-                    UUID4::new(),
-                    query_end,
-                    Some(key.0),
-                    None,
-                    Some(query_start),
-                    Some(query_end),
-                    None,
-                    Some(check.command.command_id),
-                );
-                command.log_receipt_level = LogLevel::Debug;
-                queries.push(PositionFillReportQuery {
-                    key,
-                    client_id: *client_id,
-                    command,
-                });
-            }
-        }
-
-        self.retain_position_reconciliation(&active_keys);
-
-        PositionFillReportPlan {
-            queries,
-            discrepancy_keys,
-        }
-    }
-
-    /// Checks whether position activity is unchanged since the check was prepared.
-    pub(crate) fn position_report_check_key_is_stable(
-        &self,
-        check: &PositionReportCheck,
-        key: &InstrumentAccountKey,
-    ) -> bool {
-        check
-            .activity_revisions
-            .get(key)
-            .is_some_and(|revision| self.position_activity_revision(key) == *revision)
-    }
-
-    /// Validates fill attribution and supplies a cached position ID when unambiguous.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if cached order or position state conflicts with the fill,
-    /// or inferred-fill history cannot be evaluated.
-    pub(crate) fn prepare_position_fill_report(
-        &self,
-        report: &mut FillReport,
-        venue_reports: &[PositionStatusReport],
-    ) -> anyhow::Result<PositionFillReportPreparation> {
-        let cache = self.cache();
-        let venue_client_order_id = cache.client_order_id(&report.venue_order_id).copied();
-        if let (Some(report_client_order_id), Some(venue_client_order_id)) =
-            (report.client_order_id, venue_client_order_id)
-        {
-            anyhow::ensure!(
-                report_client_order_id == venue_client_order_id,
-                "fill {} client order ID {report_client_order_id} conflicts with venue order mapping {venue_client_order_id}",
-                report.trade_id,
-            );
-        }
-
-        let client_order_id = report.client_order_id.or(venue_client_order_id);
-        let order = client_order_id.and_then(|id| cache.order(&id));
-        if let Some(order) = &order {
-            anyhow::ensure!(
-                order.instrument_id() == report.instrument_id
-                    && order.order_side() == report.order_side
-                    && order
-                        .account_id()
-                        .is_none_or(|account_id| account_id == report.account_id)
-                    && order
-                        .venue_order_id()
-                        .is_none_or(|venue_order_id| venue_order_id == report.venue_order_id),
-                "fill {} conflicts with cached order {}",
-                report.trade_id,
-                order.client_order_id(),
-            );
-        }
-
-        let hedge_context = report.venue_position_id.is_some()
-            || venue_reports
-                .iter()
-                .any(|venue_report| venue_report.venue_position_id.is_some());
-        let mapped_position_id = client_order_id
-            .and_then(|client_order_id| cache.position_id(&client_order_id))
-            .copied();
-
-        if hedge_context
-            && let (Some(venue_position_id), Some(mapped_position_id)) =
-                (report.venue_position_id, mapped_position_id)
-        {
-            anyhow::ensure!(
-                venue_position_id == mapped_position_id,
-                "fill {} position ID {venue_position_id} conflicts with cached order position {mapped_position_id}",
-                report.trade_id,
-            );
-        }
-
-        if let Some(order) = order
-            && Self::has_active_inferred_fill(&order)?
-        {
-            return Ok(PositionFillReportPreparation::InferredOverlap);
-        }
-
-        if !hedge_context {
-            return Ok(PositionFillReportPreparation::Ready);
-        }
-
-        if report.venue_position_id.is_some() {
-            return Ok(PositionFillReportPreparation::Ready);
-        }
-
-        let Some(position_id) = mapped_position_id else {
-            return Ok(PositionFillReportPreparation::Unattributed);
-        };
-
-        let position = cache.position(&position_id).ok_or_else(|| {
-            anyhow::anyhow!(
-                "fill {} maps to position {position_id}, which is not cached",
-                report.trade_id,
-            )
-        })?;
-
-        anyhow::ensure!(
-            position.account_id == report.account_id
-                && position.instrument_id == report.instrument_id,
-            "fill {} maps to position {position_id} with a different account or instrument",
-            report.trade_id,
-        );
-        anyhow::ensure!(
-            position.is_open(),
-            "fill {} maps to non-open position {position_id}",
-            report.trade_id,
-        );
-        anyhow::ensure!(
-            !position.is_opposite_side(report.order_side) || report.last_qty <= position.quantity,
-            "fill {} without a venue position ID would cross position {position_id}",
-            report.trade_id,
-        );
-
-        report.venue_position_id = Some(position_id);
-        Ok(PositionFillReportPreparation::Ready)
-    }
-
-    fn has_active_inferred_fill(order: &OrderAny) -> anyhow::Result<bool> {
-        let events = order.events();
-        let trade_ids = order.trade_ids();
-
-        let Some((first, remaining)) = events.split_first() else {
-            return Ok(false);
-        };
-
-        let mut projected = OrderAny::from_events(vec![(*first).clone()]).map_err(|e| {
-            anyhow::anyhow!(
-                "cannot replay order {} for inferred fill detection: {e}",
-                order.client_order_id(),
-            )
-        })?;
-
-        for event in remaining {
-            projected.apply((*event).clone()).map_err(|e| {
-                anyhow::anyhow!(
-                    "cannot replay order {} for inferred fill detection: {e}",
-                    order.client_order_id(),
-                )
-            })?;
-
-            let OrderEventAny::Filled(fill) = event else {
-                continue;
-            };
-
-            if !fill.reconciliation || !trade_ids.contains(&&fill.trade_id) {
-                continue;
-            }
-
-            let external_position_id = PositionId::new(format!("{}-EXTERNAL", fill.instrument_id));
-            let position_ids = [fill.position_id, Some(external_position_id)];
-
-            let inferred = position_ids.into_iter().flatten().any(|position_id| {
-                create_inferred_reconciliation_trade_id(
-                    fill.account_id,
-                    fill.instrument_id,
-                    fill.client_order_id,
-                    Some(fill.venue_order_id),
-                    fill.order_side,
-                    fill.order_type,
-                    projected.filled_qty(),
-                    fill.last_qty,
-                    fill.last_px,
-                    position_id,
-                    fill.ts_event,
-                ) == fill.trade_id
-            });
-
-            if inferred {
-                return Ok(true);
-            }
-        }
-
-        Ok(false)
-    }
-
-    /// Checks whether cached position fills match the report, including quantity and commission.
-    pub(crate) fn position_contains_fill_report(&self, report: &FillReport) -> bool {
-        let cache = self.cache();
-        let client_order_id = report
-            .client_order_id
-            .or_else(|| cache.client_order_id(&report.venue_order_id).copied());
-        let positions = cache.positions(
-            None,
-            Some(&report.instrument_id),
-            None,
-            Some(&report.account_id),
-            None,
-        );
-        let mut matched = false;
-        let mut quantity = Quantity::zero(report.last_qty.precision);
-        let mut commission = Money::zero(report.commission.currency);
-
-        for position in positions {
-            if report
-                .venue_position_id
-                .is_some_and(|position_id| position.id != position_id)
-            {
-                continue;
-            }
-
-            for replay_event in &position.replay_events {
-                let PositionReplayEvent::Filled(fill) = replay_event else {
+                if self.exec_manager.position_contains_fill_report(&report) {
                     continue;
-                };
+                }
 
-                if fill.account_id != report.account_id
-                    || fill.instrument_id != report.instrument_id
-                    || fill.venue_order_id != report.venue_order_id
-                    || fill.trade_id != report.trade_id
-                    || fill.order_side != report.order_side
-                    || fill.last_px != report.last_px
-                    || fill.liquidity_side != report.liquidity_side
-                    || client_order_id.is_some_and(|id| fill.client_order_id != id)
-                    || report
-                        .venue_position_id
-                        .is_some_and(|id| fill.position_id != Some(id))
+                if dispatches >= DISPATCHES_PER_YIELD {
+                    log::warn!(
+                        "Deferring remaining authoritative fills after reaching the per-cycle dispatch limit"
+                    );
+                    blocked = true;
+                    break;
+                }
+
+                match self
+                    .exec_manager
+                    .prepare_position_fill_report(&mut report, key_venue_reports)
                 {
-                    continue;
+                    Ok(PositionFillReportPreparation::Ready) => {}
+                    Ok(PositionFillReportPreparation::InferredOverlap) => {
+                        log::debug!(
+                            "Ignoring fill {} for {}/{} because its order contains an active inferred fill",
+                            report.trade_id,
+                            key.0,
+                            key.1,
+                        );
+                        continue;
+                    }
+                    Ok(PositionFillReportPreparation::Unattributed) => {
+                        log::debug!(
+                            "Ignoring unattributable hedge fill {} for {}/{} before synthetic fallback",
+                            report.trade_id,
+                            key.0,
+                            key.1,
+                        );
+                        continue;
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Deferring fill {} for {}/{}: {e}",
+                            report.trade_id,
+                            key.0,
+                            key.1,
+                        );
+                        blocked = true;
+                        break;
+                    }
                 }
 
-                let Some(fill_commission) = fill.commission else {
-                    return false;
-                };
-
-                if fill_commission.currency != report.commission.currency {
-                    return false;
+                if self.exec_manager.position_activity_revision(&key) != expected_revision {
+                    blocked = true;
+                    break;
                 }
 
-                let Some(next_quantity) = quantity.checked_add(fill.last_qty) else {
-                    return false;
-                };
+                self.process_exec_event(ExecutionEvent::Report(ExecutionReport::Fill(Box::new(
+                    report.clone(),
+                ))));
+                dispatches += 1;
+                let next_revision = expected_revision.saturating_add(1);
+                if self.exec_manager.position_activity_revision(&key) != next_revision
+                    || !self.exec_manager.position_contains_fill_report(&report)
+                {
+                    log::warn!(
+                        "Deferring position reconciliation for {}/{}: authoritative fill {} was not applied exactly",
+                        key.0,
+                        key.1,
+                        report.trade_id,
+                    );
+                    blocked = true;
+                    break;
+                }
 
-                let Some(next_commission) = commission.checked_add(fill_commission) else {
-                    return false;
-                };
+                expected_revision = next_revision;
+                applied_fill = true;
+            }
 
-                matched = true;
-                quantity = next_quantity;
-                commission = next_commission;
+            if self.exec_manager.position_activity_revision(&key) != expected_revision {
+                blocked = true;
+            }
+
+            if !blocked && !applied_fill {
+                fallback_keys.insert(key);
+            } else if !blocked {
+                log::debug!(
+                    "Deferring synthetic position reconciliation for {}/{} until the next fresh position report after applying authoritative fills",
+                    key.0,
+                    key.1,
+                );
             }
         }
 
-        matched && quantity == report.last_qty && commission == report.commission
+        if fallback_keys.is_empty() {
+            return;
+        }
+
+        retain_position_report_result_keys(&mut position_result, &fallback_keys);
+        let events = self.exec_manager.reconcile_position_reports(
+            &position_result.check,
+            position_result.reports,
+            &position_result.queried_clients,
+            &position_result.failed_clients,
+        );
+        self.process_reconciliation_events(&events);
     }
 
-    /// Clears pending targeted queries for the supplied orders.
-    pub(crate) fn remove_targeted_order_queries(&mut self, client_order_ids: &[ClientOrderId]) {
-        for client_order_id in client_order_ids {
-            self.remove_targeted_order_query(*client_order_id);
+    fn flush_pending_exec_client_instruments(&self) {
+        for client in &self.exec_clients {
+            client.flush_pending_instruments();
         }
     }
+
+    /// Flushes deferred instruments and clears cancelled targeted queries.
+    pub(super) fn cleanup_cancelled_report_tasks(
+        &mut self,
+        planned_client_order_ids: &[ClientOrderId],
+    ) {
+        self.flush_pending_exec_client_instruments();
+        self.exec_manager
+            .remove_targeted_order_queries(planned_client_order_ids);
+    }
+
+    /// Drops report futures before releasing their deferred client work.
+    pub(super) fn cancel_report_tasks(
+        &mut self,
+        open_order_report_task: &mut Option<OpenOrderReportTask>,
+        targeted_order_report_task: &mut Option<TargetedOrderReportTask>,
+        position_report_task: &mut Option<PositionReportTask>,
+    ) {
+        let planned_client_order_ids = targeted_order_report_task
+            .as_ref()
+            .map(|task| task.planned_client_order_ids.clone())
+            .unwrap_or_default();
+
+        drop(open_order_report_task.take());
+        drop(targeted_order_report_task.take());
+        drop(position_report_task.take());
+        self.cleanup_cancelled_report_tasks(&planned_client_order_ids);
+    }
+}
+
+async fn request_open_order_reports(
+    clients: Vec<LiveExecutionClient>,
+    command: GenerateOrderStatusReports,
+) -> OpenOrderReportQueryResult {
+    let mut all_reports = Vec::new();
+    let mut queried_clients = IndexSet::new();
+    let mut failed_clients = IndexSet::new();
+
+    for client in clients {
+        let client_id = client.client_id();
+        queried_clients.insert(client_id);
+
+        match client.generate_order_status_reports(&command).await {
+            Ok(reports) => {
+                all_reports.extend(
+                    reports
+                        .into_iter()
+                        .map(|report| SourcedOrderStatusReport { client_id, report }),
+                );
+            }
+            Err(e) => {
+                failed_clients.insert(client_id);
+                log::warn!(
+                    "Failed to generate order status reports from {}: {e}",
+                    client.client_id()
+                );
+            }
+        }
+    }
+
+    OpenOrderReportQueryResult {
+        reports: all_reports,
+        queried_clients,
+        failed_clients,
+    }
+}
+
+async fn request_position_reports(
+    clients: Vec<LiveExecutionClient>,
+    command: GeneratePositionStatusReports,
+) -> PositionReportQueryResult {
+    let mut all_reports = Vec::new();
+    let mut queried_clients = IndexSet::new();
+    let mut failed_clients = IndexSet::new();
+
+    for client in clients {
+        let client_id = client.client_id();
+        queried_clients.insert(client_id);
+
+        match client.generate_position_status_reports(&command).await {
+            Ok(reports) => {
+                all_reports.extend(reports);
+            }
+            Err(e) => {
+                failed_clients.insert(client_id);
+                log::warn!(
+                    "Failed to generate position status reports from {}: {e}",
+                    client.client_id()
+                );
+            }
+        }
+    }
+
+    PositionReportQueryResult {
+        reports: all_reports,
+        queried_clients,
+        failed_clients,
+    }
+}
+
+/// Collects scoped fill reports, rejecting failed or contradictory groups.
+pub(super) async fn request_position_fill_reports(
+    clients: Vec<LiveExecutionClient>,
+    queries: Vec<PositionFillReportQuery>,
+) -> PositionFillReportQueryResult {
+    let mut reports_by_key: IndexMap<InstrumentAccountKey, Vec<FillReport>> = IndexMap::new();
+    let mut queried_keys = IndexSet::new();
+    let mut failed_keys = IndexSet::new();
+
+    for query in queries {
+        queried_keys.insert(query.key);
+
+        let Some(client) = clients
+            .iter()
+            .find(|client| client.client_id() == query.client_id)
+        else {
+            failed_keys.insert(query.key);
+            log::warn!(
+                "Failed to generate fill reports for {}/{}: execution client {} is unavailable",
+                query.key.0,
+                query.key.1,
+                query.client_id,
+            );
+            continue;
+        };
+
+        let command = query.command;
+        match client.generate_fill_reports(command.clone()).await {
+            Ok(reports)
+                if reports
+                    .iter()
+                    .all(|report| fill_report_matches_query_scope(report, query.key, &command)) =>
+            {
+                reports_by_key.entry(query.key).or_default().extend(
+                    reports
+                        .into_iter()
+                        .filter(|report| fill_report_in_query_window(report, &command)),
+                );
+            }
+            Ok(_) => {
+                failed_keys.insert(query.key);
+                log::warn!(
+                    "Discarding fill reports for {}/{}: response contained an invalid report",
+                    query.key.0,
+                    query.key.1,
+                );
+            }
+            Err(e) => {
+                failed_keys.insert(query.key);
+                log::warn!(
+                    "Failed to generate fill reports from {} for {}/{}: {e}",
+                    query.client_id,
+                    query.key.0,
+                    query.key.1,
+                );
+            }
+        }
+    }
+
+    let mut successful_keys = IndexSet::new();
+
+    for key in queried_keys {
+        if failed_keys.contains(&key) {
+            reports_by_key.shift_remove(&key);
+            continue;
+        }
+
+        let mut deduplicated = IndexMap::new();
+        let mut contradictory = false;
+
+        for report in reports_by_key.shift_remove(&key).unwrap_or_default() {
+            let fill_key = (report.account_id, report.instrument_id, report.trade_id);
+            if let Some(existing) = deduplicated.get(&fill_key) {
+                if !fill_reports_equivalent(existing, &report) {
+                    contradictory = true;
+                    break;
+                }
+            } else {
+                deduplicated.insert(fill_key, report);
+            }
+        }
+
+        let mut reports = deduplicated.into_values().collect::<Vec<_>>();
+        reports.sort_by_key(|report| (report.ts_event, report.trade_id));
+
+        if contradictory {
+            log::warn!(
+                "Discarding fill reports for {}/{}: response contained contradictory fills",
+                key.0,
+                key.1,
+            );
+            continue;
+        }
+
+        successful_keys.insert(key);
+        reports_by_key.insert(key, reports);
+    }
+
+    PositionFillReportQueryResult {
+        reports: reports_by_key,
+        successful_keys,
+    }
+}
+
+fn fill_report_matches_query_scope(
+    report: &FillReport,
+    key: InstrumentAccountKey,
+    command: &GenerateFillReports,
+) -> bool {
+    report.instrument_id == key.0
+        && report.account_id == key.1
+        && command.instrument_id == Some(key.0)
+        && command
+            .venue_order_id
+            .is_none_or(|venue_order_id| report.venue_order_id == venue_order_id)
+        && !report.last_qty.is_zero()
+}
+
+fn fill_report_in_query_window(report: &FillReport, command: &GenerateFillReports) -> bool {
+    command.start.is_none_or(|start| report.ts_event >= start)
+        && command.end.is_none_or(|end| report.ts_event <= end)
+}
+
+fn fill_reports_equivalent(left: &FillReport, right: &FillReport) -> bool {
+    left.account_id == right.account_id
+        && left.instrument_id == right.instrument_id
+        && left.venue_order_id == right.venue_order_id
+        && left.trade_id == right.trade_id
+        && left.order_side == right.order_side
+        && left.last_qty == right.last_qty
+        && left.last_px == right.last_px
+        && left.commission == right.commission
+        && left.liquidity_side == right.liquidity_side
+        && left.avg_px == right.avg_px
+        && left.ts_event == right.ts_event
+        && left.client_order_id == right.client_order_id
+        && left.venue_position_id == right.venue_position_id
+}
+
+fn retain_position_report_result_keys(
+    result: &mut PositionReportResult,
+    keys: &IndexSet<InstrumentAccountKey>,
+) {
+    result
+        .check
+        .client_coverage
+        .retain(|key, _| keys.contains(key));
+    result
+        .check
+        .activity_revisions
+        .retain(|key, _| keys.contains(key));
+    result
+        .reports
+        .retain(|report| keys.contains(&(report.instrument_id, report.account_id)));
+}
+
+/// Checks whether an enabled interval has elapsed on the monotonic clock.
+pub(super) fn reconciliation_check_due(
+    now: dst::time::Instant,
+    last: dst::time::Instant,
+    interval: Duration,
+) -> bool {
+    interval > Duration::ZERO
+        && now
+            .checked_duration_since(last)
+            .is_some_and(|elapsed| elapsed >= interval)
+}
+
+/// Polling intervals for inflight orders, open orders, and positions.
+#[derive(Clone, Copy)]
+pub(super) struct ReconciliationCheckIntervals {
+    pub(super) inflight: Duration,
+    pub(super) open: Duration,
+    pub(super) position: Duration,
+}
+
+/// Last check instants and report tasks owned by the node loop.
+pub(super) struct ReconciliationCheckState<'a> {
+    pub(super) last_inflight_check: &'a mut dst::time::Instant,
+    pub(super) last_open_check: &'a mut dst::time::Instant,
+    pub(super) last_position_check: &'a mut dst::time::Instant,
+    pub(super) open_order_report_task: &'a mut Option<OpenOrderReportTask>,
+    pub(super) targeted_order_report_task: &'a mut Option<TargetedOrderReportTask>,
+    pub(super) position_report_task: &'a mut Option<PositionReportTask>,
+}
+
+/// Report completion or expiry of its collection deadline.
+pub(super) enum ReportTaskOutcome<T> {
+    Completed(T),
+    TimedOut,
+}
+
+type OpenOrderReportFuture =
+    Pin<Box<dyn Future<Output = ReportTaskOutcome<OpenOrderReportResult>>>>;
+
+/// Pending bulk order reports and their preparation snapshot.
+pub(super) struct OpenOrderReportTask {
+    pub(super) future: OpenOrderReportFuture,
+}
+
+/// Bulk order reports, client outcomes, and their preparation snapshot.
+pub(super) struct OpenOrderReportResult {
+    pub(super) check: OpenOrderReportCheck,
+    pub(super) reports: Vec<SourcedOrderStatusReport>,
+    pub(super) queried_clients: IndexSet<ClientId>,
+    pub(super) failed_clients: IndexSet<ClientId>,
+}
+
+type TargetedOrderReportFuture =
+    Pin<Box<dyn Future<Output = ReportTaskOutcome<Vec<TargetedOrderReportResult>>>>>;
+
+/// Pending targeted reports and order IDs to clear on cancellation.
+pub(super) struct TargetedOrderReportTask {
+    pub(super) future: TargetedOrderReportFuture,
+    pub(super) planned_client_order_ids: Vec<ClientOrderId>,
+}
+
+struct OpenOrderReportQueryResult {
+    reports: Vec<SourcedOrderStatusReport>,
+    queried_clients: IndexSet<ClientId>,
+    failed_clients: IndexSet<ClientId>,
+}
+
+type PositionReportFuture =
+    Pin<Box<dyn Future<Output = ReportTaskOutcome<PositionReportTaskResult>>>>;
+
+/// Pending position reports or their subsequent authoritative fill queries.
+pub(super) struct PositionReportTask {
+    pub(super) future: PositionReportFuture,
+}
+
+/// Position reports, client outcomes, and their preparation snapshot.
+pub(super) struct PositionReportResult {
+    pub(super) check: PositionReportCheck,
+    pub(super) reports: Vec<PositionStatusReport>,
+    pub(super) queried_clients: IndexSet<ClientId>,
+    pub(super) failed_clients: IndexSet<ClientId>,
+}
+
+/// Completed position reports or subsequent authoritative fill reports.
+pub(super) enum PositionReportTaskResult {
+    Positions(PositionReportResult),
+    Fills(PositionFillReportResult),
+}
+
+/// Authoritative fills and the position snapshot that prompted their queries.
+pub(super) struct PositionFillReportResult {
+    pub(super) position_result: PositionReportResult,
+    pub(super) reports: IndexMap<InstrumentAccountKey, Vec<FillReport>>,
+    pub(super) successful_keys: IndexSet<InstrumentAccountKey>,
+}
+
+struct PositionReportQueryResult {
+    reports: Vec<PositionStatusReport>,
+    queried_clients: IndexSet<ClientId>,
+    failed_clients: IndexSet<ClientId>,
+}
+
+/// Fill reports grouped by keys with complete, consistent query results.
+pub(super) struct PositionFillReportQueryResult {
+    pub(super) reports: IndexMap<InstrumentAccountKey, Vec<FillReport>>,
+    pub(super) successful_keys: IndexSet<InstrumentAccountKey>,
 }

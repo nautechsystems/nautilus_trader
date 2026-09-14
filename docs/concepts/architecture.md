@@ -115,7 +115,12 @@ Manages order lifecycle and execution:
 - Tracks order and position states.
 - Coordinates with risk management systems.
 - Handles execution reports and fills from venues.
-- Handles reconciliation of external execution state.
+- Applies reconciliation events and reconciles individual venue reports.
+
+For live execution, `ExecutionManager` tracks reconciliation state and coordinates individual
+reconciliation operations. `LiveNode` owns recurring checks, deadlines, and cancellation. See the
+[reconciliation component diagram](execution/reconciliation.md#component-responsibilities)
+for their ownership and dependencies.
 
 #### `RiskEngine`
 

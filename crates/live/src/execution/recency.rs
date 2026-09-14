@@ -13,6 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Monotonic activity timestamps for reconciliation throttling and retention.
+//!
+//! Trading-clock and venue timestamps do not determine these elapsed-time windows.
+
 use std::{hash::Hash, time::Duration};
 
 use indexmap::IndexMap;

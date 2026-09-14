@@ -15,13 +15,14 @@
 
 //! Live system node for [NautilusTrader](https://nautilustrader.io).
 //!
-//! The `nautilus-live` crate provides high-level abstractions and infrastructure for running live trading
-//! systems, including data streaming, execution management, and system lifecycle handling.
-//! It builds on top of the system kernel to provide simplified interfaces for live deployment:
+//! The crate provides live event transport, execution state management, and node lifecycle support.
 //!
-//! - `LiveNode` High-level abstraction for live system nodes.
-//! - `LiveNodeConfig` Configuration for live node deployment.
-//! - `AsyncRunner` for managing system real-time data flow.
+//! - [`execution`] supplies adapter-facing order context, failure classification, report filtering,
+//!   event emission, and the execution manager. The manager tracks reconciliation state, requests
+//!   reports for individual checks, and applies startup reconciliation events.
+//! - `node` (with the `node` feature) owns the kernel lifecycle, recurring reconciliation tasks,
+//!   collection deadlines, cancellation, and dispatch through the live event loop.
+//! - [`runner`] routes asynchronous data, execution, system, and timer traffic.
 //!
 //! # NautilusTrader
 //!
@@ -42,7 +43,7 @@
 //! - `examples`: Enables example strategies and testkit support for live nodes.
 //! - `extension-module`: Builds as a Python extension module.
 //! - `fuzz`: Provides shared libFuzzer integration for adapter fuzz binaries.
-//! - `node` (default): Enables the full live node, builder, config, and execution manager.
+//! - `node` (default): Enables the live node, builder, configuration, and system-kernel dependencies.
 //! - `plugin` (default): Keeps compatibility stubs for plug-in config validation.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs) and auto-enables `node` and
 //!   `streaming`.
@@ -62,7 +63,8 @@
 //! nautilus-live = { workspace = true, default-features = false }
 //! ```
 //!
-//! With `node` disabled, this crate exposes only `emitter` and `runner`, and skips
+//! With `node` disabled, execution support (including the manager), run-to-completion
+//! reconciliation, the runner, socket controls, and task support remain available. This skips
 //! the transitive dependencies on `nautilus-system`, `nautilus-trading`,
 //! `nautilus-portfolio`, `nautilus-risk`, and `nautilus-data`.
 //!
