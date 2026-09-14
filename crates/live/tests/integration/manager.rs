@@ -15771,6 +15771,11 @@ async fn test_position_check_nonflat_venue_report_protects_counter() {
 
     // Non-flat venue report should keep the counter alive
     ctx.manager.check_positions_consistency(&clients).await;
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, test_account_id())),
+        1,
+    );
 
     let position2 = create_test_position(
         &instrument,

@@ -41,7 +41,7 @@ use nautilus_model::{
     reports::{FillReport, PositionStatusReport},
 };
 
-use super::{DISPATCHES_PER_YIELD, LiveNode, NodeState};
+use super::{LiveNode, NodeState};
 use crate::{
     execution::{
         client::LiveExecutionClient,
@@ -53,6 +53,8 @@ use crate::{
     },
     runner::AsyncRunner,
 };
+
+const POSITION_FILLS_PER_CYCLE: usize = 64;
 
 impl LiveNode {
     /// Runs due checks while serializing order and position reconciliation.
@@ -340,7 +342,7 @@ impl LiveNode {
                     continue;
                 }
 
-                if dispatches >= DISPATCHES_PER_YIELD {
+                if dispatches >= POSITION_FILLS_PER_CYCLE {
                     log::warn!(
                         "Deferring remaining authoritative fills after reaching the per-cycle dispatch limit"
                     );
@@ -429,7 +431,7 @@ impl LiveNode {
             return;
         }
 
-        retain_position_report_result_keys(&mut position_result, &fallback_keys);
+        position_result.retain_keys(&fallback_keys);
         let events = self.exec_manager.reconcile_position_reports(
             &position_result.check,
             position_result.reports,
@@ -683,23 +685,6 @@ fn fill_reports_equivalent(left: &FillReport, right: &FillReport) -> bool {
         && left.venue_position_id == right.venue_position_id
 }
 
-fn retain_position_report_result_keys(
-    result: &mut PositionReportResult,
-    keys: &IndexSet<InstrumentAccountKey>,
-) {
-    result
-        .check
-        .client_coverage
-        .retain(|key, _| keys.contains(key));
-    result
-        .check
-        .activity_revisions
-        .retain(|key, _| keys.contains(key));
-    result
-        .reports
-        .retain(|report| keys.contains(&(report.instrument_id, report.account_id)));
-}
-
 /// Checks whether an enabled interval has elapsed on the monotonic clock.
 pub(super) fn reconciliation_check_due(
     now: dst::time::Instant,
@@ -781,6 +766,19 @@ pub(super) struct PositionReportResult {
     pub(super) reports: Vec<PositionStatusReport>,
     pub(super) queried_clients: IndexSet<ClientId>,
     pub(super) failed_clients: IndexSet<ClientId>,
+}
+
+impl PositionReportResult {
+    fn retain_keys(&mut self, keys: &IndexSet<InstrumentAccountKey>) {
+        self.check
+            .client_coverage
+            .retain(|key, _| keys.contains(key));
+        self.check
+            .activity_revisions
+            .retain(|key, _| keys.contains(key));
+        self.reports
+            .retain(|report| keys.contains(&(report.instrument_id, report.account_id)));
+    }
 }
 
 /// Completed position reports or subsequent authoritative fill reports.

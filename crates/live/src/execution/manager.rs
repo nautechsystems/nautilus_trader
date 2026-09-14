@@ -2372,7 +2372,23 @@ impl ExecutionManager {
             }
         }
 
-        self.reconcile_position_reports(&check, reports, &queried_clients, &failed_clients)
+        let active_keys = self
+            .open_position_keys_for_reconciliation()
+            .into_iter()
+            .chain(reports.iter().filter_map(|report| {
+                (self.should_reconcile_instrument(&report.instrument_id)
+                    && report.signed_decimal_qty != Decimal::ZERO)
+                    .then_some((report.instrument_id, report.account_id))
+            }))
+            .collect();
+
+        let events =
+            self.reconcile_position_reports(&check, reports, &queried_clients, &failed_clients);
+
+        // Global pruning requires unfiltered reports; flat reports must not preserve stale retries
+        self.retain_position_reconciliation(&active_keys);
+
+        events
     }
 
     /// Prepares a bulk position report request and records client coverage.
@@ -2424,6 +2440,9 @@ impl ExecutionManager {
     }
 
     /// Plans fill queries for settled position discrepancies with complete client coverage.
+    ///
+    /// Requires an unfiltered check and report snapshot for pruning. Coverage keys and nonflat
+    /// venue reports retain retry state.
     pub fn plan_position_fill_reports(
         &mut self,
         check: &mut PositionReportCheck,
@@ -2735,6 +2754,10 @@ impl ExecutionManager {
     }
 
     /// Reconciles cached positions against venue position reports.
+    ///
+    /// Callers may supply a filtered check and reports without pruning retry state for other positions.
+    /// Global pruning is handled by [`Self::plan_position_fill_reports`] and
+    /// [`Self::check_positions_consistency`].
     #[must_use]
     pub fn reconcile_position_reports(
         &mut self,
@@ -2868,24 +2891,6 @@ impl ExecutionManager {
                 events.extend(discrepancy_events);
             }
         }
-
-        // Prune retry counters for (instrument, account) pairs no longer actively
-        // tracked, excluding flat venue reports which shouldn't protect stale counters
-        let active_keys: IndexSet<InstrumentAccountKey> = current_position_keys
-            .into_iter()
-            .chain(
-                venue_positions
-                    .iter()
-                    .filter(|(_, reports)| {
-                        reports
-                            .iter()
-                            .any(|report| report.signed_decimal_qty != Decimal::ZERO)
-                    })
-                    .map(|(k, _)| *k),
-            )
-            .collect();
-
-        self.retain_position_reconciliation(&active_keys);
 
         events
     }

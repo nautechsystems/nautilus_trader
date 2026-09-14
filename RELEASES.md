@@ -125,6 +125,7 @@ Released on TBD (UTC).
 - Fixed NETTING reduce-only fills against `EXTERNAL` positions (#4975), thanks for reporting @qu1zzyboy
 - Fixed reconciliation races between terminal order reports and streamed fills
 - Fixed cached fill echoes aborting live order reconciliation before later fills and snapshot corrections
+- Fixed live position reconciliation clearing deferred retry counters during another position's fallback
 - Fixed zero-sized fills panicking or affecting execution reconciliation (#4957), thanks for reporting @Karrenbelt
 - Fixed position commissions and realized PnL after fill-void replay
 - Fixed OTO exit sizing for commission-adjusted positions, child size increments, and minimum quantities

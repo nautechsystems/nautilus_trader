@@ -4531,6 +4531,126 @@ mod tests {
     }
 
     #[rstest]
+    #[case::failed_query(false)]
+    #[case::local_activity(true)]
+    fn test_position_fallback_preserves_deferred_venue_only_retries(#[case] local_activity: bool) {
+        let (mut node, report, _) =
+            position_fill_test_fixture("PositionRetryRetentionNode", Quantity::from("1.0"));
+        let active_key = (report.instrument_id, report.account_id);
+        let deferred_key = (report.instrument_id, AccountId::from("SECOND-001"));
+        let deferred_reports = vec![
+            PositionStatusReport::new(
+                deferred_key.1,
+                deferred_key.0,
+                PositionSide::Long,
+                Quantity::from("2.0"),
+                UnixNanos::from(1_000),
+                UnixNanos::from(1_000),
+                None,
+                None,
+                Some(dec!(100.0)),
+            ),
+            PositionStatusReport::new(
+                deferred_key.1,
+                deferred_key.0,
+                PositionSide::Short,
+                Quantity::from("1.0"),
+                UnixNanos::from(1_000),
+                UnixNanos::from(1_000),
+                None,
+                None,
+                Some(dec!(100.0)),
+            ),
+        ];
+        let mut check = node
+            .exec_manager
+            .prepare_position_report_check(UUID4::new(), &[]);
+        check.client_coverage.clear();
+        let events = node.exec_manager.reconcile_position_reports(
+            &check,
+            deferred_reports.clone(),
+            &IndexSet::new(),
+            &IndexSet::new(),
+        );
+        assert!(events.is_empty());
+        assert_eq!(
+            node.exec_manager.position_recon_retry_count(&deferred_key),
+            1
+        );
+
+        let mut position_result = position_report_result(&node, report);
+        position_result.reports.extend(deferred_reports);
+        position_result.check.client_coverage.insert(
+            deferred_key,
+            ReportClientCoverage::Resolved(IndexSet::from([ClientId::from("SECOND")])),
+        );
+        position_result
+            .check
+            .activity_revisions
+            .insert(deferred_key, 0);
+        position_result
+            .queried_clients
+            .insert(ClientId::from("SECOND"));
+        let mut successful_keys = IndexSet::from([active_key]);
+        if local_activity {
+            successful_keys.insert(deferred_key);
+            node.exec_manager
+                .record_position_activity(deferred_key.0, deferred_key.1);
+        }
+
+        node.handle_position_fill_report_result(PositionFillReportResult {
+            position_result,
+            reports: IndexMap::from([(active_key, Vec::new())]),
+            successful_keys,
+        });
+
+        assert_eq!(
+            node.exec_manager.position_recon_retry_count(&deferred_key),
+            1
+        );
+        {
+            let cache = node.kernel.cache.borrow();
+            let positions =
+                cache.positions_open(None, Some(&active_key.0), None, Some(&active_key.1), None);
+            assert_eq!(
+                positions
+                    .iter()
+                    .map(|position| position.quantity)
+                    .collect::<Vec<_>>(),
+                vec![Quantity::from("1.0"), Quantity::from("1.0")],
+            );
+            assert_eq!(
+                cache
+                    .positions_open(
+                        None,
+                        Some(&deferred_key.0),
+                        None,
+                        Some(&deferred_key.1),
+                        None,
+                    )
+                    .len(),
+                0
+            );
+        }
+
+        let mut fresh_check = node
+            .exec_manager
+            .prepare_position_report_check(UUID4::new(), &[]);
+        node.exec_manager.plan_position_fill_reports(
+            &mut fresh_check,
+            &[],
+            &IndexSet::new(),
+            &IndexSet::new(),
+            &[],
+        );
+
+        assert_eq!(
+            node.exec_manager.position_recon_retry_count(&deferred_key),
+            0
+        );
+    }
+
+    #[rstest]
     fn test_position_fill_report_result_applies_authoritative_fill_without_synthetic_order() {
         let (mut node, venue_report, fill_report) =
             position_fill_test_fixture("AuthoritativePositionFillNode", Quantity::from("1.0"));
