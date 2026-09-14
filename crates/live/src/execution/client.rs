@@ -123,6 +123,7 @@ impl LiveExecutionClient {
                 .generate_order_status_reports(cmd)
                 .await
         };
+
         self.flush_pending_instruments();
         result
     }
@@ -154,6 +155,7 @@ impl LiveExecutionClient {
                 .generate_position_status_reports(cmd)
                 .await
         };
+
         self.flush_pending_instruments();
         result
     }
@@ -169,6 +171,7 @@ impl LiveExecutionClient {
         while let Some(instrument) = pending.pop_front() {
             client.on_instrument(instrument);
         }
+
         log::debug!("Flushed {count} deferred execution client instrument update(s)");
     }
 }

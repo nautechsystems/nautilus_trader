@@ -608,6 +608,7 @@ impl LiveNodeBuilder {
         if let Some(controller) = self.config.controller.as_ref() {
             Trader::add_controller_from_importable_config(&kernel.trader, controller)?;
         }
+
         #[cfg(not(feature = "python"))]
         if let Some(controller) = self.config.controller.as_ref() {
             anyhow::bail!(
@@ -632,6 +633,7 @@ impl LiveNodeBuilder {
                 let client = socket_registry.scope(|| {
                     factory.create(name, config.as_ref(), kernel.cache().into(), kernel.clock())
                 })?;
+
                 let client_id = client.client_id();
                 let venue = client.venue();
                 socket_registry.register_client(client_id);
@@ -690,6 +692,7 @@ impl LiveNodeBuilder {
                         factory.create(self.config.trader_id, name, config.as_ref(), kernel.cache())
                     }
                 })?;
+
                 let client = LiveExecutionClient::new(client);
                 let client_id = client.client_id();
                 let venue = client.venue();
@@ -718,6 +721,7 @@ impl LiveNodeBuilder {
                         }
                     }
                 }
+
                 ExecutionEngine::subscribe_venue_instruments(&kernel.exec_engine, venue);
                 exec_clients.push(client);
 
@@ -729,6 +733,7 @@ impl LiveNodeBuilder {
 
         let exec_manager_config = ExecutionManagerConfig::from(&self.config.exec_engine)
             .with_trader_id(self.config.trader_id);
+
         let mut exec_manager = ExecutionManager::new(
             kernel.clock.clone(),
             kernel.cache.clone(),

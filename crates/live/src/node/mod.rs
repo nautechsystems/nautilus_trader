@@ -272,6 +272,7 @@ impl LiveNode {
         if let Some(controller) = config.controller.as_ref() {
             Trader::add_controller_from_importable_config(&kernel.trader, controller)?;
         }
+
         #[cfg(not(feature = "python"))]
         if let Some(controller) = config.controller.as_ref() {
             anyhow::bail!(
@@ -282,6 +283,7 @@ impl LiveNode {
 
         let exec_manager_config =
             ExecutionManagerConfig::from(&config.exec_engine).with_trader_id(config.trader_id);
+
         let exec_manager = ExecutionManager::new(
             kernel.clock.clone(),
             kernel.cache.clone(),
@@ -303,6 +305,7 @@ impl LiveNode {
             #[cfg(feature = "plugin")]
             plugins: plugin::NodePlugins,
         };
+
         node.load_configured_plugins()?;
 
         log::info!("LiveNode built successfully with kernel config");
@@ -417,6 +420,7 @@ impl LiveNode {
             if !self.finish_startup_replay().await? {
                 return Ok(());
             }
+
             return Ok(());
         }
 
@@ -497,6 +501,7 @@ impl LiveNode {
         if let Err(e) = self.kernel.start_trader() {
             return self.abort_after_trader_start_failure(e).await;
         }
+
         #[cfg(feature = "plugin")]
         if let Err(e) = self.plugins.start_controllers() {
             return self.abort_after_trader_start_failure(e).await;
@@ -697,6 +702,7 @@ impl LiveNode {
 
     fn publish_socket_state_change(&self, change: SocketStateChange) {
         let timestamp = self.kernel.generate_timestamp_ns();
+
         let event = SocketStateChanged::new(
             self.config.trader_id,
             change.client_id,
@@ -869,6 +875,7 @@ impl LiveNode {
             if elapsed >= timeout {
                 anyhow::bail!("Startup reconciliation timeout reached");
             }
+
             let remaining = timeout
                 .checked_sub(elapsed)
                 .expect("elapsed checked against reconciliation timeout");
@@ -935,6 +942,7 @@ impl LiveNode {
                     // Register external orders with execution clients for tracking
                     if !result.external_orders.is_empty() {
                         let exec_engine = self.kernel.exec_engine.borrow();
+
                         let source_client = exec_engine.get_client(&client_id).ok_or_else(|| {
                             anyhow::anyhow!(
                                 "Execution client {client_id} disappeared during startup reconciliation"
@@ -1056,6 +1064,7 @@ impl LiveNode {
             if !self.finish_startup_replay().await? {
                 return Ok(());
             }
+
             return Ok(());
         }
 
@@ -1295,6 +1304,7 @@ impl LiveNode {
             log::info!("Event loop stopped");
             return result;
         }
+
         #[cfg(feature = "plugin")]
         if let Err(e) = self.plugins.start_controllers() {
             let result = self.abort_after_trader_start_failure(e).await;
@@ -1324,6 +1334,7 @@ impl LiveNode {
                 exec_evt: &mut exec_evt_rx,
                 exec_cmd: &mut exec_cmd_rx,
             };
+
             self.finish_startup_trader(Some(&mut receivers)).await
         };
 
@@ -1338,18 +1349,21 @@ impl LiveNode {
         let exec_config = &self.config.exec_engine;
         let inflight_interval =
             Duration::from_millis(u64::from(exec_config.inflight_check_interval_ms));
+
         let open_interval = exec_config
             .open_check_interval_secs
             .filter(|&s| s > 0.0)
             .map_or(Duration::ZERO, |secs| {
                 Duration::from_nanos(secs_to_nanos_unchecked(secs))
             });
+
         let position_interval = exec_config
             .position_check_interval_secs
             .filter(|&s| s > 0.0)
             .map_or(Duration::ZERO, |secs| {
                 Duration::from_nanos(secs_to_nanos_unchecked(secs))
             });
+
         let has_clients = !self
             .kernel
             .exec_engine
@@ -1885,6 +1899,7 @@ impl LiveNode {
         for transition in transitions {
             let topic = MessagingSwitchboard::queue_state_changed_topic(transition.channel);
             let timestamp = self.kernel.generate_timestamp_ns();
+
             let event = QueueStateChanged::new(
                 self.config.trader_id,
                 transition.channel,
@@ -1995,6 +2010,7 @@ impl LiveNode {
             for processor in &self.stream_processors {
                 (processor.0)(value, mapping)?;
             }
+
             Ok(())
         };
 
@@ -2032,6 +2048,7 @@ impl LiveNode {
                 self.exec_manager
                     .record_position_activity(fill.instrument_id, fill.account_id);
             }
+
             self.kernel.exec_engine.borrow_mut().process(event);
             if let OrderEventAny::Filled(fill) = event {
                 self.exec_manager.commit_recent_fill_if_applied(fill);
@@ -2066,6 +2083,7 @@ impl LiveNode {
             if message.endpoint() == MessagingSwitchboard::exec_engine_execute() {
                 self.observe_exec_command_before_dispatch(message.command());
             }
+
             messages.extend(message.dispatch().into_iter().rev());
         }
     }
@@ -2347,6 +2365,7 @@ impl LiveNode {
         if let Err(e) = self.plugins.stop_controllers() {
             log::error!("Error stopping plug-in controllers: {e}");
         }
+
         self.kernel.stop_trader();
         let delay = self.kernel.delay_post_stop();
         log::info!("Awaiting residual events ({delay:?})...");
@@ -2360,6 +2379,7 @@ impl LiveNode {
 
         let timeout = self.config.timeout_disconnection;
         let deadline = dst::time::Instant::now() + timeout;
+
         let disconnect_result =
             match dst::time::timeout(timeout, self.kernel.disconnect_clients()).await {
                 Ok(result) => result,
@@ -2494,6 +2514,7 @@ impl LiveNode {
                     );
                     return None;
                 }
+
                 self.exec_manager.observe_execution_report(report);
 
                 if let Some(client_order_id) = Self::closed_order_report_client_order_id(report) {
@@ -2736,6 +2757,7 @@ impl LiveNode {
                         "{e}; failed to roll back external order claims for {strategy_id}: {rollback_error}"
                     );
                 }
+
                 return Err(e);
             }
         };
@@ -2751,6 +2773,7 @@ impl LiveNode {
                     "Failed to add strategy {strategy_id}: {add_error}; failed to roll back external order claims: {rollback_error}"
                 );
             }
+
             return Err(add_error);
         }
 
@@ -2867,11 +2890,13 @@ impl LiveNode {
             if self.state() == NodeState::ShuttingDown {
                 return;
             }
+
             let result = self.exec_manager.check_inflight_orders();
             self.process_reconciliation_events(&result.events);
             for cmd in result.queries {
                 AsyncRunner::handle_exec_command(cmd);
             }
+
             *state.last_inflight_check = now;
         }
 
@@ -3081,6 +3106,7 @@ impl LiveNode {
                     "Position discrepancies remain deferred because no authoritative fill query is currently safe"
                 );
             }
+
             return None;
         }
 
@@ -3100,6 +3126,7 @@ impl LiveNode {
                 .or_insert_with(Vec::new)
                 .push(report.clone());
         }
+
         let mut fallback_keys = IndexSet::new();
         let mut dispatches = 0;
 
@@ -3199,6 +3226,7 @@ impl LiveNode {
                     blocked = true;
                     break;
                 }
+
                 expected_revision = next_revision;
                 applied_fill = true;
             }
@@ -3402,6 +3430,7 @@ async fn request_position_fill_reports(
 
     for query in queries {
         queried_keys.insert(query.key);
+
         let Some(client) = clients
             .iter()
             .find(|client| client.client_id() == query.client_id)
@@ -4235,6 +4264,7 @@ mod tests {
             },
             ..Default::default()
         };
+
         let node = LiveNode::build("QueuePublicationNode".to_string(), Some(config)).unwrap();
         let received = Rc::new(RefCell::new(Vec::<QueueStateChanged>::new()));
 
@@ -4248,6 +4278,7 @@ mod tests {
             handler,
             None,
         );
+
         let transitions = [
             QueueStateTransition {
                 channel: SystemChannel::DataEvents,
@@ -4313,17 +4344,21 @@ mod tests {
             },
             ..Default::default()
         };
+
         let node = LiveNode::build("SocketPublicationNode".to_string(), Some(config)).unwrap();
         let received = Rc::new(RefCell::new(Vec::<SocketStateChanged>::new()));
+
         let handler = ShareableMessageHandler::from_typed({
             let received = received.clone();
             move |event: &SocketStateChanged| received.borrow_mut().push(event.clone())
         });
+
         msgbus::subscribe_any(
             MessagingSwitchboard::socket_state_changed_pattern(client_id, endpoint),
             handler,
             None,
         );
+
         let change = SocketStateChange::new(
             ClientId::from("BINANCE"),
             Some(Venue::from("BINANCE")),
@@ -4414,6 +4449,7 @@ mod tests {
     #[rstest]
     fn test_process_socket_reconnect_routes_only_matching_trader() {
         let trader_id = TraderId::from("SOCKET-001");
+
         let config = LiveNodeConfig {
             trader_id,
             exec_engine: crate::config::LiveExecutionEngineConfig {
@@ -4422,6 +4458,7 @@ mod tests {
             },
             ..Default::default()
         };
+
         let node = LiveNode::build("SocketReconnectNode".to_string(), Some(config)).unwrap();
         let client_id = ClientId::from("TEST");
         let endpoint = Ustr::from("test-streams");
@@ -4469,11 +4506,13 @@ mod tests {
             timeout_shutdown: Duration::ZERO,
             ..Default::default()
         };
+
         let mut node = LiveNode::build("SocketStartupNode".to_string(), Some(config)).unwrap();
         let received = Rc::new(RefCell::new(Vec::new()));
         node.add_actor(StartupSocketActor::new(Rc::clone(&received)))
             .unwrap();
         node.runner.as_ref().unwrap().bind_senders();
+
         let change = SocketStateChange::new(
             ClientId::from("BINANCE"),
             Some(Venue::from("BINANCE")),
@@ -4521,6 +4560,7 @@ mod tests {
             delay_post_stop: Duration::ZERO,
             ..Default::default()
         };
+
         let mut node = LiveNode::build("QueueMonitorRunNode".to_string(), Some(config)).unwrap();
         let handle = node.handle();
         let received = Rc::new(RefCell::new(Vec::<QueueStateChanged>::new()));
@@ -4589,6 +4629,7 @@ mod tests {
             },
             ..Default::default()
         };
+
         let mut node = LiveNode::build("FillSkipNode".to_string(), Some(config)).unwrap();
         let event = stub_exec_event();
         let account_id = AccountId::from("TEST-001");
@@ -4630,6 +4671,7 @@ mod tests {
             },
             ..Default::default()
         };
+
         let mut node = LiveNode::build("TerminalReportNode".to_string(), Some(config)).unwrap();
         let client_order_id = ClientOrderId::from("O-TERMINAL-REPORT");
         let old_venue_order_id = VenueOrderId::from("V-TERMINAL-REPORT-OLD");
@@ -4729,11 +4771,13 @@ mod tests {
             UnixNanos::from(3_000),
             None,
         );
+
         let report = if with_fills {
             ExecutionReport::OrderWithFills(Box::new(report), Vec::new())
         } else {
             ExecutionReport::Order(Box::new(report))
         };
+
         let event = ExecutionEvent::Report(report);
 
         node.process_exec_event(event);
@@ -4744,6 +4788,7 @@ mod tests {
             .borrow()
             .order_owned(&client_order_id)
             .unwrap();
+
         let expected_venue_order_id = if superseded {
             new_venue_order_id
         } else {
@@ -4790,9 +4835,11 @@ mod tests {
     #[rstest]
     fn test_rejected_direct_fill_stays_eligible_for_later_report() {
         let (mut node, mut fill_event, _) = recent_fill_test_fixture("RejectedDirectFillNode");
+
         let OrderEventAny::Filled(fill) = &mut fill_event else {
             unreachable!();
         };
+
         fill.client_order_id = ClientOrderId::from("O-UNKNOWN");
         fill.venue_order_id = VenueOrderId::from("V-UNKNOWN");
         let fill = fill.clone();
@@ -4821,9 +4868,11 @@ mod tests {
     #[rstest]
     fn test_applied_direct_fill_commits_and_skips_later_report() {
         let (mut node, fill_event, _) = recent_fill_test_fixture("AppliedDirectFillNode");
+
         let OrderEventAny::Filled(fill) = &fill_event else {
             unreachable!();
         };
+
         let fill = fill.clone();
         let report_event = fill_report_event(&fill);
         let event = ExecutionEvent::Order(fill_event);
@@ -4840,9 +4889,11 @@ mod tests {
     #[rstest]
     fn test_canonical_duplicate_fill_counts_as_applied() {
         let (mut node, fill_event, _) = recent_fill_test_fixture("DuplicateDirectFillNode");
+
         let OrderEventAny::Filled(fill) = &fill_event else {
             unreachable!();
         };
+
         let mut fill = fill.clone();
         node.kernel
             .cache
@@ -4870,12 +4921,15 @@ mod tests {
             let OrderEventAny::Filled(fill) = &mut fill_event else {
                 unreachable!();
             };
+
             fill.client_order_id = ClientOrderId::from("O-CONTINUOUS-UNKNOWN");
             fill.venue_order_id = VenueOrderId::from("V-CONTINUOUS-UNKNOWN");
         }
+
         let OrderEventAny::Filled(fill) = &fill_event else {
             unreachable!();
         };
+
         let fill = fill.clone();
 
         node.process_reconciliation_events(&[fill_event]);
@@ -4891,9 +4945,11 @@ mod tests {
             .borrow_mut()
             .update_order(&fill_event)
             .unwrap();
+
         let OrderEventAny::Filled(fill) = fill_event else {
             unreachable!();
         };
+
         let mut account_mismatch = fill.clone();
         account_mismatch.account_id = AccountId::from("OTHER-001");
         let mut instrument_mismatch = fill;
@@ -4947,9 +5003,11 @@ mod tests {
             None,
         )
         .unwrap();
+
         let OrderEventAny::Filled(fill) = &inferred else {
             unreachable!();
         };
+
         let fill = fill.clone();
 
         node.process_reconciliation_events(&[inferred]);
@@ -4965,6 +5023,7 @@ mod tests {
         let account_id = AccountId::from("POSITION-FILLS-001");
         let instrument_id = crypto_perpetual_ethusdt().id();
         let commands = Rc::new(RefCell::new(Vec::new()));
+
         let client = LiveExecutionClient::new(Box::new(FillReportClient {
             client_id,
             account_id,
@@ -4972,6 +5031,7 @@ mod tests {
             outcome: FillReportClientOutcome::Failure,
             commands: commands.clone(),
         }));
+
         let command = GenerateFillReports::new(
             UUID4::new(),
             UnixNanos::from(2_000),
@@ -5005,6 +5065,7 @@ mod tests {
         let account_id = AccountId::from("POSITION-FILLS-001");
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let instrument_id = instrument.id();
+
         let report_b = FillReport::new(
             account_id,
             instrument_id,
@@ -5024,6 +5085,7 @@ mod tests {
         let mut report_a = report_b.clone();
         report_a.trade_id = TradeId::from("T-POSITION-FILLS-A");
         let commands = Rc::new(RefCell::new(Vec::new()));
+
         let client = LiveExecutionClient::new(Box::new(FillReportClient {
             client_id,
             account_id,
@@ -5031,6 +5093,7 @@ mod tests {
             outcome: FillReportClientOutcome::Reports(vec![report_b.clone(), report_a.clone()]),
             commands,
         }));
+
         let command = GenerateFillReports::new(
             UUID4::new(),
             UnixNanos::from(2_000),
@@ -5075,6 +5138,7 @@ mod tests {
         let account_id = AccountId::from("POSITION-FILLS-001");
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let instrument_id = instrument.id();
+
         let report = FillReport::new(
             AccountId::from(report_account),
             InstrumentId::from(report_instrument),
@@ -5091,6 +5155,7 @@ mod tests {
             UnixNanos::from(2_000),
             None,
         );
+
         let client = LiveExecutionClient::new(Box::new(FillReportClient {
             client_id,
             account_id,
@@ -5098,6 +5163,7 @@ mod tests {
             outcome: FillReportClientOutcome::Reports(vec![report]),
             commands: Rc::new(RefCell::new(Vec::new())),
         }));
+
         let command = GenerateFillReports::new(
             UUID4::new(),
             UnixNanos::from(2_000),
@@ -5135,6 +5201,7 @@ mod tests {
         let account_id = AccountId::from("POSITION-FILLS-001");
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let instrument_id = instrument.id();
+
         let report = FillReport::new(
             account_id,
             instrument_id,
@@ -5151,6 +5218,7 @@ mod tests {
             UnixNanos::from(2_000),
             None,
         );
+
         let client = LiveExecutionClient::new(Box::new(FillReportClient {
             client_id,
             account_id,
@@ -5158,6 +5226,7 @@ mod tests {
             outcome: FillReportClientOutcome::Reports(vec![report]),
             commands: Rc::new(RefCell::new(Vec::new())),
         }));
+
         let command = GenerateFillReports::new(
             UUID4::new(),
             UnixNanos::from(2_000),
@@ -5377,12 +5446,14 @@ mod tests {
             .borrow_mut()
             .register_oms_type(StrategyId::from("EXTERNAL"), OmsType::Hedging);
         let key = (venue_report.instrument_id, venue_report.account_id);
+
         let position_id = {
             let cache = node.kernel.cache.borrow();
             let positions = cache.positions_open(None, Some(&key.0), None, Some(&key.1), None);
             assert_eq!(positions.len(), 1);
             positions[0].id
         };
+
         venue_report.venue_position_id = Some(position_id);
         fill_report.client_order_id = None;
         fill_report.venue_order_id = VenueOrderId::from("V-POSITION-EXTERNAL");
@@ -5454,6 +5525,7 @@ mod tests {
             },
             ..Default::default()
         };
+
         let mut node = LiveNode::build("AcceptedBatchNode".to_string(), Some(config)).unwrap();
         let account_id = AccountId::from("TEST-ACCEPTED-BATCH-001");
         let client_id = ClientId::from("TEST-ACCEPTED-BATCH");
@@ -5511,6 +5583,7 @@ mod tests {
             },
             ..Default::default()
         };
+
         let mut node = LiveNode::build("BatchCancelNode".to_string(), Some(config)).unwrap();
         let trader_id = TraderId::from("TESTER-001");
         let strategy_id = StrategyId::from("S-BATCH-CANCEL");
@@ -5560,6 +5633,7 @@ mod tests {
             cache.update_order(&accepted).unwrap();
             cache.update_order(&pending_cancel).unwrap();
         }
+
         let cancels = child_ids
             .into_iter()
             .map(|client_order_id| {
@@ -5577,6 +5651,7 @@ mod tests {
                 )
             })
             .collect();
+
         let command = TradingCommand::CancelOrders(BatchCancelOrders::new(
             trader_id,
             None,
@@ -5625,6 +5700,7 @@ mod tests {
             },
             ..Default::default()
         };
+
         let mut node = LiveNode::build("RiskBoundNode".to_string(), Some(config)).unwrap();
         msgbus::register_trading_command_endpoint(
             MessagingSwitchboard::risk_engine_execute(),
@@ -5708,6 +5784,7 @@ mod tests {
             },
             ..Default::default()
         };
+
         let mut node = LiveNode::build("RiskApprovedNode".to_string(), Some(config)).unwrap();
         msgbus::register_trading_command_endpoint(
             MessagingSwitchboard::exec_engine_execute(),
@@ -5754,6 +5831,7 @@ mod tests {
 
         advance_clock(Duration::from_millis(101)).await;
         let result = node.exec_manager.check_inflight_orders();
+
         let [TradingCommand::QueryOrder(query)] = result.queries.as_slice() else {
             panic!("expected one query order command");
         };
@@ -6152,6 +6230,7 @@ mod tests {
         let strategy_id = StrategyId::from("CLAIMS-001");
         node.register_external_order_claims(strategy_id, &[existing_instrument_id])
             .unwrap();
+
         let mut strategy = TestStrategy::new(StrategyConfig {
             strategy_id: Some(strategy_id),
             external_order_instrument_ids: Some(vec![configured_instrument_id]),
@@ -6352,6 +6431,7 @@ mod tests {
             },
             ..Default::default()
         };
+
         let mut node =
             LiveNode::build("ReconciliationFallbackNode".to_string(), Some(config)).unwrap();
         let client_id = ClientId::from("TEST-QUERY");
@@ -6466,6 +6546,7 @@ mod tests {
             },
             ..Default::default()
         };
+
         let node = LiveNode::build(name.to_string(), Some(config)).unwrap();
         let account_id = AccountId::from("TEST-001");
         let client_id = ClientId::from("TEST-RECENT-FILL");
@@ -6559,6 +6640,7 @@ mod tests {
             },
             ..Default::default()
         };
+
         let mut node = LiveNode::build(name.to_string(), Some(config)).unwrap();
         let account_id = AccountId::from("TEST-001");
         let client_id = ClientId::from("POSITION-FILLS");
@@ -6615,13 +6697,16 @@ mod tests {
             None,
             Some(account_id),
         );
+
         let OrderEventAny::Filled(fill) = &mut initial_fill else {
             unreachable!();
         };
+
         fill.commission = Some(Money::zero(instrument.quote_currency()));
         node.process_reconciliation_events(&[initial_fill]);
 
         let ts_event = UnixNanos::from(1_000);
+
         let fill_report = FillReport::new(
             account_id,
             instrument.id(),
@@ -6638,6 +6723,7 @@ mod tests {
             ts_event,
             None,
         );
+
         let venue_report = PositionStatusReport::new(
             account_id,
             instrument.id(),
@@ -6782,6 +6868,7 @@ mod tests {
             timeout_disconnection: Duration::from_millis(50),
             ..Default::default()
         };
+
         let mut node = LiveNode::build("TestNode".to_string(), Some(config)).unwrap();
         let handle = node.handle();
 
@@ -6809,6 +6896,7 @@ mod tests {
             timeout_shutdown: Duration::ZERO,
             ..Default::default()
         };
+
         let mut node = LiveNode::build("TestNode".to_string(), Some(config)).unwrap();
         let order = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(InstrumentId::from("EUR/USD.SIM"))
@@ -6863,6 +6951,7 @@ mod tests {
         let (database, control) = TestCacheDatabaseControl::create();
         control.set_actor_state(actor_id, &actor_load);
         control.set_strategy_state(strategy_id, &strategy_load);
+
         let config = LiveNodeConfig {
             load_state: true,
             save_state: true,
@@ -6878,6 +6967,7 @@ mod tests {
             timeout_shutdown: Duration::ZERO,
             ..Default::default()
         };
+
         let mut node = LiveNode::build("StatePersistenceNode".to_string(), Some(config)).unwrap();
         node.set_cache_database(Box::new(database)).unwrap();
         node.add_actor(StateActor::new(
@@ -6926,6 +7016,7 @@ mod tests {
         let actor_id = ActorId::from("LIVE-FAIL-SAVE-ACTOR");
         let strategy_id = StrategyId::from("LIVE-FAIL-SAVE-STRATEGY-001");
         let (database, control) = TestCacheDatabaseControl::create();
+
         let config = LiveNodeConfig {
             save_state: true,
             exec_engine: crate::config::LiveExecutionEngineConfig {
@@ -6940,6 +7031,7 @@ mod tests {
             timeout_shutdown: Duration::ZERO,
             ..Default::default()
         };
+
         let mut node =
             LiveNode::build("StatePersistenceErrorNode".to_string(), Some(config)).unwrap();
         node.set_cache_database(Box::new(database)).unwrap();
@@ -6993,6 +7085,7 @@ mod tests {
             timeout_shutdown: Duration::ZERO,
             ..Default::default()
         };
+
         let mut node = LiveNode::build("TestNode".to_string(), Some(config)).unwrap();
         let order = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(InstrumentId::from("GBP/USD.SIM"))
@@ -7344,6 +7437,7 @@ mod tests {
                 .push(serde_json::to_value(command).unwrap());
             first_steps.borrow_mut().push(1);
         });
+
         let second_steps = steps.clone();
         node.add_stream_processor(move |_| second_steps.borrow_mut().push(2));
         let republished = Rc::new(RefCell::new(Vec::new()));
@@ -7359,6 +7453,7 @@ mod tests {
             }),
             None,
         );
+
         let message = BusMessage::with_str_topic(
             "external.test",
             BusPayloadType::SubscribeCommand,
@@ -7435,10 +7530,12 @@ mod tests {
     #[rstest]
     fn test_builder_with_external_msgbus_egress_uses_configured_encoding() {
         let (external_egress, publications, closed) = CapturingExternalEgress::new();
+
         let msgbus_config = MessageBusConfig {
             encoding: SerializationEncoding::Json,
             ..Default::default()
         };
+
         let node = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Sandbox)
             .unwrap()
             .with_msgbus_config(msgbus_config)
@@ -7472,10 +7569,12 @@ mod tests {
         let publications = Arc::new(Mutex::new(Vec::new()));
         let closed = Arc::new(AtomicBool::new(false));
         let factory = CapturingBackingFactory::new(publications.clone(), closed.clone(), Some(rx));
+
         let msgbus_config = MessageBusConfig {
             external_streams: Some(vec!["stream".to_string()]),
             ..Default::default()
         };
+
         let config = LiveNodeConfig {
             environment: Environment::Sandbox,
             msgbus: Some(msgbus_config),
@@ -7488,6 +7587,7 @@ mod tests {
             timeout_disconnection: Duration::from_millis(500),
             ..Default::default()
         };
+
         let mut node = LiveNodeBuilder::from_config(config)
             .unwrap()
             .with_external_msgbus_factory(Box::new(factory))
@@ -7508,6 +7608,7 @@ mod tests {
 
         let received = Rc::new(RefCell::new(Vec::<QuoteTick>::new()));
         let handle = node.handle();
+
         // Stopping from `drive` rather than here, so the node cannot finish `run` before the
         // republished quote is observed.
         let handler = TypedHandler::from({
@@ -7516,6 +7617,7 @@ mod tests {
                 received.borrow_mut().push(*quote);
             }
         });
+
         msgbus::subscribe_quotes("data.quotes.*".into(), handler, None);
         msgbus::get_message_bus()
             .borrow_mut()
@@ -7576,6 +7678,7 @@ mod tests {
         let publications = Arc::new(Mutex::new(Vec::new()));
         let closed = Arc::new(AtomicBool::new(false));
         let factory = CapturingBackingFactory::new(publications.clone(), closed.clone(), None);
+
         let config = LiveNodeConfig {
             environment: Environment::Sandbox,
             msgbus: Some(MessageBusConfig::default()),
@@ -7588,6 +7691,7 @@ mod tests {
             timeout_disconnection: Duration::from_millis(500),
             ..Default::default()
         };
+
         let mut node = LiveNodeBuilder::from_config(config)
             .unwrap()
             .with_external_msgbus_factory(Box::new(factory))
@@ -7633,6 +7737,7 @@ mod tests {
     #[rstest]
     fn test_builder_with_external_msgbus_factory_rejects_injected_surfaces() {
         let (external_egress, _publications, _closed) = CapturingExternalEgress::new();
+
         let egress_factory = CapturingBackingFactory::new(
             Arc::new(Mutex::new(Vec::new())),
             Arc::new(AtomicBool::new(false)),
@@ -7652,6 +7757,7 @@ mod tests {
         );
 
         let (_tx, rx) = tokio::sync::mpsc::channel::<BusMessage>(1);
+
         let ingress_factory = CapturingBackingFactory::new(
             Arc::new(Mutex::new(Vec::new())),
             Arc::new(AtomicBool::new(false)),
@@ -7688,6 +7794,7 @@ mod tests {
         let (tx, rx) = tokio::sync::mpsc::channel::<BusMessage>(1);
         let closed = Rc::new(Cell::new(false));
         let ingress = CapturingExternalIngress::new(rx, closed.clone());
+
         let config = LiveNodeConfig {
             environment: Environment::Sandbox,
             exec_engine: crate::config::LiveExecutionEngineConfig {
@@ -7699,18 +7806,21 @@ mod tests {
             timeout_disconnection: Duration::from_millis(500),
             ..Default::default()
         };
+
         let mut node = LiveNodeBuilder::from_config(config)
             .unwrap()
             .with_external_ingress(Box::new(ingress))
             .build()
             .expect("node builds with external message bus ingress");
         let handle = node.handle();
+
         let handler = TypedHandler::from({
             let received = received.clone();
             move |quote: &QuoteTick| {
                 received.borrow_mut().push(*quote);
             }
         });
+
         msgbus::subscribe_quotes("data.quotes.*".into(), handler, None);
         msgbus::get_message_bus()
             .borrow_mut()
@@ -7761,6 +7871,7 @@ mod tests {
         let (tx, rx) = tokio::sync::mpsc::channel::<BusMessage>(1);
         let closed = Rc::new(Cell::new(false));
         let ingress = CapturingExternalIngress::new(rx, closed.clone());
+
         let config = LiveNodeConfig {
             environment: Environment::Sandbox,
             exec_engine: crate::config::LiveExecutionEngineConfig {
@@ -7772,6 +7883,7 @@ mod tests {
             timeout_disconnection: Duration::from_millis(500),
             ..Default::default()
         };
+
         let mut node = LiveNodeBuilder::from_config(config)
             .unwrap()
             .with_external_ingress(Box::new(ingress))
@@ -7818,6 +7930,7 @@ mod tests {
     async fn test_run_aborts_startup_when_external_ingress_receiver_unavailable() {
         let closed = Rc::new(Cell::new(false));
         let ingress = FailingExternalIngress::new(closed.clone());
+
         let config = LiveNodeConfig {
             environment: Environment::Sandbox,
             exec_engine: crate::config::LiveExecutionEngineConfig {
@@ -7829,6 +7942,7 @@ mod tests {
             timeout_disconnection: Duration::from_millis(500),
             ..Default::default()
         };
+
         let mut node = LiveNodeBuilder::from_config(config)
             .unwrap()
             .with_external_ingress(Box::new(ingress))
@@ -8003,6 +8117,7 @@ mod tests {
     #[rstest]
     fn test_pending_system_events_stay_separate_from_data() {
         let mut pending = PendingEvents::default();
+
         let change = SocketStateChange::new(
             ClientId::from("BINANCE"),
             Some(Venue::from("BINANCE")),
@@ -8117,6 +8232,7 @@ mod tests {
 
         // Pre-load all channel types
         time_tx.send(stub_time_event_handler()).unwrap();
+
         let change = SocketStateChange::new(
             ClientId::from("BINANCE"),
             Some(Venue::from("BINANCE")),
@@ -8305,6 +8421,7 @@ mod tests {
                     risk_commands_handler.borrow_mut().push(command);
                 }),
             );
+
             let exec_commands_handler = exec_commands.clone();
             msgbus::register_trading_command_endpoint(
                 MessagingSwitchboard::exec_engine_execute(),

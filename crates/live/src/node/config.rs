@@ -227,6 +227,7 @@ impl From<LiveRiskEngineConfig> for RiskEngineConfig {
                 (instrument_id, notional)
             })
             .collect::<AHashMap<_, _>>();
+
         let full_position_exit_venues = config.full_position_exit_venues.into_iter().collect();
 
         Self {
@@ -259,6 +260,7 @@ pub(crate) fn parse_rate_limit(field: impl Into<String>, input: &str) -> ConfigR
         .map_err(|e| ConfigError::invalid_format(field.clone(), format!("limit: {e}")))?;
 
     let mut parts = interval.split(':');
+
     let mut next = |label: &str| -> ConfigResult<u64> {
         parts
             .next()
@@ -284,6 +286,7 @@ pub(crate) fn parse_rate_limit(field: impl Into<String>, input: &str) -> ConfigR
         })
         .and_then(|total| total.checked_add(seconds))
         .ok_or_else(|| ConfigError::range(field.clone(), "interval exceeds the supported range"))?;
+
     let interval_ns = DurationNanos::try_from_secs(interval_secs)
         .map_err(|e| ConfigError::range(field.clone(), e.to_string()))?;
 
@@ -871,6 +874,7 @@ impl LiveNodeConfig {
         if let Some(queue_monitor) = &self.queue_monitor {
             collector.collect(queue_monitor.validate());
         }
+
         collector.collect(self.validate_plugin_configs());
 
         collector.into_result()
@@ -1694,9 +1698,11 @@ mean_dispatch_ns_clear = 700
         };
 
         let error = config.validate_runtime_support().unwrap_err();
+
         let ConfigError::Multiple { errors } = error else {
             panic!("Expected multiple config errors, received {error:?}");
         };
+
         assert_eq!(errors.len(), 3);
 
         for field in [
@@ -2237,6 +2243,7 @@ config = { strategy_id = "ExampleStrategy-001", threshold = 10 }
             }),
             ..Default::default()
         };
+
         let json = serde_json::to_string(&config).expect("serialize");
         let restored: LiveNodeConfig = serde_json::from_str(&json).expect("deserialize");
 

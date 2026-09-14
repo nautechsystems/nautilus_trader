@@ -41,6 +41,7 @@ fn create_emitter() -> ExecutionEventEmitter {
 
 fn create_account_state(ts_init: UnixNanos) -> AccountState {
     let usd = Currency::USD();
+
     AccountState::new(
         AccountId::from("SIM-001"),
         AccountType::Cash,

@@ -192,6 +192,7 @@ fn bench_concurrent_channels(c: &mut Criterion) {
                     while rx.try_recv().is_ok() {
                         count += 1;
                     }
+
                     assert_eq!(count, total_events);
                 });
             },
@@ -226,6 +227,7 @@ fn bench_batch_processing(c: &mut Criterion) {
                     while rx.try_recv().is_ok() {
                         received += 1;
                     }
+
                     assert_eq!(received, size);
                 });
             },
@@ -305,6 +307,7 @@ fn bench_runner_dispatch(c: &mut Criterion) {
                     for _ in 0..size {
                         tx.send(DataEvent::Data(Data::Trade(trade))).unwrap();
                     }
+
                     drop(tx);
 
                     let start = std::time::Instant::now();
@@ -313,6 +316,7 @@ fn bench_runner_dispatch(c: &mut Criterion) {
                             AsyncRunner::handle_data_event(evt);
                         }
                     });
+
                     total += start.elapsed();
                 }
 

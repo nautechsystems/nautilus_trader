@@ -112,6 +112,7 @@ impl ExecutionHarness {
             .expect("instrument should be added to the harness cache");
 
         let portfolio = Portfolio::new(clock.clone(), cache.clone(), None);
+
         let risk_engine = Rc::new(RefCell::new(RiskEngine::new(
             RiskEngineConfig::default(),
             portfolio,
@@ -124,6 +125,7 @@ impl ExecutionHarness {
             .manage_own_order_books(true)
             .build()
             .expect("execution engine config should be valid");
+
         let exec_engine = Rc::new(RefCell::new(ExecutionEngine::new(
             clock.clone(),
             cache.clone(),
@@ -260,6 +262,7 @@ impl ExecutionHarness {
             .borrow()
             .order(&order.client_order_id())
             .and_then(|cached| cached.venue_order_id());
+
         let cmd = ModifyOrder::new(
             self.trader_id,
             Some(self.client_id),
@@ -289,6 +292,7 @@ impl ExecutionHarness {
             .borrow()
             .order(&order.client_order_id())
             .and_then(|cached| cached.venue_order_id());
+
         let cmd = CancelOrder::new(
             self.trader_id,
             Some(self.client_id),
@@ -351,6 +355,7 @@ impl ExecutionHarness {
         config.close_positions_on_stop = false;
 
         let mut tester = ExecTester::new(config);
+
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
             self.clock.clone(),
             self.cache.clone(),
@@ -534,6 +539,7 @@ pub mod invariants {
         let Some(book) = cache.own_order_book(instrument_id) else {
             return;
         };
+
         let mut order_ids = book.bid_client_order_ids();
         order_ids.extend(book.ask_client_order_ids());
 

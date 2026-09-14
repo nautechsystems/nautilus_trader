@@ -84,6 +84,7 @@ fn py_to_json_value(bound: &pyo3::Bound<'_, PyAny>) -> PyResult<serde_json::Valu
         for (key, value) in dict.iter() {
             obj.insert(key.extract::<String>()?, py_to_json_value(&value)?);
         }
+
         Ok(serde_json::Value::Object(obj))
     } else if let Ok(items) = bound.extract::<Vec<Py<PyAny>>>() {
         // Handle list/tuple/set
@@ -133,6 +134,7 @@ pub fn json_value_to_py(py: Python<'_>, value: &serde_json::Value) -> PyResult<P
             for (k, v) in obj {
                 dict.set_item(k, json_value_to_py(py, v)?)?;
             }
+
             Ok(dict.into_any().unbind())
         }
     }
@@ -152,6 +154,7 @@ pub fn coerce_json_config<S: BuildHasher>(
             let json_value = py_to_json_value(value.bind(py))?;
             result.insert(key, json_value);
         }
+
         Ok(result)
     })
 }
@@ -168,6 +171,7 @@ fn coerce_max_notional_per_order(
             let value_str: String = value.bind(py).str()?.extract()?;
             result.insert(instrument_id, value_str);
         }
+
         Ok(result)
     })
 }
@@ -198,10 +202,12 @@ impl LiveDataEngineConfig {
         debug: Option<bool>,
     ) -> PyResult<Self> {
         let default = Self::default();
+
         let time_bars_interval_type = match time_bars_interval_type {
             Some(ref obj) => coerce_bar_interval_type(obj)?,
             None => default.time_bars_interval_type,
         };
+
         Ok(Self {
             time_bars_build_with_no_updates: time_bars_build_with_no_updates
                 .unwrap_or(default.time_bars_build_with_no_updates),
@@ -324,10 +330,12 @@ impl LiveRiskEngineConfig {
             max_order_submit_rate.unwrap_or_else(|| default.max_order_submit_rate.clone());
         let max_order_modify_rate =
             max_order_modify_rate.unwrap_or_else(|| default.max_order_modify_rate.clone());
+
         let max_notional_per_order = match max_notional_per_order {
             Some(raw) => coerce_max_notional_per_order(raw)?,
             None => HashMap::new(),
         };
+
         let full_position_exit_venues = full_position_exit_venues.unwrap_or_default();
 
         parse_rate_limit(
@@ -506,6 +514,7 @@ impl LiveExecutionEngineConfig {
             own_books_audit_interval_secs,
             qsize: default.qsize,
         };
+
         config
             .validate_runtime_support()
             .map_err(config_error_to_pyvalue_err)?;
@@ -793,10 +802,12 @@ impl InstrumentProviderConfig {
         log_warnings: Option<bool>,
     ) -> PyResult<Self> {
         let default = Self::default();
+
         let filters = match filters {
             Some(raw) => coerce_json_config(raw)?,
             None => HashMap::new(),
         };
+
         Ok(Self {
             load_all: load_all.unwrap_or(default.load_all),
             load_ids,
@@ -831,6 +842,7 @@ impl InstrumentProviderConfig {
             let py_val = json_value_to_py(py, v)?;
             dict.set_item(k, py_val)?;
         }
+
         Ok(dict.into_any().unbind())
     }
 
@@ -1035,6 +1047,7 @@ impl PluginConfig {
         for (key, value) in &self.config {
             dict.set_item(key, json_value_to_py(py, value)?)?;
         }
+
         Ok(dict.unbind())
     }
 

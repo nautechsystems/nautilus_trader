@@ -516,9 +516,11 @@ impl ExecutionEventEmitter {
     /// Returns an error if the sender is not initialized or the receiving channel is closed.
     pub fn try_send_execution_report(&self, report: ExecutionReport) -> anyhow::Result<()> {
         let sender = self.sender.load();
+
         let sender = sender.as_ref().ok_or_else(|| {
             anyhow::anyhow!("Cannot send execution report: sender not initialized")
         })?;
+
         sender
             .send(ExecutionEvent::Report(report))
             .map_err(|e| anyhow::anyhow!("Failed to send execution report: {e}"))

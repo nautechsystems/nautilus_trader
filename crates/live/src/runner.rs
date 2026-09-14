@@ -891,6 +891,7 @@ mod tests {
                 processed_order.push("data_command");
             }
         });
+
         let second = runner.poll_pending(|event| match event {
             PendingRunnerEvent::DataEvent(_) => {
                 processed_by_channel[5] += 1;
@@ -1210,6 +1211,7 @@ mod tests {
                     tokio::task::yield_now().await;
                 }
             });
+
             handles.push(handle);
         }
 
@@ -1349,6 +1351,7 @@ mod tests {
                     );
                 }),
             );
+
             let (exec_handler, exec_saving_handler) =
                 get_typed_into_message_saving_handler::<TradingCommand>(Some(Ustr::from(
                     "ExecEngine.execute",
@@ -1776,6 +1779,7 @@ mod tests {
             correlation_id: None,
             params: None,
         }));
+
         data_cmd_tx.send(command).unwrap();
 
         // Send time event
@@ -2006,6 +2010,7 @@ mod tests {
                     params: None,
                 },
             )));
+
             assert!(runner.channels.data_cmd_rx.try_recv().is_ok());
 
             get_trading_cmd_sender().execute(TradingCommandMessage::new(

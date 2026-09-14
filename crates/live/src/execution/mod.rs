@@ -13,13 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod config;
 pub mod context;
 pub mod emitter;
 pub mod failure;
 pub mod manager;
 pub mod reports;
 
-pub(crate) mod recency;
-
 #[cfg(feature = "node")]
 pub(crate) mod client;
+
+mod recency;
+mod reconciliation;
