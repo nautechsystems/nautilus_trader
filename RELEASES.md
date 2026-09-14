@@ -1,6 +1,6 @@
 # NautilusTrader 2.0.0rc5
 
-Released on TBD (UTC).
+Released on 15th September 2026 (UTC).
 
 ### Enhancements
 
@@ -20,6 +20,7 @@ Released on TBD (UTC).
 - Added typed external MessageBus streaming for control, execution, and reconciliation messages
 - Added public `ExecutionEventEmitter.try_send_account_state(...)` (#4907), thanks @folknor
 - Added cache-backed claims that route external orders, fills, and reconciliation activity to the strategy
+- Added inbound latency modeling to sandbox execution client (#4865), thanks @ChrisAB
 - Added `SubscribeOptionChain.correlation_id` and `UnsubscribeOptionChain.params` for tracking edits across client routes
 - Added `UnixNanos::saturating_duration_since` for non-negative time differences
 - Added `BacktestEngine::add_data_batch` for typed data batches that replay without per-item `Data` values, thanks @faysou
@@ -47,7 +48,6 @@ Released on TBD (UTC).
 - Added Polymarket limit order modification support
 - Added Polymarket parent event IDs and raw Gamma market and event metadata
 - Added Polymarket resolution subscriptions for data-only clients (#4895), thanks @mystic-io
-- Added inbound latency modeling to sandbox execution client (#4865), thanks @ChrisAB
 
 ### Breaking Changes
 
@@ -182,6 +182,7 @@ Released on TBD (UTC).
 - Fixed Hyperliquid WebSocket post deadlines across queueing, transport writes, and replies
 - Fixed Hyperliquid reconciliation to fail closed on undecodable mass-status rows
 - Fixed Hyperliquid quote-denominated orders submitting quote amounts as base sizes
+- Fixed Hyperliquid instrument refresh so newly listed markets can trade without restart (#4969), thanks @riven314
 - Fixed Kraken Futures silently returning partial catalogs when instrument precision is unsupported
 - Fixed Kraken Futures order-state convergence for unreported open orders and partial-fill cancels
 - Fixed Kraken Futures `iocWouldNotExecute` order outcomes staying ambiguous instead of rejecting
