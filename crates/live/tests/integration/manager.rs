@@ -10440,8 +10440,7 @@ async fn test_hedge_mode_with_filter_unclaimed_external_allows_synthetic() {
 }
 
 #[tokio::test]
-async fn test_duplicate_order_reports_keeps_most_advanced_state() {
-    // When multiple order reports exist for same venue_order_id, keep most advanced
+async fn test_duplicate_order_reports_reconciles_last_report() {
     let mut ctx = TestContext::new();
     let instrument_id = test_instrument_id();
     ctx.add_instrument(test_instrument());
@@ -10473,7 +10472,6 @@ async fn test_duplicate_order_reports_keeps_most_advanced_state() {
         Some(UUID4::new()),
     );
 
-    // Tests deduplication: PartiallyFilled and Filled reports, Filled should win
     let report_partial = OrderStatusReport::new(
         test_account_id(),
         instrument_id,
@@ -10538,7 +10536,7 @@ async fn test_duplicate_order_reports_keeps_most_advanced_state() {
     assert_eq!(
         order.status(),
         OrderStatus::Filled,
-        "Order should be in most advanced state (Filled)"
+        "Order should match the last report (Filled)"
     );
 }
 

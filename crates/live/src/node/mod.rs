@@ -3007,7 +3007,7 @@ impl LiveNode {
                 let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
                 match dst::time::timeout(
                     remaining,
-                    request_targeted_order_reports(&client_refs, queries, query_delay),
+                    request_targeted_order_reports(queries, &client_refs, query_delay),
                 )
                 .await
                 {

@@ -33,7 +33,7 @@ use rust_decimal::Decimal;
 
 use crate::execution::manager::{
     ExecutionManager, InstrumentAccountKey, PositionReportCheck, ReportClientCoverage,
-    TargetedOrderQuery,
+    TargetedOrderQuery, resolve_position_report_client_coverage,
 };
 
 impl TargetedOrderQuery {
@@ -111,7 +111,7 @@ impl ExecutionManager {
             let coverage = check
                 .client_coverage
                 .entry(key)
-                .or_insert_with(|| Self::resolve_position_report_client_coverage(key, clients));
+                .or_insert_with(|| resolve_position_report_client_coverage(key, clients));
             let prepared_revision = *check.activity_revisions.entry(key).or_default();
             let venue_reports = venue_positions
                 .get(&key)
