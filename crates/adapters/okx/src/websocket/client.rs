@@ -1448,8 +1448,8 @@ impl OKXWebSocketClient {
     /// Selects the optimal channel based on user's VIP tier and requested depth:
     /// - depth 50: Requires VIP4+, subscribes to `books50-l2-tbt`
     /// - depth 0 or 400:
-    ///   - VIP5+: subscribes to `books-l2-tbt` (400 depth, fastest)
-    ///   - Below VIP5: subscribes to `books` (standard depth)
+    ///   - VIP4+: subscribes to `books-l2-tbt` (400 depth, fastest)
+    ///   - Below VIP4: subscribes to `books` (standard depth)
     ///
     /// # Errors
     ///

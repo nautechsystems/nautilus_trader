@@ -41,6 +41,7 @@ Released on TBD (UTC).
 - Added Kraken execution `max_retries` configuration (#4902), thanks @folknor
 - Added OKX raw HTTP account configuration queries (#4943), thanks @silarin
 - Added OKX USD-to-USDC spot migration support with `spot_trade_quote_ccy` and `activate_feature`
+- Added OKX `smart_iceberg` algo order type and `auto_conversion` order category decoding
 - Added Polymarket collateral-sized limit BUY orders with exact limit price preservation
 - Added Polymarket Deposit Wallet split, merge, and redeem position operations
 - Added Polymarket limit order modification support
@@ -56,6 +57,7 @@ Released on TBD (UTC).
 - Removed Coinbase `CreateOrderRequest.reduce_only`; reduce-only orders are rejected before submission
 - Removed the dormant `PortfolioStatistic::calculate_from_orders` trait method; no analyzer supplied order data to statistics
 - Removed public Rust and Python `ForwardPrice` APIs; option chains now fetch reference prices internally
+- Removed the unused OKX enums `OKXAccountMode` and `OKXTakeProfitKind`, which mapped no venue field
 - Replaced `RetryManager.execute_with_retry*` methods with `invocation(...).execute().await`
 - Replaced the Rust `DurationNanos` `u64` alias with a newtype; use constructors and accessors
 - Replaced `OKXHttpError::JsonError` and generic HTTP errors with typed transport and response failures
@@ -191,6 +193,8 @@ Released on TBD (UTC).
 - Fixed OKX book recovery after reconnect, rejected subscriptions, and missing snapshots
 - Fixed OKX private WebSocket re-authentication after reconnect
 - Fixed OKX reconnect subscriptions exceeding the venue message size
+- Fixed OKX option order price type deserialization to the `pxUsd` and `pxVol` wire values
+- Fixed OKX depth-400 book channel gating from VIP5 to VIP4 per current venue requirements
 - Fixed Polymarket resolution subscriptions losing transiently unavailable closed markets
 - Fixed Polymarket precision loss in financial data and execution reports
 - Fixed Polymarket invalid numeric values silently producing zero prices, quantities, or fees

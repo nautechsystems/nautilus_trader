@@ -619,36 +619,6 @@ pub enum OKXTradeMode {
     SpotIsolated,
 }
 
-/// Represents an OKX account mode.
-///
-/// # References
-///
-/// <https://www.okx.com/docs-v5/en/#overview-account-mode>
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Display,
-    PartialEq,
-    Eq,
-    Hash,
-    AsRefStr,
-    EnumIter,
-    EnumString,
-    Serialize,
-    Deserialize,
-)]
-pub enum OKXAccountMode {
-    #[serde(rename = "Spot mode")]
-    Spot,
-    #[serde(rename = "Spot and futures mode")]
-    SpotAndFutures,
-    #[serde(rename = "Multi-currency margin mode")]
-    MultiCurrencyMarginMode,
-    #[serde(rename = "Portfolio margin mode")]
-    PortfolioMarginMode,
-}
-
 /// Represents the margin mode for OKX accounts.
 ///
 /// # Reference
@@ -829,28 +799,6 @@ pub enum OKXSelfTradePreventionMode {
     Copy,
     Clone,
     Debug,
-    Display,
-    PartialEq,
-    Eq,
-    Hash,
-    AsRefStr,
-    EnumIter,
-    EnumString,
-    Serialize,
-    Deserialize,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum OKXTakeProfitKind {
-    #[serde(rename = "")]
-    None,
-    Condition,
-    Limit,
-}
-
-#[derive(
-    Copy,
-    Clone,
-    Debug,
     Default,
     Display,
     PartialEq,
@@ -892,8 +840,8 @@ mod tests {
     use rstest::rstest;
 
     use super::{
-        OKXAlgoOrderStatus, OKXAlgoOrderType, OKXGreeksType, OKXOptionType, OKXOrderStatus,
-        OKXOrderType, OKXRpiPermission, OKXTriggerType,
+        OKXAlgoOrderStatus, OKXAlgoOrderType, OKXGreeksType, OKXOptionType, OKXOrderCategory,
+        OKXOrderStatus, OKXOrderType, OKXPriceType, OKXRpiPermission, OKXTriggerType,
     };
 
     #[rstest]
@@ -1089,6 +1037,40 @@ mod tests {
         let parsed: OKXAlgoOrderType = serde_json::from_str("\"future_algo_type\"").unwrap();
         assert_eq!(parsed, OKXAlgoOrderType::Other);
     }
+
+    #[rstest]
+    fn test_okx_algo_order_type_deserializes_smart_iceberg() {
+        let parsed: OKXAlgoOrderType = serde_json::from_str("\"smart_iceberg\"").unwrap();
+        assert_eq!(parsed, OKXAlgoOrderType::SmartIceberg);
+
+        let json = serde_json::to_string(&OKXAlgoOrderType::SmartIceberg).unwrap();
+        assert_eq!(json, "\"smart_iceberg\"");
+    }
+
+    #[rstest]
+    fn test_okx_order_category_deserializes_auto_conversion() {
+        let parsed: OKXOrderCategory = serde_json::from_str("\"auto_conversion\"").unwrap();
+        assert_eq!(parsed, OKXOrderCategory::AutoConversion);
+
+        let json = serde_json::to_string(&OKXOrderCategory::AutoConversion).unwrap();
+        assert_eq!(json, "\"auto_conversion\"");
+    }
+
+    #[rstest]
+    #[case("\"\"", OKXPriceType::None)]
+    #[case("\"px\"", OKXPriceType::Px)]
+    #[case("\"pxUsd\"", OKXPriceType::Usd)]
+    #[case("\"pxVol\"", OKXPriceType::Vol)]
+    fn test_okx_price_type_deserializes_documented_values(
+        #[case] json: &str,
+        #[case] expected: OKXPriceType,
+    ) {
+        let parsed: OKXPriceType = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed, expected);
+
+        let serialized = serde_json::to_string(&expected).unwrap();
+        assert_eq!(serialized, json);
+    }
 }
 
 /// Represents the target currency for order quantity.
@@ -1164,12 +1146,9 @@ pub enum OKXRpiPermission {
 /// - API rate limits.
 /// - Access to advanced order book channels (L2/L3 depth).
 ///
-/// Higher VIP levels (VIP4+) get access to:
-/// - "books50-l2-tbt" channel (50 depth, 10ms updates).
-/// - "bbo-tbt" channel (1 depth, 10ms updates).
-///
-/// VIP5+ get access to:
+/// VIP4 and above get access to:
 /// - "books-l2-tbt" channel (400 depth, 10ms updates).
+/// - "books50-l2-tbt" channel (50 depth, 10ms updates).
 #[derive(
     Copy,
     Clone,
@@ -1215,11 +1194,11 @@ pub enum OKXVipLevel {
     #[serde(rename = "3")]
     #[strum(serialize = "3")]
     Vip3 = 3,
-    /// VIP level 4 (can access books50-l2-tbt channel).
+    /// VIP level 4 (can access books-l2-tbt and books50-l2-tbt channels).
     #[serde(rename = "4")]
     #[strum(serialize = "4")]
     Vip4 = 4,
-    /// VIP level 5 (can access books-l2-tbt channel).
+    /// VIP level 5.
     #[serde(rename = "5")]
     #[strum(serialize = "5")]
     Vip5 = 5,
@@ -1407,6 +1386,7 @@ pub enum OKXAlgoOrderType {
     Trigger,
     MoveOrderStop,
     Iceberg,
+    SmartIceberg,
     Twap,
     Chase,
     /// Forward-compatible fallback for algo order types OKX adds later.
@@ -1532,6 +1512,8 @@ pub enum OKXOrderCategory {
     Ddh,
     /// Event contract settlement fill.
     Delivery,
+    /// System-triggered asset conversion.
+    AutoConversion,
     /// Unknown or future category (graceful fallback).
     #[serde(other)]
     Other,
@@ -1615,8 +1597,10 @@ pub enum OKXPriceType {
     /// Standard price.
     Px,
     /// Price in USD.
+    #[serde(rename = "pxUsd")]
     Usd,
     /// Price in implied volatility.
+    #[serde(rename = "pxVol")]
     Vol,
 }
 

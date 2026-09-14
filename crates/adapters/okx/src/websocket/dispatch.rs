@@ -836,6 +836,7 @@ fn route_algo_order_message(
     if matches!(
         msg.ord_type,
         OKXAlgoOrderType::Iceberg
+            | OKXAlgoOrderType::SmartIceberg
             | OKXAlgoOrderType::Twap
             | OKXAlgoOrderType::Chase
             | OKXAlgoOrderType::Other

@@ -1467,11 +1467,14 @@ pub fn parse_algo_order_msg(
     instruments: &AHashMap<Ustr, InstrumentAny>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Option<ExecutionReport>> {
-    // Skip unsupported algo types (iceberg, twap, chase); their triggered child
-    // orders still arrive on the regular orders channel
+    // Skip unsupported algo types (iceberg, smart_iceberg, twap, chase); their
+    // triggered child orders still arrive on the regular orders channel
     if matches!(
         msg.ord_type,
-        OKXAlgoOrderType::Iceberg | OKXAlgoOrderType::Twap | OKXAlgoOrderType::Chase
+        OKXAlgoOrderType::Iceberg
+            | OKXAlgoOrderType::SmartIceberg
+            | OKXAlgoOrderType::Twap
+            | OKXAlgoOrderType::Chase
     ) {
         log::debug!("Skipping unsupported algo order type: {:?}", msg.ord_type);
         return Ok(None);

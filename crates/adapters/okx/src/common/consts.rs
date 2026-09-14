@@ -364,7 +364,7 @@ pub fn resolve_book_depth(raw_depth: usize) -> usize {
 pub(crate) fn select_book_channel(depth: usize, vip: OKXVipLevel) -> OKXBookChannel {
     match depth {
         50 if vip >= OKXVipLevel::Vip4 => OKXBookChannel::Books50L2Tbt,
-        0 | 400 if vip >= OKXVipLevel::Vip5 => OKXBookChannel::BookL2Tbt,
+        0 | 400 if vip >= OKXVipLevel::Vip4 => OKXBookChannel::BookL2Tbt,
         0 | 50 | 400 => OKXBookChannel::Book,
         _ => unreachable!("book depth must be resolved before channel selection"),
     }
@@ -378,11 +378,13 @@ mod tests {
 
     #[rstest]
     #[case::auto_default(0, OKXVipLevel::Vip0, OKXBookChannel::Book)]
-    #[case::auto_vip4(0, OKXVipLevel::Vip4, OKXBookChannel::Book)]
+    #[case::auto_vip3(0, OKXVipLevel::Vip3, OKXBookChannel::Book)]
+    #[case::auto_vip4(0, OKXVipLevel::Vip4, OKXBookChannel::BookL2Tbt)]
     #[case::auto_vip5(0, OKXVipLevel::Vip5, OKXBookChannel::BookL2Tbt)]
     #[case::depth_50_vip3(50, OKXVipLevel::Vip3, OKXBookChannel::Book)]
     #[case::depth_50_vip4(50, OKXVipLevel::Vip4, OKXBookChannel::Books50L2Tbt)]
-    #[case::depth_400_vip4(400, OKXVipLevel::Vip4, OKXBookChannel::Book)]
+    #[case::depth_400_vip3(400, OKXVipLevel::Vip3, OKXBookChannel::Book)]
+    #[case::depth_400_vip4(400, OKXVipLevel::Vip4, OKXBookChannel::BookL2Tbt)]
     #[case::depth_400_vip5(400, OKXVipLevel::Vip5, OKXBookChannel::BookL2Tbt)]
     fn test_select_book_channel(
         #[case] depth: usize,
