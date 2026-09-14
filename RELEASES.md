@@ -180,6 +180,7 @@ Released on TBD (UTC).
 - Fixed Hyperliquid shared REST quotas and WebSocket rate and capacity limits
 - Fixed Hyperliquid WebSocket post deadlines across queueing, transport writes, and replies
 - Fixed Hyperliquid reconciliation to fail closed on undecodable mass-status rows
+- Fixed Hyperliquid quote-denominated orders submitting quote amounts as base sizes
 - Fixed Kraken Futures silently returning partial catalogs when instrument precision is unsupported
 - Fixed Kraken Futures order-state convergence for unreported open orders and partial-fill cancels
 - Fixed Kraken Futures `iocWouldNotExecute` order outcomes staying ambiguous instead of rejecting
@@ -289,6 +290,7 @@ Released on TBD (UTC).
 - Updated managed GTD expiry guidance for cancel rejections, retries, and callback timing
 - Updated Bybit risk-events docs for split-settlement, dividend, and unrecognized exec types
 - Updated Hyperliquid guide for rejection events, price guard, and trigger-order resting
+- Updated Hyperliquid guide for quote-denominated quantities and orders-section scanning
 - Restructured execution documentation around algorithms, policies, reconciliation, and live recovery
 - Standardized Rust documentation links and added offline link coverage
 - Standardized admonition severity levels to match the documented taxonomy

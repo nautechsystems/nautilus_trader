@@ -80,9 +80,10 @@ use nautilus_model::{
         AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderInitialized, OrderSubmitted,
     },
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId, TraderId,
+        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
         VenueOrderId,
     },
+    instruments::{CryptoPerpetual, InstrumentAny},
     orders::{LimitOrder, MarketOrder, Order, OrderAny, OrderList, StopMarketOrder},
     reports::OrderStatusReport,
     types::{AccountBalance, Currency, Money, Price, Quantity},
@@ -2119,6 +2120,42 @@ async fn test_ws_submit_orders_does_not_cache_cloids_when_later_order_fails_conv
     assert!(
         signer
             .cached_client_order_id_cloid(&invalid_order.client_order_id())
+            .is_none()
+    );
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_ws_submit_orders_denies_quote_quantity() {
+    // The raw WebSocket batch path converts each OrderAny directly, so a
+    // quote-denominated quantity must fail locally before any conversion.
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let signer = create_test_trade_signer(addr).await;
+
+    let ws_client = HyperliquidWebSocketClient::new(
+        Some(format!("ws://{addr}/ws")),
+        HyperliquidEnvironment::Mainnet,
+        None,
+        TransportBackend::default(),
+        None,
+    );
+    let quote_order =
+        make_quote_quantity_limit_order("O-WS-SUBMIT-LIST-QUOTE", OrderSide::Buy, "100");
+
+    let err = ws_client
+        .submit_orders(&signer, &[&quote_order])
+        .await
+        .expect_err("quote-denominated order must be denied locally");
+
+    assert_eq!(
+        err.to_string(),
+        "bad request: Quote-denominated quantity order O-WS-SUBMIT-LIST-QUOTE must submit \
+         through the execution client for quote-to-base conversion"
+    );
+    assert!(
+        signer
+            .cached_client_order_id_cloid(&quote_order.client_order_id())
             .is_none()
     );
 }
@@ -4966,6 +5003,58 @@ fn make_market_order(id: &str) -> OrderAny {
     ))
 }
 
+fn make_quote_quantity_limit_order(id: &str, order_side: OrderSide, quantity: &str) -> OrderAny {
+    OrderAny::Limit(LimitOrder::new(
+        TraderId::from("TESTER-001"),
+        StrategyId::from("S-001"),
+        InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT),
+        ClientOrderId::from(id),
+        order_side,
+        Quantity::from(quantity),
+        Price::from("56730.0"),
+        TimeInForce::Gtc,
+        None,
+        false,
+        false,
+        true, // quote_quantity
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    ))
+}
+
+fn add_test_perp_instrument_to_cache(cache: &Rc<RefCell<Cache>>) {
+    let ts = UnixNanos::default();
+    let instrument = InstrumentAny::CryptoPerpetual(
+        CryptoPerpetual::builder()
+            .instrument_id(InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT))
+            .raw_symbol(Symbol::new("BTC"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USD())
+            .settlement_currency(Currency::USD())
+            .is_inverse(false)
+            .price_precision(2)
+            .size_precision(5)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00001"))
+            .ts_event(ts)
+            .ts_init(ts)
+            .build()
+            .unwrap(),
+    );
+    cache.borrow_mut().add_instrument(instrument).unwrap();
+}
+
 fn make_submit_cmd(order: &OrderAny) -> SubmitOrder {
     SubmitOrder::from_order(
         order,
@@ -5611,6 +5700,373 @@ async fn test_submit_order_market_no_quote_emits_denied() {
     assert_eq!(
         events[0].1,
         "MARKET_PRICE_UNAVAILABLE: order_type=MARKET, instrument_id=BTC-USD-PERP.HYPERLIQUID"
+    );
+    assert_eq!(*exchange_count.lock().await, 0);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::buy_converts_at_ask(OrderSide::Buy, "100", "0.00398")]
+#[case::sell_converts_at_bid(OrderSide::Sell, "100", "0.004")]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_submit_order_quote_quantity_converts_size_from_cached_quote(
+    #[case] order_side: OrderSide,
+    #[case] quantity: &str,
+    #[case] expected_size: &str,
+) {
+    // Hyperliquid takes a base `s` for every order, so an unconverted quote
+    // amount would rest on the venue as that many base units (100 USDC
+    // resting as 100 BTC).
+    let state = TestServerState::default();
+    let last_action = state.last_exchange_action.clone();
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    add_test_perp_instrument_to_cache(&cache);
+    let instrument_id = InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT);
+
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from("25000.0"), // bid
+        Price::from("25100.0"), // ask
+        Quantity::from("1.0"),
+        Quantity::from("1.0"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    cache.borrow_mut().add_quote(quote).unwrap();
+
+    let order = make_quote_quantity_limit_order("O-QUOTE-QTY", order_side, quantity);
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client.submit_order(make_submit_cmd(&order)).unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let action = last_action
+        .lock()
+        .await
+        .clone()
+        .expect("an order action should have been sent");
+    let size = action["orders"][0]["s"]
+        .as_str()
+        .expect("size field on order action");
+    assert_eq!(size, expected_size);
+
+    // Quote-quantity orders keep flowing through the untracked dispatch path:
+    // venue fills arrive in base units, so no context may be registered.
+    let denied = drain_denied_events(&mut rx, Duration::from_millis(250)).await;
+    assert!(denied.is_empty(), "unexpected denial: {denied:?}");
+    assert!(
+        client
+            .ws_dispatch_state()
+            .lookup_context(&order.client_order_id())
+            .is_none()
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_submit_order_quote_quantity_no_quote_emits_denied() {
+    // Without a cached quote there is no reference price to convert with, and
+    // the client must deny rather than let the quote amount rest as a base size.
+    let state = TestServerState::default();
+    let exchange_count = state.exchange_request_count.clone();
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    add_test_perp_instrument_to_cache(&cache);
+
+    let order = make_quote_quantity_limit_order("O-QUOTE-NO-QTY", OrderSide::Buy, "100");
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client.submit_order(make_submit_cmd(&order)).unwrap();
+
+    let events = drain_denied_events(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].0, order.client_order_id());
+    assert_eq!(
+        events[0].1,
+        "MARKET_PRICE_UNAVAILABLE: order_type=LIMIT, instrument_id=BTC-USD-PERP.HYPERLIQUID"
+    );
+    assert_eq!(*exchange_count.lock().await, 0);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_submit_order_quote_quantity_no_instrument_emits_denied() {
+    // The conversion rounds to the instrument's size precision, so a missing
+    // instrument cannot produce a venue-valid base size either.
+    let state = TestServerState::default();
+    let exchange_count = state.exchange_request_count.clone();
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let instrument_id = InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT);
+
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from("25000.0"),
+        Price::from("25100.0"),
+        Quantity::from("1.0"),
+        Quantity::from("1.0"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    cache.borrow_mut().add_quote(quote).unwrap();
+
+    let order = make_quote_quantity_limit_order("O-QUOTE-NO-INST", OrderSide::Buy, "100");
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client.submit_order(make_submit_cmd(&order)).unwrap();
+
+    let events = drain_denied_events(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].0, order.client_order_id());
+    assert_eq!(
+        events[0].1,
+        "INSTRUMENT_NOT_FOUND: BTC-USD-PERP.HYPERLIQUID"
+    );
+    assert_eq!(*exchange_count.lock().await, 0);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_submit_order_list_quote_quantity_converts_size_from_cached_quote() {
+    // The order-list path builds requests through `order_request`, a separate
+    // call site from `submit_order`, so it must convert as well.
+    let state = TestServerState::default();
+    let last_action = state.last_exchange_action.clone();
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    add_test_perp_instrument_to_cache(&cache);
+    let instrument_id = InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT);
+
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from("25000.0"), // bid
+        Price::from("25100.0"), // ask
+        Quantity::from("1.0"),
+        Quantity::from("1.0"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    cache.borrow_mut().add_quote(quote).unwrap();
+
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("S-001");
+    let cid = ClientOrderId::new("O-QUOTE-LIST");
+
+    let order = make_quote_quantity_limit_order(cid.as_str(), OrderSide::Buy, "100");
+    let init = order.init_event().clone();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    let order_list = OrderList::new(
+        OrderListId::from("quote-qty-list"),
+        instrument_id,
+        strategy_id,
+        vec![cid],
+        UnixNanos::default(),
+    );
+
+    let cmd = SubmitOrderList::new(
+        trader_id,
+        Some(*HYPERLIQUID_CLIENT_ID),
+        strategy_id,
+        order_list,
+        vec![init],
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None, // correlation_id
+    );
+
+    client.submit_order_list(cmd).unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let action = last_action
+        .lock()
+        .await
+        .clone()
+        .expect("an order action should have been sent");
+    let size = action["orders"][0]["s"]
+        .as_str()
+        .expect("size field on order action");
+    assert_eq!(size, "0.00398");
+
+    let denied = drain_denied_events(&mut rx, Duration::from_millis(250)).await;
+    assert!(denied.is_empty(), "unexpected denial: {denied:?}");
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_submit_order_quote_quantity_zero_converted_size_emits_denied() {
+    // A quote amount smaller than one size increment at the conversion price
+    // rounds to a zero base size: submitting `s: 0` can never be valid, so the
+    // client must deny locally with a clear reason.
+    let state = TestServerState::default();
+    let exchange_count = state.exchange_request_count.clone();
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    add_test_perp_instrument_to_cache(&cache);
+    let instrument_id = InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT);
+
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from("25000.0"),
+        Price::from("25100.0"),
+        Quantity::from("1.0"),
+        Quantity::from("1.0"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    cache.borrow_mut().add_quote(quote).unwrap();
+
+    let order = make_quote_quantity_limit_order("O-QUOTE-ZERO", OrderSide::Buy, "0.1");
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client.submit_order(make_submit_cmd(&order)).unwrap();
+
+    let events = drain_denied_events(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].0, order.client_order_id());
+    assert_eq!(
+        events[0].1,
+        "VALIDATION_FAILED: Quote-denominated quantity 0.1 converts to a zero base size at the instrument size precision"
+    );
+    assert_eq!(*exchange_count.lock().await, 0);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_submit_order_quote_quantity_zero_price_quote_emits_denied() {
+    // A degenerate cached quote with a zero side price cannot convert; the
+    // conversion failure must surface as a local denial, never a raw size.
+    let state = TestServerState::default();
+    let exchange_count = state.exchange_request_count.clone();
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    add_test_perp_instrument_to_cache(&cache);
+    let instrument_id = InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT);
+
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from("0.0"),
+        Price::from("0.0"),
+        Quantity::from("1.0"),
+        Quantity::from("1.0"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    cache.borrow_mut().add_quote(quote).unwrap();
+
+    let order = make_quote_quantity_limit_order("O-QUOTE-ZERO-PX", OrderSide::Buy, "100");
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client.submit_order(make_submit_cmd(&order)).unwrap();
+
+    let events = drain_denied_events(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].0, order.client_order_id());
+    assert_eq!(
+        events[0].1,
+        "VALIDATION_FAILED: Quote-denominated quantity conversion failed: `last_price` was zero when calculating base quantity"
+    );
+    assert_eq!(*exchange_count.lock().await, 0);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_modify_order_quote_quantity_emits_rejected() {
+    // A modify replaces a base-denominated size, which a quote target cannot
+    // reconcile against, so the modify must be rejected locally.
+    let state = TestServerState::default();
+    let exchange_count = state.exchange_request_count.clone();
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let order = make_quote_quantity_limit_order("O-QUOTE-MODIFY", OrderSide::Buy, "100");
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .modify_order(make_modify_cmd(&order, Some(VenueOrderId::from("12345"))))
+        .unwrap();
+
+    let events = drain_modify_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(events.len(), 1, "expected one OrderModifyRejected");
+    assert_eq!(events[0].0, order.client_order_id());
+    assert_eq!(
+        events[0].1,
+        "quote-denominated quantity orders cannot be modified; cancel and resubmit"
     );
     assert_eq!(*exchange_count.lock().await, 0);
 

@@ -3415,7 +3415,20 @@ impl HyperliquidHttpClient {
     /// Submit an order using an OrderAny object.
     ///
     /// This is a convenience method that wraps submit_order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for quote-denominated quantities: this raw path has no
+    /// cached market data for a quote-to-base conversion, so the order must be
+    /// submitted through the execution client instead.
     pub async fn submit_order_from_order_any(&self, order: &OrderAny) -> Result<OrderStatusReport> {
+        if order.is_quote_quantity() {
+            return Err(Error::bad_request(
+                "Quote-denominated quantity orders must submit through the execution client \
+                 for quote-to-base conversion",
+            ));
+        }
+
         self.submit_order(
             order.instrument_id(),
             order.client_order_id(),
@@ -3488,13 +3501,23 @@ impl HyperliquidHttpClient {
     /// # Errors
     ///
     /// Returns an error if credentials are missing, order validation fails, serialization fails,
-    /// or the API returns an error.
+    /// or the API returns an error. Also returns an error for any quote-denominated quantity:
+    /// this raw path has no cached market data for a quote-to-base conversion, so such orders
+    /// must be submitted through the execution client instead.
     pub async fn submit_orders(&self, orders: &[&OrderAny]) -> Result<Vec<OrderStatusReport>> {
         // Convert orders using asset indices from the cached map
         let mut hyperliquid_orders = Vec::with_capacity(orders.len());
         let mut client_order_ids = Vec::with_capacity(orders.len());
 
         for order in orders {
+            if order.is_quote_quantity() {
+                return Err(Error::bad_request(format!(
+                    "Quote-denominated quantity order {} must submit through the execution \
+                     client for quote-to-base conversion",
+                    order.client_order_id()
+                )));
+            }
+
             let instrument_id = order.instrument_id();
             let symbol = instrument_id.symbol.inner();
             let asset = self.get_asset_index_for_symbol(symbol).ok_or_else(|| {

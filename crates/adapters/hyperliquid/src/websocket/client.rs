@@ -832,6 +832,12 @@ impl HyperliquidWebSocketClient {
     /// order. Deferred trigger children of a `normalTpsl` bracket are absent
     /// from the result; they stay `SUBMITTED` until the user-events stream
     /// delivers an `OrderAccepted` with the real oid.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for any quote-denominated quantity: this raw path has
+    /// no cached market data for a quote-to-base conversion, so such orders
+    /// must be submitted through the execution client instead.
     pub async fn submit_orders(
         &self,
         signer: &HyperliquidHttpClient,
@@ -841,6 +847,14 @@ impl HyperliquidWebSocketClient {
         let mut client_order_ids = Vec::with_capacity(orders.len());
 
         for order in orders {
+            if order.is_quote_quantity() {
+                return Err(HyperliquidError::bad_request(format!(
+                    "Quote-denominated quantity order {} must submit through the execution \
+                     client for quote-to-base conversion",
+                    order.client_order_id()
+                )));
+            }
+
             let instrument_id = order.instrument_id();
             let symbol = instrument_id.symbol.inner();
             let asset = signer.get_asset_index_for_symbol(symbol).ok_or_else(|| {

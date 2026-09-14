@@ -1111,6 +1111,152 @@ async fn test_submit_order_resolves_outcome_response_instrument() {
 
 #[rstest]
 #[tokio::test]
+async fn test_submit_order_from_order_any_denies_quote_quantity() {
+    // The raw HTTP path has no cached market data to convert with, so a
+    // quote-denominated OrderAny must fail locally. The client targets the
+    // mock server so the test stays hermetic even without the guard.
+    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_model::{
+        enums::OrderSide,
+        identifiers::{StrategyId, TraderId},
+        orders::{LimitOrder, OrderAny},
+        types::{Price, Quantity},
+    };
+
+    let state = TestServerState::default();
+    let request_count = state.request_count.clone();
+    let addr = start_mock_server(state).await;
+
+    let mut client = HyperliquidHttpClient::from_credentials(
+        "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        None,
+        HyperliquidEnvironment::Mainnet,
+        60,
+        None,
+    )
+    .unwrap();
+    client.set_base_info_url(format!("http://{addr}/info"));
+    client.set_base_exchange_url(format!("http://{addr}/exchange"));
+    client.set_account_id(AccountId::new("HYPERLIQUID-001"));
+
+    let order = OrderAny::Limit(LimitOrder::new(
+        TraderId::from("TESTER-001"),
+        StrategyId::from("S-001"),
+        InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"),
+        ClientOrderId::new("O-QUOTE-RAW-HTTP"),
+        OrderSide::Buy,
+        Quantity::from("100"),
+        Price::from("56730.0"),
+        TimeInForce::Gtc,
+        None,
+        false,
+        false,
+        true, // quote_quantity
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    ));
+
+    let err = client
+        .submit_order_from_order_any(&order)
+        .await
+        .expect_err("quote-denominated order must be denied locally");
+    assert_eq!(
+        err.to_string(),
+        "bad request: Quote-denominated quantity orders must submit through the execution client \
+         for quote-to-base conversion"
+    );
+    assert_eq!(*request_count.lock().await, 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_orders_denies_quote_quantity() {
+    // The batch path converts each OrderAny directly, so one quote-denominated
+    // quantity must fail the whole batch locally.
+    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_model::{
+        enums::OrderSide,
+        identifiers::{StrategyId, TraderId},
+        orders::{LimitOrder, OrderAny},
+        types::{Price, Quantity},
+    };
+
+    fn make_limit(id: &str, quote_quantity: bool) -> OrderAny {
+        OrderAny::Limit(LimitOrder::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("S-001"),
+            InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"),
+            ClientOrderId::new(id),
+            OrderSide::Buy,
+            Quantity::from("100"),
+            Price::from("56730.0"),
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            quote_quantity,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        ))
+    }
+
+    let state = TestServerState::default();
+    let request_count = state.request_count.clone();
+    let addr = start_mock_server(state).await;
+
+    let mut client = HyperliquidHttpClient::from_credentials(
+        "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        None,
+        HyperliquidEnvironment::Mainnet,
+        60,
+        None,
+    )
+    .unwrap();
+    client.set_base_info_url(format!("http://{addr}/info"));
+    client.set_base_exchange_url(format!("http://{addr}/exchange"));
+    client.set_account_id(AccountId::new("HYPERLIQUID-001"));
+
+    let orders = [
+        make_limit("O-BATCH-QUOTE", true),
+        make_limit("O-BATCH-BASE", false),
+    ];
+
+    let err = client
+        .submit_orders(&orders.iter().collect::<Vec<_>>())
+        .await
+        .expect_err("quote-denominated order must be denied locally");
+    assert_eq!(
+        err.to_string(),
+        "bad request: Quote-denominated quantity order O-BATCH-QUOTE must submit through the \
+         execution client for quote-to-base conversion"
+    );
+    assert_eq!(*request_count.lock().await, 0);
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_submit_orders_resolves_outcome_response_instrument() {
     // Mirror of `test_submit_order_resolves_outcome_response_instrument` for
     // the batch path. `submit_orders` runs the same alias derivation in a

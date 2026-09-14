@@ -504,7 +504,9 @@ impl HyperliquidHttpClient {
     /// # Errors
     ///
     /// Returns an error if credentials are missing, order validation fails, serialization fails,
-    /// or the API returns an error.
+    /// or the API returns an error. Also returns an error for any quote-denominated quantity:
+    /// this raw path has no cached market data for a quote-to-base conversion, so such orders
+    /// must be submitted through the execution client instead.
     #[pyo3(name = "submit_orders")]
     fn py_submit_orders<'py>(
         &self,

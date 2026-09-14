@@ -57,6 +57,7 @@ use nautilus_model::{
     types::{AccountBalance, MarginBalance, Quantity},
 };
 use parking_lot::Mutex;
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
@@ -182,6 +183,13 @@ impl HyperliquidExecutionClient {
         )?;
         request.cloid = Some(cloid);
 
+        if let Some(base_size) = self
+            .quote_converted_size(order)
+            .map_err(|reason| anyhow::anyhow!("{reason}"))?
+        {
+            request.size = base_size;
+        }
+
         // Market orders need a limit price derived from the cached quote,
         // leaving the conversion's zero placeholder when none is cached.
         if order.order_type() == OrderType::Market {
@@ -200,6 +208,51 @@ impl HyperliquidExecutionClient {
         }
 
         Ok(request)
+    }
+
+    // Hyperliquid accepts only base-denominated sizes on the wire, so a quote
+    // amount must convert (or deny) before it can reach the venue.
+    fn quote_converted_size(&self, order: &OrderAny) -> Result<Option<Decimal>, OrderDeniedReason> {
+        if !order.is_quote_quantity() {
+            return Ok(None);
+        }
+
+        let instrument_id = order.instrument_id();
+        let cache = self.core.cache();
+
+        let Some(instrument) = cache.instrument(&instrument_id) else {
+            return Err(OrderDeniedReason::InstrumentNotFound { instrument_id });
+        };
+
+        let Some(quote) = cache.quote(&instrument_id) else {
+            return Err(OrderDeniedReason::MarketPriceUnavailable {
+                order_type: order.order_type(),
+                instrument_id,
+            });
+        };
+
+        let reference_price = if order.order_side() == OrderSide::Buy {
+            quote.ask_price
+        } else {
+            quote.bid_price
+        };
+
+        let base_size = instrument
+            .try_calculate_base_quantity(order.quantity(), reference_price)
+            .map_err(|e| OrderDeniedReason::ValidationFailed {
+                detail: format!("Quote-denominated quantity conversion failed: {e}"),
+            })?;
+
+        if base_size.is_zero() {
+            return Err(OrderDeniedReason::ValidationFailed {
+                detail: format!(
+                    "Quote-denominated quantity {} converts to a zero base size at the instrument size precision",
+                    order.quantity()
+                ),
+            });
+        }
+
+        Ok(Some(base_size.as_decimal().normalize()))
     }
 
     fn restore_staged_brackets(&self) -> Vec<ClientOrderId> {
@@ -839,6 +892,15 @@ impl ExecutionClient for HyperliquidExecutionClient {
             .unwrap_or_else(|| Cloid::from_client_order_id(order.client_order_id()));
         hyperliquid_order.cloid = Some(cloid);
 
+        match self.quote_converted_size(&order) {
+            Ok(Some(base_size)) => hyperliquid_order.size = base_size,
+            Ok(None) => {}
+            Err(reason) => {
+                self.emitter.emit_order_denied(&order, &reason.to_string());
+                return Ok(());
+            }
+        }
+
         if order.order_type() == OrderType::Market {
             let instrument_id = order.instrument_id();
             let cache = self.core.cache();
@@ -1135,6 +1197,24 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let symbol = cmd.instrument_id.symbol.inner();
         let should_normalize = self.config.normalize_prices;
         let slippage_bps = self.resolve_slippage_bps(cmd.params.as_ref());
+
+        // A modify replaces a base-denominated size, and a quote target cannot
+        // be reconciled against the venue's base-denominated fill reports.
+        if order.is_quote_quantity() {
+            let reason =
+                "quote-denominated quantity orders cannot be modified; cancel and resubmit";
+            log::warn!("Cannot modify order {client_order_id}: {reason}");
+            self.emitter.emit_order_modify_rejected_event(
+                cmd.strategy_id,
+                cmd.instrument_id,
+                client_order_id,
+                venue_order_id,
+                reason,
+                self.clock.get_time_ns(),
+            );
+            return Ok(());
+        }
+
         let modify_target = match http_client.unique_cached_client_order_id_cloid(&client_order_id)
         {
             Some(cloid) => HyperliquidExchangeModifyTarget::Cloid(cloid),
