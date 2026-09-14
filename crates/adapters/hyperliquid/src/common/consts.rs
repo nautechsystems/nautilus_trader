@@ -139,6 +139,17 @@ pub const RECONNECT_MAX_BACKOFF: Duration = Duration::from_secs(30);
 pub const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 pub const QUEUE_MAX: usize = 1000;
 
+// Post-reconnect reconciliation
+// The venue returns its full recent history either way, so the lookback is a
+// client-side filter: a wide window costs no extra weight and covers a reconnect
+// that backed off for minutes, while duplicate fills are dropped by trade id.
+pub const RECONNECT_RECONCILE_LOOKBACK: Duration = Duration::from_secs(300);
+// A sweep costs up to 240 of the 1200/min IP weight budget (userFills and
+// historicalOrders are 20 each plus 1 per 20 rows, capped at 2000 rows), so a
+// flapping socket must not sweep more than three times a minute.
+pub const RECONNECT_RECONCILE_MIN_INTERVAL: Duration = Duration::from_secs(20);
+pub const RECONNECT_RECONCILE_ATTEMPTS: u32 = 4;
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
