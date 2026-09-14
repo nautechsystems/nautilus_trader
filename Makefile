@@ -1384,7 +1384,7 @@ pytest-doctest: build-debug  #-- Run supported Python doctests
 .PHONY: pytest-memray
 pytest-memray: build-debug  #-- Run Python memory leak tests with Memray
 	$(info $(M) Running Python memory leak tests...)
-	$Q cd python && $(PYTHON_TEST_ENV) VIRTUAL_ENV= uv run --no-sync pytest -qq -rfE memray_tests/
+	$Q cd python && $(PYTHON_TEST_ENV) VIRTUAL_ENV= uv run --no-sync pytest -qq -rfE tests/memleak/
 
 .PHONY: ty
 ty: build-debug  #-- Type-check Python examples

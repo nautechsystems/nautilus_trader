@@ -20,12 +20,12 @@ import gc
 import weakref
 
 import pytest
-from tests.unit.test_component_ownership import OwnershipActor
-from tests.unit.test_component_ownership import OwnershipExecutionAlgorithm
-from tests.unit.test_component_ownership import OwnershipStrategy
 
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
+from tests.unit.test_component_ownership import OwnershipActor
+from tests.unit.test_component_ownership import OwnershipExecutionAlgorithm
+from tests.unit.test_component_ownership import OwnershipStrategy
 
 
 pytest.importorskip("pytest_memray")

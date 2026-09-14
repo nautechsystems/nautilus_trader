@@ -182,14 +182,14 @@ class Consumer(Strategy):
         self.shutdown_system("Quote received")
 
 
-def build_node(factory=Factory, config=None) -> object:
+def build_node(factory=Factory, config=None, *, timeout_connection=2) -> object:
     """
     Build a data-only node using the supplied factory and config.
     """
     return (
         LiveNode.builder("PYTHON", TraderId("PYTHON-001"), Environment.SANDBOX)
         .with_reconciliation(False)
-        .with_timeout_connection(2)
+        .with_timeout_connection(timeout_connection)
         .with_timeout_portfolio(0)
         .with_delay_post_stop_secs(0)
         .with_timeout_disconnection_secs(1)
@@ -1663,7 +1663,7 @@ def test_failed_lifecycle_releases_background_tasks_and_cache(operation, launch)
             clients.append(client)
             return client
 
-    node = build_node(FailingFactory)
+    node = build_node(FailingFactory, timeout_connection=1)
     node.add_strategy(Consumer())
 
     async def hosted():

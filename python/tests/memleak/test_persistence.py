@@ -19,10 +19,10 @@ Test retained allocations from persistence query workloads.
 import gc
 
 import pytest
-from tests.stubs import TestDataProviderPyo3
 
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.persistence import ParquetDataCatalog
+from tests.stubs import TestDataProviderPyo3
 
 
 pytest.importorskip("pytest_memray")

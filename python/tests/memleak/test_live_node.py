@@ -21,8 +21,6 @@ import gc
 import weakref
 
 import pytest
-from tests.unit.test_component_ownership import OwnershipExecutionAlgorithm
-from tests.unit.test_component_ownership import OwnershipStrategy
 
 from nautilus_trader.common import Environment
 from nautilus_trader.config import ImportableActorConfig
@@ -32,6 +30,8 @@ from nautilus_trader.config import LoggerConfig
 from nautilus_trader.live import LiveNode
 from nautilus_trader.live import NodeState
 from nautilus_trader.model import TraderId
+from tests.unit.test_component_ownership import OwnershipExecutionAlgorithm
+from tests.unit.test_component_ownership import OwnershipStrategy
 
 
 pytest.importorskip("pytest_memray")

@@ -83,8 +83,7 @@ def check(root: Path) -> list[str]:
     Check test directories and the tail of Rust files containing a test module.
     """
     paths = sorted((root / "crates").rglob("*.rs"))
-    for directory in ("tests", "memray_tests"):
-        paths.extend(sorted((root / "python" / directory).rglob("*.py")))
+    paths.extend(sorted((root / "python" / "tests").rglob("*.py")))
     errors = []
     for path in paths:
         relative = path.relative_to(root)

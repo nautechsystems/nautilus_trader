@@ -25,6 +25,7 @@ import pytest
 import nautilus_trader.live as live  # noqa: PLR0402 - Load the Python package; the root attribute can refer to the native module.
 
 
+@pytest.fixture(scope="module")
 def stub_classes() -> dict[str, ast.ClassDef]:
     """
     Read generated class definitions from the installed public module.
@@ -101,12 +102,12 @@ def stub_classes() -> dict[str, ast.ClassDef]:
         "UnsubscribeTrades",
     ],
 )
-def test_adapter_stub_names_and_properties_match_runtime(name: str) -> None:
+def test_adapter_stub_names_and_properties_match_runtime(name: str, stub_classes) -> None:
     """
     Expose the runtime name and every native getter as a stub property.
     """
     runtime = getattr(live, name)
-    classes = stub_classes()
+    classes = stub_classes
     assert name in classes
     assert "Py" + name not in classes
     stub = classes[name]
@@ -126,7 +127,7 @@ def test_adapter_stub_names_and_properties_match_runtime(name: str) -> None:
 
 
 @pytest.mark.parametrize("name", ["DataClientConfig", "ExecutionClientConfig"])
-def test_client_config_constructor_stub_preserves_subclass(name: str) -> None:
+def test_client_config_constructor_stub_preserves_subclass(name: str, stub_classes) -> None:
     """
     Describe the subclass returned by the runtime constructor.
     """
@@ -137,7 +138,7 @@ def test_client_config_constructor_stub_preserves_subclass(name: str) -> None:
 
     constructor = next(
         node
-        for node in stub_classes()[name].body
+        for node in stub_classes[name].body
         if isinstance(node, ast.FunctionDef) and node.name == "__new__"
     )
 
@@ -145,13 +146,13 @@ def test_client_config_constructor_stub_preserves_subclass(name: str) -> None:
     assert ast.unparse(constructor.returns) == "typing.Self"
 
 
-def test_live_node_run_stub_matches_runtime_arguments() -> None:
+def test_live_node_run_stub_matches_runtime_arguments(stub_classes) -> None:
     """
     Keep the existing no-argument run method consistent for static callers.
     """
     method = next(
         node
-        for node in stub_classes()["LiveNode"].body
+        for node in stub_classes["LiveNode"].body
         if isinstance(node, ast.FunctionDef) and node.name == "run"
     )
     arguments = method.args.posonlyargs + method.args.args + method.args.kwonlyargs

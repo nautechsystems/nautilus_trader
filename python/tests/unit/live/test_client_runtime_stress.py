@@ -14,6 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 """
 Stress task ownership across seeded cancellation and repeated lifetimes.
+
+Pass --client-runtime-stress to exercise the full lifetime workload.
+
 """
 
 import asyncio
@@ -29,12 +32,13 @@ from nautilus_trader._libnautilus.live import _ClientRuntime as ClientRuntime
 @pytest.mark.parametrize("seed", range(4))
 @pytest.mark.parametrize("loop_kind", ["asyncio", "uvloop"])
 @pytest.mark.parametrize("eager", [False, True])
-def test_seeded_runtime_lifetimes(seed, loop_kind, eager, native_log) -> None:
+def test_seeded_runtime_lifetimes(seed, loop_kind, eager, native_log, request) -> None:
     """
     Release every owner after varied cancellation schedules on the supported loops.
     """
     runner = asyncio.run if loop_kind == "asyncio" else pytest.importorskip("uvloop").run
-    runner(exercise_lifetimes(seed, eager, 8))
+    repetitions = 8 if request.config.getoption("--client-runtime-stress") else 2
+    runner(exercise_lifetimes(seed, eager, repetitions))
 
 
 async def exercise_lifetimes(seed: int, eager: bool, repetitions: int) -> None:

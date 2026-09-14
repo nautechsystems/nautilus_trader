@@ -20,9 +20,6 @@ import gc
 import weakref
 
 import pytest
-from tests.providers import TestInstrumentProvider
-from tests.strategies.backtest_surface import QuoteCountActor
-from tests.strategies.backtest_surface import QuoteCountActorConfig
 
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
@@ -34,6 +31,9 @@ from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import QuoteTick
 from nautilus_trader.model import Venue
+from tests.providers import TestInstrumentProvider
+from tests.strategies.backtest_surface import QuoteCountActor
+from tests.strategies.backtest_surface import QuoteCountActorConfig
 
 
 pytest.importorskip("pytest_memray")

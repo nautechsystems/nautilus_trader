@@ -28,4 +28,4 @@ uv run --project "$project_dir" --no-sync python -c "$distribution_probe"
 uv run --project "$project_dir" --no-sync python -m pytest \
   --rootdir="$project_dir" \
   --doctest-modules \
-  --pyargs "$@"
+  --pyargs "$@" -qq -rfE

@@ -396,12 +396,6 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
   "TC001",
   "TC003",
 ] # Root-relative form used by repository-wide checks
-"memray_tests/**/*.py" = [
-  "S101",
-] # Memory tests use assertions like the main test suite
-"python/memray_tests/**/*.py" = [
-  "S101",
-] # Root-relative form used by repository-wide checks
 "tests/unit/persistence/test_option_greeks_replay.py" = ["ERA001"]
 "python/tests/unit/persistence/test_option_greeks_replay.py" = [
   "ERA001",

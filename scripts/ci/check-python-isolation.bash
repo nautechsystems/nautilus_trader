@@ -45,7 +45,7 @@ if [ "$#" -eq 0 ]; then
   set -- "$pkg_dir_native/tests/"
 fi
 uv run --project "$project_dir_native" --no-sync python -m pytest \
-  --import-mode=importlib --rootdir="$pkg_dir_native" "$@" -v
+  --import-mode=importlib --rootdir="$pkg_dir_native" "$@" -qq -rfE
 
 bash "$pkg_dir/../scripts/ci/test-python-doctests.bash" "$project_dir"
 cp -R "$pkg_dir/../examples" "$neutral_dir/examples"

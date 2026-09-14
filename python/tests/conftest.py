@@ -32,10 +32,25 @@ from nautilus_trader.model import TraderId
 from nautilus_trader.model import Venue
 
 
+# Run allocation tracking separately with make pytest-memray
+collect_ignore = ["memleak"]
+
+
 # Add tests/ to sys.path so test strategies are importable by the engine
 _TESTS_DIR = Path(__file__).resolve().parent
 if str(_TESTS_DIR) not in sys.path:
     sys.path.insert(0, str(_TESTS_DIR))
+
+
+def pytest_addoption(parser) -> None:
+    """
+    Expose the extended client runtime stress workload.
+    """
+    parser.addoption(
+        "--client-runtime-stress",
+        action="store_true",
+        help="Run eight lifetimes per client runtime stress case instead of two",
+    )
 
 
 @pytest.fixture(scope="session", autouse=True)

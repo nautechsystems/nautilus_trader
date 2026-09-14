@@ -108,7 +108,7 @@ def _pickle_quotes(runs: int) -> int:
 
     for ts in range(runs):
         quote = _quote(ts)
-        restored = pickle.loads(pickle.dumps(quote))  # noqa: S301 (trusted test data)
+        restored = pickle.loads(pickle.dumps(quote))
 
         assert restored == quote
         last_ts = restored.ts_init
