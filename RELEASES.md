@@ -70,7 +70,7 @@ Released on TBD (UTC).
 - Changed Rust `ExecutionClientFactory::create` to require the node's clock after the cache argument
 - Changed Rust mixed-scale addition/subtraction to panic; use `checked_add`/`checked_sub` for fallible handling
 - Changed Rust `BinaryOption` constructors to require an `event_id` argument; pass `None` when unknown
-- Changed`OrderCanceled::new` to require an optional cancellation reason (#4903), thanks @folknor
+- Changed `OrderCanceled::new` to require an optional cancellation reason (#4903), thanks @folknor
 - Changed FFI `orderbook_deltas_is_snapshot` to use `F_SNAPSHOT` instead of the first delta action
 - Changed `PortfolioAnalyzer.realized_pnls()` to return records in ascending event-time order rather than position-derived records followed by recorded ones
 - Changed registered PnL statistics to run on every analyzed currency, including runs that closed no trades, where they receive an empty list; `Win Rate` and its peers now report NaN for such runs rather than being absent
@@ -230,11 +230,13 @@ Released on TBD (UTC).
 - Upgraded Rust (MSRV) to 1.98.1
 - Upgraded `cargo-hawk` tool to v0.1.14
 - Upgraded `cargo-llvm-cov` tool to v0.9.1
+- Upgraded `cargo-nextest` tool to v0.9.144
 - Upgraded `prek` tool to v0.5.2
-- Upgraded `uv` tool to v0.12.12
+- Upgraded `shfmt` pre-commit hook to v3.14.1
+- Upgraded `uv` tool to v0.12.13
 - Upgraded `typos` pre-commit hook to v1.50.1
 - Upgraded `zizmor` pre-commit hook to v1.30.1
-- Upgraded `alloy-primitives` crate to v1.7.2
+- Upgraded `alloy-primitives` crate to v1.7.3
 - Upgraded `flate2` crate to v1.1.10
 - Upgraded `indexmap` crate to v2.14.2
 - Upgraded `rcgen` crate to v0.14.10
@@ -244,15 +246,19 @@ Released on TBD (UTC).
 - Upgraded `databento` crate to v0.61.0
 - Upgraded `hypersync-client` crate to v1.4.1
 - Upgraded `redis` crate to v1.7.0
+- Upgraded `rstest` crate to v0.27.0
 - Upgraded `rust_decimal` crate to v1.43.0
 - Upgraded `rustls` crate to v0.23.44
 - Upgraded `smallvec` crate to v1.16.0
+- Upgraded `tabled` crate to v0.22.0
 - Upgraded `tokio-rustls` crate to v0.26.5
-- Upgraded `toml` crate to v1.1.5
+- Upgraded `toml` crate to v1.1.6
+- Upgraded `uuid` crate to v1.26.1
 - Upgraded `kaleido` package to v1.4.0
 - Upgraded `linkify-it-py` package to v2.2.0
+- Upgraded `numpy` package to v2.5.3
 - Upgraded `plotly` package to v7.0.0
-- Upgraded `ruff` package (dev) and pre-commit hook to v0.16.6
+- Upgraded `ruff` package (dev) and pre-commit hook to v0.16.7
 - Upgraded `simplejson` package to v4.1.2
 - Upgraded `ty` package (dev) to v0.0.78
 

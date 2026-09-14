@@ -141,6 +141,12 @@ criteria = "safe-to-deploy"
 delta = "1.7.1 -> 1.7.2"
 notes = "Reviewed the published crate delta. Facade and coordinated dependency metadata only."
 
+[[audits.alloy-core]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.7.2 -> 1.7.3"
+notes = "Version and changelog bump only for the coordinated alloy-core v1.7.3 release."
+
 [[audits.alloy-dyn-abi]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -158,6 +164,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.7.1 -> 1.7.2"
 notes = "Reviewed the published crate delta. Checked ABI head-size arithmetic and propagation of decoder configuration; malformed lengths return decoding errors."
+
+[[audits.alloy-dyn-abi]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.7.2 -> 1.7.3"
+notes = "cfg-gates the Arc deref impl behind target_has_atomic; no other changes."
 
 [[audits.alloy-eip2930]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -259,6 +271,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.7.1 -> 1.7.2"
 notes = "Reviewed the published crate delta. Coordinated version and release metadata only."
+
+[[audits.alloy-json-abi]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.7.2 -> 1.7.3"
+notes = "Version and changelog bump only for the coordinated alloy-core v1.7.3 release."
 
 [[audits.alloy-json-rpc]]
 who = "Chris Sellers <chris@cjdsellers.io>"
@@ -364,6 +382,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.7.1 -> 1.7.2"
 notes = "Reviewed the published crate delta. Adds optional PostgreSQL/sqlx trait implementations using existing checked decoding and database type conversions; these optional database features are not enabled by this workspace."
+
+[[audits.alloy-primitives]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.7.2 -> 1.7.3"
+notes = "Fixes the Signed overflowing_shl/shr overflow checks to use BITS instead of a hardcoded 256, with a regression test; no other source changes."
 
 [[audits.alloy-provider]]
 who = "Chris Sellers <chris@cjdsellers.io>"
@@ -586,6 +610,12 @@ criteria = "safe-to-deploy"
 delta = "1.7.1 -> 1.7.2"
 notes = "Reviewed the published crate delta. Coordinated version and release metadata only."
 
+[[audits.alloy-sol-macro]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.7.2 -> 1.7.3"
+notes = "Version and changelog bump only for the coordinated alloy-core v1.7.3 release."
+
 [[audits.alloy-sol-macro-expander]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -603,6 +633,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.7.1 -> 1.7.2"
 notes = "Reviewed the published crate delta. Propagates event decoder configuration and resource-budget failures through generated decoders."
+
+[[audits.alloy-sol-macro-expander]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.7.2 -> 1.7.3"
+notes = "Version and changelog bump only for the coordinated alloy-core v1.7.3 release."
 
 [[audits.alloy-sol-macro-input]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -622,6 +658,12 @@ criteria = "safe-to-deploy"
 delta = "1.7.1 -> 1.7.2"
 notes = "Reviewed the published crate delta. Coordinated version and release metadata only."
 
+[[audits.alloy-sol-macro-input]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.7.2 -> 1.7.3"
+notes = "Version and changelog bump only for the coordinated alloy-core v1.7.3 release."
+
 [[audits.alloy-sol-type-parser]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -640,6 +682,12 @@ criteria = "safe-to-deploy"
 delta = "1.7.1 -> 1.7.2"
 notes = "Reviewed the published crate delta. Coordinated version and release metadata only."
 
+[[audits.alloy-sol-type-parser]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.7.2 -> 1.7.3"
+notes = "Version and changelog bump only for the coordinated alloy-core v1.7.3 release."
+
 [[audits.alloy-sol-types]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -657,6 +705,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.7.1 -> 1.7.2"
 notes = "Reviewed the published crate delta. Reviews strict ABI offset, overlap, padding, trailing-data, boolean, and allocation-budget checks. Checked arithmetic bounds hostile lengths; dynamic zero-sized arrays consume the decode budget. Error payload previews are bounded. Existing permissive defaults remain."
+
+[[audits.alloy-sol-types]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.7.2 -> 1.7.3"
+notes = "Adds a validate_allow_trailing_bytes decoder config field defaulting to false; no unsafe or I/O changes."
 
 [[audits.alloy-transport]]
 who = "Chris Sellers <chris@cjdsellers.io>"
@@ -2612,6 +2666,18 @@ criteria = "safe-to-deploy"
 delta = "0.13.4 -> 0.13.5"
 notes = "Typed DNS error reporting, wasm referrer-policy mapping, and small client, body, proxy, and cookie fixes. No new endpoint, credential, process, or data-exfiltration behavior."
 
+[[audits.rstest]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.26.1 -> 0.27.0"
+notes = "Raises MSRV to 1.85, disables futures-util default features, and pins the matching macros; runtime source changes are documentation only."
+
+[[audits.rstest_macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.26.1 -> 0.27.0"
+notes = "Adds a build.rs that reads CARGO_ENCODED_RUSTFLAGS and the rustc channel to emit the use_proc_macro_diagnostic cfg; macro changes add doc-comment matrix test names, fix mut-argument tracing, and use fully qualified core imports."
+
 [[audits.ruint]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2798,6 +2864,12 @@ criteria = "safe-to-deploy"
 delta = "1.7.1 -> 1.7.2"
 notes = "Reviewed the published crate delta. Coordinated version and release metadata only."
 
+[[audits.syn-solidity]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.7.2 -> 1.7.3"
+notes = "Version and changelog bump only for the coordinated alloy-core v1.7.3 release."
+
 [[audits.sysinfo]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2821,6 +2893,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.20.0 -> 0.21.0"
 notes = "Adds Settings::modify, Color::is_empty, ColumnNames padding and RowNames split, LineText limit support, and table rendering fixes. Removes TabSize and adjusts Charset APIs. No new dependencies, build script, filesystem, network, process, or production unsafe code."
+
+[[audits.tabled]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.21.0 -> 0.22.0"
+notes = "Adds a SkipRows records iterator and CompactTable::skip; no unsafe, build, or I/O changes."
 
 [[audits.tempfile]]
 who = "Chris Sellers <chris@cjdsellers.io>"
@@ -2940,6 +3018,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.1.4+spec-1.1.0 -> 1.1.5+spec-1.1.0"
 notes = "Fixes ownership conversion for parsed integers and floats. Other changes are test data and documentation. No new unsafe, dependencies, build script, filesystem, network, process, or credential behavior."
+
+[[audits.toml]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.1.5+spec-1.1.0 -> 1.1.6+spec-1.1.0"
+notes = "Clone elision in the document parser key handling; no unsafe or API changes."
 
 [[audits.toml_edit]]
 who = "Nautech Systems <info@nautechsystems.io>"

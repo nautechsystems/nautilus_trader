@@ -1,6 +1,6 @@
 version = 1
 repository = "https://github.com/nautechsystems/nautilus_engineering"
-revision = "bd788080ff18e96bc6762cc2a1916221b7c6733d"
+revision = "77f2f9a59d7ee49ffa78802b9c97e1080d0658a1"
 manifest_sha256 = "591f89f0394dfd8a02a4c3bda884dbdc02298d2da3a1cb4861ed8d4c6d67e97e"
 marker_file = ".nautilus-engineering.syncing"
 profiles = ["sync"]
@@ -14,7 +14,7 @@ executable = false
 [[file]]
 artifact = "pre-commit-shell"
 path = ".nautilus-engineering/pre-commit/shell.yaml"
-sha256 = "a8aefc574b99250a8f5fd7a80699f931b9b8406f4f124df82bf35a331c77fed3"
+sha256 = "e7bc92530160b85a1774328d443ef46c5f706cf1cf2fedb0a75e89588c35453d"
 executable = false
 
 [[file]]
@@ -44,7 +44,7 @@ executable = false
 [[file]]
 artifact = "shared-tool-catalog"
 path = ".nautilus-engineering/tools.toml"
-sha256 = "468a01bfee5a534b6aa7145567dfe080db3b3b61e9751df304f84eab05d742d6"
+sha256 = "78f5abaa10eae4b77e38687406bfb9ddc2add5b48df5c1ed3ce08e5ffeaa564f"
 executable = false
 
 [[file]]
@@ -152,5 +152,5 @@ executable = true
 [[file]]
 artifact = "uv-version"
 path = "scripts/uv-version.sh"
-sha256 = "3e6bdef693d9788e84f8ce075f39e3af555e93ff2d8b680eaf423ee733bd540e"
+sha256 = "856dfcf3800d19e1a7dd5a0796b05491f2e0b1f90f2a941dbf4689abeb8265c1"
 executable = true

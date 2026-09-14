@@ -16,14 +16,14 @@ pre-commit-repository = "https://github.com/pre-commit/pre-commit-hooks"
 pre-commit-revision = "v{version}"
 
 [ruff]
-version = "0.16.6"
+version = "0.16.7"
 ci = true
 releases = "pypi:ruff"
 pre-commit-repository = "https://github.com/astral-sh/ruff-pre-commit"
 pre-commit-revision = "v{version}"
 
 [shfmt]
-version = "3.13.1"
+version = "3.14.1"
 ci = true
 releases = "github:mvdan/sh"
 pre-commit-repository = "https://github.com/scop/pre-commit-shfmt"
@@ -85,7 +85,7 @@ version = "0.9.1"
 releases = "crates:cargo-llvm-cov"
 
 [cargo-nextest]
-version = "0.9.143"
+version = "0.9.144"
 releases = "crates:cargo-nextest"
 
 [cargo-vet]
@@ -93,7 +93,7 @@ version = "0.10.2"
 releases = "crates:cargo-vet"
 
 [uv]
-version = "0.12.12"
+version = "0.12.13"
 releases = "pypi:uv"
 
 [pip-audit]

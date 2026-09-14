@@ -120,7 +120,7 @@ nautilus-tardis = { path = "crates/adapters/tardis", version = "0.64.0", default
 # - object_store must stay in line with datafusion (pre-1.0: minor bumps can break)
 # -----------------------------------------------------------------------------
 ahash = { version = "0.8.12", features = ["serde"] }
-alloy-primitives = { version = "1.7.2", default-features = false, features = [
+alloy-primitives = { version = "1.7.3", default-features = false, features = [
   "std",
   "serde",
 ] }
@@ -285,7 +285,7 @@ strum = { version = "0.28.0", features = ["derive"] }
 sysinfo = { version = "0.39.6", default-features = false, features = [
   "system",
 ] }
-tabled = { version = "0.21.0", default-features = false, features = ["std"] }
+tabled = { version = "0.22.0", default-features = false, features = ["std"] }
 thiserror = "2.0.20"
 tokio = { version = "1.53.1", default-features = false, features = [
   "parking_lot",
@@ -303,7 +303,7 @@ tokio-tungstenite = { version = "0.30.0", features = [
   "rustls-tls-webpki-roots",
 ] }
 tokio-util = { version = "0.7.19", default-features = false, features = ["io"] }
-toml = { version = "1.1.5", default-features = false, features = [
+toml = { version = "1.1.6", default-features = false, features = [
   "parse",
   "serde",
 ] }
@@ -321,7 +321,7 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 unbounded-interval-tree = { version = "1.1.2", default-features = false }
 url = { version = "2.5.8", default-features = false }
 ustr = { version = "1.1.0", features = ["serde"] }
-uuid = { version = "1.26.0", features = ["v4", "serde"] }
+uuid = { version = "1.26.1", features = ["v4", "serde"] }
 webpki-roots = "1.0.9"
 zeroize = { version = "1.9.0", features = ["alloc", "zeroize_derive"] }
 
@@ -377,7 +377,7 @@ rcgen = { version = "0.14.10", default-features = false, features = [
   "crypto",
   "pem",
 ] }
-rstest = { version = "0.26.1", default-features = false }
+rstest = { version = "0.27.0", default-features = false }
 tempfile = "3.27.0"
 turmoil = "0.7.2"
 
