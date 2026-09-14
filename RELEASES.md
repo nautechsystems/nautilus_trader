@@ -258,7 +258,7 @@ Released on 15th September 2026 (UTC).
 - Upgraded `redis` crate to v1.7.0
 - Upgraded `rstest` crate to v0.27.0
 - Upgraded `rust_decimal` crate to v1.43.0
-- Upgraded `rustls` crate to v0.23.44
+- Upgraded `rustls` crate to v0.23.45 (fixes RUSTSEC-2026-0285)
 - Upgraded `smallvec` crate to v1.16.0
 - Upgraded `tabled` crate to v0.22.0
 - Upgraded `tokio-rustls` crate to v0.26.5

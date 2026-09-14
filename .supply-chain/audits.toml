@@ -2708,6 +2708,12 @@ criteria = "safe-to-deploy"
 delta = "0.23.43 -> 0.23.44"
 notes = "Adds PQDSA signing key support to the aws-lc-rs provider and adjusts ECH and client-hello retry handling. Key material is parsed in-process from caller-supplied PKCS#8; no new network destination, process execution, credential disclosure, or data-exfiltration behavior."
 
+[[audits.rustls]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.23.44 -> 0.23.45"
+notes = "Reviewed the published Rust source and manifest delta. Fixes RUSTSEC-2026-0285 by rejecting pending handshake messages across key changes, tightens HelloRetryRequest validation, and zeroizes private key input after loading. No new dependencies or unsafe code."
+
 [[audits.rustls-native-certs]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"

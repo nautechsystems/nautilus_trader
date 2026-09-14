@@ -250,7 +250,7 @@ rmp-serde = "1.3.1"
 ruint = { version = "1.20.0", default-features = false }
 rust_decimal = { version = "1.43.0", features = ["serde-with-float"] }
 rust_decimal_macros = "1.40.0"
-rustls = { version = "0.23.44", default-features = false, features = [
+rustls = { version = "0.23.45", default-features = false, features = [
   "aws-lc-rs",
   "logging",
   "std",
@@ -414,6 +414,9 @@ store = { path = '.supply-chain' }
 # `exclude-newer` for Cargo. Enforced by scripts/check-cargo-cooldown.sh.
 [workspace.metadata.cooldown]
 days = 3
+
+[workspace.metadata.cooldown.allow]
+rustls = "0.23.45" # Fixes RUSTSEC-2026-0285
 
 # -----------------------------------------------------------------------------
 # Profiles
