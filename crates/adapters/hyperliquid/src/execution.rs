@@ -2322,6 +2322,17 @@ impl HyperliquidExecutionClient {
             // orphaned entries from growing unbounded.
             let mut pending_filled_cloids: FifoCache<ClientOrderId, 10_000> = FifoCache::new();
 
+            let report_ctx = ReportContext {
+                emitter,
+                dispatch_state,
+                staged_brackets,
+                ws_client: ws_client.clone(),
+                http_client,
+                builder,
+                clock,
+                session_spawner,
+            };
+
             loop {
                 let event = ws_client.next_event().await;
 
@@ -2329,165 +2340,11 @@ impl HyperliquidExecutionClient {
                     Some(msg) => match msg {
                         NautilusWsMessage::ExecutionReports(reports) => {
                             for report in reports {
-                                let staged_parent_fill = match &report {
-                                    ExecutionReport::Fill(report) => report.client_order_id,
-                                    ExecutionReport::Order(_) => None,
-                                };
-
-                                let staged_parent_terminal = match &report {
-                                    ExecutionReport::Order(report)
-                                        if matches!(
-                                            report.order_status,
-                                            OrderStatus::Canceled
-                                                | OrderStatus::Rejected
-                                                | OrderStatus::Expired
-                                        ) =>
-                                    {
-                                        report.client_order_id.map(|client_order_id| {
-                                            (client_order_id, report.ts_last)
-                                        })
-                                    }
-                                    _ => None,
-                                };
-
-                                let active_child_terminal = match &report {
-                                    ExecutionReport::Order(report)
-                                        if matches!(
-                                            report.order_status,
-                                            OrderStatus::Filled
-                                                | OrderStatus::Canceled
-                                                | OrderStatus::Rejected
-                                                | OrderStatus::Expired
-                                        ) =>
-                                    {
-                                        report.client_order_id
-                                    }
-                                    ExecutionReport::Fill(report) => {
-                                        report.client_order_id.filter(|client_order_id| {
-                                            let Some(context) =
-                                                dispatch_state.lookup_context(client_order_id)
-                                            else {
-                                                return false;
-                                            };
-                                            let previous = dispatch_state
-                                                .previous_filled_qty(client_order_id)
-                                                .unwrap_or_else(|| {
-                                                    Quantity::zero(report.last_qty.precision)
-                                                });
-                                            previous + report.last_qty >= context.quantity
-                                        })
-                                    }
-                                    _ => None,
-                                };
-
-                                let active_child_fill = match &report {
-                                    ExecutionReport::Fill(report) => {
-                                        report.client_order_id.and_then(|client_order_id| {
-                                            dispatch_state.lookup_context(&client_order_id).map(
-                                                |context| {
-                                                    (
-                                                        client_order_id,
-                                                        dispatch_state
-                                                            .previous_filled_qty(&client_order_id)
-                                                            .unwrap_or_else(|| {
-                                                                Quantity::zero(
-                                                                    report.last_qty.precision,
-                                                                )
-                                                            }),
-                                                        context.quantity,
-                                                    )
-                                                },
-                                            )
-                                        })
-                                    }
-                                    ExecutionReport::Order(_) => None,
-                                };
-
-                                if let Some((cid, oid, order)) = handle_execution_report(
+                                process_execution_report(
                                     report,
-                                    &dispatch_state,
-                                    &emitter,
-                                    &ws_client,
-                                    &http_client,
+                                    &report_ctx,
                                     &mut pending_filled_cloids,
-                                    clock.get_time_ns(),
-                                ) {
-                                    spawn_corrective_reduce(
-                                        &ws_client,
-                                        &http_client,
-                                        &dispatch_state,
-                                        cid,
-                                        oid,
-                                        order,
-                                        &session_spawner,
-                                    );
-                                }
-
-                                if let Some(parent_id) = staged_parent_fill
-                                    && let Some(children) =
-                                        staged_brackets.lock().activate(&parent_id)
-                                {
-                                    spawn_staged_children(
-                                        children,
-                                        &emitter,
-                                        &ws_client,
-                                        &http_client,
-                                        dispatch_state.clone(),
-                                        staged_brackets.clone(),
-                                        builder.clone(),
-                                        clock,
-                                        &session_spawner,
-                                    );
-                                }
-
-                                if let Some((parent_id, ts_event)) = staged_parent_terminal {
-                                    let children =
-                                        staged_brackets.lock().cancel_for_parent(&parent_id);
-
-                                    for child in children {
-                                        emitter.emit_order_canceled(&child, None, ts_event);
-                                    }
-                                }
-
-                                if let Some((client_order_id, previous, quantity)) =
-                                    active_child_fill
-                                    && let Some(cumulative) =
-                                        dispatch_state.previous_filled_qty(&client_order_id)
-                                    && cumulative > previous
-                                    && cumulative < quantity
-                                {
-                                    let sibling =
-                                        staged_brackets.lock().active_sibling(&client_order_id);
-
-                                    if let Some(sibling) = sibling {
-                                        spawn_active_sibling_resize(
-                                            sibling,
-                                            quantity - cumulative,
-                                            &emitter,
-                                            &ws_client,
-                                            &http_client,
-                                            &dispatch_state,
-                                            &session_spawner,
-                                        );
-                                    }
-                                }
-
-                                if let Some(client_order_id) = active_child_terminal {
-                                    let sibling = staged_brackets
-                                        .lock()
-                                        .take_active_sibling(&client_order_id);
-
-                                    if let Some(sibling) = sibling {
-                                        spawn_active_sibling_cancel(
-                                            sibling,
-                                            &emitter,
-                                            &ws_client,
-                                            &http_client,
-                                            &dispatch_state,
-                                            &session_spawner,
-                                        );
-                                    }
-                                }
+                                );
                             }
                         }
                         NautilusWsMessage::Reconnected => {
@@ -3522,6 +3379,189 @@ impl PostRejectionRoute {
             self.ws_client.remove_cloid_mapping(cloid_hex);
             self.http_client
                 .remove_client_order_id_cloid(&client_order_id);
+        }
+    }
+}
+
+/// Handles required to turn an execution report into engine events.
+///
+/// Shared by the live stream loop and the post-reconnect reconciliation so both
+/// run the identical per-report path.
+struct ReportContext {
+    emitter: ExecutionEventEmitter,
+    dispatch_state: Arc<WsDispatchState>,
+    staged_brackets: Arc<Mutex<StagedBracketState>>,
+    ws_client: HyperliquidWebSocketClient,
+    http_client: HyperliquidHttpClient,
+    builder: Option<crate::http::models::HyperliquidExchangeBuilderFee>,
+    clock: &'static AtomicTime,
+    session_spawner: TaskSpawner,
+}
+
+/// Applies one execution report: typed events, staged brackets, and the
+/// corrective actions their outcomes queue.
+fn process_execution_report(
+    report: ExecutionReport,
+    ctx: &ReportContext,
+    pending_filled_cloids: &mut FifoCache<ClientOrderId, 10_000>,
+) {
+    let staged_parent_fill = match &report {
+        ExecutionReport::Fill(report) => report.client_order_id,
+        ExecutionReport::Order(_) => None,
+    };
+
+    let staged_parent_terminal = match &report {
+        ExecutionReport::Order(report)
+            if matches!(
+                report.order_status,
+                OrderStatus::Canceled
+                    | OrderStatus::Rejected
+                    | OrderStatus::Expired
+            ) =>
+        {
+            report.client_order_id.map(|client_order_id| {
+                (client_order_id, report.ts_last)
+            })
+        }
+        _ => None,
+    };
+
+    let active_child_terminal = match &report {
+        ExecutionReport::Order(report)
+            if matches!(
+                report.order_status,
+                OrderStatus::Filled
+                    | OrderStatus::Canceled
+                    | OrderStatus::Rejected
+                    | OrderStatus::Expired
+            ) =>
+        {
+            report.client_order_id
+        }
+        ExecutionReport::Fill(report) => {
+            report.client_order_id.filter(|client_order_id| {
+                let Some(context) =
+                    ctx.dispatch_state.lookup_context(client_order_id)
+                else {
+                    return false;
+                };
+                let previous = ctx.dispatch_state
+                    .previous_filled_qty(client_order_id)
+                    .unwrap_or_else(|| {
+                        Quantity::zero(report.last_qty.precision)
+                    });
+                previous + report.last_qty >= context.quantity
+            })
+        }
+        _ => None,
+    };
+
+    let active_child_fill = match &report {
+        ExecutionReport::Fill(report) => {
+            report.client_order_id.and_then(|client_order_id| {
+                ctx.dispatch_state.lookup_context(&client_order_id).map(
+                    |context| {
+                        (
+                            client_order_id,
+                            ctx.dispatch_state
+                                .previous_filled_qty(&client_order_id)
+                                .unwrap_or_else(|| {
+                                    Quantity::zero(
+                                        report.last_qty.precision,
+                                    )
+                                }),
+                            context.quantity,
+                        )
+                    },
+                )
+            })
+        }
+        ExecutionReport::Order(_) => None,
+    };
+
+    if let Some((cid, oid, order)) = handle_execution_report(
+        report,
+        &ctx.dispatch_state,
+        &ctx.emitter,
+        &ctx.ws_client,
+        &ctx.http_client,
+        pending_filled_cloids,
+        ctx.clock.get_time_ns(),
+    ) {
+        spawn_corrective_reduce(
+            &ctx.ws_client,
+            &ctx.http_client,
+            &ctx.dispatch_state,
+            cid,
+            oid,
+            order,
+            &ctx.session_spawner,
+        );
+    }
+
+    if let Some(parent_id) = staged_parent_fill
+        && let Some(children) =
+            ctx.staged_brackets.lock().activate(&parent_id)
+    {
+        spawn_staged_children(
+            children,
+            &ctx.emitter,
+            &ctx.ws_client,
+            &ctx.http_client,
+            ctx.dispatch_state.clone(),
+            ctx.staged_brackets.clone(),
+            ctx.builder.clone(),
+            ctx.clock,
+            &ctx.session_spawner,
+        );
+    }
+
+    if let Some((parent_id, ts_event)) = staged_parent_terminal {
+        let children =
+            ctx.staged_brackets.lock().cancel_for_parent(&parent_id);
+
+        for child in children {
+            ctx.emitter.emit_order_canceled(&child, None, ts_event);
+        }
+    }
+
+    if let Some((client_order_id, previous, quantity)) =
+        active_child_fill
+        && let Some(cumulative) =
+            ctx.dispatch_state.previous_filled_qty(&client_order_id)
+        && cumulative > previous
+        && cumulative < quantity
+    {
+        let sibling =
+            ctx.staged_brackets.lock().active_sibling(&client_order_id);
+
+        if let Some(sibling) = sibling {
+            spawn_active_sibling_resize(
+                sibling,
+                quantity - cumulative,
+                &ctx.emitter,
+                &ctx.ws_client,
+                &ctx.http_client,
+                &ctx.dispatch_state,
+                &ctx.session_spawner,
+            );
+        }
+    }
+
+    if let Some(client_order_id) = active_child_terminal {
+        let sibling = ctx.staged_brackets
+            .lock()
+            .take_active_sibling(&client_order_id);
+
+        if let Some(sibling) = sibling {
+            spawn_active_sibling_cancel(
+                sibling,
+                &ctx.emitter,
+                &ctx.ws_client,
+                &ctx.http_client,
+                &ctx.dispatch_state,
+                &ctx.session_spawner,
+            );
         }
     }
 }
