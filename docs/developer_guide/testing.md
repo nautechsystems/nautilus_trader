@@ -284,8 +284,6 @@ Prefer hand-written stubs that return fixed values over mocking frameworks. Use 
 
 ## Code coverage
 
-We generate coverage reports with `coverage` and publish them to [codecov](https://about.codecov.io/).
-
 Aim for high coverage without sacrificing appropriate error handling or causing "test induced damage" to the architecture.
 
 Some branches remain untestable without modifying production behavior.

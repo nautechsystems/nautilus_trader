@@ -133,7 +133,6 @@ env/
 !scripts/crate-test-features.sh
 !scripts/curate-dataset.sh
 !scripts/doc-changed.sh
-!scripts/find-replace.sh
 !scripts/install-capnp.sh
 !scripts/install-osv-scanner.sh
 !scripts/package-version.sh
