@@ -1861,7 +1861,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_dispatch_corporate_action_execution_emits_only_fill_report() {
+    #[case::corporate_action("CorporateAction")]
+    #[case::forward_split_settle("ForwardSplitSettle")]
+    #[case::reverse_split_settle("ReverseSplitSettle")]
+    #[case::dividend("Dividend")]
+    #[case::unrecognized("StockMerger")]
+    fn test_dispatch_venue_initiated_execution_emits_only_fill_report(#[case] exec_type: &str) {
         let instrument = linear_instrument();
         let instruments = build_instruments(std::slice::from_ref(&instrument));
         let (emitter, mut rx) = create_emitter();
@@ -1870,13 +1875,11 @@ mod tests {
 
         let json = load_test_json("ws_account_execution_adl.json");
         let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
-        value["data"][0]["execType"] = serde_json::Value::String("CorporateAction".to_string());
+        value["data"][0]["execType"] = serde_json::Value::String(exec_type.to_string());
         let msg: crate::websocket::messages::BybitWsAccountExecutionMsg =
             serde_json::from_value(value).unwrap();
         let execution = &msg.data[0];
 
-        assert_eq!(execution.exec_type, BybitExecType::CorporateAction);
-        assert!(execution.exec_type.is_exchange_generated());
         assert!(execution.order_link_id.is_empty());
 
         dispatch_ws_message(

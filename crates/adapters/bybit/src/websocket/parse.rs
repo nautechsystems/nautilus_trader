@@ -1492,6 +1492,36 @@ mod tests {
     }
 
     #[rstest]
+    #[case::forward_split_settle("ForwardSplitSettle", BybitExecType::ForwardSplitSettle)]
+    #[case::reverse_split_settle("ReverseSplitSettle", BybitExecType::ReverseSplitSettle)]
+    #[case::dividend("Dividend", BybitExecType::Dividend)]
+    fn parse_ws_exchange_generated_execution_into_fill_report(
+        #[case] exec_type: &str,
+        #[case] expected: BybitExecType,
+    ) {
+        let instrument = linear_instrument();
+        let json = load_test_json("ws_account_execution_adl.json");
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        value["data"][0]["execType"] = serde_json::json!(exec_type);
+        let msg: crate::websocket::messages::BybitWsAccountExecutionMsg =
+            serde_json::from_value(value).unwrap();
+        let execution = &msg.data[0];
+        let account_id = AccountId::new("BYBIT-001");
+
+        assert_eq!(execution.exec_type, expected);
+        assert!(execution.exec_type.is_exchange_generated());
+        assert!(execution.order_link_id.is_empty());
+
+        let report = parse_ws_fill_report(execution, account_id, &instrument, TS).unwrap();
+
+        assert_eq!(report.client_order_id, None);
+        assert_eq!(
+            report.venue_order_id.to_string(),
+            "9aac161b-8ed6-450d-9cab-c5cc67c21785"
+        );
+    }
+
+    #[rstest]
     fn parse_ws_fill_report_venue_position_id_is_none() {
         let instrument = linear_instrument();
         let json = load_test_json("ws_account_execution.json");
@@ -1613,6 +1643,22 @@ mod tests {
             matches!(frame, BybitWsFrame::AccountExecution(_)),
             "expected AccountExecution, found {frame:?}",
         );
+    }
+
+    #[rstest]
+    fn parse_bybit_ws_frame_unrecognized_exec_type_still_routes_execution() {
+        let json = load_test_json("ws_account_execution_adl.json");
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        value["data"][0]["execType"] = serde_json::json!("StockMerger");
+
+        let frame = parse_bybit_ws_frame(value);
+
+        match frame {
+            BybitWsFrame::AccountExecution(msg) => {
+                assert_eq!(msg.data[0].exec_type, BybitExecType::Unknown);
+            }
+            other => panic!("Expected AccountExecution, found {other:?}"),
+        }
     }
 
     #[rstest]

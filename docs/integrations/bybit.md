@@ -332,7 +332,13 @@ Bybit emits venue-initiated fills with `execType` set to:
   position after margin was exhausted.
 - `Delivery`: USDC futures delivery.
 - `Settle`: Inverse futures settlement.
-- `CorporateAction`: Stock split or reverse stock split.
+- `ForwardSplitSettle`: Forward stock split fractional share settlement.
+- `ReverseSplitSettle`: Reverse stock split fractional share settlement.
+- `Dividend`: Dividend distribution.
+
+The venue previously issued `CorporateAction` for stock splits and reverse splits. The adapter
+still accepts it in execution history recorded before its replacement by the settle and dividend
+types above.
 
 The adapter flags each as exchange-generated and logs a warning containing the
 execution ID, symbol, side, quantity, and price. Fills flow through the normal
@@ -340,6 +346,9 @@ execution ID, symbol, side, quantity, and price. Fills flow through the normal
 execution engine treats them as external and assigns them through the
 instrument's active external order claim, configured initially with
 `external_order_instrument_ids`, or to the `EXTERNAL` strategy by default.
+
+Execution types the adapter does not recognize are handled as `UNKNOWN` rather than rejected, so
+future venue additions still flow through the fill path instead of being dropped.
 
 Funding settlements use `execType=Funding`, but they are balance adjustments rather than fills.
 The adapter ignores them in historical fill reports and standard private `execution` messages, so

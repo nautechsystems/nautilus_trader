@@ -171,6 +171,7 @@ Released on TBD (UTC).
 - Fixed Bybit funding settlements being treated as fills (#4937), thanks for reporting @luk911
 - Fixed Bybit incorrect book quotes and zero sizes from deleted levels, thanks for reporting @xsidorov
 - Fixed Bybit quote and book cleanup after unsubscribe or subscription failure, thanks for reporting @xsidorov
+- Fixed Bybit REST and WebSocket executions dropping split-settlement, dividend, and unrecognized exec types
 - Fixed Derive accepting trade amounts that convert to zero-sized fills
 - Fixed Derive order queries without venue order IDs (#4958), thanks for reporting @Aviksaikat
 - Fixed Hyperliquid shared REST quotas and WebSocket rate and capacity limits
@@ -281,6 +282,7 @@ Released on TBD (UTC).
 - Updated migration guidance for order books and instrument inspection
 - Updated Makefile help output to match the startup log header
 - Updated managed GTD expiry guidance for cancel rejections, retries, and callback timing
+- Updated Bybit risk-events docs for split-settlement, dividend, and unrecognized exec types
 - Updated Hyperliquid guide for rejection events, price guard, and trigger-order resting
 - Restructured execution documentation around algorithms, policies, reconciliation, and live recovery
 - Standardized Rust documentation links and added offline link coverage

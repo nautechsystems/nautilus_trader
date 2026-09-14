@@ -911,8 +911,18 @@ pub enum BybitExecType {
     BlockTrade,
     #[serde(rename = "MovePosition")]
     MovePosition,
+    /// Retained for execution history recorded while the venue issued this type
+    /// (2026-07-23 to 2026-08-20), before its replacement by the split settlement
+    /// and dividend types.
     #[serde(rename = "CorporateAction")]
     CorporateAction,
+    #[serde(rename = "ForwardSplitSettle")]
+    ForwardSplitSettle,
+    #[serde(rename = "ReverseSplitSettle")]
+    ReverseSplitSettle,
+    #[serde(rename = "Dividend")]
+    Dividend,
+    #[serde(other)]
     #[serde(rename = "UNKNOWN")]
     Unknown,
 }
@@ -922,7 +932,7 @@ impl BybitExecType {
     ///
     /// This covers auto-deleveraging (`AdlTrade`), liquidation takeovers (`BustTrade`),
     /// scheduled deliveries (`Delivery`), settlement (`Settle`), and corporate actions
-    /// (`CorporateAction`).
+    /// (`CorporateAction`, `ForwardSplitSettle`, `ReverseSplitSettle`, `Dividend`).
     #[must_use]
     pub const fn is_exchange_generated(&self) -> bool {
         matches!(
@@ -932,6 +942,9 @@ impl BybitExecType {
                 | Self::Delivery
                 | Self::Settle
                 | Self::CorporateAction
+                | Self::ForwardSplitSettle
+                | Self::ReverseSplitSettle
+                | Self::Dividend
         )
     }
 }
@@ -1202,11 +1215,48 @@ mod tests {
     #[case(BybitExecType::BlockTrade, false)]
     #[case(BybitExecType::MovePosition, false)]
     #[case(BybitExecType::CorporateAction, true)]
+    #[case(BybitExecType::ForwardSplitSettle, true)]
+    #[case(BybitExecType::ReverseSplitSettle, true)]
+    #[case(BybitExecType::Dividend, true)]
     #[case(BybitExecType::Unknown, false)]
     fn test_exec_type_is_exchange_generated(
         #[case] exec_type: BybitExecType,
         #[case] expected: bool,
     ) {
         assert_eq!(exec_type.is_exchange_generated(), expected);
+    }
+
+    #[rstest]
+    #[case(BybitExecType::Trade, "Trade")]
+    #[case(BybitExecType::AdlTrade, "AdlTrade")]
+    #[case(BybitExecType::Funding, "Funding")]
+    #[case(BybitExecType::BustTrade, "BustTrade")]
+    #[case(BybitExecType::Delivery, "Delivery")]
+    #[case(BybitExecType::Settle, "Settle")]
+    #[case(BybitExecType::BlockTrade, "BlockTrade")]
+    #[case(BybitExecType::MovePosition, "MovePosition")]
+    #[case(BybitExecType::CorporateAction, "CorporateAction")]
+    #[case(BybitExecType::ForwardSplitSettle, "ForwardSplitSettle")]
+    #[case(BybitExecType::ReverseSplitSettle, "ReverseSplitSettle")]
+    #[case(BybitExecType::Dividend, "Dividend")]
+    #[case(BybitExecType::Unknown, "UNKNOWN")]
+    fn test_exec_type_round_trip(#[case] exec_type: BybitExecType, #[case] wire_value: &str) {
+        let value = serde_json::Value::String(wire_value.to_string());
+
+        assert_eq!(
+            serde_json::from_value::<BybitExecType>(value.clone()).unwrap(),
+            exec_type
+        );
+        assert_eq!(serde_json::to_value(exec_type).unwrap(), value);
+    }
+
+    #[rstest]
+    fn test_exec_type_unrecognized_value_deserializes_to_unknown() {
+        let value = serde_json::Value::String("StockMerger".to_string());
+
+        assert_eq!(
+            serde_json::from_value::<BybitExecType>(value).unwrap(),
+            BybitExecType::Unknown
+        );
     }
 }
