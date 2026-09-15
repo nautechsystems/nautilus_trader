@@ -20,7 +20,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
@@ -66,8 +66,7 @@ use crate::{
         consts::{
             HYPERLIQUID_BUILDER_APPROVAL_DOCS_URL, HYPERLIQUID_BUILDER_FEE_NOT_APPROVED,
             HYPERLIQUID_POST_ONLY_WOULD_MATCH, HYPERLIQUID_VENUE, RECONNECT_BASE_BACKOFF,
-            RECONNECT_MAX_BACKOFF, RECONNECT_RECONCILE_ATTEMPTS, RECONNECT_RECONCILE_LOOKBACK,
-            RECONNECT_RECONCILE_MIN_INTERVAL,
+            RECONNECT_MAX_BACKOFF, RECONNECT_RECONCILE_LOOKBACK, RECONNECT_RECONCILE_MIN_INTERVAL,
         },
         credential::Secrets,
         enums::HyperliquidProductType,
@@ -86,7 +85,8 @@ use crate::{
             HyperliquidExchangeCancelByCloidRequest, HyperliquidExchangeCancelOrderRequest,
             HyperliquidExchangeGrouping, HyperliquidExchangeModifyOrderRequest,
             HyperliquidExchangeModifyTarget, HyperliquidExchangeOrderKind,
-            HyperliquidExchangePlaceOrderRequest, HyperliquidExchangeTpSl, SpotClearinghouseState,
+            HyperliquidExchangePlaceOrderRequest, HyperliquidExchangeTpSl, HyperliquidFill,
+            HyperliquidOrderStatusEntry, SpotClearinghouseState,
         },
         parse::derive_outcome_settlements,
     },
@@ -102,6 +102,7 @@ use crate::{
 };
 
 const TASK_SHUTDOWN_DENIAL_REASON: &str = "Hyperliquid execution client is shutting down";
+const RECONNECT_USER_FILLS_HISTORY_LIMIT: usize = 10_000;
 
 #[derive(Debug)]
 pub struct HyperliquidExecutionClient {
@@ -2285,6 +2286,7 @@ impl HyperliquidExecutionClient {
             ws_client.cache_instrument(instrument);
         }
 
+        ws_client.reset_disconnect_tracking();
         ws_client.connect().await?;
         if let Err(e) = ws_client
             .subscribe_order_updates(&subscription_address)
@@ -2322,6 +2324,7 @@ impl HyperliquidExecutionClient {
             subscription_address.clone(),
             reconnect_rx,
             reconciled_tx,
+            self.clock,
         ))?;
 
         self.session_tasks.spawn(async move {
@@ -2380,7 +2383,16 @@ impl HyperliquidExecutionClient {
                             // resubscribing to orderUpdates and userEvents replays no
                             // snapshot, so anything that happened while the socket was
                             // down needs a REST sweep to reach the engine
-                            if reconnect_tx.send(clock.get_time_ns()).is_err() {
+                            let outage = ws_client
+                                .take_disconnect_duration()
+                                .and_then(|duration| DurationNanos::try_from(duration).ok())
+                                .unwrap_or_default();
+                            let lookback =
+                                DurationNanos::from_secs(RECONNECT_RECONCILE_LOOKBACK.as_secs())
+                                    .max(outage);
+                            let window_start = clock.get_time_ns().saturating_sub(lookback);
+
+                            if reconnect_tx.send(window_start).is_err() {
                                 log::warn!(
                                     "Reconnect reconciliation stopped, gap will not be repaired"
                                 );
@@ -3419,15 +3431,8 @@ impl PostRejectionRoute {
     }
 }
 
-/// Repairs execution state after the WebSocket reconnects.
-///
-/// Hyperliquid sends no snapshot when `orderUpdates` and `userEvents` are
-/// resubscribed, so an accept, cancel or fill that lands while the socket is
-/// down is never delivered. One REST sweep per reconnect closes that gap.
-///
-/// Fetching runs here rather than in the stream loop so live events keep
-/// draining while the sweep is in flight; the selected reports go back to the
-/// loop because applying them mutates its loop-local cloid bookkeeping.
+// Fetches reconnect history away from the stream loop, then returns selected
+// reports to that loop because applying them mutates its CLOID bookkeeping.
 async fn run_reconnect_reconciliation(
     http_client: HyperliquidHttpClient,
     ws_client: HyperliquidWebSocketClient,
@@ -3435,14 +3440,12 @@ async fn run_reconnect_reconciliation(
     account_address: String,
     mut reconnect_rx: tokio::sync::mpsc::UnboundedReceiver<UnixNanos>,
     reconciled_tx: tokio::sync::mpsc::UnboundedSender<Vec<ExecutionReport>>,
+    clock: &'static AtomicTime,
 ) {
     let mut last_sweep: Option<Instant> = None;
 
-    while let Some(mut reconnect_ns) = reconnect_rx.recv().await {
-        // one sweep per burst, so a flapping socket cannot stack sweeps
-        while let Ok(ns) = reconnect_rx.try_recv() {
-            reconnect_ns = ns;
-        }
+    while let Some(window_start) = reconnect_rx.recv().await {
+        let window_start = coalesce_reconnect_window(window_start, &mut reconnect_rx);
 
         if let Some(elapsed) = last_sweep.map(|last| last.elapsed())
             && elapsed < RECONNECT_RECONCILE_MIN_INTERVAL
@@ -3452,17 +3455,23 @@ async fn run_reconnect_reconciliation(
             tokio::time::sleep(RECONNECT_RECONCILE_MIN_INTERVAL.saturating_sub(elapsed)).await;
         }
 
-        let Some((fills, orders)) = fetch_reconnect_reports(&http_client, &account_address).await
-        else {
-            continue;
-        };
-        last_sweep = Some(Instant::now());
+        // A queued subscribe command does not close the REST/stream cutover gap.
+        // Wait for both execution subscription acknowledgements before taking
+        // the snapshot which will bridge into the resumed stream.
+        while !ws_client.execution_subscriptions_confirmed(&account_address) {
+            tokio::time::sleep(RECONNECT_BASE_BACKOFF).await;
+        }
 
-        let window_start = reconnect_ns.saturating_sub(DurationNanos::from_secs(
-            RECONNECT_RECONCILE_LOOKBACK.as_secs(),
-        ));
-        let reports =
-            select_reconcile_reports(fills, orders, &ws_client, &dispatch_state, window_start);
+        let reports = fetch_reconnect_reports(
+            &http_client,
+            &ws_client,
+            &dispatch_state,
+            &account_address,
+            window_start,
+            clock,
+        )
+        .await;
+        last_sweep = Some(Instant::now());
 
         if reports.is_empty() {
             continue;
@@ -3480,112 +3489,276 @@ async fn run_reconnect_reconciliation(
     }
 }
 
-/// Fetches the fill and historical order snapshots for one sweep.
-///
-/// Either request fails whole when a single venue row cannot be decoded or
-/// resolved to an instrument, so a transient failure is retried with backoff
-/// rather than left to the next reconnect.
-async fn fetch_reconnect_reports(
-    http_client: &HyperliquidHttpClient,
-    account_address: &str,
-) -> Option<(Vec<FillReport>, Vec<OrderStatusReport>)> {
-    let mut backoff = RECONNECT_BASE_BACKOFF;
-
-    for attempt in 1..=RECONNECT_RECONCILE_ATTEMPTS {
-        let (fills, orders) = tokio::join!(
-            http_client.request_fill_reports(account_address, None),
-            http_client.request_historical_order_status_reports(account_address, None),
-        );
-
-        match (fills, orders) {
-            (Ok(fills), Ok(orders)) => return Some((fills, orders)),
-            (Err(e), _) | (_, Err(e)) => log::warn!(
-                "Post-reconnect reconciliation attempt {attempt}/{RECONNECT_RECONCILE_ATTEMPTS} failed: {e}"
-            ),
-        }
-
-        if attempt < RECONNECT_RECONCILE_ATTEMPTS {
-            tokio::time::sleep(backoff).await;
-            backoff = (backoff * 2).min(RECONNECT_MAX_BACKOFF);
-        }
+fn coalesce_reconnect_window(
+    mut window_start: UnixNanos,
+    reconnect_rx: &mut tokio::sync::mpsc::UnboundedReceiver<UnixNanos>,
+) -> UnixNanos {
+    while let Ok(queued_start) = reconnect_rx.try_recv() {
+        window_start = window_start.min(queued_start);
     }
 
-    log::error!("Post-reconnect reconciliation exhausted retries, gap remains unrepaired");
-
-    None
+    window_start
 }
 
-/// Selects the reports worth replaying after a reconnect.
-///
-/// Keeps only reports inside the reconnect window that belong to an order this
-/// client tracks, so history never creates an external order, and places fills
-/// ahead of order statuses: a status-only `FILLED` marker defers its cloid
-/// eviction until the matching fill arrives, so the reverse order would evict
-/// the mapping while the fill still needs it.
-fn select_reconcile_reports(
-    fills: Vec<FillReport>,
-    orders: Vec<OrderStatusReport>,
+async fn fetch_reconnect_reports(
+    http_client: &HyperliquidHttpClient,
     ws_client: &HyperliquidWebSocketClient,
     dispatch_state: &WsDispatchState,
+    account_address: &str,
     window_start: UnixNanos,
+    clock: &'static AtomicTime,
 ) -> Vec<ExecutionReport> {
-    let mut reports = Vec::new();
+    let mut backoff = RECONNECT_BASE_BACKOFF;
+    let mut attempt = 1_u64;
 
-    for mut fill in fills {
-        if fill.ts_event < window_start {
+    loop {
+        let window_end = clock.get_time_ns();
+        let (fills, orders) = tokio::join!(
+            fetch_reconnect_fills(http_client, account_address, window_start, window_end),
+            http_client.info_historical_orders(account_address),
+        );
+
+        let result = match (fills, orders) {
+            (Ok(fills), Ok(orders)) => {
+                get_reconnect_reports(
+                    fills,
+                    orders,
+                    http_client,
+                    ws_client,
+                    dispatch_state,
+                    account_address,
+                    window_start,
+                )
+                .await
+            }
+            (Err(e), _) => Err(e),
+            (_, Err(e)) => Err(anyhow::Error::new(e)),
+        };
+
+        match result {
+            Ok(reports) => return reports,
+            Err(e) => {
+                log::warn!("Post-reconnect reconciliation attempt {attempt} failed: {e}; retrying");
+            }
+        }
+
+        tokio::time::sleep(backoff).await;
+        backoff = (backoff * 2).min(RECONNECT_MAX_BACKOFF);
+        attempt = attempt.saturating_add(1);
+    }
+}
+
+async fn fetch_reconnect_fills(
+    http_client: &HyperliquidHttpClient,
+    account_address: &str,
+    window_start: UnixNanos,
+    window_end: UnixNanos,
+) -> anyhow::Result<Vec<HyperliquidFill>> {
+    let start_ms = window_start.as_millis();
+    let mut end_ms = window_end.as_millis();
+    let mut fills = Vec::new();
+
+    loop {
+        let page = http_client
+            .info_user_fills_by_time(account_address, start_ms, end_ms)
+            .await
+            .context("failed to fetch time-bounded fills")?;
+
+        if page.is_empty() {
+            break;
+        }
+
+        let oldest_timestamp = page
+            .iter()
+            .map(|fill| fill.time)
+            .min()
+            .context("non-empty fill page had no timestamp")?;
+        fills.extend(page);
+
+        if oldest_timestamp <= start_ms {
+            break;
+        }
+
+        if fills.len() >= RECONNECT_USER_FILLS_HISTORY_LIMIT {
+            fills.truncate(RECONNECT_USER_FILLS_HISTORY_LIMIT);
+            log::error!(
+                "Post-reconnect fill history reached the venue's {RECONNECT_USER_FILLS_HISTORY_LIMIT}-fill availability limit"
+            );
+            break;
+        }
+
+        let next_end = oldest_timestamp - 1;
+        if next_end >= end_ms {
+            anyhow::bail!("time-bounded fill pagination did not advance before {end_ms}");
+        }
+        end_ms = next_end;
+    }
+
+    Ok(fills)
+}
+
+async fn get_reconnect_reports(
+    fills: Vec<HyperliquidFill>,
+    orders: Vec<HyperliquidOrderStatusEntry>,
+    http_client: &HyperliquidHttpClient,
+    ws_client: &HyperliquidWebSocketClient,
+    dispatch_state: &WsDispatchState,
+    account_address: &str,
+    window_start: UnixNanos,
+) -> anyhow::Result<Vec<ExecutionReport>> {
+    let mut reports = Vec::new();
+    let mut client_order_id_by_venue_order_id = AHashMap::new();
+    let mut selected_fills = Vec::new();
+
+    for fill in fills {
+        if UnixNanos::from_millis(fill.time) < window_start {
             continue;
         }
 
         let Some(client_order_id) =
-            resolve_tracked_client_order_id(fill.client_order_id, ws_client, dispatch_state)
+            resolve_tracked_client_order_id(fill.cloid.as_deref(), ws_client, dispatch_state)
         else {
             continue;
         };
 
+        client_order_id_by_venue_order_id
+            .insert(VenueOrderId::new(fill.oid.to_string()), client_order_id);
+        selected_fills.push(fill);
+    }
+
+    let fill_sweep = http_client.fill_reports_from_response(selected_fills, None)?;
+    if !fill_sweep.complete {
+        anyhow::bail!("tracked fill history could not be parsed completely");
+    }
+
+    for mut fill in fill_sweep.reports {
+        let client_order_id = client_order_id_by_venue_order_id
+            .get(&fill.venue_order_id)
+            .copied()
+            .context("tracked fill lost its venue order mapping")?;
         fill.client_order_id = Some(client_order_id);
         reports.push(ExecutionReport::Fill(fill));
     }
 
-    for mut order in orders {
-        if order.ts_last < window_start {
+    let history_capped = orders.len() >= HYPERLIQUID_RECENT_HISTORY_LIMIT;
+    let mut selected_orders = Vec::new();
+
+    for order in orders {
+        if UnixNanos::from_millis(order.status_timestamp) < window_start {
             continue;
         }
 
-        let Some(client_order_id) =
-            resolve_tracked_client_order_id(order.client_order_id, ws_client, dispatch_state)
-        else {
+        let Some(client_order_id) = resolve_tracked_client_order_id(
+            order.order.cloid.as_deref(),
+            ws_client,
+            dispatch_state,
+        ) else {
             continue;
         };
 
+        client_order_id_by_venue_order_id.insert(
+            VenueOrderId::new(order.order.oid.to_string()),
+            client_order_id,
+        );
+        selected_orders.push(order);
+    }
+
+    let order_sweep =
+        http_client.historical_order_status_reports_from_response(selected_orders, None)?;
+
+    if !order_sweep.complete {
+        anyhow::bail!("tracked order history could not be parsed completely");
+    }
+
+    let mut order_client_order_ids = AHashSet::new();
+
+    for mut order in order_sweep.reports {
+        let client_order_id = client_order_id_by_venue_order_id
+            .get(&order.venue_order_id)
+            .copied()
+            .context("tracked order lost its venue order mapping")?;
         order.client_order_id = Some(client_order_id);
+        order_client_order_ids.insert(client_order_id);
         reports.push(ExecutionReport::Order(order));
     }
 
-    reports
+    if history_capped {
+        for client_order_id in dispatch_state.tracked_client_order_ids() {
+            if order_client_order_ids.contains(&client_order_id) {
+                continue;
+            }
+
+            let cloid = http_client
+                .cached_client_order_id_cloid(&client_order_id)
+                .context("tracked order has no cached CLOID")?;
+            let Some(mut order) = http_client
+                .request_order_status_report_by_cloid(account_address, &cloid)
+                .await?
+            else {
+                continue;
+            };
+
+            if order.ts_last < window_start {
+                continue;
+            }
+
+            order.client_order_id = Some(client_order_id);
+            reports.push(ExecutionReport::Order(order));
+        }
+    }
+
+    sort_reconnect_reports(&mut reports);
+    let mut trade_ids = AHashSet::new();
+    reports.retain(
+        |report| !matches!(report, ExecutionReport::Fill(fill) if !trade_ids.insert(fill.trade_id)),
+    );
+
+    Ok(reports)
 }
 
-/// Resolves the venue cloid carried by a REST report to a tracked client order id.
-///
-/// The cloid is `keccak256(client_order_id)` truncated to 16 bytes, so the
-/// WebSocket client's cache is the only way back. An unresolved or untracked id
-/// belongs to another session or to an external order and must not be replayed.
 fn resolve_tracked_client_order_id(
-    cloid: Option<ClientOrderId>,
+    cloid: Option<&str>,
     ws_client: &HyperliquidWebSocketClient,
     dispatch_state: &WsDispatchState,
 ) -> Option<ClientOrderId> {
     let cloid = cloid?;
-    let client_order_id = ws_client.get_cloid_mapping(&Ustr::from(cloid.as_str()))?;
+    let client_order_id = ws_client.get_cloid_mapping(&Ustr::from(cloid))?;
 
     dispatch_state
         .lookup_context(&client_order_id)
         .map(|_| client_order_id)
 }
 
-/// Handles required to turn an execution report into engine events.
-///
-/// Shared by the live stream loop and the post-reconnect reconciliation so both
-/// run the identical per-report path.
+fn sort_reconnect_reports(reports: &mut [ExecutionReport]) {
+    reports.sort_by(|left, right| {
+        let (left_ts, left_kind, left_venue_order_id, left_trade_id) = match left {
+            ExecutionReport::Fill(report) => (
+                report.ts_event,
+                0_u8,
+                report.venue_order_id,
+                Some(report.trade_id),
+            ),
+            ExecutionReport::Order(report) => (report.ts_last, 1_u8, report.venue_order_id, None),
+        };
+        let (right_ts, right_kind, right_venue_order_id, right_trade_id) = match right {
+            ExecutionReport::Fill(report) => (
+                report.ts_event,
+                0_u8,
+                report.venue_order_id,
+                Some(report.trade_id),
+            ),
+            ExecutionReport::Order(report) => (report.ts_last, 1_u8, report.venue_order_id, None),
+        };
+
+        (left_ts, left_kind, left_venue_order_id, left_trade_id).cmp(&(
+            right_ts,
+            right_kind,
+            right_venue_order_id,
+            right_trade_id,
+        ))
+    });
+}
+
 struct ReportContext {
     emitter: ExecutionEventEmitter,
     dispatch_state: Arc<WsDispatchState>,
@@ -3597,8 +3770,8 @@ struct ReportContext {
     session_spawner: TaskSpawner,
 }
 
-/// Applies one execution report: typed events, staged brackets, and the
-/// corrective actions their outcomes queue.
+// Applies one execution report, including staged bracket transitions and any
+// corrective actions queued by the dispatch outcome.
 fn process_execution_report(
     report: ExecutionReport,
     ctx: &ReportContext,
@@ -3921,10 +4094,10 @@ use crate::common::parse::determine_order_list_grouping;
 mod tests {
     use std::{
         cell::RefCell,
+        collections::VecDeque,
         net::SocketAddr,
         rc::Rc,
         sync::{Arc, Mutex as StdMutex},
-        time::Duration,
     };
 
     use alloy::signers::local::PrivateKeySigner;
@@ -3972,10 +4145,10 @@ mod tests {
         HyperliquidExecutionClient, HyperliquidExecutionClientConfig, HyperliquidHttpClient,
         HyperliquidWebSocketClient, PostRejectionRoute, StagedBracketChild, StagedBracketState,
         WsDispatchState, attach_known_client_order_id, build_ouo_resize_request,
-        can_fast_cancel_order, classify_post_failure, determine_order_list_grouping,
-        fetch_reconnect_reports, handle_execution_report, register_order_context_into,
-        run_reconnect_reconciliation, select_reconcile_reports, split_fast_cancel_requests,
-        validate_order_for_hyperliquid,
+        can_fast_cancel_order, classify_post_failure, coalesce_reconnect_window,
+        determine_order_list_grouping, fetch_reconnect_fills, fetch_reconnect_reports,
+        get_reconnect_reports, handle_execution_report, register_order_context_into,
+        split_fast_cancel_requests, validate_order_for_hyperliquid,
     };
     use crate::{
         common::{
@@ -3988,7 +4161,7 @@ mod tests {
                 Cloid, HyperliquidExchangeAction, HyperliquidExchangeCancelOrderRequest,
                 HyperliquidExchangeGrouping, HyperliquidExchangeLimitParams,
                 HyperliquidExchangeOrderKind, HyperliquidExchangePlaceOrderRequest,
-                HyperliquidExchangeTif, PerpMeta,
+                HyperliquidExchangeTif, HyperliquidFill, HyperliquidOrderStatusEntry, PerpMeta,
             },
             parse::{create_instrument_from_def, parse_perp_instruments},
         },
@@ -4038,6 +4211,17 @@ mod tests {
 
     fn make_http_client() -> HyperliquidHttpClient {
         HyperliquidHttpClient::new(HyperliquidEnvironment::Testnet, 1, None).unwrap()
+    }
+
+    fn make_http_client_with_btc() -> HyperliquidHttpClient {
+        let mut client = make_http_client();
+        client.set_account_id(AccountId::from("HYPERLIQUID-001"));
+        let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
+        let defs = parse_perp_instruments(&meta, 0).unwrap();
+        let def = defs.iter().find(|def| def.raw_symbol == "BTC").unwrap();
+        let instrument = create_instrument_from_def(def, UnixNanos::default()).unwrap();
+        client.cache_instrument(&instrument);
+        client
     }
 
     fn make_execution_client() -> HyperliquidExecutionClient {
@@ -4215,6 +4399,59 @@ mod tests {
     fn cloid_for(id: &str) -> Ustr {
         let cloid = Cloid::from_client_order_id(ClientOrderId::from(id));
         Ustr::from(&cloid.to_hex())
+    }
+
+    fn make_raw_fill(
+        coin: &str,
+        cloid: Option<&str>,
+        oid: u64,
+        tid: u64,
+        time: u64,
+    ) -> HyperliquidFill {
+        serde_json::from_value(json!({
+            "coin": coin,
+            "px": "56730.0",
+            "sz": "0.0001",
+            "side": "B",
+            "time": time,
+            "startPosition": "0",
+            "dir": "Open Long",
+            "closedPnl": "0",
+            "hash": "0xabc",
+            "oid": oid,
+            "crossed": true,
+            "fee": "0.01",
+            "tid": tid,
+            "feeToken": "USDC",
+            "cloid": cloid,
+        }))
+        .unwrap()
+    }
+
+    fn make_raw_status(
+        coin: &str,
+        cloid: Option<&str>,
+        oid: u64,
+        status: &str,
+        timestamp: u64,
+    ) -> HyperliquidOrderStatusEntry {
+        serde_json::from_value(json!({
+            "order": {
+                "coin": coin,
+                "side": "B",
+                "limitPx": "56730.0",
+                "sz": "0.0001",
+                "oid": oid,
+                "timestamp": timestamp,
+                "origSz": "0.0001",
+                "cloid": cloid,
+                "tif": "Gtc",
+                "reduceOnly": false,
+            },
+            "status": status,
+            "statusTimestamp": timestamp,
+        }))
+        .unwrap()
     }
 
     fn limit_order(
@@ -4620,23 +4857,52 @@ mod tests {
         );
     }
 
-    /// Mock `POST /info` server that records requests and can fail the first sweep.
+    // Mock `POST /info` server that records requests and can fail the first sweep.
     #[derive(Clone, Default)]
     struct SweepServerState {
-        requests: Arc<StdMutex<Vec<String>>>,
+        requests: Arc<StdMutex<Vec<Value>>>,
         failing_requests: usize,
+        order_status_response: Option<Value>,
+        fill_responses: Arc<StdMutex<VecDeque<Value>>>,
     }
 
     impl SweepServerState {
         fn failing_first_sweep() -> Self {
             Self {
-                requests: Arc::new(StdMutex::new(Vec::new())),
                 failing_requests: 2,
+                ..Default::default()
+            }
+        }
+
+        fn with_order_status(response: Value) -> Self {
+            Self {
+                order_status_response: Some(response),
+                ..Default::default()
+            }
+        }
+
+        fn with_fill_responses(responses: Vec<Value>) -> Self {
+            Self {
+                fill_responses: Arc::new(StdMutex::new(responses.into())),
+                ..Default::default()
             }
         }
 
         fn request_count(&self) -> usize {
             self.requests.lock().unwrap().len()
+        }
+
+        fn request_types(&self) -> Vec<String> {
+            self.requests
+                .lock()
+                .unwrap()
+                .iter()
+                .filter_map(|request| request.get("type")?.as_str().map(str::to_string))
+                .collect()
+        }
+
+        fn requests(&self) -> Vec<Value> {
+            self.requests.lock().unwrap().clone()
         }
     }
 
@@ -4650,112 +4916,149 @@ mod tests {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string();
+        let is_order_status = request_type == "orderStatus";
 
         let seen = {
             let mut requests = state.requests.lock().unwrap();
-            requests.push(request_type);
+            requests.push(request);
             requests.len()
         };
 
         if seen <= state.failing_requests {
             return (
-                StatusCode::INTERNAL_SERVER_ERROR,
+                StatusCode::BAD_REQUEST,
                 Json(json!({"error": "venue unavailable"})),
             )
                 .into_response();
         }
 
+        if is_order_status {
+            return Json(
+                state
+                    .order_status_response
+                    .expect("order status response must be configured"),
+            )
+            .into_response();
+        }
+
+        if request_type == "userFillsByTime"
+            && let Some(response) = state.fill_responses.lock().unwrap().pop_front()
+        {
+            return Json(response).into_response();
+        }
+
         Json(json!([])).into_response()
     }
 
-    async fn start_sweep_server(state: SweepServerState) -> SocketAddr {
+    async fn start_sweep_server(
+        state: SweepServerState,
+    ) -> (SocketAddr, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let router = Router::new()
             .route("/info", post(handle_sweep_info))
             .with_state(state);
 
-        tokio::spawn(async move {
+        let task = tokio::spawn(async move {
             axum::serve(listener, router).await.unwrap();
         });
 
-        addr
+        (addr, task)
     }
 
     fn make_sweep_http_client(addr: &SocketAddr) -> HyperliquidHttpClient {
-        let mut http_client = make_http_client();
-        http_client.set_account_id(AccountId::from("HYPERLIQUID-001"));
+        let mut http_client = make_http_client_with_btc();
         http_client.set_base_info_url(format!("http://{addr}/info"));
         http_client
-    }
-
-    async fn wait_for_requests(state: &SweepServerState, expected: usize) {
-        tokio::time::timeout(Duration::from_secs(5), async {
-            while state.request_count() < expected {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("sweep requests should reach the mock venue");
     }
 
     #[rstest]
     #[tokio::test]
     async fn test_reconnect_reconcile_retries_failed_fetch() {
-        // Either request fails whole when one venue row cannot be decoded, so a
-        // failed sweep must retry rather than leave the gap until the next
-        // reconnect, potentially hours away.
         let state = SweepServerState::failing_first_sweep();
-        let addr = start_sweep_server(state.clone()).await;
+        let (addr, server) = start_sweep_server(state.clone()).await;
         let http_client = make_sweep_http_client(&addr);
+        let ws_client = make_ws_client();
+        let dispatch_state = WsDispatchState::new();
 
-        let fetched = fetch_reconnect_reports(&http_client, "0xaccount").await;
+        let reports = fetch_reconnect_reports(
+            &http_client,
+            &ws_client,
+            &dispatch_state,
+            "0xaccount",
+            UnixNanos::default(),
+            get_atomic_clock_realtime(),
+        )
+        .await;
+        server.abort();
 
-        assert!(fetched.is_some());
-        // two requests failed, then the retry issued both again
+        assert!(reports.is_empty());
         assert_eq!(state.request_count(), 4);
+        let mut request_types = state.request_types();
+        request_types.sort();
+        assert_eq!(
+            request_types,
+            [
+                "historicalOrders",
+                "historicalOrders",
+                "userFillsByTime",
+                "userFillsByTime",
+            ]
+        );
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_reconnect_reconcile_sweeps_once_per_trigger_burst() {
-        // A flapping socket must not stack sweeps: the burst collapses into one,
-        // and the next sweep waits out the minimum interval.
-        let state = SweepServerState::default();
-        let addr = start_sweep_server(state.clone()).await;
+    async fn test_reconnect_fill_pagination_moves_backwards_without_gaps() {
+        let state = SweepServerState::with_fill_responses(vec![
+            json!([
+                make_raw_fill("BTC", None, 42, 3, 3_000),
+                make_raw_fill("BTC", None, 42, 2, 2_000),
+            ]),
+            json!([make_raw_fill("BTC", None, 42, 1, 1_000)]),
+        ]);
+        let (addr, server) = start_sweep_server(state.clone()).await;
+        let http_client = make_sweep_http_client(&addr);
 
-        let (reconnect_tx, reconnect_rx) = tokio::sync::mpsc::unbounded_channel();
-        let (reconciled_tx, _reconciled_rx) = tokio::sync::mpsc::unbounded_channel();
+        let fills = fetch_reconnect_fills(
+            &http_client,
+            "0xaccount",
+            UnixNanos::from_millis(1_000),
+            UnixNanos::from_millis(4_000),
+        )
+        .await
+        .unwrap();
+        server.abort();
 
-        let driver = tokio::spawn(run_reconnect_reconciliation(
-            make_sweep_http_client(&addr),
-            make_ws_client(),
-            Arc::new(WsDispatchState::new()),
-            "0xaccount".to_string(),
-            reconnect_rx,
-            reconciled_tx,
-        ));
-
-        for _ in 0..3 {
-            reconnect_tx.send(UnixNanos::default()).unwrap();
-        }
-
-        wait_for_requests(&state, 2).await;
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        assert_eq!(state.request_count(), 2);
-
-        drop(reconnect_tx);
-        driver.await.unwrap();
+        assert_eq!(
+            fills.iter().map(|fill| fill.tid).collect::<Vec<_>>(),
+            [3, 2, 1]
+        );
+        let requests = state.requests();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0]["startTime"], 1_000);
+        assert_eq!(requests[0]["endTime"], 4_000);
+        assert_eq!(requests[1]["startTime"], 1_000);
+        assert_eq!(requests[1]["endTime"], 1_999);
     }
 
     #[rstest]
-    fn test_select_reconcile_reports_resolves_cloid_and_orders_fills_first() {
-        // REST reports carry the venue cloid rather than the client order id, and
-        // the fill must precede the status-only FILLED marker so the marker does
-        // not evict the cloid mapping while the fill still needs it.
+    fn test_reconnect_reconcile_coalesces_to_earliest_window() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        tx.send(UnixNanos::from(3_000)).unwrap();
+        tx.send(UnixNanos::from(1_000)).unwrap();
+
+        let window_start = coalesce_reconnect_window(UnixNanos::from(2_000), &mut rx);
+
+        assert_eq!(window_start, UnixNanos::from(1_000));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_get_reconnect_reports_resolves_cloid_and_sorts_chronologically() {
         let ws_client = make_ws_client();
         let state = WsDispatchState::new();
+        let http_client = make_http_client_with_btc();
 
         let cid = ClientOrderId::from("O-REC-FILL");
         state.register_context(test_context(cid));
@@ -4764,60 +5067,75 @@ mod tests {
         let cloid = cloid_for("O-REC-FILL");
         ws_client.cache_cloid_mapping(cloid, cid);
 
-        let fill = make_fill_report(Some(cloid.as_str()), "v-rec", "trade-rec");
-        let status = make_status_report(Some(cloid.as_str()), "v-rec", OrderStatus::Filled);
+        let later_fill = make_raw_fill("BTC", Some(cloid.as_str()), 42, 2, 2_000);
+        let earlier_fill = make_raw_fill("BTC", Some(cloid.as_str()), 42, 1, 1_000);
+        let status = make_raw_status("BTC", Some(cloid.as_str()), 42, "filled", 2_000);
 
-        let reports = select_reconcile_reports(
-            vec![fill],
+        let reports = get_reconnect_reports(
+            vec![later_fill, earlier_fill],
             vec![status],
+            &http_client,
             &ws_client,
             &state,
+            "0xaccount",
             UnixNanos::default(),
-        );
+        )
+        .await
+        .unwrap();
 
-        assert_eq!(reports.len(), 2);
+        assert_eq!(reports.len(), 3);
         let ExecutionReport::Fill(fill) = &reports[0] else {
-            panic!("expected the fill report first");
+            panic!("expected the earlier fill first");
         };
         assert_eq!(fill.client_order_id, Some(cid));
-        let ExecutionReport::Order(status) = &reports[1] else {
-            panic!("expected the order status report second");
+        assert_eq!(fill.ts_event, UnixNanos::from_millis(1_000));
+        let ExecutionReport::Fill(fill) = &reports[1] else {
+            panic!("expected the later fill before the simultaneous order status");
+        };
+        assert_eq!(fill.ts_event, UnixNanos::from_millis(2_000));
+        let ExecutionReport::Order(status) = &reports[2] else {
+            panic!("expected the order status last");
         };
         assert_eq!(status.client_order_id, Some(cid));
     }
 
     #[rstest]
-    fn test_select_reconcile_reports_ignores_untracked_history() {
-        // History spans every order on the account, so a cloid this session never
-        // mapped, or one whose context is gone, must not be replayed as an
-        // external order.
+    #[tokio::test]
+    async fn test_get_reconnect_reports_ignores_untracked_unparsable_history() {
         let ws_client = make_ws_client();
         let state = WsDispatchState::new();
+        let http_client = make_http_client_with_btc();
 
         let untracked = cloid_for("O-REC-OTHER");
         ws_client.cache_cloid_mapping(untracked, ClientOrderId::from("O-REC-OTHER"));
 
-        let unmapped_fill = make_fill_report(Some("0xdeadbeef"), "v-other", "trade-other");
-        let unmapped_status =
-            make_status_report(Some("0xdeadbeef"), "v-other", OrderStatus::Canceled);
-        let untracked_fill = make_fill_report(Some(untracked.as_str()), "v-gone", "trade-gone");
-        let anonymous_fill = make_fill_report(None, "v-anon", "trade-anon");
-
-        let reports = select_reconcile_reports(
-            vec![unmapped_fill, untracked_fill, anonymous_fill],
-            vec![unmapped_status],
+        let reports = get_reconnect_reports(
+            vec![make_raw_fill("UNKNOWN", Some("0xdeadbeef"), 1, 1, 1_000)],
+            vec![make_raw_status(
+                "UNKNOWN",
+                Some(untracked.as_str()),
+                2,
+                "canceled",
+                1_000,
+            )],
+            &http_client,
             &ws_client,
             &state,
+            "0xaccount",
             UnixNanos::default(),
-        );
+        )
+        .await
+        .unwrap();
 
         assert!(reports.is_empty());
     }
 
     #[rstest]
-    fn test_select_reconcile_reports_drops_reports_before_window() {
+    #[tokio::test]
+    async fn test_get_reconnect_reports_drops_reports_before_window() {
         let ws_client = make_ws_client();
         let state = WsDispatchState::new();
+        let http_client = make_http_client_with_btc();
 
         let cid = ClientOrderId::from("O-REC-OLD");
         state.register_context(test_context(cid));
@@ -4826,20 +5144,87 @@ mod tests {
         let cloid = cloid_for("O-REC-OLD");
         ws_client.cache_cloid_mapping(cloid, cid);
 
-        let mut fill = make_fill_report(Some(cloid.as_str()), "v-old", "trade-old");
-        fill.ts_event = UnixNanos::from(1_000);
-        let mut status = make_status_report(Some(cloid.as_str()), "v-old", OrderStatus::Canceled);
-        status.ts_last = UnixNanos::from(1_000);
-
-        let reports = select_reconcile_reports(
-            vec![fill],
-            vec![status],
+        let reports = get_reconnect_reports(
+            vec![make_raw_fill("BTC", Some(cloid.as_str()), 1, 1, 1)],
+            vec![make_raw_status(
+                "BTC",
+                Some(cloid.as_str()),
+                1,
+                "canceled",
+                1,
+            )],
+            &http_client,
             &ws_client,
             &state,
-            UnixNanos::from(2_000),
-        );
+            "0xaccount",
+            UnixNanos::from_millis(2),
+        )
+        .await
+        .unwrap();
 
         assert!(reports.is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_get_reconnect_reports_queries_tracked_orders_when_history_is_capped() {
+        let cid = ClientOrderId::from("O-REC-CAPPED");
+        let cloid = cloid_for(cid.as_str());
+        let status = json!({
+            "status": "order",
+            "order": {
+                "order": {
+                    "coin": "BTC",
+                    "side": "B",
+                    "limitPx": "56730.0",
+                    "sz": "0.0001",
+                    "oid": 42,
+                    "timestamp": 2_000,
+                    "origSz": "0.0001",
+                    "cloid": cloid.as_str(),
+                    "tif": "Gtc",
+                    "reduceOnly": false,
+                },
+                "status": "canceled",
+                "statusTimestamp": 2_000,
+            },
+        });
+        let server_state = SweepServerState::with_order_status(status);
+        let (addr, server) = start_sweep_server(server_state.clone()).await;
+        let http_client = make_sweep_http_client(&addr);
+        let generated_cloid = http_client.get_or_generate_client_order_id_cloid(cid);
+        assert_eq!(generated_cloid.to_hex(), cloid.as_str());
+
+        let ws_client = make_ws_client();
+        ws_client.cache_cloid_mapping(cloid, cid);
+        let dispatch_state = WsDispatchState::new();
+        dispatch_state.register_context(test_context(cid));
+        dispatch_state.insert_accepted(cid);
+        let capped_history = vec![
+            make_raw_status("UNKNOWN", None, 7, "canceled", 2_000);
+            super::HYPERLIQUID_RECENT_HISTORY_LIMIT
+        ];
+
+        let reports = get_reconnect_reports(
+            Vec::new(),
+            capped_history,
+            &http_client,
+            &ws_client,
+            &dispatch_state,
+            "0xaccount",
+            UnixNanos::default(),
+        )
+        .await
+        .unwrap();
+        server.abort();
+
+        assert_eq!(server_state.request_types(), ["orderStatus"]);
+        assert_eq!(reports.len(), 1);
+        let ExecutionReport::Order(report) = &reports[0] else {
+            panic!("expected an order status report");
+        };
+        assert_eq!(report.client_order_id, Some(cid));
+        assert_eq!(report.order_status, OrderStatus::Canceled);
     }
 
     #[rstest]

@@ -1227,11 +1227,7 @@ pub fn parse_fill_report(
         last_px,
         commission,
         liquidity_side,
-        // the venue cloid, not the Nautilus client order id: the cloid is a one-way
-        // hash of it, so only the WebSocket client's cloid cache maps it back
-        fill.cloid
-            .as_ref()
-            .map(|cloid| ClientOrderId::new(cloid.as_str())),
+        None, // client_order_id - the venue CLOID is not a Nautilus client order ID
         None, // venue_position_id
         ts_event,
         ts_init,
@@ -2294,10 +2290,7 @@ mod tests {
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
         assert_eq!(report.last_qty.as_decimal(), dec!(1000));
         assert_eq!(report.last_px.as_decimal(), dec!(0.55));
-        assert_eq!(
-            report.client_order_id,
-            Some(ClientOrderId::new("0x5bdd47600dea461f36c8378cd7b4150c")),
-        );
+        assert_eq!(report.client_order_id, None);
     }
 
     #[rstest]
@@ -2327,10 +2320,20 @@ mod tests {
         // Fixture is real mainnet wire data.
         let fills: Vec<HyperliquidFill> = load_test_data("http_user_fills_with_cloid.json");
 
-        assert!(
-            fills
-                .iter()
-                .all(|fill| fill.cloid.as_deref() == Some("0x5bdd47600dea461f36c8378cd7b4150c")),
+        assert_eq!(fills.len(), 2);
+        assert_eq!(fills[0].oid, 544_900_123_760);
+        assert_eq!(fills[0].tid, 1_109_765_720_343_214);
+        assert_eq!(fills[0].time, 1_789_407_361_368);
+        assert_eq!(
+            fills[0].cloid.as_deref(),
+            Some("0x5bdd47600dea461f36c8378cd7b4150c")
+        );
+        assert_eq!(fills[1].oid, 544_900_123_760);
+        assert_eq!(fills[1].tid, 780_373_658_822_388);
+        assert_eq!(fills[1].time, 1_789_407_361_023);
+        assert_eq!(
+            fills[1].cloid.as_deref(),
+            Some("0x5bdd47600dea461f36c8378cd7b4150c")
         );
     }
 
