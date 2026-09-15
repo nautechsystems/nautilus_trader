@@ -437,6 +437,18 @@ that window with a one-second signing and transport margin, so an expiry of exac
 denied locally before signing; tester configurations expressed in whole minutes should use at least
 6 minutes.
 
+#### GTD policy
+
+`use_gtd=True` is the default. The strategy `expire_time` becomes the venue `GoodTillTime` expiry
+and must lie within the venue's 5-minute to 30-day lifetime window (a one-second signing and
+transport margin applies to the lower bound).
+
+Set `use_gtd=False` only when the submitting strategy has `manage_gtd_expiry=True`. Lighter exposes
+no `GoodTillCancel` time-in-force, so the opt-out cannot switch the wire time-in-force the way the
+Binance adapter does: the order still rests as `GoodTillTime` on the venue's default 28-day window
+instead of the strategy's shorter `expire_time`, and Nautilus cancels the order locally when its
+own expiry elapses. Venue cancel latency still bounds how quickly the resting order is removed.
+
 ### Execution instructions
 
 | Instruction   | Perpetuals | Spot | Notes                                                     |
@@ -819,6 +831,7 @@ endpoints.
 | `rest_quota_per_min`        | `None`        | REST quota override; unset keeps 60 req/min.                  |
 | `sendtx_quota_per_min`      | `None`        | Transaction quota override; unset keeps 60 req/min.           |
 | `transport_backend`         | Default       | WebSocket transport backend.                                  |
+| `use_gtd`                   | `True`        | Use venue-native GTD; see [GTD policy](#gtd-policy).          |
 
 ### Configuration example
 
