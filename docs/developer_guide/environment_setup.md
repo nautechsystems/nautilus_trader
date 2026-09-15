@@ -327,13 +327,13 @@ A version inside the cooldown window requires both an exact entry in
 the check. Publication dates come from the committed database at
 `.supply-chain/crate-dates.json`. Recorded dates are trusted offline; versions missing from the
 database are looked up on crates.io and fail closed when the registry is unreachable. The
-diff-based pre-commit and dependency-update checks remain separate: a clean Git diff does not
-establish that resolved dependencies are old enough.
+pre-commit hook checks all resolved versions using these recorded dates, including entries added
+since the comparison base. A clean Git diff does not establish that dependencies are old enough.
 
 `make cargo-update` records dates for every change it accepts. After a manual lockfile edit, run
 `bash scripts/check-cargo-cooldown.sh --update-db` to reconcile the database, which also prunes
-entries no tracked lock resolves. Entries added by the same change that bumps a lockfile are
-re-verified against crates.io, and a recorded date that disagrees with the registry fails the check.
+entries no tracked lock resolves. The dependency-update command separately re-verifies newly added
+dates against crates.io; routine pre-commit and full checks use the committed database offline.
 
 Successful full checks are cached as `.cargo-cooldown.json` in `CARGO_TARGET_DIR`, or the Make
 `TARGET_DIR` when no Cargo target directory is set. CI uses its configured Cargo target directory
