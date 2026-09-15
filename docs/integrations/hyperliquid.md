@@ -1353,19 +1353,16 @@ target them without cycling the containing client.
 
 Resubscribing to `orderUpdates` and `userEvents` replays no snapshot, so an accept, cancel, or fill
 that lands while the execution socket is down would otherwise never reach the engine. After both
-execution subscriptions are acknowledged, the execution client sweeps time-bounded
-`userFillsByTime` and `historicalOrders` over REST. The window is at least five minutes and expands
-to cover a longer socket outage. Reports are filtered to orders tracked by this client, sorted
-oldest first (fills before a status at the same timestamp), and replayed through the same path as
-live WebSocket reports. Duplicate fills are dropped by deterministic trade ID, so overlap with
-live events is harmless.
+execution subscriptions are acknowledged, the execution client sweeps `userFills` and
+`historicalOrders` over REST, keeps reports from the last five minutes that belong to an order it
+tracks, and replays them through the same path as live WebSocket reports. Raw history is filtered
+before instrument conversion, and fills are ordered oldest first and ahead of order statuses.
+Duplicate fills are dropped by deterministic trade ID, so overlap with live events is harmless.
 
 The sweep needs no configuration and runs independently of the engine's periodic
-`open_check_interval_secs`. A failed sweep keeps retrying with capped exponential backoff, and a
-burst of reconnects collapses into one sweep with a minimum interval of 20 seconds to stay inside
-the venue's 1,200/min IP weight budget. Time-bounded fills are paginated up to Hyperliquid's
-10,000-fill account-history availability. If `historicalOrders` reaches its 2,000-row limit, the
-adapter queries the current status of any missing tracked order by CLOID.
+`open_check_interval_secs`. A failed sweep is retried up to four times with exponential backoff,
+and a burst of reconnects collapses into one sweep with a minimum interval of 20 seconds to stay
+inside the venue's 1,200/min IP weight budget.
 
 ### Stream health and recovery
 
