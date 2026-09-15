@@ -904,7 +904,7 @@ fn generate_depth10_data(instrument_id: InstrumentId, depth_count: usize) -> Vec
                 );
             }
 
-            Data::BookDepth10(Box::new(OrderBookDepth10::new(
+            Data::BookDepth(Box::new(OrderBookDepth10::new(
                 instrument_id,
                 bids,
                 asks,

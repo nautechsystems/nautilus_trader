@@ -13,39 +13,45 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use arrow::{
-    array::{FixedSizeBinaryArray, FixedSizeBinaryBuilder, UInt8Array, UInt64Array},
+    array::{Decimal128Array, UInt8Array, UInt64Array},
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
     record_batch::RecordBatch,
 };
+#[cfg(test)]
+use nautilus_model::identifiers::InstrumentId;
 use nautilus_model::{
     data::{BookOrder, OrderBookDelta},
-    enums::{BookAction, FromU8, OrderSide},
-    types::fixed::PRECISION_BYTES,
+    enums::{BookAction, OrderSide},
 };
 
 use super::{
-    DecodeDataFromRecordBatch, EncodingError, decode_price_with_sentinel,
-    decode_quantity_with_sentinel, extract_column, parse_price_size_metadata,
-    validate_precision_bytes,
+    DecodeDataFromRecordBatch, EncodingError, KEY_IDENTIFIER, decode_decimal_price,
+    decode_decimal_quantity, decode_required_timestamp, decode_required_u8, decode_required_u64,
+    enum_dictionary_array, enum_dictionary_data_type, extract_column, extract_column_string,
+    fixed_decimal_data_type, identifier_array_from_display, parse_metadata, price_decimal_array,
+    quantity_decimal_array,
 };
+#[cfg(test)]
+use super::{KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION};
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for OrderBookDelta {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
         let fields = vec![
-            Field::new("action", DataType::UInt8, false),
-            Field::new("side", DataType::UInt8, false),
-            Field::new("price", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("size", DataType::FixedSizeBinary(PRECISION_BYTES), false),
+            Field::new("action", enum_dictionary_data_type(), false),
+            Field::new("side", enum_dictionary_data_type(), false),
+            Field::new("price", fixed_decimal_data_type(), true),
+            Field::new("size", fixed_decimal_data_type(), true),
             Field::new("order_id", DataType::UInt64, false),
             Field::new("flags", DataType::UInt8, false),
             Field::new("sequence", DataType::UInt64, false),
-            Field::new("ts_event", DataType::UInt64, false),
-            Field::new("ts_init", DataType::UInt64, false),
+            Field::new("ts_event", crate::arrow::timestamp_data_type(), false),
+            Field::new("ts_init", crate::arrow::timestamp_data_type(), false),
+            Field::new(KEY_IDENTIFIER, DataType::Utf8, true),
         ];
 
         match metadata {
@@ -56,29 +62,20 @@ impl ArrowSchemaProvider for OrderBookDelta {
 }
 
 impl EncodeToRecordBatch for OrderBookDelta {
-    fn encode_batch(
+    fn encode_batch<T>(
         metadata: &HashMap<String, String>,
-        data: &[Self],
-    ) -> Result<RecordBatch, ArrowError> {
-        let mut action_builder = UInt8Array::builder(data.len());
-        let mut side_builder = UInt8Array::builder(data.len());
-        let mut price_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
-        let mut size_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
+        data: &[T],
+    ) -> Result<RecordBatch, ArrowError>
+    where
+        T: std::borrow::Borrow<Self>,
+    {
         let mut order_id_builder = UInt64Array::builder(data.len());
         let mut flags_builder = UInt8Array::builder(data.len());
         let mut sequence_builder = UInt64Array::builder(data.len());
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
 
-        for delta in data {
-            action_builder.append_value(delta.action as u8);
-            side_builder.append_value(delta.order.side.map_or(0, |side| side as u8));
-            price_builder
-                .append_value(delta.order.price.raw().to_le_bytes())
-                .unwrap();
-            size_builder
-                .append_value(delta.order.size.raw().to_le_bytes())
-                .unwrap();
+        for delta in data.iter().map(std::borrow::Borrow::borrow) {
             order_id_builder.append_value(delta.order.order_id);
             flags_builder.append_value(delta.flags);
             sequence_builder.append_value(delta.sequence);
@@ -86,17 +83,37 @@ impl EncodeToRecordBatch for OrderBookDelta {
             ts_init_builder.append_value(delta.ts_init.as_u64());
         }
 
-        let action_array = action_builder.finish();
-        let side_array = side_builder.finish();
-        let price_array = price_builder.finish();
-        let size_array = size_builder.finish();
+        let action_array = enum_dictionary_array(
+            data.iter()
+                .map(std::borrow::Borrow::borrow)
+                .map(|delta| delta.action),
+        )?;
+        let side_array =
+            enum_dictionary_array(data.iter().map(std::borrow::Borrow::borrow).map(|delta| {
+                delta
+                    .order
+                    .side
+                    .map_or_else(|| "NO_ORDER_SIDE".to_string(), |side| side.to_string())
+            }))?;
+        let price_array = price_decimal_array(
+            data.iter()
+                .map(std::borrow::Borrow::borrow)
+                .map(|delta| delta.order.price.raw()),
+            "price",
+        )?;
+        let size_array = quantity_decimal_array(
+            data.iter()
+                .map(std::borrow::Borrow::borrow)
+                .map(|delta| delta.order.size.raw()),
+            "size",
+        )?;
         let order_id_array = order_id_builder.finish();
         let flags_array = flags_builder.finish();
         let sequence_array = sequence_builder.finish();
         let ts_event_array = ts_event_builder.finish();
         let ts_init_array = ts_init_builder.finish();
 
-        RecordBatch::try_new(
+        crate::arrow::record_batch_with_timestamps(
             Self::get_schema(Some(metadata.clone())).into(),
             vec![
                 Arc::new(action_array),
@@ -108,6 +125,11 @@ impl EncodeToRecordBatch for OrderBookDelta {
                 Arc::new(sequence_array),
                 Arc::new(ts_event_array),
                 Arc::new(ts_init_array),
+                Arc::new(identifier_array_from_display(
+                    data.iter()
+                        .map(std::borrow::Borrow::borrow)
+                        .map(|delta| delta.instrument_id),
+                )),
             ],
         )
     }
@@ -121,15 +143,26 @@ impl EncodeToRecordBatch for OrderBookDelta {
     }
 
     /// Extracts metadata from the first non-clear delta, falling back to the first clear.
-    ///
-    /// Clear deltas use sentinel values whose precision does not describe the following book data.
-    fn chunk_metadata(chunk: &[Self]) -> HashMap<String, String> {
+    fn chunk_metadata<T>(chunk: &[T]) -> HashMap<String, String>
+    where
+        T: std::borrow::Borrow<Self>,
+    {
         chunk
             .iter()
+            .map(std::borrow::Borrow::borrow)
             .find(|delta| delta.action != BookAction::Clear)
-            .or_else(|| chunk.first())
+            .or_else(|| chunk.first().map(std::borrow::Borrow::borrow))
             .map(EncodeToRecordBatch::metadata)
-            .expect("Chunk must have at least one element to encode")
+            .expect("Chunk must contain at least one element to encode")
+    }
+
+    fn matches_chunk_metadata(&self, metadata: &HashMap<String, String>) -> bool {
+        if self.action != BookAction::Clear {
+            return self.metadata() == *metadata;
+        }
+
+        parse_metadata(metadata)
+            .is_ok_and(|(instrument_id, _, _)| self.instrument_id == instrument_id)
     }
 }
 
@@ -138,62 +171,44 @@ impl DecodeFromRecordBatch for OrderBookDelta {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Result<Vec<Self>, EncodingError> {
-        let (instrument_id, price_precision, size_precision) = parse_price_size_metadata(metadata)?;
+        let (instrument_id, price_precision, size_precision) = parse_metadata(metadata)?;
+        let record_batch = crate::arrow::record_batch_with_u64_timestamps(&record_batch)?;
+        let record_batch = &record_batch;
         let cols = record_batch.columns();
 
-        let action_values = extract_column::<UInt8Array>(cols, "action", 0, DataType::UInt8)?;
-        let side_values = extract_column::<UInt8Array>(cols, "side", 1, DataType::UInt8)?;
-        let price_values = extract_column::<FixedSizeBinaryArray>(
-            cols,
-            "price",
-            2,
-            DataType::FixedSizeBinary(PRECISION_BYTES),
-        )?;
-        let size_values = extract_column::<FixedSizeBinaryArray>(
-            cols,
-            "size",
-            3,
-            DataType::FixedSizeBinary(PRECISION_BYTES),
-        )?;
+        let action_values = extract_column_string(cols, "action", 0)?;
+        let side_values = extract_column_string(cols, "side", 1)?;
+        let price_values =
+            extract_column::<Decimal128Array>(cols, "price", 2, fixed_decimal_data_type())?;
+        let size_values =
+            extract_column::<Decimal128Array>(cols, "size", 3, fixed_decimal_data_type())?;
         let order_id_values = extract_column::<UInt64Array>(cols, "order_id", 4, DataType::UInt64)?;
         let flags_values = extract_column::<UInt8Array>(cols, "flags", 5, DataType::UInt8)?;
         let sequence_values = extract_column::<UInt64Array>(cols, "sequence", 6, DataType::UInt64)?;
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 7, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 8, DataType::UInt64)?;
 
-        validate_precision_bytes(price_values, "price")?;
-        validate_precision_bytes(size_values, "size")?;
-
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|i| {
                 let action_value = action_values.value(i);
-                let action = BookAction::from_u8(action_value).ok_or_else(|| {
-                    EncodingError::ParseError(
-                        stringify!(BookAction),
-                        format!("Invalid enum value, was {action_value}"),
-                    )
+                let action = BookAction::from_str(action_value).map_err(|e| {
+                    EncodingError::ParseError(stringify!(BookAction), e.to_string())
                 })?;
                 let side_value = side_values.value(i);
-                let side = match side_value {
-                    0 => None,
-                    1 => Some(OrderSide::Buy),
-                    2 => Some(OrderSide::Sell),
-                    _ => {
-                        return Err(EncodingError::ParseError(
-                            "Option<OrderSide>",
-                            format!("Invalid enum value, was {side_value}"),
-                        ));
-                    }
+                let side = if side_value.eq_ignore_ascii_case("NO_ORDER_SIDE") {
+                    None
+                } else {
+                    Some(OrderSide::from_str(side_value).map_err(|e| {
+                        EncodingError::ParseError(stringify!(OrderSide), e.to_string())
+                    })?)
                 };
-                let price =
-                    decode_price_with_sentinel(price_values.value(i), price_precision, "price", i)?;
-                let size =
-                    decode_quantity_with_sentinel(size_values.value(i), size_precision, "size", i)?;
-                let order_id = order_id_values.value(i);
-                let flags = flags_values.value(i);
-                let sequence = sequence_values.value(i);
-                let ts_event = ts_event_values.value(i).into();
-                let ts_init = ts_init_values.value(i).into();
+                let price = decode_decimal_price(price_values, price_precision, "price", i)?;
+                let size = decode_decimal_quantity(size_values, size_precision, "size", i)?;
+                let order_id = decode_required_u64(order_id_values, "order_id", i)?;
+                let flags = decode_required_u8(flags_values, "flags", i)?;
+                let sequence = decode_required_u64(sequence_values, "sequence", i)?;
+                let ts_event = decode_required_timestamp(ts_event_values, "ts_event", i)?;
+                let ts_init = decode_required_timestamp(ts_init_values, "ts_init", i)?;
 
                 Ok(Self {
                     instrument_id,
@@ -230,22 +245,18 @@ impl DecodeDataFromRecordBatch for OrderBookDelta {
 mod tests {
     use std::sync::Arc;
 
-    use arrow::{array::Array, record_batch::RecordBatch};
-    use nautilus_model::{
-        enums::OrderSide,
-        identifiers::InstrumentId,
-        types::{
-            Price, Quantity,
-            fixed::FIXED_SCALAR,
-            price::{PRICE_UNDEF, PriceRaw},
-            quantity::{QUANTITY_UNDEF, QuantityRaw},
-        },
+    use arrow::array::{Array, ArrayRef, TimestampNanosecondArray};
+    use nautilus_model::types::{
+        Price, Quantity,
+        fixed::FIXED_SCALAR,
+        price::{PRICE_UNDEF, PriceRaw},
+        quantity::{QUANTITY_UNDEF, QuantityRaw},
     };
     use pretty_assertions::assert_eq;
     use rstest::rstest;
 
     use super::*;
-    use crate::arrow::{KEY_INSTRUMENT_ID, fixed_size_binary, get_raw_price};
+    use crate::arrow::get_raw_price;
 
     #[rstest]
     fn test_get_schema() {
@@ -254,15 +265,16 @@ mod tests {
         let schema = OrderBookDelta::get_schema(Some(metadata.clone()));
 
         let expected_fields = vec![
-            Field::new("action", DataType::UInt8, false),
-            Field::new("side", DataType::UInt8, false),
-            Field::new("price", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("size", DataType::FixedSizeBinary(PRECISION_BYTES), false),
+            Field::new("action", enum_dictionary_data_type(), false),
+            Field::new("side", enum_dictionary_data_type(), false),
+            Field::new("price", fixed_decimal_data_type(), true),
+            Field::new("size", fixed_decimal_data_type(), true),
             Field::new("order_id", DataType::UInt64, false),
             Field::new("flags", DataType::UInt8, false),
             Field::new("sequence", DataType::UInt64, false),
-            Field::new("ts_event", DataType::UInt64, false),
-            Field::new("ts_init", DataType::UInt64, false),
+            Field::new("ts_event", crate::arrow::timestamp_data_type(), false),
+            Field::new("ts_init", crate::arrow::timestamp_data_type(), false),
+            Field::new(KEY_IDENTIFIER, DataType::Utf8, true),
         ];
 
         let expected_schema = Schema::new_with_metadata(expected_fields, metadata);
@@ -272,17 +284,42 @@ mod tests {
     #[rstest]
     fn test_get_schema_map() {
         let schema_map = OrderBookDelta::get_schema_map();
-        let fixed_size_binary = format!("FixedSizeBinary({PRECISION_BYTES})");
+        let fixed_size_binary = "Decimal128(38, 16)".to_string();
 
-        assert_eq!(schema_map.get("action").unwrap(), "UInt8");
-        assert_eq!(schema_map.get("side").unwrap(), "UInt8");
+        assert_eq!(schema_map.get("action").unwrap(), "Dictionary(Int8, Utf8)");
+        assert_eq!(schema_map.get("side").unwrap(), "Dictionary(Int8, Utf8)");
         assert_eq!(*schema_map.get("price").unwrap(), fixed_size_binary);
         assert_eq!(*schema_map.get("size").unwrap(), fixed_size_binary);
         assert_eq!(schema_map.get("order_id").unwrap(), "UInt64");
         assert_eq!(schema_map.get("flags").unwrap(), "UInt8");
         assert_eq!(schema_map.get("sequence").unwrap(), "UInt64");
-        assert_eq!(schema_map.get("ts_event").unwrap(), "UInt64");
-        assert_eq!(schema_map.get("ts_init").unwrap(), "UInt64");
+        assert_eq!(
+            schema_map.get("ts_event").unwrap(),
+            "Timestamp(Nanosecond, Some(\"UTC\"))"
+        );
+        assert_eq!(
+            schema_map.get("ts_init").unwrap(),
+            "Timestamp(Nanosecond, Some(\"UTC\"))"
+        );
+        assert_eq!(schema_map.get(KEY_IDENTIFIER).unwrap(), "Utf8");
+    }
+
+    #[rstest]
+    fn clear_delta_rejects_other_instrument_chunk_metadata() {
+        let delta = OrderBookDelta::clear(InstrumentId::from("AAPL.XNAS"), 0, 1.into(), 1.into());
+        let metadata = OrderBookDelta::get_metadata(&InstrumentId::from("MSFT.XNAS"), 2, 0);
+
+        assert!(!delta.matches_chunk_metadata(&metadata));
+    }
+
+    #[rstest]
+    fn clear_delta_rejects_chunk_metadata_without_price_precision() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let delta = OrderBookDelta::clear(instrument_id, 0, 1.into(), 1.into());
+        let mut metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
+        metadata.remove(KEY_PRICE_PRECISION);
+
+        assert!(!delta.matches_chunk_metadata(&metadata));
     }
 
     #[rstest]
@@ -324,29 +361,35 @@ mod tests {
         let record_batch = OrderBookDelta::encode_batch(&metadata, &data).unwrap();
 
         let columns = record_batch.columns();
-        let action_values = columns[0].as_any().downcast_ref::<UInt8Array>().unwrap();
-        let side_values = columns[1].as_any().downcast_ref::<UInt8Array>().unwrap();
+        let action_values = extract_column_string(columns, "action", 0).unwrap();
+        let side_values = extract_column_string(columns, "side", 1).unwrap();
         let price_values = columns[2]
             .as_any()
-            .downcast_ref::<FixedSizeBinaryArray>()
+            .downcast_ref::<Decimal128Array>()
             .unwrap();
         let size_values = columns[3]
             .as_any()
-            .downcast_ref::<FixedSizeBinaryArray>()
+            .downcast_ref::<Decimal128Array>()
             .unwrap();
         let order_id_values = columns[4].as_any().downcast_ref::<UInt64Array>().unwrap();
         let flags_values = columns[5].as_any().downcast_ref::<UInt8Array>().unwrap();
         let sequence_values = columns[6].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ts_event_values = columns[7].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ts_init_values = columns[8].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let ts_event_values = columns[7]
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .unwrap();
+        let ts_init_values = columns[8]
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .unwrap();
 
-        assert_eq!(columns.len(), 9);
+        assert_eq!(columns.len(), 10);
         assert_eq!(action_values.len(), 2);
-        assert_eq!(action_values.value(0), 1);
-        assert_eq!(action_values.value(1), 2);
+        assert_eq!(action_values.value(0), "ADD");
+        assert_eq!(action_values.value(1), "UPDATE");
         assert_eq!(side_values.len(), 2);
-        assert_eq!(side_values.value(0), 1);
-        assert_eq!(side_values.value(1), 2);
+        assert_eq!(side_values.value(0), "BUY");
+        assert_eq!(side_values.value(1), "SELL");
 
         assert_eq!(price_values.len(), 2);
         assert_eq!(
@@ -389,13 +432,13 @@ mod tests {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
 
-        let action = UInt8Array::from(vec![1, 2]);
-        let side = UInt8Array::from(vec![1, 1]);
-        let price = fixed_size_binary(vec![
+        let action = enum_dictionary_array([BookAction::Add, BookAction::Update]).unwrap();
+        let side = enum_dictionary_array([OrderSide::Buy, OrderSide::Buy]).unwrap();
+        let price = crate::arrow::test_support::decimal_array_from_bytes(vec![
             &((101.10 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
             &((101.20 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
         ]);
-        let size = fixed_size_binary(vec![
+        let size = crate::arrow::test_support::decimal_array_from_bytes(vec![
             &((10000.0 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
             &((9000.0 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
         ]);
@@ -405,8 +448,11 @@ mod tests {
         let ts_event = UInt64Array::from(vec![1, 2]);
         let ts_init = UInt64Array::from(vec![3, 4]);
 
-        let record_batch = RecordBatch::try_new(
-            OrderBookDelta::get_schema(Some(metadata.clone())).into(),
+        let record_batch = crate::arrow::record_batch_with_timestamps(
+            crate::arrow::schema_without_identifier_column(&OrderBookDelta::get_schema(Some(
+                metadata.clone(),
+            )))
+            .into(),
             vec![
                 Arc::new(action),
                 Arc::new(side),
@@ -426,18 +472,109 @@ mod tests {
     }
 
     #[rstest]
+    fn test_decode_batch_rejects_null_timestamp_with_field_and_row() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
+        let delta = OrderBookDelta {
+            instrument_id,
+            action: BookAction::Add,
+            order: BookOrder {
+                side: OrderSide::Buy.into(),
+                price: Price::from("100.10"),
+                size: Quantity::from(100),
+                order_id: 1,
+            },
+            flags: 0,
+            sequence: 1,
+            ts_event: 1.into(),
+            ts_init: 2.into(),
+        };
+        let encoded = OrderBookDelta::encode_batch(&metadata, &[delta]).unwrap();
+        let mut columns = encoded.columns().to_vec();
+        columns[8] = Arc::new(TimestampNanosecondArray::from(vec![None]).with_timezone("UTC"));
+        let fields = encoded
+            .schema()
+            .fields()
+            .iter()
+            .map(|field| {
+                if field.name() == "ts_init" {
+                    Arc::new(field.as_ref().clone().with_nullable(true))
+                } else {
+                    field.clone()
+                }
+            })
+            .collect::<Vec<_>>();
+        let schema = Arc::new(Schema::new_with_metadata(fields, metadata.clone()));
+        let batch = RecordBatch::try_new(schema, columns).unwrap();
+
+        let error = OrderBookDelta::decode_batch(&metadata, batch).unwrap_err();
+
+        assert!(error.to_string().contains("ts_init"));
+        assert!(error.to_string().contains("row 0"));
+    }
+
+    #[rstest]
+    fn test_decode_batch_rejects_null_required_integers_with_field_and_row() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
+        let delta = OrderBookDelta {
+            instrument_id,
+            action: BookAction::Add,
+            order: BookOrder::new(
+                OrderSide::Buy,
+                Price::from("100.10"),
+                Quantity::from(100),
+                1,
+            ),
+            flags: 0,
+            sequence: 1,
+            ts_event: 1.into(),
+            ts_init: 2.into(),
+        };
+        let encoded = OrderBookDelta::encode_batch(&metadata, &[delta]).unwrap();
+        let corruptions: [(usize, &str, ArrayRef); 3] = [
+            (4, "order_id", Arc::new(UInt64Array::from(vec![None]))),
+            (5, "flags", Arc::new(UInt8Array::from(vec![None]))),
+            (6, "sequence", Arc::new(UInt64Array::from(vec![None]))),
+        ];
+
+        for (index, field, column) in corruptions {
+            let mut columns = encoded.columns().to_vec();
+            columns[index] = column;
+            let fields = encoded
+                .schema()
+                .fields()
+                .iter()
+                .map(|schema_field| {
+                    if schema_field.name() == field {
+                        Arc::new(schema_field.as_ref().clone().with_nullable(true))
+                    } else {
+                        schema_field.clone()
+                    }
+                })
+                .collect::<Vec<_>>();
+            let schema = Arc::new(Schema::new_with_metadata(fields, metadata.clone()));
+            let batch = RecordBatch::try_new(schema, columns).unwrap();
+
+            let error = OrderBookDelta::decode_batch(&metadata, batch).unwrap_err();
+            assert!(error.to_string().contains(field));
+            assert!(error.to_string().contains("row 0"));
+        }
+    }
+
+    #[rstest]
     fn test_decode_batch_with_undef_values() {
         let instrument_id = InstrumentId::from("PLTR.XNAS");
         let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
 
         // Create test data with 'R' (clear) action which has PRICE_UNDEF and QUANTITY_UNDEF
-        let action = UInt8Array::from(vec![4, 1]); // 4 = Clear, 1 = Add
-        let side = UInt8Array::from(vec![0, 1]); // No side for Clear, Buy for Add
-        let price = fixed_size_binary(vec![
+        let action = enum_dictionary_array([BookAction::Clear, BookAction::Add]).unwrap();
+        let side = enum_dictionary_array(["NO_ORDER_SIDE", "BUY"]).unwrap();
+        let price = crate::arrow::test_support::decimal_array_from_bytes(vec![
             &PRICE_UNDEF.to_le_bytes(),
             &((100.50 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
         ]);
-        let size = fixed_size_binary(vec![
+        let size = crate::arrow::test_support::decimal_array_from_bytes(vec![
             &QUANTITY_UNDEF.to_le_bytes(),
             &((1000.0 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
         ]);
@@ -447,8 +584,11 @@ mod tests {
         let ts_event = UInt64Array::from(vec![1, 2]);
         let ts_init = UInt64Array::from(vec![3, 4]);
 
-        let record_batch = RecordBatch::try_new(
-            OrderBookDelta::get_schema(Some(metadata.clone())).into(),
+        let record_batch = crate::arrow::record_batch_with_timestamps(
+            crate::arrow::schema_without_identifier_column(&OrderBookDelta::get_schema(Some(
+                metadata.clone(),
+            )))
+            .into(),
             vec![
                 Arc::new(action),
                 Arc::new(side),
@@ -478,20 +618,27 @@ mod tests {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
 
-        let action = UInt8Array::from(vec![1]);
-        let side = UInt8Array::from(vec![1]);
+        let action = enum_dictionary_array([BookAction::Add]).unwrap();
+        let side = enum_dictionary_array([OrderSide::Buy]).unwrap();
 
         let invalid_price: PriceRaw = PriceRaw::MAX - 1000;
-        let price = fixed_size_binary(vec![&invalid_price.to_le_bytes()]);
-        let size = fixed_size_binary(vec![&((100.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes()]);
+        let price = crate::arrow::test_support::decimal_array_from_bytes(vec![
+            &invalid_price.to_le_bytes(),
+        ]);
+        let size = crate::arrow::test_support::decimal_array_from_bytes(vec![
+            &((100.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+        ]);
         let order_id = UInt64Array::from(vec![1]);
         let flags = UInt8Array::from(vec![0]);
         let sequence = UInt64Array::from(vec![1]);
         let ts_event = UInt64Array::from(vec![1]);
         let ts_init = UInt64Array::from(vec![2]);
 
-        let record_batch = RecordBatch::try_new(
-            OrderBookDelta::get_schema(Some(metadata.clone())).into(),
+        let record_batch = crate::arrow::record_batch_with_timestamps(
+            crate::arrow::schema_without_identifier_column(&OrderBookDelta::get_schema(Some(
+                metadata.clone(),
+            )))
+            .into(),
             vec![
                 Arc::new(action),
                 Arc::new(side),
@@ -520,18 +667,25 @@ mod tests {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
 
-        let action = UInt8Array::from(vec![99]);
-        let side = UInt8Array::from(vec![1]);
-        let price = fixed_size_binary(vec![&((100.0 * FIXED_SCALAR) as PriceRaw).to_le_bytes()]);
-        let size = fixed_size_binary(vec![&((100.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes()]);
+        let action = enum_dictionary_array(["INVALID"]).unwrap();
+        let side = enum_dictionary_array([OrderSide::Buy]).unwrap();
+        let price = crate::arrow::test_support::decimal_array_from_bytes(vec![
+            &((100.0 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
+        ]);
+        let size = crate::arrow::test_support::decimal_array_from_bytes(vec![
+            &((100.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+        ]);
         let order_id = UInt64Array::from(vec![1]);
         let flags = UInt8Array::from(vec![0]);
         let sequence = UInt64Array::from(vec![1]);
         let ts_event = UInt64Array::from(vec![1]);
         let ts_init = UInt64Array::from(vec![2]);
 
-        let record_batch = RecordBatch::try_new(
-            OrderBookDelta::get_schema(Some(metadata.clone())).into(),
+        let record_batch = crate::arrow::record_batch_with_timestamps(
+            crate::arrow::schema_without_identifier_column(&OrderBookDelta::get_schema(Some(
+                metadata.clone(),
+            )))
+            .into(),
             vec![
                 Arc::new(action),
                 Arc::new(side),
@@ -561,18 +715,25 @@ mod tests {
         let mut metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
         metadata.remove(KEY_INSTRUMENT_ID);
 
-        let action = UInt8Array::from(vec![1]);
-        let side = UInt8Array::from(vec![1]);
-        let price = fixed_size_binary(vec![&((100.0 * FIXED_SCALAR) as PriceRaw).to_le_bytes()]);
-        let size = fixed_size_binary(vec![&((100.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes()]);
+        let action = enum_dictionary_array([BookAction::Add]).unwrap();
+        let side = enum_dictionary_array([OrderSide::Buy]).unwrap();
+        let price = crate::arrow::test_support::decimal_array_from_bytes(vec![
+            &((100.0 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
+        ]);
+        let size = crate::arrow::test_support::decimal_array_from_bytes(vec![
+            &((100.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+        ]);
         let order_id = UInt64Array::from(vec![1]);
         let flags = UInt8Array::from(vec![0]);
         let sequence = UInt64Array::from(vec![1]);
         let ts_event = UInt64Array::from(vec![1]);
         let ts_init = UInt64Array::from(vec![2]);
 
-        let record_batch = RecordBatch::try_new(
-            OrderBookDelta::get_schema(Some(metadata.clone())).into(),
+        let record_batch = crate::arrow::record_batch_with_timestamps(
+            crate::arrow::schema_without_identifier_column(&OrderBookDelta::get_schema(Some(
+                metadata.clone(),
+            )))
+            .into(),
             vec![
                 Arc::new(action),
                 Arc::new(side),

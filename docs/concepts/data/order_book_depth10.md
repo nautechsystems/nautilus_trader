@@ -1,51 +1,52 @@
-# OrderBookDepth10
+# OrderBookDepth
 
-`OrderBookDepth10` represents a fixed-depth book update with up to 10 bid levels and 10 ask levels.
+`OrderBookDepth` represents a snapshot with a variable number of bid and ask levels.
 Use it when a venue publishes a self-contained depth snapshot rather than incremental deltas.
 
 ## Fields
 
-| Field           | Rust type         | Python type       | Required/default | Notes                                      |
-| --------------- | ----------------- | ----------------- | ---------------- | ------------------------------------------ |
-| `instrument_id` | `InstrumentId`    | `InstrumentId`    | Required         | Instrument whose book is represented.      |
-| `bids`          | `[BookOrder; 10]` | `list[BookOrder]` | Required         | Exactly 10 bid levels.                     |
-| `asks`          | `[BookOrder; 10]` | `list[BookOrder]` | Required         | Exactly 10 ask levels.                     |
-| `bid_counts`    | `[u32; 10]`       | `list[int]`       | Required         | Number of bid orders at each level.        |
-| `ask_counts`    | `[u32; 10]`       | `list[int]`       | Required         | Number of ask orders at each level.        |
-| `flags`         | `u8`              | `int`             | Required         | `RecordFlag` bit field for event metadata. |
-| `sequence`      | `u64`             | `int`             | Required         | Venue sequence number, or zero if absent.  |
-| `ts_event`      | `UnixNanos`       | `int`             | Required         | Event timestamp in nanoseconds.            |
-| `ts_init`       | `UnixNanos`       | `int`             | Required         | Initialization timestamp in nanoseconds.   |
+| Field           | Rust type                   | Python type       | Required/default | Notes                                      |
+| --------------- | --------------------------- | ----------------- | ---------------- | ------------------------------------------ |
+| `instrument_id` | `InstrumentId`              | `InstrumentId`    | Required         | Instrument whose book is represented.      |
+| `bids`          | `SmallVec<[BookOrder; 10]>` | `list[BookOrder]` | Required         | Bid levels in book order.                  |
+| `asks`          | `SmallVec<[BookOrder; 10]>` | `list[BookOrder]` | Required         | Ask levels in book order.                  |
+| `bid_counts`    | `SmallVec<[u32; 10]>`       | `list[int]`       | Required         | Number of bid orders at each level.        |
+| `ask_counts`    | `SmallVec<[u32; 10]>`       | `list[int]`       | Required         | Number of ask orders at each level.        |
+| `flags`         | `u8`                        | `int`             | Required         | `RecordFlag` bit field for event metadata. |
+| `sequence`      | `u64`                       | `int`             | Required         | Venue sequence number, or zero if absent.  |
+| `ts_event`      | `UnixNanos`                 | `int`             | Required         | Event timestamp in nanoseconds.            |
+| `ts_init`       | `UnixNanos`                 | `int`             | Required         | Initialization timestamp in nanoseconds.   |
 
 ## Behavior
 
-- Rust and PyO3 Python constructors require exactly 10 bid levels, 10 ask levels,
-  10 bid counts, and 10 ask counts.
-- Use null or default book orders with zero counts for unavailable levels.
+- Rust and PyO3 Python constructors accept variable-length sides. Each side requires one count
+  per order; bid and ask sides can have different lengths.
+- Empty sides use empty sequences. The inline capacity is ten; larger snapshots allocate as needed.
 - This type is not interchangeable with incremental `OrderBookDelta` streams.
+
+`OrderBookDepth10` remains a compatibility name. The legacy C FFI and fixed-depth SBE encoding require exactly ten
+levels per side.
 
 ## Example
 
 ```rust tab="Rust"
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::{BookOrder, OrderBookDepth10, DEPTH10_LEN},
+    data::{BookOrder, OrderBookDepth},
     enums::OrderSide,
     identifiers::InstrumentId,
     types::{Price, Quantity},
 };
 
-let mut bids = [BookOrder::default(); DEPTH10_LEN];
-let mut asks = [BookOrder::default(); DEPTH10_LEN];
-bids[0] = BookOrder::new(OrderSide::Buy, Price::from("2500.10"), Quantity::from("3.5"), 1);
-asks[0] = BookOrder::new(OrderSide::Sell, Price::from("2500.20"), Quantity::from("2.0"), 2);
+let bids = vec![BookOrder::new(OrderSide::Buy, Price::from("2500.10"), Quantity::from("3.5"), 1)];
+let asks = vec![BookOrder::new(OrderSide::Sell, Price::from("2500.20"), Quantity::from("2.0"), 2)];
 
-let depth = OrderBookDepth10::new(
+let depth = OrderBookDepth::new(
     InstrumentId::from("ETHUSDT-PERP.BINANCE"),
     bids,
     asks,
-    [1; DEPTH10_LEN],
-    [1; DEPTH10_LEN],
+    vec![1],
+    vec![1],
     0,
     42,
     UnixNanos::from(1_000_000_000),
@@ -58,7 +59,7 @@ from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import BookOrder
-from nautilus_trader.model import OrderBookDepth10
+from nautilus_trader.model import OrderBookDepth
 from nautilus_trader.model import OrderSide
 
 bids = [
@@ -68,7 +69,7 @@ bids = [
         Quantity.from_str("3.5"),
         i + 1,
     )
-    for i in range(10)
+    for i in range(3)
 ]
 asks = [
     BookOrder(
@@ -77,15 +78,15 @@ asks = [
         Quantity.from_str("2.0"),
         i + 11,
     )
-    for i in range(10)
+    for i in range(2)
 ]
 
-depth = OrderBookDepth10(
+depth = OrderBookDepth(
     instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
     bids=bids,
     asks=asks,
-    bid_counts=[1] * 10,
-    ask_counts=[1] * 10,
+    bid_counts=[1] * len(bids),
+    ask_counts=[1] * len(asks),
     flags=0,
     sequence=42,
     ts_event=1_000_000_000,

@@ -15,12 +15,11 @@
 
 //! Arrow serialization for CryptoFuturesSpread instruments.
 
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{borrow::Borrow, collections::HashMap, str::FromStr, sync::Arc};
 
 use arrow::{
     array::{
-        Array, BinaryArray, BinaryBuilder, BooleanArray, BooleanBuilder, StringArray,
-        StringBuilder, UInt8Array, UInt64Array,
+        Array, BooleanArray, BooleanBuilder, StringArray, StringBuilder, UInt8Array, UInt64Array,
     },
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
@@ -39,7 +38,8 @@ use super::KEY_CLASS;
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
     KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, extract_column, extract_column_by_name_or_index,
-    extract_optional_string_column_by_name, optional_ustr_value,
+    extract_optional_string_column_by_name, json_string_field, optional_ustr_value,
+    record_batch_with_timestamps, record_batch_with_u64_timestamps, timestamp_data_type,
 };
 
 impl ArrowSchemaProvider for CryptoFuturesSpread {
@@ -52,8 +52,8 @@ impl ArrowSchemaProvider for CryptoFuturesSpread {
             Field::new("settlement_currency", DataType::Utf8, false),
             Field::new("is_inverse", DataType::Boolean, false),
             Field::new("strategy_type", DataType::Utf8, false),
-            Field::new("activation_ns", DataType::UInt64, false),
-            Field::new("expiration_ns", DataType::UInt64, false),
+            Field::new("activation_ns", timestamp_data_type(), false),
+            Field::new("expiration_ns", timestamp_data_type(), false),
             Field::new("price_precision", DataType::UInt8, false),
             Field::new("size_precision", DataType::UInt8, false),
             Field::new("price_increment", DataType::Utf8, false),
@@ -71,9 +71,9 @@ impl ArrowSchemaProvider for CryptoFuturesSpread {
             Field::new("maker_fee", DataType::Utf8, false),
             Field::new("taker_fee", DataType::Utf8, false),
             Field::new("tick_scheme", DataType::Utf8, true),
-            Field::new("info", DataType::Binary, true),
-            Field::new("ts_event", DataType::UInt64, false),
-            Field::new("ts_init", DataType::UInt64, false),
+            json_string_field("info", true),
+            Field::new("ts_event", timestamp_data_type(), false),
+            Field::new("ts_init", timestamp_data_type(), false),
         ];
 
         let mut final_metadata = HashMap::new();
@@ -88,10 +88,13 @@ impl ArrowSchemaProvider for CryptoFuturesSpread {
 }
 
 impl EncodeToRecordBatch for CryptoFuturesSpread {
-    fn encode_batch(
+    fn encode_batch<T>(
         #[allow(unused)] metadata: &HashMap<String, String>,
-        data: &[Self],
-    ) -> Result<RecordBatch, ArrowError> {
+        data: &[T],
+    ) -> Result<RecordBatch, ArrowError>
+    where
+        T: std::borrow::Borrow<Self>,
+    {
         let mut id_builder = StringBuilder::new();
         let mut raw_symbol_builder = StringBuilder::new();
         let mut underlying_builder = StringBuilder::new();
@@ -118,11 +121,11 @@ impl EncodeToRecordBatch for CryptoFuturesSpread {
         let mut maker_fee_builder = StringBuilder::new();
         let mut taker_fee_builder = StringBuilder::new();
         let mut tick_scheme_builder = StringBuilder::new();
-        let mut info_builder = BinaryBuilder::new();
+        let mut info_builder = StringBuilder::new();
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
 
-        for cf in data {
+        for cf in data.iter().map(Borrow::borrow) {
             id_builder.append_value(cf.id.to_string());
             raw_symbol_builder.append_value(cf.raw_symbol);
             underlying_builder.append_value(cf.underlying.to_string());
@@ -187,8 +190,8 @@ impl EncodeToRecordBatch for CryptoFuturesSpread {
             }
 
             if let Some(ref info) = cf.info {
-                match serde_json::to_vec(info) {
-                    Ok(json_bytes) => info_builder.append_value(json_bytes),
+                match serde_json::to_string(info) {
+                    Ok(json) => info_builder.append_value(json),
                     Err(e) => {
                         return Err(ArrowError::InvalidArgumentError(format!(
                             "Failed to serialize info dict to JSON: {e}"
@@ -206,7 +209,7 @@ impl EncodeToRecordBatch for CryptoFuturesSpread {
         let mut final_metadata = metadata.clone();
         final_metadata.insert(KEY_CLASS.to_string(), "CryptoFuturesSpread".to_string());
 
-        RecordBatch::try_new(
+        record_batch_with_timestamps(
             Self::get_schema(Some(final_metadata)).into(),
             vec![
                 Arc::new(id_builder.finish()),
@@ -270,6 +273,8 @@ pub fn decode_crypto_futures_spread_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
     record_batch: &RecordBatch,
 ) -> Result<Vec<CryptoFuturesSpread>, EncodingError> {
+    let record_batch = record_batch_with_u64_timestamps(record_batch)?;
+    let record_batch = &record_batch;
     let cols = record_batch.columns();
     let num_rows = record_batch.num_rows();
 
@@ -324,7 +329,7 @@ pub fn decode_crypto_futures_spread_batch(
     let taker_fee_values = extract_column::<StringArray>(cols, "taker_fee", 24, DataType::Utf8)?;
     let tick_scheme_values = extract_optional_string_column_by_name(record_batch, "tick_scheme")?;
     let info_values =
-        extract_column_by_name_or_index::<BinaryArray>(record_batch, "info", 25, DataType::Binary)?;
+        extract_column_by_name_or_index::<StringArray>(record_batch, "info", 25, DataType::Utf8)?;
     let ts_event_values = extract_column_by_name_or_index::<UInt64Array>(
         record_batch,
         "ts_event",
@@ -486,13 +491,13 @@ pub fn decode_crypto_futures_spread_batch(
         let info = if info_values.is_null(i) {
             None
         } else {
-            let info_bytes = info_values
+            let info_json = info_values
                 .as_any()
-                .downcast_ref::<BinaryArray>()
+                .downcast_ref::<StringArray>()
                 .ok_or_else(|| EncodingError::ParseError("info", format!("row {i}: invalid type")))?
                 .value(i);
 
-            match serde_json::from_slice::<Params>(info_bytes) {
+            match serde_json::from_str::<Params>(info_json) {
                 Ok(info_dict) => Some(info_dict),
                 Err(e) => {
                     return Err(EncodingError::ParseError(

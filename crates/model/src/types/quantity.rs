@@ -70,15 +70,17 @@ use serde::{Deserialize, Deserializer, Serialize};
 #[cfg(feature = "defi")]
 use super::fixed::compare_raw;
 use super::fixed::{
-    FIXED_PRECISION, FIXED_SCALAR, FIXED_SCALAR_RAW, MAX_FLOAT_PRECISION, canonical_raw,
-    check_fixed_precision, checked_mul_div_fixed, checked_mul_div_raw,
-    mantissa_exponent_to_fixed_i128, mantissa_exponent_to_raw_checked, raw_scale, raw_scales_match,
-    scaled_raw_to_decimal,
+    FIXED_PRECISION, FIXED_SCALAR, FIXED_SCALAR_RAW, canonical_raw, check_fixed_precision,
+    checked_mul_div_fixed, checked_mul_div_raw, format_scaled_u128,
+    mantissa_exponent_to_fixed_i128, mantissa_exponent_to_raw_checked, parse_decimal_mantissa,
+    raw_scale, raw_scales_match, scaled_raw_to_decimal,
 };
 #[cfg(not(feature = "high-precision"))]
 use super::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
 #[cfg(feature = "high-precision")]
 use super::fixed::{f64_to_fixed_u128, fixed_u128_to_f64};
+#[cfg(feature = "defi")]
+use crate::types::fixed::MAX_FLOAT_PRECISION;
 
 // -----------------------------------------------------------------------------
 // QuantityRaw
@@ -469,6 +471,19 @@ impl Quantity {
     #[must_use]
     pub fn to_formatted_string(&self) -> String {
         format!("{self}").separate_with_underscores()
+    }
+
+    fn raw_at_precision(&self) -> QuantityRaw {
+        let precision_diff = FIXED_PRECISION.saturating_sub(self.precision);
+        self.raw / QuantityRaw::pow(10, u32::from(precision_diff))
+    }
+
+    fn raw_as_u128(raw: QuantityRaw) -> u128 {
+        #[allow(
+            clippy::useless_conversion,
+            reason = "u128::from is a widening conversion when QuantityRaw is u64"
+        )]
+        u128::from(raw)
     }
 
     /// Creates a new [`Quantity`] from a `Decimal` value with specified precision.
@@ -878,18 +893,31 @@ impl FromStr for Quantity {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         let clean_value = value.replace('_', "");
 
-        let decimal = if clean_value.contains('e') || clean_value.contains('E') {
-            Decimal::from_scientific(&clean_value)
-                .map_err(|e| format!("Error parsing `input` string '{value}' as Decimal: {e}"))?
-        } else {
-            Decimal::from_str(&clean_value)
-                .map_err(|e| format!("Error parsing `input` string '{value}' as Decimal: {e}"))?
-        };
+        if clean_value.contains('e') || clean_value.contains('E') {
+            let decimal = Decimal::from_scientific(&clean_value)
+                .map_err(|e| format!("Error parsing `input` string '{value}' as Decimal: {e}"))?;
+            let precision = decimal.scale() as u8;
+            return Self::from_decimal_dp(decimal, precision).map_err(|e| e.to_string());
+        }
 
-        // Use decimal scale to preserve caller-specified precision (including trailing zeros)
-        let precision = decimal.scale() as u8;
-
-        Self::from_decimal_dp(decimal, precision).map_err(|e| e.to_string())
+        let (mantissa, precision) = parse_decimal_mantissa(&clean_value)
+            .map_err(|e| format!("Error parsing `input` string '{value}' as Decimal: {e}"))?;
+        if mantissa < 0 {
+            return Err(format!(
+                "Decimal value '{clean_value}' is negative, Quantity must be non-negative"
+            ));
+        }
+        let exponent = -i8::try_from(precision).map_err(|e| e.to_string())?;
+        let raw = mantissa_exponent_to_raw_checked::<QuantityRaw>(
+            mantissa,
+            exponent,
+            precision,
+            "Quantity::from_str",
+            "QuantityRaw",
+            "Quantity",
+        )
+        .map_err(|e| e.to_string())?;
+        Self::from_raw_checked(raw, precision).map_err(|e| e.to_string())
     }
 }
 
@@ -913,21 +941,22 @@ impl From<&String> for Quantity {
 
 impl Debug for Quantity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.precision > MAX_FLOAT_PRECISION {
-            write!(f, "{}({})", stringify!(Quantity), self.raw)
-        } else {
-            write!(f, "{}({})", stringify!(Quantity), self.as_decimal())
-        }
+        write!(
+            f,
+            "{}({})",
+            stringify!(Quantity),
+            format_scaled_u128(Self::raw_as_u128(self.raw_at_precision()), self.precision),
+        )
     }
 }
 
 impl Display for Quantity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.precision > MAX_FLOAT_PRECISION {
-            write!(f, "{}", self.raw)
-        } else {
-            write!(f, "{}", self.as_decimal())
-        }
+        write!(
+            f,
+            "{}",
+            format_scaled_u128(Self::raw_as_u128(self.raw_at_precision()), self.precision),
+        )
     }
 }
 
@@ -1721,8 +1750,8 @@ mod tests {
         case(
             1_000_000_000_000_000_000.0,
             18,
-            "Quantity(1000000000000000000)",
-            "1000000000000000000"
+            "Quantity(1.000000000000000000)",
+            "1.000000000000000000"
         )
     )] // High precision
     fn test_debug_display_precision_handling(
@@ -1731,7 +1760,7 @@ mod tests {
         #[case] expected_debug: &str,
         #[case] expected_display: &str,
     ) {
-        let quantity = if precision > MAX_FLOAT_PRECISION {
+        let quantity = if precision > crate::types::fixed::MAX_FLOAT_PRECISION {
             // For high precision, use from_raw to avoid f64 conversion issues
             Quantity::from_raw(value as QuantityRaw, precision)
         } else {
@@ -1890,14 +1919,23 @@ mod tests {
 
     #[cfg(feature = "high-precision")]
     #[rstest]
-    #[case(QUANTITY_RAW_MAX, dec!(34028236692093))]
-    #[case(80_000_000_000_000_000_000_000_000_000, dec!(8000000000000))]
-    fn test_as_decimal_above_decimal_mantissa(#[case] raw: QuantityRaw, #[case] expected: Decimal) {
-        // Regression: a precision-16 quantity above roughly 7.92e12 rescales to a raw value
-        // beyond `Decimal`'s 96-bit mantissa, which used to panic during conversion.
-        let qty = Quantity::from_raw(raw, 16);
+    fn test_max_raw_precision_16_string_round_trip() {
+        let quantity = Quantity::from_raw(QUANTITY_RAW_MAX, 16);
 
-        assert_eq!(qty.as_decimal(), expected);
+        let decoded = quantity.to_string().parse::<Quantity>().unwrap();
+
+        assert_eq!(decoded, quantity);
+        assert_eq!(decoded.raw, QUANTITY_RAW_MAX);
+        assert_eq!(decoded.precision, 16);
+    }
+
+    #[cfg(all(feature = "defi", feature = "high-precision"))]
+    #[rstest]
+    fn test_wei_above_decimal_mantissa_formats_exactly() {
+        let raw = 80_000_000_000_000_000_250_000_000_000_u128;
+        let qty = Quantity::from_raw(raw, 18);
+
+        assert_eq!(qty.to_string(), "80000000000.000000250000000000");
     }
 
     #[rstest]
@@ -2089,12 +2127,12 @@ mod property_tests {
 
     /// Strategy to generate valid precision values.
     fn precision_strategy() -> impl Strategy<Value = u8> {
-        let upper = FIXED_PRECISION.min(MAX_FLOAT_PRECISION);
+        let upper = FIXED_PRECISION.min(crate::types::fixed::MAX_FLOAT_PRECISION);
         prop_oneof![Just(0u8), 0u8..=upper, Just(FIXED_PRECISION),]
     }
 
     fn precision_strategy_non_zero() -> impl Strategy<Value = u8> {
-        let upper = FIXED_PRECISION.clamp(1, MAX_FLOAT_PRECISION);
+        let upper = FIXED_PRECISION.clamp(1, crate::types::fixed::MAX_FLOAT_PRECISION);
         prop_oneof![Just(upper), Just(FIXED_PRECISION.max(1)), 1u8..=upper,]
     }
 
@@ -2122,7 +2160,7 @@ mod property_tests {
     const DECIMAL_MAX_MANTISSA: u128 = 79_228_162_514_264_337_593_543_950_335;
 
     fn decimal_compatible(raw: QuantityRaw, precision: u8) -> bool {
-        if precision > MAX_FLOAT_PRECISION {
+        if precision > crate::types::fixed::MAX_FLOAT_PRECISION {
             return false;
         }
         let precision_diff = u32::from(FIXED_PRECISION.saturating_sub(precision));
@@ -2142,9 +2180,6 @@ mod property_tests {
         fn prop_quantity_serde_round_trip(
             (raw, precision) in raw_for_precision_strategy()
         ) {
-            // Only run string-based round-trip checks where decimal formatting is supported.
-            prop_assume!(decimal_compatible(raw, precision));
-
             let original = Quantity::from_raw(raw, precision);
 
             // String round-trip (this should be exact and is the most important)

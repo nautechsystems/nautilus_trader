@@ -25,6 +25,7 @@ pub mod bet;
 pub mod black_scholes;
 pub mod close;
 pub mod custom;
+pub mod data_type;
 pub mod delta;
 pub mod deltas;
 pub mod depth;
@@ -38,28 +39,29 @@ pub mod registry;
 pub mod status;
 pub mod trade;
 
+/// Arrow schema-map name for compact string enum columns.
+pub const ARROW_ENUM_DICTIONARY: &str = "Dictionary(Int8, Utf8)";
+/// Arrow schema-map name for UTC nanosecond instants.
+pub const ARROW_TIMESTAMP_NANOSECOND: &str = "Timestamp(Nanosecond, Some(\"UTC\"))";
+
 #[cfg(any(test, feature = "test-support"))]
 pub mod stubs;
 
 use std::{
     fmt::{Debug, Display},
-    hash::{Hash, Hasher},
+    ops::{Deref, Range},
     str::FromStr,
+    sync::Arc,
 };
 
-use nautilus_core::{Params, UnixNanos};
-use serde::{
-    Deserialize, Serialize,
-    de::{self, IgnoredAny, MapAccess, SeqAccess, Visitor},
-};
-use serde_json::Value as JsonValue;
+use nautilus_core::UnixNanos;
+use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "defi")]
 use crate::defi::DefiData;
 // Re-exports
 #[rustfmt::skip]  // Keep these grouped
 pub use bar::{Bar, BarSpecification, BarType};
-pub use batch::{BatchView, DataBatch};
 pub use black_scholes::Greeks;
 pub use close::InstrumentClose;
 #[cfg(feature = "python")]
@@ -71,9 +73,10 @@ pub use custom::{
 pub use custom::{
     get_python_data_class, reconstruct_python_custom_data, register_python_data_class,
 };
+pub use data_type::DataType;
 pub use delta::OrderBookDelta;
 pub use deltas::OrderBookDeltas;
-pub use depth::{DEPTH10_LEN, OrderBookDepth10};
+pub use depth::{DEPTH_INLINE_LEN, DEPTH10_LEN, OrderBookDepth, OrderBookDepth10};
 pub use funding::FundingRateUpdate;
 pub use greeks::{
     BlackScholesGreeksResult, GreeksData, HasGreeks, OptionGreekValues, PortfolioGreeks,
@@ -86,7 +89,7 @@ pub use quote::QuoteTick;
 #[cfg(feature = "arrow")]
 pub use registry::{
     ArrowDecoder, ArrowEncoder, decode_custom_from_arrow, encode_custom_to_arrow,
-    ensure_arrow_registered, get_arrow_schema, register_arrow,
+    ensure_arrow_registered, get_arrow_schema, register_arrow, validate_custom_arrow_schema,
 };
 #[cfg(feature = "python")]
 pub use registry::{
@@ -100,16 +103,68 @@ pub use registry::{
 pub use status::InstrumentStatus;
 pub use trade::TradeTick;
 
-use crate::identifiers::{InstrumentId, Venue};
+/// Canonical custom data type name for calculated option Greeks.
+pub const GREEKS_DATA_TYPE_NAME: &str = "GreeksData";
+
+use crate::{
+    identifiers::InstrumentId,
+    instruments::{Instrument, InstrumentAny},
+};
+
+/// Invokes a macro with every built-in typed data family.
+///
+/// Each tuple contains the canonical family name, concrete type, `Data` variant,
+/// `DataBatch` variant, and catalog path prefix. The first four fields use the same name whenever
+/// the family has one concrete representation. Custom and DeFi data have no single built-in
+/// concrete type; `Deltas` and `Data` are aggregate compatibility batches. Consumers handle
+/// those variants explicitly.
+#[macro_export]
+macro_rules! for_each_data_type {
+    ($macro:ident) => {
+        $macro! {
+            (Instrument, InstrumentAny, Instrument, Instrument, "instruments"),
+            (QuoteTick, QuoteTick, Quote, Quote, "quotes"),
+            (TradeTick, TradeTick, Trade, Trade, "trades"),
+            (Bar, Bar, Bar, Bar, "bars"),
+            (OrderBookDelta, OrderBookDelta, BookDelta, BookDelta, "order_book_deltas"),
+            (OrderBookDepth, OrderBookDepth, BookDepth, BookDepth, "order_book_depths"),
+            (MarkPriceUpdate, MarkPriceUpdate, MarkPrice, MarkPrice, "mark_prices"),
+            (IndexPriceUpdate, IndexPriceUpdate, IndexPrice, IndexPrice, "index_prices"),
+            (FundingRateUpdate, FundingRateUpdate, FundingRate, FundingRate, "funding_rates"),
+            (InstrumentStatus, InstrumentStatus, InstrumentStatus, InstrumentStatus, "instrument_status"),
+            (OptionGreeks, OptionGreeks, OptionGreeks, OptionGreeks, "option_greeks"),
+            (InstrumentClose, InstrumentClose, InstrumentClose, InstrumentClose, "instrument_closes"),
+        }
+    };
+    ($macro:ident, $($args:tt)*) => {
+        $macro! {
+            ($($args)*);
+            (Instrument, InstrumentAny, Instrument, Instrument, "instruments"),
+            (QuoteTick, QuoteTick, Quote, Quote, "quotes"),
+            (TradeTick, TradeTick, Trade, Trade, "trades"),
+            (Bar, Bar, Bar, Bar, "bars"),
+            (OrderBookDelta, OrderBookDelta, BookDelta, BookDelta, "order_book_deltas"),
+            (OrderBookDepth, OrderBookDepth, BookDepth, BookDepth, "order_book_depths"),
+            (MarkPriceUpdate, MarkPriceUpdate, MarkPrice, MarkPrice, "mark_prices"),
+            (IndexPriceUpdate, IndexPriceUpdate, IndexPrice, IndexPrice, "index_prices"),
+            (FundingRateUpdate, FundingRateUpdate, FundingRate, FundingRate, "funding_rates"),
+            (InstrumentStatus, InstrumentStatus, InstrumentStatus, InstrumentStatus, "instrument_status"),
+            (OptionGreeks, OptionGreeks, OptionGreeks, OptionGreeks, "option_greeks"),
+            (InstrumentClose, InstrumentClose, InstrumentClose, InstrumentClose, "instrument_closes"),
+        }
+    };
+}
+
 /// A built-in Nautilus data type.
 ///
 /// Not recommended for storing large amounts of data, as the largest variant is significantly
 /// larger (~10x) than the smallest.
 #[derive(Debug)]
 pub enum Data {
+    Instrument(Box<InstrumentAny>),
     BookDelta(OrderBookDelta),
     BookDeltas(Box<OrderBookDeltas>),
-    BookDepth10(Box<OrderBookDepth10>), // This variant is significantly larger
+    BookDepth(Box<OrderBookDepth>), // This variant is significantly larger
     Quote(QuoteTick),
     Trade(TradeTick),
     Bar(Bar),
@@ -124,12 +179,13 @@ pub enum Data {
     Defi(Box<DefiData>), // This variant is significantly larger
 }
 
-/// A borrowed view of a built-in Nautilus data type.
+/// Borrowed data item used by typed replay paths.
 #[derive(Clone, Copy, Debug)]
 pub enum DataRef<'a> {
+    Instrument(&'a InstrumentAny),
     BookDelta(&'a OrderBookDelta),
     BookDeltas(&'a OrderBookDeltas),
-    BookDepth10(&'a OrderBookDepth10),
+    BookDepth(&'a OrderBookDepth),
     Quote(&'a QuoteTick),
     Trade(&'a TradeTick),
     Bar(&'a Bar),
@@ -145,11 +201,12 @@ pub enum DataRef<'a> {
 }
 
 impl<'a> From<&'a Data> for DataRef<'a> {
-    fn from(value: &'a Data) -> Self {
-        match value {
+    fn from(data: &'a Data) -> Self {
+        match data {
+            Data::Instrument(instrument) => Self::Instrument(instrument),
             Data::BookDelta(delta) => Self::BookDelta(delta),
             Data::BookDeltas(deltas) => Self::BookDeltas(deltas),
-            Data::BookDepth10(depth) => Self::BookDepth10(depth),
+            Data::BookDepth(depth) => Self::BookDepth(depth),
             Data::Quote(quote) => Self::Quote(quote),
             Data::Trade(trade) => Self::Trade(trade),
             Data::Bar(bar) => Self::Bar(bar),
@@ -162,6 +219,753 @@ impl<'a> From<&'a Data> for DataRef<'a> {
             Data::Custom(custom) => Self::Custom(custom),
             #[cfg(feature = "defi")]
             Data::Defi(defi) => Self::Defi(defi),
+        }
+    }
+}
+
+impl DataRef<'_> {
+    /// Returns the instrument ID for the data.
+    #[must_use]
+    pub fn instrument_id(&self) -> InstrumentId {
+        match self {
+            Self::Instrument(instrument) => instrument.id(),
+            Self::BookDelta(delta) => delta.instrument_id,
+            Self::BookDeltas(deltas) => deltas.instrument_id,
+            Self::BookDepth(depth) => depth.instrument_id,
+            Self::Quote(quote) => quote.instrument_id,
+            Self::Trade(trade) => trade.instrument_id,
+            Self::Bar(bar) => bar.bar_type.instrument_id(),
+            Self::MarkPrice(mark_price) => mark_price.instrument_id,
+            Self::IndexPrice(index_price) => index_price.instrument_id,
+            Self::FundingRate(funding_rate) => funding_rate.instrument_id,
+            Self::OptionGreeks(greeks) => greeks.instrument_id,
+            Self::InstrumentStatus(status) => status.instrument_id,
+            Self::InstrumentClose(close) => close.instrument_id,
+            Self::Custom(custom) => custom
+                .data_type
+                .identifier()
+                .and_then(|s| InstrumentId::from_str(s).ok())
+                .or_else(|| {
+                    custom
+                        .data_type
+                        .metadata()
+                        .and_then(|m| m.get_str("instrument_id"))
+                        .and_then(|s| InstrumentId::from_str(s).ok())
+                })
+                .unwrap_or_else(|| InstrumentId::from("NULL.NULL")),
+            #[cfg(feature = "defi")]
+            Self::Defi(defi) => defi.instrument_id(),
+        }
+    }
+
+    /// Returns whether the data is a type of order book data.
+    #[must_use]
+    pub fn is_order_book_data(&self) -> bool {
+        matches!(
+            self,
+            Self::BookDelta(_) | Self::BookDeltas(_) | Self::BookDepth(_)
+        )
+    }
+
+    /// Materializes this borrowed item as an owned [`Data`] enum for compatibility.
+    #[must_use]
+    pub fn to_owned_data(&self) -> Data {
+        match self {
+            Self::Instrument(instrument) => Data::Instrument(Box::new((*instrument).clone())),
+            Self::BookDelta(delta) => Data::BookDelta(**delta),
+            Self::BookDeltas(deltas) => Data::BookDeltas(Box::new((**deltas).clone())),
+            Self::BookDepth(depth) => Data::BookDepth(Box::new((*depth).clone())),
+            Self::Quote(quote) => Data::Quote(**quote),
+            Self::Trade(trade) => Data::Trade(**trade),
+            Self::Bar(bar) => Data::Bar(**bar),
+            Self::MarkPrice(mark_price) => Data::MarkPrice(**mark_price),
+            Self::IndexPrice(index_price) => Data::IndexPrice(**index_price),
+            Self::FundingRate(funding_rate) => Data::FundingRate(**funding_rate),
+            Self::OptionGreeks(greeks) => Data::OptionGreeks(**greeks),
+            Self::InstrumentStatus(status) => Data::InstrumentStatus(**status),
+            Self::InstrumentClose(close) => Data::InstrumentClose(**close),
+            Self::Custom(custom) => Data::Custom((**custom).clone()),
+            #[cfg(feature = "defi")]
+            Self::Defi(defi) => Data::Defi(Box::new((**defi).clone())),
+        }
+    }
+}
+
+impl HasTsInit for DataRef<'_> {
+    fn ts_init(&self) -> UnixNanos {
+        match self {
+            Self::Instrument(instrument) => Instrument::ts_init(*instrument),
+            Self::BookDelta(delta) => delta.ts_init,
+            Self::BookDeltas(deltas) => deltas.ts_init,
+            Self::BookDepth(depth) => depth.ts_init,
+            Self::Quote(quote) => quote.ts_init,
+            Self::Trade(trade) => trade.ts_init,
+            Self::Bar(bar) => bar.ts_init,
+            Self::MarkPrice(mark_price) => mark_price.ts_init,
+            Self::IndexPrice(index_price) => index_price.ts_init,
+            Self::FundingRate(funding_rate) => funding_rate.ts_init,
+            Self::OptionGreeks(greeks) => greeks.ts_init,
+            Self::InstrumentStatus(status) => status.ts_init,
+            Self::InstrumentClose(close) => close.ts_init,
+            Self::Custom(custom) => custom.data.ts_init(),
+            #[cfg(feature = "defi")]
+            Self::Defi(defi) => defi.ts_init(),
+        }
+    }
+}
+
+/// Range view over a shared typed data batch.
+#[derive(Clone, Debug)]
+#[expect(
+    clippy::rc_buffer,
+    reason = "Backtest batch views share full Vec batches by design"
+)]
+pub struct BatchView<T> {
+    data: Arc<Vec<T>>,
+    range: Range<usize>,
+}
+
+impl<T> BatchView<T> {
+    /// Creates a new [`BatchView`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `range` is invalid or exceeds `data.len()`.
+    #[must_use]
+    pub fn new(data: Arc<Vec<T>>, range: Range<usize>) -> Self {
+        assert!(range.start <= range.end, "invalid batch view range");
+        assert!(
+            range.end <= data.len(),
+            "batch view range exceeds data length"
+        );
+        Self { data, range }
+    }
+
+    #[must_use]
+    pub fn full(data: Arc<Vec<T>>) -> Self {
+        let len = data.len();
+        Self {
+            data,
+            range: 0..len,
+        }
+    }
+
+    #[must_use]
+    pub fn arc(&self) -> &Arc<Vec<T>> {
+        &self.data
+    }
+
+    #[must_use]
+    pub fn range(&self) -> Range<usize> {
+        self.range.clone()
+    }
+
+    /// Returns a sub-view of this batch view.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `[start, end)` is invalid or exceeds this view length.
+    #[must_use]
+    pub fn slice(&self, start: usize, end: usize) -> Self {
+        assert!(start <= end, "invalid batch slice range");
+        assert!(end <= self.len(), "batch slice range exceeds view length");
+        Self {
+            data: self.data.clone(),
+            range: (self.range.start + start)..(self.range.start + end),
+        }
+    }
+    /// Returns this view for modification, cloning shared storage when needed.
+    pub fn make_mut(&mut self) -> &mut [T]
+    where
+        T: Clone,
+    {
+        &mut Arc::make_mut(&mut self.data)[self.range.clone()]
+    }
+}
+
+impl<T> From<Vec<T>> for BatchView<T> {
+    fn from(data: Vec<T>) -> Self {
+        Self::full(Arc::new(data))
+    }
+}
+
+impl<T> From<Arc<Vec<T>>> for BatchView<T> {
+    fn from(data: Arc<Vec<T>>) -> Self {
+        Self::full(data)
+    }
+}
+
+impl<T> AsRef<[T]> for BatchView<T> {
+    fn as_ref(&self) -> &[T] {
+        self
+    }
+}
+
+impl<T> Deref for BatchView<T> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        &self.data[self.range.clone()]
+    }
+}
+
+/// Shared typed batch used by replay and catalog fan-out paths.
+#[derive(Clone, Debug)]
+pub enum DataBatch {
+    Instrument(BatchView<InstrumentAny>),
+    BookDelta(BatchView<OrderBookDelta>),
+    BookDeltas(BatchView<OrderBookDeltas>),
+    BookDepth(BatchView<OrderBookDepth>),
+    Quote(BatchView<QuoteTick>),
+    Trade(BatchView<TradeTick>),
+    Bar(BatchView<Bar>),
+    MarkPrice(BatchView<MarkPriceUpdate>),
+    IndexPrice(BatchView<IndexPriceUpdate>),
+    FundingRate(BatchView<FundingRateUpdate>),
+    OptionGreeks(BatchView<OptionGreeks>),
+    InstrumentStatus(BatchView<InstrumentStatus>),
+    InstrumentClose(BatchView<InstrumentClose>),
+    Custom(BatchView<CustomData>),
+    #[cfg(feature = "defi")]
+    Defi(BatchView<DefiData>),
+}
+
+macro_rules! data_batch_from_data_vec {
+    (
+        ($data_type:ident, $input:ident);
+        $(($variant:ident, $type:ident, $data:ident, $batch:ident, $prefix:literal)),+ $(,)?
+    ) => {
+        match $data_type {
+            $(
+                NautilusDataType::$variant => Ok(Self::$batch(
+                    to_variant_for_batch::<$type>($data_type, $input)?.into(),
+                )),
+            )+
+            NautilusDataType::OrderBook => {
+                anyhow::bail!("order book snapshots cannot be represented as a data batch")
+            }
+            NautilusDataType::Custom { .. } => {
+                let expected_len = $input.len();
+                let custom = $input
+                    .into_iter()
+                    .filter_map(|item| match item {
+                        Data::Custom(custom) => Some(custom),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                anyhow::ensure!(
+                    custom.len() == expected_len,
+                    "catalog query for {} returned rows with another data type",
+                    $data_type,
+                );
+                Ok(Self::Custom(custom.into()))
+            }
+            #[cfg(feature = "defi")]
+            NautilusDataType::Defi => {
+                let expected_len = $input.len();
+                let defi = $input
+                    .into_iter()
+                    .filter_map(|item| match item {
+                        Data::Defi(defi) => Some(*defi),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                anyhow::ensure!(
+                    defi.len() == expected_len,
+                    "catalog query for {} returned rows with another data type",
+                    $data_type,
+                );
+                Ok(Self::Defi(defi.into()))
+            }
+        }
+    };
+}
+
+impl DataBatch {
+    /// Converts owned compatibility rows into a typed batch for `data_type`.
+    ///
+    /// This is a transition path for backends that still decode through [`Data`] but should not
+    /// expose legacy batches to typed replay.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `data_type` is not replayable as a typed batch.
+    pub fn from_data_vec_for_type(
+        data_type: &NautilusDataType,
+        data: Vec<Data>,
+    ) -> anyhow::Result<Self> {
+        if matches!(data_type, NautilusDataType::OrderBookDelta)
+            && matches!(data.first(), Some(Data::BookDeltas(_)))
+        {
+            return Ok(Self::BookDeltas(
+                to_variant_for_batch::<OrderBookDeltas>(data_type, data)?.into(),
+            ));
+        }
+
+        crate::for_each_data_type!(data_batch_from_data_vec, data_type, data)
+    }
+
+    /// Groups mixed compatibility rows into typed batches.
+    ///
+    /// [`Data::BookDeltas`] values retain their event-batch boundary in a separate typed batch.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a row cannot be represented by a typed batch.
+    pub fn from_data_vec_grouped(data: &[Data]) -> anyhow::Result<Vec<Self>> {
+        let mut groups = Vec::<(NautilusDataType, Vec<Data>)>::new();
+
+        for item in data.iter().cloned() {
+            let data_type = NautilusDataType::from_data(&item);
+            let is_deltas = matches!(item, Data::BookDeltas(_));
+
+            if let Some((_, group)) = groups.iter_mut().find(|(group_type, group)| {
+                group_type == &data_type
+                    && group
+                        .first()
+                        .is_some_and(|item| matches!(item, Data::BookDeltas(_)) == is_deltas)
+            }) {
+                group.push(item);
+            } else {
+                groups.push((data_type, vec![item]));
+            }
+        }
+
+        groups
+            .into_iter()
+            .map(|(data_type, data)| Self::from_data_vec_for_type(&data_type, data))
+            .collect()
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Instrument(data) => data.len(),
+            Self::BookDelta(data) => data.len(),
+            Self::BookDeltas(data) => data.len(),
+            Self::BookDepth(data) => data.len(),
+            Self::Quote(data) => data.len(),
+            Self::Trade(data) => data.len(),
+            Self::Bar(data) => data.len(),
+            Self::MarkPrice(data) => data.len(),
+            Self::IndexPrice(data) => data.len(),
+            Self::FundingRate(data) => data.len(),
+            Self::OptionGreeks(data) => data.len(),
+            Self::InstrumentStatus(data) => data.len(),
+            Self::InstrumentClose(data) => data.len(),
+            Self::Custom(data) => data.len(),
+            #[cfg(feature = "defi")]
+            Self::Defi(data) => data.len(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Returns the storage-family name of this batch's data type.
+    #[must_use]
+    pub fn data_type_name(&self) -> &'static str {
+        match self {
+            Self::Instrument(_) => "instruments",
+            Self::BookDelta(_) => "order_book_deltas",
+            Self::BookDeltas(_) => "order_book_deltas_batches",
+            Self::BookDepth(_) => "order_book_depths",
+            Self::Quote(_) => "quotes",
+            Self::Trade(_) => "trades",
+            Self::Bar(_) => "bars",
+            Self::MarkPrice(_) => "mark_prices",
+            Self::IndexPrice(_) => "index_prices",
+            Self::FundingRate(_) => "funding_rates",
+            Self::OptionGreeks(_) => "option_greeks",
+            Self::InstrumentStatus(_) => "instrument_status",
+            Self::InstrumentClose(_) => "instrument_closes",
+            Self::Custom(_) => "custom",
+            #[cfg(feature = "defi")]
+            Self::Defi(_) => "defi",
+        }
+    }
+
+    #[must_use]
+    pub fn is_monotonically_increasing_by_init(&self) -> bool {
+        (0..self.len())
+            .filter_map(|index| self.get(index))
+            .map(|data| data.ts_init())
+            .is_sorted()
+    }
+
+    #[must_use]
+    pub fn get(&self, index: usize) -> Option<DataRef<'_>> {
+        match self {
+            Self::Instrument(data) => data.get(index).map(DataRef::Instrument),
+            Self::BookDelta(data) => data.get(index).map(DataRef::BookDelta),
+            Self::BookDeltas(data) => data.get(index).map(DataRef::BookDeltas),
+            Self::BookDepth(data) => data.get(index).map(DataRef::BookDepth),
+            Self::Quote(data) => data.get(index).map(DataRef::Quote),
+            Self::Trade(data) => data.get(index).map(DataRef::Trade),
+            Self::Bar(data) => data.get(index).map(DataRef::Bar),
+            Self::MarkPrice(data) => data.get(index).map(DataRef::MarkPrice),
+            Self::IndexPrice(data) => data.get(index).map(DataRef::IndexPrice),
+            Self::FundingRate(data) => data.get(index).map(DataRef::FundingRate),
+            Self::OptionGreeks(data) => data.get(index).map(DataRef::OptionGreeks),
+            Self::InstrumentStatus(data) => data.get(index).map(DataRef::InstrumentStatus),
+            Self::InstrumentClose(data) => data.get(index).map(DataRef::InstrumentClose),
+            Self::Custom(data) => data.get(index).map(DataRef::Custom),
+            #[cfg(feature = "defi")]
+            Self::Defi(data) => data.get(index).map(DataRef::Defi),
+        }
+    }
+
+    #[must_use]
+    pub fn aligned_chunk(&self, start: usize, chunk_size: Option<usize>) -> Option<(Self, usize)> {
+        let len = self.len();
+        if start >= len {
+            return None;
+        }
+
+        let mut end = match chunk_size {
+            Some(size) => len.min(start + size.max(1)),
+            None => len,
+        };
+
+        if end < len
+            && let Some(boundary_ts) = self.get(end - 1).map(|data| data.ts_init())
+        {
+            while end < len
+                && self
+                    .get(end)
+                    .is_some_and(|data| data.ts_init() == boundary_ts)
+            {
+                end += 1;
+            }
+        }
+
+        Some((self.slice(start, end), end))
+    }
+
+    #[must_use]
+    pub fn slice(&self, start: usize, end: usize) -> Self {
+        if start == 0 && end == self.len() {
+            return self.clone();
+        }
+
+        match self {
+            Self::Instrument(data) => Self::Instrument(data.slice(start, end)),
+            Self::BookDelta(data) => Self::BookDelta(data.slice(start, end)),
+            Self::BookDeltas(data) => Self::BookDeltas(data.slice(start, end)),
+            Self::BookDepth(data) => Self::BookDepth(data.slice(start, end)),
+            Self::Quote(data) => Self::Quote(data.slice(start, end)),
+            Self::Trade(data) => Self::Trade(data.slice(start, end)),
+            Self::Bar(data) => Self::Bar(data.slice(start, end)),
+            Self::MarkPrice(data) => Self::MarkPrice(data.slice(start, end)),
+            Self::IndexPrice(data) => Self::IndexPrice(data.slice(start, end)),
+            Self::FundingRate(data) => Self::FundingRate(data.slice(start, end)),
+            Self::OptionGreeks(data) => Self::OptionGreeks(data.slice(start, end)),
+            Self::InstrumentStatus(data) => Self::InstrumentStatus(data.slice(start, end)),
+            Self::InstrumentClose(data) => Self::InstrumentClose(data.slice(start, end)),
+            Self::Custom(data) => Self::Custom(data.slice(start, end)),
+            #[cfg(feature = "defi")]
+            Self::Defi(data) => Self::Defi(data.slice(start, end)),
+        }
+    }
+
+    #[must_use]
+    pub fn to_data_vec_for_compat(&self) -> Vec<Data> {
+        (0..self.len())
+            .filter_map(|index| self.get(index).map(|item| item.to_owned_data()))
+            .collect()
+    }
+}
+
+/// Typed values that wrap into their [`DataBatch`] variant.
+pub trait IntoDataBatch: Sized {
+    /// Wraps owned typed values in their [`DataBatch`] variant.
+    #[must_use]
+    fn into_batch(data: Vec<Self>) -> DataBatch;
+}
+
+impl<T: IntoDataBatch> From<Vec<T>> for DataBatch {
+    fn from(data: Vec<T>) -> Self {
+        T::into_batch(data)
+    }
+}
+
+macro_rules! impl_into_data_batch {
+    ($(($variant:ident, $type:ident, $data:ident, $batch:ident, $prefix:literal)),+ $(,)?) => {
+        $(
+            impl IntoDataBatch for $type {
+                fn into_batch(data: Vec<Self>) -> DataBatch {
+                    DataBatch::$batch(data.into())
+                }
+            }
+        )+
+    };
+}
+
+for_each_data_type!(impl_into_data_batch);
+
+impl IntoDataBatch for OrderBookDeltas {
+    fn into_batch(data: Vec<Self>) -> DataBatch {
+        DataBatch::BookDeltas(data.into())
+    }
+}
+
+impl IntoDataBatch for CustomData {
+    fn into_batch(data: Vec<Self>) -> DataBatch {
+        DataBatch::Custom(data.into())
+    }
+}
+
+#[cfg(feature = "defi")]
+impl IntoDataBatch for DefiData {
+    fn into_batch(data: Vec<Self>) -> DataBatch {
+        DataBatch::Defi(data.into())
+    }
+}
+
+/// Typed values that unwrap from their [`DataBatch`] variant.
+pub trait FromDataBatch: Sized {
+    /// Unwraps a typed batch into owned values.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `batch` holds another variant.
+    fn from_batch(batch: DataBatch) -> anyhow::Result<Vec<Self>>;
+}
+
+macro_rules! impl_from_data_batch {
+    ($(($variant:ident, $type:ident, $data:ident, $batch:ident, $prefix:literal)),+ $(,)?) => {
+        $(
+            impl FromDataBatch for $type {
+                fn from_batch(batch: DataBatch) -> anyhow::Result<Vec<Self>> {
+                    match batch {
+                        DataBatch::$batch(data) => Ok(data.as_ref().to_vec()),
+                        _ => anyhow::bail!(
+                            "expected a {} batch, found another data batch variant",
+                            stringify!($batch),
+                        ),
+                    }
+                }
+            }
+        )+
+    };
+}
+
+for_each_data_type!(impl_from_data_batch);
+
+impl FromDataBatch for CustomData {
+    fn from_batch(batch: DataBatch) -> anyhow::Result<Vec<Self>> {
+        match batch {
+            DataBatch::Custom(data) => Ok(data.as_ref().to_vec()),
+            _ => anyhow::bail!("expected a Custom batch, found another data batch variant"),
+        }
+    }
+}
+
+#[cfg(feature = "defi")]
+impl FromDataBatch for DefiData {
+    fn from_batch(batch: DataBatch) -> anyhow::Result<Vec<Self>> {
+        match batch {
+            DataBatch::Defi(data) => Ok(data.as_ref().to_vec()),
+            _ => anyhow::bail!("expected a Defi batch, found another data batch variant"),
+        }
+    }
+}
+
+/// Data family selector used by request and catalog APIs.
+///
+/// This is a type-level descriptor, not a decoded data value. [`Data::BookDeltas`] maps to
+/// [`NautilusDataType::OrderBookDelta`] because both share the same storage and request family.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub enum NautilusDataType {
+    Instrument,
+    OrderBook,
+    QuoteTick,
+    TradeTick,
+    Bar,
+    OrderBookDelta,
+    OrderBookDepth,
+    MarkPriceUpdate,
+    IndexPriceUpdate,
+    FundingRateUpdate,
+    InstrumentStatus,
+    OptionGreeks,
+    InstrumentClose,
+    /// User-defined data type identified by `type_name`.
+    Custom {
+        type_name: String,
+    },
+    #[cfg(feature = "defi")]
+    Defi,
+}
+
+impl Display for NautilusDataType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Instrument => f.write_str("Instrument"),
+            Self::OrderBook => f.write_str("OrderBook"),
+            Self::QuoteTick => f.write_str("QuoteTick"),
+            Self::TradeTick => f.write_str("TradeTick"),
+            Self::Bar => f.write_str("Bar"),
+            Self::OrderBookDelta => f.write_str("OrderBookDelta"),
+            Self::OrderBookDepth => f.write_str("OrderBookDepth"),
+            Self::MarkPriceUpdate => f.write_str("MarkPriceUpdate"),
+            Self::IndexPriceUpdate => f.write_str("IndexPriceUpdate"),
+            Self::FundingRateUpdate => f.write_str("FundingRateUpdate"),
+            Self::InstrumentStatus => f.write_str("InstrumentStatus"),
+            Self::OptionGreeks => f.write_str("OptionGreeks"),
+            Self::InstrumentClose => f.write_str("InstrumentClose"),
+            #[cfg(feature = "defi")]
+            Self::Defi => f.write_str("Defi"),
+            Self::Custom { type_name } => write!(f, "Custom:{type_name}"),
+        }
+    }
+}
+
+impl FromStr for NautilusDataType {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> anyhow::Result<Self> {
+        match s {
+            "Instrument" | "instruments" | "instrument" => Ok(Self::Instrument),
+            "OrderBook" | "order_book" => Ok(Self::OrderBook),
+            "QuoteTick" | "quotes" | "quote" | "quote_tick" => Ok(Self::QuoteTick),
+            "TradeTick" | "trades" | "trade" | "trade_tick" => Ok(Self::TradeTick),
+            "Bar" | "bars" | "bar" => Ok(Self::Bar),
+            "OrderBookDelta" | "OrderBookDeltas" | "order_book_deltas" | "order_book_delta" => {
+                Ok(Self::OrderBookDelta)
+            }
+            // One-release compatibility spellings for the former fixed-depth type
+            "OrderBookDepth10" | "OrderBookDepth" | "order_book_depths" | "order_book_depth10" => {
+                Ok(Self::OrderBookDepth)
+            }
+            "MarkPriceUpdate" | "mark_price_updates" | "mark_prices" | "mark_price_update" => {
+                Ok(Self::MarkPriceUpdate)
+            }
+            "IndexPriceUpdate" | "index_price_updates" | "index_prices" | "index_price_update" => {
+                Ok(Self::IndexPriceUpdate)
+            }
+            "FundingRateUpdate" | "funding_rate_update" | "funding_rates" => {
+                Ok(Self::FundingRateUpdate)
+            }
+            "InstrumentStatus" | "instrument_status" => Ok(Self::InstrumentStatus),
+            "OptionGreeks" | "option_greeks" => Ok(Self::OptionGreeks),
+            "InstrumentClose" | "instrument_closes" | "instrument_close" => {
+                Ok(Self::InstrumentClose)
+            }
+            #[cfg(feature = "defi")]
+            "Defi" => Ok(Self::Defi),
+            custom if custom.starts_with("Custom:") => Ok(Self::Custom {
+                type_name: custom.trim_start_matches("Custom:").to_string(),
+            }),
+            _ => anyhow::bail!("Invalid `NautilusDataType`: '{s}'"),
+        }
+    }
+}
+
+/// Catalog record selector used to query Arrow-backed persisted records.
+#[derive(
+    Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, strum::Display, strum::EnumIter,
+)]
+pub enum NautilusRecordType {
+    AccountState,
+    OrderInitialized,
+    OrderDenied,
+    OrderEmulated,
+    OrderSubmitted,
+    OrderAccepted,
+    OrderRejected,
+    OrderPendingCancel,
+    OrderCanceled,
+    OrderCancelRejected,
+    OrderExpired,
+    OrderTriggered,
+    OrderPendingUpdate,
+    OrderReleased,
+    OrderModifyRejected,
+    OrderUpdated,
+    OrderFilled,
+    OrderFillVoided,
+    PositionOpened,
+    PositionChanged,
+    PositionClosed,
+    PositionAdjusted,
+    OrderSnapshot,
+    PositionSnapshot,
+    OrderStatusReport,
+    FillReport,
+    PositionStatusReport,
+    ExecutionMassStatus,
+    #[cfg(feature = "defi")]
+    Defi,
+}
+
+impl FromStr for NautilusRecordType {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> anyhow::Result<Self> {
+        match s {
+            "AccountState" | "account_state" => Ok(Self::AccountState),
+            "OrderInitialized" | "order_initialized" => Ok(Self::OrderInitialized),
+            "OrderDenied" | "order_denied" => Ok(Self::OrderDenied),
+            "OrderEmulated" | "order_emulated" => Ok(Self::OrderEmulated),
+            "OrderSubmitted" | "order_submitted" => Ok(Self::OrderSubmitted),
+            "OrderAccepted" | "order_accepted" => Ok(Self::OrderAccepted),
+            "OrderRejected" | "order_rejected" => Ok(Self::OrderRejected),
+            "OrderPendingCancel" | "order_pending_cancel" => Ok(Self::OrderPendingCancel),
+            "OrderCanceled" | "order_canceled" => Ok(Self::OrderCanceled),
+            "OrderCancelRejected" | "order_cancel_rejected" => Ok(Self::OrderCancelRejected),
+            "OrderExpired" | "order_expired" => Ok(Self::OrderExpired),
+            "OrderTriggered" | "order_triggered" => Ok(Self::OrderTriggered),
+            "OrderPendingUpdate" | "order_pending_update" => Ok(Self::OrderPendingUpdate),
+            "OrderReleased" | "order_released" => Ok(Self::OrderReleased),
+            "OrderModifyRejected" | "order_modify_rejected" => Ok(Self::OrderModifyRejected),
+            "OrderUpdated" | "order_updated" => Ok(Self::OrderUpdated),
+            "OrderFilled" | "order_filled" => Ok(Self::OrderFilled),
+            "OrderFillVoided" | "order_fill_voided" => Ok(Self::OrderFillVoided),
+            "PositionOpened" | "position_opened" => Ok(Self::PositionOpened),
+            "PositionChanged" | "position_changed" => Ok(Self::PositionChanged),
+            "PositionClosed" | "position_closed" => Ok(Self::PositionClosed),
+            "PositionAdjusted" | "position_adjusted" => Ok(Self::PositionAdjusted),
+            "OrderSnapshot" | "order_snapshot" => Ok(Self::OrderSnapshot),
+            "PositionSnapshot" | "position_snapshot" => Ok(Self::PositionSnapshot),
+            "OrderStatusReport" | "order_status_report" => Ok(Self::OrderStatusReport),
+            "FillReport" | "fill_report" => Ok(Self::FillReport),
+            "PositionStatusReport" | "position_status_report" => Ok(Self::PositionStatusReport),
+            "ExecutionMassStatus" | "execution_mass_status" => Ok(Self::ExecutionMassStatus),
+            "custom" | "CustomData" => {
+                anyhow::bail!("custom data queries require NautilusDataType::Custom")
+            }
+            #[cfg(feature = "defi")]
+            "Defi" | "defi" => Ok(Self::Defi),
+            _ => anyhow::bail!("Invalid `NautilusRecordType`: '{s}'"),
+        }
+    }
+}
+
+impl NautilusDataType {
+    /// Returns the discriminant tag for a [`Data`] value.
+    #[must_use]
+    pub fn from_data(data: &Data) -> Self {
+        match data {
+            Data::Instrument(_) => Self::Instrument,
+            Data::Quote(_) => Self::QuoteTick,
+            Data::Trade(_) => Self::TradeTick,
+            Data::Bar(_) => Self::Bar,
+            Data::BookDelta(_) | Data::BookDeltas(_) => Self::OrderBookDelta,
+            Data::BookDepth(_) => Self::OrderBookDepth,
+            Data::MarkPrice(_) => Self::MarkPriceUpdate,
+            Data::IndexPrice(_) => Self::IndexPriceUpdate,
+            Data::FundingRate(_) => Self::FundingRateUpdate,
+            Data::InstrumentStatus(_) => Self::InstrumentStatus,
+            Data::OptionGreeks(_) => Self::OptionGreeks,
+            Data::InstrumentClose(_) => Self::InstrumentClose,
+            Data::Custom(c) => Self::Custom {
+                type_name: c.data_type.type_name().to_string(),
+            },
+            #[cfg(feature = "defi")]
+            Data::Defi(_) => Self::Defi,
         }
     }
 }
@@ -179,13 +983,23 @@ impl<'de> Deserialize<'de> for Data {
             .ok_or_else(|| D::Error::custom("Missing 'type' field in Data"))?;
 
         match type_name {
+            "Instrument" => Ok(Self::Instrument(Box::new(
+                serde_json::from_value(
+                    value
+                        .get("data")
+                        .cloned()
+                        .ok_or_else(|| D::Error::custom("Missing 'data' field for Instrument"))?,
+                )
+                .map_err(D::Error::custom)?,
+            ))),
             "OrderBookDelta" => Ok(Self::BookDelta(
                 serde_json::from_value(value).map_err(D::Error::custom)?,
             )),
             "OrderBookDeltas" => Ok(Self::BookDeltas(
                 serde_json::from_value(value).map_err(D::Error::custom)?,
             )),
-            "OrderBookDepth10" => Ok(Self::BookDepth10(
+            // One-release compatibility spelling for serialized v1 payloads
+            "OrderBookDepth10" | "OrderBookDepth" => Ok(Self::BookDepth(
                 serde_json::from_value(value).map_err(D::Error::custom)?,
             )),
             "QuoteTick" => Ok(Self::Quote(
@@ -231,9 +1045,10 @@ impl<'de> Deserialize<'de> for Data {
 impl Clone for Data {
     fn clone(&self) -> Self {
         match self {
+            Self::Instrument(x) => Self::Instrument(x.clone()),
             Self::BookDelta(x) => Self::BookDelta(*x),
             Self::BookDeltas(x) => Self::BookDeltas(x.clone()),
-            Self::BookDepth10(x) => Self::BookDepth10(x.clone()),
+            Self::BookDepth(x) => Self::BookDepth(x.clone()),
             Self::Quote(x) => Self::Quote(*x),
             Self::Trade(x) => Self::Trade(*x),
             Self::Bar(x) => Self::Bar(*x),
@@ -253,9 +1068,10 @@ impl Clone for Data {
 impl PartialEq for Data {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
+            (Self::Instrument(a), Self::Instrument(b)) => a == b,
             (Self::BookDelta(a), Self::BookDelta(b)) => a == b,
             (Self::BookDeltas(a), Self::BookDeltas(b)) => a == b,
-            (Self::BookDepth10(a), Self::BookDepth10(b)) => a == b,
+            (Self::BookDepth(a), Self::BookDepth(b)) => a == b,
             (Self::Quote(a), Self::Quote(b)) => a == b,
             (Self::Trade(a), Self::Trade(b)) => a == b,
             (Self::Bar(a), Self::Bar(b)) => a == b,
@@ -279,9 +1095,14 @@ impl Serialize for Data {
         S: serde::Serializer,
     {
         match self {
+            Self::Instrument(instrument) => serde_json::json!({
+                "type": "Instrument",
+                "data": instrument,
+            })
+            .serialize(serializer),
             Self::BookDelta(x) => x.serialize(serializer),
             Self::BookDeltas(x) => x.serialize(serializer),
-            Self::BookDepth10(x) => x.serialize(serializer),
+            Self::BookDepth(x) => x.serialize(serializer),
             Self::Quote(x) => x.serialize(serializer),
             Self::Trade(x) => x.serialize(serializer),
             Self::Bar(x) => x.serialize(serializer),
@@ -321,12 +1142,23 @@ macro_rules! impl_data_conversions {
     };
 }
 
-impl TryFrom<Data> for OrderBookDepth10 {
+impl TryFrom<Data> for OrderBookDepth {
     type Error = ();
 
     fn try_from(value: Data) -> Result<Self, Self::Error> {
         match value {
-            Data::BookDepth10(x) => Ok(*x),
+            Data::BookDepth(x) => Ok(*x),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryFrom<Data> for InstrumentAny {
+    type Error = ();
+
+    fn try_from(value: Data) -> Result<Self, Self::Error> {
+        match value {
+            Data::Instrument(instrument) => Ok(*instrument),
             _ => Err(()),
         }
     }
@@ -337,7 +1169,7 @@ impl TryFrom<Data> for OrderBookDeltas {
 
     fn try_from(value: Data) -> Result<Self, Self::Error> {
         match value {
-            Data::BookDeltas(x) => Ok(*x),
+            Data::BookDeltas(deltas) => Ok(*deltas),
             _ => Err(()),
         }
     }
@@ -365,6 +1197,19 @@ pub fn to_variant<T: TryFrom<Data>>(data: Vec<Data>) -> Vec<T> {
         .collect()
 }
 
+fn to_variant_for_batch<T: TryFrom<Data>>(
+    data_type: &NautilusDataType,
+    data: Vec<Data>,
+) -> anyhow::Result<Vec<T>> {
+    let expected_len = data.len();
+    let converted = to_variant(data);
+    anyhow::ensure!(
+        converted.len() == expected_len,
+        "catalog query for {data_type} returned rows with another data type",
+    );
+    Ok(converted)
+}
+
 impl Data {
     /// Returns the instrument ID for the data.
     #[must_use]
@@ -379,47 +1224,9 @@ impl Data {
     }
 }
 
-impl DataRef<'_> {
-    /// Returns the instrument ID for the data.
-    #[must_use]
-    pub fn instrument_id(&self) -> InstrumentId {
-        match self {
-            Self::BookDelta(delta) => delta.instrument_id,
-            Self::BookDeltas(deltas) => deltas.instrument_id,
-            Self::BookDepth10(depth) => depth.instrument_id,
-            Self::Quote(quote) => quote.instrument_id,
-            Self::Trade(trade) => trade.instrument_id,
-            Self::Bar(bar) => bar.bar_type.instrument_id(),
-            Self::MarkPrice(mark_price) => mark_price.instrument_id,
-            Self::IndexPrice(index_price) => index_price.instrument_id,
-            Self::FundingRate(funding_rate) => funding_rate.instrument_id,
-            Self::OptionGreeks(greeks) => greeks.instrument_id,
-            Self::InstrumentStatus(status) => status.instrument_id,
-            Self::InstrumentClose(close) => close.instrument_id,
-            Self::Custom(custom) => custom
-                .data_type
-                .identifier()
-                .and_then(|s| InstrumentId::from_str(s).ok())
-                .or_else(|| {
-                    custom
-                        .data_type
-                        .metadata()
-                        .and_then(|m| m.get_str("instrument_id"))
-                        .and_then(|s| InstrumentId::from_str(s).ok())
-                })
-                .unwrap_or_else(|| InstrumentId::from("NULL.NULL")),
-            #[cfg(feature = "defi")]
-            Self::Defi(defi) => defi.instrument_id(),
-        }
-    }
-
-    /// Returns whether the data is a type of order book data.
-    #[must_use]
-    pub fn is_order_book_data(&self) -> bool {
-        matches!(
-            self,
-            Self::BookDelta(_) | Self::BookDeltas(_) | Self::BookDepth10(_)
-        )
+impl From<InstrumentAny> for Data {
+    fn from(value: InstrumentAny) -> Self {
+        Self::Instrument(Box::new(value))
     }
 }
 
@@ -433,73 +1240,9 @@ pub trait HasTsInit {
     fn ts_init(&self) -> UnixNanos;
 }
 
-/// Trait for data types that have a catalog path prefix.
-pub trait CatalogPathPrefix {
-    /// Returns the path prefix (directory name) for this data type.
-    fn path_prefix() -> &'static str;
-}
-
-/// Macro for implementing [`CatalogPathPrefix`] for data types.
-///
-/// This macro provides a convenient way to implement the trait for multiple types
-/// with their corresponding path prefixes.
-///
-/// # Parameters
-///
-/// - `$type`: The data type to implement the trait for.
-/// - `$path`: The path prefix string for that type.
-#[macro_export]
-macro_rules! impl_catalog_path_prefix {
-    ($type:ty, $path:expr) => {
-        impl $crate::data::CatalogPathPrefix for $type {
-            fn path_prefix() -> &'static str {
-                $path
-            }
-        }
-    };
-}
-
-// Standard implementations for financial data types
-impl_catalog_path_prefix!(QuoteTick, "quotes");
-impl_catalog_path_prefix!(TradeTick, "trades");
-impl_catalog_path_prefix!(OrderBookDelta, "order_book_deltas");
-impl_catalog_path_prefix!(OrderBookDepth10, "order_book_depths");
-impl_catalog_path_prefix!(Bar, "bars");
-impl_catalog_path_prefix!(IndexPriceUpdate, "index_prices");
-impl_catalog_path_prefix!(MarkPriceUpdate, "mark_prices");
-impl_catalog_path_prefix!(FundingRateUpdate, "funding_rate_update");
-impl_catalog_path_prefix!(OptionGreeks, "option_greeks");
-impl_catalog_path_prefix!(InstrumentStatus, "instrument_status");
-impl_catalog_path_prefix!(InstrumentClose, "instrument_closes");
-
-use crate::instruments::InstrumentAny;
-impl_catalog_path_prefix!(InstrumentAny, "instruments");
-
 impl HasTsInit for Data {
     fn ts_init(&self) -> UnixNanos {
         DataRef::from(self).ts_init()
-    }
-}
-
-impl HasTsInit for DataRef<'_> {
-    fn ts_init(&self) -> UnixNanos {
-        match self {
-            Self::BookDelta(d) => d.ts_init,
-            Self::BookDeltas(d) => d.ts_init,
-            Self::BookDepth10(d) => d.ts_init,
-            Self::Quote(q) => q.ts_init,
-            Self::Trade(t) => t.ts_init,
-            Self::Bar(b) => b.ts_init,
-            Self::MarkPrice(p) => p.ts_init,
-            Self::IndexPrice(p) => p.ts_init,
-            Self::FundingRate(f) => f.ts_init,
-            Self::OptionGreeks(g) => g.ts_init,
-            Self::InstrumentStatus(s) => s.ts_init,
-            Self::InstrumentClose(c) => c.ts_init,
-            Self::Custom(c) => c.data.ts_init(),
-            #[cfg(feature = "defi")]
-            Self::Defi(d) => d.ts_init(),
-        }
     }
 }
 
@@ -517,9 +1260,9 @@ impl From<OrderBookDeltas> for Data {
     }
 }
 
-impl From<OrderBookDepth10> for Data {
-    fn from(value: OrderBookDepth10) -> Self {
-        Self::BookDepth10(Box::new(value))
+impl From<OrderBookDepth> for Data {
+    fn from(value: OrderBookDepth) -> Self {
+        Self::BookDepth(Box::new(value))
     }
 }
 
@@ -530,1051 +1273,168 @@ impl From<DefiData> for Data {
     }
 }
 
-/// Builds a string-only view of a JSON value for use in topic (key=value).
-fn value_to_topic_string(v: &JsonValue) -> String {
-    if let Some(s) = v.as_str() {
-        return s.to_string();
-    }
-
-    if let Some(n) = v.as_u64() {
-        return n.to_string();
-    }
-
-    if let Some(n) = v.as_i64() {
-        return n.to_string();
-    }
-
-    if let Some(b) = v.as_bool() {
-        return b.to_string();
-    }
-
-    if let Some(f) = v.as_f64() {
-        return f.to_string();
-    }
-
-    if v.is_null() {
-        return "null".to_string();
-    }
-    serde_json::to_string(v).unwrap_or_default()
-}
-
-/// Builds the topic suffix from Params (string-only view: key=value joined by ".").
-fn params_to_topic_suffix(params: &Params) -> String {
-    let mut entries = params.iter().collect::<Vec<_>>();
-    entries.sort_by_key(|(key, _)| *key);
-
-    entries
-        .into_iter()
-        .map(|(k, v)| format!("{k}={}", value_to_topic_string(v)))
-        .collect::<Vec<_>>()
-        .join(".")
-}
-
-/// Represents a data type including metadata.
-#[derive(Clone, Serialize)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
-)]
-pub struct DataType {
-    type_name: String,
-    metadata: Option<Params>,
-    topic: String,
-    hash: u64,
-    identifier: Option<String>,
-}
-
-impl<'de> Deserialize<'de> for DataType {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        const FIELDS: &[&str] = &["type_name", "metadata", "topic", "hash", "identifier"];
-
-        #[derive(Deserialize)]
-        #[serde(field_identifier, rename_all = "snake_case")]
-        enum Field {
-            TypeName,
-            Metadata,
-            Topic,
-            Hash,
-            Identifier,
-            #[serde(other)]
-            Other,
-        }
-
-        fn finish(
-            type_name: &str,
-            metadata: Option<Params>,
-            topic: Option<String>,
-            identifier: Option<String>,
-        ) -> DataType {
-            let mut data_type = DataType::new(type_name, metadata, identifier);
-
-            if let Some(topic) = topic {
-                let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                topic.hash(&mut hasher);
-                data_type.topic = topic;
-                data_type.hash = hasher.finish();
-            }
-
-            data_type
-        }
-
-        struct DataTypeVisitor;
-
-        impl<'de> Visitor<'de> for DataTypeVisitor {
-            type Value = DataType;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                formatter.write_str("struct DataType")
-            }
-
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-            where
-                A: SeqAccess<'de>,
-            {
-                let type_name: String = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
-                // A non-empty Params cannot be decoded here by a non-self-describing format:
-                // it stores serde_json::Value, whose Deserialize requires deserialize_any.
-                // That is a pre-existing Params limitation, not one this path introduces.
-                let metadata = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
-                let topic = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(2, &self))?;
-                let _hash: u64 = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(3, &self))?;
-                let identifier = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(4, &self))?;
-
-                Ok(finish(&type_name, metadata, Some(topic), identifier))
-            }
-
-            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-            where
-                A: MapAccess<'de>,
-            {
-                let mut type_name: Option<String> = None;
-                let mut metadata = None;
-                let mut topic = None;
-                let mut hash_seen = false;
-                let mut identifier = None;
-
-                while let Some(key) = map.next_key()? {
-                    match key {
-                        Field::TypeName => {
-                            if type_name.is_some() {
-                                return Err(de::Error::duplicate_field("type_name"));
-                            }
-                            type_name = Some(map.next_value()?);
-                        }
-                        Field::Metadata => {
-                            if metadata.is_some() {
-                                return Err(de::Error::duplicate_field("metadata"));
-                            }
-                            metadata = Some(map.next_value()?);
-                        }
-                        Field::Topic => {
-                            if topic.is_some() {
-                                return Err(de::Error::duplicate_field("topic"));
-                            }
-                            topic = Some(map.next_value()?);
-                        }
-                        Field::Hash => {
-                            if hash_seen {
-                                return Err(de::Error::duplicate_field("hash"));
-                            }
-                            hash_seen = true;
-                            let _: Option<u64> = map.next_value()?;
-                        }
-                        Field::Identifier => {
-                            if identifier.is_some() {
-                                return Err(de::Error::duplicate_field("identifier"));
-                            }
-                            identifier = Some(map.next_value()?);
-                        }
-                        Field::Other => {
-                            let _: IgnoredAny = map.next_value()?;
-                        }
-                    }
-                }
-
-                let type_name = type_name.ok_or_else(|| de::Error::missing_field("type_name"))?;
-                Ok(finish(
-                    &type_name,
-                    metadata.unwrap_or(None),
-                    topic.unwrap_or(None),
-                    identifier.unwrap_or(None),
-                ))
-            }
-        }
-
-        deserializer.deserialize_struct("DataType", FIELDS, DataTypeVisitor)
-    }
-}
-
-impl DataType {
-    /// Creates a new [`DataType`] instance.
-    #[must_use]
-    pub fn new(type_name: &str, metadata: Option<Params>, identifier: Option<String>) -> Self {
-        // Precompute topic from type_name + metadata (string-only view for backward compatibility)
-        let topic = if let Some(ref meta) = metadata {
-            if meta.is_empty() {
-                type_name.to_string()
-            } else {
-                format!("{type_name}.{}", params_to_topic_suffix(meta))
-            }
-        } else {
-            type_name.to_string()
-        };
-
-        // Precompute hash
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        topic.hash(&mut hasher);
-
-        Self {
-            type_name: type_name.to_owned(),
-            metadata,
-            topic,
-            hash: hasher.finish(),
-            identifier,
-        }
-    }
-
-    /// Creates a [`DataType`] from persisted parts (`type_name`, topic, metadata).
-    /// Hash is recomputed from topic. Use when restoring from legacy `data_type` column.
-    /// Identifier is set to None.
-    #[must_use]
-    pub fn from_parts(type_name: &str, topic: &str, metadata: Option<Params>) -> Self {
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        topic.hash(&mut hasher);
-        Self {
-            type_name: type_name.to_owned(),
-            metadata,
-            topic: topic.to_owned(),
-            hash: hasher.finish(),
-            identifier: None,
-        }
-    }
-
-    /// Serializes to JSON for persistence (`type_name`, metadata, identifier; no topic, no hash).
-    ///
-    /// # Errors
-    ///
-    /// Returns a JSON serialization error if the data cannot be serialized.
-    pub fn to_persistence_json(&self) -> Result<String, serde_json::Error> {
-        let mut map = serde_json::Map::new();
-        map.insert(
-            "type_name".to_string(),
-            serde_json::Value::String(self.type_name.clone()),
-        );
-        map.insert(
-            "metadata".to_string(),
-            self.metadata.as_ref().map_or(serde_json::Value::Null, |m| {
-                serde_json::to_value(m).unwrap_or(serde_json::Value::Null)
-            }),
-        );
-
-        if let Some(ref id) = self.identifier {
-            map.insert(
-                "identifier".to_string(),
-                serde_json::Value::String(id.clone()),
-            );
-        }
-        serde_json::to_string(&serde_json::Value::Object(map))
-    }
-
-    /// Deserializes from JSON produced by `to_persistence_json`.
-    /// Accepts legacy JSON with `topic` (ignored); topic is rebuilt from `type_name` + metadata.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the string is not valid JSON or missing required fields.
-    pub fn from_persistence_json(s: &str) -> Result<Self, anyhow::Error> {
-        let value: serde_json::Value =
-            serde_json::from_str(s).map_err(|e| anyhow::anyhow!("Invalid data_type JSON: {e}"))?;
-        let obj = value
-            .as_object()
-            .ok_or_else(|| anyhow::anyhow!("data_type must be a JSON object"))?;
-        let type_name = obj
-            .get("type_name")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("data_type must have type_name"))?;
-        let metadata = obj.get("metadata").and_then(|m| {
-            if m.is_null() {
-                None
-            } else {
-                let p: Params = serde_json::from_value(m.clone()).ok()?;
-                if p.is_empty() { None } else { Some(p) }
-            }
-        });
-        let identifier = obj
-            .get("identifier")
-            .and_then(|v| v.as_str())
-            .map(String::from);
-        Ok(Self::new(type_name, metadata, identifier))
-    }
-
-    /// Returns the type name for the data type.
-    #[must_use]
-    pub fn type_name(&self) -> &str {
-        self.type_name.as_str()
-    }
-
-    /// Returns the metadata for the data type.
-    #[must_use]
-    pub fn metadata(&self) -> Option<&Params> {
-        self.metadata.as_ref()
-    }
-
-    /// Returns a string representation of the metadata.
-    #[must_use]
-    pub fn metadata_str(&self) -> String {
-        self.metadata.as_ref().map_or_else(
-            || "null".to_string(),
-            |metadata| {
-                let mut entries = metadata.iter().collect::<Vec<_>>();
-                entries.sort_by_key(|(key, _)| *key);
-
-                let mut metadata_map = serde_json::Map::new();
-                for (key, value) in entries {
-                    metadata_map.insert(key.clone(), value.clone());
-                }
-
-                serde_json::to_string(&metadata_map).unwrap_or_default()
-            },
-        )
-    }
-
-    /// Returns metadata as a string-only map (e.g. for Arrow schema metadata).
-    #[must_use]
-    pub fn metadata_string_map(&self) -> Option<std::collections::HashMap<String, String>> {
-        self.metadata.as_ref().map(|p| {
-            p.iter()
-                .map(|(k, v)| (k.clone(), value_to_topic_string(v)))
-                .collect()
-        })
-    }
-
-    /// Returns the precomputed hash for this data type.
-    #[must_use]
-    pub fn precomputed_hash(&self) -> u64 {
-        self.hash
-    }
-
-    /// Returns the messaging topic for the data type.
-    #[must_use]
-    pub fn topic(&self) -> &str {
-        self.topic.as_str()
-    }
-
-    /// Returns the optional catalog path identifier (can contain subdirs, e.g. `"venue//symbol"`).
-    #[must_use]
-    pub fn identifier(&self) -> Option<&str> {
-        self.identifier.as_deref()
-    }
-
-    /// Returns an [`Option<InstrumentId>`] parsed from the metadata.
-    ///
-    /// # Panics
-    ///
-    /// This function panics if:
-    /// - The `instrument_id` value contained in the metadata is invalid.
-    #[must_use]
-    pub fn instrument_id(&self) -> Option<InstrumentId> {
-        let metadata = self.metadata.as_ref()?;
-        let instrument_id = metadata.get_str("instrument_id")?;
-        Some(
-            InstrumentId::from_str(instrument_id)
-                .expect("Invalid `InstrumentId` for 'instrument_id'"),
-        )
-    }
-
-    /// Returns an [`Option<Venue>`] parsed from the metadata.
-    ///
-    /// # Panics
-    ///
-    /// This function panics if:
-    /// - The `venue` value contained in the metadata is invalid.
-    #[must_use]
-    pub fn venue(&self) -> Option<Venue> {
-        let metadata = self.metadata.as_ref()?;
-        let venue_str = metadata.get_str("venue")?;
-        Some(Venue::from(venue_str))
-    }
-
-    /// Returns an [`Option<UnixNanos>`] parsed from the metadata `start` field.
-    ///
-    /// # Panics
-    ///
-    /// This function panics if:
-    /// - The `start` value contained in the metadata is invalid.
-    #[must_use]
-    pub fn start(&self) -> Option<UnixNanos> {
-        let metadata = self.metadata.as_ref()?;
-        let start_str = metadata.get_str("start")?;
-        Some(UnixNanos::from_str(start_str).expect("Invalid `UnixNanos` for 'start'"))
-    }
-
-    /// Returns an [`Option<UnixNanos>`] parsed from the metadata `end` field.
-    ///
-    /// # Panics
-    ///
-    /// This function panics if:
-    /// - The `end` value contained in the metadata is invalid.
-    #[must_use]
-    pub fn end(&self) -> Option<UnixNanos> {
-        let metadata = self.metadata.as_ref()?;
-        let end_str = metadata.get_str("end")?;
-        Some(UnixNanos::from_str(end_str).expect("Invalid `UnixNanos` for 'end'"))
-    }
-
-    /// Returns an [`Option<usize>`] parsed from the metadata `limit` field.
-    ///
-    /// # Panics
-    ///
-    /// This function panics if:
-    /// - The `limit` value contained in the metadata is invalid.
-    #[must_use]
-    pub fn limit(&self) -> Option<usize> {
-        let metadata = self.metadata.as_ref()?;
-        metadata.get_usize("limit").or_else(|| {
-            metadata
-                .get_str("limit")
-                .map(|s| s.parse::<usize>().expect("Invalid `usize` for 'limit'"))
-        })
-    }
-}
-
-impl PartialEq for DataType {
-    fn eq(&self, other: &Self) -> bool {
-        self.topic == other.topic
-    }
-}
-
-impl Eq for DataType {}
-
-impl PartialOrd for DataType {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for DataType {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.topic.cmp(&other.topic)
-    }
-}
-
-impl Hash for DataType {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.hash.hash(state);
-    }
-}
-
-impl Display for DataType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.topic)
-    }
-}
-
-impl Debug for DataType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "DataType(type_name={}, metadata={:?}, identifier={:?})",
-            self.type_name, self.metadata, self.identifier
-        )
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use std::hash::DefaultHasher;
+    use std::sync::Arc;
 
     use rstest::*;
-    use serde_json::json;
 
     use super::*;
-    #[cfg(feature = "defi")]
-    use crate::defi::{
-        data::block::BlockPosition,
-        pool_analysis::snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
-    };
-    use crate::{
-        data::stubs::{
-            stub_bar, stub_custom_data, stub_delta, stub_deltas, stub_depth10,
-            stub_instrument_close, stub_instrument_status, stub_trade_ethusdt_buy,
-        },
-        types::Price,
-    };
-
-    fn params_from_json(value: serde_json::Value) -> Params {
-        serde_json::from_value(value).expect("valid Params JSON")
-    }
-
-    fn hash_data_type(data_type: &DataType) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        data_type.hash(&mut hasher);
-        hasher.finish()
-    }
+    use crate::instruments::stubs::crypto_perpetual_ethusdt;
 
     #[rstest]
-    fn test_data_ref_maps_every_data_variant_without_copying_payloads() {
-        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
-        let data = vec![
-            Data::BookDelta(stub_delta()),
-            Data::BookDeltas(Box::new(stub_deltas())),
-            Data::BookDepth10(Box::new(stub_depth10())),
-            Data::Quote(QuoteTick::default()),
-            Data::Trade(stub_trade_ethusdt_buy()),
-            Data::Bar(stub_bar()),
-            Data::MarkPrice(MarkPriceUpdate::new(
-                instrument_id,
-                Price::from("100.10"),
-                UnixNanos::from(7),
-                UnixNanos::from(8),
-            )),
-            Data::IndexPrice(IndexPriceUpdate::new(
-                instrument_id,
-                Price::from("100.20"),
-                UnixNanos::from(9),
-                UnixNanos::from(10),
-            )),
-            Data::FundingRate(FundingRateUpdate::new(
-                instrument_id,
-                "0.0001".parse().unwrap(),
-                Some(480),
-                Some(UnixNanos::from(12)),
-                UnixNanos::from(11),
-                UnixNanos::from(12),
-            )),
-            Data::OptionGreeks(OptionGreeks {
-                instrument_id,
-                ts_event: UnixNanos::from(13),
-                ts_init: UnixNanos::from(14),
-                ..OptionGreeks::default()
-            }),
-            Data::InstrumentStatus(stub_instrument_status()),
-            Data::InstrumentClose(stub_instrument_close()),
-            Data::Custom(stub_custom_data(
-                15,
-                42,
-                None,
-                Some("CUSTOM.SIM".to_string()),
-            )),
-        ];
-        assert_eq!(data.len(), 13, "every non-DeFi Data variant needs a case");
-
-        for data in &data {
-            let data_ref = DataRef::from(data);
-
-            assert_eq!(data_ref.instrument_id(), data.instrument_id());
-            assert_eq!(data_ref.ts_init(), data.ts_init());
-
-            match (data, data_ref) {
-                (Data::BookDelta(expected), DataRef::BookDelta(actual)) => {
-                    assert!(std::ptr::eq(expected, actual));
-                }
-                (Data::BookDeltas(expected), DataRef::BookDeltas(actual)) => {
-                    assert!(std::ptr::eq(expected.as_ref(), actual));
-                }
-                (Data::BookDepth10(expected), DataRef::BookDepth10(actual)) => {
-                    assert!(std::ptr::eq(expected.as_ref(), actual));
-                }
-                (Data::Quote(expected), DataRef::Quote(actual)) => {
-                    assert!(std::ptr::eq(expected, actual));
-                }
-                (Data::Trade(expected), DataRef::Trade(actual)) => {
-                    assert!(std::ptr::eq(expected, actual));
-                }
-                (Data::Bar(expected), DataRef::Bar(actual)) => {
-                    assert!(std::ptr::eq(expected, actual));
-                }
-                (Data::MarkPrice(expected), DataRef::MarkPrice(actual)) => {
-                    assert!(std::ptr::eq(expected, actual));
-                }
-                (Data::IndexPrice(expected), DataRef::IndexPrice(actual)) => {
-                    assert!(std::ptr::eq(expected, actual));
-                }
-                (Data::FundingRate(expected), DataRef::FundingRate(actual)) => {
-                    assert!(std::ptr::eq(expected, actual));
-                }
-                (Data::OptionGreeks(expected), DataRef::OptionGreeks(actual)) => {
-                    assert!(std::ptr::eq(expected, actual));
-                }
-                (Data::InstrumentStatus(expected), DataRef::InstrumentStatus(actual)) => {
-                    assert!(std::ptr::eq(expected, actual));
-                }
-                (Data::InstrumentClose(expected), DataRef::InstrumentClose(actual)) => {
-                    assert!(std::ptr::eq(expected, actual));
-                }
-                (Data::Custom(expected), DataRef::Custom(actual)) => {
-                    assert!(std::ptr::eq(expected, actual));
-                }
-                _ => panic!("DataRef variant did not match its Data source"),
-            }
+    fn test_depth_family_matches_both_macro_forms() {
+        macro_rules! family_rows {
+            (($marker:ident); $($rows:tt)*) => { family_rows!($($rows)*) };
+            ($(($family:ident, $type:ident, $data:ident, $batch:ident, $prefix:literal)),+ $(,)?) => {
+                vec![$((stringify!($family), stringify!($type), stringify!($data), stringify!($batch), $prefix)),+]
+            };
         }
-    }
-
-    #[rstest]
-    #[case(Vec::new(), true)]
-    #[case(vec![1], true)]
-    #[case(vec![1, 1, 2], true)]
-    #[case(vec![2, 1], false)]
-    fn test_is_monotonically_increasing_by_init(
-        #[case] timestamps: Vec<u64>,
-        #[case] expected: bool,
-    ) {
-        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
-        let data: Vec<IndexPriceUpdate> = timestamps
-            .into_iter()
-            .map(|ts_init| {
-                IndexPriceUpdate::new(
-                    instrument_id,
-                    Price::from("100.00"),
-                    UnixNanos::from(0),
-                    UnixNanos::from(ts_init),
-                )
-            })
-            .collect();
-
-        assert_eq!(is_monotonically_increasing_by_init(&data), expected);
-    }
-
-    #[cfg(feature = "defi")]
-    #[rstest]
-    fn test_data_ref_maps_defi_without_copying_payload() {
-        let instrument_id = InstrumentId::from("ETH/USDC.UNISWAPV3");
-        let snapshot = PoolSnapshot::new(
-            instrument_id,
-            PoolState::default(),
-            Vec::new(),
-            Vec::new(),
-            PoolAnalytics::default(),
-            BlockPosition::new(7, "0x123".to_string(), 2, 3),
-            UnixNanos::from(16),
-            UnixNanos::from(17),
+        let rows = for_each_data_type!(family_rows);
+        let rows_with_args = for_each_data_type!(family_rows, context);
+        let depth = rows
+            .iter()
+            .find(|row| row.4 == "order_book_depths")
+            .copied()
+            .unwrap();
+        assert_eq!(rows, rows_with_args);
+        assert_eq!(
+            depth,
+            (
+                "OrderBookDepth",
+                "OrderBookDepth",
+                "BookDepth",
+                "BookDepth",
+                "order_book_depths"
+            )
         );
-        let data = Data::Defi(Box::new(DefiData::PoolSnapshot(snapshot)));
-        let data_ref = DataRef::from(&data);
-
-        assert_eq!(data_ref.instrument_id(), data.instrument_id());
-        assert_eq!(data_ref.ts_init(), data.ts_init());
-
-        let (Data::Defi(expected), DataRef::Defi(actual)) = (&data, data_ref) else {
-            panic!("DataRef variant did not match its Data source");
-        };
-        assert!(std::ptr::eq(expected.as_ref(), actual));
     }
 
     #[rstest]
-    fn test_data_type_creation_with_metadata() {
-        let metadata = Some(params_from_json(
-            json!({"key1": "value1", "key2": "value2"}),
-        ));
-        let data_type = DataType::new("ExampleType", metadata.clone(), None);
+    fn data_instrument_json_roundtrips() {
+        let data = Data::from(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()));
 
-        assert_eq!(data_type.type_name(), "ExampleType");
-        assert_eq!(data_type.topic(), "ExampleType.key1=value1.key2=value2");
-        assert_eq!(data_type.metadata(), metadata.as_ref());
+        let encoded = serde_json::to_string(&data).unwrap();
+        let decoded = serde_json::from_str::<Data>(&encoded).unwrap();
+
+        assert_eq!(decoded, data);
     }
 
     #[rstest]
-    fn test_data_type_topic_identity_uses_canonical_metadata_order() {
-        let mut metadata1 = Params::new();
-        metadata1.insert("b".to_string(), json!(2));
-        metadata1.insert("a".to_string(), json!(1));
-        let mut metadata2 = Params::new();
-        metadata2.insert("a".to_string(), json!(1));
-        metadata2.insert("b".to_string(), json!(2));
-
-        let data_type1 = DataType::new("ExampleType", Some(metadata1), None);
-        let data_type2 = DataType::new("ExampleType", Some(metadata2), None);
-        let mut hasher1 = DefaultHasher::new();
-        data_type1.hash(&mut hasher1);
-        let hash1 = hasher1.finish();
-        let mut hasher2 = DefaultHasher::new();
-        data_type2.hash(&mut hasher2);
-        let hash2 = hasher2.finish();
-
-        assert_eq!(data_type1.topic(), "ExampleType.a=1.b=2");
-        assert_eq!(data_type1.topic(), data_type2.topic());
-        assert_eq!(data_type1, data_type2);
-        assert_eq!(hash1, hash2);
-        assert_eq!(format!("{data_type1}"), format!("{data_type2}"));
-        assert_eq!(data_type1.metadata_str(), r#"{"a":1,"b":2}"#);
-        assert_eq!(data_type1.metadata_str(), data_type2.metadata_str());
-    }
-
-    #[rstest]
-    fn test_data_type_creation_without_metadata() {
-        let data_type = DataType::new("ExampleType", None, None);
-
-        assert_eq!(data_type.type_name(), "ExampleType");
-        assert_eq!(data_type.topic(), "ExampleType");
-        assert_eq!(data_type.metadata(), None);
-    }
-
-    #[rstest]
-    fn test_data_type_equality() {
-        let metadata1 = Some(params_from_json(json!({"key1": "value1"})));
-        let metadata2 = Some(params_from_json(json!({"key1": "value1"})));
-
-        let data_type1 = DataType::new("ExampleType", metadata1, None);
-        let data_type2 = DataType::new("ExampleType", metadata2, None);
-
-        assert_eq!(data_type1, data_type2);
-    }
-
-    #[rstest]
-    fn test_data_type_inequality() {
-        let metadata1 = Some(params_from_json(json!({"key1": "value1"})));
-        let metadata2 = Some(params_from_json(json!({"key2": "value2"})));
-
-        let data_type1 = DataType::new("ExampleType", metadata1, None);
-        let data_type2 = DataType::new("ExampleType", metadata2, None);
-
-        assert_ne!(data_type1, data_type2);
-    }
-
-    #[rstest]
-    fn test_data_type_ordering() {
-        let metadata1 = Some(params_from_json(json!({"key1": "value1"})));
-        let metadata2 = Some(params_from_json(json!({"key2": "value2"})));
-
-        let data_type1 = DataType::new("ExampleTypeA", metadata1, None);
-        let data_type2 = DataType::new("ExampleTypeB", metadata2, None);
-
-        assert!(data_type1 < data_type2);
-    }
-
-    #[rstest]
-    fn test_data_type_hash() {
-        let metadata = Some(params_from_json(json!({"key1": "value1"})));
-
-        let data_type1 = DataType::new("ExampleType", metadata.clone(), None);
-        let data_type2 = DataType::new("ExampleType", metadata, None);
-
-        let mut hasher1 = DefaultHasher::new();
-        data_type1.hash(&mut hasher1);
-        let hash1 = hasher1.finish();
-
-        let mut hasher2 = DefaultHasher::new();
-        data_type2.hash(&mut hasher2);
-        let hash2 = hasher2.finish();
-
-        assert_eq!(hash1, hash2);
-    }
-
-    #[rstest]
-    fn test_data_type_deserialization_recomputes_hash_from_topic() {
-        let expected = DataType::from_parts(
-            "ExampleType",
-            "custom.topic",
-            Some(params_from_json(json!({"key": "value"}))),
-        );
-        let payload = json!({
-            "type_name": expected.type_name(),
-            "metadata": expected.metadata(),
-            "topic": expected.topic(),
-            "hash": expected.precomputed_hash() ^ u64::MAX,
-            "identifier": "catalog/path",
-        });
-
-        let deserialized: DataType = serde_json::from_value(payload).unwrap();
-
-        assert_eq!(deserialized.topic(), expected.topic());
-        assert_eq!(deserialized.precomputed_hash(), expected.precomputed_hash());
-    }
-
-    #[rstest]
-    fn test_data_type_deserialization_without_cache_fields_uses_constructor() {
-        let payload = json!({
-            "type_name": "ExampleType",
-            "metadata": {"z": 9, "a": 1},
-            "identifier": "catalog/path",
-        });
-        let expected = DataType::new(
-            "ExampleType",
-            Some(params_from_json(json!({"z": 9, "a": 1}))),
-            Some("catalog/path".to_string()),
-        );
-
-        let deserialized: DataType = serde_json::from_value(payload).unwrap();
-
-        assert_eq!(deserialized.topic(), expected.topic());
-        assert_eq!(deserialized.precomputed_hash(), expected.precomputed_hash());
-    }
-
-    #[rstest]
-    fn test_data_type_deserialization_preserves_topic_without_hash() {
-        let expected = DataType::from_parts("ExampleType", "custom.topic", None);
-        let payload = json!({
-            "type_name": "ExampleType",
-            "metadata": null,
-            "topic": "custom.topic",
-        });
-
-        let deserialized: DataType = serde_json::from_value(payload).unwrap();
-
-        assert_eq!(deserialized.topic(), "custom.topic");
-        assert_eq!(deserialized.precomputed_hash(), expected.precomputed_hash());
-    }
-
-    #[rstest]
-    fn test_data_type_deserialization_ignores_hash_without_topic() {
-        let expected = DataType::new("ExampleType", None, None);
-        let payload = json!({
-            "type_name": "ExampleType",
-            "metadata": null,
-            "hash": expected.precomputed_hash() ^ u64::MAX,
-        });
-
-        let deserialized: DataType = serde_json::from_value(payload).unwrap();
-
-        assert_eq!(deserialized.topic(), expected.topic());
-        assert_eq!(deserialized.precomputed_hash(), expected.precomputed_hash());
-    }
-
-    #[rstest]
-    fn test_data_type_deserialization_rejects_duplicate_map_key() {
-        let payload = r#"{"type_name":"ExampleType","topic":"first","topic":"second"}"#;
-
-        let error = serde_json::from_str::<DataType>(payload).unwrap_err();
-
-        assert!(error.to_string().contains("duplicate field `topic`"));
-    }
-
-    #[rstest]
+    #[case(NautilusDataType::Instrument, "Instrument")]
+    #[case(NautilusDataType::OrderBook, "OrderBook")]
+    #[case(NautilusDataType::QuoteTick, "QuoteTick")]
+    #[case(NautilusDataType::OrderBookDelta, "OrderBookDelta")]
     #[case(
-        r#"{"type_name":"ExampleType","topic":null,"topic":"second"}"#,
-        "duplicate field `topic`"
+        NautilusDataType::Custom {
+            type_name: "Example".to_string()
+        },
+        "Custom:Example"
     )]
-    #[case(
-        r#"{"type_name":"ExampleType","hash":null,"hash":7}"#,
-        "duplicate field `hash`"
-    )]
-    #[case(
-        r#"{"type_name":"ExampleType","metadata":null,"metadata":{"a":1}}"#,
-        "duplicate field `metadata`"
-    )]
-    #[case(
-        r#"{"type_name":"ExampleType","identifier":null,"identifier":"second"}"#,
-        "duplicate field `identifier`"
-    )]
-    fn test_data_type_deserialization_rejects_duplicate_map_key_after_null(
-        #[case] payload: &str,
+    fn nautilus_data_type_display_from_str_roundtrips(
+        #[case] nautilus_data_type: NautilusDataType,
         #[case] expected: &str,
     ) {
-        // A null first occurrence must still count as "seen". A plain Option slot could not
-        // tell an absent key from an explicit null, and would silently accept the duplicate.
-        let error = serde_json::from_str::<DataType>(payload).unwrap_err();
-
-        assert!(error.to_string().contains(expected));
-    }
-
-    #[rstest]
-    fn test_data_type_serde_roundtrip_preserves_fields_and_repairs_hash() {
-        let expected = DataType::from_parts(
-            "ExampleType",
-            "custom.topic",
-            Some(params_from_json(json!({"key": "value"}))),
-        );
-        let payload = json!({
-            "type_name": expected.type_name(),
-            "metadata": expected.metadata(),
-            "topic": expected.topic(),
-            "hash": expected.precomputed_hash() ^ u64::MAX,
-            "identifier": "catalog/path",
-        });
-        let deserialized: DataType = serde_json::from_value(payload).unwrap();
-
-        let json = serde_json::to_string(&deserialized).unwrap();
-        let roundtripped: DataType = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(roundtripped.type_name(), "ExampleType");
-        assert_eq!(roundtripped.metadata(), expected.metadata());
-        assert_eq!(roundtripped.identifier(), Some("catalog/path"));
-        assert_eq!(roundtripped.topic(), "custom.topic");
-        assert_eq!(roundtripped.precomputed_hash(), expected.precomputed_hash());
-    }
-
-    #[rstest]
-    fn test_data_type_serialized_cache_fields_remain_wire_compatible() {
-        #[derive(Deserialize)]
-        struct LegacyDataType {
-            type_name: String,
-            metadata: Option<Params>,
-            topic: String,
-            hash: u64,
-            identifier: Option<String>,
-        }
-
-        let expected = DataType::new(
-            "ExampleType",
-            Some(params_from_json(json!({"key": "value"}))),
-            Some("catalog/path".to_string()),
-        );
-        let mut payload = serde_json::to_value(&expected).unwrap();
-        payload["hash"] = json!(expected.precomputed_hash() ^ u64::MAX);
-        let repaired: DataType = serde_json::from_value(payload).unwrap();
-
-        let serialized = serde_json::to_value(&repaired).unwrap();
-        assert!(serialized.get("topic").is_some());
-        assert!(serialized.get("hash").is_some());
-
-        let legacy: LegacyDataType = serde_json::from_value(serialized).unwrap();
-        assert_eq!(legacy.type_name, expected.type_name());
-        assert_eq!(legacy.metadata.as_ref(), expected.metadata());
-        assert_eq!(legacy.topic, expected.topic());
-        assert_eq!(legacy.hash, expected.precomputed_hash());
-        assert_eq!(legacy.identifier.as_deref(), expected.identifier());
-    }
-
-    #[rstest]
-    fn test_data_type_display() {
-        let metadata = Some(params_from_json(json!({"key1": "value1"})));
-        let data_type = DataType::new("ExampleType", metadata, None);
-
-        assert_eq!(format!("{data_type}"), "ExampleType.key1=value1");
-    }
-
-    #[rstest]
-    fn test_data_type_debug() {
-        let metadata = Some(params_from_json(json!({"key1": "value1"})));
-        let data_type = DataType::new("ExampleType", metadata.clone(), None);
-
+        assert_eq!(nautilus_data_type.to_string(), expected);
         assert_eq!(
-            format!("{data_type:?}"),
-            format!("DataType(type_name=ExampleType, metadata={metadata:?}, identifier=None)")
+            expected.parse::<NautilusDataType>().unwrap(),
+            nautilus_data_type
         );
     }
 
     #[rstest]
-    fn test_parse_instrument_id_from_metadata() {
-        let instrument_id_str = "MSFT.XNAS";
-        let metadata = Some(params_from_json(
-            json!({"instrument_id": instrument_id_str}),
-        ));
-        let data_type = DataType::new("InstrumentAny", metadata, None);
+    #[case("instruments", NautilusDataType::Instrument)]
+    #[case("order_book", NautilusDataType::OrderBook)]
+    #[case("quotes", NautilusDataType::QuoteTick)]
+    #[case("order_book_deltas", NautilusDataType::OrderBookDelta)]
+    #[case("instrument_closes", NautilusDataType::InstrumentClose)]
+    // Plural class names, so callers can pass a Nautilus type's own name.
+    #[case("OrderBookDeltas", NautilusDataType::OrderBookDelta)]
+    #[case("OrderBookDepth", NautilusDataType::OrderBookDepth)]
+    fn nautilus_data_type_storage_names_parse(
+        #[case] value: &str,
+        #[case] expected: NautilusDataType,
+    ) {
+        assert_eq!(value.parse::<NautilusDataType>().unwrap(), expected);
+    }
 
-        assert_eq!(
-            data_type.instrument_id().unwrap(),
-            InstrumentId::from_str(instrument_id_str).unwrap()
+    #[rstest]
+    #[case(NautilusRecordType::AccountState, "AccountState")]
+    #[case(NautilusRecordType::OrderFilled, "OrderFilled")]
+    #[case(NautilusRecordType::OrderFillVoided, "OrderFillVoided")]
+    #[case(NautilusRecordType::ExecutionMassStatus, "ExecutionMassStatus")]
+    fn nautilus_record_type_display_from_str_roundtrips(
+        #[case] record_type: NautilusRecordType,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(record_type.to_string(), expected);
+        assert_eq!(expected.parse::<NautilusRecordType>().unwrap(), record_type);
+    }
+
+    #[rstest]
+    #[case("account_state", NautilusRecordType::AccountState)]
+    #[case("order_filled", NautilusRecordType::OrderFilled)]
+    #[case("order_fill_voided", NautilusRecordType::OrderFillVoided)]
+    #[case("position_snapshot", NautilusRecordType::PositionSnapshot)]
+    fn nautilus_record_type_storage_names_parse(
+        #[case] value: &str,
+        #[case] expected: NautilusRecordType,
+    ) {
+        assert_eq!(value.parse::<NautilusRecordType>().unwrap(), expected);
+    }
+
+    #[rstest]
+    fn data_batches_group_mixed_rows_in_first_seen_order() {
+        let data = vec![
+            Data::Quote(QuoteTick::default()),
+            Data::Trade(TradeTick::default()),
+            Data::Quote(QuoteTick::default()),
+        ];
+
+        let batches = DataBatch::from_data_vec_grouped(&data).unwrap();
+
+        assert_eq!(batches.len(), 2);
+        assert!(matches!(&batches[0], DataBatch::Quote(rows) if rows.len() == 2));
+        assert!(matches!(&batches[1], DataBatch::Trade(rows) if rows.len() == 1));
+    }
+
+    #[rstest]
+    fn data_batches_preserve_order_book_delta_event_batches() {
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let delta = OrderBookDelta::clear(instrument_id, 1, UnixNanos::from(2), UnixNanos::from(3));
+        let data = vec![Data::BookDeltas(Box::new(OrderBookDeltas::new(
+            instrument_id,
+            vec![delta],
+        )))];
+
+        let batches = DataBatch::from_data_vec_grouped(&data).unwrap();
+
+        assert_eq!(batches.len(), 1);
+        assert!(
+            matches!(&batches[0], DataBatch::BookDeltas(rows) if rows.len() == 1 && rows[0].deltas == vec![delta])
         );
     }
-
     #[rstest]
-    fn test_parse_venue_from_metadata() {
-        let venue_str = "BINANCE";
-        let metadata = Some(params_from_json(json!({"venue": venue_str})));
-        let data_type = DataType::new(stringify!(InstrumentAny), metadata, None);
+    fn test_batch_view_make_mut_reuses_unshared_backing() {
+        let mut view = BatchView::from(vec![3, 1, 2]);
+        let backing = Arc::as_ptr(view.arc());
 
-        assert_eq!(data_type.venue().unwrap(), Venue::new(venue_str));
+        view.make_mut().sort_unstable();
+
+        assert!(std::ptr::eq(Arc::as_ptr(view.arc()), backing));
+        assert_eq!(view.as_ref(), &[1, 2, 3]);
     }
 
     #[rstest]
-    fn test_parse_start_from_metadata() {
-        let start_ns = 1_600_054_595_844_758_000;
-        let metadata = Some(params_from_json(json!({"start": start_ns.to_string()})));
-        let data_type = DataType::new(stringify!(TradeTick), metadata, None);
+    fn test_batch_view_make_mut_clones_shared_backing_within_range() {
+        let source = BatchView::new(Arc::new(vec![9, 3, 1, 2]), 1..4);
+        let mut view = source.clone();
 
-        assert_eq!(data_type.start().unwrap(), UnixNanos::from(start_ns),);
-    }
+        view.make_mut().sort_unstable();
 
-    #[rstest]
-    fn test_parse_end_from_metadata() {
-        let end_ns = 1_720_954_595_844_758_000;
-        let metadata = Some(params_from_json(json!({"end": end_ns.to_string()})));
-        let data_type = DataType::new(stringify!(TradeTick), metadata, None);
-
-        assert_eq!(data_type.end().unwrap(), UnixNanos::from(end_ns),);
-    }
-
-    #[rstest]
-    fn test_parse_limit_from_metadata() {
-        let limit = 1000;
-        let metadata = Some(params_from_json(json!({"limit": limit})));
-        let data_type = DataType::new(stringify!(TradeTick), metadata, None);
-
-        assert_eq!(data_type.limit().unwrap(), limit);
-    }
-
-    #[rstest]
-    fn test_data_type_metadata_accessors_return_none_without_metadata() {
-        let data_type = DataType::new(stringify!(TradeTick), None, None);
-
-        assert_eq!(data_type.instrument_id(), None);
-        assert_eq!(data_type.venue(), None);
-        assert_eq!(data_type.start(), None);
-        assert_eq!(data_type.end(), None);
-    }
-
-    #[rstest]
-    fn test_data_type_persistence_json_with_identifier() {
-        let data_type = DataType::new("MyCustomType", None, Some("venue//symbol".to_string()));
-        let json = data_type.to_persistence_json().unwrap();
-        assert!(!json.contains("topic"));
-        assert!(json.contains("\"identifier\":\"venue//symbol\""));
-        let restored = DataType::from_persistence_json(&json).unwrap();
-        assert_eq!(restored.type_name(), "MyCustomType");
-        assert_eq!(restored.identifier(), Some("venue//symbol"));
-        assert_eq!(restored.topic(), "MyCustomType");
-    }
-
-    #[rstest]
-    fn test_data_type_from_persistence_json_rebuilds_canonical_topic() {
-        let json = r#"{
-            "type_name": "ExampleType",
-            "topic": "ExampleType.z=9.a=1",
-            "metadata": {"z": 9, "a": 1}
-        }"#;
-
-        let restored = DataType::from_persistence_json(json).unwrap();
-
-        assert_eq!(restored.topic(), "ExampleType.a=1.z=9");
-    }
-
-    #[rstest]
-    fn test_data_type_persistence_result_hashes_like_equal_deserialized_value() {
-        let persistence_json = r#"{
-            "type_name": "ExampleType",
-            "topic": "ignored.legacy.topic",
-            "metadata": {"z": 9, "a": 1},
-            "identifier": "catalog/path"
-        }"#;
-        let persisted = DataType::from_persistence_json(persistence_json).unwrap();
-        let payload = json!({
-            "type_name": persisted.type_name(),
-            "metadata": persisted.metadata(),
-            "topic": persisted.topic(),
-            "hash": persisted.precomputed_hash() ^ u64::MAX,
-            "identifier": persisted.identifier(),
-        });
-        let deserialized: DataType = serde_json::from_value(payload).unwrap();
-
-        assert_eq!(persisted.topic(), "ExampleType.a=1.z=9");
-        assert_eq!(persisted.identifier(), Some("catalog/path"));
-        assert_eq!(deserialized, persisted);
-        assert_eq!(hash_data_type(&deserialized), hash_data_type(&persisted));
-    }
-
-    #[rstest]
-    fn test_data_type_identifier_getter() {
-        let data_type = DataType::new("T", None, Some("id".to_string()));
-        assert_eq!(data_type.identifier(), Some("id"));
-        let data_type_no_id = DataType::new("T", None, None);
-        assert_eq!(data_type_no_id.identifier(), None);
+        assert!(!Arc::ptr_eq(source.arc(), view.arc()));
+        assert_eq!(source.as_ref(), &[3, 1, 2]);
+        assert_eq!(view.as_ref(), &[1, 2, 3]);
+        assert_eq!(view.arc().as_slice(), &[9, 1, 2, 3]);
     }
 }

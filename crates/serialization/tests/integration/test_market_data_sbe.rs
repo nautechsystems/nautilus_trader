@@ -337,6 +337,24 @@ fn test_order_book_depth10_roundtrip() {
 }
 
 #[rstest]
+#[case(0)]
+#[case(9)]
+#[case(11)]
+fn test_depth10_encoding_rejects_other_depths(#[case] levels: usize) {
+    let mut depth = stub_depth10();
+    depth.bids.resize(levels, depth.bids[0]);
+    depth.bid_counts.resize(levels, 1);
+    assert_eq!(
+        depth.to_sbe().unwrap_err(),
+        SbeEncodeError::InvalidGroupSize {
+            group: "bids",
+            count: levels,
+            expected: 10,
+        }
+    );
+}
+
+#[rstest]
 fn test_funding_rate_update_roundtrip() {
     let value = sample_funding_rate_update();
 
@@ -833,7 +851,7 @@ fn assert_order_book_depth10_matches_capnp_parity(
     expected: &OrderBookDepth10,
     actual: &OrderBookDepth10,
 ) {
-    let expected = normalize_depth10_capnp_parity(*expected);
+    let expected = normalize_depth10_capnp_parity(expected.clone());
 
     assert_eq!(expected.instrument_id, actual.instrument_id);
     assert_eq!(expected.bid_counts, actual.bid_counts);

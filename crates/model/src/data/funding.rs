@@ -22,7 +22,7 @@ use nautilus_core::{UnixNanos, serialization::Serializable};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-use super::HasTsInit;
+use super::{ARROW_TIMESTAMP_NANOSECOND, HasTsInit};
 use crate::identifiers::InstrumentId;
 
 /// Represents a funding rate update for perpetual swap instruments.
@@ -104,11 +104,21 @@ impl FundingRateUpdate {
     #[must_use]
     pub fn get_fields() -> IndexMap<String, String> {
         let mut metadata = IndexMap::new();
-        metadata.insert("rate".to_string(), "Decimal128".to_string());
-        metadata.insert("interval".to_string(), "UInt16".to_string());
-        metadata.insert("next_funding_ns".to_string(), "UInt64".to_string());
-        metadata.insert("ts_event".to_string(), "UInt64".to_string());
-        metadata.insert("ts_init".to_string(), "UInt64".to_string());
+        metadata.insert("instrument_id".to_string(), "Utf8".to_string());
+        metadata.insert("rate".to_string(), "Utf8".to_string());
+        metadata.insert("interval".to_string(), "UInt64".to_string());
+        metadata.insert(
+            "next_funding_ns".to_string(),
+            ARROW_TIMESTAMP_NANOSECOND.to_string(),
+        );
+        metadata.insert(
+            "ts_event".to_string(),
+            ARROW_TIMESTAMP_NANOSECOND.to_string(),
+        );
+        metadata.insert(
+            "ts_init".to_string(),
+            ARROW_TIMESTAMP_NANOSECOND.to_string(),
+        );
         metadata
     }
 }

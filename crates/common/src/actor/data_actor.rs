@@ -90,10 +90,11 @@ use crate::{
         switchboard::{
             MessagingSwitchboard, get_bars_topic, get_book_deltas_pattern, get_book_deltas_topic,
             get_book_depth10_pattern, get_book_depth10_topic, get_book_snapshots_topic,
-            get_custom_topic, get_funding_rate_topic, get_index_price_topic,
-            get_instrument_close_topic, get_instrument_status_topic, get_instrument_topic,
-            get_instruments_pattern, get_mark_price_topic, get_option_chain_topic,
-            get_option_greeks_topic, get_quotes_topic, get_signal_pattern, get_trades_topic,
+            get_custom_subscription_topics, get_custom_topic, get_funding_rate_topic,
+            get_index_price_topic, get_instrument_close_topic, get_instrument_status_topic,
+            get_instrument_topic, get_instruments_pattern, get_mark_price_topic,
+            get_option_chain_topic, get_option_greeks_topic, get_quotes_topic, get_signal_pattern,
+            get_trades_topic,
         },
     },
     runner::SystemChannel,
@@ -4395,7 +4396,14 @@ impl DataActorCore {
             self.cache.is_some()
         );
 
-        let topic = get_custom_topic(&data_type);
+        let mut topics = get_custom_subscription_topics(&data_type);
+        let Some(topic) = topics.pop() else {
+            return;
+        };
+
+        for alias in topics {
+            self.add_subscription_any(alias, handler.clone(), None, None);
+        }
 
         // If no client ID specified, just subscribe to the topic
         if client_id.is_none() {
@@ -4929,8 +4937,13 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        let topic = get_custom_topic(&data_type);
-        let retained = self.remove_subscription_any(topic);
+        let mut retained = None;
+
+        for topic in get_custom_subscription_topics(&data_type) {
+            if let Some(command) = self.remove_subscription_any(topic) {
+                retained = Some(command);
+            }
+        }
 
         if client_id.is_none() && retained.is_none() {
             return;

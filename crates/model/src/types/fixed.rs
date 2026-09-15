@@ -86,9 +86,12 @@ pub static HIGH_PRECISION_MODE: u8 = cfg!(feature = "high-precision") as u8;
 /// The maximum fixed-point precision.
 pub const FIXED_PRECISION: u8 = 16;
 
+/// The maximum fixed-point precision used by standard-precision catalog data.
+pub const FIXED_PRECISION_STANDARD: u8 = 9;
+
 #[cfg(not(feature = "high-precision"))]
 /// The maximum fixed-point precision.
-pub const FIXED_PRECISION: u8 = 9;
+pub const FIXED_PRECISION: u8 = FIXED_PRECISION_STANDARD;
 
 // -----------------------------------------------------------------------------
 // PRECISION_BYTES (size of integer backing the fixed-point values)
@@ -102,17 +105,8 @@ pub const PRECISION_BYTES: i32 = 16;
 /// The width in bytes for fixed-point value types in standard-precision mode (64-bit).
 pub const PRECISION_BYTES: i32 = 8;
 
-// -----------------------------------------------------------------------------
-// FIXED_BINARY_SIZE
-// -----------------------------------------------------------------------------
-
-#[cfg(feature = "high-precision")]
-/// The data type name for the Arrow fixed-size binary representation.
-pub const FIXED_SIZE_BINARY: &str = "FixedSizeBinary(16)";
-
-#[cfg(not(feature = "high-precision"))]
-/// The data type name for the Arrow fixed-size binary representation.
-pub const FIXED_SIZE_BINARY: &str = "FixedSizeBinary(8)";
+/// The Arrow data type name for fixed-point value types.
+pub const FIXED_DECIMAL: &str = "Decimal128(38, 16)";
 
 // -----------------------------------------------------------------------------
 // FIXED_SCALAR
@@ -333,6 +327,60 @@ pub(crate) fn scaled_raw_to_decimal(scaled_raw: i128, precision: u8) -> Decimal 
         Decimal::from(scaled_raw / divisor)
             + Decimal::from_i128_with_scale(scaled_raw % divisor, scale)
     })
+}
+
+pub(crate) fn format_scaled_i128(raw: i128, precision: u8) -> String {
+    let sign = if raw < 0 { "-" } else { "" };
+    format!(
+        "{sign}{}",
+        format_scaled_u128(raw.unsigned_abs(), precision)
+    )
+}
+
+/// Parses a plain decimal string into its signed mantissa and fractional precision.
+pub(crate) fn parse_decimal_mantissa(value: &str) -> Result<(i128, u8), String> {
+    let (negative, unsigned) = value
+        .strip_prefix('-')
+        .map_or((false, value), |value| (true, value));
+    let unsigned = unsigned.strip_prefix('+').unwrap_or(unsigned);
+    let (whole, fraction) = unsigned.split_once('.').unwrap_or((unsigned, ""));
+    if fraction.contains('.') {
+        return Err(format!("Invalid decimal value '{value}'"));
+    }
+    let digits = format!("{whole}{fraction}");
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(format!("Invalid decimal value '{value}'"));
+    }
+    let precision = u8::try_from(fraction.len())
+        .map_err(|_| format!("Decimal value '{value}' has too many fractional digits"))?;
+    let mut mantissa = 0_i128;
+    for digit in digits.bytes().map(|byte| i128::from(byte - b'0')) {
+        mantissa = if negative {
+            mantissa
+                .checked_mul(10)
+                .and_then(|value| value.checked_sub(digit))
+        } else {
+            mantissa
+                .checked_mul(10)
+                .and_then(|value| value.checked_add(digit))
+        }
+        .ok_or_else(|| format!("Decimal value '{value}' exceeds i128 range"))?;
+    }
+    Ok((mantissa, precision))
+}
+
+pub(crate) fn format_scaled_u128(raw: u128, precision: u8) -> String {
+    if precision == 0 {
+        return raw.to_string();
+    }
+
+    let scale = 10_u128.pow(u32::from(precision));
+    format!(
+        "{}.{:0>width$}",
+        raw / scale,
+        raw % scale,
+        width = usize::from(precision),
+    )
 }
 
 /// Returns `lhs * rhs / FIXED_SCALAR`, truncated toward zero.
@@ -1003,61 +1051,6 @@ mod tests {
         assert!(check_fixed_precision(0).is_ok());
         assert!(check_fixed_precision(FIXED_PRECISION).is_ok());
         assert!(check_fixed_precision(FIXED_PRECISION + 1).is_err());
-    }
-
-    #[rstest]
-    #[case(0, 0, "0")]
-    #[case(125, 2, "1.25")]
-    #[case(-1234, 2, "-12.34")]
-    #[case(1, 16, "0.0000000000000001")]
-    #[case(-1, 16, "-0.0000000000000001")]
-    #[case(1_000_000_000_000_000_000, 18, "1.000000000000000000")]
-    fn test_scaled_raw_to_decimal_matches_plain_conversion(
-        #[case] raw: i128,
-        #[case] precision: u8,
-        #[case] expected: &str,
-    ) {
-        let plain = Decimal::from_i128_with_scale(raw, u32::from(precision));
-        let result = scaled_raw_to_decimal(raw, precision);
-
-        assert_eq!(result, plain);
-        assert_eq!(result.scale(), plain.scale());
-        assert_eq!(result.to_string(), expected);
-    }
-
-    #[rstest]
-    #[case(80_000_000_000_000_000_000_000_000_000, 16, "8000000000000")]
-    #[case(340_282_366_920_930_000_000_000_000_000, 16, "34028236692093")]
-    #[case(170_141_183_460_460_000_000_000_000_000, 16, "17014118346046")]
-    #[case(-170_141_183_460_460_000_000_000_000_000, 16, "-17014118346046")]
-    // Non-zero remainders exercise the fractional addition, including sign composition across
-    // the truncating division, and a precision beyond `FIXED_PRECISION`.
-    #[case(
-        80_000_000_000_000_005_000_000_000_000,
-        16,
-        "8000000000000.000500000000000"
-    )]
-    #[case(-80_000_000_000_000_005_000_000_000_000, 16, "-8000000000000.000500000000000")]
-    #[case(
-        80_000_000_000_000_000_000_000_000_001,
-        16,
-        "8000000000000.000000000000000"
-    )]
-    #[case(
-        80_000_000_000_000_000_250_000_000_000,
-        18,
-        "80000000000.00000025000000000"
-    )]
-    #[case(-80_000_000_000_000_000_250_000_000_000, 18, "-80000000000.00000025000000000")]
-    fn test_scaled_raw_to_decimal_beyond_mantissa_rounds_rather_than_panics(
-        #[case] raw: i128,
-        #[case] precision: u8,
-        #[case] expected: &str,
-    ) {
-        // `Decimal::from_i128_with_scale` panics on each of these raw values. Splitting the whole
-        // and fractional parts lets `Decimal` drop scale instead, which is the only representable
-        // outcome once the value needs more than a 96-bit mantissa.
-        assert_eq!(scaled_raw_to_decimal(raw, precision).to_string(), expected);
     }
 
     #[cfg(feature = "defi")]

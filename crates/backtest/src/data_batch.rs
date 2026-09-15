@@ -19,6 +19,7 @@ use nautilus_model::data::{BatchView, Data, DataBatch, DataRef};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DataKind {
+    Instrument,
     BookDelta,
     BookDeltas,
     BookDepth10,
@@ -39,9 +40,10 @@ enum DataKind {
 impl From<&Data> for DataKind {
     fn from(data: &Data) -> Self {
         match data {
+            Data::Instrument(_) => Self::Instrument,
             Data::BookDelta(_) => Self::BookDelta,
             Data::BookDeltas(_) => Self::BookDeltas,
-            Data::BookDepth10(_) => Self::BookDepth10,
+            Data::BookDepth(_) => Self::BookDepth10,
             Data::Quote(_) => Self::Quote,
             Data::Trade(_) => Self::Trade,
             Data::Bar(_) => Self::Bar,
@@ -102,9 +104,10 @@ impl ReplayBatch {
         }
 
         match kind {
+            DataKind::Instrument => collect_batch!(data, Instrument, Instrument, boxed),
             DataKind::BookDelta => collect_batch!(data, BookDelta, BookDelta),
             DataKind::BookDeltas => collect_batch!(data, BookDeltas, BookDeltas, boxed),
-            DataKind::BookDepth10 => collect_batch!(data, BookDepth10, BookDepth10, boxed),
+            DataKind::BookDepth10 => collect_batch!(data, BookDepth, BookDepth, boxed),
             DataKind::Quote => collect_batch!(data, Quote, Quote),
             DataKind::Trade => collect_batch!(data, Trade, Trade),
             DataKind::Bar => collect_batch!(data, Bar, Bar),
@@ -140,9 +143,10 @@ impl ReplayBatch {
 
     pub(super) fn get_owned(&self, index: usize) -> Option<Data> {
         match self.get(index)? {
+            DataRef::Instrument(data) => Some(Data::Instrument(Box::new(data.clone()))),
             DataRef::BookDelta(data) => Some(Data::BookDelta(*data)),
             DataRef::BookDeltas(data) => Some(Data::BookDeltas(Box::new(data.clone()))),
-            DataRef::BookDepth10(data) => Some(Data::BookDepth10(Box::new(*data))),
+            DataRef::BookDepth(data) => Some(Data::BookDepth(Box::new(data.clone()))),
             DataRef::Quote(data) => Some(Data::Quote(*data)),
             DataRef::Trade(data) => Some(Data::Trade(*data)),
             DataRef::Bar(data) => Some(Data::Bar(*data)),
@@ -195,7 +199,7 @@ mod tests {
         let data = vec![
             Data::BookDelta(stub_delta()),
             Data::BookDeltas(Box::new(stub_deltas())),
-            Data::BookDepth10(Box::new(stub_depth10())),
+            Data::BookDepth(Box::new(stub_depth10())),
             Data::Quote(QuoteTick::default()),
             Data::Trade(stub_trade_ethusdt_buy()),
             Data::Bar(stub_bar()),
@@ -238,7 +242,7 @@ mod tests {
             match (&batch, batch.get(0)) {
                 (ReplayBatch::Typed(DataBatch::BookDelta(_)), Some(DataRef::BookDelta(_)))
                 | (ReplayBatch::Typed(DataBatch::BookDeltas(_)), Some(DataRef::BookDeltas(_)))
-                | (ReplayBatch::Typed(DataBatch::BookDepth10(_)), Some(DataRef::BookDepth10(_)))
+                | (ReplayBatch::Typed(DataBatch::BookDepth(_)), Some(DataRef::BookDepth(_)))
                 | (ReplayBatch::Typed(DataBatch::Quote(_)), Some(DataRef::Quote(_)))
                 | (ReplayBatch::Typed(DataBatch::Trade(_)), Some(DataRef::Trade(_)))
                 | (ReplayBatch::Typed(DataBatch::Bar(_)), Some(DataRef::Bar(_)))
