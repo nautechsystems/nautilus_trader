@@ -10,6 +10,8 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed backtest rejection of lower-precision order fields within the same fixed-point scale
+
 ### Internal Improvements
 
 - Improved cache order query benchmark coverage

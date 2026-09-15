@@ -1217,9 +1217,6 @@ impl OrderCore {
             }
         }
 
-        filled.precision = self.quantity.precision;
-        voided.precision = self.quantity.precision;
-        non_reopened_voided.precision = self.quantity.precision;
         self.filled_qty = filled;
         self.voided_qty = voided;
         self.overfill_qty = self.filled_qty.saturating_sub(self.quantity);
@@ -1259,17 +1256,15 @@ impl OrderCore {
     }
 
     fn filled(&mut self, event: &OrderFilled, source_status: OrderStatus) {
-        let mut new_filled_qty = self
+        let new_filled_qty = self
             .filled_qty
             .checked_add(event.last_qty)
             .expect("fill quantity bounds pre-checked");
-        new_filled_qty.precision = self.filled_qty.precision;
 
         // Calculate overfill if any
         if new_filled_qty > self.quantity {
             let overfill = new_filled_qty - self.quantity;
             self.overfill_qty = self.overfill_qty.saturating_add(overfill);
-            self.overfill_qty.precision = self.filled_qty.precision;
         }
 
         let new_leaves_qty = self.leaves_qty.saturating_sub(event.last_qty);
@@ -1919,6 +1914,58 @@ mod tests {
         assert_eq!(corrected.leaves_qty(), Quantity::from(0));
         assert_eq!(replayed.filled_qty(), corrected.filled_qty());
         assert_eq!(replayed.voided_qty(), corrected.voided_qty());
+    }
+
+    #[rstest]
+    #[case::lower("1")]
+    #[case::equal("1.000")]
+    fn test_fractional_fill_correction_preserves_quantity_precision(#[case] quantity: &str) {
+        let mut order = market_order_with_fills(
+            OrderSide::Buy,
+            Quantity::from(quantity),
+            &[fill("TRADE-1", "0.750", "1.00")],
+        );
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(order.filled_qty().as_decimal(), dec!(0.750));
+        assert_eq!(order.leaves_qty().as_decimal(), dec!(0.250));
+
+        order
+            .apply(OrderEventAny::FillVoided(
+                OrderFillVoidedSpec::builder()
+                    .trade_id(TradeId::from("TRADE-1"))
+                    .voided_qty(Quantity::from("0.125"))
+                    .last_px(Price::from("1.00"))
+                    .build(),
+            ))
+            .unwrap();
+
+        assert_eq!(order.filled_qty().as_decimal(), dec!(0.625));
+        assert_eq!(order.voided_qty().as_decimal(), dec!(0.125));
+        assert_eq!(order.leaves_qty().as_decimal(), dec!(0.250));
+        assert_eq!(order.overfill_qty().as_decimal(), dec!(0));
+    }
+
+    #[rstest]
+    #[case::lower("1")]
+    #[case::equal("1.000")]
+    fn test_fractional_overfill_preserves_quantity_precision(
+        #[case] quantity: &str,
+        #[values(false, true)] partial_fill_first: bool,
+    ) {
+        let fills = if partial_fill_first {
+            vec![
+                fill("TRADE-1", "0.750", "1.00"),
+                fill("TRADE-2", "0.500", "1.00"),
+            ]
+        } else {
+            vec![fill("TRADE-1", "1.250", "1.00")]
+        };
+        let order = market_order_with_fills(OrderSide::Buy, Quantity::from(quantity), &fills);
+
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.filled_qty().as_decimal(), dec!(1.250));
+        assert_eq!(order.overfill_qty().as_decimal(), dec!(0.250));
+        assert_eq!(order.leaves_qty().as_decimal(), dec!(0));
     }
 
     #[rstest]

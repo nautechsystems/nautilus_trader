@@ -2424,6 +2424,52 @@ fn expiration_fill_price(
 }
 
 #[rstest]
+#[case::lower("1")]
+#[case::equal("1.000")]
+fn test_strategy_order_representable_quantity_precision(
+    #[case] quantity: &str,
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+    engine
+        .add_strategy(SnapshotNettingFlip::new(
+            instrument_id,
+            Quantity::from(quantity),
+        ))
+        .unwrap();
+    engine
+        .add_data(
+            vec![
+                quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+                quote(instrument_id, "1000.00", "1001.00", 2_000_000_000),
+                quote(instrument_id, "1000.00", "1001.00", 3_000_000_000),
+            ],
+            None,
+            true,
+            true,
+        )
+        .unwrap();
+    engine.run(None, None, None, false).unwrap();
+
+    let cache = engine.kernel().cache.borrow();
+    let orders = cache.orders(None, Some(&instrument_id), None, None, None);
+    assert_eq!(orders.len(), 1);
+    let order = &orders[0];
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.quantity().as_decimal(), Decimal::ONE);
+    assert_eq!(order.filled_qty().as_decimal(), Decimal::ONE);
+    assert_eq!(order.leaves_qty().as_decimal(), Decimal::ZERO);
+    let OrderEventAny::Filled(fill) = order.last_event() else {
+        panic!("Expected fill");
+    };
+    assert_eq!(fill.last_qty.as_decimal(), Decimal::ONE);
+    assert_eq!(fill.last_px.as_decimal(), Decimal::from(1001));
+}
+
+#[rstest]
 fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let mut engine = create_engine();
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);

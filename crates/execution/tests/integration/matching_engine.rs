@@ -414,16 +414,109 @@ fn test_process_order_when_instrument_not_active(
 }
 
 #[rstest]
+#[case::market_lower(OrderType::Market, "1", "1500", "1500", None)]
+#[case::market_equal(OrderType::Market, "1.000", "1500.00", "1500.00", None)]
+#[case::limit_lower(OrderType::Limit, "1", "1500", "1500", None)]
+#[case::limit_equal(OrderType::Limit, "1.000", "1500.00", "1500.00", None)]
+#[case::limit_price_lower(OrderType::Limit, "1.000", "1500", "1500.00", None)]
+#[case::stop_lower(OrderType::StopMarket, "1", "1500", "1500", None)]
+#[case::stop_equal(OrderType::StopMarket, "1.000", "1500.00", "1500.00", None)]
+#[case::stop_trigger_lower(OrderType::StopMarket, "1.000", "1500.00", "1500", None)]
+#[case::display_lower(OrderType::Limit, "1.000", "1500.00", "1500.00", Some("1"))]
+#[case::display_equal(OrderType::Limit, "1.000", "1500.00", "1500.00", Some("1.000"))]
+fn test_process_order_representable_precision(
+    #[case] order_type: OrderType,
+    #[case] quantity: &str,
+    #[case] price: &str,
+    #[case] trigger_price: &str,
+    #[case] display_qty: Option<&str>,
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let handler = order_event_handler_with_cache(cache.clone());
+    let mut engine = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        None,
+        Some(cache.clone()),
+        None,
+        Some(OrderMatchingEngineConfig {
+            reject_stop_orders: false,
+            ..Default::default()
+        }),
+    );
+    let mut builder = OrderTestBuilder::new(order_type);
+    builder
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(quantity))
+        .submit(true);
+
+    if order_type == OrderType::Limit {
+        builder.price(Price::from(price));
+    }
+
+    if let Some(display_qty) = display_qty {
+        builder.display_qty(Quantity::from(display_qty));
+    }
+
+    if order_type == OrderType::StopMarket {
+        builder.trigger_price(Price::from(trigger_price));
+    }
+    let mut order = builder.build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    engine
+        .process_order_book_delta(
+            &OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+                .book_action(BookAction::Add)
+                .book_order(BookOrder::new(
+                    OrderSide::Sell,
+                    Price::from("1500.00"),
+                    Quantity::from("0.500"),
+                    1,
+                ))
+                .build(),
+        )
+        .unwrap();
+
+    engine.process_order(&mut order, account_id);
+
+    let messages = handler.get_messages();
+    assert!(
+        !messages
+            .iter()
+            .any(|event| event.event_type() == OrderEventType::Rejected)
+    );
+    let cache = cache.borrow();
+    let cached = cache.order(&order.client_order_id()).unwrap();
+    assert_eq!(cached.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(cached.filled_qty().as_decimal(), dec!(0.500));
+    assert_eq!(cached.leaves_qty().as_decimal(), dec!(0.500));
+    let fill = messages
+        .iter()
+        .find_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(fill.last_qty.as_decimal(), dec!(0.500));
+    assert_eq!(fill.last_px.as_decimal(), dec!(1500.00));
+}
+
+#[rstest]
 fn test_process_order_when_invalid_quantity_precision(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
     instrument_eth_usdt: InstrumentAny,
 ) {
-    // Create market order with invalid quantity precision 0 for eth/usdt precision of 3
+    // Create market order with invalid quantity precision 4 for eth/usdt precision of 3
     let mut market_order_invalid_precision = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Buy)
-        .quantity(Quantity::from("1"))
+        .quantity(Quantity::from("1.0000"))
         .submit(true)
         .build();
 
@@ -440,7 +533,7 @@ fn test_process_order_when_invalid_quantity_precision(
     assert_eq!(
         first_message.message().unwrap(),
         Ustr::from(
-            "Invalid order quantity precision for order O-19700101-000000-001-001-1, was 0 when ETHUSDT-PERP.BINANCE size precision is 3"
+            "Invalid order quantity precision for order O-19700101-000000-001-001-1, was 4 when ETHUSDT-PERP.BINANCE size precision is 3"
         )
     );
 }
@@ -3787,7 +3880,10 @@ fn test_update_limit_order_valid(instrument_eth_usdt: InstrumentAny, account_id:
 }
 
 #[rstest]
+#[case::lower("1501")]
+#[case::equal("1501.00")]
 fn test_update_stop_market_order_valid(
+    #[case] trigger_price: &str,
     instrument_eth_usdt: InstrumentAny,
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
@@ -3823,7 +3919,7 @@ fn test_update_stop_market_order_valid(
 
     // Create modify command which moves trigger price to 1501.00 which won't trigger the stop price
     //  as ask is at 1500.00 and order will be correctly updated
-    let new_trigger_price = Price::from("1501.00");
+    let new_trigger_price = Price::from(trigger_price);
     let modify_order_command = ModifyOrder::new(
         TraderId::test_default(),
         Some(ClientId::from("CLIENT-001")),
@@ -4659,7 +4755,10 @@ fn test_updating_of_contingent_orders(
 }
 
 #[rstest]
+#[case::lower("80")]
+#[case::equal("80.000")]
 fn test_reduce_only_order_exceeding_position_quantity(
+    #[case] quantity: &str,
     account_id: AccountId,
     instrument_eth_usdt: InstrumentAny,
 ) {
@@ -4675,7 +4774,7 @@ fn test_reduce_only_order_exceeding_position_quantity(
     let opening = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Buy)
-        .quantity(Quantity::from("79.000"))
+        .quantity(Quantity::from("79.500"))
         .client_order_id(ClientOrderId::from("REDUCE-OPEN"))
         .submit(true)
         .build();
@@ -4726,7 +4825,7 @@ fn test_reduce_only_order_exceeding_position_quantity(
     let mut order = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Sell)
-        .quantity(Quantity::from("80.000"))
+        .quantity(Quantity::from(quantity))
         .price(Price::from("1500.00"))
         .reduce_only(true)
         .submit(true)
@@ -4748,18 +4847,18 @@ fn test_reduce_only_order_exceeding_position_quantity(
     };
     assert_eq!(accepted.client_order_id, order.client_order_id());
     assert_eq!(updated.client_order_id, order.client_order_id());
-    assert_eq!(updated.quantity, Quantity::from("79.000"));
+    assert_eq!(updated.quantity.as_decimal(), dec!(79.500));
     assert_eq!(fill.client_order_id, order.client_order_id());
     assert_eq!(fill.order_side, OrderSide::Sell);
     assert_eq!(fill.last_px, Price::from("1500.00"));
-    assert_eq!(fill.last_qty, Quantity::from("79.000"));
+    assert_eq!(fill.last_qty, Quantity::from("79.500"));
     position.apply(fill);
     assert!(position.is_closed());
     assert_eq!(position.quantity, Quantity::from("0.000"));
     let cache = cache.borrow();
     let cached = cache.order(&order.client_order_id()).unwrap();
-    assert_eq!(cached.quantity(), Quantity::from("79.000"));
-    assert_eq!(cached.filled_qty(), Quantity::from("79.000"));
+    assert_eq!(cached.quantity(), Quantity::from("79.500"));
+    assert_eq!(cached.filled_qty().as_decimal(), dec!(79.500));
     assert_eq!(cached.leaves_qty(), Quantity::from("0.000"));
     assert_eq!(cached.status(), OrderStatus::Filled);
     assert!(!engine.order_exists(order.client_order_id()));
@@ -6500,6 +6599,7 @@ fn test_modify_partially_filled_order_quantity_below_filled_rejected(
 #[case("0.600", Some("0.400"), None)]
 #[case("0.600", Some("0.600"), None)]
 fn test_ouo_sibling_adjusted_after_resolving_order_fill(
+    #[values("1495", "1495.00")] sibling_price: &str,
     instrument_eth_usdt: InstrumentAny,
     account_id: AccountId,
     #[case] fill_qty: &str,
@@ -6537,7 +6637,7 @@ fn test_ouo_sibling_adjusted_after_resolving_order_fill(
     let mut sibling_order = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Buy)
-        .price(Price::from("1495.00"))
+        .price(Price::from(sibling_price))
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id_sibling)
         .contingency_type(ContingencyType::Ouo)
@@ -7322,7 +7422,11 @@ fn test_stop_limit_triggered_not_filled_single_accept(
 /// When an order is modified, the new price should persist to the core
 /// and be used for subsequent matching.
 #[rstest]
+#[case::lower("1", "1495")]
+#[case::equal("1.000", "1495.00")]
 fn test_modify_limit_order_price_persists_to_core(
+    #[case] quantity: &str,
+    #[case] price: &str,
     instrument_eth_usdt: InstrumentAny,
     account_id: AccountId,
 ) {
@@ -7352,7 +7456,7 @@ fn test_modify_limit_order_price_persists_to_core(
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Buy)
         .price(Price::from("1490.00"))
-        .quantity(Quantity::from("1.000"))
+        .quantity(Quantity::from(quantity))
         .client_order_id(client_order_id)
         .submit(true)
         .build();
@@ -7373,8 +7477,8 @@ fn test_modify_limit_order_price_persists_to_core(
         instrument_eth_usdt.id(),
         client_order_id,
         Some(VenueOrderId::from("V1")),
-        Some(Quantity::from("1.000")),
-        Some(Price::from("1495.00")),
+        Some(Quantity::from(quantity)),
+        Some(Price::from(price)),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -15742,7 +15846,13 @@ fn test_l1_market_order_slips_remainder_through_next_tick(
 }
 
 #[rstest]
+#[case::existing("1.500", "1.000", "0.500")]
+#[case::lower("2", "1.250", "0.750")]
+#[case::equal("2.000", "1.250", "0.750")]
 fn test_reduce_only_l1_market_order_slip_caps_remaining_position(
+    #[case] quantity: &str,
+    #[case] position_quantity: &str,
+    #[case] remainder: &str,
     account_id: AccountId,
     instrument_eth_usdt: InstrumentAny,
 ) {
@@ -15771,7 +15881,7 @@ fn test_reduce_only_l1_market_order_slip_caps_remaining_position(
     let opening_order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Buy)
-        .quantity(Quantity::from("1.000"))
+        .quantity(Quantity::from(position_quantity))
         .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-OPEN"))
         .build();
     let opening_fill = build_order_filled(
@@ -15812,7 +15922,7 @@ fn test_reduce_only_l1_market_order_slip_caps_remaining_position(
     let mut market_order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Sell)
-        .quantity(Quantity::from("1.500"))
+        .quantity(Quantity::from(quantity))
         .client_order_id(client_order_id)
         .reduce_only(true)
         .submit(true)
@@ -15843,15 +15953,27 @@ fn test_reduce_only_l1_market_order_slip_caps_remaining_position(
     assert_eq!(fills[0].last_px, Price::from("1000.00"));
     assert_eq!(fills[0].last_qty, Quantity::from("0.500"));
     assert_eq!(fills[1].last_px, Price::from("999.99"));
-    assert_eq!(fills[1].last_qty, Quantity::from("0.500"));
-    assert_eq!(updated.quantity, Quantity::from("1.000"));
+    assert_eq!(
+        fills[1].last_qty.as_decimal(),
+        Quantity::from(remainder).as_decimal()
+    );
+    assert_eq!(
+        updated.quantity.as_decimal(),
+        Quantity::from(position_quantity).as_decimal()
+    );
 
     let cache_ref = cache.borrow();
     let order = cache_ref
         .order(&client_order_id)
         .expect("Expected reduce-only order in cache");
-    assert_eq!(order.quantity(), Quantity::from("1.000"));
-    assert_eq!(order.filled_qty(), Quantity::from("1.000"));
+    assert_eq!(
+        order.quantity().as_decimal(),
+        Quantity::from(position_quantity).as_decimal()
+    );
+    assert_eq!(
+        order.filled_qty().as_decimal(),
+        Quantity::from(position_quantity).as_decimal()
+    );
     assert_eq!(order.status(), OrderStatus::Filled);
 }
 
