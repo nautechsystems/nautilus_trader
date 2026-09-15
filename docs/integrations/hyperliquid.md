@@ -1357,7 +1357,8 @@ execution subscriptions are acknowledged, the execution client sweeps `userFills
 `historicalOrders` over REST, keeps reports from the last five minutes that belong to an order it
 tracks, and replays them through the same path as live WebSocket reports. Raw history is filtered
 before instrument conversion, and fills are ordered oldest first and ahead of order statuses.
-Duplicate fills are dropped by deterministic trade ID, so overlap with live events is harmless.
+Deterministic trade-ID deduplication suppresses duplicate `OrderFilled` events when recovery
+overlaps the resumed stream.
 
 The sweep needs no configuration and runs independently of the engine's periodic
 `open_check_interval_secs`. A failed sweep is retried up to four times with exponential backoff,
