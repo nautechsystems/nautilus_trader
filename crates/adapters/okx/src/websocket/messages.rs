@@ -16,8 +16,6 @@
 //! Data structures modeling OKX WebSocket request and response payloads.
 
 use derive_builder::Builder;
-#[cfg(test)]
-use nautilus_core::string::secret::REDACTED;
 use nautilus_core::string::secret::SecretString;
 use nautilus_model::{
     data::{Data, FundingRateUpdate, InstrumentStatus, OrderBookDeltas},
@@ -1519,7 +1517,7 @@ pub struct WsCancelAlgoOrderParams {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::time::get_atomic_clock_realtime;
+    use nautilus_core::{string::secret::REDACTED, time::get_atomic_clock_realtime};
     use rstest::rstest;
     use rust_decimal::Decimal;
 

@@ -582,39 +582,6 @@ fn is_spread_order_updated_excluding_venue_id_for_live(
     Ok(false)
 }
 
-/// Checks if order parameters have been updated (used by tests).
-#[cfg(test)]
-fn is_order_updated(
-    msg: &OKXOrderMsg,
-    previous: &OrderStateSnapshot,
-    instrument: &InstrumentAny,
-) -> anyhow::Result<bool> {
-    let current_venue_id = VenueOrderId::new(msg.ord_id);
-
-    // Venue order ID change indicates amendment
-    if previous.venue_order_id != current_venue_id {
-        return Ok(true);
-    }
-
-    let current_qty = parse_quantity(&msg.sz, instrument.size_precision())?;
-    if previous.quantity != current_qty {
-        return Ok(true);
-    }
-
-    // Price change only applies to limit orders
-    if !is_market_price(&msg.px) {
-        let current_price = parse_price(&msg.px, instrument.price_precision())?;
-
-        if let Some(prev_price) = previous.price
-            && prev_price != current_price
-        {
-            return Ok(true);
-        }
-    }
-
-    Ok(false)
-}
-
 /// Parses vector of OKX book messages into Nautilus order book deltas.
 ///
 /// # Errors
@@ -2491,7 +2458,7 @@ mod tests {
     use nautilus_model::{
         data::bar::BAR_SPEC_1_DAY_LAST,
         enums::GreeksConvention,
-        identifiers::{ClientOrderId, Symbol},
+        identifiers::{ClientOrderId, Symbol, VenueOrderId},
         instruments::CryptoPerpetual,
         types::Currency,
     };
@@ -2518,6 +2485,35 @@ mod tests {
             OKXWsFrame,
         },
     };
+
+    fn is_order_updated(
+        msg: &OKXOrderMsg,
+        previous: &OrderStateSnapshot,
+        instrument: &InstrumentAny,
+    ) -> anyhow::Result<bool> {
+        let current_venue_id = VenueOrderId::new(msg.ord_id);
+
+        if previous.venue_order_id != current_venue_id {
+            return Ok(true);
+        }
+
+        let current_qty = parse_quantity(&msg.sz, instrument.size_precision())?;
+        if previous.quantity != current_qty {
+            return Ok(true);
+        }
+
+        if !is_market_price(&msg.px) {
+            let current_price = parse_price(&msg.px, instrument.price_precision())?;
+
+            if let Some(prev_price) = previous.price
+                && prev_price != current_price
+            {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
 
     fn create_stub_instrument() -> CryptoPerpetual {
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");

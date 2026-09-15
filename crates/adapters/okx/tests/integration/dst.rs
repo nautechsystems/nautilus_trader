@@ -15,17 +15,35 @@
 
 #![cfg(all(feature = "simulation", madsim))]
 
-use std::time::Duration;
+use std::{path::PathBuf, time::Duration};
 
-use futures_util::StreamExt;
-use nautilus_model::{data::BarType, identifiers::InstrumentId};
+use futures_util::{SinkExt, StreamExt};
+use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_model::{
+    data::BarType,
+    enums::{OrderSide, OrderType, PositionSide, TimeInForce},
+    identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId},
+    instruments::InstrumentAny,
+    types::{Price, Quantity},
+};
 use nautilus_network::{dst::net::TcpListener, websocket::TransportBackend};
-use nautilus_okx::websocket::{
-    client::OKXWebSocketClient,
-    enums::{OKXWsChannel, OKXWsOperation},
-    messages::{OKXSubscription, OKXSubscriptionArg},
+use nautilus_okx::{
+    common::{
+        consts::OKX_NAUTILUS_BROKER_ID,
+        credential::Credential,
+        enums::{OKXInstrumentType, OKXTradeMode},
+        models::OKXInstrument,
+        parse::parse_instrument_any,
+    },
+    http::client::OKXResponse,
+    websocket::{
+        client::OKXWebSocketClient,
+        enums::{OKXWsChannel, OKXWsOperation},
+        messages::{OKXSubscription, OKXSubscriptionArg},
+    },
 };
 use rstest::rstest;
+use serde_json::{Value, json};
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use ustr::Ustr;
 
@@ -62,6 +80,43 @@ fn public_client(url: &str) -> OKXWebSocketClient {
         None,
     )
     .expect("websocket client")
+}
+
+fn private_client(url: &str) -> OKXWebSocketClient {
+    OKXWebSocketClient::new(
+        Some(url.to_string()),
+        Some("api_key".to_string()),
+        Some("api_secret".to_string()),
+        Some("passphrase".to_string()),
+        None,
+        Some(30),
+        None,
+        TransportBackend::Tungstenite,
+        None,
+    )
+    .expect("websocket client")
+}
+
+fn load_spot_instruments() -> Vec<InstrumentAny> {
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/http_get_instruments_spot.json");
+    let content = std::fs::read_to_string(&path).expect("spot instrument fixture must be readable");
+    let response: OKXResponse<OKXInstrument> =
+        serde_json::from_str(&content).expect("valid spot instrument fixture");
+    response
+        .data
+        .iter()
+        .filter_map(|raw| {
+            parse_instrument_any(raw, None, None, None, None, UnixNanos::default())
+                .ok()
+                .flatten()
+        })
+        .collect()
+}
+
+fn parse_frame(message: Message) -> Value {
+    let text = message.into_text().expect("text frame");
+    serde_json::from_str(text.as_str()).expect("valid JSON frame")
 }
 
 #[rstest]
@@ -184,4 +239,256 @@ async fn reconnect_resubscribes_multi_instrument_quotes_in_topic_order() {
     })
     .await
     .unwrap();
+}
+
+#[madsim::test]
+async fn private_connect_sends_deterministic_login_frame() {
+    madsim::time::timeout(Duration::from_secs(5), async {
+        let listener = TcpListener::bind("127.0.0.1:18093").await.unwrap();
+
+        let peer = madsim::task::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut socket = accept_async(stream).await.unwrap();
+            let message = socket.next().await.unwrap().unwrap();
+            socket
+                .send(Message::text(
+                    r#"{"event":"login","code":"0","msg":"","connId":"dst-conn"}"#,
+                ))
+                .await
+                .unwrap();
+            message
+        });
+
+        let mut client = private_client("ws://127.0.0.1:18093");
+        let expected_timestamp = get_atomic_clock_realtime()
+            .get_time_ns()
+            .as_seconds()
+            .to_string();
+        client.connect().await.unwrap();
+
+        let frame = parse_frame(peer.await.unwrap());
+        client.close().await.unwrap();
+
+        assert_eq!(frame["op"], "login");
+        let arg = &frame["args"][0];
+        assert_eq!(arg["apiKey"], "api_key");
+        assert_eq!(arg["passphrase"], "passphrase");
+        let timestamp = arg["timestamp"].as_str().expect("timestamp string");
+        assert_eq!(timestamp, expected_timestamp);
+
+        let credential = Credential::new(
+            "api_key".to_string(),
+            "api_secret".to_string(),
+            "passphrase".to_string(),
+        );
+        let expected_sign = credential.sign(&expected_timestamp, "GET", "/users/self/verify", "");
+        assert_eq!(arg["sign"].as_str().unwrap(), expected_sign);
+    })
+    .await
+    .unwrap();
+}
+
+#[madsim::test]
+async fn private_order_submit_sends_exact_wire_fields() {
+    madsim::time::timeout(Duration::from_secs(5), async {
+        let listener = TcpListener::bind("127.0.0.1:18094").await.unwrap();
+
+        let peer = madsim::task::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut socket = accept_async(stream).await.unwrap();
+            let _login = socket.next().await.unwrap().unwrap();
+            socket
+                .send(Message::text(
+                    r#"{"event":"login","code":"0","msg":"","connId":"dst-conn"}"#,
+                ))
+                .await
+                .unwrap();
+            socket.next().await.unwrap().unwrap()
+        });
+
+        let mut client = private_client("ws://127.0.0.1:18094");
+        client.cache_instruments(&load_spot_instruments());
+        client.cache_inst_id_code(Ustr::from("BTC-USD"), 10_459);
+        client.connect().await.unwrap();
+        client.wait_until_active(5.0).await.unwrap();
+
+        client
+            .submit_order(
+                TraderId::from("TRADER-001"),
+                StrategyId::from("STRATEGY-001"),
+                InstrumentId::from("BTC-USD.OKX"),
+                OKXTradeMode::Cash,
+                ClientOrderId::from("Odstspotlimitorder0001"),
+                OrderSide::Buy,
+                OrderType::Limit,
+                Quantity::from("0.25"),
+                Some(TimeInForce::Gtc),
+                Some(Price::from("65000.1")),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        let frame = parse_frame(peer.await.unwrap());
+        client.close().await.unwrap();
+
+        assert_eq!(
+            frame,
+            json!({
+                "id": "1",
+                "op": "order",
+                "args": [{
+                    "instIdCode": 10_459,
+                    "tdMode": "cash",
+                    "ccy": "USD",
+                    "clOrdId": "Odstspotlimitorder0001",
+                    "side": "buy",
+                    "ordType": "limit",
+                    "sz": "0.25",
+                    "px": "65000.1",
+                    "tag": OKX_NAUTILUS_BROKER_ID,
+                }],
+            })
+        );
+    })
+    .await
+    .unwrap();
+}
+
+#[madsim::test]
+async fn private_batch_submit_preserves_input_order_on_wire() {
+    madsim::time::timeout(Duration::from_secs(5), async {
+        let listener = TcpListener::bind("127.0.0.1:18095").await.unwrap();
+
+        let peer = madsim::task::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut socket = accept_async(stream).await.unwrap();
+            let _login = socket.next().await.unwrap().unwrap();
+            socket
+                .send(Message::text(
+                    r#"{"event":"login","code":"0","msg":"","connId":"dst-conn"}"#,
+                ))
+                .await
+                .unwrap();
+            socket.next().await.unwrap().unwrap()
+        });
+
+        let mut client = private_client("ws://127.0.0.1:18095");
+        client.cache_instruments(&load_spot_instruments());
+        client.cache_inst_id_code(Ustr::from("BTC-USD"), 10_459);
+        client.connect().await.unwrap();
+        client.wait_until_active(5.0).await.unwrap();
+
+        client
+            .batch_submit_orders(vec![
+                spot_limit_order("Zbatchlastfirst0000001", OrderSide::Sell, "65002.3"),
+                spot_limit_order("Abatchmiddleorder00001", OrderSide::Buy, "64999.0"),
+                spot_limit_order("Mbatchendorder0000001", OrderSide::Buy, "65001.2"),
+            ])
+            .await
+            .unwrap();
+
+        let frame = parse_frame(peer.await.unwrap());
+        client.close().await.unwrap();
+
+        assert_eq!(
+            frame,
+            json!({
+                "id": "1",
+                "op": "batch-orders",
+                "args": [
+                    {
+                        "instIdCode": 10_459,
+                        "tdMode": "cash",
+                        "ccy": "USD",
+                        "clOrdId": "Zbatchlastfirst0000001",
+                        "side": "sell",
+                        "ordType": "limit",
+                        "sz": "0.25",
+                        "px": "65002.3",
+                        "tag": OKX_NAUTILUS_BROKER_ID,
+                    },
+                    {
+                        "instIdCode": 10_459,
+                        "tdMode": "cash",
+                        "ccy": "USD",
+                        "clOrdId": "Abatchmiddleorder00001",
+                        "side": "buy",
+                        "ordType": "limit",
+                        "sz": "0.25",
+                        "px": "64999.0",
+                        "tag": OKX_NAUTILUS_BROKER_ID,
+                    },
+                    {
+                        "instIdCode": 10_459,
+                        "tdMode": "cash",
+                        "ccy": "USD",
+                        "clOrdId": "Mbatchendorder0000001",
+                        "side": "buy",
+                        "ordType": "limit",
+                        "sz": "0.25",
+                        "px": "65001.2",
+                        "tag": OKX_NAUTILUS_BROKER_ID,
+                    },
+                ],
+            })
+        );
+    })
+    .await
+    .unwrap();
+}
+
+#[expect(clippy::type_complexity)]
+fn spot_limit_order(
+    client_order_id: &str,
+    side: OrderSide,
+    px: &str,
+) -> (
+    OKXInstrumentType,
+    InstrumentId,
+    OKXTradeMode,
+    ClientOrderId,
+    OrderSide,
+    Option<PositionSide>,
+    OrderType,
+    Quantity,
+    Option<Price>,
+    Option<Price>,
+    Option<bool>,
+    Option<bool>,
+    Option<String>,
+    Option<bool>,
+    Option<bool>,
+    Option<bool>,
+) {
+    (
+        OKXInstrumentType::Spot,
+        InstrumentId::from("BTC-USD.OKX"),
+        OKXTradeMode::Cash,
+        ClientOrderId::from(client_order_id),
+        side,
+        None,
+        OrderType::Limit,
+        Quantity::from("0.25"),
+        Some(Price::from(px)),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
 }

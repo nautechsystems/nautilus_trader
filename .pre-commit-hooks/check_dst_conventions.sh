@@ -46,13 +46,17 @@ IN_SCOPE_CRATES=(
 # establish runtime eligibility for every capability those files serve.
 ADAPTER_PATHS=(
   "crates/adapters/okx/src/book_sync.rs"
+  "crates/adapters/okx/src/common/parse.rs"
   "crates/adapters/okx/src/common/task.rs"
   "crates/adapters/okx/src/data.rs"
   "crates/adapters/okx/src/execution.rs"
   "crates/adapters/okx/src/http/client.rs"
+  "crates/adapters/okx/src/http/models.rs"
   "crates/adapters/okx/src/websocket/client.rs"
   "crates/adapters/okx/src/websocket/dispatch.rs"
   "crates/adapters/okx/src/websocket/handler.rs"
+  "crates/adapters/okx/src/websocket/messages.rs"
+  "crates/adapters/okx/src/websocket/parse.rs"
 )
 
 # Rule-1 L-dispositioned sites from the codebase audit: log timing, progress
