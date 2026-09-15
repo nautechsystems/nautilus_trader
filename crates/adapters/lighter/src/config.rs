@@ -261,6 +261,16 @@ pub struct LighterExecutionClientConfig {
     /// WebSocket transport backend.
     #[builder(default)]
     pub transport_backend: TransportBackend,
+    /// Whether to use Lighter-native GTD orders.
+    ///
+    /// The current Lighter venue validation requires a `GoodTillTime` expiry of at least five
+    /// minutes, so a shorter strategy GTD lifetime cannot be represented as an explicit venue
+    /// expiry. Set to false only when the strategy manages GTD expiry locally. Lighter then uses
+    /// a 28-day fallback expiry and the strategy must enable `manage_gtd_expiry` so the local
+    /// expiry timer sends the cancel. Local strategy expiries beyond 28 days are denied because
+    /// the fallback would expire first; use native GTD for those orders.
+    #[builder(default = true)]
+    pub use_gtd: bool,
 }
 
 #[cfg(feature = "python")]
@@ -279,6 +289,7 @@ nautilus_core::impl_pyo3_config_getters!(LighterExecutionClientConfig {
     rest_quota_per_min: Option<u32>,
     sendtx_quota_per_min: Option<u32>,
     transport_backend: TransportBackend,
+    use_gtd: bool,
 });
 
 impl Default for LighterExecutionClientConfig {
@@ -547,12 +558,29 @@ mod tests {
             rest_quota_per_min: None,
             sendtx_quota_per_min: None,
             transport_backend: TransportBackend::default(),
+            use_gtd: true,
         };
 
         let dbg_out = format!("{config:?}");
 
         assert!(dbg_out.contains(REDACTED));
         assert!(!dbg_out.contains(PRIVATE_KEY_HEX));
+    }
+
+    #[rstest]
+    fn exec_config_use_gtd_defaults_to_true() {
+        // Backwards compatibility: the default preserves the native Lighter GTD
+        // behavior so existing configs are unchanged.
+        let config = LighterExecutionClientConfig::default();
+
+        assert!(config.use_gtd);
+    }
+
+    #[rstest]
+    fn exec_config_toml_use_gtd_override() {
+        let config: LighterExecutionClientConfig = toml::from_str("use_gtd = false").unwrap();
+
+        assert!(!config.use_gtd);
     }
 
     #[rstest]

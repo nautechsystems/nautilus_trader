@@ -417,7 +417,7 @@ quote is denied. Override the slippage with `SubmitOrder.params["market_order_sl
 | -------------- | ---------- | ---- | ----------------------------------------------------------------------------- |
 | `GTC`          | ✓          | ✓    | Limit-style uses `GoodTillTime`; market-style uses `IOC`.                     |
 | `DAY`          | ✓          | ✓    | Limit-style and conditional orders use a positive order expiry.               |
-| `GTD`          | ✓          | ✓    | Supplied expiry must be 5 minutes to 30 days from submission.                 |
+| `GTD`          | ✓          | ✓    | Native expiry is 5 minutes to 30 days; see the managed-GTD policy below.      |
 | `IOC`          | ✓          | ✓    | Plain `MARKET`/`LIMIT` use expiry `0`; conditional limit uses trigger expiry. |
 | `FOK`          | -          | -    | *Not supported*.                                                              |
 | `AT_THE_OPEN`  | -          | -    | *Not supported*.                                                              |
@@ -431,11 +431,24 @@ post-trigger execution. Conditional limit orders can use `IOC`: their trigger re
 expiry, then the child uses `ImmediateOrCancel`.
 
 Without an explicit GTD expiry, limit-style `GTC`, `DAY`, and `GTD` orders default to the current
-time plus 28 days; conditional `GTC`, `DAY`, and limit-style `IOC` use the same default. Lighter
-rejects `-1` and accepts expiries from 5 minutes to 30 days after submission. The adapter enforces
-that window with a one-second signing and transport margin, so an expiry of exactly 5 minutes is
-denied locally before signing; tester configurations expressed in whole minutes should use at least
-6 minutes.
+time plus 28 days; conditional `GTC`, `DAY`, and limit-style `IOC` use the same default. The
+adapter uses this explicit 28-day expiry because the venue has rejected `-1` in these paths with
+`21711 invalid expiry`. Explicit native GTD expiries are currently validated from 5 minutes to 30
+days after submission, with a one-second signing and transport margin on the lower bound.
+
+#### GTD policy
+
+Use local management for short-lived orders and venue-native GTD for longer-lived orders.
+`use_gtd=True` is the default. The strategy `expire_time` becomes the venue `GoodTillTime` expiry
+and must lie within the adapter's current 5-minute to 30-day validation window.
+
+Set `use_gtd=False` only when the submitting strategy has `manage_gtd_expiry=True`. Lighter exposes
+no `GoodTillCancel` time-in-force, so the opt-out cannot switch the wire time-in-force the way the
+Binance adapter does: the order still rests as `GoodTillTime` on the venue's default 28-day
+fallback window, while Nautilus cancels it locally at the strategy expiry. The native 5-minute
+lower bound is not applied in this mode, but local strategy expiries beyond 28 days are rejected;
+use native GTD for those orders. Venue cancel latency still bounds how quickly a locally managed
+order is removed.
 
 ### Execution instructions
 
@@ -819,6 +832,7 @@ endpoints.
 | `rest_quota_per_min`        | `None`        | REST quota override; unset keeps 60 req/min.                  |
 | `sendtx_quota_per_min`      | `None`        | Transaction quota override; unset keeps 60 req/min.           |
 | `transport_backend`         | Default       | WebSocket transport backend.                                  |
+| `use_gtd`                   | `True`        | Use venue-native GTD; see [GTD policy](#gtd-policy).          |
 
 ### Configuration example
 

@@ -115,6 +115,7 @@ impl LighterExecutionClientConfig {
         transport_backend = None,
         deployment = None,
         venue = None,
+        use_gtd = true,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -134,6 +135,7 @@ impl LighterExecutionClientConfig {
         transport_backend: Option<TransportBackend>,
         deployment: Option<LighterDeployment>,
         venue: Option<Venue>,
+        use_gtd: bool,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -154,6 +156,7 @@ impl LighterExecutionClientConfig {
             rest_quota_per_min,
             sendtx_quota_per_min,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
+            use_gtd,
         }
     }
 

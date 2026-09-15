@@ -111,6 +111,8 @@ class LighterExecutionClientConfig:
     def sendtx_quota_per_min(self) -> int | None: ...
     @property
     def transport_backend(self) -> network.TransportBackend: ...
+    @property
+    def use_gtd(self) -> bool: ...
     def __init__(
         self,
         account_id: model.AccountId,
@@ -129,6 +131,7 @@ class LighterExecutionClientConfig:
         transport_backend: network.TransportBackend | None = None,
         deployment: LighterDeployment | None = None,
         venue: model.Venue | None = None,
+        use_gtd: bool = True,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...
