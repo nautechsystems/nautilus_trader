@@ -16,6 +16,7 @@ delta = "1.8.1 -> 1.8.2"
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy]]
@@ -45,12 +46,14 @@ delta = "1.8.1 -> 1.8.2"
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-consensus]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-consensus]]
@@ -63,6 +66,7 @@ notes = "Reviewed alloy-rs/alloy v2.3.0 -> v2.4.1 published crate deltas. Change
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.1 -> 2.4.2"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.4.1 -> v2.4.2 published crate deltas. Changes add optional CCIP Read (ERC-3668) gateway support behind disabled-by-default ccip-read features, request metadata and header helpers, Bogota engine API methods, EIP-4844/7594 sidecar and EIP-7910/8282 type updates, and a block_opt accessor. No new unsafe block, build script, network destination, process execution, credential disclosure, or data-exfiltration behavior was added in the enabled graph."
 
 [[audits.alloy-consensus-any]]
@@ -74,12 +78,14 @@ delta = "1.8.1 -> 1.8.2"
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-consensus-any]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-consensus-any]]
@@ -92,6 +98,7 @@ notes = "Reviewed alloy-rs/alloy v2.3.0 -> v2.4.1 published crate deltas. Change
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.1 -> 2.4.2"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.4.1 -> v2.4.2 published crate deltas. Changes add optional CCIP Read (ERC-3668) gateway support behind disabled-by-default ccip-read features, request metadata and header helpers, Bogota engine API methods, EIP-4844/7594 sidecar and EIP-7910/8282 type updates, and a block_opt accessor. No new unsafe block, build script, network destination, process execution, credential disclosure, or data-exfiltration behavior was added in the enabled graph."
 
 [[audits.alloy-contract]]
@@ -103,12 +110,14 @@ delta = "1.8.1 -> 1.8.2"
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-contract]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-contract]]
@@ -121,12 +130,14 @@ notes = "Reviewed alloy-rs/alloy v2.3.0 -> v2.4.1 published crate deltas. Change
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.1 -> 2.4.2"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.4.1 -> v2.4.2 published crate deltas. Changes add optional CCIP Read (ERC-3668) gateway support behind disabled-by-default ccip-read features, request metadata and header helpers, Bogota engine API methods, EIP-4844/7594 sidecar and EIP-7910/8282 type updates, and a block_opt accessor. No new unsafe block, build script, network destination, process execution, credential disclosure, or data-exfiltration behavior was added in the enabled graph."
 
 [[audits.alloy-core]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.6.0 -> 1.6.1"
+importable = false
 notes = "Reviewed alloy-rs/core v1.6.0 -> v1.6.1 monorepo delta. Fixes ABI and EIP-712 length, width, recursion, allocation, and topic validation; changes bloom checks, map hashing, signature recovery, optional keccak cache APIs, derive generation, and moves to proc-macro-error3. The cache feature is disabled here. No new enabled unsafe, build script, network, filesystem, process, credential, or data-exfiltration behavior."
 
 [[audits.alloy-core]]
@@ -151,6 +162,7 @@ notes = "Version and changelog bump only for the coordinated alloy-core v1.7.3 r
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.6.0 -> 1.6.1"
+importable = false
 notes = "Reviewed alloy-rs/core v1.6.0 -> v1.6.1 monorepo delta. Fixes ABI and EIP-712 length, width, recursion, allocation, and topic validation; changes bloom checks, map hashing, signature recovery, optional keccak cache APIs, derive generation, and moves to proc-macro-error3. The cache feature is disabled here. No new enabled unsafe, build script, network, filesystem, process, credential, or data-exfiltration behavior."
 
 [[audits.alloy-dyn-abi]]
@@ -199,6 +211,7 @@ notes = "Reviewed the published 0.4.7 -> 0.4.8 crate. Storage key and value JSON
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.4.8 -> 0.4.9"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.4.1 -> v2.4.2 published crate deltas. Changes add optional CCIP Read (ERC-3668) gateway support behind disabled-by-default ccip-read features, request metadata and header helpers, Bogota engine API methods, EIP-4844/7594 sidecar and EIP-7910/8282 type updates, and a block_opt accessor. No new unsafe block, build script, network destination, process execution, credential disclosure, or data-exfiltration behavior was added in the enabled graph."
 
 [[audits.alloy-eips]]
@@ -210,12 +223,14 @@ delta = "1.8.1 -> 1.8.2"
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-eips]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-eips]]
@@ -228,18 +243,21 @@ notes = "Reviewed alloy-rs/alloy v2.3.0 -> v2.4.1 published crate deltas. Change
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.1 -> 2.4.2"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.4.1 -> v2.4.2 published crate deltas. Changes add optional CCIP Read (ERC-3668) gateway support behind disabled-by-default ccip-read features, request metadata and header helpers, Bogota engine API methods, EIP-4844/7594 sidecar and EIP-7910/8282 type updates, and a block_opt accessor. No new unsafe block, build script, network destination, process execution, credential disclosure, or data-exfiltration behavior was added in the enabled graph."
 
 [[audits.alloy-ens]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-ens]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-ens]]
@@ -252,12 +270,14 @@ notes = "Reviewed alloy-rs/alloy v2.3.0 -> v2.4.1 published crate deltas. Change
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.1 -> 2.4.2"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.4.1 -> v2.4.2 published crate deltas. Changes add optional CCIP Read (ERC-3668) gateway support behind disabled-by-default ccip-read features, request metadata and header helpers, Bogota engine API methods, EIP-4844/7594 sidecar and EIP-7910/8282 type updates, and a block_opt accessor. No new unsafe block, build script, network destination, process execution, credential disclosure, or data-exfiltration behavior was added in the enabled graph."
 
 [[audits.alloy-json-abi]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.6.0 -> 1.6.1"
+importable = false
 notes = "Reviewed alloy-rs/core v1.6.0 -> v1.6.1 monorepo delta. Fixes ABI and EIP-712 length, width, recursion, allocation, and topic validation; changes bloom checks, map hashing, signature recovery, optional keccak cache APIs, derive generation, and moves to proc-macro-error3. The cache feature is disabled here. No new enabled unsafe, build script, network, filesystem, process, credential, or data-exfiltration behavior."
 
 [[audits.alloy-json-abi]]
@@ -287,12 +307,14 @@ delta = "1.8.1 -> 1.8.2"
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-json-rpc]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-json-rpc]]
@@ -305,6 +327,7 @@ notes = "Reviewed alloy-rs/alloy v2.3.0 -> v2.4.1 published crate deltas. Change
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.1 -> 2.4.2"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.4.1 -> v2.4.2 published crate deltas. Changes add optional CCIP Read (ERC-3668) gateway support behind disabled-by-default ccip-read features, request metadata and header helpers, Bogota engine API methods, EIP-4844/7594 sidecar and EIP-7910/8282 type updates, and a block_opt accessor. No new unsafe block, build script, network destination, process execution, credential disclosure, or data-exfiltration behavior was added in the enabled graph."
 
 [[audits.alloy-network]]
@@ -316,12 +339,14 @@ delta = "1.8.1 -> 1.8.2"
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-network]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-network]]
@@ -334,6 +359,7 @@ notes = "Reviewed alloy-rs/alloy v2.3.0 -> v2.4.1 published crate deltas. Change
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.1 -> 2.4.2"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.4.1 -> v2.4.2 published crate deltas. Changes add optional CCIP Read (ERC-3668) gateway support behind disabled-by-default ccip-read features, request metadata and header helpers, Bogota engine API methods, EIP-4844/7594 sidecar and EIP-7910/8282 type updates, and a block_opt accessor. No new unsafe block, build script, network destination, process execution, credential disclosure, or data-exfiltration behavior was added in the enabled graph."
 
 [[audits.alloy-network-primitives]]
@@ -345,12 +371,14 @@ delta = "1.8.1 -> 1.8.2"
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-network-primitives]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-network-primitives]]
@@ -363,12 +391,14 @@ notes = "Reviewed alloy-rs/alloy v2.3.0 -> v2.4.1 published crate deltas. Change
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.1 -> 2.4.2"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.4.1 -> v2.4.2 published crate deltas. Changes add optional CCIP Read (ERC-3668) gateway support behind disabled-by-default ccip-read features, request metadata and header helpers, Bogota engine API methods, EIP-4844/7594 sidecar and EIP-7910/8282 type updates, and a block_opt accessor. No new unsafe block, build script, network destination, process execution, credential disclosure, or data-exfiltration behavior was added in the enabled graph."
 
 [[audits.alloy-primitives]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.6.0 -> 1.6.1"
+importable = false
 notes = "Reviewed alloy-rs/core v1.6.0 -> v1.6.1 monorepo delta. Fixes ABI and EIP-712 length, width, recursion, allocation, and topic validation; changes bloom checks, map hashing, signature recovery, optional keccak cache APIs, derive generation, and moves to proc-macro-error3. The cache feature is disabled here. No new enabled unsafe, build script, network, filesystem, process, credential, or data-exfiltration behavior."
 
 [[audits.alloy-primitives]]
@@ -398,12 +428,14 @@ delta = "1.8.1 -> 1.8.2"
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-provider]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-provider]]
@@ -416,6 +448,7 @@ notes = "Reviewed alloy-rs/alloy v2.3.0 -> v2.4.1 published crate deltas. Change
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.1 -> 2.4.2"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.4.1 -> v2.4.2 published crate deltas. Changes add optional CCIP Read (ERC-3668) gateway support behind disabled-by-default ccip-read features, request metadata and header helpers, Bogota engine API methods, EIP-4844/7594 sidecar and EIP-7910/8282 type updates, and a block_opt accessor. No new unsafe block, build script, network destination, process execution, credential disclosure, or data-exfiltration behavior was added in the enabled graph."
 
 [[audits.alloy-rpc-client]]
@@ -427,12 +460,14 @@ delta = "1.8.1 -> 1.8.2"
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-rpc-client]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-rpc-client]]
@@ -445,6 +480,7 @@ notes = "Reviewed alloy-rs/alloy v2.3.0 -> v2.4.1 published crate deltas. Change
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.1 -> 2.4.2"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.4.1 -> v2.4.2 published crate deltas. Changes add optional CCIP Read (ERC-3668) gateway support behind disabled-by-default ccip-read features, request metadata and header helpers, Bogota engine API methods, EIP-4844/7594 sidecar and EIP-7910/8282 type updates, and a block_opt accessor. No new unsafe block, build script, network destination, process execution, credential disclosure, or data-exfiltration behavior was added in the enabled graph."
 
 [[audits.alloy-rpc-types-any]]
@@ -456,12 +492,14 @@ delta = "1.8.1 -> 1.8.2"
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-rpc-types-any]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-rpc-types-any]]
@@ -474,6 +512,7 @@ notes = "Reviewed alloy-rs/alloy v2.3.0 -> v2.4.1 published crate deltas. Change
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.1 -> 2.4.2"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.4.1 -> v2.4.2 published crate deltas. Changes add optional CCIP Read (ERC-3668) gateway support behind disabled-by-default ccip-read features, request metadata and header helpers, Bogota engine API methods, EIP-4844/7594 sidecar and EIP-7910/8282 type updates, and a block_opt accessor. No new unsafe block, build script, network destination, process execution, credential disclosure, or data-exfiltration behavior was added in the enabled graph."
 
 [[audits.alloy-rpc-types-eth]]
@@ -485,12 +524,14 @@ delta = "1.8.1 -> 1.8.2"
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-rpc-types-eth]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-rpc-types-eth]]
@@ -503,6 +544,7 @@ notes = "Reviewed alloy-rs/alloy v2.3.0 -> v2.4.1 published crate deltas. Change
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.1 -> 2.4.2"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.4.1 -> v2.4.2 published crate deltas. Changes add optional CCIP Read (ERC-3668) gateway support behind disabled-by-default ccip-read features, request metadata and header helpers, Bogota engine API methods, EIP-4844/7594 sidecar and EIP-7910/8282 type updates, and a block_opt accessor. No new unsafe block, build script, network destination, process execution, credential disclosure, or data-exfiltration behavior was added in the enabled graph."
 
 [[audits.alloy-serde]]
@@ -514,12 +556,14 @@ delta = "1.8.1 -> 1.8.2"
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-serde]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-serde]]
@@ -532,6 +576,7 @@ notes = "Reviewed alloy-rs/alloy v2.3.0 -> v2.4.1 published crate deltas. Change
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.1 -> 2.4.2"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.4.1 -> v2.4.2 published crate deltas. Changes add optional CCIP Read (ERC-3668) gateway support behind disabled-by-default ccip-read features, request metadata and header helpers, Bogota engine API methods, EIP-4844/7594 sidecar and EIP-7910/8282 type updates, and a block_opt accessor. No new unsafe block, build script, network destination, process execution, credential disclosure, or data-exfiltration behavior was added in the enabled graph."
 
 [[audits.alloy-signer]]
@@ -543,12 +588,14 @@ delta = "1.8.1 -> 1.8.2"
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-signer]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-signer]]
@@ -561,6 +608,7 @@ notes = "Reviewed alloy-rs/alloy v2.3.0 -> v2.4.1 published crate deltas. Change
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.1 -> 2.4.2"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.4.1 -> v2.4.2 published crate deltas. Changes add optional CCIP Read (ERC-3668) gateway support behind disabled-by-default ccip-read features, request metadata and header helpers, Bogota engine API methods, EIP-4844/7594 sidecar and EIP-7910/8282 type updates, and a block_opt accessor. No new unsafe block, build script, network destination, process execution, credential disclosure, or data-exfiltration behavior was added in the enabled graph."
 
 [[audits.alloy-signer-local]]
@@ -572,12 +620,14 @@ delta = "1.8.1 -> 1.8.2"
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-signer-local]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-signer-local]]
@@ -590,12 +640,14 @@ notes = "Reviewed alloy-rs/alloy v2.3.0 -> v2.4.1 published crate deltas. Change
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.1 -> 2.4.2"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.4.1 -> v2.4.2 published crate deltas. Changes add optional CCIP Read (ERC-3668) gateway support behind disabled-by-default ccip-read features, request metadata and header helpers, Bogota engine API methods, EIP-4844/7594 sidecar and EIP-7910/8282 type updates, and a block_opt accessor. No new unsafe block, build script, network destination, process execution, credential disclosure, or data-exfiltration behavior was added in the enabled graph."
 
 [[audits.alloy-sol-macro]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.6.0 -> 1.6.1"
+importable = false
 notes = "Reviewed alloy-rs/core v1.6.0 -> v1.6.1 monorepo delta. Fixes ABI and EIP-712 length, width, recursion, allocation, and topic validation; changes bloom checks, map hashing, signature recovery, optional keccak cache APIs, derive generation, and moves to proc-macro-error3. The cache feature is disabled here. No new enabled unsafe, build script, network, filesystem, process, credential, or data-exfiltration behavior."
 
 [[audits.alloy-sol-macro]]
@@ -620,6 +672,7 @@ notes = "Version and changelog bump only for the coordinated alloy-core v1.7.3 r
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.6.0 -> 1.6.1"
+importable = false
 notes = "Reviewed alloy-rs/core v1.6.0 -> v1.6.1 monorepo delta. Fixes ABI and EIP-712 length, width, recursion, allocation, and topic validation; changes bloom checks, map hashing, signature recovery, optional keccak cache APIs, derive generation, and moves to proc-macro-error3. The cache feature is disabled here. No new enabled unsafe, build script, network, filesystem, process, credential, or data-exfiltration behavior."
 
 [[audits.alloy-sol-macro-expander]]
@@ -644,6 +697,7 @@ notes = "Version and changelog bump only for the coordinated alloy-core v1.7.3 r
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.6.0 -> 1.6.1"
+importable = false
 notes = "Reviewed alloy-rs/core v1.6.0 -> v1.6.1 monorepo delta. Fixes ABI and EIP-712 length, width, recursion, allocation, and topic validation; changes bloom checks, map hashing, signature recovery, optional keccak cache APIs, derive generation, and moves to proc-macro-error3. The cache feature is disabled here. No new enabled unsafe, build script, network, filesystem, process, credential, or data-exfiltration behavior."
 
 [[audits.alloy-sol-macro-input]]
@@ -668,6 +722,7 @@ notes = "Version and changelog bump only for the coordinated alloy-core v1.7.3 r
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.6.0 -> 1.6.1"
+importable = false
 notes = "Reviewed alloy-rs/core v1.6.0 -> v1.6.1 monorepo delta. Fixes ABI and EIP-712 length, width, recursion, allocation, and topic validation; changes bloom checks, map hashing, signature recovery, optional keccak cache APIs, derive generation, and moves to proc-macro-error3. The cache feature is disabled here. No new enabled unsafe, build script, network, filesystem, process, credential, or data-exfiltration behavior."
 
 [[audits.alloy-sol-type-parser]]
@@ -692,6 +747,7 @@ notes = "Version and changelog bump only for the coordinated alloy-core v1.7.3 r
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.6.0 -> 1.6.1"
+importable = false
 notes = "Reviewed alloy-rs/core v1.6.0 -> v1.6.1 monorepo delta. Fixes ABI and EIP-712 length, width, recursion, allocation, and topic validation; changes bloom checks, map hashing, signature recovery, optional keccak cache APIs, derive generation, and moves to proc-macro-error3. The cache feature is disabled here. No new enabled unsafe, build script, network, filesystem, process, credential, or data-exfiltration behavior."
 
 [[audits.alloy-sol-types]]
@@ -721,12 +777,14 @@ delta = "1.8.1 -> 1.8.2"
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-transport]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-transport]]
@@ -739,6 +797,7 @@ notes = "Reviewed alloy-rs/alloy v2.3.0 -> v2.4.1 published crate deltas. Change
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.1 -> 2.4.2"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.4.1 -> v2.4.2 published crate deltas. Changes add optional CCIP Read (ERC-3668) gateway support behind disabled-by-default ccip-read features, request metadata and header helpers, Bogota engine API methods, EIP-4844/7594 sidecar and EIP-7910/8282 type updates, and a block_opt accessor. No new unsafe block, build script, network destination, process execution, credential disclosure, or data-exfiltration behavior was added in the enabled graph."
 
 [[audits.alloy-transport-http]]
@@ -750,12 +809,14 @@ delta = "1.8.1 -> 1.8.2"
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-transport-http]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-transport-http]]
@@ -768,6 +829,7 @@ notes = "Reviewed alloy-rs/alloy v2.3.0 -> v2.4.1 published crate deltas. Change
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.1 -> 2.4.2"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.4.1 -> v2.4.2 published crate deltas. Changes add optional CCIP Read (ERC-3668) gateway support behind disabled-by-default ccip-read features, request metadata and header helpers, Bogota engine API methods, EIP-4844/7594 sidecar and EIP-7910/8282 type updates, and a block_opt accessor. No new unsafe block, build script, network destination, process execution, credential disclosure, or data-exfiltration behavior was added in the enabled graph."
 
 [[audits.alloy-tx-macros]]
@@ -779,12 +841,14 @@ delta = "1.8.1 -> 1.8.2"
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.1 -> 2.2.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.1.1 -> v2.2.0 monorepo delta. Runtime changes add gas-limit validation, AnyRpcBlock header conversion, PayloadId parsing, and small iterator/lint fixes; optional signer dependency changes are outside this workspace feature graph. No new unsafe, build script, runtime network destination, credential handling, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-tx-macros]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.2.0 -> v2.3.0 monorepo delta. Changes fix fallback decoding, receipt typing, pending block miner preservation, and Retry-After handling, and add protocol/filter APIs. No new unsafe, build script, external endpoint, credential, process, filesystem, or data-exfiltration behavior in the enabled graph."
 
 [[audits.alloy-tx-macros]]
@@ -797,6 +861,7 @@ notes = "Reviewed alloy-rs/alloy v2.3.0 -> v2.4.1 published crate deltas. Change
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.1 -> 2.4.2"
+importable = false
 notes = "Reviewed alloy-rs/alloy v2.4.1 -> v2.4.2 published crate deltas. Changes add optional CCIP Read (ERC-3668) gateway support behind disabled-by-default ccip-read features, request metadata and header helpers, Bogota engine API methods, EIP-4844/7594 sidecar and EIP-7910/8282 type updates, and a block_opt accessor. No new unsafe block, build script, network destination, process execution, credential disclosure, or data-exfiltration behavior was added in the enabled graph."
 
 [[audits.android_system_properties]]
@@ -3048,6 +3113,7 @@ notes = "Reviewed the published crate delta. Literal-string parse diagnostics re
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.6.0 -> 1.6.1"
+importable = false
 notes = "Reviewed alloy-rs/core v1.6.0 -> v1.6.1 monorepo delta. Fixes ABI and EIP-712 length, width, recursion, allocation, and topic validation; changes bloom checks, map hashing, signature recovery, optional keccak cache APIs, derive generation, and moves to proc-macro-error3. The cache feature is disabled here. No new enabled unsafe, build script, network, filesystem, process, credential, or data-exfiltration behavior."
 
 [[audits.syn-solidity]]
