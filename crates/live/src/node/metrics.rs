@@ -19,6 +19,7 @@ use std::{
 };
 
 use nautilus_common::{
+    live::dispatch::CommandMessage,
     messages::{DataEvent, ExecutionEvent, data::DataCommand},
     runner::{SystemChannel, TimeEventMessage, TradingCommandMessage},
 };
@@ -358,9 +359,9 @@ impl RunnerChannelQueueDepths {
     pub(crate) fn from_receivers(
         time_events: &tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
         exec_events: &tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
-        exec_commands: &tokio::sync::mpsc::UnboundedReceiver<TradingCommandMessage>,
+        exec_commands: &tokio::sync::mpsc::UnboundedReceiver<CommandMessage<TradingCommandMessage>>,
         data_events: &tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
-        data_commands: &tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
+        data_commands: &tokio::sync::mpsc::UnboundedReceiver<CommandMessage<DataCommand>>,
     ) -> Self {
         Self {
             time_events: time_events.len(),
@@ -426,6 +427,7 @@ mod tests {
     use std::time::Duration;
 
     use nautilus_common::{
+        live::dispatch::CommandMessage,
         messages::{
             data::{SubscribeCommand, subscribe::SubscribeInstruments},
             execution::{QueryAccount, TradingCommand},
@@ -840,9 +842,10 @@ mod tests {
         let (time_tx, time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
         let (exec_evt_tx, exec_evt_rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
         let (exec_cmd_tx, exec_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<TradingCommandMessage>();
+            tokio::sync::mpsc::unbounded_channel::<CommandMessage<TradingCommandMessage>>();
         let (data_evt_tx, data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-        let (data_cmd_tx, data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
+        let (data_cmd_tx, data_cmd_rx) =
+            tokio::sync::mpsc::unbounded_channel::<CommandMessage<DataCommand>>();
         let metrics = RunnerMetrics::default();
 
         time_tx.send(stub_time_event_handler()).unwrap();
@@ -853,10 +856,13 @@ mod tests {
 
         for _ in 0..3 {
             exec_cmd_tx
-                .send(TradingCommandMessage::new(
-                    MessagingSwitchboard::exec_engine_execute(),
-                    stub_trading_command(),
-                ))
+                .send(
+                    TradingCommandMessage::new(
+                        MessagingSwitchboard::exec_engine_execute(),
+                        stub_trading_command(),
+                    )
+                    .into(),
+                )
                 .unwrap();
         }
 
@@ -865,7 +871,7 @@ mod tests {
         }
 
         for _ in 0..5 {
-            data_cmd_tx.send(stub_data_command()).unwrap();
+            data_cmd_tx.send(stub_data_command().into()).unwrap();
         }
 
         metrics.publish_queue_depths(

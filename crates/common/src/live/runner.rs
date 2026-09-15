@@ -15,7 +15,7 @@
 
 //! Tokio-based channel senders for live trading runtime.
 //!
-//! This module provides thread-local storage for tokio mpsc channels used in live trading.
+//! Provides thread-local storage for tokio mpsc channels.
 
 use std::cell::RefCell;
 

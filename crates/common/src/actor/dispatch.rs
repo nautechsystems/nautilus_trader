@@ -24,7 +24,11 @@ use std::{
     cell::{Cell, RefCell},
     collections::VecDeque,
     rc::Rc,
+    sync::mpsc,
+    thread::{self, ThreadId},
 };
+
+use ahash::AHashMap;
 
 const MAX_PENDING: usize = 65_536;
 const MAX_KNOWN_BYTES: usize = 64 * 1024 * 1024;
@@ -32,6 +36,7 @@ const MAX_CHAIN: usize = 1_048_576;
 const CHAIN_BYTES: usize = size_of::<Chain>() + 2 * size_of::<usize>();
 
 thread_local! {
+    static COMMAND_CONTEXTS: RefCell<Option<CommandContexts>> = const { RefCell::new(None) };
     static DISPATCH: RefCell<Dispatcher> = RefCell::new(Dispatcher::default());
 }
 
@@ -343,6 +348,8 @@ pub(super) fn failure() -> Option<DispatchError> {
 }
 
 pub(super) fn has_pending() -> bool {
+    collect_command_contexts();
+
     DISPATCH
         .try_with(|state| {
             let state = state.borrow();
@@ -354,6 +361,8 @@ pub(super) fn has_pending() -> bool {
 }
 
 pub(super) fn clear() -> Result<(), DispatchError> {
+    collect_command_contexts();
+
     let previous = DISPATCH
         .try_with(|state| {
             let mut state = state.borrow_mut();
@@ -525,6 +534,10 @@ pub(crate) struct ChainContext {
 }
 
 impl ChainContext {
+    pub(crate) const fn independent() -> Self {
+        Self { chain: None }
+    }
+
     pub(crate) fn capture() -> Self {
         let chain = DISPATCH
             .try_with(|state| {
@@ -568,6 +581,106 @@ impl Drop for ChainContext {
                 .set(chain.accounting.contexts.get() - 1);
         }
     }
+}
+
+#[derive(Debug)]
+pub(crate) struct SendChainContext {
+    id: u64,
+    owner: ThreadId,
+    released: mpsc::Sender<u64>,
+}
+
+impl SendChainContext {
+    pub(crate) fn capture() -> Option<Self> {
+        collect_command_contexts();
+        let context = ChainContext::capture();
+        context.chain.as_ref()?;
+
+        COMMAND_CONTEXTS
+            .try_with(|contexts| {
+                let mut contexts = contexts.borrow_mut();
+                let contexts = contexts.get_or_insert_with(CommandContexts::default);
+                contexts.next = contexts
+                    .next
+                    .checked_add(1)
+                    .expect("command context IDs exhausted");
+                let id = contexts.next;
+                contexts.pending.insert(id, context);
+
+                Self {
+                    id,
+                    owner: thread::current().id(),
+                    released: contexts.released.clone(),
+                }
+            })
+            .ok()
+    }
+
+    pub(crate) fn take(&self) -> Option<ChainContext> {
+        assert_eq!(
+            self.owner,
+            thread::current().id(),
+            "command context dispatched outside its owner thread"
+        );
+        COMMAND_CONTEXTS
+            .try_with(|contexts| {
+                contexts
+                    .borrow_mut()
+                    .as_mut()
+                    .and_then(|contexts| contexts.pending.remove(&self.id))
+            })
+            .ok()
+            .flatten()
+    }
+
+    pub(crate) fn is_owner(&self) -> bool {
+        self.owner == thread::current().id()
+    }
+}
+
+impl Drop for SendChainContext {
+    fn drop(&mut self) {
+        if self.is_owner() {
+            drop(self.take());
+        } else {
+            // Foreign receivers release only an ID; the owner retains every Rc access
+            let _ = self.released.send(self.id);
+        }
+    }
+}
+
+struct CommandContexts {
+    next: u64,
+    pending: AHashMap<u64, ChainContext>,
+    released: mpsc::Sender<u64>,
+    releases: mpsc::Receiver<u64>,
+}
+
+impl Default for CommandContexts {
+    fn default() -> Self {
+        let (released, releases) = mpsc::channel();
+
+        Self {
+            next: 0,
+            pending: AHashMap::new(),
+            released,
+            releases,
+        }
+    }
+}
+
+pub(crate) fn collect_command_contexts() {
+    let _ = COMMAND_CONTEXTS.try_with(|contexts| {
+        let mut contexts = contexts.borrow_mut();
+
+        let Some(contexts) = contexts.as_mut() else {
+            return;
+        };
+
+        while let Ok(id) = contexts.releases.try_recv() {
+            contexts.pending.remove(&id);
+        }
+    });
 }
 
 struct ChainScope {
@@ -2909,5 +3022,361 @@ mod tests {
             trading_command(id)
         );
         id
+    }
+    #[cfg(feature = "live")]
+    mod live_commands {
+        use super::*;
+        use crate::live::dispatch::CommandMessage;
+
+        #[rstest]
+        fn independent_trading_leaf_allocates_no_root() {
+            clear().unwrap();
+            msgbus::register_trading_command_endpoint(
+                MessagingSwitchboard::exec_engine_execute(),
+                TypedIntoHandler::from(|command| {
+                    assert_eq!(command, trading_command(1));
+                    assert!(DISPATCH.with_borrow(|state| state.current.is_none()));
+                    assert_eq!(
+                        DISPATCH.with_borrow(|state| state.accounting.bytes.get()),
+                        0
+                    );
+                }),
+            );
+
+            CommandMessage::new(trading_message(1), thread::current().id())
+                .dispatch_trading(|_| {});
+            assert!(!has_pending());
+            clear().unwrap();
+        }
+
+        #[rstest]
+        #[case(false)]
+        #[case(true)]
+        fn channel_command_keeps_budget_through_children(#[case] exhausted: bool) {
+            clear().unwrap();
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let root = reserve(0).unwrap();
+            root.slot
+                .chain
+                .delivered
+                .set(MAX_CHAIN - if exhausted { 1 } else { 2 });
+            let chain = Rc::downgrade(&root.slot.chain);
+            let accounting = root.slot.accounting.clone();
+            root.commit(tx, |tx| {
+                tx.send(CommandMessage::new(
+                    trading_message(1),
+                    thread::current().id(),
+                ))
+                .unwrap();
+                true
+            });
+
+            drain(1).unwrap();
+            assert_eq!(accounting.contexts.get(), 1);
+            assert_eq!(clear(), Err(DispatchError::Active));
+            msgbus::register_trading_command_endpoint(
+                MessagingSwitchboard::exec_engine_execute(),
+                TypedIntoHandler::from(|command| {
+                    assert_eq!(command, trading_command(1));
+                    capture_trading_cmd(trading_message(2));
+                }),
+            );
+
+            let observed = Rc::new(Cell::new(false));
+            let value = observed.clone();
+            msgbus::register_trading_command_endpoint(
+                MessagingSwitchboard::risk_engine_execute(),
+                TypedIntoHandler::from(move |command| {
+                    assert_eq!(command, trading_command(2));
+                    reserve(0).unwrap().commit(value.clone(), |value| {
+                        value.set(true);
+                        true
+                    });
+                }),
+            );
+
+            rx.try_recv().unwrap().dispatch_trading(|_| {});
+            let result = drain(1);
+            assert_eq!(
+                result,
+                if exhausted {
+                    Err(DispatchError::Runaway)
+                } else {
+                    Ok(DrainResult {
+                        delivered: 1,
+                        pending: false,
+                    })
+                }
+            );
+            assert_eq!(observed.get(), !exhausted);
+            assert_eq!(accounting.contexts.get(), 0);
+            clear().unwrap();
+            assert_eq!(chain.strong_count(), 0);
+        }
+
+        #[rstest]
+        #[case(false)]
+        #[case(true)]
+        fn foreign_receiver_drop_releases_on_owner(#[case] closed: bool) {
+            clear().unwrap();
+            let storage = retain(0).unwrap();
+            let accounting = storage.accounting.clone();
+            let chain = Rc::downgrade(&storage.chain);
+            let (tx, rx) = std::sync::mpsc::channel();
+            if closed {
+                drop(rx);
+                storage.with_chain(|| {
+                    drop(tx.send(CommandMessage::new(17u32, thread::current().id())));
+                });
+            } else {
+                storage.with_chain(|| {
+                    tx.send(CommandMessage::new(17u32, thread::current().id()))
+                        .unwrap();
+                });
+
+                thread::spawn(move || drop(rx)).join().unwrap();
+            }
+
+            drop(storage);
+            assert!(!has_pending());
+            assert_eq!(accounting.contexts.get(), 0);
+            assert_eq!(accounting.bytes.get(), 0);
+            assert_eq!(chain.strong_count(), 0);
+            clear().unwrap();
+        }
+
+        #[rstest]
+        fn external_sender_does_not_capture_foreign_root() {
+            clear().unwrap();
+            let owner = thread::current().id();
+
+            let message = thread::spawn(move || {
+                let storage = retain(0).unwrap();
+                let message = storage.with_chain(|| CommandMessage::new(23u32, owner));
+                assert_eq!(storage.accounting.contexts.get(), 0);
+                message
+            })
+            .join()
+            .unwrap();
+
+            let enclosing = retain(0).unwrap();
+            enclosing.with_chain(|| {
+                message.dispatch(|command| {
+                    assert_eq!(command, 23);
+                    assert!(DISPATCH.with_borrow(|state| state.current.is_none()));
+                    let next = reserve::<()>(0).unwrap();
+                    assert!(!Rc::ptr_eq(&next.slot.chain, &enclosing.chain));
+                });
+            });
+
+            drop(enclosing);
+            clear().unwrap();
+        }
+
+        #[rstest]
+        fn foreign_dispatch_panics_and_releases_context() {
+            clear().unwrap();
+            let storage = retain(0).unwrap();
+            let accounting = storage.accounting.clone();
+            let message = storage.with_chain(|| CommandMessage::new(31u32, thread::current().id()));
+            let called = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let observed = called.clone();
+            let result = thread::spawn(move || {
+                message.dispatch(|_| observed.store(true, std::sync::atomic::Ordering::SeqCst));
+            })
+            .join();
+            assert!(result.is_err());
+            drop(storage);
+            assert!(!has_pending());
+            assert!(!called.load(std::sync::atomic::Ordering::SeqCst));
+            assert_eq!(accounting.contexts.get(), 0);
+            clear().unwrap();
+        }
+
+        #[rstest]
+        fn data_channel_resumes_root_and_nested_send() {
+            clear().unwrap();
+            let owner = thread::current().id();
+            let root = retain(0).unwrap();
+            let chain = root.chain.clone();
+            let accounting = root.accounting.clone();
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            root.with_chain(|| {
+                tx.send(CommandMessage::new(data_command(3), owner))
+                    .unwrap();
+            });
+
+            msgbus::register_data_command_endpoint(
+                MessagingSwitchboard::data_engine_execute(),
+                TypedIntoHandler::from(move |command| {
+                    assert!(
+                        DISPATCH.with_borrow(|state| Rc::ptr_eq(
+                            state.current.as_ref().unwrap(),
+                            &chain
+                        ))
+                    );
+
+                    if command == data_command(3) {
+                        tx.send(CommandMessage::new(data_command(5), owner))
+                            .unwrap();
+                    } else {
+                        assert_eq!(command, data_command(5));
+                    }
+                }),
+            );
+
+            drop(root);
+
+            for remaining in [1, 0] {
+                rx.try_recv().unwrap().dispatch(|command| {
+                    msgbus::send_data_command(MessagingSwitchboard::data_engine_execute(), command);
+                });
+
+                assert_eq!(rx.len(), remaining);
+                assert_eq!(accounting.contexts.get(), remaining);
+            }
+
+            msgbus::register_data_command_endpoint(
+                MessagingSwitchboard::data_engine_execute(),
+                TypedIntoHandler::from(|_: DataCommand| {}),
+            );
+            assert_eq!(accounting.bytes.get(), 0);
+            clear().unwrap();
+        }
+
+        #[rstest]
+        #[case(false)]
+        #[case(true)]
+        fn payload_drop_resumes_root_outside_registry_borrow(#[case] unwind: bool) {
+            struct Payload {
+                chain: Rc<Chain>,
+                dropped: Rc<Cell<bool>>,
+            }
+            impl Drop for Payload {
+                fn drop(&mut self) {
+                    assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(
+                        state.current.as_ref().unwrap(),
+                        &self.chain
+                    )));
+                    let nested = CommandMessage::new(17u32, thread::current().id());
+                    drop(nested);
+                    self.dropped.set(true);
+                }
+            }
+            clear().unwrap();
+            let root = retain(0).unwrap();
+            let accounting = root.accounting.clone();
+            let dropped = Rc::new(Cell::new(false));
+
+            let message = root.with_chain(|| {
+                CommandMessage::new(
+                    Payload {
+                        chain: root.chain.clone(),
+                        dropped: dropped.clone(),
+                    },
+                    thread::current().id(),
+                )
+            });
+
+            drop(root);
+
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                if unwind {
+                    message.dispatch(|_payload| panic!("injected handler panic"));
+                } else {
+                    drop(message);
+                }
+            }));
+
+            assert_eq!(result.is_err(), unwind);
+            assert!(dropped.get());
+            assert_eq!(accounting.contexts.get(), 0);
+            assert_eq!(accounting.bytes.get(), 0);
+            clear().unwrap();
+        }
+
+        #[rstest]
+        #[case(false)]
+        #[case(true)]
+        fn message_outlives_owner_thread(#[case] registry_first: bool) {
+            let message = thread::spawn(move || {
+                if registry_first {
+                    collect_command_contexts();
+                }
+
+                let root = retain(0).unwrap();
+                root.with_chain(|| CommandMessage::new(29u32, thread::current().id()))
+            })
+            .join()
+            .unwrap();
+
+            drop(message);
+        }
+
+        #[rstest]
+        fn thread_teardown_can_capture_after_command_registry_drops() {
+            struct Retained(Option<RetainedStorage>);
+            impl Drop for Retained {
+                fn drop(&mut self) {
+                    self.0.as_ref().unwrap().with_chain(|| {
+                        drop(CommandMessage::new(41u32, thread::current().id()));
+                    });
+                }
+            }
+            thread_local! {
+                static RETAINED: RefCell<Retained> = const { RefCell::new(Retained(None)) };
+            }
+
+            thread::spawn(|| {
+                let storage = retain(0).unwrap();
+                RETAINED.with_borrow_mut(|retained| retained.0 = Some(storage));
+                RETAINED.with_borrow(|retained| {
+                    retained
+                        .0
+                        .as_ref()
+                        .unwrap()
+                        .with_chain(|| drop(CommandMessage::new(43u32, thread::current().id())));
+                });
+            })
+            .join()
+            .unwrap();
+        }
+
+        proptest::proptest! {
+            #[rstest]
+            fn channel_contexts_restore_and_release(actions in proptest::collection::vec((0u8..4, proptest::bool::ANY), 0..64)) {
+                clear().unwrap();
+                let owner = thread::current().id();
+                let roots = [retain(0).unwrap(), retain(0).unwrap()];
+                let accounting = roots[0].accounting.clone();
+                let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+                for (i, &(root, _)) in actions.iter().enumerate() {
+                    let message = if root < 2 {
+                        roots[usize::from(root)].with_chain(|| CommandMessage::new(i, owner))
+                    } else { CommandMessage::from(i) };
+                    tx.send(message).unwrap();
+                }
+
+                for (i, &(root, unwind)) in actions.iter().enumerate() {
+                    let message = rx.try_recv().unwrap();
+                    roots[1].with_chain(|| {
+                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| message.dispatch(|value| {
+                            assert_eq!(value, i);
+                            let current = DISPATCH.with_borrow(|state| state.current.clone());
+                            if root < 2 { assert!(Rc::ptr_eq(current.as_ref().unwrap(), &roots[usize::from(root)].chain)); }
+                            else { assert!(current.is_none()); }
+                            assert!(!unwind, "injected handler panic");
+                        })));
+                        assert_eq!(result.is_err(), unwind);
+                        assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(state.current.as_ref().unwrap(), &roots[1].chain)));
+                    });
+                }
+                assert_eq!(accounting.contexts.get(), 0);
+                drop(roots);
+                assert_eq!(accounting.bytes.get(), 0);
+                clear().unwrap();
+            }
+        }
     }
 }

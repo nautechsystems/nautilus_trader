@@ -19,6 +19,7 @@
 //! used for live trading scenarios. These are gated behind the `live` feature flag.
 
 pub mod clock;
+pub mod dispatch;
 pub mod dst;
 pub mod listener;
 pub mod runner;
