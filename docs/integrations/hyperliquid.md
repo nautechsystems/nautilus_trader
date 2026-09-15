@@ -1351,17 +1351,21 @@ target them without cycling the containing client.
 
 ### Execution gap recovery
 
-Resubscribing to `orderUpdates` and `userEvents` replays no snapshot, so an accept, cancel, or
-fill that lands while the execution socket is down would otherwise never reach the engine. On
-each `Reconnected` event the execution client sweeps `userFills` and `historicalOrders` over REST,
-keeps the reports that fall inside a five-minute window and belong to an order it tracks, and
-replays them through the same per-report path live WebSocket reports take. Duplicate fills are
-dropped by their deterministic trade id, so overlap with live events is harmless.
+Resubscribing to `orderUpdates` and `userEvents` replays no snapshot, so an accept, cancel, or fill
+that lands while the execution socket is down would otherwise never reach the engine. After both
+execution subscriptions are acknowledged, the execution client sweeps time-bounded
+`userFillsByTime` and `historicalOrders` over REST. The window is at least five minutes and expands
+to cover a longer socket outage. Reports are filtered to orders tracked by this client, sorted
+oldest first (fills before a status at the same timestamp), and replayed through the same path as
+live WebSocket reports. Duplicate fills are dropped by deterministic trade ID, so overlap with
+live events is harmless.
 
 The sweep needs no configuration and runs independently of the engine's periodic
-`open_check_interval_secs`. A failed sweep is retried with exponential backoff, and a burst of
-reconnects collapses into one sweep with a minimum interval of 20 seconds to stay inside the
-venue's 1,200/min IP weight budget.
+`open_check_interval_secs`. A failed sweep keeps retrying with capped exponential backoff, and a
+burst of reconnects collapses into one sweep with a minimum interval of 20 seconds to stay inside
+the venue's 1,200/min IP weight budget. Time-bounded fills are paginated up to Hyperliquid's
+10,000-fill account-history availability. If `historicalOrders` reaches its 2,000-row limit, the
+adapter queries the current status of any missing tracked order by CLOID.
 
 ### Stream health and recovery
 
