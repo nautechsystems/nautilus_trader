@@ -16,7 +16,7 @@
 //! Instrument definition diffing and emission for the Bybit adapter.
 
 use ahash::{AHashMap, AHashSet};
-use nautilus_common::messages::DataEvent;
+use nautilus_common::{live::sender::EventSender, messages::DataEvent};
 use nautilus_model::{
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
@@ -56,7 +56,7 @@ pub fn diff_and_emit_instruments(
     new_instruments: &[InstrumentAny],
     cached: &mut AHashMap<InstrumentId, InstrumentAny>,
     subscriptions: Option<&AHashSet<InstrumentId>>,
-    sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    sender: &EventSender<DataEvent>,
 ) {
     let is_subscribed = |id: &InstrumentId| subscriptions.is_none_or(|subs| subs.contains(id));
 
@@ -132,7 +132,12 @@ mod tests {
         let instrument = default_perp();
         let mut cached = AHashMap::new();
 
-        diff_and_emit_instruments(std::slice::from_ref(&instrument), &mut cached, None, &tx);
+        diff_and_emit_instruments(
+            std::slice::from_ref(&instrument),
+            &mut cached,
+            None,
+            &tx.into(),
+        );
 
         match rx.try_recv().expect("expected instrument event") {
             DataEvent::Instrument(emitted) => assert_eq!(emitted.id(), instrument.id()),
@@ -148,7 +153,7 @@ mod tests {
         let mut cached = AHashMap::new();
         cached.insert(instrument.id(), default_perp());
 
-        diff_and_emit_instruments(&[instrument], &mut cached, None, &tx);
+        diff_and_emit_instruments(&[instrument], &mut cached, None, &tx.into());
 
         assert!(rx.try_recv().is_err());
     }
@@ -162,7 +167,7 @@ mod tests {
 
         // Same instrument, higher taker fee.
         let updated = perp(dec!(0.0001), dec!(0.0008), Quantity::from("0.001"), None);
-        diff_and_emit_instruments(&[updated], &mut cached, None, &tx);
+        diff_and_emit_instruments(&[updated], &mut cached, None, &tx.into());
 
         match rx
             .try_recv()
@@ -183,7 +188,7 @@ mod tests {
         let mut cached = AHashMap::new();
         cached.insert(id, default_perp());
         let bigger_step = perp(dec!(0.0001), dec!(0.00055), Quantity::from("0.002"), None);
-        diff_and_emit_instruments(&[bigger_step], &mut cached, None, &tx);
+        diff_and_emit_instruments(&[bigger_step], &mut cached, None, &tx.clone().into());
         assert!(rx.try_recv().is_ok(), "size_increment change should emit");
 
         // min_notional change
@@ -195,7 +200,7 @@ mod tests {
             Quantity::from("0.001"),
             Some(Money::new(5.0, Currency::USDT())),
         );
-        diff_and_emit_instruments(&[with_min], &mut cached, None, &tx);
+        diff_and_emit_instruments(&[with_min], &mut cached, None, &tx.into());
         assert!(rx.try_recv().is_ok(), "min_notional change should emit");
     }
 
@@ -210,7 +215,12 @@ mod tests {
         cached.insert(id, default_perp());
         let updated = perp(dec!(0.0001), dec!(0.0008), Quantity::from("0.001"), None);
 
-        diff_and_emit_instruments(&[updated], &mut cached, Some(&empty_subs), &tx);
+        diff_and_emit_instruments(
+            &[updated],
+            &mut cached,
+            Some(&empty_subs),
+            &tx.clone().into(),
+        );
 
         assert!(rx.try_recv().is_err(), "unsubscribed should not emit");
         assert_eq!(
@@ -226,7 +236,7 @@ mod tests {
         cached.insert(id, default_perp());
         let updated = perp(dec!(0.0001), dec!(0.0008), Quantity::from("0.001"), None);
 
-        diff_and_emit_instruments(&[updated], &mut cached, Some(&subs), &tx);
+        diff_and_emit_instruments(&[updated], &mut cached, Some(&subs), &tx.into());
 
         assert!(rx.try_recv().is_ok(), "subscribed should emit");
     }

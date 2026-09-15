@@ -17,9 +17,9 @@ use std::{cell::RefCell, hint::black_box, rc::Rc, sync::Arc, time::Duration};
 
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_common::{
-    live::dispatch::CommandMessage,
+    live::{dispatch::DispatchMessage, sender::EventSender},
     messages::{
-        DataEvent,
+        DataEvent, ExecutionEvent,
         data::{DataCommand, SubscribeCommand, SubscribeQuotes},
         execution::{QueryAccount, TradingCommand},
     },
@@ -37,6 +37,7 @@ use nautilus_live::runner::AsyncRunner;
 use nautilus_model::{
     data::{Data, quote::QuoteTick, trade::TradeTick},
     enums::AggressorSide,
+    events::{OrderEventAny, OrderInitialized},
     identifiers::{InstrumentId, TradeId},
     types::{Price, Quantity},
 };
@@ -378,15 +379,16 @@ fn bench_command_channels(c: &mut Criterion) {
             None,
         )),
     );
-    bench_command_transport(
+    bench_channel_transport(
         c,
         "live_data_commands",
         || data.clone(),
         |command| msgbus::send_data_command(MessagingSwitchboard::data_engine_execute(), command),
         AsyncRunner::handle_data_command,
+        command_send,
         &received,
     );
-    bench_command_transport(
+    bench_channel_transport(
         c,
         "live_trading_commands",
         || TradingCommandMessage::new(trading.endpoint(), trading.command().clone()),
@@ -397,16 +399,76 @@ fn bench_command_channels(c: &mut Criterion) {
             }
         },
         AsyncRunner::handle_trading_command,
+        command_send,
         &received,
     );
 }
 
-fn bench_command_transport<T: std::fmt::Debug + 'static>(
+fn bench_event_channels(c: &mut Criterion) {
+    let received = Rc::new(std::cell::Cell::new(0usize));
+    let observed = received.clone();
+    msgbus::register_data_endpoint(
+        MessagingSwitchboard::data_engine_process_data(),
+        TypedIntoHandler::from(move |event| {
+            black_box(event);
+            observed.set(observed.get() + 1);
+        }),
+    );
+
+    let observed = received.clone();
+    msgbus::register_order_event_endpoint(
+        MessagingSwitchboard::exec_engine_process(),
+        TypedIntoHandler::from(move |event| {
+            black_box(event);
+            observed.set(observed.get() + 1);
+        }),
+    );
+
+    bench_channel_transport(
+        c,
+        "live_data_events",
+        || DataEvent::Data(Data::Quote(create_test_quote())),
+        AsyncRunner::handle_data_event,
+        AsyncRunner::dispatch_data_event,
+        event_send,
+        &received,
+    );
+    bench_channel_transport(
+        c,
+        "live_exec_events",
+        || ExecutionEvent::Order(OrderEventAny::Initialized(OrderInitialized::default())),
+        AsyncRunner::handle_exec_event,
+        AsyncRunner::dispatch_exec_event,
+        event_send,
+        &received,
+    );
+}
+
+fn command_send<T: std::fmt::Debug>(
+    sender: tokio::sync::mpsc::UnboundedSender<DispatchMessage<T>>,
+    owner: std::thread::ThreadId,
+) -> impl Fn(T) {
+    move |command| sender.send(DispatchMessage::new(command, owner)).unwrap()
+}
+
+fn event_send<T: std::fmt::Debug>(
+    sender: tokio::sync::mpsc::UnboundedSender<DispatchMessage<T>>,
+    _owner: std::thread::ThreadId,
+) -> impl Fn(T) {
+    let sender = EventSender::new(sender);
+    move |event| sender.send(event).unwrap()
+}
+
+fn bench_channel_transport<T: std::fmt::Debug + 'static, S: Fn(T) + 'static>(
     c: &mut Criterion,
     name: &str,
-    make_command: impl Fn() -> T,
+    make_message: impl Fn() -> T,
     raw_dispatch: impl Fn(T),
-    dispatch: impl Fn(CommandMessage<T>),
+    dispatch: impl Fn(DispatchMessage<T>),
+    make_send: impl Fn(
+        tokio::sync::mpsc::UnboundedSender<DispatchMessage<T>>,
+        std::thread::ThreadId,
+    ) -> S,
     received: &std::cell::Cell<usize>,
 ) {
     let mut group = c.benchmark_group(name);
@@ -418,13 +480,14 @@ fn bench_command_transport<T: std::fmt::Debug + 'static>(
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
             let (raw_tx, mut raw_rx) = tokio::sync::mpsc::unbounded_channel();
             let pending = inputs.clone();
+            let tracked_send = make_send(tx, owner);
 
             let send = move || {
-                for command in pending.borrow_mut().drain(..) {
+                for message in pending.borrow_mut().drain(..) {
                     if tracked {
-                        tx.send(CommandMessage::new(command, owner)).unwrap();
+                        tracked_send(message);
                     } else {
-                        raw_tx.send(command).unwrap();
+                        raw_tx.send(message).unwrap();
                     }
                 }
             };
@@ -461,7 +524,7 @@ fn bench_command_transport<T: std::fmt::Debug + 'static>(
                         let setup = || {
                             inputs
                                 .borrow_mut()
-                                .extend(std::iter::repeat_with(&make_command).take(count));
+                                .extend(std::iter::repeat_with(&make_message).take(count));
                             Some(TradingCommandMessage::new(
                                 trigger.endpoint(),
                                 trigger.command().clone(),
@@ -477,12 +540,12 @@ fn bench_command_transport<T: std::fmt::Debug + 'static>(
                             }
 
                             if tracked {
-                                while let Ok(command) = rx.try_recv() {
-                                    dispatch(command);
+                                while let Ok(message) = rx.try_recv() {
+                                    dispatch(message);
                                 }
                             } else {
-                                while let Ok(command) = raw_rx.try_recv() {
-                                    raw_dispatch(command);
+                                while let Ok(message) = raw_rx.try_recv() {
+                                    raw_dispatch(message);
                                 }
                             }
                         };
@@ -503,6 +566,7 @@ fn bench_command_transport<T: std::fmt::Debug + 'static>(
 criterion_group!(
     benches,
     bench_command_channels,
+    bench_event_channels,
     bench_channel_operations,
     bench_runner_components,
     bench_event_creation,

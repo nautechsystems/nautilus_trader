@@ -27,7 +27,7 @@ use ahash::{AHashMap, AHashSet};
 use async_trait::async_trait;
 use nautilus_common::{
     clients::DataClient,
-    live::runner::get_data_event_sender,
+    live::{runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
         data::{
@@ -109,7 +109,7 @@ pub struct BetfairDataClient {
     config: BetfairDataClientConfig,
     currency: Currency,
     is_connected: AtomicBool,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     subscribed_market_ids: AHashSet<String>,
     session_tasks: TaskGroup,
@@ -299,7 +299,7 @@ impl BetfairDataClient {
     }
 
     fn create_stream_handler(
-        data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        data_sender: EventSender<DataEvent>,
         instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         currency: Currency,
         min_notional: Option<Money>,
@@ -1340,7 +1340,7 @@ mod tests {
         let (reconnect_tx, _reconnect_rx) = tokio::sync::mpsc::unbounded_channel();
         let clock = Box::leak(Box::new(AtomicTime::new(false, ts_init)));
         let handler = BetfairDataClient::create_stream_handler(
-            data_tx,
+            data_tx.into(),
             Arc::new(AtomicMap::new()),
             Currency::GBP(),
             None,

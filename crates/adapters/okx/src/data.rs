@@ -29,6 +29,7 @@ use nautilus_common::{
     live::{
         dst::time::{self, Duration, Instant},
         runner::get_data_event_sender,
+        sender::EventSender,
     },
     messages::{
         DataEvent,
@@ -110,7 +111,7 @@ pub struct OKXDataClient {
     is_connected: AtomicBool,
     transports_started: bool,
     tasks: TaskGroup,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     // Shared instrument cache keyed by raw symbol so stream tasks, reconciliation,
     // and request paths all read and write one source of truth
     instruments_by_symbol: Arc<AtomicMap<Ustr, InstrumentAny>>,
@@ -269,7 +270,7 @@ impl OKXDataClient {
             .context("business websocket client not available (credentials required)")
     }
 
-    fn send_data(sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>, data: Data) {
+    fn send_data(sender: &EventSender<DataEvent>, data: Data) {
         if let Err(e) = sender.send(DataEvent::Data(data)) {
             log::error!("Failed to emit data event: {e}");
         }
@@ -349,7 +350,7 @@ impl OKXDataClient {
     #[expect(clippy::too_many_arguments)]
     fn handle_ws_message(
         message: OKXWsMessage,
-        data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        data_sender: &EventSender<DataEvent>,
         instruments_by_symbol: &Arc<AtomicMap<Ustr, InstrumentAny>>,
         http_client: &OKXHttpClient,
         config: &OKXDataClientConfig,
@@ -1360,7 +1361,7 @@ struct InstrumentUpdateLock {
 
 fn dispatch_parsed_data(
     msg: NautilusWsMessage,
-    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: &EventSender<DataEvent>,
     instruments_by_symbol: &Arc<AtomicMap<Ustr, InstrumentAny>>,
 ) {
     match msg {
@@ -1398,10 +1399,7 @@ fn dispatch_parsed_data(
     }
 }
 
-fn emit_funding_rates(
-    sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
-    updates: Vec<FundingRateUpdate>,
-) {
+fn emit_funding_rates(sender: &EventSender<DataEvent>, updates: Vec<FundingRateUpdate>) {
     for update in updates {
         if let Err(e) = sender.send(DataEvent::FundingRate(update)) {
             log::error!("Failed to emit funding rate event: {e}");
@@ -1410,7 +1408,7 @@ fn emit_funding_rates(
 }
 
 fn emit_instrument_status(
-    sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    sender: &EventSender<DataEvent>,
     instrument_id: InstrumentId,
     status_action: MarketStatusAction,
     is_live: bool,
@@ -1514,7 +1512,7 @@ fn publish_instrument_updates(
     ws_public: Option<&OKXWebSocketClient>,
     ws_business: Option<&OKXWebSocketClient>,
     instrument_update_lock: &InstrumentUpdateLock,
-    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: &EventSender<DataEvent>,
 ) {
     cache_instrument_updates(
         changed,
@@ -1734,7 +1732,7 @@ async fn reconcile_instruments(
     instrument_update_lock: &InstrumentUpdateLock,
     ws_public: Option<&OKXWebSocketClient>,
     ws_business: Option<&OKXWebSocketClient>,
-    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: &EventSender<DataEvent>,
 ) -> anyhow::Result<InstrumentReconciliation> {
     let seq_before = instrument_update_lock.write_seq.load(Ordering::SeqCst);
     let fetched = fetch_configured_instruments(http_client, config).await?;
@@ -3057,7 +3055,7 @@ mod tests {
 
         dispatch_parsed_data(
             NautilusWsMessage::InstrumentStatus(status),
-            &sender,
+            &sender.into(),
             &instruments_by_symbol,
         );
 
@@ -3102,7 +3100,7 @@ mod tests {
                 code: "60018".to_string(),
                 msg: "Channel does not exist".to_string(),
             },
-            &sender,
+            &sender.into(),
             &instruments_by_symbol,
             &http,
             &OKXDataClientConfig::default(),
@@ -3171,7 +3169,7 @@ mod tests {
 
         OKXDataClient::handle_ws_message(
             OKXWsMessage::Reconnected,
-            &sender,
+            &sender.clone().into(),
             &instruments_by_symbol,
             &http,
             &OKXDataClientConfig::default(),
@@ -3215,7 +3213,7 @@ mod tests {
                     "ts": "3"
                 }]),
             },
-            &sender,
+            &sender.clone().into(),
             &instruments_by_symbol,
             &http,
             &OKXDataClientConfig::default(),
@@ -3261,7 +3259,7 @@ mod tests {
                     "ts": "4"
                 }]),
             },
-            &sender,
+            &sender.into(),
             &instruments_by_symbol,
             &http,
             &OKXDataClientConfig::default(),
@@ -3331,7 +3329,7 @@ mod tests {
         let mut handle = |message| {
             OKXDataClient::handle_ws_message(
                 message,
-                &sender,
+                &sender.clone().into(),
                 &instruments_by_symbol,
                 &http,
                 &OKXDataClientConfig::default(),
@@ -3552,7 +3550,7 @@ mod tests {
     }
 
     fn handle_instruments_message(
-        sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        sender: &EventSender<DataEvent>,
         instruments_by_symbol: &Arc<AtomicMap<Ustr, InstrumentAny>>,
         http_client: &OKXHttpClient,
         config: &OKXDataClientConfig,
@@ -3601,7 +3599,7 @@ mod tests {
         let ws_business = offline_ws_client();
 
         handle_instruments_message(
-            &sender,
+            &sender.into(),
             &instruments_by_symbol,
             &http,
             &OKXDataClientConfig::default(),
@@ -3658,7 +3656,7 @@ mod tests {
 
         for _ in 0..2 {
             handle_instruments_message(
-                &sender,
+                &sender.clone().into(),
                 &instruments_by_symbol,
                 &http,
                 &OKXDataClientConfig::default(),
@@ -3699,7 +3697,7 @@ mod tests {
         let http = offline_http_client();
 
         handle_instruments_message(
-            &sender,
+            &sender.clone().into(),
             &instruments_by_symbol,
             &http,
             &OKXDataClientConfig::default(),
@@ -3708,7 +3706,7 @@ mod tests {
             ws_instruments_message(swap_definition("0.1")),
         );
         handle_instruments_message(
-            &sender,
+            &sender.into(),
             &instruments_by_symbol,
             &http,
             &OKXDataClientConfig::default(),
@@ -3760,7 +3758,7 @@ mod tests {
         definition["uly"] = json!("");
 
         handle_instruments_message(
-            &sender,
+            &sender.into(),
             &instruments_by_symbol,
             &http,
             &OKXDataClientConfig::default(),
@@ -3803,7 +3801,7 @@ mod tests {
         ]);
 
         handle_instruments_message(
-            &sender,
+            &sender.into(),
             &instruments_by_symbol,
             &http,
             &OKXDataClientConfig::default(),
@@ -3852,7 +3850,7 @@ mod tests {
             .build();
 
         handle_instruments_message(
-            &sender,
+            &sender.clone().into(),
             &instruments_by_symbol,
             &http,
             &config,
@@ -3883,7 +3881,7 @@ mod tests {
         assert_eq!(inverse_item["instId"], json!("BTC-USD-SWAP"));
         assert_eq!(inverse_item["ctType"], json!("inverse"));
         handle_instruments_message(
-            &sender,
+            &sender.into(),
             &instruments_by_symbol,
             &http,
             &config,
@@ -3920,7 +3918,7 @@ mod tests {
         eth_definition["uly"] = json!("ETH-USDT");
 
         handle_instruments_message(
-            &sender,
+            &sender.clone().into(),
             &instruments_by_symbol,
             &http,
             &config,
@@ -3945,7 +3943,7 @@ mod tests {
         assert!(instruments_by_symbol.load().is_empty());
 
         handle_instruments_message(
-            &sender,
+            &sender.into(),
             &instruments_by_symbol,
             &http,
             &config,
@@ -3992,7 +3990,7 @@ mod tests {
             &update_lock,
             None,
             None,
-            &sender,
+            &sender.clone().into(),
         )
         .await
         .expect("reconcile");
@@ -4037,7 +4035,7 @@ mod tests {
             &update_lock,
             None,
             None,
-            &sender,
+            &sender.clone().into(),
         )
         .await
         .expect("reconcile");
@@ -4147,7 +4145,7 @@ mod tests {
             &update_lock,
             None,
             None,
-            &sender,
+            &sender.clone().into(),
         )
         .await
         .expect("reconcile");
@@ -4158,7 +4156,7 @@ mod tests {
         let rest_item = test_payload("http_get_instruments_swap.json")["data"][2].clone();
         assert_eq!(rest_item["instId"], json!("BTC-USDT-SWAP"));
         handle_instruments_message(
-            &sender,
+            &sender.clone().into(),
             &instruments_by_symbol,
             &http,
             &OKXDataClientConfig::default(),
@@ -4395,7 +4393,7 @@ mod tests {
             &update_lock,
             None,
             None,
-            &sender,
+            &sender.clone().into(),
         )
         .await
         .expect("initial reconcile");
@@ -4412,7 +4410,7 @@ mod tests {
             &update_lock,
             None,
             None,
-            &sender,
+            &sender.clone().into(),
         )
         .await
         .expect("unchanged reconcile");
@@ -4435,7 +4433,7 @@ mod tests {
             &update_lock,
             None,
             None,
-            &sender,
+            &sender.clone().into(),
         )
         .await
         .expect("changed reconcile");
@@ -4463,7 +4461,7 @@ mod tests {
             &update_lock,
             None,
             None,
-            &sender,
+            &sender.clone().into(),
         )
         .await
         .expect("new listing reconcile");
@@ -4488,7 +4486,7 @@ mod tests {
             &update_lock,
             None,
             None,
-            &sender,
+            &sender.clone().into(),
         )
         .await
         .expect("removal reconcile");
@@ -4527,7 +4525,7 @@ mod tests {
             &update_lock,
             None,
             None,
-            &sender,
+            &sender.clone().into(),
         )
         .await;
 
@@ -4564,7 +4562,7 @@ mod tests {
             &update_lock,
             None,
             None,
-            &sender,
+            &sender.clone().into(),
         )
         .await
         .expect("reconcile");
@@ -4621,7 +4619,7 @@ mod tests {
             &update_lock,
             None,
             None,
-            &sender,
+            &sender.clone().into(),
         )
         .await
         .expect("reconcile");
@@ -4663,7 +4661,7 @@ mod tests {
             &update_lock,
             None,
             None,
-            &sender,
+            &sender.clone().into(),
         )
         .await
         .expect("reconcile");
@@ -4705,7 +4703,7 @@ mod tests {
                 &update_lock_task,
                 Some(&ws_task),
                 Some(&ws_business_task),
-                &sender,
+                &sender.clone().into(),
             )
             .await
         });
@@ -4761,7 +4759,7 @@ mod tests {
             &update_lock,
             None,
             None,
-            &sender,
+            &sender.clone().into(),
         )
         .await
         .expect("seed reconcile");
@@ -4782,7 +4780,7 @@ mod tests {
                     &update_lock,
                     None,
                     None,
-                    &sender,
+                    &sender.clone().into(),
                 )
                 .await
             })
@@ -4810,7 +4808,7 @@ mod tests {
                 None,
                 None,
                 &update_lock,
-                &sender,
+                &sender.clone().into(),
             );
         }
 

@@ -32,7 +32,7 @@ use dashmap::DashMap;
 use nautilus_common::{
     cache::{InstrumentLookupError, quote::QuoteCache},
     clients::DataClient,
-    live::runner::get_data_event_sender,
+    live::{runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
         data::{
@@ -110,7 +110,7 @@ pub struct DeriveDataClient {
     session_tasks: TaskGroup,
     pending_tasks: TaskGroup,
     shutdown_errors: Vec<String>,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     active_book_delta_channels: Arc<AtomicMap<InstrumentId, String>>,
     active_book_depth10_channels: Arc<AtomicMap<InstrumentId, String>>,
@@ -2524,7 +2524,7 @@ mod tests {
         (
             WsMessageContext {
                 clock: get_atomic_clock_realtime(),
-                data_sender,
+                data_sender: data_sender.into(),
                 instruments,
                 active_book_delta_channels: Arc::new(AtomicMap::new()),
                 active_book_depth10_channels: Arc::new(AtomicMap::new()),

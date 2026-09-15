@@ -90,7 +90,7 @@ use nautilus_common::{
     clients::ExecutionClient,
     component::Component,
     enums::{Environment, LogColor},
-    live::{dispatch::CommandMessage, dst},
+    live::{dispatch::DispatchMessage, dst},
     log_info,
     messages::{
         DataEvent, ExecutionEvent, ExecutionReport, SystemCommand, SystemEvent,
@@ -618,9 +618,11 @@ impl LiveNode {
             }
             PendingRunnerEvent::SystemEvent(event) => self.process_system_event(event),
             PendingRunnerEvent::SystemCommand(command) => self.process_system_command(command),
-            PendingRunnerEvent::ExecEvent(event) => self.process_exec_event(event),
+            PendingRunnerEvent::ExecEvent(event) => {
+                event.dispatch(|event| self.process_exec_event(event));
+            }
             PendingRunnerEvent::ExecCommand(command) => self.process_exec_command(command),
-            PendingRunnerEvent::DataEvent(event) => AsyncRunner::handle_data_event(event),
+            PendingRunnerEvent::DataEvent(event) => AsyncRunner::dispatch_data_event(event),
             PendingRunnerEvent::DataCommand(command) => AsyncRunner::handle_data_command(command),
         }
     }
@@ -1775,7 +1777,7 @@ impl LiveNode {
                         residual_events += 1;
                     }
 
-                    self.process_exec_event(evt);
+                    evt.dispatch(|evt| self.process_exec_event(evt));
                     record_runner_dispatch(
                         &metrics,
                         SystemChannel::ExecEvents,
@@ -1830,7 +1832,7 @@ impl LiveNode {
                         log::debug!("Residual data event: {evt:?}");
                         residual_events += 1;
                     }
-                    AsyncRunner::handle_data_event(evt);
+                    AsyncRunner::dispatch_data_event(evt);
                     record_runner_dispatch(
                         &metrics,
                         SystemChannel::DataEvents,
@@ -2074,7 +2076,7 @@ impl LiveNode {
         }
     }
 
-    fn process_exec_command(&mut self, message: CommandMessage<TradingCommandMessage>) {
+    fn process_exec_command(&mut self, message: DispatchMessage<TradingCommandMessage>) {
         message.dispatch_trading(|message| {
             if message.endpoint() == MessagingSwitchboard::exec_engine_execute() {
                 self.observe_exec_command_before_dispatch(message.command());
@@ -2307,7 +2309,7 @@ impl LiveNode {
                     processed += 1;
                 }
                 Some(event) = receivers.exec_evt.recv() => {
-                    self.process_exec_event(event);
+                    event.dispatch(|event| self.process_exec_event(event));
                     processed += 1;
                 }
                 Some(command) = receivers.exec_cmd.recv() => {
@@ -2315,7 +2317,7 @@ impl LiveNode {
                     processed += 1;
                 }
                 Some(event) = receivers.data_evt.recv() => {
-                    AsyncRunner::handle_data_event(event);
+                    AsyncRunner::dispatch_data_event(event);
                     processed += 1;
                 }
                 Some(command) = receivers.data_cmd.recv() => {
@@ -2415,12 +2417,12 @@ impl LiveNode {
         time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
         system_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
         system_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemCommand>,
-        exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+        exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<ExecutionEvent>>,
         exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<
-            CommandMessage<TradingCommandMessage>,
+            DispatchMessage<TradingCommandMessage>,
         >,
-        data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
-        data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<CommandMessage<DataCommand>>,
+        data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<DataEvent>>,
+        data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<DataCommand>>,
     ) {
         let mut drained = 0;
 
@@ -2438,7 +2440,7 @@ impl LiveNode {
         }
 
         while let Ok(evt) = data_evt_rx.try_recv() {
-            AsyncRunner::handle_data_event(evt);
+            AsyncRunner::dispatch_data_event(evt);
             drained += 1;
         }
 
@@ -2448,7 +2450,7 @@ impl LiveNode {
         }
 
         while let Ok(evt) = exec_evt_rx.try_recv() {
-            AsyncRunner::handle_exec_event(evt);
+            AsyncRunner::dispatch_exec_event(evt);
             drained += 1;
         }
 
@@ -2942,10 +2944,10 @@ struct RunnerReceivers<'a> {
     time_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
     system_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
     system_cmd: &'a mut tokio::sync::mpsc::UnboundedReceiver<SystemCommand>,
-    exec_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
-    exec_cmd: &'a mut tokio::sync::mpsc::UnboundedReceiver<CommandMessage<TradingCommandMessage>>,
-    data_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
-    data_cmd: &'a mut tokio::sync::mpsc::UnboundedReceiver<CommandMessage<DataCommand>>,
+    exec_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<ExecutionEvent>>,
+    exec_cmd: &'a mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<TradingCommandMessage>>,
+    data_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<DataEvent>>,
+    data_cmd: &'a mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<DataCommand>>,
 }
 
 /// Flushes data events and commands from both `pending` and the channel receivers
@@ -2956,14 +2958,14 @@ struct RunnerReceivers<'a> {
 /// that were not captured into `pending`.
 fn flush_pending_data(
     pending: &mut PendingEvents,
-    data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
-    data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<CommandMessage<DataCommand>>,
+    data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<DataEvent>>,
+    data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<DataCommand>>,
 ) {
     loop {
         let mut progressed = pending.drain_data();
 
         while let Ok(evt) = data_evt_rx.try_recv() {
-            AsyncRunner::handle_data_event(evt);
+            AsyncRunner::dispatch_data_event(evt);
             progressed = true;
         }
 
@@ -2992,10 +2994,10 @@ fn flush_all_pending(
     time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
     system_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
     system_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemCommand>,
-    exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
-    exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<CommandMessage<TradingCommandMessage>>,
-    data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
-    data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<CommandMessage<DataCommand>>,
+    exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<ExecutionEvent>>,
+    exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<TradingCommandMessage>>,
+    data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<DataEvent>>,
+    data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<DataCommand>>,
 ) {
     // Flush channel receivers into pending
     while let Ok(handler) = time_evt_rx.try_recv() {
@@ -3019,32 +3021,7 @@ fn flush_all_pending(
     }
 
     while let Ok(evt) = exec_evt_rx.try_recv() {
-        match evt {
-            ExecutionEvent::Account(_) => {
-                AsyncRunner::handle_exec_event(evt);
-            }
-            ExecutionEvent::Report(report) => {
-                pending.exec_reports.push(report);
-            }
-            ExecutionEvent::Order(order_evt) => {
-                pending.order_evts.push(order_evt);
-            }
-            ExecutionEvent::OrderSubmittedBatch(batch) => {
-                for submitted in batch {
-                    pending.order_evts.push(OrderEventAny::Submitted(submitted));
-                }
-            }
-            ExecutionEvent::OrderAcceptedBatch(batch) => {
-                for accepted in batch {
-                    pending.order_evts.push(OrderEventAny::Accepted(accepted));
-                }
-            }
-            ExecutionEvent::OrderCanceledBatch(batch) => {
-                for canceled in batch {
-                    pending.order_evts.push(OrderEventAny::Canceled(canceled));
-                }
-            }
-        }
+        pending.push_exec_event(evt);
     }
 
     while let Ok(cmd) = exec_cmd_rx.try_recv() {
@@ -3068,10 +3045,10 @@ async fn drive_with_event_buffering<F: std::future::Future>(
     time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
     system_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
     system_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemCommand>,
-    exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
-    exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<CommandMessage<TradingCommandMessage>>,
-    data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
-    data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<CommandMessage<DataCommand>>,
+    exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<ExecutionEvent>>,
+    exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<TradingCommandMessage>>,
+    data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<DataEvent>>,
+    data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<DataCommand>>,
 ) -> F::Output {
     tokio::pin!(future);
 
@@ -3092,35 +3069,7 @@ async fn drive_with_event_buffering<F: std::future::Future>(
                 pending.system_commands.push(command);
             }
             Some(evt) = exec_evt_rx.recv() => {
-                // Account events are safe to process immediately. Report and
-                // Order events need ExecEngine borrow_mut which may conflict
-                // with the borrow held by the driven future.
-                match evt {
-                    ExecutionEvent::Account(_) => {
-                        AsyncRunner::handle_exec_event(evt);
-                    }
-                    ExecutionEvent::Report(report) => {
-                        pending.exec_reports.push(report);
-                    }
-                    ExecutionEvent::Order(order_evt) => {
-                        pending.order_evts.push(order_evt);
-                    }
-                    ExecutionEvent::OrderSubmittedBatch(batch) => {
-                        for submitted in batch {
-                            pending.order_evts.push(OrderEventAny::Submitted(submitted));
-                        }
-                    }
-                    ExecutionEvent::OrderAcceptedBatch(batch) => {
-                        for accepted in batch {
-                            pending.order_evts.push(OrderEventAny::Accepted(accepted));
-                        }
-                    }
-                    ExecutionEvent::OrderCanceledBatch(batch) => {
-                        for canceled in batch {
-                            pending.order_evts.push(OrderEventAny::Canceled(canceled));
-                        }
-                    }
-                }
+                pending.push_exec_event(evt);
             }
             Some(cmd) = exec_cmd_rx.recv() => {
                 pending.exec_cmds.push(cmd);
@@ -3139,11 +3088,11 @@ async fn drive_with_event_buffering<F: std::future::Future>(
 struct PendingEvents {
     system_events: Vec<SystemEvent>,
     system_commands: Vec<SystemCommand>,
-    data_evts: Vec<DataEvent>,
-    data_cmds: Vec<CommandMessage<DataCommand>>,
-    exec_reports: Vec<ExecutionReport>,
-    order_evts: Vec<OrderEventAny>,
-    exec_cmds: Vec<CommandMessage<TradingCommandMessage>>,
+    data_evts: Vec<DispatchMessage<DataEvent>>,
+    data_cmds: Vec<DispatchMessage<DataCommand>>,
+    exec_reports: Vec<DispatchMessage<ExecutionReport>>,
+    order_evts: Vec<DispatchMessage<OrderEventAny>>,
+    exec_cmds: Vec<DispatchMessage<TradingCommandMessage>>,
 }
 
 impl PendingEvents {
@@ -3173,7 +3122,7 @@ impl PendingEvents {
         }
 
         for evt in self.data_evts.drain(..) {
-            AsyncRunner::handle_data_event(evt);
+            AsyncRunner::dispatch_data_event(evt);
         }
 
         for cmd in self.data_cmds.drain(..) {
@@ -3204,7 +3153,7 @@ impl PendingEvents {
         }
 
         for evt in self.data_evts.drain(..) {
-            AsyncRunner::handle_data_event(evt);
+            AsyncRunner::dispatch_data_event(evt);
         }
 
         for cmd in self.data_cmds.drain(..) {
@@ -3212,16 +3161,59 @@ impl PendingEvents {
         }
 
         for report in self.exec_reports.drain(..) {
-            AsyncRunner::handle_exec_event(ExecutionEvent::Report(report));
+            report
+                .dispatch(|report| AsyncRunner::handle_exec_event(ExecutionEvent::Report(report)));
         }
 
         for evt in self.order_evts.drain(..) {
-            AsyncRunner::handle_exec_event(ExecutionEvent::Order(evt));
+            evt.dispatch(|evt| AsyncRunner::handle_exec_event(ExecutionEvent::Order(evt)));
         }
 
         for cmd in self.exec_cmds.drain(..) {
             AsyncRunner::handle_trading_command(cmd);
         }
+    }
+
+    fn push_exec_event(&mut self, event: DispatchMessage<ExecutionEvent>) {
+        let rooted = event.is_rooted();
+        event.dispatch(|event| {
+            let owner = std::thread::current().id();
+
+            let order = |event| {
+                if rooted {
+                    DispatchMessage::new(event, owner)
+                } else {
+                    DispatchMessage::from(event)
+                }
+            };
+
+            // Account events are safe to process immediately. Reports and orders need
+            // ExecEngine access, which may conflict with the driven startup future's borrow.
+            match event {
+                ExecutionEvent::Account(_) => AsyncRunner::handle_exec_event(event),
+                ExecutionEvent::Report(report) => self.exec_reports.push(if rooted {
+                    DispatchMessage::new(report, owner)
+                } else {
+                    report.into()
+                }),
+                ExecutionEvent::Order(event) => self.order_evts.push(order(event)),
+                ExecutionEvent::OrderSubmittedBatch(batch) => {
+                    for event in batch {
+                        self.order_evts.push(order(OrderEventAny::Submitted(event)));
+                    }
+                }
+                ExecutionEvent::OrderAcceptedBatch(batch) => {
+                    for event in batch {
+                        self.order_evts.push(order(OrderEventAny::Accepted(event)));
+                    }
+                }
+                ExecutionEvent::OrderCanceledBatch(batch) => {
+                    for event in batch {
+                        self.order_evts.push(order(OrderEventAny::Canceled(event)));
+                    }
+                }
+            }
+        });
     }
 
     fn take_system_events(&mut self) -> Vec<SystemEvent> {
@@ -3271,8 +3263,7 @@ mod tests {
     use log::{Level, LevelFilter, Log, Metadata, Record};
     #[cfg(feature = "python")]
     use nautilus_common::runner::{
-        SyncDataCommandSender, SyncTradingCommandSender, replace_data_cmd_sender,
-        replace_exec_cmd_sender,
+        SyncDataCommandSender, replace_data_cmd_sender, replace_exec_cmd_sender,
     };
     use nautilus_common::{
         actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
@@ -3293,6 +3284,7 @@ mod tests {
             MessagingSwitchboard, ShareableMessageHandler, TypedHandler, TypedIntoHandler,
         },
         nautilus_actor,
+        runner::{SyncTradingCommandSender, TradingCommandSender},
         testing::wait_until_async,
     };
     use nautilus_core::{Params, UUID4, UnixNanos};
@@ -7434,11 +7426,10 @@ mod tests {
         use nautilus_model::instruments::{InstrumentAny, stubs::crypto_perpetual_ethusdt};
 
         let mut pending = PendingEvents::default();
-        pending
-            .data_evts
-            .push(DataEvent::Instrument(InstrumentAny::CryptoPerpetual(
-                crypto_perpetual_ethusdt(),
-            )));
+        pending.data_evts.push(
+            DataEvent::Instrument(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()))
+                .into(),
+        );
 
         assert!(pending.drain_data());
         assert!(pending.data_evts.is_empty());
@@ -7476,18 +7467,19 @@ mod tests {
 
     #[rstest]
     fn test_flush_pending_data_drains_events_and_commands() {
-        let (evt_tx, mut evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let (evt_tx, mut evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataEvent>>();
         let (cmd_tx, mut cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<CommandMessage<DataCommand>>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataCommand>>();
 
         let mut pending = PendingEvents::default();
 
         // Pre-load pending (items captured by the select loop)
-        pending.data_evts.push(stub_data_event());
+        pending.data_evts.push((stub_data_event()).into());
         pending.data_cmds.push(stub_data_command().into());
 
         // Pre-load channels (items missed by the select loop)
-        evt_tx.send(stub_data_event()).unwrap();
+        evt_tx.send((stub_data_event()).into()).unwrap();
         cmd_tx.send(stub_data_command().into()).unwrap();
 
         flush_pending_data(&mut pending, &mut evt_rx, &mut cmd_rx);
@@ -7500,19 +7492,20 @@ mod tests {
 
     #[rstest]
     fn test_flush_pending_data_drains_mixed_sources() {
-        let (evt_tx, mut evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let (evt_tx, mut evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataEvent>>();
         let (cmd_tx, mut cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<CommandMessage<DataCommand>>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataCommand>>();
 
         let mut pending = PendingEvents::default();
 
         // First pass: pending has an event, channel has a command
-        pending.data_evts.push(stub_data_event());
+        pending.data_evts.push((stub_data_event()).into());
         cmd_tx.send(stub_data_command().into()).unwrap();
 
         // Second pass: channel has items that simulate arrival during first drain
-        evt_tx.send(stub_data_event()).unwrap();
-        evt_tx.send(stub_data_event()).unwrap();
+        evt_tx.send((stub_data_event()).into()).unwrap();
+        evt_tx.send((stub_data_event()).into()).unwrap();
         cmd_tx.send(stub_data_command().into()).unwrap();
 
         flush_pending_data(&mut pending, &mut evt_rx, &mut cmd_rx);
@@ -7626,18 +7619,19 @@ mod tests {
             tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
         let (system_cmd_tx, mut system_cmd_rx) =
             tokio::sync::mpsc::unbounded_channel::<SystemCommand>();
-        let (data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let (data_evt_tx, mut data_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataEvent>>();
         let (data_cmd_tx, mut data_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<CommandMessage<DataCommand>>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataCommand>>();
         let (exec_evt_tx, mut exec_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<ExecutionEvent>>();
         let (exec_cmd_tx, mut exec_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<CommandMessage<TradingCommandMessage>>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<TradingCommandMessage>>();
 
         let mut pending = PendingEvents::default();
 
         // Pre-load pending with data items
-        pending.data_evts.push(stub_data_event());
+        pending.data_evts.push((stub_data_event()).into());
         pending.data_cmds.push(stub_data_command().into());
 
         // Pre-load all channel types
@@ -7653,9 +7647,9 @@ mod tests {
             .send(SystemEvent::SocketState(change))
             .unwrap();
         system_cmd_tx.send(stub_system_command()).unwrap();
-        data_evt_tx.send(stub_data_event()).unwrap();
+        data_evt_tx.send((stub_data_event()).into()).unwrap();
         data_cmd_tx.send(stub_data_command().into()).unwrap();
-        exec_evt_tx.send(stub_exec_event()).unwrap();
+        exec_evt_tx.send((stub_exec_event()).into()).unwrap();
         exec_cmd_tx
             .send(stub_trading_command_message().into())
             .unwrap();
@@ -7723,18 +7717,19 @@ mod tests {
             tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
         let (_system_cmd_tx, mut system_cmd_rx) =
             tokio::sync::mpsc::unbounded_channel::<SystemCommand>();
-        let (_data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let (_data_evt_tx, mut data_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataEvent>>();
         let (_data_cmd_tx, mut data_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<CommandMessage<DataCommand>>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataCommand>>();
         let (exec_evt_tx, mut exec_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<ExecutionEvent>>();
         let (_exec_cmd_tx, mut exec_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<CommandMessage<TradingCommandMessage>>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<TradingCommandMessage>>();
 
         let mut pending = PendingEvents::default();
 
-        exec_evt_tx.send(stub_order_event()).unwrap();
-        exec_evt_tx.send(stub_exec_event()).unwrap();
+        exec_evt_tx.send((stub_order_event()).into()).unwrap();
+        exec_evt_tx.send((stub_exec_event()).into()).unwrap();
 
         flush_all_pending(
             &mut pending,
@@ -7760,17 +7755,18 @@ mod tests {
             tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
         let (_system_cmd_tx, mut system_cmd_rx) =
             tokio::sync::mpsc::unbounded_channel::<SystemCommand>();
-        let (_data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let (_data_evt_tx, mut data_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataEvent>>();
         let (_data_cmd_tx, mut data_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<CommandMessage<DataCommand>>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataCommand>>();
         let (exec_evt_tx, mut exec_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<ExecutionEvent>>();
         let (_exec_cmd_tx, mut exec_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<CommandMessage<TradingCommandMessage>>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<TradingCommandMessage>>();
 
         let mut pending = PendingEvents::default();
 
-        exec_evt_tx.send(stub_account_event()).unwrap();
+        exec_evt_tx.send((stub_account_event()).into()).unwrap();
 
         flush_all_pending(
             &mut pending,
@@ -7800,7 +7796,7 @@ mod tests {
     #[rstest]
     fn test_pending_is_empty_false_with_data_evt() {
         let mut pending = PendingEvents::default();
-        pending.data_evts.push(stub_data_event());
+        pending.data_evts.push((stub_data_event()).into());
 
         assert!(!pending.is_empty());
     }
@@ -7882,7 +7878,7 @@ mod tests {
         let mut pending = PendingEvents::default();
 
         if let ExecutionEvent::Report(report) = stub_exec_event() {
-            pending.exec_reports.push(report);
+            pending.exec_reports.push((report).into());
         }
 
         assert!(!pending.is_empty());
@@ -7893,7 +7889,7 @@ mod tests {
         let mut pending = PendingEvents::default();
 
         if let ExecutionEvent::Order(order_evt) = stub_order_event() {
-            pending.order_evts.push(order_evt);
+            pending.order_evts.push((order_evt).into());
         }
 
         assert!(!pending.is_empty());
@@ -7942,17 +7938,20 @@ mod tests {
             tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
         let (_system_cmd_tx, mut system_cmd_rx) =
             tokio::sync::mpsc::unbounded_channel::<SystemCommand>();
-        let (_data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let (_data_evt_tx, mut data_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataEvent>>();
         let (_data_cmd_tx, mut data_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<CommandMessage<DataCommand>>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataCommand>>();
         let (exec_evt_tx, mut exec_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<ExecutionEvent>>();
         let (_exec_cmd_tx, mut exec_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<CommandMessage<TradingCommandMessage>>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<TradingCommandMessage>>();
 
         let mut pending = PendingEvents::default();
 
-        exec_evt_tx.send(stub_submitted_batch_event()).unwrap();
+        exec_evt_tx
+            .send((stub_submitted_batch_event()).into())
+            .unwrap();
 
         flush_all_pending(
             &mut pending,
@@ -7977,17 +7976,20 @@ mod tests {
             tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
         let (_system_cmd_tx, mut system_cmd_rx) =
             tokio::sync::mpsc::unbounded_channel::<SystemCommand>();
-        let (_data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let (_data_evt_tx, mut data_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataEvent>>();
         let (_data_cmd_tx, mut data_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<CommandMessage<DataCommand>>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataCommand>>();
         let (exec_evt_tx, mut exec_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<ExecutionEvent>>();
         let (_exec_cmd_tx, mut exec_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<CommandMessage<TradingCommandMessage>>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<TradingCommandMessage>>();
 
         let mut pending = PendingEvents::default();
 
-        exec_evt_tx.send(stub_canceled_batch_event()).unwrap();
+        exec_evt_tx
+            .send((stub_canceled_batch_event()).into())
+            .unwrap();
 
         flush_all_pending(
             &mut pending,
@@ -8010,49 +8012,148 @@ mod tests {
         use nautilus_model::identifiers::ClientOrderId;
 
         let (exec_evt_tx, mut exec_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<ExecutionEvent>>();
 
-        exec_evt_tx.send(stub_canceled_batch_event()).unwrap();
+        exec_evt_tx
+            .send((stub_canceled_batch_event()).into())
+            .unwrap();
 
         let mut pending = PendingEvents::default();
 
-        // Manually replicate what flush_all_pending does before drain
         while let Ok(evt) = exec_evt_rx.try_recv() {
-            match evt {
-                ExecutionEvent::Account(_) => {
-                    AsyncRunner::handle_exec_event(evt);
-                }
-                ExecutionEvent::Report(report) => {
-                    pending.exec_reports.push(report);
-                }
-                ExecutionEvent::Order(order_evt) => {
-                    pending.order_evts.push(order_evt);
-                }
-                ExecutionEvent::OrderSubmittedBatch(batch) => {
-                    for submitted in batch {
-                        pending.order_evts.push(OrderEventAny::Submitted(submitted));
-                    }
-                }
-                ExecutionEvent::OrderAcceptedBatch(batch) => {
-                    for accepted in batch {
-                        pending.order_evts.push(OrderEventAny::Accepted(accepted));
-                    }
-                }
-                ExecutionEvent::OrderCanceledBatch(batch) => {
-                    for canceled in batch {
-                        pending.order_evts.push(OrderEventAny::Canceled(canceled));
-                    }
-                }
-            }
+            pending.push_exec_event(evt);
         }
 
-        assert_eq!(pending.order_evts.len(), 2);
+        let events: Vec<_> = pending
+            .order_evts
+            .drain(..)
+            .map(|event| event.dispatch(|event| event))
+            .collect();
+        assert_eq!(events.len(), 2);
         assert!(
-            matches!(&pending.order_evts[0], OrderEventAny::Canceled(c) if c.client_order_id == ClientOrderId::from("O-001"))
+            matches!(&events[0], OrderEventAny::Canceled(c) if c.client_order_id == ClientOrderId::from("O-001"))
         );
         assert!(
-            matches!(&pending.order_evts[1], OrderEventAny::Canceled(c) if c.client_order_id == ClientOrderId::from("O-002"))
+            matches!(&events[1], OrderEventAny::Canceled(c) if c.client_order_id == ClientOrderId::from("O-002"))
         );
+    }
+
+    #[rstest]
+    #[case(stub_order_event, 1)]
+    #[case(stub_submitted_batch_event, 2)]
+    #[case(stub_accepted_batch_event, 2)]
+    #[case(stub_canceled_batch_event, 2)]
+    fn test_pending_events_preserve_roots_when_splitting_batches(
+        #[values(false, true)] rooted: bool,
+        #[case] make_event: fn() -> ExecutionEvent,
+        #[case] orders: usize,
+    ) {
+        let runner = AsyncRunner::new();
+        runner.bind_senders();
+        let mut channels = runner.take_channels();
+
+        let send = move || {
+            get_data_event_sender().send(stub_data_event()).unwrap();
+            get_exec_event_sender().send(stub_exec_event()).unwrap();
+            get_exec_event_sender().send(make_event()).unwrap();
+        };
+
+        if rooted {
+            msgbus::register_trading_command_endpoint(
+                MessagingSwitchboard::risk_engine_execute(),
+                TypedIntoHandler::from(move |_| send()),
+            );
+            TradingCommandSender::execute(
+                &SyncTradingCommandSender,
+                TradingCommandMessage::new(
+                    MessagingSwitchboard::risk_engine_execute(),
+                    TradingCommand::QueryAccount(QueryAccount::new(
+                        "TRADER-001".into(),
+                        None,
+                        "SIM-001".into(),
+                        UUID4::new(),
+                        37.into(),
+                        None,
+                        None,
+                    )),
+                ),
+            );
+            nautilus_common::runner::drain_trading_cmd_queue();
+        } else {
+            send();
+        }
+
+        let mut pending = PendingEvents::default();
+        pending
+            .data_evts
+            .push(channels.data_evt_rx.try_recv().unwrap());
+        while let Ok(event) = channels.exec_evt_rx.try_recv() {
+            pending.push_exec_event(event);
+        }
+
+        assert_eq!(pending.data_evts.len(), 1);
+        assert_eq!(pending.exec_reports.len(), 1);
+        assert_eq!(pending.order_evts.len(), orders);
+        assert_eq!(pending.data_evts[0].is_rooted(), rooted);
+        assert_eq!(pending.exec_reports[0].is_rooted(), rooted);
+        assert!(
+            pending
+                .order_evts
+                .iter()
+                .all(|event| event.is_rooted() == rooted)
+        );
+
+        let results = std::thread::spawn(move || {
+            let mut results = Vec::new();
+            for event in pending.data_evts {
+                results.push(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+                    || event.dispatch(drop),
+                )));
+            }
+
+            for event in pending.exec_reports {
+                results.push(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+                    || event.dispatch(drop),
+                )));
+            }
+
+            for event in pending.order_evts {
+                results.push(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+                    || event.dispatch(drop),
+                )));
+            }
+
+            results
+        })
+        .join()
+        .unwrap();
+
+        assert_eq!(results.len(), orders + 2);
+
+        for result in results {
+            if rooted {
+                let error = result.unwrap_err();
+                assert!(
+                    error
+                        .downcast_ref::<String>()
+                        .unwrap()
+                        .contains("command context dispatched outside its owner thread")
+                );
+            } else {
+                result.unwrap();
+            }
+        }
+    }
+
+    fn stub_accepted_batch_event() -> ExecutionEvent {
+        ExecutionEvent::OrderAcceptedBatch(OrderAcceptedBatch::new(vec![
+            OrderAcceptedSpec::builder()
+                .client_order_id(ClientOrderId::from("O-017"))
+                .build(),
+            OrderAcceptedSpec::builder()
+                .client_order_id(ClientOrderId::from("O-023"))
+                .build(),
+        ]))
     }
 
     #[derive(Debug)]

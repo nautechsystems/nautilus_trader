@@ -33,7 +33,7 @@ use databento::{dbn, live::Subscription};
 use indexmap::IndexMap;
 use nautilus_common::{
     clients::DataClient,
-    live::runner::get_data_event_sender,
+    live::{runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent, DataResponse,
         data::{
@@ -177,7 +177,7 @@ pub struct DatabentoDataClient {
     cancellation_token: CancellationToken,
     publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
     symbol_venue_map: Arc<AtomicMap<Symbol, Venue>>,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
 }
 
 impl DatabentoDataClient {
@@ -1349,11 +1349,7 @@ async fn seed_price_precision_if_needed(
     }
 }
 
-fn send_data_response(
-    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
-    response: DataResponse,
-    label: &str,
-) {
+fn send_data_response(data_sender: &EventSender<DataEvent>, response: DataResponse, label: &str) {
     if let Err(e) = data_sender.send(DataEvent::Response(response)) {
         log::error!("Failed to send {label} response: {e}");
     }

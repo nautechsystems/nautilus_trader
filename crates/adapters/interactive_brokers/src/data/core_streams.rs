@@ -33,7 +33,7 @@ use ibapi::{
     prelude::StreamExt,
     subscriptions::{Subscription, SubscriptionItem},
 };
-use nautilus_common::messages::DataEvent;
+use nautilus_common::{live::sender::EventSender, messages::DataEvent};
 use nautilus_core::{UnixNanos, time::AtomicTime};
 use nautilus_live::task::TaskSlot;
 use nautilus_model::{
@@ -449,7 +449,7 @@ pub(super) async fn handle_historical_bars_subscription(
     size_precision: u8,
     use_rth: bool,
     start_ns: Option<UnixNanos>,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     handle_revised_bars: bool,
     clock: &'static AtomicTime,
     cancellation_token: CancellationToken,
@@ -679,7 +679,7 @@ pub(super) async fn handle_quote_subscription(
     instrument_id: InstrumentId,
     price_precision: u8,
     size_precision: u8,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     quote_cache: Arc<tokio::sync::Mutex<QuoteCache>>,
     clock: &'static AtomicTime,
     cancellation_token: CancellationToken,
@@ -782,7 +782,7 @@ pub(super) async fn handle_option_greeks_subscription(
     client: Arc<ibapi::Client>,
     contract: ibapi::contracts::Contract,
     instrument_id: InstrumentId,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     option_greeks_cache: Arc<tokio::sync::Mutex<OptionGreeksCache>>,
     clock: &'static AtomicTime,
     cancellation_token: CancellationToken,
@@ -885,7 +885,7 @@ pub(super) async fn handle_index_price_subscription(
     instrument_id: InstrumentId,
     price_precision: u8,
     price_magnifier: i32,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     clock: &'static AtomicTime,
     cancellation_token: CancellationToken,
     data_farm_state: Arc<DataFarmConnectionState>,
@@ -986,7 +986,7 @@ pub(super) async fn handle_tick_by_tick_quote_subscription(
     instrument_id: InstrumentId,
     price_precision: u8,
     size_precision: u8,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     clock: &'static AtomicTime,
     cancellation_token: CancellationToken,
     price_magnifier: f64,
@@ -1104,7 +1104,7 @@ pub(super) async fn handle_trade_subscription(
     instrument_id: InstrumentId,
     price_precision: u8,
     size_precision: u8,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     clock: &'static AtomicTime,
     cancellation_token: CancellationToken,
     data_farm_state: Arc<DataFarmConnectionState>,
@@ -1156,7 +1156,7 @@ pub(super) async fn handle_realtime_bars_subscription(
     what_to_show: RealtimeWhatToShow,
     price_precision: u8,
     size_precision: u8,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     clock: &'static AtomicTime,
     last_bars: Arc<tokio::sync::Mutex<AHashMap<String, RealtimeBar>>>,
     bar_timeout_tasks: Arc<tokio::sync::Mutex<AHashMap<String, TaskSlot<()>>>>,
@@ -1232,7 +1232,7 @@ async fn process_trade_stream(
     instrument_id: InstrumentId,
     price_precision: u8,
     size_precision: u8,
-    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: &EventSender<DataEvent>,
     clock: &'static AtomicTime,
     cancellation_token: &CancellationToken,
     data_farm_state: &DataFarmConnectionState,
@@ -1320,7 +1320,7 @@ async fn process_realtime_bar_stream(
     bar_type_str: &str,
     price_precision: u8,
     size_precision: u8,
-    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: &EventSender<DataEvent>,
     last_bars: &Arc<tokio::sync::Mutex<AHashMap<String, RealtimeBar>>>,
     bar_timeout_tasks: &Arc<tokio::sync::Mutex<AHashMap<String, TaskSlot<()>>>>,
     handle_revised_bars: bool,
@@ -1419,7 +1419,7 @@ async fn process_market_depth_stream(
     instrument_id: InstrumentId,
     price_precision: u8,
     size_precision: u8,
-    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: &EventSender<DataEvent>,
     clock: &'static AtomicTime,
     cancellation_token: &CancellationToken,
     data_farm_state: &DataFarmConnectionState,
@@ -1541,7 +1541,7 @@ pub(super) async fn handle_market_depth_subscription(
     size_precision: u8,
     depth_rows: i32,
     is_smart_depth: bool,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     clock: &'static AtomicTime,
     cancellation_token: CancellationToken,
     data_farm_state: Arc<DataFarmConnectionState>,
@@ -1592,7 +1592,7 @@ async fn process_quote_tick_result<I, E>(
     instrument_id: InstrumentId,
     price_precision: u8,
     size_precision: u8,
-    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: &EventSender<DataEvent>,
     quote_cache: &Arc<tokio::sync::Mutex<QuoteCache>>,
     clock: &'static AtomicTime,
     ignore_size_updates: bool,
@@ -1689,7 +1689,7 @@ where
 async fn process_option_greeks_tick_result<I, E>(
     tick_result: Result<I, E>,
     instrument_id: InstrumentId,
-    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: &EventSender<DataEvent>,
     option_greeks_cache: &Arc<tokio::sync::Mutex<OptionGreeksCache>>,
     clock: &'static AtomicTime,
 ) -> anyhow::Result<StreamAction>
@@ -1767,7 +1767,7 @@ async fn process_index_price_tick_result<I, E>(
     instrument_id: InstrumentId,
     price_precision: u8,
     price_magnifier: i32,
-    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: &EventSender<DataEvent>,
     clock: &'static AtomicTime,
 ) -> anyhow::Result<StreamAction>
 where
@@ -1955,7 +1955,7 @@ fn update_quote_from_price_size_tick(
 
 fn send_quote_tick(
     quote: Option<QuoteTick>,
-    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: &EventSender<DataEvent>,
     instrument_id: InstrumentId,
 ) -> StreamAction {
     if let Some(quote_tick) = quote
@@ -1975,7 +1975,7 @@ fn send_quote_tick(
 
 fn send_option_greeks(
     greeks: Option<OptionGreeks>,
-    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: &EventSender<DataEvent>,
     instrument_id: InstrumentId,
 ) -> StreamAction {
     if let Some(option_greeks) = greeks
@@ -1997,7 +1997,7 @@ async fn process_option_open_interest_tick(
     instrument_id: InstrumentId,
     tick_type: TickType,
     value: f64,
-    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: &EventSender<DataEvent>,
     option_greeks_cache: &Arc<tokio::sync::Mutex<OptionGreeksCache>>,
     clock: &'static AtomicTime,
 ) -> anyhow::Result<StreamAction> {
@@ -2505,7 +2505,7 @@ mod tests {
             instrument_id,
             2,
             100,
-            &sender,
+            &sender.clone().into(),
             clock,
         )
         .await
@@ -2537,7 +2537,7 @@ mod tests {
             instrument_id,
             2,
             0,
-            &sender,
+            &sender.clone().into(),
             &quote_cache,
             clock,
             false,
@@ -2553,7 +2553,7 @@ mod tests {
             instrument_id,
             2,
             0,
-            &sender,
+            &sender.clone().into(),
             &quote_cache,
             clock,
             false,
@@ -2589,7 +2589,7 @@ mod tests {
             instrument_id,
             2,
             0,
-            &sender,
+            &sender.clone().into(),
             &quote_cache,
             clock,
             false,
@@ -2605,7 +2605,7 @@ mod tests {
             instrument_id,
             2,
             0,
-            &sender,
+            &sender.clone().into(),
             &quote_cache,
             clock,
             false,
@@ -2657,7 +2657,7 @@ mod tests {
                 instrument_id,
                 2,
                 0,
-                &sender,
+                &sender.clone().into(),
                 &quote_cache,
                 clock,
                 false,
@@ -2708,7 +2708,7 @@ mod tests {
                 instrument_id,
                 2,
                 0,
-                &sender,
+                &sender.clone().into(),
                 &quote_cache,
                 clock,
                 false,
@@ -2748,7 +2748,7 @@ mod tests {
             instrument_id,
             2,
             0,
-            &sender,
+            &sender.clone().into(),
             &quote_cache,
             clock,
             false,
@@ -2766,7 +2766,7 @@ mod tests {
             instrument_id,
             2,
             0,
-            &sender,
+            &sender.clone().into(),
             &quote_cache,
             clock,
             false,
@@ -2801,7 +2801,7 @@ mod tests {
             instrument_id,
             2,
             0,
-            &sender,
+            &sender.clone().into(),
             &quote_cache,
             clock,
             true,
@@ -2817,7 +2817,7 @@ mod tests {
             instrument_id,
             2,
             0,
-            &sender,
+            &sender.clone().into(),
             &quote_cache,
             clock,
             true,
@@ -2842,7 +2842,7 @@ mod tests {
             instrument_id,
             2,
             0,
-            &sender,
+            &sender.clone().into(),
             &quote_cache,
             clock,
             true,
@@ -2871,7 +2871,7 @@ mod tests {
             instrument_id,
             2,
             0,
-            &sender,
+            &sender.clone().into(),
             &quote_cache,
             clock,
             false,
@@ -2897,7 +2897,7 @@ mod tests {
             instrument_id,
             2,
             1,
-            &sender,
+            &sender.clone().into(),
             clock,
         )
         .await
@@ -2919,7 +2919,7 @@ mod tests {
             instrument_id,
             2,
             0,
-            &sender,
+            &sender.clone().into(),
             &quote_cache,
             clock,
             false,
@@ -2945,7 +2945,7 @@ mod tests {
                 ..Default::default()
             })),
             instrument_id,
-            &sender,
+            &sender.clone().into(),
             &greeks_cache,
             clock,
         )
@@ -2962,7 +2962,7 @@ mod tests {
                 ..Default::default()
             })),
             instrument_id,
-            &sender,
+            &sender.clone().into(),
             &greeks_cache,
             clock,
         )
@@ -2977,7 +2977,7 @@ mod tests {
                 value: 1000.0,
             })),
             instrument_id,
-            &sender,
+            &sender.clone().into(),
             &greeks_cache,
             clock,
         )
@@ -2998,7 +2998,7 @@ mod tests {
                 ..Default::default()
             })),
             instrument_id,
-            &sender,
+            &sender.clone().into(),
             &greeks_cache,
             clock,
         )
@@ -3039,7 +3039,7 @@ mod tests {
                 advanced_order_reject_json: String::new(),
             })),
             instrument_id,
-            &sender,
+            &sender.clone().into(),
             &greeks_cache,
             clock,
         )
@@ -3115,7 +3115,7 @@ mod tests {
             instrument_id,
             2,
             0,
-            &sender,
+            &sender.clone().into(),
             clock,
             &cancellation_token,
             &data_farm_state,
@@ -3176,7 +3176,7 @@ mod tests {
             instrument_id,
             2,
             0,
-            &sender,
+            &sender.clone().into(),
             clock,
             &cancellation_token,
             &data_farm_state,
@@ -3223,7 +3223,7 @@ mod tests {
             &bar_type_str,
             2,
             0,
-            &sender,
+            &sender.clone().into(),
             &last_bars,
             &timeout_tasks,
             true,
@@ -3282,7 +3282,7 @@ mod tests {
             instrument_id,
             2,
             0,
-            &sender,
+            &sender.clone().into(),
             clock,
             &cancellation_token,
             &data_farm_state,
@@ -3315,7 +3315,7 @@ mod tests {
         let instrument_id = instrument_id();
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         assert!(matches!(
-            send_quote_tick(None, &sender, instrument_id),
+            send_quote_tick(None, &sender.clone().into(), instrument_id),
             StreamAction::Continue
         ));
     }

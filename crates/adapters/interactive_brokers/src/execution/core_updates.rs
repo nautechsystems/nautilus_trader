@@ -8,6 +8,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use ibapi::subscriptions::SubscriptionItem;
+use nautilus_common::live::sender::EventSender;
 
 use super::*;
 use crate::{
@@ -96,7 +97,7 @@ impl InteractiveBrokersExecutionClient {
         order_id_map: &Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
         venue_order_id_map: &Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
         instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
         clock: &'static AtomicTime,
         account_id: AccountId,
         commission_cache: &Arc<Mutex<CommissionCache>>,
@@ -159,7 +160,7 @@ impl InteractiveBrokersExecutionClient {
         order_id_map: &Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
         venue_order_id_map: &Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
         instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
         clock: &'static AtomicTime,
         account_id: AccountId,
         commission_cache: &Arc<Mutex<CommissionCache>>,
@@ -380,7 +381,7 @@ impl InteractiveBrokersExecutionClient {
         trader_id_map: &Arc<Mutex<AHashMap<i32, TraderId>>>,
         strategy_id_map: &Arc<Mutex<AHashMap<i32, StrategyId>>>,
         instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
         ts_init: UnixNanos,
         account_id: AccountId,
     ) -> anyhow::Result<()> {
@@ -461,7 +462,7 @@ impl InteractiveBrokersExecutionClient {
         order_id_map: &Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
         venue_order_id_map: &Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
         instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
         ts_init: UnixNanos,
         account_id: AccountId,
         instrument_id_map: &Arc<Mutex<AHashMap<i32, InstrumentId>>>,
@@ -695,7 +696,7 @@ impl InteractiveBrokersExecutionClient {
         order_id_map: &Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
         venue_order_id_map: &Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
         instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
         ts_init: UnixNanos,
         account_id: AccountId,
         commission_cache: &Arc<Mutex<CommissionCache>>,
@@ -969,7 +970,7 @@ impl InteractiveBrokersExecutionClient {
         pending_combo_fills: &Arc<Mutex<AHashMap<ClientOrderId, VecDeque<PendingComboFill>>>>,
         pending_combo_fill_avgs: &Arc<Mutex<AHashMap<ClientOrderId, VecDeque<(Decimal, Price)>>>>,
         order_fill_progress: &Arc<Mutex<AHashMap<ClientOrderId, (Decimal, Decimal)>>>,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
     ) -> anyhow::Result<()> {
         let mut combo_fills = pending_combo_fills.lock();
         let mut avg_chunks = pending_combo_fill_avgs.lock();
@@ -1051,7 +1052,7 @@ impl InteractiveBrokersExecutionClient {
         trader_id_map: &Arc<Mutex<AHashMap<i32, TraderId>>>,
         strategy_id_map: &Arc<Mutex<AHashMap<i32, StrategyId>>>,
         instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
         ts_init: UnixNanos,
         account_id: AccountId,
     ) -> anyhow::Result<()> {
@@ -1127,7 +1128,7 @@ impl InteractiveBrokersExecutionClient {
         commission: f64,
         commission_currency: &str,
         instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
         ts_init: UnixNanos,
         account_id: AccountId,
         spread_fill_tracking: &Arc<Mutex<AHashMap<ClientOrderId, ahash::AHashSet<String>>>>,
@@ -1311,7 +1312,7 @@ impl InteractiveBrokersExecutionClient {
         commission: f64,
         commission_currency: &str,
         instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
         ts_init: UnixNanos,
         account_id: AccountId,
         avg_px: Option<Price>,

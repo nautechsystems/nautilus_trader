@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet};
 use dashmap::{DashMap, mapref::entry::Entry};
-use nautilus_common::messages::DataEvent;
+use nautilus_common::{live::sender::EventSender, messages::DataEvent};
 use nautilus_core::{AtomicMap, AtomicSet, time::AtomicTime};
 use nautilus_model::{
     data::{Data as NautilusData, InstrumentClose, InstrumentStatus},
@@ -154,7 +154,7 @@ pub(crate) enum ResolveApplyResult {
 #[derive(Clone)]
 pub(crate) struct ResolveContext {
     pub(crate) clock: &'static AtomicTime,
-    pub(crate) data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    pub(crate) data_sender: EventSender<DataEvent>,
     pub(crate) instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     pub(crate) watchlist: Arc<AtomicMap<String, ResolveWatchEntry>>,
     pub(crate) apply_mutex: Arc<Mutex<()>>,
@@ -847,7 +847,7 @@ mod tests {
         let (ws_tx, _ws_rx) = tokio::sync::mpsc::unbounded_channel();
         let ctx = ResolveContext {
             clock: get_atomic_clock_realtime(),
-            data_sender: data_tx,
+            data_sender: data_tx.into(),
             instruments: Arc::new(AtomicMap::new()),
             watchlist: Arc::new(AtomicMap::new()),
             apply_mutex: Arc::new(Mutex::new(())),

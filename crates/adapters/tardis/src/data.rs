@@ -27,7 +27,7 @@ use ahash::{AHashMap, AHashSet};
 use futures_util::{SinkExt, StreamExt};
 use nautilus_common::{
     clients::DataClient,
-    live::runner::get_data_event_sender,
+    live::{runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
         data::{
@@ -76,7 +76,7 @@ pub struct TardisDataClient {
     is_connected: Arc<AtomicBool>,
     cancellation_token: CancellationToken,
     tasks: TaskGroup,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
 }
 
 impl TardisDataClient {
@@ -260,7 +260,7 @@ impl TardisDataClient {
             tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
         >,
         cancel: &CancellationToken,
-        sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        sender: &EventSender<DataEvent>,
         instrument_map: &AHashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>>,
         book_snapshot_output: &BookSnapshotOutput,
         extract_bbo_as_quotes: bool,
@@ -312,7 +312,7 @@ impl TardisDataClient {
     fn send_derivative_ticker_events(
         ws_msg: &WsMessage,
         info: &Arc<TardisInstrumentMiniInfo>,
-        sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        sender: &EventSender<DataEvent>,
         cache: &mut DerivativeTickerCache,
     ) -> bool {
         if let Some(funding) = parse_tardis_ws_message_funding_rate(ws_msg.clone(), info)
@@ -357,7 +357,7 @@ impl TardisDataClient {
             >,
         >,
         cancel: &CancellationToken,
-        sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        sender: &EventSender<DataEvent>,
         instrument_map: &AHashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>>,
         book_snapshot_output: &BookSnapshotOutput,
         extract_bbo_as_quotes: bool,

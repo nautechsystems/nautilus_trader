@@ -28,7 +28,7 @@ use jiff::Timestamp;
 use nautilus_common::{
     cache::InstrumentLookupError,
     clients::DataClient,
-    live::runner::get_data_event_sender,
+    live::{runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
         data::{
@@ -96,7 +96,7 @@ pub struct HyperliquidDataClient {
     session_tasks: TaskGroup,
     pending_tasks: TaskGroup,
     shutdown_errors: Vec<String>,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     coin_to_instrument_id: Arc<AtomicMap<Ustr, InstrumentId>>,
     // serializes instrument fetch-and-apply passes, see `refresh_instruments`
@@ -1694,7 +1694,7 @@ async fn refresh_instruments(
     ws_client: &HyperliquidWebSocketClient,
     instruments_by_id: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     coin_to_instrument_id: &Arc<AtomicMap<Ustr, InstrumentId>>,
-    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: &EventSender<DataEvent>,
 ) -> anyhow::Result<InstrumentRefresh> {
     let _update_guard = update_lock.lock().await;
 
@@ -1732,7 +1732,7 @@ async fn reconcile_instruments(
     ws_client: &HyperliquidWebSocketClient,
     instruments_by_id: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     coin_to_instrument_id: &Arc<AtomicMap<Ustr, InstrumentId>>,
-    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: &EventSender<DataEvent>,
 ) -> InstrumentRefresh {
     let changed = changed_definitions(&fetched, instruments_by_id);
     let added = added_symbols(&changed, instruments_by_id);

@@ -29,7 +29,7 @@ use dashmap::{DashMap, DashSet, mapref::entry::Entry};
 use nautilus_common::{
     cache::InstrumentLookupError,
     clients::DataClient,
-    live::runner::get_data_event_sender,
+    live::{runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
         data::{
@@ -112,7 +112,7 @@ pub struct LighterDataClient {
     ws_disconnect_handle: TaskSlot<Result<(), LighterWsError>>,
     ws_handler_retained: Arc<RetainedTaskSlot>,
     shutdown_errors: Vec<String>,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     instrument_statuses: Arc<DashMap<InstrumentId, LighterMarketStatus>>,
     instrument_status_subscriptions: Arc<DashSet<InstrumentId>>,
@@ -864,7 +864,7 @@ fn rollback_market_stats_subscription(
 }
 
 fn emit_lighter_instrument_status_if_subscribed(
-    sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    sender: &EventSender<DataEvent>,
     subscriptions: &DashSet<InstrumentId>,
     instrument_id: InstrumentId,
     status: LighterMarketStatus,
@@ -877,7 +877,7 @@ fn emit_lighter_instrument_status_if_subscribed(
 }
 
 fn emit_lighter_instrument_status(
-    sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    sender: &EventSender<DataEvent>,
     instrument_id: InstrumentId,
     status: LighterMarketStatus,
     ts_event: UnixNanos,
@@ -2243,7 +2243,7 @@ mod tests {
         );
 
         assert!(emit_market_stats_ws_message(
-            &sender,
+            &sender.clone().into(),
             &subscriptions,
             &NautilusWsMessage::MarkPrice(MarkPriceUpdate::new(
                 instrument_id,
@@ -2253,7 +2253,7 @@ mod tests {
             )),
         ));
         assert!(emit_market_stats_ws_message(
-            &sender,
+            &sender.clone().into(),
             &subscriptions,
             &NautilusWsMessage::IndexPrice(IndexPriceUpdate::new(
                 instrument_id,
@@ -2263,7 +2263,7 @@ mod tests {
             )),
         ));
         assert!(emit_market_stats_ws_message(
-            &sender,
+            &sender.clone().into(),
             &subscriptions,
             &NautilusWsMessage::FundingRate(FundingRateUpdate::new(
                 instrument_id,
@@ -2300,7 +2300,7 @@ mod tests {
         }
 
         assert!(!emit_market_stats_ws_message(
-            &sender,
+            &sender.into(),
             &subscriptions,
             &NautilusWsMessage::MarkPrice(MarkPriceUpdate::new(
                 other_instrument_id,

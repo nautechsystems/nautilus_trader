@@ -3026,7 +3026,7 @@ mod tests {
     #[cfg(feature = "live")]
     mod live_commands {
         use super::*;
-        use crate::live::dispatch::CommandMessage;
+        use crate::live::{dispatch::DispatchMessage, sender::EventSender};
 
         #[rstest]
         fn independent_trading_leaf_allocates_no_root() {
@@ -3043,7 +3043,7 @@ mod tests {
                 }),
             );
 
-            CommandMessage::new(trading_message(1), thread::current().id())
+            DispatchMessage::new(trading_message(1), thread::current().id())
                 .dispatch_trading(|_| {});
             assert!(!has_pending());
             clear().unwrap();
@@ -3063,7 +3063,7 @@ mod tests {
             let chain = Rc::downgrade(&root.slot.chain);
             let accounting = root.slot.accounting.clone();
             root.commit(tx, |tx| {
-                tx.send(CommandMessage::new(
+                tx.send(DispatchMessage::new(
                     trading_message(1),
                     thread::current().id(),
                 ))
@@ -3126,11 +3126,11 @@ mod tests {
             if closed {
                 drop(rx);
                 storage.with_chain(|| {
-                    drop(tx.send(CommandMessage::new(17u32, thread::current().id())));
+                    drop(tx.send(DispatchMessage::new(17u32, thread::current().id())));
                 });
             } else {
                 storage.with_chain(|| {
-                    tx.send(CommandMessage::new(17u32, thread::current().id()))
+                    tx.send(DispatchMessage::new(17u32, thread::current().id()))
                         .unwrap();
                 });
 
@@ -3152,7 +3152,7 @@ mod tests {
 
             let message = thread::spawn(move || {
                 let storage = retain(0).unwrap();
-                let message = storage.with_chain(|| CommandMessage::new(23u32, owner));
+                let message = storage.with_chain(|| DispatchMessage::new(23u32, owner));
                 assert_eq!(storage.accounting.contexts.get(), 0);
                 message
             })
@@ -3178,7 +3178,8 @@ mod tests {
             clear().unwrap();
             let storage = retain(0).unwrap();
             let accounting = storage.accounting.clone();
-            let message = storage.with_chain(|| CommandMessage::new(31u32, thread::current().id()));
+            let message =
+                storage.with_chain(|| DispatchMessage::new(31u32, thread::current().id()));
             let called = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             let observed = called.clone();
             let result = thread::spawn(move || {
@@ -3202,7 +3203,7 @@ mod tests {
             let accounting = root.accounting.clone();
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
             root.with_chain(|| {
-                tx.send(CommandMessage::new(data_command(3), owner))
+                tx.send(DispatchMessage::new(data_command(3), owner))
                     .unwrap();
             });
 
@@ -3217,7 +3218,7 @@ mod tests {
                     );
 
                     if command == data_command(3) {
-                        tx.send(CommandMessage::new(data_command(5), owner))
+                        tx.send(DispatchMessage::new(data_command(5), owner))
                             .unwrap();
                     } else {
                         assert_eq!(command, data_command(5));
@@ -3258,7 +3259,7 @@ mod tests {
                         state.current.as_ref().unwrap(),
                         &self.chain
                     )));
-                    let nested = CommandMessage::new(17u32, thread::current().id());
+                    let nested = DispatchMessage::new(17u32, thread::current().id());
                     drop(nested);
                     self.dropped.set(true);
                 }
@@ -3269,7 +3270,7 @@ mod tests {
             let dropped = Rc::new(Cell::new(false));
 
             let message = root.with_chain(|| {
-                CommandMessage::new(
+                DispatchMessage::new(
                     Payload {
                         chain: root.chain.clone(),
                         dropped: dropped.clone(),
@@ -3305,7 +3306,7 @@ mod tests {
                 }
 
                 let root = retain(0).unwrap();
-                root.with_chain(|| CommandMessage::new(29u32, thread::current().id()))
+                root.with_chain(|| DispatchMessage::new(29u32, thread::current().id()))
             })
             .join()
             .unwrap();
@@ -3319,7 +3320,7 @@ mod tests {
             impl Drop for Retained {
                 fn drop(&mut self) {
                     self.0.as_ref().unwrap().with_chain(|| {
-                        drop(CommandMessage::new(41u32, thread::current().id()));
+                        drop(DispatchMessage::new(41u32, thread::current().id()));
                     });
                 }
             }
@@ -3335,11 +3336,171 @@ mod tests {
                         .0
                         .as_ref()
                         .unwrap()
-                        .with_chain(|| drop(CommandMessage::new(43u32, thread::current().id())));
+                        .with_chain(|| drop(DispatchMessage::new(43u32, thread::current().id())));
                 });
             })
             .join()
             .unwrap();
+        }
+
+        #[rstest]
+        #[case(false)]
+        #[case(true)]
+        fn event_sender_keeps_command_budget(#[case] exhausted: bool) {
+            clear().unwrap();
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let sender = EventSender::new(tx);
+            let root = reserve(0).unwrap();
+            root.slot
+                .chain
+                .delivered
+                .set(MAX_CHAIN - if exhausted { 1 } else { 2 });
+            let chain = Rc::downgrade(&root.slot.chain);
+            let accounting = root.slot.accounting.clone();
+            msgbus::register_trading_command_endpoint(
+                MessagingSwitchboard::exec_engine_execute(),
+                TypedIntoHandler::from(move |command| {
+                    assert_eq!(command, trading_command(1));
+                    sender.send(17u32).unwrap();
+                }),
+            );
+
+            root.commit((), |()| {
+                SyncTradingCommandSender.execute(trading_message(1));
+                true
+            });
+
+            drain(1).unwrap();
+            drain_trading_cmd_queue();
+            assert_eq!(clear(), Err(DispatchError::Active));
+
+            let observed = Rc::new(Cell::new(0));
+            let value = observed.clone();
+            rx.try_recv().unwrap().dispatch(|event| {
+                reserve(0)
+                    .unwrap()
+                    .commit((value, event), |(value, event)| {
+                        value.set(*event);
+                        true
+                    });
+            });
+
+            let result = drain(1);
+
+            assert_eq!(observed.get(), if exhausted { 0 } else { 17 });
+            assert_eq!(
+                result,
+                if exhausted {
+                    Err(DispatchError::Runaway)
+                } else {
+                    Ok(DrainResult {
+                        delivered: 1,
+                        pending: false,
+                    })
+                }
+            );
+            assert_eq!(accounting.contexts.get(), 0);
+            clear().unwrap();
+            assert_eq!(chain.strong_count(), 0);
+        }
+
+        #[rstest]
+        fn event_sender_foreign_ingress_is_independent() {
+            clear().unwrap();
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let sender = EventSender::new(tx);
+
+            thread::spawn(move || {
+                let foreign = retain(0).unwrap();
+                foreign.with_chain(|| sender.send(23u32).unwrap());
+                drop(foreign);
+                clear().unwrap();
+            })
+            .join()
+            .unwrap();
+
+            let enclosing = retain(0).unwrap();
+            enclosing.with_chain(|| {
+                rx.try_recv().unwrap().dispatch(|event| {
+                    assert_eq!(event, 23);
+                    assert!(DISPATCH.with_borrow(|state| state.current.is_none()));
+                });
+            });
+
+            drop(enclosing);
+            clear().unwrap();
+        }
+
+        #[rstest]
+        #[case(false)]
+        #[case(true)]
+        fn event_sender_releases_abandoned_roots(#[case] closed: bool) {
+            clear().unwrap();
+            let root = retain(0).unwrap();
+            let accounting = root.accounting.clone();
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            let sender = EventSender::new(tx);
+
+            if closed {
+                drop(rx);
+                let error = root.with_chain(|| sender.send(29u32).unwrap_err());
+                assert!(error.0.is_rooted());
+                assert_eq!(accounting.contexts.get(), 1);
+                error.0.dispatch(|event| {
+                    assert_eq!(event, 29);
+                    assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(
+                        state.current.as_ref().unwrap(),
+                        &root.chain
+                    )));
+                });
+            } else {
+                root.with_chain(|| sender.send(29u32).unwrap());
+                assert_eq!(accounting.contexts.get(), 1);
+
+                thread::spawn(move || drop(rx)).join().unwrap();
+            }
+
+            drop(root);
+            assert!(!has_pending());
+            assert_eq!(accounting.contexts.get(), 0);
+            assert_eq!(accounting.bytes.get(), 0);
+            clear().unwrap();
+        }
+
+        proptest::proptest! {
+            #[rstest]
+            fn prop_mixed_channel_hops_preserve_root(kinds in proptest::collection::vec(proptest::bool::ANY, 1..32)) {
+                clear().unwrap();
+                let root = retain(0).unwrap();
+                let chain = Rc::downgrade(&root.chain);
+                let accounting = root.accounting.clone();
+                let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+                let sender = EventSender::new(event_tx);
+                let owner = thread::current().id();
+                let mut message = root.with_chain(|| DispatchMessage::new(0usize, owner));
+                drop(root);
+
+                for (index, event) in kinds.iter().enumerate() {
+                    message = message.dispatch(|value| {
+                        assert_eq!(value, index);
+                        assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(state.current.as_ref().unwrap(), &chain.upgrade().unwrap())));
+                        if *event {
+                            sender.send(index + 1).unwrap();
+                            event_rx.try_recv().unwrap()
+                        } else {
+                            DispatchMessage::new(index + 1, owner)
+                        }
+                    });
+                    assert!(DISPATCH.with_borrow(|state| state.current.is_none()));
+                    assert_eq!(accounting.contexts.get(), 1);
+                    assert_eq!(clear(), Err(DispatchError::Active));
+                }
+                assert_eq!(message.dispatch(|value| value), kinds.len());
+                assert_eq!(chain.strong_count(), 0);
+                assert_eq!(accounting.contexts.get(), 0);
+                assert_eq!(accounting.bytes.get(), 0);
+                clear().unwrap();
+            }
         }
 
         proptest::proptest! {
@@ -3353,8 +3514,8 @@ mod tests {
 
                 for (i, &(root, _)) in actions.iter().enumerate() {
                     let message = if root < 2 {
-                        roots[usize::from(root)].with_chain(|| CommandMessage::new(i, owner))
-                    } else { CommandMessage::from(i) };
+                        roots[usize::from(root)].with_chain(|| DispatchMessage::new(i, owner))
+                    } else { DispatchMessage::from(i) };
                     tx.send(message).unwrap();
                 }
 

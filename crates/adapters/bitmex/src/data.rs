@@ -29,7 +29,7 @@ use futures_util::StreamExt;
 use nautilus_common::{
     cache::quote::QuoteCache,
     clients::DataClient,
-    live::{runner::get_data_event_sender, runtime::get_runtime},
+    live::{runner::get_data_event_sender, runtime::get_runtime, sender::EventSender},
     messages::{
         DataEvent,
         data::{
@@ -97,7 +97,7 @@ pub struct BitmexDataClient {
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
     tasks: Vec<JoinHandle<()>>,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     book_channels: Arc<AtomicMap<InstrumentId, BitmexBookChannel>>,
     instrument_refresh_active: bool,
@@ -175,7 +175,7 @@ impl BitmexDataClient {
             .context("websocket client not initialized; call connect first")
     }
 
-    fn send_data(sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>, data: Data) {
+    fn send_data(sender: &EventSender<DataEvent>, data: Data) {
         if let Err(e) = sender.send(DataEvent::Data(data)) {
             log::error!("Failed to emit data event: {e}");
         }
@@ -246,7 +246,7 @@ impl BitmexDataClient {
     fn handle_ws_message(
         ts_init: UnixNanos,
         message: BitmexWsMessage,
-        sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        sender: &EventSender<DataEvent>,
         instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         instruments_by_symbol: &mut AHashMap<Ustr, InstrumentAny>,
         quote_cache: &mut QuoteCache,
@@ -397,7 +397,7 @@ impl BitmexDataClient {
         action: BitmexAction,
         data: Vec<crate::websocket::messages::BitmexInstrumentMsg>,
         ts_init: UnixNanos,
-        sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        sender: &EventSender<DataEvent>,
         instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         instruments_by_symbol: &mut AHashMap<Ustr, InstrumentAny>,
     ) {
@@ -1384,7 +1384,7 @@ fn handle_quote_messages(
     instruments_by_symbol: &AHashMap<Ustr, InstrumentAny>,
     quote_cache: &mut QuoteCache,
     ts_init: UnixNanos,
-    sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    sender: &EventSender<DataEvent>,
 ) {
     for msg in data {
         let Some(instrument) = instruments_by_symbol.get(&msg.symbol) else {

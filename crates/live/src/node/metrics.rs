@@ -19,7 +19,7 @@ use std::{
 };
 
 use nautilus_common::{
-    live::dispatch::CommandMessage,
+    live::dispatch::DispatchMessage,
     messages::{DataEvent, ExecutionEvent, data::DataCommand},
     runner::{SystemChannel, TimeEventMessage, TradingCommandMessage},
 };
@@ -358,10 +358,12 @@ pub(crate) struct RunnerChannelQueueDepths {
 impl RunnerChannelQueueDepths {
     pub(crate) fn from_receivers(
         time_events: &tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
-        exec_events: &tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
-        exec_commands: &tokio::sync::mpsc::UnboundedReceiver<CommandMessage<TradingCommandMessage>>,
-        data_events: &tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
-        data_commands: &tokio::sync::mpsc::UnboundedReceiver<CommandMessage<DataCommand>>,
+        exec_events: &tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<ExecutionEvent>>,
+        exec_commands: &tokio::sync::mpsc::UnboundedReceiver<
+            DispatchMessage<TradingCommandMessage>,
+        >,
+        data_events: &tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<DataEvent>>,
+        data_commands: &tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<DataCommand>>,
     ) -> Self {
         Self {
             time_events: time_events.len(),
@@ -427,7 +429,7 @@ mod tests {
     use std::time::Duration;
 
     use nautilus_common::{
-        live::dispatch::CommandMessage,
+        live::dispatch::DispatchMessage,
         messages::{
             data::{SubscribeCommand, subscribe::SubscribeInstruments},
             execution::{QueryAccount, TradingCommand},
@@ -840,18 +842,20 @@ mod tests {
     #[rstest]
     fn test_runner_metrics_queue_depths_use_receiver_lengths() {
         let (time_tx, time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
-        let (exec_evt_tx, exec_evt_rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        let (exec_evt_tx, exec_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<ExecutionEvent>>();
         let (exec_cmd_tx, exec_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<CommandMessage<TradingCommandMessage>>();
-        let (data_evt_tx, data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<TradingCommandMessage>>();
+        let (data_evt_tx, data_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataEvent>>();
         let (data_cmd_tx, data_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<CommandMessage<DataCommand>>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataCommand>>();
         let metrics = RunnerMetrics::default();
 
         time_tx.send(stub_time_event_handler()).unwrap();
 
         for _ in 0..2 {
-            exec_evt_tx.send(stub_exec_event()).unwrap();
+            exec_evt_tx.send((stub_exec_event()).into()).unwrap();
         }
 
         for _ in 0..3 {
@@ -867,7 +871,7 @@ mod tests {
         }
 
         for _ in 0..4 {
-            data_evt_tx.send(stub_data_event()).unwrap();
+            data_evt_tx.send((stub_data_event()).into()).unwrap();
         }
 
         for _ in 0..5 {

@@ -38,7 +38,7 @@ use dashmap::DashMap;
 use nautilus_common::{
     cache::InstrumentLookupError,
     clients::DataClient,
-    live::runner::get_data_event_sender,
+    live::{runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
         data::{
@@ -123,7 +123,7 @@ pub struct PolymarketDataClient {
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
     tasks: TaskGroup,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     instrument_update_state: Arc<Mutex<InstrumentUpdateState>>,
     token_meta: Arc<DashMap<Ustr, TokenMeta>>,

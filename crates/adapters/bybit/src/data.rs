@@ -30,7 +30,7 @@ use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     cache::quote::QuoteCache,
     clients::DataClient,
-    live::runner::get_data_event_sender,
+    live::{runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
         data::{
@@ -106,7 +106,7 @@ pub struct BybitDataClient {
     session_tasks: TaskGroup,
     command_tasks: TaskGroup,
     shutdown_errors: Vec<String>,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     book_depths: Arc<AtomicMap<InstrumentId, u32>>,
     quote_subs: Arc<AtomicSet<InstrumentId>>,
@@ -427,7 +427,7 @@ impl BybitDataClient {
     }
 }
 
-fn send_data(sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>, data: Data) {
+fn send_data(sender: &EventSender<DataEvent>, data: Data) {
     if let Err(e) = sender.send(DataEvent::Data(data)) {
         log::error!("Failed to emit data event: {e}");
     }
@@ -447,7 +447,7 @@ type FundingCacheEntry = (Option<String>, Option<String>, Option<String>);
 #[expect(clippy::too_many_arguments)]
 fn handle_ws_message(
     message: &BybitWsMessage,
-    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: &EventSender<DataEvent>,
     instruments: &AHashMap<Ustr, InstrumentAny>,
     product_type: Option<BybitProductType>,
     trade_subs: &Arc<AtomicSet<InstrumentId>>,
@@ -2253,7 +2253,7 @@ mod tests {
 
         handle_ws_message(
             &ws_msg,
-            &tx,
+            &tx.into(),
             &instruments,
             Some(BybitProductType::Linear),
             &trade_subs,
@@ -2296,7 +2296,7 @@ mod tests {
 
         handle_ws_message(
             &ws_msg,
-            &tx,
+            &tx.into(),
             &instruments,
             Some(BybitProductType::Linear),
             &trade_subs,
@@ -2361,7 +2361,7 @@ mod tests {
 
         handle_ws_message(
             &BybitWsMessage::Orderbook(msg),
-            &tx,
+            &tx.into(),
             &instruments,
             Some(BybitProductType::Linear),
             &trade_subs,
@@ -2431,7 +2431,7 @@ mod tests {
 
         handle_ws_message(
             &ws_msg,
-            &tx,
+            &tx.into(),
             &instruments,
             Some(BybitProductType::Linear),
             &trade_subs,
@@ -2472,7 +2472,7 @@ mod tests {
 
         handle_ws_message(
             &ws_msg,
-            &tx,
+            &tx.into(),
             &instruments,
             Some(BybitProductType::Linear),
             &trade_subs,
@@ -2514,7 +2514,7 @@ mod tests {
 
         handle_ws_message(
             &ws_msg,
-            &tx,
+            &tx.clone().into(),
             &instruments,
             Some(BybitProductType::Linear),
             &trade_subs,
@@ -2535,7 +2535,7 @@ mod tests {
         let ws_msg2 = BybitWsMessage::TickerLinear(msg);
         handle_ws_message(
             &ws_msg2,
-            &tx,
+            &tx.into(),
             &instruments,
             Some(BybitProductType::Linear),
             &trade_subs,
@@ -2577,7 +2577,7 @@ mod tests {
 
         handle_ws_message(
             &ws_msg,
-            &tx,
+            &tx.into(),
             &instruments,
             Some(BybitProductType::Linear),
             &trade_subs,
@@ -2633,7 +2633,7 @@ mod tests {
 
         handle_ws_message(
             &BybitWsMessage::Reconnected,
-            &tx,
+            &tx.into(),
             &instruments,
             None,
             &trade_subs,
@@ -2679,7 +2679,7 @@ mod tests {
 
         handle_ws_message(
             &ws_msg,
-            &tx,
+            &tx.into(),
             &instruments,
             Some(BybitProductType::Option),
             &trade_subs,
@@ -2715,7 +2715,7 @@ mod tests {
 
         handle_ws_message(
             &ws_msg,
-            &tx,
+            &tx.into(),
             &instruments,
             None,
             &trade_subs,
@@ -2753,7 +2753,7 @@ mod tests {
         // With None product_type, raw symbol "BTCUSDT" does not match "BTCUSDT-LINEAR"
         handle_ws_message(
             &BybitWsMessage::Trade(msg.clone()),
-            &tx,
+            &tx.clone().into(),
             &map,
             None,
             &trade_subs,
@@ -2771,7 +2771,7 @@ mod tests {
         // With product_type=Linear, "BTCUSDT" -> "BTCUSDT-LINEAR" matches
         handle_ws_message(
             &BybitWsMessage::Trade(msg),
-            &tx,
+            &tx.into(),
             &map,
             Some(BybitProductType::Linear),
             &trade_subs,
@@ -2806,7 +2806,7 @@ mod tests {
         // Without subscription, trade should be filtered out
         handle_ws_message(
             &BybitWsMessage::Trade(msg.clone()),
-            &tx,
+            &tx.clone().into(),
             &instruments,
             Some(BybitProductType::Linear),
             &trade_subs,
@@ -2825,7 +2825,7 @@ mod tests {
         trade_subs.insert(instrument.id());
         handle_ws_message(
             &BybitWsMessage::Trade(msg),
-            &tx,
+            &tx.into(),
             &instruments,
             Some(BybitProductType::Linear),
             &trade_subs,

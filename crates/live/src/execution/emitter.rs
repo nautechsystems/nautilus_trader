@@ -34,6 +34,7 @@ use std::sync::Arc;
 use arc_swap::ArcSwapOption;
 use nautilus_common::{
     factories::OrderEventFactory,
+    live::sender::EventSender,
     messages::{ExecutionEvent, ExecutionReport},
 };
 use nautilus_core::{Params, UUID4, UnixNanos, time::AtomicTime};
@@ -65,7 +66,7 @@ use nautilus_model::{
 pub struct ExecutionEventEmitter {
     clock: &'static AtomicTime,
     factory: OrderEventFactory,
-    sender: Arc<ArcSwapOption<tokio::sync::mpsc::UnboundedSender<ExecutionEvent>>>,
+    sender: Arc<ArcSwapOption<EventSender<ExecutionEvent>>>,
 }
 
 impl ExecutionEventEmitter {
@@ -103,8 +104,8 @@ impl ExecutionEventEmitter {
     /// `try_get_exec_event_sender` returns `Some`; `None` there means the calling thread has no
     /// bound senders and is not a construction failure. See the adapter guide for hosts that drive
     /// a client outside `LiveNode`.
-    pub fn set_sender(&mut self, sender: tokio::sync::mpsc::UnboundedSender<ExecutionEvent>) {
-        self.sender.store(Some(Arc::new(sender)));
+    pub fn set_sender(&mut self, sender: impl Into<EventSender<ExecutionEvent>>) {
+        self.sender.store(Some(Arc::new(sender.into())));
     }
 
     /// Returns true if the sender is initialized for this emitter and its clones.

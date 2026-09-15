@@ -29,7 +29,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
     clients::DataClient,
-    live::get_data_event_sender,
+    live::{get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
         data::{
@@ -96,7 +96,7 @@ pub struct KrakenFuturesDataClient {
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     quote_instruments: Arc<AtomicSet<InstrumentId>>,
     book_instruments: Arc<AtomicSet<InstrumentId>>,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
 }
 
 impl KrakenFuturesDataClient {
@@ -325,7 +325,7 @@ impl KrakenFuturesDataClient {
     #[expect(clippy::too_many_arguments)]
     fn handle_ws_message(
         msg: KrakenFuturesWsMessage,
-        sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        sender: &EventSender<DataEvent>,
         instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         quote_instruments: &Arc<AtomicSet<InstrumentId>>,
         book_instruments: &Arc<AtomicSet<InstrumentId>>,
@@ -492,7 +492,7 @@ impl KrakenFuturesDataClient {
         instrument_id: InstrumentId,
         last_quotes: &mut AHashMap<InstrumentId, QuoteTick>,
         ts_init: UnixNanos,
-        sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        sender: &EventSender<DataEvent>,
     ) {
         let (Some(bid_price), Some(ask_price)) = (book.best_bid_price(), book.best_ask_price())
         else {

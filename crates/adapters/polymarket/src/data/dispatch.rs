@@ -37,7 +37,7 @@ use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet};
 use dashmap::{DashMap, mapref::entry::Entry};
-use nautilus_common::messages::DataEvent;
+use nautilus_common::{live::sender::EventSender, messages::DataEvent};
 use nautilus_core::{AtomicMap, AtomicSet, time::AtomicTime};
 #[cfg(test)]
 use nautilus_live::task::TaskGroup;
@@ -101,7 +101,7 @@ impl Drop for NewMarketInflightGuard {
 
 pub(super) struct WsMessageContext {
     pub(super) clock: &'static AtomicTime,
-    pub(super) data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    pub(super) data_sender: EventSender<DataEvent>,
     pub(super) token_meta: Arc<DashMap<Ustr, TokenMeta>>,
     pub(super) instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     pub(super) instrument_update_state: Arc<Mutex<InstrumentUpdateState>>,
@@ -1350,7 +1350,7 @@ mod tests {
 
         let ctx = WsMessageContext {
             clock: get_atomic_clock_realtime(),
-            data_sender: data_tx.clone(),
+            data_sender: data_tx.clone().into(),
             token_meta: Arc::new(DashMap::new()),
             instruments: Arc::new(AtomicMap::new()),
             instrument_update_state: Arc::new(Mutex::new(InstrumentUpdateState::default())),
@@ -1381,7 +1381,7 @@ mod tests {
                 "ws://localhost/rtds".to_string(),
                 TransportBackend::default(),
                 get_atomic_clock_realtime(),
-                data_tx,
+                data_tx.into(),
             ),
             subscribe_new_markets: false,
             new_market_filter: None,

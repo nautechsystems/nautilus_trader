@@ -18,7 +18,7 @@ use std::{cmp::max, collections::BTreeMap, sync::Arc};
 use ahash::AHashMap;
 use anyhow::Context;
 use futures_util::StreamExt;
-use nautilus_common::messages::DataEvent;
+use nautilus_common::{live::sender::EventSender, messages::DataEvent};
 use nautilus_core::{
     UnixNanos, hex,
     string::{formatting::Separable, secret::REDACTED},
@@ -112,7 +112,7 @@ pub struct BlockchainDataClientCore {
     /// Manages subscriptions for various DEX events (swaps, mints, burns).
     pub subscription_manager: DefiDataSubscriptionManager,
     /// Channel sender for data events.
-    data_tx: Option<tokio::sync::mpsc::UnboundedSender<DataEvent>>,
+    data_tx: Option<EventSender<DataEvent>>,
     /// Cancellation token for graceful shutdown of long-running operations.
     cancellation_token: tokio_util::sync::CancellationToken,
 }
@@ -170,7 +170,7 @@ impl BlockchainDataClientCore {
     pub fn new(
         config: BlockchainDataClientConfig,
         hypersync_tx: Option<tokio::sync::mpsc::UnboundedSender<BlockchainMessage>>,
-        data_tx: Option<tokio::sync::mpsc::UnboundedSender<DataEvent>>,
+        data_tx: Option<EventSender<DataEvent>>,
         cancellation_token: tokio_util::sync::CancellationToken,
     ) -> Self {
         let chain = config.chain.clone();

@@ -31,7 +31,7 @@ use futures_util::StreamExt;
 use jiff::{SignedDuration, Timestamp};
 use nautilus_common::{
     clients::DataClient,
-    live::runner::get_data_event_sender,
+    live::{runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent, DataResponse,
         data::{
@@ -108,7 +108,7 @@ pub struct AxDataClient {
     session_tasks: TaskGroup,
     pending_tasks: TaskGroup,
     shutdown_errors: Vec<String>,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     instruments: Arc<AtomicMap<Ustr, InstrumentAny>>,
     clock: &'static AtomicTime,
     funding_rate_cancellations: AHashMap<InstrumentId, CancellationToken>,
@@ -1164,7 +1164,7 @@ fn drain_status_invalidations(
 #[expect(clippy::too_many_arguments)]
 fn handle_ws_message(
     msg: AxDataWsMessage,
-    sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    sender: &EventSender<DataEvent>,
     instruments: &Arc<AtomicMap<Ustr, InstrumentAny>>,
     symbol_data_types: &Arc<AtomicMap<String, SymbolDataTypes>>,
     book_sequences: &mut AHashMap<Ustr, u64>,
@@ -1199,7 +1199,7 @@ fn handle_ws_message(
 #[expect(clippy::too_many_arguments)]
 fn handle_md_message(
     message: AxMdMessage,
-    sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    sender: &EventSender<DataEvent>,
     instruments: &Arc<AtomicMap<Ustr, InstrumentAny>>,
     symbol_data_types: &Arc<AtomicMap<String, SymbolDataTypes>>,
     book_sequences: &mut AHashMap<Ustr, u64>,
@@ -1551,7 +1551,7 @@ mod tests {
         let msg = AxMdMessage::Ticker(ticker_message(AxInstrumentState::Open));
         handle_md_message(
             msg.clone(),
-            &tx,
+            &tx.clone().into(),
             &instruments,
             &sdt,
             &mut book_sequences,
@@ -1563,7 +1563,7 @@ mod tests {
         // Same state repeated: second call should not emit a second InstrumentStatus
         handle_md_message(
             msg,
-            &tx,
+            &tx.into(),
             &instruments,
             &sdt,
             &mut book_sequences,
@@ -1606,7 +1606,7 @@ mod tests {
 
         handle_md_message(
             AxMdMessage::Ticker(ticker_message(AxInstrumentState::Open)),
-            &tx,
+            &tx.clone().into(),
             &instruments,
             &sdt,
             &mut book_sequences,
@@ -1616,7 +1616,7 @@ mod tests {
         );
         handle_md_message(
             AxMdMessage::Ticker(ticker_message(AxInstrumentState::Closed)),
-            &tx,
+            &tx.into(),
             &instruments,
             &sdt,
             &mut book_sequences,
@@ -1656,7 +1656,7 @@ mod tests {
 
         handle_md_message(
             AxMdMessage::Ticker(ticker_message(AxInstrumentState::Open)),
-            &tx,
+            &tx.into(),
             &instruments,
             &sdt,
             &mut book_sequences,
@@ -1706,7 +1706,7 @@ mod tests {
 
         handle_md_message(
             message,
-            &tx,
+            &tx.into(),
             &instruments,
             &sdt,
             &mut book_sequences,

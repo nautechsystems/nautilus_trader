@@ -44,7 +44,10 @@ use nautilus_common::{
     },
     clock::Clock,
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory, OrderEventFactory},
-    live::runner::{get_data_event_sender, get_exec_event_sender},
+    live::{
+        runner::{get_data_event_sender, get_exec_event_sender},
+        sender::EventSender,
+    },
     messages::{
         DataEvent, ExecutionEvent, ExecutionReport,
         data::{
@@ -440,12 +443,12 @@ pub struct ClientOutput {
 
 #[derive(Debug, Default)]
 struct OutputState {
-    sender: Option<tokio::sync::mpsc::UnboundedSender<DataEvent>>,
+    sender: Option<EventSender<DataEvent>>,
     bound: bool,
     disposed: bool,
     claimed: bool,
     client_id: Option<ClientId>,
-    exec_sender: Option<tokio::sync::mpsc::UnboundedSender<ExecutionEvent>>,
+    exec_sender: Option<EventSender<ExecutionEvent>>,
     event_factory: Option<OrderEventFactory>,
     venue: Option<Venue>,
 }
@@ -843,7 +846,7 @@ impl ClientOutput {
         self.sender()?.send(event).map_err(to_pyruntime_err)
     }
 
-    fn sender(&self) -> PyResult<tokio::sync::mpsc::UnboundedSender<DataEvent>> {
+    fn sender(&self) -> PyResult<EventSender<DataEvent>> {
         if thread::current().id() != self.owner {
             return Err(to_pyruntime_err("Client output requires its owner thread"));
         }
@@ -864,7 +867,7 @@ impl ClientOutput {
             .ok_or_else(|| to_pyruntime_err("Client has no execution identity"))
     }
 
-    fn exec_sender(&self) -> PyResult<tokio::sync::mpsc::UnboundedSender<ExecutionEvent>> {
+    fn exec_sender(&self) -> PyResult<EventSender<ExecutionEvent>> {
         if thread::current().id() != self.owner {
             return Err(to_pyruntime_err("Client output requires its owner thread"));
         }
@@ -2220,7 +2223,7 @@ mod tests {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         {
             let mut state = output.state.lock();
-            state.exec_sender = Some(sender);
+            state.exec_sender = Some(sender.into());
             state.bound = true;
             state.event_factory = Some(OrderEventFactory::new(
                 TraderId::from("TESTER-001"),
@@ -2457,7 +2460,7 @@ class Runtime:
     ) {
         let (output, _) = execution_output;
         let (sender, _) = tokio::sync::mpsc::unbounded_channel();
-        output.state.lock().sender = Some(sender);
+        output.state.lock().sender = Some(sender.into());
         output.invalidate();
         output.invalidate();
         assert_eq!(
@@ -2686,7 +2689,7 @@ class Runtime:
             let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
             {
                 let mut state = output.state.lock();
-                state.sender = Some(sender);
+                state.sender = Some(sender.into());
                 state.client_id = Some(ClientId::from("SIM"));
             }
 

@@ -31,7 +31,7 @@ use anyhow::Context;
 use nautilus_common::{
     cache::InstrumentLookupError,
     clients::DataClient,
-    live::runner::get_data_event_sender,
+    live::{runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
         data::{
@@ -102,7 +102,7 @@ pub struct CoinbaseDataClient {
     session_tasks: TaskGroup,
     command_tasks: TaskGroup,
     shutdown_errors: Vec<String>,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     deriv_polls: DerivPollManager,
     clock: &'static AtomicTime,
@@ -357,7 +357,7 @@ impl CoinbaseDataClient {
 
 fn dispatch_ws_message(
     msg: NautilusWsMessage,
-    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: &EventSender<DataEvent>,
     status_subs: &Arc<Mutex<AHashSet<InstrumentId>>>,
 ) {
     match msg {
@@ -1265,7 +1265,7 @@ mod tests {
         set.insert(instrument_id);
         let subs = Arc::new(Mutex::new(set));
 
-        dispatch_ws_message(make_status_event(instrument_id), &tx, &subs);
+        dispatch_ws_message(make_status_event(instrument_id), &tx.into(), &subs);
 
         match rx.try_recv() {
             Ok(DataEvent::InstrumentStatus(status)) => {
@@ -1284,7 +1284,7 @@ mod tests {
         set.insert(subscribed);
         let subs = Arc::new(Mutex::new(set));
 
-        dispatch_ws_message(make_status_event(unsubscribed), &tx, &subs);
+        dispatch_ws_message(make_status_event(unsubscribed), &tx.into(), &subs);
 
         assert!(
             rx.try_recv().is_err(),

@@ -21,7 +21,10 @@ use ibapi::{
     },
     subscriptions::Subscription,
 };
-use nautilus_common::{cache::Cache, live::runner::replace_exec_event_sender};
+use nautilus_common::{
+    cache::Cache,
+    live::{runner::replace_exec_event_sender, sender::EventSender},
+};
 use nautilus_live::{ExecutionClientCore, execution::failure::CommandFailure};
 use nautilus_model::{
     enums::{AccountType, AssetClass, LiquiditySide, OmsType, OrderSide, OrderType},
@@ -235,7 +238,7 @@ impl SubmitTrackingState {
         &self,
         order_id: i32,
         account_id: AccountId,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
     ) -> bool {
         InteractiveBrokersExecutionClient::emit_order_accepted_if_needed(
             order_id,
@@ -262,7 +265,7 @@ impl SubmitTrackingState {
 async fn process_submitted_status(
     order_id: i32,
     state: &SubmitTrackingState,
-    exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+    exec_sender: &EventSender<ExecutionEvent>,
 ) {
     InteractiveBrokersExecutionClient::handle_order_status(
         &create_test_order_status(order_id, "Submitted"),
@@ -460,7 +463,7 @@ fn single_submit_definitive_failure_rejects_and_removes_tracking() {
         &state.strategy_id_map,
         &state.active_order_contexts,
         &state.terminal_order_contexts,
-        &exec_sender,
+        &exec_sender.clone().into(),
         nautilus_core::time::get_atomic_clock_realtime(),
     );
 
@@ -523,7 +526,7 @@ async fn single_submit_ambiguous_failure_retains_tracking_for_status_resolution(
         &state.strategy_id_map,
         &state.active_order_contexts,
         &state.terminal_order_contexts,
-        &exec_sender,
+        &exec_sender.clone().into(),
         nautilus_core::time::get_atomic_clock_realtime(),
     );
 
@@ -541,7 +544,7 @@ async fn single_submit_ambiguous_failure_retains_tracking_for_status_resolution(
         false,
     );
 
-    process_submitted_status(order_id, &state, &exec_sender).await;
+    process_submitted_status(order_id, &state, &exec_sender.clone().into()).await;
 
     match exec_receiver.try_recv().unwrap() {
         ExecutionEvent::Order(OrderEventAny::Accepted(event)) => {
@@ -597,7 +600,11 @@ fn list_submit_definitive_partial_failure_preserves_prefix_and_omits_tail() {
         trader_id,
         strategy_id,
     );
-    assert!(state.emit_accepted(prior_id, AccountId::from("IB-LIST-001"), &exec_sender));
+    assert!(state.emit_accepted(
+        prior_id,
+        AccountId::from("IB-LIST-001"),
+        &exec_sender.clone().into()
+    ));
     assert!(matches!(
         exec_receiver.try_recv().unwrap(),
         ExecutionEvent::Order(OrderEventAny::Accepted(event))
@@ -619,7 +626,7 @@ fn list_submit_definitive_partial_failure_preserves_prefix_and_omits_tail() {
         &state.strategy_id_map,
         &state.active_order_contexts,
         &state.terminal_order_contexts,
-        &exec_sender,
+        &exec_sender.clone().into(),
         nautilus_core::time::get_atomic_clock_realtime(),
     );
 
@@ -677,7 +684,11 @@ async fn list_submit_ambiguous_partial_failure_retains_attempted_children_only()
         trader_id,
         strategy_id,
     );
-    assert!(state.emit_accepted(prior_id, AccountId::from("IB-001"), &exec_sender));
+    assert!(state.emit_accepted(
+        prior_id,
+        AccountId::from("IB-001"),
+        &exec_sender.clone().into()
+    ));
     assert!(matches!(
         exec_receiver.try_recv().unwrap(),
         ExecutionEvent::Order(OrderEventAny::Accepted(event))
@@ -701,7 +712,7 @@ async fn list_submit_ambiguous_partial_failure_retains_attempted_children_only()
         &state.strategy_id_map,
         &state.active_order_contexts,
         &state.terminal_order_contexts,
-        &exec_sender,
+        &exec_sender.clone().into(),
         nautilus_core::time::get_atomic_clock_realtime(),
     );
 
@@ -728,7 +739,7 @@ async fn list_submit_ambiguous_partial_failure_retains_attempted_children_only()
     );
     state.assert_absent(tail_id, tail_client_id);
 
-    process_submitted_status(current_id, &state, &exec_sender).await;
+    process_submitted_status(current_id, &state, &exec_sender.clone().into()).await;
 
     assert!(matches!(
         exec_receiver.try_recv().unwrap(),
@@ -1371,7 +1382,7 @@ async fn handle_order_update_ignores_deactivated_open_order(
         &order_id_map,
         &venue_order_id_map,
         &instrument_provider,
-        &exec_sender,
+        &exec_sender.clone().into(),
         nautilus_core::time::get_atomic_clock_realtime(),
         AccountId::from("IB-001"),
         &commission_cache,
@@ -1766,7 +1777,7 @@ async fn test_handle_spread_execution_first_fill() {
         1.0,
         "USD",
         &instrument_provider,
-        &exec_sender,
+        &exec_sender.clone().into(),
         ts_init,
         account_id,
         &spread_fill_tracking,
@@ -1837,7 +1848,7 @@ async fn test_handle_spread_execution_duplicate_detection() {
         1.0,
         "USD",
         &instrument_provider,
-        &exec_sender,
+        &exec_sender.clone().into(),
         ts_init,
         account_id,
         &spread_fill_tracking,
@@ -1882,7 +1893,7 @@ fn test_flush_pending_combo_fills_emits_tracked_order_fill() {
         &pending_combo_fills,
         &pending_combo_fill_avgs,
         &order_fill_progress,
-        &exec_sender,
+        &exec_sender.clone().into(),
     )
     .unwrap();
 
@@ -1977,7 +1988,7 @@ fn test_flush_pending_combo_fills_retains_partial_avg_chunk_remainder() {
         &pending_combo_fills,
         &pending_combo_fill_avgs,
         &order_fill_progress,
-        &exec_sender,
+        &exec_sender.clone().into(),
     )
     .unwrap();
 
@@ -2027,7 +2038,7 @@ fn test_emit_order_pending_cancel_is_idempotent() {
         &trader_id_map,
         &strategy_id_map,
         &pending_cancel_orders,
-        &exec_sender,
+        &exec_sender.clone().into(),
         UnixNanos::new(1),
         AccountId::from("IB-001"),
     )
@@ -2040,7 +2051,7 @@ fn test_emit_order_pending_cancel_is_idempotent() {
         &trader_id_map,
         &strategy_id_map,
         &pending_cancel_orders,
-        &exec_sender,
+        &exec_sender.clone().into(),
         UnixNanos::new(1),
         AccountId::from("IB-001"),
     )
@@ -2389,7 +2400,7 @@ async fn test_handle_order_status_canceled_emits_canceled_event() {
         &order_id_map,
         &venue_order_id_map,
         &instrument_provider,
-        &exec_sender,
+        &exec_sender.clone().into(),
         UnixNanos::new(1),
         AccountId::from("IB-001"),
         &instrument_id_map,
@@ -2464,7 +2475,7 @@ async fn test_opra_cancel_status_preserves_canonical_instrument_identity() {
         &state.order_id_map,
         &state.venue_order_id_map,
         &instrument_provider,
-        &exec_sender,
+        &exec_sender.clone().into(),
         UnixNanos::new(1),
         AccountId::from("IB-001"),
         &state.instrument_id_map,
@@ -2563,7 +2574,7 @@ async fn test_process_order_update_stream_emits_accepted_then_canceled() {
         &order_id_map,
         &venue_order_id_map,
         &instrument_provider,
-        &exec_sender,
+        &exec_sender.clone().into(),
         nautilus_core::time::get_atomic_clock_realtime(),
         AccountId::from("IB-001"),
         &commission_cache,
@@ -2653,7 +2664,7 @@ async fn test_process_order_update_stream_clears_market_order_update_prices() {
         &order_id_map,
         &venue_order_id_map,
         &instrument_provider,
-        &exec_sender,
+        &exec_sender.clone().into(),
         nautilus_core::time::get_atomic_clock_realtime(),
         AccountId::from("IB-001"),
         &commission_cache,
@@ -2763,7 +2774,7 @@ async fn test_process_order_update_stream_emits_fill_after_commission_report(
         &order_id_map,
         &venue_order_id_map,
         &instrument_provider,
-        &exec_sender,
+        &exec_sender.clone().into(),
         nautilus_core::time::get_atomic_clock_realtime(),
         AccountId::from("IB-001"),
         &commission_cache,
@@ -2878,7 +2889,7 @@ async fn test_process_order_update_stream_retains_terminal_identity_for_late_fil
         &order_id_map,
         &venue_order_id_map,
         &instrument_provider,
-        &exec_sender,
+        &exec_sender.clone().into(),
         nautilus_core::time::get_atomic_clock_realtime(),
         AccountId::from("IB-001"),
         &commission_cache,
@@ -2928,7 +2939,7 @@ async fn test_process_order_update_stream_retains_terminal_identity_for_late_fil
         &order_id_map,
         &venue_order_id_map,
         &instrument_provider,
-        &exec_sender,
+        &exec_sender.clone().into(),
         nautilus_core::time::get_atomic_clock_realtime(),
         AccountId::from("IB-001"),
         &commission_cache,
@@ -3040,7 +3051,7 @@ async fn test_process_order_update_stream_retains_terminal_combo_routing() {
         &order_id_map,
         &venue_order_id_map,
         &instrument_provider,
-        &exec_sender,
+        &exec_sender.clone().into(),
         nautilus_core::time::get_atomic_clock_realtime(),
         AccountId::from("IB-001"),
         &commission_cache,
@@ -3138,7 +3149,7 @@ async fn test_process_order_update_stream_learns_order_ref_from_execution() {
         &order_id_map,
         &venue_order_id_map,
         &instrument_provider,
-        &exec_sender,
+        &exec_sender.clone().into(),
         nautilus_core::time::get_atomic_clock_realtime(),
         AccountId::from("IB-001"),
         &commission_cache,

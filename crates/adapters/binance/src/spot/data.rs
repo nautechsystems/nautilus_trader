@@ -29,7 +29,7 @@ use anyhow::Context;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::DataClient,
-    live::runner::get_data_event_sender,
+    live::{runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
         data::{
@@ -124,7 +124,7 @@ pub struct BinanceSpotDataClient {
     session_tasks: TaskGroup,
     command_tasks: TaskGroup,
     shutdown_errors: Vec<String>,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     status_cache: Arc<AtomicMap<InstrumentId, MarketStatusAction>>,
     book_buffers: Arc<AtomicMap<InstrumentId, BookBuffer>>,
@@ -254,7 +254,7 @@ impl BinanceSpotDataClient {
         *BINANCE_VENUE
     }
 
-    fn send_data(sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>, data: Data) {
+    fn send_data(sender: &EventSender<DataEvent>, data: Data) {
         if let Err(e) = sender.send(DataEvent::Data(data)) {
             log::error!("Failed to emit data event: {e}");
         }
@@ -353,7 +353,7 @@ impl BinanceSpotDataClient {
         instruments_cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         status_cache: &Arc<AtomicMap<InstrumentId, MarketStatusAction>>,
         ws: &SpotWsClient,
-        sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        sender: &EventSender<DataEvent>,
         clock: &'static AtomicTime,
         emit_status_changes: bool,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
@@ -399,7 +399,7 @@ impl BinanceSpotDataClient {
     #[expect(clippy::too_many_arguments)]
     fn handle_ws_message(
         msg: BinanceSpotWsMessage,
-        data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        data_sender: &EventSender<DataEvent>,
         instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         ws_instruments: &Arc<AtomicMap<Ustr, InstrumentAny>>,
         book_buffers: &Arc<AtomicMap<InstrumentId, BookBuffer>>,
@@ -498,7 +498,7 @@ impl BinanceSpotDataClient {
     #[expect(clippy::too_many_arguments)]
     fn handle_public_json_ws_message(
         msg: BinanceSpotPublicWsMessage,
-        data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        data_sender: &EventSender<DataEvent>,
         instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         ws_instruments: &Arc<AtomicMap<Ustr, InstrumentAny>>,
         book_buffers: &Arc<AtomicMap<InstrumentId, BookBuffer>>,
@@ -627,7 +627,7 @@ impl BinanceSpotDataClient {
     }
 
     fn send_top_of_book(
-        data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        data_sender: &EventSender<DataEvent>,
         l1_book_subscriptions: &Arc<AtomicMap<InstrumentId, u32>>,
         quote: QuoteTick,
         sequence: u64,
@@ -640,7 +640,7 @@ impl BinanceSpotDataClient {
     }
 
     fn route_depth_diff(
-        data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        data_sender: &EventSender<DataEvent>,
         book_buffers: &Arc<AtomicMap<InstrumentId, BookBuffer>>,
         deltas: OrderBookDeltas,
         first_update_id: u64,
@@ -680,7 +680,7 @@ impl BinanceSpotDataClient {
         reason = "book recovery requires the full subscription and command ownership context"
     )]
     fn rebuild_full_depth_books(
-        data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        data_sender: &EventSender<DataEvent>,
         instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         book_buffers: &Arc<AtomicMap<InstrumentId, BookBuffer>>,
         book_subscriptions: &Arc<AtomicMap<InstrumentId, u32>>,
@@ -756,7 +756,7 @@ impl BinanceSpotDataClient {
 
     async fn fetch_and_emit_snapshot(
         http: BinanceSpotHttpClient,
-        sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        sender: EventSender<DataEvent>,
         buffers: Arc<AtomicMap<InstrumentId, BookBuffer>>,
         instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         instrument_id: InstrumentId,
@@ -779,7 +779,7 @@ impl BinanceSpotDataClient {
     #[expect(clippy::too_many_arguments)]
     async fn fetch_and_emit_snapshot_inner(
         http: BinanceSpotHttpClient,
-        sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        sender: EventSender<DataEvent>,
         buffers: Arc<AtomicMap<InstrumentId, BookBuffer>>,
         instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         instrument_id: InstrumentId,
@@ -2708,7 +2708,7 @@ mod tests {
 
         BinanceSpotDataClient::handle_ws_message(
             message,
-            &sender,
+            &sender.into(),
             &instruments,
             &ws_instruments,
             &book_buffers,

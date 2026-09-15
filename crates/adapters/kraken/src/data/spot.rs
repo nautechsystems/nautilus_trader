@@ -30,7 +30,7 @@ use async_trait::async_trait;
 use futures_util::StreamExt;
 use nautilus_common::{
     clients::DataClient,
-    live::get_data_event_sender,
+    live::{get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
         data::{
@@ -99,7 +99,7 @@ pub struct KrakenSpotDataClient {
     session_tasks: TaskGroup,
     command_tasks: TaskGroup,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
 }
 
 impl KrakenSpotDataClient {
@@ -544,10 +544,7 @@ impl KrakenSpotDataClient {
             .context("failed to register Kraken Spot message handler")
     }
 
-    fn flush_ohlc_buffer(
-        ohlc_buffer: &OhlcBuffer,
-        sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
-    ) {
+    fn flush_ohlc_buffer(ohlc_buffer: &OhlcBuffer, sender: &EventSender<DataEvent>) {
         let mut buffer = ohlc_buffer.lock();
         let bars: Vec<Bar> = buffer.drain().map(|(_, (bar, _))| bar).collect();
         for bar in bars {
@@ -1238,7 +1235,7 @@ type OhlcBufferKey = (Ustr, u32);
 type OhlcBuffer = Arc<Mutex<AHashMap<OhlcBufferKey, (Bar, UnixNanos)>>>;
 
 struct DataEventSink<'a> {
-    sender: &'a tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    sender: &'a EventSender<DataEvent>,
 }
 
 impl L3Sink for DataEventSink<'_> {
@@ -1253,7 +1250,7 @@ impl L3Sink for DataEventSink<'_> {
 }
 
 struct SpotMessageContext<'a> {
-    sender: &'a tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    sender: &'a EventSender<DataEvent>,
     instruments: &'a Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     book_sequence: &'a Arc<AtomicU64>,
     l2_depths: &'a L2Depths,
@@ -1382,7 +1379,11 @@ mod tests {
 
         let mut states = AHashMap::new();
         let hasher = BookOrderIdHasher::new();
-        let mut sink = DataEventSink { sender: &sender };
+
+        let mut sink = DataEventSink {
+            sender: &sender.into(),
+        };
+
         let request = process_l3_message(
             KrakenL3WsMessage::Snapshot(snapshot),
             &mut sink,
@@ -1425,7 +1426,7 @@ mod tests {
         let mut l2_books = L2BookState::default();
         let ohlc_buffer = Arc::new(Mutex::new(AHashMap::new()));
         let context = SpotMessageContext {
-            sender: &sender,
+            sender: &sender.into(),
             instruments: &instruments,
             book_sequence: &book_sequence,
             l2_depths: &l2_depths,

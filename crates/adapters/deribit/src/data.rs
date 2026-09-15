@@ -29,7 +29,7 @@ use async_trait::async_trait;
 use futures_util::StreamExt;
 use nautilus_common::{
     clients::DataClient,
-    live::runner::get_data_event_sender,
+    live::{runner::get_data_event_sender, sender::EventSender},
     log_debug, log_info,
     messages::{
         DataEvent, DataResponse,
@@ -98,7 +98,7 @@ pub struct DeribitDataClient {
     cancellation_token: CancellationToken,
     session_tasks: TaskGroup,
     command_tasks: TaskGroup,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     mark_price_subs: Arc<AtomicSet<InstrumentId>>,
     index_price_subs: Arc<AtomicSet<InstrumentId>>,
@@ -326,7 +326,7 @@ impl DeribitDataClient {
     /// Handles incoming WebSocket messages.
     fn handle_ws_message(
         message: NautilusWsMessage,
-        sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        sender: &EventSender<DataEvent>,
         instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     ) {
         match message {
@@ -439,7 +439,7 @@ impl DeribitDataClient {
     }
 
     /// Sends data to the data channel.
-    fn send_data(sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>, data: Data) {
+    fn send_data(sender: &EventSender<DataEvent>, data: Data) {
         if let Err(e) = sender.send(DataEvent::Data(data)) {
             log::error!("Failed to send data: {e}");
         }

@@ -53,7 +53,7 @@ use nautilus_common::{
     clients::ExecutionClient,
     enums::LogLevel,
     factories::OrderEventFactory,
-    live::runner::get_exec_event_sender,
+    live::{runner::get_exec_event_sender, sender::EventSender},
     messages::{
         ExecutionEvent,
         execution::{
@@ -1929,7 +1929,7 @@ impl InteractiveBrokersExecutionClient {
     fn send_order_modify_rejected(
         cmd: &ModifyOrder,
         reason: &str,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
         ts_event: UnixNanos,
         account_id: AccountId,
     ) -> anyhow::Result<()> {
@@ -1954,7 +1954,7 @@ impl InteractiveBrokersExecutionClient {
     fn send_order_cancel_rejected(
         target_order: &OrderAny,
         reason: &str,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
         ts_event: UnixNanos,
         account_id: AccountId,
     ) -> anyhow::Result<()> {
@@ -2144,7 +2144,7 @@ impl InteractiveBrokersExecutionClient {
         trader_id_map: &Arc<Mutex<AHashMap<i32, TraderId>>>,
         strategy_id_map: &Arc<Mutex<AHashMap<i32, StrategyId>>>,
         pending_cancel_orders: &Arc<Mutex<ahash::AHashSet<ClientOrderId>>>,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
         ts_init: UnixNanos,
         account_id: AccountId,
         request_timeout_secs: u64,
@@ -2287,7 +2287,7 @@ impl InteractiveBrokersExecutionClient {
         trader_id_map: &Arc<Mutex<AHashMap<i32, TraderId>>>,
         strategy_id_map: &Arc<Mutex<AHashMap<i32, StrategyId>>>,
         pending_cancel_orders: &Arc<Mutex<ahash::AHashSet<ClientOrderId>>>,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
         ts_init: UnixNanos,
         account_id: AccountId,
         request_timeout_secs: u64,
@@ -2396,7 +2396,7 @@ impl InteractiveBrokersExecutionClient {
         trader_id_map: &Arc<Mutex<AHashMap<i32, TraderId>>>,
         strategy_id_map: &Arc<Mutex<AHashMap<i32, StrategyId>>>,
         pending_cancel_orders: &Arc<Mutex<ahash::AHashSet<ClientOrderId>>>,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
         ts_init: UnixNanos,
         account_id: AccountId,
     ) -> anyhow::Result<()> {
