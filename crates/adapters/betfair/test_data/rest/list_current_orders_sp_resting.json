@@ -1,0 +1,34 @@
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+        "currentOrders": [
+            {
+                "betId": "442849719274",
+                "marketId": "1.262362241",
+                "selectionId": 6532924,
+                "handicap": 0.0,
+                "priceSize": {
+                    "price": 1000.0,
+                    "size": 0.0
+                },
+                "bspLiability": 2.0,
+                "side": "BACK",
+                "status": "EXECUTION_COMPLETE",
+                "persistenceType": "LAPSE",
+                "orderType": "MARKET_ON_CLOSE",
+                "placedDate": "2026-09-14T22:06:13.000Z",
+                "matchedDate": "2026-09-14T22:06:13.000Z",
+                "averagePriceMatched": 0.0,
+                "sizeMatched": 0.0,
+                "sizeRemaining": 0.0,
+                "sizeLapsed": 0.0,
+                "sizeCancelled": 0.0,
+                "sizeVoided": 0.0,
+                "customerOrderRef": "O-20260914-220613-001-001-1",
+                "regulatorCode": "MALTA LOTTERIES AND GAMBLING AUTHORITY"
+            }
+        ],
+        "moreAvailable": false
+    }
+}

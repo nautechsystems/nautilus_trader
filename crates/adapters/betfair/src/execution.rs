@@ -148,7 +148,10 @@ use crate::{
         config::BetfairStreamConfig,
         messages::{OCM, OrderMarketChange, OrderRunnerChange, StreamMessage, UnmatchedOrder},
         ocm::{CustomerOrderRefResolution, OcmState},
-        parse::{FillTracker, FillVoidAllocation, has_cancel_quantity, parse_order_status_report},
+        parse::{
+            FillTracker, FillVoidAllocation, has_cancel_quantity, is_resting_sp_bet,
+            parse_order_status_report,
+        },
     },
 };
 
@@ -992,6 +995,7 @@ impl BetfairExecutionClient {
         }
 
         if uo.status == StreamingOrderStatus::ExecutionComplete
+            && !is_resting_sp_bet(uo)
             && cancel_action != CancelAction::Suppress
         {
             if let Some(client_order_id) =
@@ -2314,6 +2318,11 @@ impl ExecutionClient for BetfairExecutionClient {
         let emitter = self.emitter.clone();
         let ocm_state = Arc::clone(&self.ocm_state);
         let clock = self.clock;
+        let sp_bet = self
+            .core
+            .cache()
+            .order(&client_order_id)
+            .is_some_and(|order| is_sp_order(&order));
 
         self.spawn_task("cancel-order", async move {
             let result: Result<CancelExecutionReport, _> = http_client
@@ -2347,7 +2356,7 @@ impl ExecutionClient for BetfairExecutionClient {
             let instruction_report =
                 single_instruction_report(report.instruction_reports.as_deref());
             let instruction_result = instruction_report.map(|ir| {
-                classify_instruction_report(ir.status, ir.error_code, true, || {
+                classify_instruction_report(ir.status, ir.error_code, !sp_bet, || {
                     format_cancel_instruction_reason(ir.error_code, report.error_code)
                 })
             });
@@ -2917,6 +2926,7 @@ impl ExecutionClient for BetfairExecutionClient {
                 instrument_id: order.instrument_id(),
                 client_order_id,
                 venue_order_id,
+                sp_bet: is_sp_order(&order),
             });
         }
         drop(cache);
@@ -2944,14 +2954,22 @@ impl ExecutionClient for BetfairExecutionClient {
 
         let mut cancels = Vec::new();
 
+        let cache = self.core.cache();
+
         for cancel in &cmd.cancels {
             match cancel.venue_order_id {
-                Some(venue_order_id) => cancels.push(CancelOrderData {
-                    strategy_id: cancel.strategy_id,
-                    instrument_id: cancel.instrument_id,
-                    client_order_id: cancel.client_order_id,
-                    venue_order_id,
-                }),
+                Some(venue_order_id) => {
+                    let sp_bet = cache
+                        .order(&cancel.client_order_id)
+                        .is_some_and(|order| is_sp_order(&order));
+                    cancels.push(CancelOrderData {
+                        strategy_id: cancel.strategy_id,
+                        instrument_id: cancel.instrument_id,
+                        client_order_id: cancel.client_order_id,
+                        venue_order_id,
+                        sp_bet,
+                    });
+                }
                 None => {
                     log::warn!(
                         "Cannot batch cancel order {}: no venue_order_id",
@@ -3196,6 +3214,7 @@ struct CancelOrderData {
     instrument_id: InstrumentId,
     client_order_id: ClientOrderId,
     venue_order_id: VenueOrderId,
+    sp_bet: bool,
 }
 
 impl BetfairExecutionClient {
@@ -3278,7 +3297,7 @@ impl BetfairExecutionClient {
                 for (index, cancel) in cancels.iter().enumerate() {
                     let instruction_report = instruction_reports.get(index);
                     let instruction_result = instruction_report.map(|ir| {
-                        classify_instruction_report(ir.status, ir.error_code, true, || {
+                        classify_instruction_report(ir.status, ir.error_code, !cancel.sp_bet, || {
                             format_cancel_instruction_reason(ir.error_code, report.error_code)
                         })
                     });
@@ -3346,6 +3365,14 @@ fn validate_order(order: &impl Order) -> Result<(), OrderDeniedReason> {
         OrderType::Market => Ok(()),
         order_type => Err(OrderDeniedReason::UnsupportedOrderType { order_type }),
     }
+}
+
+// SP bets cannot be cancelled once placed.
+fn is_sp_order(order: &OrderAny) -> bool {
+    matches!(
+        order.time_in_force(),
+        TimeInForce::AtTheClose | TimeInForce::AtTheOpen
+    )
 }
 
 fn create_place_instruction(
@@ -5037,6 +5064,23 @@ mod tests {
     }
 
     #[rstest]
+    #[case(OrderType::Market, TimeInForce::AtTheClose, true)]
+    #[case(OrderType::Limit, TimeInForce::AtTheClose, true)]
+    #[case(OrderType::Limit, TimeInForce::AtTheOpen, true)]
+    #[case(OrderType::Limit, TimeInForce::Gtc, false)]
+    fn test_is_sp_order_matches_on_close_time_in_force(
+        #[case] order_type: OrderType,
+        #[case] time_in_force: TimeInForce,
+        #[case] expected: bool,
+    ) {
+        let order = validation_order_builder(order_type)
+            .time_in_force(time_in_force)
+            .build();
+
+        assert_eq!(is_sp_order(&order), expected);
+    }
+
+    #[rstest]
     fn test_validate_order_denies_reduce_only() {
         let order = validation_order_builder(OrderType::Limit)
             .reduce_only(true)
@@ -5582,6 +5626,37 @@ mod tests {
         }
     }
 
+    fn resting_sp_unmatched_order(
+        bet_id: &str,
+        rfo: Option<String>,
+    ) -> crate::stream::messages::UnmatchedOrder {
+        crate::stream::messages::UnmatchedOrder {
+            id: bet_id.to_string(),
+            p: Decimal::new(10000, 1),
+            s: Decimal::ZERO,
+            side: crate::common::enums::StreamingSide::Back,
+            status: crate::common::enums::StreamingOrderStatus::ExecutionComplete,
+            pt: Some(crate::common::enums::StreamingPersistenceType::MarketOnClose),
+            ot: crate::common::enums::StreamingOrderType::MarketOnClose,
+            pd: 1789423573000,
+            bsp: Some(Decimal::new(2, 0)),
+            rfo,
+            rfs: None,
+            rc: None,
+            rac: None,
+            md: None,
+            cd: None,
+            ld: None,
+            avp: None,
+            sm: Some(Decimal::ZERO),
+            sr: Some(Decimal::ZERO),
+            sl: Some(Decimal::ZERO),
+            sc: Some(Decimal::ZERO),
+            sv: Some(Decimal::ZERO),
+            lsrc: None,
+        }
+    }
+
     fn emitter_with_receiver(
         account_id: AccountId,
     ) -> (
@@ -5866,6 +5941,58 @@ mod tests {
             }
             other => panic!("expected an OrderStatusReport, was {other:?}"),
         }
+    }
+
+    #[rstest]
+    fn test_tracked_resting_sp_bet_stays_open() {
+        // A resting SP bet is execution-complete with zero sizes but cannot be
+        // cancelled: it must not emit a terminal event or be marked terminal.
+        let account_id = AccountId::from("BETFAIR-001");
+        let client_order_id = ClientOrderId::from("O-SP-001");
+        let strategy_id = StrategyId::from("S-QUOTER");
+
+        let mut inner = OcmState::default();
+        inner
+            .register_submission(client_order_id, strategy_id)
+            .unwrap();
+        inner.mark_accepted(client_order_id);
+        let ocm_state = Arc::new(Mutex::new(inner));
+
+        let (emitter, mut rx) = emitter_with_receiver(account_id);
+        let rfo = make_customer_order_ref(client_order_id.as_str());
+        let uo = resting_sp_unmatched_order("bet_sp_resting", Some(rfo));
+
+        let processed = BetfairExecutionClient::process_unmatched_order(
+            &uo,
+            InstrumentId::from("1.234567-12345-0.0.BETFAIR"),
+            account_id,
+            Currency::from("GBP"),
+            &emitter,
+            &ocm_state,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        assert!(processed);
+        assert!(
+            rx.try_recv().is_err(),
+            "resting SP bet must not emit a terminal event",
+        );
+
+        // The bet was not marked terminal, so a repeat update still processes
+        let processed_again = BetfairExecutionClient::process_unmatched_order(
+            &uo,
+            InstrumentId::from("1.234567-12345-0.0.BETFAIR"),
+            account_id,
+            Currency::from("GBP"),
+            &emitter,
+            &ocm_state,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        assert!(processed_again);
+        assert!(rx.try_recv().is_err());
     }
 
     #[rstest]

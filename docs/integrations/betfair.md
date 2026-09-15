@@ -109,6 +109,15 @@ BSP on-close instructions carry a **liability**, not a stake. For `MARKET_ON_CLO
 order by the amount you are prepared to lose, not by the stake you want matched.
 :::
 
+BSP bets are irrevocable: once placed, the venue refuses cancel requests for them. While a BSP bet
+rests, both the stream and `listCurrentOrders` report it as `EXECUTION_COMPLETE` with zero matched,
+remaining, cancelled, lapsed, and voided sizes, carrying the liability separately. The adapter keeps
+such a bet `ACCEPTED` until BSP reconciliation, where a matched bet resolves `FILLED` and a lapsed
+bet resolves `CANCELED`. An explicit `CancelOrder` or `BatchCancelOrders` on a BSP bet emits
+`OrderCancelRejected` with the venue's `BET_TAKEN_OR_LAPSED` reason rather than closing the order;
+`CancelAllOrders` emits no per-order events, as described under
+[Cancel all orders](#cancel-all-orders).
+
 ### Time in force
 
 | Time in force  | Supported | Notes                                                        |
@@ -433,7 +442,9 @@ attempt has an unknown outcome, a later failed attempt cannot make the overall r
 Definitive placement, cancellation, and modification failures normally emit `OrderRejected`,
 `OrderCancelRejected`, and `OrderModifyRejected`, respectively. A definitive price replacement
 failure instead emits `OrderCanceled` once the old-bet cancel has arrived because that bet is no
-longer executable. `BET_TAKEN_OR_LAPSED` completes a cancellation for the same terminal reason.
+longer executable. `BET_TAKEN_OR_LAPSED` completes a cancellation for the same terminal reason,
+except on BSP bets, where the venue has not applied the cancel: there it emits
+`OrderCancelRejected` and the bet stays open until BSP reconciliation.
 
 ### JSON-RPC errors
 

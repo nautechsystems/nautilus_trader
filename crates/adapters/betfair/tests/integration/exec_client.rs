@@ -680,7 +680,7 @@ async fn test_cancel_order_bet_taken_or_lapsed_treated_as_success() {
         .insert(METHOD_CANCEL_ORDERS.to_string(), v["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
-    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
 
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
@@ -693,6 +693,9 @@ async fn test_cancel_order_bet_taken_or_lapsed_treated_as_success() {
     connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
+
+    let order = make_accepted_test_order("1.179082386-235-0.BETFAIR", "O-001", "1", "2.58", "10");
+    add_order_to_cache(&cache, order);
 
     let cmd = make_cancel_order("1.179082386-235-0.BETFAIR", "O-001", "1");
     client.cancel_order(cmd).unwrap();
@@ -716,6 +719,66 @@ async fn test_cancel_order_bet_taken_or_lapsed_treated_as_success() {
     assert!(
         !rejected_seen,
         "BetTakenOrLapsed should not emit cancel rejected"
+    );
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_order_sp_bet_taken_or_lapsed_emits_rejected() {
+    let (addr, state) = start_mock_http().await;
+
+    let fixture = load_fixture("rest/betting_cancel_orders_bet_taken_or_lapsed.json");
+    let v: Value = serde_json::from_str(&fixture).unwrap();
+    state
+        .betting_overrides
+        .lock()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), v["result"].clone());
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let order = make_accepted_sp_test_order("1.179082386-235-0.BETFAIR", "O-SP-001", "1", "2");
+    add_order_to_cache(&cache, order);
+
+    let cmd = make_cancel_order("1.179082386-235-0.BETFAIR", "O-SP-001", "1");
+    client.cancel_order(cmd).unwrap();
+
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 1
+    })
+    .await;
+
+    let mut rejected_seen = false;
+
+    while let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(500), rx.recv()).await {
+        if matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::CancelRejected(_))
+        ) {
+            rejected_seen = true;
+            break;
+        }
+    }
+
+    assert!(
+        rejected_seen,
+        "BetTakenOrLapsed on an SP bet must emit cancel rejected"
     );
 
     client.disconnect().await.unwrap();
@@ -995,6 +1058,38 @@ fn make_test_order(
         .quantity(Quantity::from(quantity))
         .time_in_force(TimeInForce::Gtc)
         .build()
+}
+
+fn make_accepted_sp_test_order(
+    instrument_id: &str,
+    client_order_id: &str,
+    venue_order_id: &str,
+    quantity: &str,
+) -> OrderAny {
+    let mut order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(InstrumentId::from(instrument_id))
+        .client_order_id(ClientOrderId::from(client_order_id))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(quantity))
+        .time_in_force(TimeInForce::AtTheClose)
+        .build();
+    order
+        .apply(OrderEventAny::Accepted(OrderAccepted::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("S-001"),
+            InstrumentId::from(instrument_id),
+            ClientOrderId::from(client_order_id),
+            VenueOrderId::from(venue_order_id),
+            AccountId::from("BETFAIR-001"),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+        )))
+        .unwrap();
+    order
 }
 
 fn make_reduce_only_test_order(
