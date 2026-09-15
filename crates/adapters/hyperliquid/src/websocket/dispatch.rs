@@ -748,6 +748,8 @@ pub(crate) struct AppliedFill {
 pub(crate) struct FillDispatchResult {
     pub outcome: DispatchOutcome,
     pub applied: Option<AppliedFill>,
+    /// Unseen fill held until the replacement `ACCEPTED` drains it.
+    pub buffered: bool,
 }
 
 impl FillDispatchResult {
@@ -755,6 +757,7 @@ impl FillDispatchResult {
         Self {
             outcome,
             applied: None,
+            buffered: false,
         }
     }
 }
@@ -916,7 +919,11 @@ pub(crate) fn dispatch_order_fill_with_replay(
                  or cached price; buffering until the replacement ACCEPTED arrives",
             );
             state.buffer_fill(client_order_id, report.clone());
-            return FillDispatchResult::without_fill(DispatchOutcome::Tracked);
+            return FillDispatchResult {
+                outcome: DispatchOutcome::Tracked,
+                applied: None,
+                buffered: true,
+            };
         };
         let updated_quantity = target.unwrap_or(context.quantity);
         promotion = Some((price, updated_quantity, target, sent_request));
@@ -1034,6 +1041,7 @@ pub(crate) fn dispatch_order_fill_with_replay(
             cumulative_filled_qty: cumulative,
             order_quantity: context.quantity,
         }),
+        buffered: false,
     }
 }
 

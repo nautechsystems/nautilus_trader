@@ -3756,6 +3756,7 @@ struct CorrectiveReduce {
 #[derive(Default)]
 struct ReportApplication {
     applied_fill: Option<AppliedFill>,
+    buffered_fill: Option<ClientOrderId>,
     applied_terminal: Option<(ClientOrderId, UnixNanos)>,
     applied_child_terminal: Option<ClientOrderId>,
     corrective_reduce: Option<CorrectiveReduce>,
@@ -3800,8 +3801,15 @@ fn process_execution_report(
         );
     }
 
-    if let Some(fill) = application.applied_fill
-        && let Some(children) = ctx.staged_brackets.lock().activate(&fill.client_order_id)
+    // A buffered fill is an unseen venue trade whose OrderFilled waits for the
+    // replacement ACCEPTED; that drain bypasses this path, so activate now
+    let filled_parent = application
+        .applied_fill
+        .map(|fill| fill.client_order_id)
+        .or(application.buffered_fill);
+
+    if let Some(parent_id) = filled_parent
+        && let Some(children) = ctx.staged_brackets.lock().activate(&parent_id)
     {
         spawn_staged_children(
             children,
@@ -4033,6 +4041,7 @@ fn handle_execution_report_with_replay(
 
             ReportApplication {
                 applied_fill: result.applied,
+                buffered_fill: client_order_id.filter(|_| result.buffered),
                 corrective_reduce,
                 ..Default::default()
             }
@@ -5195,6 +5204,80 @@ mod tests {
         );
         assert!(tasks.is_empty());
         assert!(drain_events(&mut rx).is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_buffered_parent_fill_activates_staged_children() {
+        let ws_client = make_ws_client();
+        let (emitter, mut rx) = test_emitter();
+        let state = Arc::new(WsDispatchState::new());
+        let staged_brackets = Arc::new(parking_lot::Mutex::new(StagedBracketState::default()));
+        let tasks = TaskGroup::new();
+        let context = get_report_context(
+            emitter,
+            state.clone(),
+            staged_brackets.clone(),
+            ws_client,
+            make_http_client(),
+            &tasks,
+        );
+        let mut pending_cloids = FifoCache::new();
+
+        // a stop-market parent has no limit price, so a replacement-leg fill
+        // is buffered until the replacement ACCEPTED drains it
+        let parent_id = ClientOrderId::from("O-PARENT");
+        let target = Quantity::from("1.0");
+        let mut order_context = test_context(parent_id);
+        order_context.quantity = target;
+        order_context.price = None;
+        state.register_context(order_context);
+        state.insert_accepted(parent_id);
+        state.record_venue_order_id(parent_id, VenueOrderId::new("old-voi"));
+        state.mark_pending_modify(parent_id, VenueOrderId::new("old-voi"), target);
+        staged_brackets.lock().stage(
+            parent_id,
+            vec![
+                staged_child("O-CHILD-1", "O-CHILD-2"),
+                staged_child("O-CHILD-2", "O-CHILD-1"),
+            ],
+        );
+
+        let fill = make_fill_report_with_qty(Some("O-PARENT"), "new-voi", "T-BUF-PARENT", target);
+        let application = process_execution_report(
+            ExecutionReport::Fill(fill),
+            &context,
+            &mut pending_cloids,
+            None,
+        );
+
+        assert!(application.applied_fill.is_none());
+        assert_eq!(state.buffered_fill_count(&parent_id), 1);
+        assert!(!staged_brackets.lock().contains_parent(&parent_id));
+        assert!(
+            staged_brackets
+                .lock()
+                .active_sibling(&ClientOrderId::from("O-CHILD-1"))
+                .is_some()
+        );
+
+        let accepted = make_status_report_with_quantity(
+            Some("O-PARENT"),
+            "new-voi",
+            OrderStatus::Accepted,
+            target,
+        );
+        let _ = process_execution_report(
+            ExecutionReport::Order(accepted),
+            &context,
+            &mut pending_cloids,
+            None,
+        );
+
+        assert_eq!(state.buffered_fill_count(&parent_id), 0);
+        assert!(matches!(
+            drain_events(&mut rx).last(),
+            Some(ExecutionEvent::Order(OrderEventAny::Filled(_)))
+        ));
     }
 
     #[rstest]
