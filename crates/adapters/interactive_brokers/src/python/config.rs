@@ -40,7 +40,7 @@ fn validate_order_id_client_slot(client_id: i32) -> PyResult<()> {
 impl InteractiveBrokersDataClientConfig {
     /// Creates a new `InteractiveBrokersDataClientConfig` instance.
     #[new]
-    #[pyo3(signature = (host=None, port=None, client_id=None, use_regular_trading_hours=None, market_data_type=None, ignore_quote_tick_size_updates=None, connection_timeout=None, request_timeout=None, handle_revised_bars=None, batch_quotes=None, instrument_provider=None, dockerized_gateway=None))]
+    #[pyo3(signature = (host=None, port=None, client_id=None, use_regular_trading_hours=None, market_data_type=None, ignore_quote_tick_size_updates=None, connection_timeout=None, request_timeout=None, handle_revised_bars=None, batch_quotes=None, all_last_trades=None, instrument_provider=None, dockerized_gateway=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
         host: Option<String>,
@@ -53,6 +53,7 @@ impl InteractiveBrokersDataClientConfig {
         request_timeout: Option<u64>,
         handle_revised_bars: Option<bool>,
         batch_quotes: Option<bool>,
+        all_last_trades: Option<bool>,
         instrument_provider: Option<InteractiveBrokersInstrumentProviderConfig>,
         dockerized_gateway: Option<&DockerizedIBGatewayConfig>,
     ) -> PyResult<Self> {
@@ -78,6 +79,7 @@ impl InteractiveBrokersDataClientConfig {
             request_timeout,
             handle_revised_bars: handle_revised_bars.unwrap_or(false),
             batch_quotes: batch_quotes.unwrap_or(true),
+            all_last_trades: all_last_trades.unwrap_or(true),
             instrument_provider: instrument_provider.unwrap_or_default(),
         })
     }
@@ -140,6 +142,12 @@ impl InteractiveBrokersDataClientConfig {
     #[getter]
     fn batch_quotes(&self) -> bool {
         self.batch_quotes
+    }
+
+    /// Returns whether tick-by-tick trades are subscribed as `AllLast` rather than `Last`.
+    #[getter]
+    fn all_last_trades(&self) -> bool {
+        self.all_last_trades
     }
 
     /// Returns the instrument provider configuration.
