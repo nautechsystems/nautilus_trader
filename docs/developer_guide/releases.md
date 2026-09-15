@@ -83,6 +83,64 @@ Keep these sequencing rules intact when editing `.github/workflows/build.yml`:
   verifies the final draft asset set before publishing and verifies GitHub's release attestation
   after publishing the draft.
 
+## Recovering a missing release tag
+
+The `Create git tag` step creates `v<version>` only when the version at the run's commit differs
+from the version at the previous commit (`HEAD~1`), and never when the tag already exists. A run
+whose commit carries the same version as its parent therefore never creates the tag, and when the
+tag is missing `Verify release tag` fails no matter how often the failed jobs are re-run. This is
+the normal shape of a retried release: one or more commits land on `master` after the version
+bump, so the retry run carries the same version as its parent. Because `tag-release` anchors the
+draft release and every downstream publish job, the run cannot proceed while the tag is missing.
+
+First check whether the tag exists and whether the run's commit bumps the version:
+
+- If the tag is missing and the run's commit bumps the version, re-running the failed jobs is
+  enough: once the failed jobs pass, `tag-release` creates the tag.
+- If the tag is missing and the run's commit carries the same version as its parent, no re-run
+  creates the tag. Recover with the manual tag procedure below.
+
+Manual tag recovery works because of the remaining `tag-release` mechanics:
+
+- On a re-run after the manual push, `Create git tag` skips creation under the same rule.
+- `Verify release tag` requires `v<version>` to resolve to the run's commit (`GITHUB_SHA`), so a
+  manually pushed tag at that exact commit passes the check.
+- Draft release creation is idempotent, so a re-run updates the existing draft if one was already
+  created.
+
+To recover, a maintainer creates the tag manually and re-runs the failed jobs:
+
+1. From the failed run page, note the run's commit SHA. Check out that commit locally and confirm
+   the version it carries:
+
+   ```bash
+   ./scripts/package-version.sh
+   ```
+
+1. Create a signed annotated tag at the run's exact commit, using the existing tag message
+   convention, and push it:
+
+   ```bash
+   git tag -s v<version> -m "Released version <version>" <run-commit-sha>
+   git push origin v<version>
+   ```
+
+1. Verify the tag locally. The signature must be good and `git rev-parse 'v<version>^{commit}'`
+   must equal the run's commit SHA:
+
+   ```bash
+   git tag -v v<version>
+   git rev-parse 'v<version>^{commit}'
+   ```
+
+1. On the failed run, select "Re-run failed jobs". `Verify release tag` passes with the pushed
+   tag, and draft release creation and the downstream publishing jobs continue.
+
+Only do this when the release commit and version are final. The tag is the permanent release
+anchor, and once release immutability applies the published release tag cannot be changed. If
+`v<version>` already exists but points at a different commit, do not move or re-push the tag;
+investigate the mismatch instead, because `Verify release tag` fails in that case by design.
+
 ## Versioning
 
 The project maintains two version numbers:
@@ -155,6 +213,8 @@ mismatches also fail.
   - Registry verification passes before release checksums, crates manifest, and attestation siblings
     are attached
   - GitHub release published after all release assets and integrity assets are attached
+  - If the run fails with the release tag missing, follow
+    [Recovering a missing release tag](#recovering-a-missing-release-tag) and re-run the failed jobs
 - [ ] Verify the `docker` workflow completes (images built and pushed)
 - [ ] Verify the `build-docs` workflow completes (docs rebuild triggered)
 
