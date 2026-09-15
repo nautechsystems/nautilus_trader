@@ -15,7 +15,7 @@
 
 use std::{hint::black_box, time::Duration};
 
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_common::cache::Cache;
 use nautilus_model::{
     identifiers::{InstrumentId, Venue},
@@ -46,7 +46,18 @@ fn bench_order_indexing(c: &mut Criterion) {
     }
 
     let venue = Venue::from("VENUE-1");
-    let instrument = InstrumentId::from("SYMBOL-1.1");
+    let instrument = InstrumentId::from("SYMBOL-1.VENUE-1");
+
+    assert_eq!(
+        cache.orders(Some(&venue), None, None, None, None).len(),
+        20_000
+    );
+    assert_eq!(
+        cache
+            .orders(Some(&venue), Some(&instrument), None, None, None)
+            .len(),
+        200,
+    );
 
     c.bench_function("Cache query by venue", |b| {
         b.iter(|| {
@@ -58,7 +69,7 @@ fn bench_order_indexing(c: &mut Criterion) {
         });
     });
 
-    c.bench_function("Cache query by venue + instrument", |b| {
+    c.bench_function("Cache query by venue + instrument (200 orders)", |b| {
         b.iter(|| {
             cache_order_querying_venue_instrument(
                 black_box(&cache),
@@ -89,5 +100,34 @@ fn bench_order_processing(c: &mut Criterion) {
     large.finish();
 }
 
-criterion_group!(benches, bench_order_indexing, bench_order_processing);
+fn bench_order_query_small(c: &mut Criterion) {
+    // Check sorting overhead when queries return only a handful of orders
+    let mut group = c.benchmark_group("Cache query small");
+
+    for count in [1, 8, 32] {
+        let mut cache = Cache::default();
+        for order in create_order_list_sample(1, 1, count) {
+            cache.add_order(order, None, None, false).unwrap();
+        }
+
+        assert_eq!(
+            cache.orders(None, None, None, None, None).len(),
+            count as usize
+        );
+
+        group.throughput(Throughput::Elements(u64::from(count)));
+        group.bench_with_input(BenchmarkId::from_parameter(count), &cache, |b, cache| {
+            b.iter(|| black_box(cache).orders(None, None, None, None, None));
+        });
+    }
+
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_order_indexing,
+    bench_order_processing,
+    bench_order_query_small,
+);
 criterion_main!(benches);

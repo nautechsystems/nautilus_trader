@@ -1250,14 +1250,19 @@ fn test_reset_honors_drop_instruments_on_reset(
 }
 
 #[rstest]
-fn test_get_xrate_from_bars_selects_latest_bar_per_side(audusd_sim: CurrencyPair) {
+#[case(2000)]
+#[case(1000)]
+fn test_get_xrate_from_bars_selects_latest_bar_per_side(
+    audusd_sim: CurrencyPair,
+    #[case] ts_newer: u64,
+) {
     let mut cache = Cache::default();
     let instrument = InstrumentAny::CurrencyPair(audusd_sim.clone());
     cache.add_instrument(instrument).unwrap();
 
     let instrument_id = audusd_sim.id;
     let ts_older = UnixNanos::from(1000);
-    let ts_newer = UnixNanos::from(2000);
+    let ts_newer = UnixNanos::from(ts_newer);
 
     let make_bar = |bar_type: BarType, close: &str, ts_init: UnixNanos| {
         Bar::new(
@@ -1272,7 +1277,7 @@ fn test_get_xrate_from_bars_selects_latest_bar_per_side(audusd_sim: CurrencyPair
         )
     };
 
-    // Older 1-MINUTE bars must not shadow the newer 5-MINUTE bars regardless of map order
+    // Newer timestamps win, with the bar type breaking timestamp ties
     let bid_type_old = BarType::from(format!("{instrument_id}-1-MINUTE-BID-EXTERNAL").as_str());
     let bid_type_new = BarType::from(format!("{instrument_id}-5-MINUTE-BID-EXTERNAL").as_str());
     let ask_type_old = BarType::from(format!("{instrument_id}-1-MINUTE-ASK-EXTERNAL").as_str());
@@ -1298,7 +1303,101 @@ fn test_get_xrate_from_bars_selects_latest_bar_per_side(audusd_sim: CurrencyPair
         PriceType::Mid,
     );
 
+    let bid_rate = cache.get_xrate(
+        instrument_id.venue,
+        Currency::AUD(),
+        Currency::USD(),
+        PriceType::Bid,
+    );
+    let ask_rate = cache.get_xrate(
+        instrument_id.venue,
+        Currency::AUD(),
+        Currency::USD(),
+        PriceType::Ask,
+    );
+
     assert_eq!(rate, Some(dec!(0.80005)));
+    assert_eq!(bid_rate, Some(dec!(0.80000)));
+    assert_eq!(ask_rate, Some(dec!(0.80010)));
+}
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn test_get_xrate_from_bars_keeps_instruments_and_sides_separate(#[case] reverse: bool) {
+    let mut cache = Cache::default();
+    let venue = Venue::from("SIM");
+    let other_venue = Venue::from("OTHER");
+
+    let [aud, eur, gbp, other_aud] = [
+        ("AUD/USD", venue),
+        ("EUR/USD", venue),
+        ("GBP/USD", venue),
+        ("AUD/USD", other_venue),
+    ]
+    .map(|(symbol, venue)| {
+        let instrument = default_fx_ccy(Symbol::from(symbol), Some(venue));
+        let id = instrument.id;
+        cache
+            .add_instrument(InstrumentAny::CurrencyPair(instrument))
+            .unwrap();
+        id
+    });
+
+    let mut bars = [
+        (aud, "BID", "0.80000"),
+        (aud, "ASK", "0.82000"),
+        (eur, "BID", "1.10000"),
+        (eur, "ASK", "1.14000"),
+        (gbp, "BID", "1.30000"),
+        (gbp, "LAST", "1.32000"),
+        (other_aud, "BID", "0.90000"),
+        (other_aud, "ASK", "0.94000"),
+    ];
+
+    if reverse {
+        bars.reverse();
+    }
+
+    for (instrument_id, price_type, close) in bars {
+        let bar_type =
+            BarType::from(format!("{instrument_id}-1-MINUTE-{price_type}-EXTERNAL").as_str());
+        let close = Price::from(close);
+        cache
+            .add_bar(Bar::new(
+                bar_type,
+                close,
+                close,
+                close,
+                close,
+                Quantity::from(100_000),
+                UnixNanos::from(1000),
+                UnixNanos::from(1000),
+            ))
+            .unwrap();
+    }
+
+    assert_eq!(
+        cache.get_xrate(venue, Currency::AUD(), Currency::USD(), PriceType::Mid),
+        Some(dec!(0.81)),
+    );
+    assert_eq!(
+        cache.get_xrate(venue, Currency::EUR(), Currency::USD(), PriceType::Mid),
+        Some(dec!(1.12)),
+    );
+    assert_eq!(
+        cache.get_xrate(venue, Currency::GBP(), Currency::USD(), PriceType::Bid),
+        None,
+    );
+    assert_eq!(
+        cache.get_xrate(
+            other_venue,
+            Currency::AUD(),
+            Currency::USD(),
+            PriceType::Mid
+        ),
+        Some(dec!(0.92)),
+    );
 }
 
 #[rstest]
@@ -3220,22 +3319,28 @@ fn test_correct_order_indexing(mut cache: Cache) {
 }
 
 #[rstest]
+#[case(3)]
+#[case(64)]
 fn test_cache_orders_returned_sorted_by_client_order_id(
     mut cache: Cache,
     audusd_sim: CurrencyPair,
+    #[case] count: usize,
 ) {
     // The cache index is AHash-backed for fast lookup, so it iterates in
     // hasher-randomized order. The public Vec returns sort by client_order_id
     // so callers (e.g. own-book replay, cancel-all cascades) see the same
     // sequence across runs.
     let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let expected: Vec<_> = (0..count)
+        .map(|i| ClientOrderId::from(format!("O-{i:03}").as_str()))
+        .collect();
 
-    for raw in ["O-303", "O-101", "O-202"] {
+    for client_order_id in expected.iter().rev() {
         let order = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(instrument.id())
             .side(OrderSide::Buy)
             .quantity(Quantity::from(100_000))
-            .client_order_id(ClientOrderId::from(raw))
+            .client_order_id(*client_order_id)
             .build();
         cache.add_order(order, None, None, false).unwrap();
     }
@@ -3246,14 +3351,7 @@ fn test_cache_orders_returned_sorted_by_client_order_id(
         .map(|o| o.client_order_id())
         .collect();
 
-    assert_eq!(
-        returned,
-        vec![
-            ClientOrderId::from("O-101"),
-            ClientOrderId::from("O-202"),
-            ClientOrderId::from("O-303"),
-        ],
-    );
+    assert_eq!(returned, expected);
 }
 
 #[rstest]

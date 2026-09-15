@@ -12,6 +12,8 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 
+- Improved cache order query benchmark coverage
+- Optimized cache order queries and exchange-rate lookups from bars
 - Upgraded `datafusion` crates to v55.1.0
 - Upgraded `smallvec` crate to v1.16.1
 - Upgraded `ty` package (dev) to v0.0.79
