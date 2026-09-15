@@ -96,13 +96,101 @@ use crate::{
         ExecutionReport, NautilusWsMessage, USER_STREAMS_ENDPOINT,
         client::{HyperliquidWebSocketClient, PostRequestError},
         dispatch::{
-            DispatchOutcome, WsDispatchState, dispatch_order_event, dispatch_order_fill,
-            promote_replacement_from_query,
+            AppliedFill, DispatchOutcome, ReplayFillContext, WsDispatchState, dispatch_order_event,
+            dispatch_order_fill_with_replay, promote_replacement_from_query,
         },
     },
 };
 
 const TASK_SHUTDOWN_DENIAL_REASON: &str = "Hyperliquid execution client is shutting down";
+
+#[derive(Debug, Clone, Copy)]
+struct ReconnectOrderSnapshot {
+    context: OrderContext,
+    filled_qty: Quantity,
+}
+
+/// Tracked identity and fill state frozen when a reconnect is observed.
+///
+/// The sweep owns this snapshot until replay finishes, so live terminal
+/// cleanup cannot make an earlier REST fill look external or lose its baseline.
+#[derive(Debug, Clone)]
+struct ReconnectSnapshot {
+    client_order_id_by_cloid: AHashMap<Ustr, ClientOrderId>,
+    order_by_client_order_id: AHashMap<ClientOrderId, ReconnectOrderSnapshot>,
+}
+
+impl ReconnectSnapshot {
+    fn capture(http_client: &HyperliquidHttpClient, dispatch_state: &WsDispatchState) -> Self {
+        let mut client_order_id_by_cloid = AHashMap::new();
+        let mut order_by_client_order_id = AHashMap::new();
+
+        for entry in &dispatch_state.order_contexts {
+            let context = *entry.value();
+            let client_order_id = context.identity.client_order_id;
+            let cloid = http_client
+                .cached_client_order_id_cloid(&client_order_id)
+                .unwrap_or_else(|| Cloid::from_client_order_id(client_order_id));
+            let filled_qty = dispatch_state
+                .previous_filled_qty(&client_order_id)
+                .unwrap_or_else(|| Quantity::zero(context.quantity.precision));
+
+            client_order_id_by_cloid.insert(Ustr::from(&cloid.to_hex()), client_order_id);
+            order_by_client_order_id.insert(
+                client_order_id,
+                ReconnectOrderSnapshot {
+                    context,
+                    filled_qty,
+                },
+            );
+        }
+
+        Self {
+            client_order_id_by_cloid,
+            order_by_client_order_id,
+        }
+    }
+
+    fn merge(&mut self, other: Self) {
+        self.client_order_id_by_cloid
+            .extend(other.client_order_id_by_cloid);
+        self.order_by_client_order_id
+            .extend(other.order_by_client_order_id);
+    }
+
+    fn resolve_cloid(&self, cloid: Option<&str>) -> Option<ClientOrderId> {
+        self.client_order_id_by_cloid
+            .get(&Ustr::from(cloid?))
+            .copied()
+    }
+
+    fn replay_fill_context(&self, client_order_id: ClientOrderId) -> Option<ReplayFillContext> {
+        self.order_by_client_order_id
+            .get(&client_order_id)
+            .map(|snapshot| ReplayFillContext {
+                order: snapshot.context,
+                filled_qty: snapshot.filled_qty,
+            })
+    }
+
+    fn record_applied_fill(&mut self, fill: AppliedFill) {
+        if let Some(snapshot) = self.order_by_client_order_id.get_mut(&fill.client_order_id) {
+            snapshot.filled_qty = fill.cumulative_filled_qty;
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ReconnectRequest {
+    reconnect_ns: UnixNanos,
+    snapshot: ReconnectSnapshot,
+}
+
+#[derive(Debug)]
+struct ReconnectReports {
+    reports: Vec<ExecutionReport>,
+    snapshot: ReconnectSnapshot,
+}
 
 #[derive(Debug)]
 pub struct HyperliquidExecutionClient {
@@ -2312,14 +2400,14 @@ impl HyperliquidExecutionClient {
             .spawner()
             .map_err(|e| anyhow::anyhow!("Hyperliquid session task admission is closed: {e}"))?;
 
-        let (reconnect_tx, reconnect_rx) = tokio::sync::mpsc::unbounded_channel::<UnixNanos>();
+        let (reconnect_tx, reconnect_rx) =
+            tokio::sync::mpsc::unbounded_channel::<ReconnectRequest>();
         let (reconciled_tx, mut reconciled_rx) =
-            tokio::sync::mpsc::unbounded_channel::<Vec<ExecutionReport>>();
+            tokio::sync::mpsc::unbounded_channel::<ReconnectReports>();
 
         self.session_tasks.spawn(run_reconnect_reconciliation(
             self.http_client.clone(),
             self.ws_client.clone(),
-            self.ws_dispatch_state.clone(),
             subscription_address.clone(),
             reconnect_rx,
             reconciled_tx,
@@ -2352,13 +2440,26 @@ impl HyperliquidExecutionClient {
             loop {
                 let event = tokio::select! {
                     event = ws_client.next_event() => event,
-                    Some(reports) = reconciled_rx.recv() => {
-                        for report in reports {
-                            process_execution_report(
+                    Some(mut recovery) = reconciled_rx.recv() => {
+                        for report in recovery.reports {
+                            let replay = match &report {
+                                ExecutionReport::Fill(fill) => fill.client_order_id.and_then(
+                                    |client_order_id| {
+                                        recovery.snapshot.replay_fill_context(client_order_id)
+                                    },
+                                ),
+                                ExecutionReport::Order(_) => None,
+                            };
+                            let application = process_execution_report(
                                 report,
                                 &report_ctx,
                                 &mut pending_filled_cloids,
+                                replay,
                             );
+
+                            if let Some(fill) = application.applied_fill {
+                                recovery.snapshot.record_applied_fill(fill);
+                            }
                         }
                         continue;
                     }
@@ -2368,10 +2469,11 @@ impl HyperliquidExecutionClient {
                     Some(msg) => match msg {
                         NautilusWsMessage::ExecutionReports(reports) => {
                             for report in reports {
-                                process_execution_report(
+                                let _ = process_execution_report(
                                     report,
                                     &report_ctx,
                                     &mut pending_filled_cloids,
+                                    None,
                                 );
                             }
                         }
@@ -2381,7 +2483,15 @@ impl HyperliquidExecutionClient {
                             // resubscribing to orderUpdates and userEvents replays no
                             // snapshot, so anything that happened while the socket was
                             // down needs a REST sweep to reach the engine
-                            if reconnect_tx.send(clock.get_time_ns()).is_err() {
+                            let request = ReconnectRequest {
+                                reconnect_ns: clock.get_time_ns(),
+                                snapshot: ReconnectSnapshot::capture(
+                                    &report_ctx.http_client,
+                                    &report_ctx.dispatch_state,
+                                ),
+                            };
+
+                            if reconnect_tx.send(request).is_err() {
                                 log::warn!(
                                     "Reconnect reconciliation stopped, gap will not be repaired"
                                 );
@@ -3432,17 +3542,17 @@ impl PostRejectionRoute {
 async fn run_reconnect_reconciliation(
     http_client: HyperliquidHttpClient,
     ws_client: HyperliquidWebSocketClient,
-    dispatch_state: Arc<WsDispatchState>,
     account_address: String,
-    mut reconnect_rx: tokio::sync::mpsc::UnboundedReceiver<UnixNanos>,
-    reconciled_tx: tokio::sync::mpsc::UnboundedSender<Vec<ExecutionReport>>,
+    mut reconnect_rx: tokio::sync::mpsc::UnboundedReceiver<ReconnectRequest>,
+    reconciled_tx: tokio::sync::mpsc::UnboundedSender<ReconnectReports>,
 ) {
     let mut last_sweep: Option<Instant> = None;
 
-    while let Some(mut reconnect_ns) = reconnect_rx.recv().await {
+    while let Some(mut request) = reconnect_rx.recv().await {
         // one sweep per burst, so a flapping socket cannot stack sweeps
-        while let Ok(ns) = reconnect_rx.try_recv() {
-            reconnect_ns = ns;
+        while let Ok(next) = reconnect_rx.try_recv() {
+            request.reconnect_ns = request.reconnect_ns.min(next.reconnect_ns);
+            request.snapshot.merge(next.snapshot);
         }
 
         if let Some(elapsed) = last_sweep.map(|last| last.elapsed())
@@ -3454,19 +3564,20 @@ async fn run_reconnect_reconciliation(
         }
 
         // A queued subscribe command does not close the REST/stream cutover gap.
-        // Wait for both execution subscription acknowledgements before taking
-        // the snapshot which will bridge into the resumed stream.
+        // Wait for both execution subscription acknowledgements before querying
+        // the REST snapshot which will bridge into the resumed stream.
         while !ws_client.execution_subscriptions_confirmed(&account_address) {
             tokio::time::sleep(RECONNECT_BASE_BACKOFF).await;
         }
 
-        let window_start = reconnect_ns.saturating_sub(DurationNanos::from_secs(
-            RECONNECT_RECONCILE_LOOKBACK.as_secs(),
-        ));
+        let window_start = request
+            .reconnect_ns
+            .saturating_sub(DurationNanos::from_secs(
+                RECONNECT_RECONCILE_LOOKBACK.as_secs(),
+            ));
         let Some(reports) = fetch_reconnect_reports(
             &http_client,
-            &ws_client,
-            &dispatch_state,
+            &request.snapshot,
             &account_address,
             window_start,
         )
@@ -3485,7 +3596,13 @@ async fn run_reconnect_reconciliation(
             reports.len()
         );
 
-        if reconciled_tx.send(reports).is_err() {
+        if reconciled_tx
+            .send(ReconnectReports {
+                reports,
+                snapshot: request.snapshot,
+            })
+            .is_err()
+        {
             log::debug!("Execution stream closed, stopping reconnect reconciliation");
             break;
         }
@@ -3498,8 +3615,7 @@ async fn run_reconnect_reconciliation(
 /// make reconciliation fail because its instrument is unavailable locally.
 async fn fetch_reconnect_reports(
     http_client: &HyperliquidHttpClient,
-    ws_client: &HyperliquidWebSocketClient,
-    dispatch_state: &WsDispatchState,
+    snapshot: &ReconnectSnapshot,
     account_address: &str,
     window_start: UnixNanos,
 ) -> Option<Vec<ExecutionReport>> {
@@ -3512,14 +3628,9 @@ async fn fetch_reconnect_reports(
         );
 
         let result = match (fills, orders) {
-            (Ok(fills), Ok(orders)) => get_reconnect_reports(
-                fills,
-                orders,
-                http_client,
-                ws_client,
-                dispatch_state,
-                window_start,
-            ),
+            (Ok(fills), Ok(orders)) => {
+                get_reconnect_reports(fills, orders, http_client, snapshot, window_start)
+            }
             (Err(e), _) | (_, Err(e)) => Err(anyhow::Error::new(e)),
         };
 
@@ -3545,8 +3656,7 @@ fn get_reconnect_reports(
     fills: Vec<HyperliquidFill>,
     orders: Vec<HyperliquidOrderStatusEntry>,
     http_client: &HyperliquidHttpClient,
-    ws_client: &HyperliquidWebSocketClient,
-    dispatch_state: &WsDispatchState,
+    snapshot: &ReconnectSnapshot,
     window_start: UnixNanos,
 ) -> anyhow::Result<Vec<ExecutionReport>> {
     let mut reports = Vec::new();
@@ -3558,9 +3668,7 @@ fn get_reconnect_reports(
             continue;
         }
 
-        let Some(client_order_id) =
-            resolve_tracked_client_order_id(fill.cloid.as_deref(), ws_client, dispatch_state)
-        else {
+        let Some(client_order_id) = snapshot.resolve_cloid(fill.cloid.as_deref()) else {
             continue;
         };
 
@@ -3594,11 +3702,7 @@ fn get_reconnect_reports(
             continue;
         }
 
-        let Some(client_order_id) = resolve_tracked_client_order_id(
-            order.order.cloid.as_deref(),
-            ws_client,
-            dispatch_state,
-        ) else {
+        let Some(client_order_id) = snapshot.resolve_cloid(order.order.cloid.as_deref()) else {
             continue;
         };
 
@@ -3628,24 +3732,6 @@ fn get_reconnect_reports(
     Ok(reports)
 }
 
-/// Resolves the venue cloid carried by a REST row to a tracked client order id.
-///
-/// The cloid is `keccak256(client_order_id)` truncated to 16 bytes, so the
-/// WebSocket client's cache is the only way back. An unresolved or untracked id
-/// belongs to another session or to an external order and must not be replayed.
-fn resolve_tracked_client_order_id(
-    cloid: Option<&str>,
-    ws_client: &HyperliquidWebSocketClient,
-    dispatch_state: &WsDispatchState,
-) -> Option<ClientOrderId> {
-    let cloid = cloid?;
-    let client_order_id = ws_client.get_cloid_mapping(&Ustr::from(cloid))?;
-
-    dispatch_state
-        .lookup_context(&client_order_id)
-        .map(|_| client_order_id)
-}
-
 /// Handles required to turn an execution report into engine events.
 ///
 /// Shared by the live stream loop and the post-reconnect reconciliation so both
@@ -3661,96 +3747,61 @@ struct ReportContext {
     session_spawner: TaskSpawner,
 }
 
+struct CorrectiveReduce {
+    client_order_id: ClientOrderId,
+    venue_order_id: u64,
+    order: HyperliquidExchangePlaceOrderRequest,
+}
+
+#[derive(Default)]
+struct ReportApplication {
+    applied_fill: Option<AppliedFill>,
+    applied_terminal: Option<(ClientOrderId, UnixNanos)>,
+    applied_child_terminal: Option<ClientOrderId>,
+    corrective_reduce: Option<CorrectiveReduce>,
+}
+
+#[derive(Clone, Copy)]
+struct ReportDispatchOptions {
+    replay: Option<ReplayFillContext>,
+    ts_init: UnixNanos,
+}
+
 /// Applies one execution report: typed events, staged brackets, and the
 /// corrective actions their outcomes queue.
 fn process_execution_report(
     report: ExecutionReport,
     ctx: &ReportContext,
     pending_filled_cloids: &mut FifoCache<ClientOrderId, 10_000>,
-) {
-    let staged_parent_fill = match &report {
-        ExecutionReport::Fill(report) => report.client_order_id,
-        ExecutionReport::Order(_) => None,
-    };
-
-    let staged_parent_terminal = match &report {
-        ExecutionReport::Order(report)
-            if matches!(
-                report.order_status,
-                OrderStatus::Canceled | OrderStatus::Rejected | OrderStatus::Expired
-            ) =>
-        {
-            report
-                .client_order_id
-                .map(|client_order_id| (client_order_id, report.ts_last))
-        }
-        _ => None,
-    };
-
-    let active_child_terminal = match &report {
-        ExecutionReport::Order(report)
-            if matches!(
-                report.order_status,
-                OrderStatus::Filled
-                    | OrderStatus::Canceled
-                    | OrderStatus::Rejected
-                    | OrderStatus::Expired
-            ) =>
-        {
-            report.client_order_id
-        }
-        ExecutionReport::Fill(report) => report.client_order_id.filter(|client_order_id| {
-            let Some(context) = ctx.dispatch_state.lookup_context(client_order_id) else {
-                return false;
-            };
-            let previous = ctx
-                .dispatch_state
-                .previous_filled_qty(client_order_id)
-                .unwrap_or_else(|| Quantity::zero(report.last_qty.precision));
-            previous + report.last_qty >= context.quantity
-        }),
-        _ => None,
-    };
-
-    let active_child_fill = match &report {
-        ExecutionReport::Fill(report) => report.client_order_id.and_then(|client_order_id| {
-            ctx.dispatch_state
-                .lookup_context(&client_order_id)
-                .map(|context| {
-                    (
-                        client_order_id,
-                        ctx.dispatch_state
-                            .previous_filled_qty(&client_order_id)
-                            .unwrap_or_else(|| Quantity::zero(report.last_qty.precision)),
-                        context.quantity,
-                    )
-                })
-        }),
-        ExecutionReport::Order(_) => None,
-    };
-
-    if let Some((cid, oid, order)) = handle_execution_report(
+    replay: Option<ReplayFillContext>,
+) -> ReportApplication {
+    let application = handle_execution_report_with_replay(
         report,
         &ctx.dispatch_state,
         &ctx.emitter,
         &ctx.ws_client,
         &ctx.http_client,
         pending_filled_cloids,
-        ctx.clock.get_time_ns(),
-    ) {
+        ReportDispatchOptions {
+            replay,
+            ts_init: ctx.clock.get_time_ns(),
+        },
+    );
+
+    if let Some(corrective) = &application.corrective_reduce {
         spawn_corrective_reduce(
             &ctx.ws_client,
             &ctx.http_client,
             &ctx.dispatch_state,
-            cid,
-            oid,
-            order,
+            corrective.client_order_id,
+            corrective.venue_order_id,
+            corrective.order.clone(),
             &ctx.session_spawner,
         );
     }
 
-    if let Some(parent_id) = staged_parent_fill
-        && let Some(children) = ctx.staged_brackets.lock().activate(&parent_id)
+    if let Some(fill) = application.applied_fill
+        && let Some(children) = ctx.staged_brackets.lock().activate(&fill.client_order_id)
     {
         spawn_staged_children(
             children,
@@ -3765,7 +3816,7 @@ fn process_execution_report(
         );
     }
 
-    if let Some((parent_id, ts_event)) = staged_parent_terminal {
+    if let Some((parent_id, ts_event)) = application.applied_terminal {
         let children = ctx.staged_brackets.lock().cancel_for_parent(&parent_id);
 
         for child in children {
@@ -3773,17 +3824,18 @@ fn process_execution_report(
         }
     }
 
-    if let Some((client_order_id, previous, quantity)) = active_child_fill
-        && let Some(cumulative) = ctx.dispatch_state.previous_filled_qty(&client_order_id)
-        && cumulative > previous
-        && cumulative < quantity
+    if let Some(fill) = application.applied_fill
+        && fill.cumulative_filled_qty < fill.order_quantity
     {
-        let sibling = ctx.staged_brackets.lock().active_sibling(&client_order_id);
+        let sibling = ctx
+            .staged_brackets
+            .lock()
+            .active_sibling(&fill.client_order_id);
 
         if let Some(sibling) = sibling {
             spawn_active_sibling_resize(
                 sibling,
-                quantity - cumulative,
+                fill.order_quantity - fill.cumulative_filled_qty,
                 &ctx.emitter,
                 &ctx.ws_client,
                 &ctx.http_client,
@@ -3793,7 +3845,13 @@ fn process_execution_report(
         }
     }
 
-    if let Some(client_order_id) = active_child_terminal {
+    let terminal_child = application
+        .applied_fill
+        .filter(|fill| fill.cumulative_filled_qty >= fill.order_quantity)
+        .map(|fill| fill.client_order_id)
+        .or(application.applied_child_terminal);
+
+    if let Some(client_order_id) = terminal_child {
         let sibling = ctx
             .staged_brackets
             .lock()
@@ -3810,6 +3868,8 @@ fn process_execution_report(
             );
         }
     }
+
+    application
 }
 
 /// Routes a single execution report through the two-tier dispatch.
@@ -3818,6 +3878,7 @@ fn process_execution_report(
 /// dispatch module; external / untracked orders fall back to the raw report
 /// so the engine can reconcile. Cloid-mapping cleanup is handled here so
 /// long-running sessions do not leak mapping entries.
+#[cfg(test)]
 fn handle_execution_report(
     report: ExecutionReport,
     dispatch_state: &WsDispatchState,
@@ -3827,13 +3888,57 @@ fn handle_execution_report(
     pending_filled_cloids: &mut FifoCache<ClientOrderId, 10_000>,
     ts_init: UnixNanos,
 ) -> Option<(ClientOrderId, u64, HyperliquidExchangePlaceOrderRequest)> {
+    handle_execution_report_with_replay(
+        report,
+        dispatch_state,
+        emitter,
+        ws_client,
+        http_client,
+        pending_filled_cloids,
+        ReportDispatchOptions {
+            replay: None,
+            ts_init,
+        },
+    )
+    .corrective_reduce
+    .map(|corrective| {
+        (
+            corrective.client_order_id,
+            corrective.venue_order_id,
+            corrective.order,
+        )
+    })
+}
+
+fn handle_execution_report_with_replay(
+    report: ExecutionReport,
+    dispatch_state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+    ws_client: &HyperliquidWebSocketClient,
+    http_client: &HyperliquidHttpClient,
+    pending_filled_cloids: &mut FifoCache<ClientOrderId, 10_000>,
+    options: ReportDispatchOptions,
+) -> ReportApplication {
     match report {
         ExecutionReport::Order(order_report) => {
             let is_filled_marker = matches!(order_report.order_status, OrderStatus::Filled);
             let is_terminal = order_report.order_status.is_closed();
+            let cancels_staged_children = matches!(
+                order_report.order_status,
+                OrderStatus::Canceled | OrderStatus::Rejected | OrderStatus::Expired
+            );
+            let terminates_active_child = matches!(
+                order_report.order_status,
+                OrderStatus::Filled
+                    | OrderStatus::Canceled
+                    | OrderStatus::Rejected
+                    | OrderStatus::Expired
+            );
             let client_order_id = order_report.client_order_id;
+            let ts_event = order_report.ts_last;
 
-            let outcome = dispatch_order_event(&order_report, dispatch_state, emitter, ts_init);
+            let outcome =
+                dispatch_order_event(&order_report, dispatch_state, emitter, options.ts_init);
 
             if outcome == DispatchOutcome::External {
                 emitter.send_order_status_report(order_report);
@@ -3866,18 +3971,43 @@ fn handle_execution_report(
 
             // Hand any queued corrective reduce to the loop to post; this
             // cache-free task cannot rebuild the order spec itself.
-            client_order_id.and_then(|id| {
+            let corrective_reduce = client_order_id.and_then(|id| {
                 dispatch_state
                     .take_corrective(&id)
-                    .map(|(oid, order)| (id, oid, order))
-            })
+                    .map(|(venue_order_id, order)| CorrectiveReduce {
+                        client_order_id: id,
+                        venue_order_id,
+                        order,
+                    })
+            });
+            let applied_terminal = (outcome == DispatchOutcome::Tracked && cancels_staged_children)
+                .then_some(client_order_id)
+                .flatten()
+                .map(|client_order_id| (client_order_id, ts_event));
+            let applied_child_terminal = (outcome == DispatchOutcome::Tracked
+                && terminates_active_child)
+                .then_some(client_order_id)
+                .flatten();
+
+            ReportApplication {
+                applied_terminal,
+                applied_child_terminal,
+                corrective_reduce,
+                ..Default::default()
+            }
         }
         ExecutionReport::Fill(fill_report) => {
             let client_order_id = fill_report.client_order_id;
 
-            let outcome = dispatch_order_fill(&fill_report, dispatch_state, emitter, ts_init);
+            let result = dispatch_order_fill_with_replay(
+                &fill_report,
+                dispatch_state,
+                emitter,
+                options.replay,
+                options.ts_init,
+            );
 
-            if outcome == DispatchOutcome::External {
+            if result.outcome == DispatchOutcome::External {
                 emitter.send_fill_report(fill_report);
             }
 
@@ -3891,11 +4021,21 @@ fn handle_execution_report(
                 remove_cloid_mapping_for_client_order_id(ws_client, http_client, &id);
             }
 
-            client_order_id.and_then(|id| {
+            let corrective_reduce = client_order_id.and_then(|id| {
                 dispatch_state
                     .take_corrective(&id)
-                    .map(|(oid, order)| (id, oid, order))
-            })
+                    .map(|(venue_order_id, order)| CorrectiveReduce {
+                        client_order_id: id,
+                        venue_order_id,
+                        order,
+                    })
+            });
+
+            ReportApplication {
+                applied_fill: result.applied,
+                corrective_reduce,
+                ..Default::default()
+            }
         }
     }
 }
@@ -4033,11 +4173,12 @@ mod tests {
     use super::{
         CancelEntry, ExecutionClient, ExecutionClientCore, ExecutionReport, FifoCache,
         HyperliquidExecutionClient, HyperliquidExecutionClientConfig, HyperliquidHttpClient,
-        HyperliquidWebSocketClient, PostRejectionRoute, StagedBracketChild, StagedBracketState,
-        WsDispatchState, attach_known_client_order_id, build_ouo_resize_request,
-        can_fast_cancel_order, classify_post_failure, determine_order_list_grouping,
-        fetch_reconnect_reports, get_reconnect_reports, handle_execution_report,
-        register_order_context_into, split_fast_cancel_requests, validate_order_for_hyperliquid,
+        HyperliquidWebSocketClient, PostRejectionRoute, ReconnectSnapshot, ReportContext,
+        StagedBracketChild, StagedBracketState, WsDispatchState, attach_known_client_order_id,
+        build_ouo_resize_request, can_fast_cancel_order, classify_post_failure,
+        determine_order_list_grouping, fetch_reconnect_reports, get_reconnect_reports,
+        handle_execution_report, process_execution_report, register_order_context_into,
+        split_fast_cancel_requests, validate_order_for_hyperliquid,
     };
     use crate::{
         common::{
@@ -4111,6 +4252,26 @@ mod tests {
         let instrument = create_instrument_from_def(def, UnixNanos::default()).unwrap();
         client.cache_instrument(&instrument);
         client
+    }
+
+    fn get_report_context(
+        emitter: ExecutionEventEmitter,
+        dispatch_state: Arc<WsDispatchState>,
+        staged_brackets: Arc<parking_lot::Mutex<StagedBracketState>>,
+        ws_client: HyperliquidWebSocketClient,
+        http_client: HyperliquidHttpClient,
+        tasks: &TaskGroup,
+    ) -> ReportContext {
+        ReportContext {
+            emitter,
+            dispatch_state,
+            staged_brackets,
+            ws_client,
+            http_client,
+            builder: None,
+            clock: get_atomic_clock_realtime(),
+            session_spawner: tasks.spawner().unwrap(),
+        }
     }
 
     fn make_execution_client() -> HyperliquidExecutionClient {
@@ -4825,17 +4986,12 @@ mod tests {
         let state = SweepServerState::failing_first_sweep();
         let (addr, server) = start_sweep_server(state.clone()).await;
         let http_client = make_sweep_http_client(&addr);
-        let ws_client = make_ws_client();
         let dispatch_state = WsDispatchState::new();
+        let snapshot = ReconnectSnapshot::capture(&http_client, &dispatch_state);
 
-        let reports = fetch_reconnect_reports(
-            &http_client,
-            &ws_client,
-            &dispatch_state,
-            "0xaccount",
-            UnixNanos::default(),
-        )
-        .await;
+        let reports =
+            fetch_reconnect_reports(&http_client, &snapshot, "0xaccount", UnixNanos::default())
+                .await;
         server.abort();
 
         assert!(reports.is_some());
@@ -4855,7 +5011,6 @@ mod tests {
 
     #[rstest]
     fn test_get_reconnect_reports_resolves_cloid_and_sorts_fills_oldest_first() {
-        let ws_client = make_ws_client();
         let state = WsDispatchState::new();
         let http_client = make_http_client_with_btc();
 
@@ -4864,7 +5019,7 @@ mod tests {
         state.insert_accepted(cid);
 
         let cloid = cloid_for("O-REC-FILL");
-        ws_client.cache_cloid_mapping(cloid, cid);
+        let snapshot = ReconnectSnapshot::capture(&http_client, &state);
 
         let later_fill = make_raw_fill("BTC", Some(cloid.as_str()), 42, 2, 2_000);
         let earlier_fill = make_raw_fill("BTC", Some(cloid.as_str()), 42, 1, 1_000);
@@ -4874,8 +5029,7 @@ mod tests {
             vec![later_fill, earlier_fill],
             vec![status],
             &http_client,
-            &ws_client,
-            &state,
+            &snapshot,
             UnixNanos::default(),
         )
         .unwrap();
@@ -4898,12 +5052,11 @@ mod tests {
 
     #[rstest]
     fn test_get_reconnect_reports_ignores_untracked_unparsable_history() {
-        let ws_client = make_ws_client();
         let state = WsDispatchState::new();
         let http_client = make_http_client_with_btc();
 
         let untracked = cloid_for("O-REC-OTHER");
-        ws_client.cache_cloid_mapping(untracked, ClientOrderId::from("O-REC-OTHER"));
+        let snapshot = ReconnectSnapshot::capture(&http_client, &state);
 
         let reports = get_reconnect_reports(
             vec![make_raw_fill("UNKNOWN", Some("0xdeadbeef"), 1, 1, 1_000)],
@@ -4915,8 +5068,7 @@ mod tests {
                 1_000,
             )],
             &http_client,
-            &ws_client,
-            &state,
+            &snapshot,
             UnixNanos::default(),
         )
         .unwrap();
@@ -4926,7 +5078,6 @@ mod tests {
 
     #[rstest]
     fn test_get_reconnect_reports_drops_reports_before_window() {
-        let ws_client = make_ws_client();
         let state = WsDispatchState::new();
         let http_client = make_http_client_with_btc();
 
@@ -4935,7 +5086,7 @@ mod tests {
         state.insert_accepted(cid);
 
         let cloid = cloid_for("O-REC-OLD");
-        ws_client.cache_cloid_mapping(cloid, cid);
+        let snapshot = ReconnectSnapshot::capture(&http_client, &state);
 
         let reports = get_reconnect_reports(
             vec![make_raw_fill("BTC", Some(cloid.as_str()), 1, 1, 1)],
@@ -4947,8 +5098,7 @@ mod tests {
                 1,
             )],
             &http_client,
-            &ws_client,
-            &state,
+            &snapshot,
             UnixNanos::from_millis(2),
         )
         .unwrap();
@@ -4990,6 +5140,334 @@ mod tests {
             .filter(|event| matches!(event, ExecutionEvent::Order(OrderEventAny::Filled(_))))
             .count();
         assert_eq!(filled, 1);
+    }
+
+    #[rstest]
+    fn test_process_replayed_child_fill_does_not_cancel_sibling() {
+        let ws_client = make_ws_client();
+        let (emitter, mut rx) = test_emitter();
+        let state = Arc::new(WsDispatchState::new());
+        let staged_brackets = Arc::new(parking_lot::Mutex::new(StagedBracketState::default()));
+        let tasks = TaskGroup::new();
+        let context = get_report_context(
+            emitter,
+            state.clone(),
+            staged_brackets.clone(),
+            ws_client,
+            make_http_client(),
+            &tasks,
+        );
+        let mut pending_cloids = FifoCache::new();
+
+        let client_order_id = ClientOrderId::from("O-CHILD-A");
+        let mut order_context = test_context(client_order_id);
+        order_context.quantity = Quantity::from("1.0");
+        state.register_context(order_context);
+        state.insert_accepted(client_order_id);
+        state.record_venue_order_id(client_order_id, VenueOrderId::new("old-voi"));
+        state.record_filled_qty(client_order_id, Quantity::from("0.6"));
+        assert!(!state.check_and_insert_trade(TradeId::from("T-CHILD-A")));
+
+        staged_brackets.lock().restore_active(&[
+            staged_child("O-CHILD-A", "O-CHILD-B"),
+            staged_child("O-CHILD-B", "O-CHILD-A"),
+        ]);
+
+        let replay = make_fill_report_with_qty(
+            Some("O-CHILD-A"),
+            "old-voi",
+            "T-CHILD-A",
+            Quantity::from("0.6"),
+        );
+        let application = process_execution_report(
+            ExecutionReport::Fill(replay),
+            &context,
+            &mut pending_cloids,
+            None,
+        );
+
+        assert!(application.applied_fill.is_none());
+        assert!(
+            staged_brackets
+                .lock()
+                .active_sibling(&client_order_id)
+                .is_some()
+        );
+        assert!(tasks.is_empty());
+        assert!(drain_events(&mut rx).is_empty());
+    }
+
+    #[rstest]
+    fn test_reconnect_snapshot_preserves_unseen_fill_after_live_cancel() {
+        let ws_client = make_ws_client();
+        let (emitter, mut rx) = test_emitter();
+        let state = Arc::new(WsDispatchState::new());
+        let http_client = make_http_client_with_btc();
+        let staged_brackets = Arc::new(parking_lot::Mutex::new(StagedBracketState::default()));
+        let tasks = TaskGroup::new();
+        let context = get_report_context(
+            emitter,
+            state.clone(),
+            staged_brackets,
+            ws_client.clone(),
+            http_client.clone(),
+            &tasks,
+        );
+        let mut pending_cloids = FifoCache::new();
+
+        let client_order_id = ClientOrderId::from("O-REC-CANCEL-RACE");
+        let cloid = cloid_for("O-REC-CANCEL-RACE");
+        state.register_context(test_context(client_order_id));
+        state.insert_accepted(client_order_id);
+        state.record_venue_order_id(client_order_id, VenueOrderId::new("42"));
+        ws_client.cache_cloid_mapping(cloid, client_order_id);
+        let mut snapshot = ReconnectSnapshot::capture(&http_client, &state);
+
+        let cancel = make_status_report(Some("O-REC-CANCEL-RACE"), "42", OrderStatus::Canceled);
+        let _ = process_execution_report(
+            ExecutionReport::Order(cancel),
+            &context,
+            &mut pending_cloids,
+            None,
+        );
+        assert!(state.lookup_context(&client_order_id).is_none());
+        assert!(ws_client.get_cloid_mapping(&cloid).is_none());
+
+        let reports = get_reconnect_reports(
+            vec![make_raw_fill("BTC", Some(cloid.as_str()), 42, 7, 1_000)],
+            Vec::new(),
+            &http_client,
+            &snapshot,
+            UnixNanos::default(),
+        )
+        .unwrap();
+        assert_eq!(reports.len(), 1);
+
+        let replay = snapshot
+            .replay_fill_context(client_order_id)
+            .expect("reconnect snapshot should retain the canceled order context");
+        let application = process_execution_report(
+            reports.into_iter().next().unwrap(),
+            &context,
+            &mut pending_cloids,
+            Some(replay),
+        );
+        let applied = application
+            .applied_fill
+            .expect("unseen recovery fill should be applied");
+        snapshot.record_applied_fill(applied);
+
+        let events = drain_events(&mut rx);
+        assert_eq!(events.len(), 2);
+        assert!(matches!(
+            events[0],
+            ExecutionEvent::Order(OrderEventAny::Canceled(_))
+        ));
+        assert!(matches!(
+            events[1],
+            ExecutionEvent::Order(OrderEventAny::Filled(_))
+        ));
+    }
+
+    #[rstest]
+    fn test_replayed_old_leg_fill_preserves_newer_modify() {
+        let ws_client = make_ws_client();
+        let (emitter, mut rx) = test_emitter();
+        let state = Arc::new(WsDispatchState::new());
+        let staged_brackets = Arc::new(parking_lot::Mutex::new(StagedBracketState::default()));
+        let tasks = TaskGroup::new();
+        let context = get_report_context(
+            emitter,
+            state.clone(),
+            staged_brackets,
+            ws_client,
+            make_http_client(),
+            &tasks,
+        );
+        let mut pending_cloids = FifoCache::new();
+        let client_order_id = ClientOrderId::from("O-REC-OLD-FILL");
+        let target = Quantity::from("1.0");
+        let mut order_context = test_context(client_order_id);
+        order_context.quantity = target;
+        state.register_context(order_context);
+        state.insert_accepted(client_order_id);
+        state.record_venue_order_id(client_order_id, VenueOrderId::new("old-voi"));
+        state.mark_pending_modify(client_order_id, VenueOrderId::new("old-voi"), target);
+
+        let mut accepted = make_status_report_with_quantity(
+            Some("O-REC-OLD-FILL"),
+            "new-voi",
+            OrderStatus::Accepted,
+            target,
+        );
+        accepted.ts_last = UnixNanos::from(200);
+        let _ = process_execution_report(
+            ExecutionReport::Order(accepted),
+            &context,
+            &mut pending_cloids,
+            None,
+        );
+        state.mark_pending_modify(client_order_id, VenueOrderId::new("new-voi"), target);
+        assert!(!state.check_and_insert_trade(TradeId::from("T-OLD-LEG")));
+
+        let mut replay = make_fill_report_with_qty(
+            Some("O-REC-OLD-FILL"),
+            "old-voi",
+            "T-OLD-LEG",
+            Quantity::from("0.1"),
+        );
+        replay.ts_event = UnixNanos::from(100);
+        let application = process_execution_report(
+            ExecutionReport::Fill(replay),
+            &context,
+            &mut pending_cloids,
+            None,
+        );
+
+        assert!(application.applied_fill.is_none());
+        assert_eq!(
+            state.cached_venue_order_id(&client_order_id),
+            Some(VenueOrderId::new("new-voi"))
+        );
+        assert_eq!(
+            state.pending_modify(&client_order_id),
+            Some(VenueOrderId::new("new-voi"))
+        );
+        assert_eq!(drain_events(&mut rx).len(), 1);
+    }
+
+    #[rstest]
+    fn test_unseen_old_leg_fill_does_not_restore_superseded_binding() {
+        let ws_client = make_ws_client();
+        let (emitter, mut rx) = test_emitter();
+        let state = Arc::new(WsDispatchState::new());
+        let staged_brackets = Arc::new(parking_lot::Mutex::new(StagedBracketState::default()));
+        let tasks = TaskGroup::new();
+        let context = get_report_context(
+            emitter,
+            state.clone(),
+            staged_brackets,
+            ws_client,
+            make_http_client(),
+            &tasks,
+        );
+        let mut pending_cloids = FifoCache::new();
+        let client_order_id = ClientOrderId::from("O-REC-UNSEEN-OLD-FILL");
+        let target = Quantity::from("1.0");
+        let mut order_context = test_context(client_order_id);
+        order_context.quantity = target;
+        state.register_context(order_context);
+        state.insert_accepted(client_order_id);
+        state.record_venue_order_id(client_order_id, VenueOrderId::new("old-voi"));
+        state.mark_pending_modify(client_order_id, VenueOrderId::new("old-voi"), target);
+
+        let mut accepted = make_status_report_with_quantity(
+            Some("O-REC-UNSEEN-OLD-FILL"),
+            "new-voi",
+            OrderStatus::Accepted,
+            target,
+        );
+        accepted.ts_last = UnixNanos::from(200);
+        let _ = process_execution_report(
+            ExecutionReport::Order(accepted),
+            &context,
+            &mut pending_cloids,
+            None,
+        );
+        state.mark_pending_modify(client_order_id, VenueOrderId::new("new-voi"), target);
+
+        let mut replay = make_fill_report_with_qty(
+            Some("O-REC-UNSEEN-OLD-FILL"),
+            "old-voi",
+            "T-UNSEEN-OLD-LEG",
+            Quantity::from("0.1"),
+        );
+        replay.ts_event = UnixNanos::from(100);
+        let application = process_execution_report(
+            ExecutionReport::Fill(replay),
+            &context,
+            &mut pending_cloids,
+            None,
+        );
+
+        assert!(application.applied_fill.is_some());
+        assert_eq!(
+            state.cached_venue_order_id(&client_order_id),
+            Some(VenueOrderId::new("new-voi"))
+        );
+        assert_eq!(
+            state.pending_modify(&client_order_id),
+            Some(VenueOrderId::new("new-voi"))
+        );
+        assert!(matches!(
+            drain_events(&mut rx).last(),
+            Some(ExecutionEvent::Order(OrderEventAny::Filled(_)))
+        ));
+    }
+
+    #[rstest]
+    fn test_older_accepted_does_not_restore_superseded_binding() {
+        let ws_client = make_ws_client();
+        let (emitter, mut rx) = test_emitter();
+        let state = Arc::new(WsDispatchState::new());
+        let staged_brackets = Arc::new(parking_lot::Mutex::new(StagedBracketState::default()));
+        let tasks = TaskGroup::new();
+        let context = get_report_context(
+            emitter,
+            state.clone(),
+            staged_brackets,
+            ws_client,
+            make_http_client(),
+            &tasks,
+        );
+        let mut pending_cloids = FifoCache::new();
+        let client_order_id = ClientOrderId::from("O-REC-OLD-ACCEPT");
+        let target = Quantity::from("1.0");
+        let mut order_context = test_context(client_order_id);
+        order_context.quantity = target;
+        state.register_context(order_context);
+        state.insert_accepted(client_order_id);
+        state.record_venue_order_id(client_order_id, VenueOrderId::new("old-voi"));
+        state.mark_pending_modify(client_order_id, VenueOrderId::new("old-voi"), target);
+
+        let mut current = make_status_report_with_quantity(
+            Some("O-REC-OLD-ACCEPT"),
+            "new-voi",
+            OrderStatus::Accepted,
+            target,
+        );
+        current.ts_last = UnixNanos::from(200);
+        let _ = process_execution_report(
+            ExecutionReport::Order(current),
+            &context,
+            &mut pending_cloids,
+            None,
+        );
+        state.mark_pending_modify(client_order_id, VenueOrderId::new("new-voi"), target);
+
+        let mut stale = make_status_report_with_quantity(
+            Some("O-REC-OLD-ACCEPT"),
+            "old-voi",
+            OrderStatus::Accepted,
+            target,
+        );
+        stale.ts_last = UnixNanos::from(100);
+        let _ = process_execution_report(
+            ExecutionReport::Order(stale),
+            &context,
+            &mut pending_cloids,
+            None,
+        );
+
+        assert_eq!(
+            state.cached_venue_order_id(&client_order_id),
+            Some(VenueOrderId::new("new-voi"))
+        );
+        assert_eq!(
+            state.pending_modify(&client_order_id),
+            Some(VenueOrderId::new("new-voi"))
+        );
+        assert_eq!(drain_events(&mut rx).len(), 1);
     }
 
     #[rstest]
