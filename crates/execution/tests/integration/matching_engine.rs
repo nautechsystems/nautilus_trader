@@ -4416,6 +4416,271 @@ fn test_process_trailing_stop_orders_rejeceted_and_valid(
     );
 }
 
+fn add_l2_best_bid_ask(
+    engine: &mut OrderMatchingEngine,
+    instrument_id: InstrumentId,
+    bid: Price,
+    ask: Price,
+) {
+    let bid_delta = OrderBookDeltaTestBuilder::new(instrument_id)
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Buy,
+            bid,
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    let ask_delta = OrderBookDeltaTestBuilder::new(instrument_id)
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            ask,
+            Quantity::from("1.000"),
+            2,
+        ))
+        .build();
+    engine.process_order_book_delta(&bid_delta).unwrap();
+    engine.process_order_book_delta(&ask_delta).unwrap();
+}
+
+fn trailing_stop_is_activated(order: &OrderAny) -> bool {
+    match order {
+        OrderAny::TrailingStopMarket(inner) => inner.is_activated,
+        OrderAny::TrailingStopLimit(inner) => inner.is_activated,
+        other => panic!("Expected trailing stop, was {other:?}"),
+    }
+}
+
+fn build_trailing_stop_for_in_market_policy(
+    order_type: OrderType,
+    instrument_id: InstrumentId,
+    side: OrderSide,
+    client_order_id: ClientOrderId,
+    activation_price: Option<Price>,
+    trigger_price: Option<Price>,
+) -> OrderAny {
+    let mut builder = OrderTestBuilder::new(order_type);
+    builder
+        .instrument_id(instrument_id)
+        .side(side)
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .trailing_offset(dec!(1))
+        .trailing_offset_type(TrailingOffsetType::Price)
+        .submit(true);
+
+    if order_type == OrderType::TrailingStopLimit {
+        builder.limit_offset(dec!(1));
+        builder.price(if side == OrderSide::Buy {
+            Price::from("1400.00")
+        } else {
+            Price::from("1600.00")
+        });
+    }
+
+    if let Some(price) = activation_price {
+        builder.activation_price(price);
+    }
+
+    if let Some(price) = trigger_price {
+        builder.trigger_price(price);
+    }
+
+    builder.build()
+}
+
+#[rstest]
+fn test_trailing_stop_sell_rejects_activation_already_in_market(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+    add_l2_best_bid_ask(
+        &mut engine_l2,
+        instrument_eth_usdt.id(),
+        Price::from("1499.00"),
+        Price::from("1500.00"),
+    );
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut order = build_trailing_stop_for_in_market_policy(
+        OrderType::TrailingStopMarket,
+        instrument_eth_usdt.id(),
+        OrderSide::Sell,
+        client_order_id,
+        Some(Price::from("1499.00")),
+        None,
+    );
+    engine_l2.process_order(&mut order, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    assert_eq!(saved_messages.len(), 1);
+
+    let rejected = match saved_messages.first().unwrap() {
+        OrderEventAny::Rejected(rejected) => rejected,
+        other => panic!("Expected OrderRejected, was {other:?}"),
+    };
+
+    assert_eq!(rejected.client_order_id, client_order_id);
+    assert_eq!(
+        rejected.reason,
+        Ustr::from(
+            "TRAILING_STOP_MARKET SELL order activation px of 1499.00 was in the market: bid=1499.00, ask=1500.00, but rejected because of configuration"
+        )
+    );
+    assert!(!trailing_stop_is_activated(&order));
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TrailingStopSubmitScenario {
+    ActivationMatched,
+    TriggerMatched,
+    BothMatched,
+    NeitherMatched,
+    TriggerMatchedBeforeActivation,
+}
+
+#[rstest]
+#[case(OrderType::TrailingStopMarket, OrderSide::Sell)]
+#[case(OrderType::TrailingStopMarket, OrderSide::Buy)]
+#[case(OrderType::TrailingStopLimit, OrderSide::Sell)]
+#[case(OrderType::TrailingStopLimit, OrderSide::Buy)]
+fn test_trailing_stop_in_market_submission_policy(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+    #[case] order_type: OrderType,
+    #[case] side: OrderSide,
+    #[values(true, false)] reject_stop_orders: bool,
+    #[values(
+        TrailingStopSubmitScenario::ActivationMatched,
+        TrailingStopSubmitScenario::TriggerMatched,
+        TrailingStopSubmitScenario::BothMatched,
+        TrailingStopSubmitScenario::NeitherMatched,
+        TrailingStopSubmitScenario::TriggerMatchedBeforeActivation
+    )]
+    scenario: TrailingStopSubmitScenario,
+) {
+    let config = OrderMatchingEngineConfig {
+        reject_stop_orders,
+        ..Default::default()
+    };
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, Some(config));
+    add_l2_best_bid_ask(
+        &mut engine_l2,
+        instrument_eth_usdt.id(),
+        Price::from("1499.00"),
+        Price::from("1500.00"),
+    );
+
+    let (activation_in, activation_out, trigger_in, trigger_out) = match side {
+        OrderSide::Sell => (
+            Price::from("1498.00"),
+            Price::from("1510.00"),
+            Price::from("1500.00"),
+            Price::from("1490.00"),
+        ),
+        OrderSide::Buy => (
+            Price::from("1501.00"),
+            Price::from("1490.00"),
+            Price::from("1498.00"),
+            Price::from("1510.00"),
+        ),
+    };
+
+    let (activation_price, trigger_price) = match scenario {
+        TrailingStopSubmitScenario::ActivationMatched => (Some(activation_in), None),
+        TrailingStopSubmitScenario::TriggerMatched => (None, Some(trigger_in)),
+        TrailingStopSubmitScenario::BothMatched => (Some(activation_in), Some(trigger_in)),
+        TrailingStopSubmitScenario::NeitherMatched => (Some(activation_out), Some(trigger_out)),
+        TrailingStopSubmitScenario::TriggerMatchedBeforeActivation => {
+            (Some(activation_out), Some(trigger_in))
+        }
+    };
+
+    let reject_kind = match (scenario, reject_stop_orders) {
+        (TrailingStopSubmitScenario::ActivationMatched, true) => Some("activation px"),
+        (TrailingStopSubmitScenario::TriggerMatched, _) => Some("trigger px"),
+        (TrailingStopSubmitScenario::BothMatched, true) => Some("activation px"),
+        (TrailingStopSubmitScenario::BothMatched, false) => Some("trigger px"),
+        _ => None,
+    };
+
+    let expect_activated =
+        matches!(scenario, TrailingStopSubmitScenario::ActivationMatched) && !reject_stop_orders;
+
+    for (idx, client_order_id) in [
+        ClientOrderId::from("O-19700101-000000-001-001-1"),
+        ClientOrderId::from("O-19700101-000000-001-001-2"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        clear_order_event_handler_messages(&order_event_handler);
+        let mut order = build_trailing_stop_for_in_market_policy(
+            order_type,
+            instrument_eth_usdt.id(),
+            side,
+            client_order_id,
+            activation_price,
+            trigger_price,
+        );
+        engine_l2.process_order(&mut order, account_id);
+
+        let saved_messages = get_order_event_handler_messages(&order_event_handler);
+
+        if let Some(kind) = reject_kind {
+            let px = if kind == "activation px" {
+                activation_price.unwrap()
+            } else {
+                trigger_price.unwrap()
+            };
+
+            assert_eq!(saved_messages.len(), 1, "replay {idx}");
+
+            let rejected = match saved_messages.first().unwrap() {
+                OrderEventAny::Rejected(rejected) => rejected,
+                other => panic!("Expected OrderRejected on replay {idx}, was {other:?}"),
+            };
+
+            assert_eq!(rejected.client_order_id, client_order_id);
+            assert_eq!(
+                rejected.reason,
+                Ustr::from(&format!(
+                    "{order_type} {side} order {kind} of {px} was in the market: bid=1499.00, ask=1500.00, but rejected because of configuration"
+                ))
+            );
+            assert!(!trailing_stop_is_activated(&order));
+        } else {
+            let accepted = match saved_messages.first().unwrap() {
+                OrderEventAny::Accepted(accepted) => accepted,
+                other => panic!("Expected OrderAccepted on replay {idx}, was {other:?}"),
+            };
+
+            assert_eq!(accepted.client_order_id, client_order_id);
+            assert_eq!(trailing_stop_is_activated(&order), expect_activated);
+
+            if expect_activated && trigger_price.is_none() {
+                assert_eq!(saved_messages.len(), 2, "replay {idx}");
+
+                let updated = match saved_messages.get(1).unwrap() {
+                    OrderEventAny::Updated(updated) => updated,
+                    other => panic!("Expected OrderUpdated on replay {idx}, was {other:?}"),
+                };
+
+                assert_eq!(updated.client_order_id, client_order_id);
+                assert!(updated.trigger_price.is_some());
+            } else {
+                assert_eq!(saved_messages.len(), 1, "replay {idx}");
+            }
+        }
+    }
+}
+
 #[rstest]
 fn test_updating_of_trailing_stop_market_order_with_no_trigger_price_set(
     instrument_eth_usdt: InstrumentAny,

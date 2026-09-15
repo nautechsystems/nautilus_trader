@@ -13,6 +13,7 @@ Released on TBD (UTC).
 ### Fixes
 
 - Fixed backtest rejection of lower-precision order fields within the same fixed-point scale
+- Fixed trailing-stop orders already in the market being accepted despite `reject_stop_orders`
 
 ### Internal Improvements
 

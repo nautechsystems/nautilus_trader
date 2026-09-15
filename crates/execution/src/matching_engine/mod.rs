@@ -3878,28 +3878,67 @@ impl OrderMatchingEngine {
     }
 
     fn process_trailing_stop_order(&mut self, order: &mut OrderAny) {
-        if let Some(trigger_price) = order.trigger_price()
-            && self.core.is_stop_matched_with_trigger_type(
-                order.order_side(),
-                trigger_price,
-                order.trigger_type().unwrap_or(TriggerType::Default),
-            )
+        let side = order.order_side();
+        let trigger_type = order.trigger_type().unwrap_or(TriggerType::Default);
+
+        if let Some(activation_price) = order.activation_price()
+            && self.core.is_touch_triggered(side, activation_price)
+            && self.config.reject_stop_orders
         {
             self.generate_order_rejected(
-                    order,
-                    format!(
-                        "{} {} order trigger px of {} was in the market: bid={}, ask={}, but rejected because of configuration",
-                        order.order_type(),
-                        order.order_side(),
-                        trigger_price,
-                        self.core
-                            .bid
-                            .map_or_else(|| "None".to_string(), |p| p.to_string()),
-                        self.core
-                            .ask
-                            .map_or_else(|| "None".to_string(), |p| p.to_string())
-                    ).into(),
-                );
+                order,
+                format!(
+                    "{} {} order activation px of {} was in the market: bid={}, ask={}, but rejected because of configuration",
+                    order.order_type(),
+                    side,
+                    activation_price,
+                    self.core
+                        .bid
+                        .map_or_else(|| "None".to_string(), |p| p.to_string()),
+                    self.core
+                        .ask
+                        .map_or_else(|| "None".to_string(), |p| p.to_string())
+                )
+                .into(),
+            );
+            return;
+        }
+
+        let activates_now = match order.activation_price() {
+            Some(activation_price) => self.core.is_touch_triggered(side, activation_price),
+            None => self
+                .get_trailing_activation_price(
+                    trigger_type,
+                    side,
+                    self.core.bid,
+                    self.core.ask,
+                    self.core.last,
+                )
+                .is_some(),
+        };
+
+        if activates_now
+            && let Some(trigger_price) = order.trigger_price()
+            && self
+                .core
+                .is_stop_matched_with_trigger_type(side, trigger_price, trigger_type)
+        {
+            self.generate_order_rejected(
+                order,
+                format!(
+                    "{} {} order trigger px of {} was in the market: bid={}, ask={}, but rejected because of configuration",
+                    order.order_type(),
+                    side,
+                    trigger_price,
+                    self.core
+                        .bid
+                        .map_or_else(|| "None".to_string(), |p| p.to_string()),
+                    self.core
+                        .ask
+                        .map_or_else(|| "None".to_string(), |p| p.to_string())
+                )
+                .into(),
+            );
             return;
         }
 
