@@ -594,4 +594,64 @@ if [[ -s "${work_dir}/upload.log" ]]; then
   fail "publish-existing should not upload when checksum validation fails."
 fi
 
+release_retry_bin="${work_dir}/release-retry-bin"
+mkdir -p "$release_retry_bin"
+cp "${mock_bin}/sleep" "${release_retry_bin}/sleep"
+cat > "${release_retry_bin}/gh" << 'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "$*" == "release verify --help" ]]; then
+  exit 0
+fi
+printf '%s\n' "$2" >> "${MOCK_RELEASE_CALLS:?}"
+if [[ "$2" == "${MOCK_RELEASE_COMMAND:?}" ]]; then
+  count=$(grep -c "^${MOCK_RELEASE_COMMAND}$" "$MOCK_RELEASE_CALLS")
+  if [[ "$count" -le "${MOCK_RELEASE_FAILURES:?}" ]]; then
+    exit 17
+  fi
+fi
+if [[ "$2" == view ]]; then
+  printf 'true\thttps://example.invalid/release\n'
+fi
+MOCK
+chmod +x "${release_retry_bin}/gh"
+
+for release_command in view edit verify; do
+  release_script=publish-github-release.bash
+  if [[ "$release_command" == verify ]]; then
+    release_script=verify-github-release-attestation.bash
+  fi
+  for failures in 0 1 2; do
+    calls="${work_dir}/release-calls"
+    output="${work_dir}/release-retry.out"
+    : > "$calls"
+    status=0
+    PATH="${release_retry_bin}:${PATH}" \
+      GITHUB_TOKEN=mock-token \
+      GITHUB_REPOSITORY=mock/repo \
+      TAG_NAME=v1.2.3 \
+      GH_RELEASE_PUBLISH_ATTEMPTS=2 \
+      GH_RELEASE_VERIFY_ATTEMPTS=2 \
+      MOCK_RELEASE_COMMAND="$release_command" \
+      MOCK_RELEASE_FAILURES="$failures" \
+      MOCK_RELEASE_CALLS="$calls" \
+      bash "${script_dir}/${release_script}" > "$output" 2>&1 || status=$?
+    expected_status=0
+    expected_calls=$((failures + 1))
+    if [[ "$failures" -eq 2 ]]; then
+      expected_status=17
+      expected_calls=2
+    fi
+    [[ "$status" -eq "$expected_status" ]] ||
+      fail "${release_command}: expected exit ${expected_status}, was ${status}"
+    actual_calls=$(grep -c "^${release_command}$" "$calls")
+    [[ "$actual_calls" -eq "$expected_calls" ]] ||
+      fail "${release_command}: expected ${expected_calls} calls, was ${actual_calls}"
+    if [[ "$release_command" == view && "$failures" -eq 2 ]]; then
+      assert_not_contains "$calls" edit "Failed release lookup must not publish."
+    fi
+  done
+done
+
 echo "release GitHub asset tests passed"
