@@ -20,7 +20,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use ahash::{AHashMap, AHashSet};
@@ -47,7 +47,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    SocketState, SocketStateSink,
+    SocketStateSink,
     mode::ConnectionMode,
     websocket::{
         AuthTracker, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
@@ -151,7 +151,6 @@ pub struct HyperliquidWebSocketClient {
     proxy_url: Option<SecretString>,
     socket_sink: Option<SocketStateSink>,
     socket_control: Option<SocketControl>,
-    disconnect_started_at: Arc<Mutex<Option<Instant>>>,
 }
 
 impl Clone for HyperliquidWebSocketClient {
@@ -186,7 +185,6 @@ impl Clone for HyperliquidWebSocketClient {
             proxy_url: self.proxy_url.clone(),
             socket_sink: self.socket_sink.clone(),
             socket_control: self.socket_control.clone(),
-            disconnect_started_at: Arc::clone(&self.disconnect_started_at),
         }
     }
 }
@@ -245,7 +243,6 @@ impl HyperliquidWebSocketClient {
             proxy_url: proxy_url.map(SecretString::from),
             socket_sink: None,
             socket_control: None,
-            disconnect_started_at: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -317,27 +314,18 @@ impl HyperliquidWebSocketClient {
                 .map(|value| value.expose_secret().to_owned()),
         };
         let connection_rate_keys: Arc<[Ustr]> = Arc::from([self.rate_limits.connection_key()]);
-        let disconnect_started_at = Arc::clone(&self.disconnect_started_at);
-        let state_sink = self
-            .socket_control
-            .as_ref()
-            .map(SocketControl::sink)
-            .or_else(|| self.socket_sink.clone())
-            .map(|sink| {
-                sink.with_callback(move |state| {
-                    if state == SocketState::Disconnected {
-                        let mut started_at = disconnect_started_at.lock();
-                        started_at.get_or_insert_with(Instant::now);
-                    }
-                })
-            });
         let client_result = WebSocketClient::builder()
             .config(cfg)
             .message_handler(message_handler)
             .rate_limiter(Arc::clone(&self.rate_limits.messages))
             .connection_rate_limiter(Arc::clone(&self.rate_limits.connections))
             .connection_rate_keys(connection_rate_keys)
-            .maybe_state_sink(state_sink)
+            .maybe_state_sink(
+                self.socket_control
+                    .as_ref()
+                    .map(SocketControl::sink)
+                    .or_else(|| self.socket_sink.clone()),
+            )
             .connect()
             .await;
         let client = match client_result {
@@ -1415,17 +1403,6 @@ impl HyperliquidWebSocketClient {
                 .get(&Ustr::from(channel.as_str()))
                 .is_some_and(|users| users.contains(&user))
         })
-    }
-
-    pub(crate) fn reset_disconnect_tracking(&self) {
-        let _ = self.disconnect_started_at.lock().take();
-    }
-
-    pub(crate) fn take_disconnect_duration(&self) -> Option<Duration> {
-        self.disconnect_started_at
-            .lock()
-            .take()
-            .map(|started_at| started_at.elapsed())
     }
 
     /// Gets a bar type from the cache by coin and interval.
@@ -2722,29 +2699,6 @@ mod tests {
         client.subscriptions.confirm_subscribe(&user_events);
         assert!(client.execution_subscriptions_confirmed(user));
         assert!(!client.execution_subscriptions_confirmed("0xdef"));
-    }
-
-    #[rstest]
-    fn disconnect_duration_is_consumed_once_and_can_be_reset() {
-        let client = HyperliquidWebSocketClient::new(
-            None,
-            HyperliquidEnvironment::Testnet,
-            None,
-            TransportBackend::default(),
-            None,
-        );
-        *client.disconnect_started_at.lock() = Some(
-            Instant::now()
-                .checked_sub(std::time::Duration::from_secs(2))
-                .unwrap(),
-        );
-
-        assert!(client.take_disconnect_duration().unwrap() >= std::time::Duration::from_secs(2));
-        assert!(client.take_disconnect_duration().is_none());
-
-        *client.disconnect_started_at.lock() = Some(Instant::now());
-        client.reset_disconnect_tracking();
-        assert!(client.take_disconnect_duration().is_none());
     }
 
     #[rstest]

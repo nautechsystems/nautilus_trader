@@ -242,14 +242,6 @@ impl WsDispatchState {
         self.order_contexts.get(client_order_id).map(|r| *r)
     }
 
-    #[must_use]
-    pub(crate) fn tracked_client_order_ids(&self) -> Vec<ClientOrderId> {
-        self.order_contexts
-            .iter()
-            .map(|entry| *entry.key())
-            .collect()
-    }
-
     /// Marks a tracked order as awaiting its submission POST response.
     pub fn mark_submission_pending(&self, client_order_id: ClientOrderId) {
         self.pending_submissions.insert(client_order_id);

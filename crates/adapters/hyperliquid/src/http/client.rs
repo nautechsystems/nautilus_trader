@@ -488,32 +488,9 @@ impl HyperliquidRawHttpClient {
         serde_json::from_value(response).map_err(Error::Serde)
     }
 
-    /// Get user fills in an inclusive time range.
-    pub(crate) async fn info_user_fills_by_time(
-        &self,
-        user: &str,
-        start_time: u64,
-        end_time: u64,
-    ) -> Result<HyperliquidFills> {
-        let request = InfoRequest::user_fills_by_time(user, start_time, end_time);
-        let response = self.send_info_request(&request).await?;
-        serde_json::from_value(response).map_err(Error::Serde)
-    }
-
     /// Get order status for a user.
     pub async fn info_order_status(&self, user: &str, oid: u64) -> Result<HyperliquidOrderStatus> {
         let request = InfoRequest::order_status(user, oid);
-        let response = self.send_info_request(&request).await?;
-        serde_json::from_value(response).map_err(Error::Serde)
-    }
-
-    /// Get order status for a user by venue CLOID.
-    pub(crate) async fn info_order_status_by_cloid(
-        &self,
-        user: &str,
-        cloid: &Cloid,
-    ) -> Result<HyperliquidOrderStatus> {
-        let request = InfoRequest::order_status_by_cloid(user, &cloid.to_hex());
         let response = self.send_info_request(&request).await?;
         serde_json::from_value(response).map_err(Error::Serde)
     }
@@ -1828,28 +1805,9 @@ impl HyperliquidHttpClient {
         self.inner.info_user_fills(user).await
     }
 
-    pub(crate) async fn info_user_fills_by_time(
-        &self,
-        user: &str,
-        start_time: u64,
-        end_time: u64,
-    ) -> Result<HyperliquidFills> {
-        self.inner
-            .info_user_fills_by_time(user, start_time, end_time)
-            .await
-    }
-
     /// Get order status for a user.
     pub async fn info_order_status(&self, user: &str, oid: u64) -> Result<HyperliquidOrderStatus> {
         self.inner.info_order_status(user, oid).await
-    }
-
-    pub(crate) async fn info_order_status_by_cloid(
-        &self,
-        user: &str,
-        cloid: &Cloid,
-    ) -> Result<HyperliquidOrderStatus> {
-        self.inner.info_order_status_by_cloid(user, cloid).await
     }
 
     /// Get all open orders for a user.
@@ -2585,36 +2543,16 @@ impl HyperliquidHttpClient {
 
         // Order not in open set: query by oid (returns limited HyperliquidOrderInfo)
         let response = self.info_order_status(user, oid).await?;
-        self.order_status_report_from_response(response, &format!("oid {oid}"))
-    }
-
-    pub(crate) async fn request_order_status_report_by_cloid(
-        &self,
-        user: &str,
-        cloid: &Cloid,
-    ) -> Result<Option<OrderStatusReport>> {
-        let response = self.info_order_status_by_cloid(user, cloid).await?;
-        self.order_status_report_from_response(response, &format!("CLOID {cloid}"))
-    }
-
-    fn order_status_report_from_response(
-        &self,
-        response: HyperliquidOrderStatus,
-        order_id: &str,
-    ) -> Result<Option<OrderStatusReport>> {
-        let Some(entry) = response.into_order() else {
-            return Ok(None);
+        let entry = match response.into_order() {
+            Some(e) => e,
+            None => return Ok(None),
         };
-        let account_id = self
-            .account_id
-            .ok_or_else(|| Error::bad_request("Account ID not set"))?;
-        let ts_init = self.clock.get_time_ns();
 
         let instrument = match self.get_or_create_instrument(&entry.order.coin, None) {
             Some(inst) => inst,
             None => {
                 return Err(Error::bad_request(format!(
-                    "Failed to resolve instrument for order {order_id} with coin {}",
+                    "Failed to resolve instrument for order oid {oid} with coin {}",
                     entry.order.coin,
                 )));
             }
@@ -2651,7 +2589,7 @@ impl HyperliquidHttpClient {
         )
         .map_err(|e| {
             Error::bad_request(format!(
-                "Failed to parse order status report for {order_id}: {e}"
+                "Failed to parse order status report for oid {oid}: {e}"
             ))
         })?;
 

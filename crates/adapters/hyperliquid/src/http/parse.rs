@@ -1227,7 +1227,8 @@ pub fn parse_fill_report(
         last_px,
         commission,
         liquidity_side,
-        None, // client_order_id - the venue CLOID is not a Nautilus client order ID
+        // the venue CLOID is not a Nautilus client order ID
+        None,
         None, // venue_position_id
         ts_event,
         ts_init,
