@@ -2441,26 +2441,12 @@ impl HyperliquidExecutionClient {
                 let event = tokio::select! {
                     event = ws_client.next_event() => event,
                     Some(mut recovery) = reconciled_rx.recv() => {
-                        for report in recovery.reports {
-                            let replay = match &report {
-                                ExecutionReport::Fill(fill) => fill.client_order_id.and_then(
-                                    |client_order_id| {
-                                        recovery.snapshot.replay_fill_context(client_order_id)
-                                    },
-                                ),
-                                ExecutionReport::Order(_) => None,
-                            };
-                            let application = process_execution_report(
-                                report,
-                                &report_ctx,
-                                &mut pending_filled_cloids,
-                                replay,
-                            );
-
-                            if let Some(fill) = application.applied_fill {
-                                recovery.snapshot.record_applied_fill(fill);
-                            }
-                        }
+                        apply_reconnect_reports(
+                            recovery.reports,
+                            &mut recovery.snapshot,
+                            &report_ctx,
+                            &mut pending_filled_cloids,
+                        );
                         continue;
                     }
                 };
@@ -3768,6 +3754,31 @@ struct ReportDispatchOptions {
     ts_init: UnixNanos,
 }
 
+/// Applies a reconnect recovery batch against the snapshot captured at reconnect.
+///
+/// Each applied fill advances the snapshot baseline, so a later missed fill for
+/// an order the live stream already cleaned up builds on the earlier one.
+fn apply_reconnect_reports(
+    reports: Vec<ExecutionReport>,
+    snapshot: &mut ReconnectSnapshot,
+    ctx: &ReportContext,
+    pending_filled_cloids: &mut FifoCache<ClientOrderId, 10_000>,
+) {
+    for report in reports {
+        let replay = match &report {
+            ExecutionReport::Fill(fill) => fill
+                .client_order_id
+                .and_then(|client_order_id| snapshot.replay_fill_context(client_order_id)),
+            ExecutionReport::Order(_) => None,
+        };
+        let application = process_execution_report(report, ctx, pending_filled_cloids, replay);
+
+        if let Some(fill) = application.applied_fill {
+            snapshot.record_applied_fill(fill);
+        }
+    }
+}
+
 /// Applies one execution report: typed events, staged brackets, and the
 /// corrective actions their outcomes queue.
 fn process_execution_report(
@@ -4183,11 +4194,11 @@ mod tests {
         CancelEntry, ExecutionClient, ExecutionClientCore, ExecutionReport, FifoCache,
         HyperliquidExecutionClient, HyperliquidExecutionClientConfig, HyperliquidHttpClient,
         HyperliquidWebSocketClient, PostRejectionRoute, ReconnectSnapshot, ReportContext,
-        StagedBracketChild, StagedBracketState, WsDispatchState, attach_known_client_order_id,
-        build_ouo_resize_request, can_fast_cancel_order, classify_post_failure,
-        determine_order_list_grouping, fetch_reconnect_reports, get_reconnect_reports,
-        handle_execution_report, process_execution_report, register_order_context_into,
-        split_fast_cancel_requests, validate_order_for_hyperliquid,
+        StagedBracketChild, StagedBracketState, WsDispatchState, apply_reconnect_reports,
+        attach_known_client_order_id, build_ouo_resize_request, can_fast_cancel_order,
+        classify_post_failure, determine_order_list_grouping, fetch_reconnect_reports,
+        get_reconnect_reports, handle_execution_report, process_execution_report,
+        register_order_context_into, split_fast_cancel_requests, validate_order_for_hyperliquid,
     };
     use crate::{
         common::{
@@ -5274,10 +5285,18 @@ mod tests {
         );
 
         assert_eq!(state.buffered_fill_count(&parent_id), 0);
-        assert!(matches!(
-            drain_events(&mut rx).last(),
-            Some(ExecutionEvent::Order(OrderEventAny::Filled(_)))
-        ));
+
+        // activated children submit on the shared runtime, so only parent events are ordered
+        let parent_events = drain_events(&mut rx)
+            .into_iter()
+            .filter_map(|event| match event {
+                ExecutionEvent::Order(event) if event.client_order_id() == parent_id => Some(event),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(parent_events.len(), 2);
+        assert!(matches!(parent_events[0], OrderEventAny::Updated(_)));
+        assert!(matches!(parent_events[1], OrderEventAny::Filled(_)));
     }
 
     #[rstest]
@@ -5300,7 +5319,9 @@ mod tests {
 
         let client_order_id = ClientOrderId::from("O-REC-CANCEL-RACE");
         let cloid = cloid_for("O-REC-CANCEL-RACE");
-        state.register_context(test_context(client_order_id));
+        let mut order_context = test_context(client_order_id);
+        order_context.quantity = Quantity::from("0.0002");
+        state.register_context(order_context);
         state.insert_accepted(client_order_id);
         state.record_venue_order_id(client_order_id, VenueOrderId::new("42"));
         ws_client.cache_cloid_mapping(cloid, client_order_id);
@@ -5317,37 +5338,38 @@ mod tests {
         assert!(ws_client.get_cloid_mapping(&cloid).is_none());
 
         let reports = get_reconnect_reports(
-            vec![make_raw_fill("BTC", Some(cloid.as_str()), 42, 7, 1_000)],
+            vec![
+                make_raw_fill("BTC", Some(cloid.as_str()), 42, 7, 1_000),
+                make_raw_fill("BTC", Some(cloid.as_str()), 42, 8, 2_000),
+            ],
             Vec::new(),
             &http_client,
             &snapshot,
             UnixNanos::default(),
         )
         .unwrap();
-        assert_eq!(reports.len(), 1);
+        assert_eq!(reports.len(), 2);
 
+        apply_reconnect_reports(reports, &mut snapshot, &context, &mut pending_cloids);
+
+        // the second missed fill must build on the first, not the reconnect baseline
         let replay = snapshot
             .replay_fill_context(client_order_id)
             .expect("reconnect snapshot should retain the canceled order context");
-        let application = process_execution_report(
-            reports.into_iter().next().unwrap(),
-            &context,
-            &mut pending_cloids,
-            Some(replay),
-        );
-        let applied = application
-            .applied_fill
-            .expect("unseen recovery fill should be applied");
-        snapshot.record_applied_fill(applied);
+        assert_eq!(replay.filled_qty, Quantity::from("0.0002"));
 
         let events = drain_events(&mut rx);
-        assert_eq!(events.len(), 2);
+        assert_eq!(events.len(), 3);
         assert!(matches!(
             events[0],
             ExecutionEvent::Order(OrderEventAny::Canceled(_))
         ));
         assert!(matches!(
             events[1],
+            ExecutionEvent::Order(OrderEventAny::Filled(_))
+        ));
+        assert!(matches!(
+            events[2],
             ExecutionEvent::Order(OrderEventAny::Filled(_))
         ));
     }
