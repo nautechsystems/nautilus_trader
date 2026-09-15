@@ -3355,6 +3355,130 @@ fn test_cache_orders_returned_sorted_by_client_order_id(
 }
 
 #[rstest]
+#[case(None, None, None, None, None, &["O-A", "O-B", "O-C", "O-D", "O-E", "O-Z"])]
+#[case(Some("VENUE-A"), None, None, None, None, &["O-A", "O-B", "O-C", "O-E", "O-Z"])]
+#[case(None, Some("SYMBOL-1.VENUE-A"), None, None, None, &["O-A", "O-B", "O-E", "O-Z"])]
+#[case(None, None, Some("S-001"), None, None, &["O-A", "O-B", "O-C", "O-D", "O-Z"])]
+#[case(None, None, None, Some("SIM-002"), None, &["O-E"])]
+#[case(None, None, None, None, Some(OrderSide::Sell), &["O-B"])]
+#[case(Some("VENUE-A"), Some("SYMBOL-1.VENUE-A"), Some("S-001"), Some("SIM-001"), Some(OrderSide::Buy), &["O-A", "O-Z"])]
+#[case(Some("VENUE-B"), Some("SYMBOL-1.VENUE-A"), None, None, None, &[])]
+#[case(None, None, Some("S-001"), Some("SIM-002"), None, &[])]
+#[case(Some("UNKNOWN"), None, None, None, None, &[])]
+#[case(None, Some("UNKNOWN.VENUE-A"), None, None, None, &[])]
+#[case(None, None, Some("UNKNOWN-001"), None, None, &[])]
+#[case(None, None, None, Some("UNKNOWN-001"), None, &[])]
+fn test_orders_filtered_results_and_borrows(
+    #[case] venue: Option<&str>,
+    #[case] instrument: Option<&str>,
+    #[case] strategy: Option<&str>,
+    #[case] account: Option<&str>,
+    #[case] side: Option<OrderSide>,
+    #[case] expected: &[&str],
+    #[values(false, true)] refs: bool,
+) {
+    let mut cache = cache();
+
+    for (id, instrument, side, strategy, account) in [
+        (
+            "O-Z",
+            "SYMBOL-1.VENUE-A",
+            OrderSide::Buy,
+            "S-001",
+            "SIM-001",
+        ),
+        (
+            "O-E",
+            "SYMBOL-1.VENUE-A",
+            OrderSide::Buy,
+            "S-002",
+            "SIM-002",
+        ),
+        (
+            "O-D",
+            "SYMBOL-1.VENUE-B",
+            OrderSide::Buy,
+            "S-001",
+            "SIM-001",
+        ),
+        (
+            "O-C",
+            "SYMBOL-2.VENUE-A",
+            OrderSide::Buy,
+            "S-001",
+            "SIM-001",
+        ),
+        (
+            "O-B",
+            "SYMBOL-1.VENUE-A",
+            OrderSide::Sell,
+            "S-001",
+            "SIM-001",
+        ),
+        (
+            "O-A",
+            "SYMBOL-1.VENUE-A",
+            OrderSide::Buy,
+            "S-001",
+            "SIM-001",
+        ),
+    ] {
+        let mut order = build_filter_order(
+            InstrumentId::from(instrument),
+            side,
+            ClientOrderId::from(id),
+            Some(StrategyId::from(strategy)),
+            None,
+        );
+        cache.add_order(order.clone(), None, None, false).unwrap();
+        promote_to_open(
+            &mut cache,
+            &mut order,
+            AccountId::from(account),
+            VenueOrderId::from(id),
+        );
+    }
+
+    let venue = venue.map(Venue::from);
+    let instrument = instrument.map(InstrumentId::from);
+    let strategy = strategy.map(StrategyId::from);
+    let account = account.map(AccountId::from);
+    let expected: Vec<_> = expected.iter().map(|id| ClientOrderId::from(*id)).collect();
+
+    let orders = if refs {
+        cache.orders_refs(
+            venue.as_ref(),
+            instrument.as_ref(),
+            strategy.as_ref(),
+            account.as_ref(),
+            side,
+        )
+    } else {
+        cache.orders(
+            venue.as_ref(),
+            instrument.as_ref(),
+            strategy.as_ref(),
+            account.as_ref(),
+            side,
+        )
+    };
+
+    let actual: Vec<_> = orders.iter().map(|order| order.client_order_id()).collect();
+
+    assert_eq!(actual, expected);
+
+    for (id, cell) in &cache.orders {
+        assert_eq!(cell.try_borrow_mut().is_err(), expected.contains(id));
+    }
+
+    drop(orders);
+
+    for cell in cache.orders.values() {
+        assert!(cell.try_borrow_mut().is_ok());
+    }
+}
+
+#[rstest]
 fn test_cache_positions_returned_sorted_by_position_id(mut cache: Cache, audusd_sim: CurrencyPair) {
     // Mirror of test_cache_orders_returned_sorted_by_client_order_id for the
     // positions path; get_positions_for_ids now sorts by PositionId so the

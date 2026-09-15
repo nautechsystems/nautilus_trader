@@ -19,7 +19,7 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use nautilus_common::cache::Cache;
 use nautilus_model::{
     identifiers::{InstrumentId, Venue},
-    orders::{OrderAny, stubs::create_order_list_sample},
+    orders::{Order, OrderAny, stubs::create_order_list_sample},
 };
 
 fn cache_order_querying_venue_instrument(
@@ -40,24 +40,44 @@ fn cache_orders_processing(orders: &[OrderAny]) {
 fn bench_order_indexing(c: &mut Criterion) {
     // Create 100k orders list and add it to the cache
     let all_orders = create_order_list_sample(5, 100, 200);
+    let venue = Venue::from("VENUE-1");
+    let instrument = InstrumentId::from("SYMBOL-1.VENUE-1");
+    let mut expected_venue: Vec<_> = all_orders
+        .iter()
+        .filter(|order| order.instrument_id().venue == venue)
+        .map(|order| order.client_order_id())
+        .collect();
+    let mut expected_instrument: Vec<_> = all_orders
+        .iter()
+        .filter(|order| order.instrument_id() == instrument)
+        .map(|order| order.client_order_id())
+        .collect();
+    expected_venue.sort();
+    expected_instrument.sort();
+    assert_eq!(expected_venue.len(), 20_000);
+    assert_eq!(expected_instrument.len(), 200);
+
     let mut cache = Cache::default();
     for order in all_orders {
         cache.add_order(order, None, None, false).unwrap();
     }
 
-    let venue = Venue::from("VENUE-1");
-    let instrument = InstrumentId::from("SYMBOL-1.VENUE-1");
+    for (venue_filter, instrument_filter, expected) in [
+        (Some(&venue), None, &expected_venue),
+        (None, Some(&instrument), &expected_instrument),
+        (Some(&venue), Some(&instrument), &expected_instrument),
+    ] {
+        let actual: Vec<_> = cache
+            .orders(venue_filter, instrument_filter, None, None, None)
+            .iter()
+            .map(|order| order.client_order_id())
+            .collect();
+        assert_eq!(&actual, expected);
+    }
 
-    assert_eq!(
-        cache.orders(Some(&venue), None, None, None, None).len(),
-        20_000
-    );
-    assert_eq!(
-        cache
-            .orders(Some(&venue), Some(&instrument), None, None, None)
-            .len(),
-        200,
-    );
+    c.bench_function("Cache query by instrument (200 orders)", |b| {
+        b.iter(|| black_box(&cache).orders(None, Some(black_box(&instrument)), None, None, None));
+    });
 
     c.bench_function("Cache query by venue", |b| {
         b.iter(|| {

@@ -5908,10 +5908,10 @@ impl Cache {
     ///
     /// # Panics
     ///
-    /// Panics if any `client_order_id` in the set is not found in the cache.
+    /// Panics if any `client_order_id` in the input is not found in the cache.
     fn get_orders_for_ids(
         &self,
-        client_order_ids: &AHashSet<ClientOrderId>,
+        client_order_ids: impl IntoIterator<Item = ClientOrderId>,
         side: Option<OrderSide>,
     ) -> Vec<OrderRef<'_>> {
         const UNCACHED_SORT_MAX_LEN: usize = 32;
@@ -5921,7 +5921,7 @@ impl Cache {
         for client_order_id in client_order_ids {
             let order_cell = self
                 .orders
-                .get(client_order_id)
+                .get(&client_order_id)
                 .unwrap_or_else(|| panic!("Order {client_order_id} not found"));
             let order = OrderRef::new(order_cell.borrow());
 
@@ -5931,7 +5931,7 @@ impl Cache {
         }
 
         // Sort so callers receive a deterministic Vec across runs; the
-        // underlying client_order_ids set is AHash-backed.
+        // underlying ID sources are AHash-backed.
         let key = |order: &OrderRef<'_>| order.client_order_id();
 
         if orders.len() <= UNCACHED_SORT_MAX_LEN {
@@ -6619,8 +6619,17 @@ impl Cache {
         account_id: Option<&AccountId>,
         side: Option<OrderSide>,
     ) -> Vec<OrderRef<'_>> {
-        let client_order_ids = self.client_order_ids(venue, instrument_id, strategy_id, account_id);
-        self.get_orders_for_ids(&client_order_ids, side)
+        if venue.is_none()
+            && instrument_id.is_none()
+            && strategy_id.is_none()
+            && account_id.is_none()
+        {
+            return self.get_orders_for_ids(self.index.orders.iter().copied(), side);
+        }
+
+        let client_order_ids =
+            self.iter_client_order_ids(venue, instrument_id, strategy_id, account_id);
+        self.get_orders_for_ids(client_order_ids, side)
     }
 
     /// Returns borrows of all orders matching the optional filter parameters.
@@ -6650,7 +6659,7 @@ impl Cache {
     ) -> Vec<OrderRef<'_>> {
         let client_order_ids =
             self.client_order_ids_open(venue, instrument_id, strategy_id, account_id);
-        self.get_orders_for_ids(&client_order_ids, side)
+        self.get_orders_for_ids(client_order_ids.iter().copied(), side)
     }
 
     /// Returns borrows of all open orders matching the optional filter parameters.
@@ -6680,7 +6689,7 @@ impl Cache {
     ) -> Vec<OrderRef<'_>> {
         let client_order_ids =
             self.client_order_ids_closed(venue, instrument_id, strategy_id, account_id);
-        self.get_orders_for_ids(&client_order_ids, side)
+        self.get_orders_for_ids(client_order_ids.iter().copied(), side)
     }
 
     /// Returns borrows of all closed orders matching the optional filter parameters.
@@ -6713,7 +6722,7 @@ impl Cache {
     ) -> Vec<OrderRef<'_>> {
         let client_order_ids =
             self.client_order_ids_active_local(venue, instrument_id, strategy_id, account_id);
-        self.get_orders_for_ids(&client_order_ids, side)
+        self.get_orders_for_ids(client_order_ids.iter().copied(), side)
     }
 
     /// Returns borrows of all locally active orders matching the optional filter parameters.
@@ -6743,7 +6752,7 @@ impl Cache {
     ) -> Vec<OrderRef<'_>> {
         let client_order_ids =
             self.client_order_ids_emulated(venue, instrument_id, strategy_id, account_id);
-        self.get_orders_for_ids(&client_order_ids, side)
+        self.get_orders_for_ids(client_order_ids.iter().copied(), side)
     }
 
     /// Returns borrows of all emulated orders matching the optional filter parameters.
@@ -6773,7 +6782,7 @@ impl Cache {
     ) -> Vec<OrderRef<'_>> {
         let client_order_ids =
             self.client_order_ids_inflight(venue, instrument_id, strategy_id, account_id);
-        self.get_orders_for_ids(&client_order_ids, side)
+        self.get_orders_for_ids(client_order_ids.iter().copied(), side)
     }
 
     /// Returns borrows of all in-flight orders matching the optional filter parameters.
@@ -6795,7 +6804,9 @@ impl Cache {
     #[must_use]
     pub fn orders_for_position(&self, position_id: &PositionId) -> Vec<OrderRef<'_>> {
         match self.index.position_orders.get(position_id) {
-            Some(client_order_ids) => self.get_orders_for_ids(client_order_ids, None),
+            Some(client_order_ids) => {
+                self.get_orders_for_ids(client_order_ids.iter().copied(), None)
+            }
             None => Vec::new(),
         }
     }
@@ -7183,14 +7194,14 @@ impl Cache {
             strategy_id,
             account_id,
         );
-        self.get_orders_for_ids(&filtered, side)
+        self.get_orders_for_ids(filtered.iter().copied(), side)
     }
 
     /// Returns references to all orders with the `exec_spawn_id`.
     #[must_use]
     pub fn orders_for_exec_spawn(&self, exec_spawn_id: &ClientOrderId) -> Vec<OrderRef<'_>> {
         match self.index.exec_spawn_orders.get(exec_spawn_id) {
-            Some(ids) => self.get_orders_for_ids(ids, None),
+            Some(ids) => self.get_orders_for_ids(ids.iter().copied(), None),
             None => Vec::new(),
         }
     }
