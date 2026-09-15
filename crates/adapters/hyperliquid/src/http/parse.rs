@@ -1227,7 +1227,8 @@ pub fn parse_fill_report(
         last_px,
         commission,
         liquidity_side,
-        None, // client_order_id - to be linked by execution engine
+        // the venue CLOID is not a Nautilus client order ID
+        None,
         None, // venue_position_id
         ts_event,
         ts_init,
@@ -2275,6 +2276,7 @@ mod tests {
             tid: 77_001,
             fee_token: Ustr::from("+420"),
             builder_fee: Some(dec!(0.0001)),
+            cloid: Some("0x5bdd47600dea461f36c8378cd7b4150c".to_string()),
         };
 
         let account_id = AccountId::from("HYPERLIQUID-001");
@@ -2289,6 +2291,7 @@ mod tests {
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
         assert_eq!(report.last_qty.as_decimal(), dec!(1000));
         assert_eq!(report.last_px.as_decimal(), dec!(0.55));
+        assert_eq!(report.client_order_id, None);
     }
 
     #[rstest]
@@ -2308,6 +2311,30 @@ mod tests {
                 HyperliquidFillDirection::SpotDustConversion,
                 HyperliquidFillDirection::NetChildVaults,
             ],
+        );
+    }
+
+    #[rstest]
+    fn test_deserialize_user_fills_with_cloid() {
+        // userFills carries the venue cloid whenever the order was submitted with
+        // one, so reconciliation can link a REST fill back to its client order id.
+        // Fixture is real mainnet wire data.
+        let fills: Vec<HyperliquidFill> = load_test_data("http_user_fills_with_cloid.json");
+
+        assert_eq!(fills.len(), 2);
+        assert_eq!(fills[0].oid, 544_900_123_760);
+        assert_eq!(fills[0].tid, 1_109_765_720_343_214);
+        assert_eq!(fills[0].time, 1_789_407_361_368);
+        assert_eq!(
+            fills[0].cloid.as_deref(),
+            Some("0x5bdd47600dea461f36c8378cd7b4150c")
+        );
+        assert_eq!(fills[1].oid, 544_900_123_760);
+        assert_eq!(fills[1].tid, 780_373_658_822_388);
+        assert_eq!(fills[1].time, 1_789_407_361_023);
+        assert_eq!(
+            fills[1].cloid.as_deref(),
+            Some("0x5bdd47600dea461f36c8378cd7b4150c")
         );
     }
 
