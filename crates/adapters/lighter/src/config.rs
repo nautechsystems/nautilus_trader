@@ -261,6 +261,16 @@ pub struct LighterExecutionClientConfig {
     /// WebSocket transport backend.
     #[builder(default)]
     pub transport_backend: TransportBackend,
+    /// Whether to use Lighter-native GTD orders.
+    ///
+    /// Lighter requires a venue-native `GoodTillTime` expiry of at least five minutes, so a
+    /// strategy GTD order with a shorter lifetime cannot be represented as an explicit venue
+    /// expiry. Set to false only when the strategy manages GTD expiry locally: the adapter then
+    /// submits a venue-valid long-lived resting order (the default 28-day window) instead of the
+    /// strategy's short `expire_time`, and the strategy must enable `manage_gtd_expiry` so the
+    /// local expiry timer sends the cancel.
+    #[builder(default = true)]
+    pub use_gtd: bool,
 }
 
 #[cfg(feature = "python")]
@@ -279,6 +289,7 @@ nautilus_core::impl_pyo3_config_getters!(LighterExecutionClientConfig {
     rest_quota_per_min: Option<u32>,
     sendtx_quota_per_min: Option<u32>,
     transport_backend: TransportBackend,
+    use_gtd: bool,
 });
 
 impl Default for LighterExecutionClientConfig {
@@ -547,12 +558,29 @@ mod tests {
             rest_quota_per_min: None,
             sendtx_quota_per_min: None,
             transport_backend: TransportBackend::default(),
+            use_gtd: true,
         };
 
         let dbg_out = format!("{config:?}");
 
         assert!(dbg_out.contains(REDACTED));
         assert!(!dbg_out.contains(PRIVATE_KEY_HEX));
+    }
+
+    #[rstest]
+    fn exec_config_use_gtd_defaults_to_true() {
+        // Backwards compatibility: the default preserves the native Lighter GTD
+        // behavior so existing configs are unchanged.
+        let config = LighterExecutionClientConfig::default();
+
+        assert!(config.use_gtd);
+    }
+
+    #[rstest]
+    fn exec_config_toml_use_gtd_override() {
+        let config: LighterExecutionClientConfig = toml::from_str("use_gtd = false").unwrap();
+
+        assert!(!config.use_gtd);
     }
 
     #[rstest]
