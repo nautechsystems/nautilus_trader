@@ -314,9 +314,7 @@ impl BacktestNode {
     ) -> PyResult<()> {
         #[cfg(feature = "examples")]
         {
-            let engine = self.get_engine_mut(run_config_id).ok_or_else(|| {
-                to_pyruntime_err(format!("No engine for run config '{run_config_id}'"))
-            })?;
+            let engine = self.require_engine_mut(run_config_id)?;
 
             let register = builtin_strategy_register(type_name).ok_or_else(|| {
                 to_pytype_err(format!("Unsupported built-in strategy type: {type_name}"))
@@ -341,12 +339,33 @@ impl BacktestNode {
 impl BacktestNode {
     fn require_engine(&self, run_config_id: &str) -> PyResult<&BacktestEngine> {
         self.get_engine(run_config_id)
-            .ok_or_else(|| to_pyruntime_err(format!("No engine for run config '{run_config_id}'")))
+            .ok_or_else(|| self.missing_engine_err(run_config_id))
     }
 
     fn require_engine_mut(&mut self, run_config_id: &str) -> PyResult<&mut BacktestEngine> {
-        self.get_engine_mut(run_config_id)
-            .ok_or_else(|| to_pyruntime_err(format!("No engine for run config '{run_config_id}'")))
+        if self.get_engine(run_config_id).is_none() {
+            return Err(self.missing_engine_err(run_config_id));
+        }
+
+        Ok(self.get_engine_mut(run_config_id).expect("checked above"))
+    }
+
+    fn missing_engine_err(&self, run_config_id: &str) -> PyErr {
+        let known = self
+            .configs()
+            .iter()
+            .any(|config| config.id() == run_config_id);
+        let reason = if !known {
+            let ids: Vec<&str> = self.configs().iter().map(BacktestRunConfig::id).collect();
+            format!("unknown run config ID (known IDs: {ids:?})")
+        } else if self.get_engines().is_empty() {
+            "call build() first".to_string()
+        } else {
+            "the engine failed to build, see the log".to_string()
+        };
+        to_pyruntime_err(format!(
+            "No engine for run config '{run_config_id}': {reason}"
+        ))
     }
 }
 

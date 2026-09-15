@@ -589,8 +589,39 @@ def test_node_post_run_inspection_unknown_config_raises(
     config = BacktestRunConfig(venues=[venue], data=[])
     node = BacktestNode([config])
 
-    with pytest.raises(RuntimeError, match="No engine for run config 'missing'"):
+    with pytest.raises(
+        RuntimeError,
+        match="No engine for run config 'missing': unknown run config ID",
+    ):
         getattr(node, method_name)("missing", *args)
+
+
+def test_node_add_strategy_before_build_raises_with_build_hint() -> None:
+    """
+    Test node add strategy before build raises with build hint.
+    """
+    venue = BacktestVenueConfig(
+        name="SIM",
+        oms_type=OmsType.HEDGING,
+        account_type=AccountType.MARGIN,
+        book_type=BookType.L1_MBP,
+        starting_balances=["1_000_000 USD"],
+    )
+    config = BacktestRunConfig(venues=[venue], data=[])
+    node = BacktestNode([config])
+
+    with pytest.raises(
+        RuntimeError,
+        match=rf"No engine for run config '{config.id}': call build\(\) first",
+    ):
+        node.add_strategy_from_config(
+            config.id,
+            ImportableStrategyConfig(
+                strategy_path="tests.strategies.backtest_surface:StreamingWhipsaw",
+                config_path="tests.strategies.backtest_surface:StreamingWhipsawConfig",
+                config={"instrument_id": "AAA.SIM", "trade_size": "1.00000"},
+            ),
+        )
 
 
 def test_node_post_run_inspection_retains_exact_engine_state(tmp_path: Path) -> None:
