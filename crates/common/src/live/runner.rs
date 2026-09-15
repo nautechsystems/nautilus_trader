@@ -25,7 +25,7 @@
 use std::cell::RefCell;
 
 use crate::{
-    live::sender::EventSender,
+    live::sender::{DispatchSender, EventSender},
     messages::{DataEvent, ExecutionEvent, SystemCommand, SystemEvent},
 };
 
@@ -84,7 +84,7 @@ pub fn replace_data_event_sender(sender: impl Into<EventSender<DataEvent>>) {
 ///
 /// Panics if the sender is uninitialized.
 #[must_use]
-pub fn get_system_event_sender() -> tokio::sync::mpsc::UnboundedSender<SystemEvent> {
+pub fn get_system_event_sender() -> EventSender<SystemEvent> {
     SYSTEM_EVENT_SENDER.with(|sender| {
         sender
             .borrow()
@@ -98,7 +98,7 @@ pub fn get_system_event_sender() -> tokio::sync::mpsc::UnboundedSender<SystemEve
 ///
 /// Returns `None` if the sender is not initialized (e.g., in test environments).
 #[must_use]
-pub fn try_get_system_event_sender() -> Option<tokio::sync::mpsc::UnboundedSender<SystemEvent>> {
+pub fn try_get_system_event_sender() -> Option<EventSender<SystemEvent>> {
     SYSTEM_EVENT_SENDER.with(|sender| sender.borrow().as_ref().cloned())
 }
 
@@ -109,7 +109,8 @@ pub fn try_get_system_event_sender() -> Option<tokio::sync::mpsc::UnboundedSende
 /// # Panics
 ///
 /// Panics if a sender has already been set.
-pub fn set_system_event_sender(sender: tokio::sync::mpsc::UnboundedSender<SystemEvent>) {
+pub fn set_system_event_sender(sender: impl Into<EventSender<SystemEvent>>) {
+    let sender = sender.into();
     SYSTEM_EVENT_SENDER.with(|s| {
         let mut slot = s.borrow_mut();
         assert!(slot.is_none(), "System event sender can only be set once");
@@ -118,7 +119,8 @@ pub fn set_system_event_sender(sender: tokio::sync::mpsc::UnboundedSender<System
 }
 
 /// Replaces the system event sender for the current thread.
-pub fn replace_system_event_sender(sender: tokio::sync::mpsc::UnboundedSender<SystemEvent>) {
+pub fn replace_system_event_sender(sender: impl Into<EventSender<SystemEvent>>) {
+    let sender = sender.into();
     SYSTEM_EVENT_SENDER.with(|s| {
         *s.borrow_mut() = Some(sender);
     });
@@ -130,7 +132,7 @@ pub fn replace_system_event_sender(sender: tokio::sync::mpsc::UnboundedSender<Sy
 ///
 /// Panics if the sender is uninitialized.
 #[must_use]
-pub fn get_system_command_sender() -> tokio::sync::mpsc::UnboundedSender<SystemCommand> {
+pub fn get_system_command_sender() -> DispatchSender<SystemCommand> {
     SYSTEM_COMMAND_SENDER.with(|sender| {
         sender
             .borrow()
@@ -144,8 +146,7 @@ pub fn get_system_command_sender() -> tokio::sync::mpsc::UnboundedSender<SystemC
 ///
 /// Returns `None` if the sender is not initialized.
 #[must_use]
-pub fn try_get_system_command_sender() -> Option<tokio::sync::mpsc::UnboundedSender<SystemCommand>>
-{
+pub fn try_get_system_command_sender() -> Option<DispatchSender<SystemCommand>> {
     SYSTEM_COMMAND_SENDER.with(|sender| sender.borrow().as_ref().cloned())
 }
 
@@ -156,7 +157,8 @@ pub fn try_get_system_command_sender() -> Option<tokio::sync::mpsc::UnboundedSen
 /// # Panics
 ///
 /// Panics if a sender has already been set.
-pub fn set_system_command_sender(sender: tokio::sync::mpsc::UnboundedSender<SystemCommand>) {
+pub fn set_system_command_sender(sender: impl Into<DispatchSender<SystemCommand>>) {
+    let sender = sender.into();
     SYSTEM_COMMAND_SENDER.with(|s| {
         let mut slot = s.borrow_mut();
         assert!(slot.is_none(), "System command sender can only be set once");
@@ -165,7 +167,8 @@ pub fn set_system_command_sender(sender: tokio::sync::mpsc::UnboundedSender<Syst
 }
 
 /// Replaces the system command sender for the current thread.
-pub fn replace_system_command_sender(sender: tokio::sync::mpsc::UnboundedSender<SystemCommand>) {
+pub fn replace_system_command_sender(sender: impl Into<DispatchSender<SystemCommand>>) {
+    let sender = sender.into();
     SYSTEM_COMMAND_SENDER.with(|s| {
         *s.borrow_mut() = Some(sender);
     });
@@ -225,8 +228,8 @@ pub fn replace_exec_event_sender(sender: impl Into<EventSender<ExecutionEvent>>)
 thread_local! {
     static DATA_EVENT_SENDER: RefCell<Option<EventSender<DataEvent>>> = const { RefCell::new(None) };
     static EXEC_EVENT_SENDER: RefCell<Option<EventSender<ExecutionEvent>>> = const { RefCell::new(None) };
-    static SYSTEM_EVENT_SENDER: RefCell<Option<tokio::sync::mpsc::UnboundedSender<SystemEvent>>> = const { RefCell::new(None) };
-    static SYSTEM_COMMAND_SENDER: RefCell<Option<tokio::sync::mpsc::UnboundedSender<SystemCommand>>> = const { RefCell::new(None) };
+    static SYSTEM_EVENT_SENDER: RefCell<Option<EventSender<SystemEvent>>> = const { RefCell::new(None) };
+    static SYSTEM_COMMAND_SENDER: RefCell<Option<DispatchSender<SystemCommand>>> = const { RefCell::new(None) };
 }
 
 #[cfg(test)]

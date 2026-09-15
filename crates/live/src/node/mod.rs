@@ -616,8 +616,12 @@ impl LiveNode {
             PendingRunnerEvent::TimeEvent(message) => {
                 let _ = AsyncRunner::handle_time_event(message);
             }
-            PendingRunnerEvent::SystemEvent(event) => self.process_system_event(event),
-            PendingRunnerEvent::SystemCommand(command) => self.process_system_command(command),
+            PendingRunnerEvent::SystemEvent(event) => {
+                event.dispatch(|event| self.process_system_event(event));
+            }
+            PendingRunnerEvent::SystemCommand(command) => {
+                command.dispatch(|command| self.process_system_command(command));
+            }
             PendingRunnerEvent::ExecEvent(event) => {
                 event.dispatch(|event| self.process_exec_event(event));
             }
@@ -627,15 +631,15 @@ impl LiveNode {
         }
     }
 
-    fn process_system_events(&self, events: Vec<SystemEvent>) {
+    fn process_system_events(&self, events: Vec<DispatchMessage<SystemEvent>>) {
         for event in events {
-            self.process_system_event(event);
+            event.dispatch(|event| self.process_system_event(event));
         }
     }
 
-    fn process_system_commands(&self, commands: Vec<SystemCommand>) {
+    fn process_system_commands(&self, commands: Vec<DispatchMessage<SystemCommand>>) {
         for command in commands {
-            self.process_system_command(command);
+            command.dispatch(|command| self.process_system_command(command));
         }
     }
 
@@ -1760,14 +1764,14 @@ impl LiveNode {
                         log::debug!("Residual system event: {event}");
                         residual_events += 1;
                     }
-                    self.process_system_event(event);
+                    event.dispatch(|event| self.process_system_event(event));
                 }
                 Some(command) = system_cmd_rx.recv() => {
                     if is_shutting_down {
                         log::debug!("Residual system command: {command}");
                         residual_events += 1;
                     }
-                    self.process_system_command(command);
+                    command.dispatch(|command| self.process_system_command(command));
                 }
                 Some(evt) = exec_evt_rx.recv() => {
                     let dispatch_start = dst::time::Instant::now();
@@ -2301,11 +2305,11 @@ impl LiveNode {
                     processed += 1;
                 }
                 Some(event) = receivers.system_evt.recv() => {
-                    self.process_system_event(event);
+                    event.dispatch(|event| self.process_system_event(event));
                     processed += 1;
                 }
                 Some(command) = receivers.system_cmd.recv() => {
-                    self.process_system_command(command);
+                    command.dispatch(|command| self.process_system_command(command));
                     processed += 1;
                 }
                 Some(event) = receivers.exec_evt.recv() => {
@@ -2414,9 +2418,9 @@ impl LiveNode {
     }
 
     fn drain_channels(
-        time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
-        system_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
-        system_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemCommand>,
+        time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<TimeEventMessage>>,
+        system_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<SystemEvent>>,
+        system_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<SystemCommand>>,
         exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<ExecutionEvent>>,
         exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<
             DispatchMessage<TradingCommandMessage>,
@@ -2941,9 +2945,9 @@ async fn recv_external_msgbus_message(
 }
 
 struct RunnerReceivers<'a> {
-    time_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
-    system_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
-    system_cmd: &'a mut tokio::sync::mpsc::UnboundedReceiver<SystemCommand>,
+    time_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<TimeEventMessage>>,
+    system_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<SystemEvent>>,
+    system_cmd: &'a mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<SystemCommand>>,
     exec_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<ExecutionEvent>>,
     exec_cmd: &'a mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<TradingCommandMessage>>,
     data_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<DataEvent>>,
@@ -2991,9 +2995,9 @@ fn flush_pending_data(
 )]
 fn flush_all_pending(
     pending: &mut PendingEvents,
-    time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
-    system_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
-    system_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemCommand>,
+    time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<TimeEventMessage>>,
+    system_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<SystemEvent>>,
+    system_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<SystemCommand>>,
     exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<ExecutionEvent>>,
     exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<TradingCommandMessage>>,
     data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<DataEvent>>,
@@ -3042,9 +3046,9 @@ fn flush_all_pending(
 async fn drive_with_event_buffering<F: std::future::Future>(
     future: F,
     pending: &mut PendingEvents,
-    time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
-    system_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
-    system_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemCommand>,
+    time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<TimeEventMessage>>,
+    system_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<SystemEvent>>,
+    system_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<SystemCommand>>,
     exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<ExecutionEvent>>,
     exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<TradingCommandMessage>>,
     data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<DataEvent>>,
@@ -3086,8 +3090,8 @@ async fn drive_with_event_buffering<F: std::future::Future>(
 
 #[derive(Default)]
 struct PendingEvents {
-    system_events: Vec<SystemEvent>,
-    system_commands: Vec<SystemCommand>,
+    system_events: Vec<DispatchMessage<SystemEvent>>,
+    system_commands: Vec<DispatchMessage<SystemCommand>>,
     data_evts: Vec<DispatchMessage<DataEvent>>,
     data_cmds: Vec<DispatchMessage<DataCommand>>,
     exec_reports: Vec<DispatchMessage<ExecutionReport>>,
@@ -3216,11 +3220,11 @@ impl PendingEvents {
         });
     }
 
-    fn take_system_events(&mut self) -> Vec<SystemEvent> {
+    fn take_system_events(&mut self) -> Vec<DispatchMessage<SystemEvent>> {
         std::mem::take(&mut self.system_events)
     }
 
-    fn take_system_commands(&mut self) -> Vec<SystemCommand> {
+    fn take_system_commands(&mut self) -> Vec<DispatchMessage<SystemCommand>> {
         std::mem::take(&mut self.system_commands)
     }
 }
@@ -3270,7 +3274,10 @@ mod tests {
         cache::Cache,
         clock::{Clock, TestClock},
         enums::SerializationEncoding,
-        live::runner::{get_data_event_sender, get_exec_event_sender, get_system_event_sender},
+        live::{
+            runner::{get_data_event_sender, get_exec_event_sender, get_system_event_sender},
+            sender::DispatchSender,
+        },
         messages::{
             data::{SubscribeCommand, SubscribeQuotes},
             execution::{GenerateFillReports, QueryAccount, SubmitOrder, TradingCommand},
@@ -3712,6 +3719,75 @@ mod tests {
         #[case] expected: SocketReconnectDispatchOutcome,
     ) {
         assert_eq!(LiveNode::request_socket_reconnect(lookup), expected);
+    }
+
+    #[rstest]
+    fn test_system_dispatch_restores_context(#[values(false, true)] startup: bool) {
+        let trader_id = TraderId::from("SOCKET-001");
+
+        let config = LiveNodeConfig {
+            trader_id,
+            ..Default::default()
+        };
+
+        let mut node = LiveNode::build("SystemDispatchNode".to_string(), Some(config)).unwrap();
+        let client_id = ClientId::from("TEST");
+        let endpoint = Ustr::from("test-streams");
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let sender = DispatchSender::new(tx);
+        let events = sender.clone();
+        msgbus::subscribe_any(
+            MessagingSwitchboard::socket_state_changed_pattern(
+                Some(client_id),
+                Some(endpoint.as_str()),
+            ),
+            ShareableMessageHandler::from_typed(move |_: &SocketStateChanged| {
+                events.send(17u32).unwrap();
+            }),
+            None,
+        );
+
+        let control =
+            SocketControl::with_registry(client_id, None, endpoint, &node.socket_registry);
+        let _sink = control.sink();
+        control.register(move || {
+            sender.send(23u32).unwrap();
+            ReconnectRequestOutcome::Accepted
+        });
+
+        let event = SystemEvent::SocketState(SocketStateChange::new(
+            client_id,
+            None,
+            endpoint,
+            SocketState::Connected,
+        ));
+        let command = SystemCommand::ReconnectSocket(ReconnectSocket::new(
+            trader_id,
+            client_id,
+            endpoint,
+            31.into(),
+        ));
+
+        if startup {
+            let mut pending = PendingEvents::default();
+            pending.system_events.push(event.into());
+            pending.system_commands.push(command.into());
+            node.process_system_events(pending.take_system_events());
+            node.process_system_commands(pending.take_system_commands());
+            assert!(pending.is_empty());
+        } else {
+            node.process_runner_event(PendingRunnerEvent::SystemEvent(event.into()));
+            node.process_runner_event(PendingRunnerEvent::SystemCommand(command.into()));
+        }
+
+        let event_child = rx.try_recv().unwrap();
+        let command_child = rx.try_recv().unwrap();
+        assert!(event_child.is_rooted());
+        assert!(command_child.is_rooted());
+        assert_eq!(event_child.dispatch(|value| value), 17);
+        assert_eq!(command_child.dispatch(|value| value), 23);
+        assert!(rx.is_empty());
+        msgbus::get_message_bus().borrow_mut().dispose();
     }
 
     #[rstest]
@@ -7527,8 +7603,14 @@ mod tests {
             SocketState::Connected,
         );
 
-        pending.system_events.push(SystemEvent::SocketState(change));
-        let system_events = pending.take_system_events();
+        pending
+            .system_events
+            .push(SystemEvent::SocketState(change).into());
+        let system_events = pending
+            .take_system_events()
+            .into_iter()
+            .map(|message| message.dispatch(|value| value))
+            .collect::<Vec<_>>();
 
         assert_eq!(system_events, vec![SystemEvent::SocketState(change)]);
         assert!(pending.is_empty());
@@ -7539,8 +7621,12 @@ mod tests {
         let mut pending = PendingEvents::default();
         let command = stub_system_command();
 
-        pending.system_commands.push(command);
-        let system_commands = pending.take_system_commands();
+        pending.system_commands.push(command.into());
+        let system_commands = pending
+            .take_system_commands()
+            .into_iter()
+            .map(|message| message.dispatch(|value| value))
+            .collect::<Vec<_>>();
 
         assert_eq!(system_commands, vec![command]);
         assert!(pending.is_empty());
@@ -7614,11 +7700,12 @@ mod tests {
 
     #[rstest]
     fn test_flush_all_pending_drains_buffered_channels() {
-        let (time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
+        let (time_tx, mut time_rx) =
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<TimeEventMessage>>();
         let (system_evt_tx, mut system_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<SystemEvent>>();
         let (system_cmd_tx, mut system_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<SystemCommand>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<SystemCommand>>();
         let (data_evt_tx, mut data_evt_rx) =
             tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataEvent>>();
         let (data_cmd_tx, mut data_cmd_rx) =
@@ -7635,7 +7722,7 @@ mod tests {
         pending.data_cmds.push(stub_data_command().into());
 
         // Pre-load all channel types
-        time_tx.send(stub_time_event_handler()).unwrap();
+        time_tx.send((stub_time_event_handler()).into()).unwrap();
 
         let change = SocketStateChange::new(
             ClientId::from("BINANCE"),
@@ -7644,9 +7731,9 @@ mod tests {
             SocketState::Connected,
         );
         system_evt_tx
-            .send(SystemEvent::SocketState(change))
+            .send((SystemEvent::SocketState(change)).into())
             .unwrap();
-        system_cmd_tx.send(stub_system_command()).unwrap();
+        system_cmd_tx.send((stub_system_command()).into()).unwrap();
         data_evt_tx.send((stub_data_event()).into()).unwrap();
         data_cmd_tx.send(stub_data_command().into()).unwrap();
         exec_evt_tx.send((stub_exec_event()).into()).unwrap();
@@ -7665,8 +7752,16 @@ mod tests {
             &mut data_cmd_rx,
         );
 
-        let system_events = pending.take_system_events();
-        let system_commands = pending.take_system_commands();
+        let system_events = pending
+            .take_system_events()
+            .into_iter()
+            .map(|message| message.dispatch(|value| value))
+            .collect::<Vec<_>>();
+        let system_commands = pending
+            .take_system_commands()
+            .into_iter()
+            .map(|message| message.dispatch(|value| value))
+            .collect::<Vec<_>>();
         assert_eq!(system_events, vec![SystemEvent::SocketState(change)]);
         assert_eq!(system_commands, vec![stub_system_command()]);
         assert!(pending.data_evts.is_empty());
@@ -7712,11 +7807,12 @@ mod tests {
 
     #[rstest]
     fn test_flush_all_pending_routes_order_event_to_order_evts() {
-        let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
+        let (_time_tx, mut time_rx) =
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<TimeEventMessage>>();
         let (_system_evt_tx, mut system_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<SystemEvent>>();
         let (_system_cmd_tx, mut system_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<SystemCommand>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<SystemCommand>>();
         let (_data_evt_tx, mut data_evt_rx) =
             tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataEvent>>();
         let (_data_cmd_tx, mut data_cmd_rx) =
@@ -7750,11 +7846,12 @@ mod tests {
 
     #[rstest]
     fn test_flush_all_pending_routes_account_event_immediately() {
-        let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
+        let (_time_tx, mut time_rx) =
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<TimeEventMessage>>();
         let (_system_evt_tx, mut system_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<SystemEvent>>();
         let (_system_cmd_tx, mut system_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<SystemCommand>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<SystemCommand>>();
         let (_data_evt_tx, mut data_evt_rx) =
             tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataEvent>>();
         let (_data_cmd_tx, mut data_cmd_rx) =
@@ -7933,11 +8030,12 @@ mod tests {
 
     #[rstest]
     fn test_flush_all_pending_buffers_submitted_batch_as_individual_events() {
-        let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
+        let (_time_tx, mut time_rx) =
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<TimeEventMessage>>();
         let (_system_evt_tx, mut system_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<SystemEvent>>();
         let (_system_cmd_tx, mut system_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<SystemCommand>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<SystemCommand>>();
         let (_data_evt_tx, mut data_evt_rx) =
             tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataEvent>>();
         let (_data_cmd_tx, mut data_cmd_rx) =
@@ -7971,11 +8069,12 @@ mod tests {
 
     #[rstest]
     fn test_flush_all_pending_buffers_canceled_batch_as_individual_events() {
-        let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
+        let (_time_tx, mut time_rx) =
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<TimeEventMessage>>();
         let (_system_evt_tx, mut system_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<SystemEvent>>();
         let (_system_cmd_tx, mut system_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<SystemCommand>();
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<SystemCommand>>();
         let (_data_evt_tx, mut data_evt_rx) =
             tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataEvent>>();
         let (_data_cmd_tx, mut data_cmd_rx) =

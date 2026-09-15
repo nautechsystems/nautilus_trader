@@ -13,28 +13,31 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Event senders for standalone clients and live runtime dispatch.
+//! Message senders for standalone clients and live runtime dispatch.
 
 use std::thread::{self, ThreadId};
 
 use super::dispatch::DispatchMessage;
 
-/// An event sender which preserves callback ancestry when bound to a live runtime.
+/// A message sender which preserves callback ancestry when bound to a live runtime.
 ///
 /// Sends on the runtime owner thread capture its active root. Sends on other threads
 /// and sends without an active root are independent ingress. Conversion from a plain Tokio sender supports standalone
 /// clients whose receivers consume domain events directly, without callback tracking.
 #[derive(Debug)]
-pub struct EventSender<T> {
-    channel: EventChannel<T>,
+pub struct DispatchSender<T> {
+    channel: DispatchChannel<T>,
 }
 
-impl<T> EventSender<T> {
+/// A sender for data, execution, and system events.
+pub type EventSender<T> = DispatchSender<T>;
+
+impl<T> DispatchSender<T> {
     /// Binds a dispatch channel to the calling runtime thread.
     #[must_use]
     pub fn new(sender: tokio::sync::mpsc::UnboundedSender<DispatchMessage<T>>) -> Self {
         Self {
-            channel: EventChannel::Dispatch {
+            channel: DispatchChannel::Dispatch {
                 sender,
                 owner: thread::current().id(),
             },
@@ -42,7 +45,7 @@ impl<T> EventSender<T> {
     }
 
     // panics-doc-ok
-    /// Sends an event, preserving the active owner-thread callback root.
+    /// Sends a message, preserving the active owner-thread callback root.
     ///
     /// # Errors
     ///
@@ -53,14 +56,14 @@ impl<T> EventSender<T> {
     /// Panics if the owner exhausts its channel context IDs.
     pub fn send(
         &self,
-        event: T,
+        message: T,
     ) -> Result<(), tokio::sync::mpsc::error::SendError<DispatchMessage<T>>> {
         match &self.channel {
-            EventChannel::Plain(sender) => sender
-                .send(event)
+            DispatchChannel::Plain(sender) => sender
+                .send(message)
                 .map_err(|e| tokio::sync::mpsc::error::SendError(e.0.into())),
-            EventChannel::Dispatch { sender, owner } => {
-                sender.send(DispatchMessage::new(event, *owner))
+            DispatchChannel::Dispatch { sender, owner } => {
+                sender.send(DispatchMessage::new(message, *owner))
             }
         }
     }
@@ -69,8 +72,8 @@ impl<T> EventSender<T> {
     #[must_use]
     pub fn is_closed(&self) -> bool {
         match &self.channel {
-            EventChannel::Plain(sender) => sender.is_closed(),
-            EventChannel::Dispatch { sender, .. } => sender.is_closed(),
+            DispatchChannel::Plain(sender) => sender.is_closed(),
+            DispatchChannel::Dispatch { sender, .. } => sender.is_closed(),
         }
     }
 
@@ -78,21 +81,23 @@ impl<T> EventSender<T> {
     #[must_use]
     pub fn same_channel(&self, other: &Self) -> bool {
         match (&self.channel, &other.channel) {
-            (EventChannel::Plain(left), EventChannel::Plain(right)) => left.same_channel(right),
+            (DispatchChannel::Plain(left), DispatchChannel::Plain(right)) => {
+                left.same_channel(right)
+            }
             (
-                EventChannel::Dispatch { sender: left, .. },
-                EventChannel::Dispatch { sender: right, .. },
+                DispatchChannel::Dispatch { sender: left, .. },
+                DispatchChannel::Dispatch { sender: right, .. },
             ) => left.same_channel(right),
             _ => false,
         }
     }
 }
 
-impl<T> Clone for EventSender<T> {
+impl<T> Clone for DispatchSender<T> {
     fn clone(&self) -> Self {
         let channel = match &self.channel {
-            EventChannel::Plain(sender) => EventChannel::Plain(sender.clone()),
-            EventChannel::Dispatch { sender, owner } => EventChannel::Dispatch {
+            DispatchChannel::Plain(sender) => DispatchChannel::Plain(sender.clone()),
+            DispatchChannel::Dispatch { sender, owner } => DispatchChannel::Dispatch {
                 sender: sender.clone(),
                 owner: *owner,
             },
@@ -102,16 +107,16 @@ impl<T> Clone for EventSender<T> {
     }
 }
 
-impl<T> From<tokio::sync::mpsc::UnboundedSender<T>> for EventSender<T> {
+impl<T> From<tokio::sync::mpsc::UnboundedSender<T>> for DispatchSender<T> {
     fn from(sender: tokio::sync::mpsc::UnboundedSender<T>) -> Self {
         Self {
-            channel: EventChannel::Plain(sender),
+            channel: DispatchChannel::Plain(sender),
         }
     }
 }
 
 #[derive(Debug)]
-enum EventChannel<T> {
+enum DispatchChannel<T> {
     Plain(tokio::sync::mpsc::UnboundedSender<T>),
     Dispatch {
         sender: tokio::sync::mpsc::UnboundedSender<DispatchMessage<T>>,

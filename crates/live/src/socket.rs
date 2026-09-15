@@ -26,7 +26,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use nautilus_common::{
-    live::runner::try_get_system_event_sender,
+    live::{runner::try_get_system_event_sender, sender::EventSender},
     messages::{
         SystemEvent,
         system::{SocketState as SystemSocketState, SocketStateChange},
@@ -384,7 +384,7 @@ fn deactivate(entry: Option<RegistryEntry>) {
 pub struct SocketControlFactory {
     client_id: ClientId,
     venue: Option<Venue>,
-    sender: Option<tokio::sync::mpsc::UnboundedSender<SystemEvent>>,
+    sender: Option<EventSender<SystemEvent>>,
     owner: Option<SocketReconnectOwner>,
     controls: Arc<Mutex<AHashMap<Ustr, SocketControl>>>,
 }
@@ -454,7 +454,7 @@ struct SocketStatePublisher {
     client_id: ClientId,
     venue: Option<Venue>,
     endpoint: Ustr,
-    sender: Option<tokio::sync::mpsc::UnboundedSender<SystemEvent>>,
+    sender: Option<EventSender<SystemEvent>>,
     active_generation: Arc<AtomicU64>,
     publish_lock: Arc<Mutex<()>>,
 }
@@ -666,7 +666,7 @@ mod tests {
         let registry = SocketReconnectRegistry::default();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         let mut control = control(&registry);
-        control.publisher.sender = Some(sender);
+        control.publisher.sender = Some(sender.into());
         let _sink = control.sink();
 
         control.publisher.publish(SocketState::Connected);
@@ -689,9 +689,9 @@ mod tests {
         let registry = SocketReconnectRegistry::default();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         let mut first = control(&registry);
-        first.publisher.sender = Some(sender.clone());
+        first.publisher.sender = Some(sender.clone().into());
         let mut replacement = first.clone();
-        replacement.publisher.sender = Some(sender);
+        replacement.publisher.sender = Some(sender.into());
         let _stale_sink = first.sink();
         let stale_generation = first.generation.load(Ordering::Acquire);
         let _current_sink = replacement.sink();

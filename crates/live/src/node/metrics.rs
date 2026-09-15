@@ -357,7 +357,7 @@ pub(crate) struct RunnerChannelQueueDepths {
 
 impl RunnerChannelQueueDepths {
     pub(crate) fn from_receivers(
-        time_events: &tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
+        time_events: &tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<TimeEventMessage>>,
         exec_events: &tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<ExecutionEvent>>,
         exec_commands: &tokio::sync::mpsc::UnboundedReceiver<
             DispatchMessage<TradingCommandMessage>,
@@ -841,7 +841,8 @@ mod tests {
 
     #[rstest]
     fn test_runner_metrics_queue_depths_use_receiver_lengths() {
-        let (time_tx, time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
+        let (time_tx, time_rx) =
+            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<TimeEventMessage>>();
         let (exec_evt_tx, exec_evt_rx) =
             tokio::sync::mpsc::unbounded_channel::<DispatchMessage<ExecutionEvent>>();
         let (exec_cmd_tx, exec_cmd_rx) =
@@ -852,7 +853,7 @@ mod tests {
             tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataCommand>>();
         let metrics = RunnerMetrics::default();
 
-        time_tx.send(stub_time_event_handler()).unwrap();
+        time_tx.send(stub_time_event_handler().into()).unwrap();
 
         for _ in 0..2 {
             exec_evt_tx.send((stub_exec_event()).into()).unwrap();

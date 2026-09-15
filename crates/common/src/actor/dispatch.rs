@@ -3026,7 +3026,14 @@ mod tests {
     #[cfg(feature = "live")]
     mod live_commands {
         use super::*;
-        use crate::live::{dispatch::DispatchMessage, sender::EventSender};
+        use crate::{
+            live::{
+                dispatch::DispatchMessage,
+                sender::{DispatchSender, EventSender},
+            },
+            runner::TimeEventMessage,
+            timer::{TimeEvent, TimeEventCallback},
+        };
 
         #[rstest]
         fn independent_trading_leaf_allocates_no_root() {
@@ -3341,6 +3348,96 @@ mod tests {
             })
             .join()
             .unwrap();
+        }
+
+        #[rstest]
+        fn time_event_dispatch_preserves_root_and_budget() {
+            clear().unwrap();
+            let root = retain(0).unwrap();
+            let chain = root.chain.clone();
+            chain.delivered.set(37);
+            let expected = chain.clone();
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let sender = DispatchSender::new(tx);
+            let event = TimeEvent::new("rooted-time".into(), UUID4::new(), 17.into(), 19.into());
+            let expected_event = event.clone();
+
+            let callback = TimeEventCallback::RustLocal(Rc::new(move |received| {
+                assert_eq!(received, expected_event);
+                DISPATCH.with_borrow(|state| {
+                    assert!(Rc::ptr_eq(state.current.as_ref().unwrap(), &expected));
+                    assert_eq!(expected.delivered.get(), 37);
+                });
+            }));
+
+            root.with_chain(|| sender.send(TimeEventMessage::new(event, callback)).unwrap());
+            let enclosing = retain(0).unwrap();
+            enclosing.with_chain(|| {
+                assert!(rx.try_recv().unwrap().dispatch(TimeEventMessage::dispatch));
+                DISPATCH.with_borrow(|state| {
+                    assert!(Rc::ptr_eq(
+                        state.current.as_ref().unwrap(),
+                        &enclosing.chain
+                    ));
+                });
+            });
+
+            assert_eq!(chain.delivered.get(), 37);
+            assert_eq!(root.accounting.contexts.get(), 0);
+            drop(enclosing);
+            drop(root);
+            drop(chain);
+            clear().unwrap();
+        }
+
+        #[rstest]
+        fn repeated_time_events_start_independent_roots() {
+            clear().unwrap();
+            let enclosing = retain(0).unwrap();
+            let roots = Rc::new(RefCell::new(Vec::new()));
+            let observed = roots.clone();
+
+            let callback = TimeEventCallback::RustLocal(Rc::new(move |_| {
+                let storage = retain(0).unwrap();
+                observed.borrow_mut().push(storage.chain.clone());
+            }));
+
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let sender = DispatchSender::new(tx);
+
+            for timestamp in [17, 23] {
+                let event = TimeEvent::new(
+                    "repeated-time".into(),
+                    UUID4::new(),
+                    timestamp.into(),
+                    29.into(),
+                );
+                sender
+                    .send(TimeEventMessage::new(event, callback.clone()))
+                    .unwrap();
+            }
+
+            enclosing.with_chain(|| {
+                for _ in 0..2 {
+                    let message = rx.try_recv().unwrap();
+                    assert!(!message.is_rooted());
+                    assert!(message.dispatch(TimeEventMessage::dispatch));
+                }
+            });
+
+            let captured = roots.borrow();
+            assert_eq!(captured.len(), 2);
+            assert!(!Rc::ptr_eq(&captured[0], &captured[1]));
+
+            for root in captured.iter() {
+                assert!(!Rc::ptr_eq(root, &enclosing.chain));
+                assert_eq!(root.delivered.get(), 0);
+            }
+
+            drop(captured);
+            roots.borrow_mut().clear();
+            drop(enclosing);
+            clear().unwrap();
         }
 
         #[rstest]
