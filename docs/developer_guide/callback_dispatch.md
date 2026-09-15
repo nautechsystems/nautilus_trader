@@ -131,7 +131,14 @@ when none is active. Growing that storage preserves its root.
 
 Resuming retained work through `with_chain` makes its root active for the call. Return or unwind
 restores the enclosing root. Invocation batches use this mechanism for each retained value;
-resuming work does not itself count as a delivery.
+resuming work does not itself count as a delivery. Each invocation batch is local to one preparation
+and invocation call. Its backing allocation does not choose the roots of later values: each value
+captures the context active at its own admission.
+
+Callback registration and causal ownership have separate lifetimes. Reusing a registered timer callback
+does not reuse a firing's budget. Each independent live time-event envelope establishes its own scope
+before callback lookup and invocation, even when delivery occurs inside another active scope. Retained continuations
+keep their original root; storage reuse alone does not make an unrelated event a continuation.
 
 A delivered capture's destructor runs with the delivery's root active, including during unwind.
 Uninvoked batch values also restore their root when destroyed.
@@ -177,8 +184,8 @@ Live data and execution event channels also preserve roots through mixed channel
 [startup buffering](../../crates/live/src/node/mod.rs).
 Before queued callback activation, runtime integration must:
 
-- Preserve independent ingress boundaries when reusing long-lived storage, so unrelated events do not
-  accumulate against one root's budget.
+- Preserve the independent ingress boundaries above when activating additional callback routes or
+  introducing reusable invocation storage.
 - Provide safe drain boundaries.
 - Detect a busy head that cannot make progress.
 

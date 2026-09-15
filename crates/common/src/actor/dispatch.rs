@@ -1359,6 +1359,80 @@ mod tests {
     }
 
     #[rstest]
+    fn invocation_batch_keeps_independent_and_continued_roots_separate() {
+        clear().unwrap();
+        let parent = retain(17).unwrap();
+        parent.chain.delivered.set(37);
+        let ingress = ChainContext::independent();
+        let mut roots = Vec::new();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        parent.with_chain(|| {
+            super::super::invocation::run(
+                |batch| {
+                    for value in [11, 23, 31, 47] {
+                        if value == 23 || value == 47 {
+                            ingress.with_chain(|| batch.reserve(0).unwrap().commit(value));
+                        } else {
+                            batch.reserve(0).unwrap().commit(value);
+                        }
+                    }
+                },
+                |value| {
+                    roots.push(ChainContext::capture());
+                    reserve(0)
+                        .unwrap()
+                        .commit((received.clone(), value), record);
+                },
+            );
+
+            assert!(
+                DISPATCH.with_borrow(|state| Rc::ptr_eq(
+                    state.current.as_ref().unwrap(),
+                    &parent.chain,
+                ))
+            );
+        });
+
+        assert_eq!(roots.len(), 4);
+        let chains = roots
+            .iter()
+            .map(|root| root.chain.as_ref().unwrap())
+            .collect::<Vec<_>>();
+        assert!(Rc::ptr_eq(chains[0], &parent.chain));
+        assert!(Rc::ptr_eq(chains[2], &parent.chain));
+        assert!(!Rc::ptr_eq(chains[1], &parent.chain));
+        assert!(!Rc::ptr_eq(chains[3], &parent.chain));
+        assert!(!Rc::ptr_eq(chains[1], chains[3]));
+        assert_eq!(
+            chains
+                .iter()
+                .map(|chain| chain.delivered.get())
+                .collect::<Vec<_>>(),
+            [37, 0, 37, 0]
+        );
+        assert_eq!(
+            drain(4),
+            Ok(DrainResult {
+                delivered: 4,
+                pending: false
+            })
+        );
+        assert_eq!(*received.borrow(), [11, 23, 31, 47]);
+        assert_eq!(
+            chains
+                .iter()
+                .map(|chain| chain.delivered.get())
+                .collect::<Vec<_>>(),
+            [39, 1, 39, 1]
+        );
+        drop(chains);
+        drop(roots);
+        drop(parent);
+        assert!(!has_pending());
+        clear().unwrap();
+    }
+
+    #[rstest]
     fn uninvoked_capture_destruction_preserves_root() {
         struct Capture(bool);
 
@@ -3031,7 +3105,7 @@ mod tests {
                 dispatch::DispatchMessage,
                 sender::{DispatchSender, EventSender},
             },
-            runner::TimeEventMessage,
+            runner::{TimeEventMessage, register_time_event_callback},
             timer::{TimeEvent, TimeEventCallback},
         };
 
@@ -3394,16 +3468,27 @@ mod tests {
         fn repeated_time_events_start_independent_roots() {
             clear().unwrap();
             let enclosing = retain(0).unwrap();
+            enclosing.chain.delivered.set(MAX_CHAIN);
             let roots = Rc::new(RefCell::new(Vec::new()));
             let observed = roots.clone();
+            let received = Rc::new(RefCell::new(Vec::new()));
+            let delivered = received.clone();
 
-            let callback = TimeEventCallback::RustLocal(Rc::new(move |_| {
+            let callback = TimeEventCallback::RustLocal(Rc::new(move |event| {
                 let storage = retain(0).unwrap();
                 observed.borrow_mut().push(storage.chain.clone());
+                reserve(0)
+                    .unwrap()
+                    .commit((delivered.clone(), event), |(received, event)| {
+                        received.borrow_mut().push(event.clone());
+                        true
+                    });
             }));
 
+            let token = enclosing.with_chain(|| register_time_event_callback(callback));
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
             let sender = DispatchSender::new(tx);
+            let mut expected = Vec::new();
 
             for timestamp in [17, 23] {
                 let event = TimeEvent::new(
@@ -3412,18 +3497,33 @@ mod tests {
                     timestamp.into(),
                     29.into(),
                 );
+                expected.push(event.clone());
                 sender
-                    .send(TimeEventMessage::new(event, callback.clone()))
+                    .send(TimeEventMessage::registered(
+                        event,
+                        token.acquire().unwrap(),
+                    ))
                     .unwrap();
-            }
-
-            enclosing.with_chain(|| {
-                for _ in 0..2 {
+                enclosing.with_chain(|| {
                     let message = rx.try_recv().unwrap();
                     assert!(!message.is_rooted());
                     assert!(message.dispatch(TimeEventMessage::dispatch));
-                }
-            });
+                    assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(
+                        state.current.as_ref().unwrap(),
+                        &enclosing.chain,
+                    )));
+                });
+
+                assert_eq!(
+                    drain(1),
+                    Ok(DrainResult {
+                        delivered: 1,
+                        pending: false
+                    })
+                );
+            }
+
+            token.close();
 
             let captured = roots.borrow();
             assert_eq!(captured.len(), 2);
@@ -3431,12 +3531,16 @@ mod tests {
 
             for root in captured.iter() {
                 assert!(!Rc::ptr_eq(root, &enclosing.chain));
-                assert_eq!(root.delivered.get(), 0);
+                assert_eq!(root.delivered.get(), 1);
             }
 
+            assert_eq!(*received.borrow(), expected);
+            assert_eq!(enclosing.chain.delivered.get(), MAX_CHAIN);
+            assert!(rx.is_empty());
             drop(captured);
             roots.borrow_mut().clear();
             drop(enclosing);
+            assert!(!has_pending());
             clear().unwrap();
         }
 
