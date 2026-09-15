@@ -1602,8 +1602,10 @@ impl BinanceFuturesAlgoOrder {
     /// Converts this algo order to a report enriched with matching-engine execution details.
     ///
     /// The algo order remains the source of client identity and conditional-order metadata.
-    /// The matching-engine order is authoritative for status, quantity, fills, average price,
-    /// venue order identity, and the last update time.
+    /// Binance links the triggered matching-engine order through `actualOrderId`, but does not
+    /// specify that its `clientOrderId` equals the parent `clientAlgoId`; the child client ID is
+    /// therefore not used for identity validation. The matching-engine order is authoritative
+    /// for status, quantity, fills, average price, venue order identity, and the last update time.
     ///
     /// # Errors
     ///
@@ -1649,6 +1651,23 @@ impl BinanceFuturesAlgoOrder {
             );
         }
 
+        if let (Some(expected), Some(observed)) = (self.position_side, actual.position_side) {
+            anyhow::ensure!(
+                expected == observed,
+                "actual order position side mismatch: expected {expected:?}, was {observed:?}"
+            );
+        }
+
+        if let (Some(trigger_time), Some(actual_update_time)) = (
+            self.trigger_time.filter(|time| *time > 0),
+            actual.update_time.filter(|time| *time > 0),
+        ) {
+            anyhow::ensure!(
+                actual_update_time >= trigger_time,
+                "actual order update time precedes trigger time: trigger={trigger_time}, actual_update={actual_update_time}"
+            );
+        }
+
         let mut report = self.to_order_status_report(
             account_id,
             instrument_id,
@@ -1664,6 +1683,15 @@ impl BinanceFuturesAlgoOrder {
             treat_expired_as_canceled,
             ts_init,
         )?;
+
+        if self.close_position != Some(true) {
+            anyhow::ensure!(
+                report.quantity == actual_report.quantity,
+                "actual order quantity mismatch: expected {}, was {}",
+                report.quantity,
+                actual_report.quantity
+            );
+        }
         report.venue_order_id = actual_report.venue_order_id;
         report.order_status = actual_report.order_status;
         report.quantity = actual_report.quantity;
@@ -2508,6 +2536,127 @@ mod tests {
             Some(UnixNanos::from_millis(1_625_474_305_000))
         );
         assert_eq!(report.ts_last, UnixNanos::from_millis(1_625_474_306_000));
+    }
+
+    #[rstest]
+    #[case("exchange-generated-child")]
+    #[case("x-aHRE4BCj-Rdifferent-nautilus-order")]
+    fn test_algo_report_with_actual_keeps_parent_client_identity(
+        #[case] child_client_order_id: &str,
+    ) {
+        let mut algo = algo_order_with_price(None);
+        algo.algo_status = Some(BinanceAlgoStatus::Triggered);
+        algo.actual_order_id = Some("987654321".to_string());
+
+        let mut actual = order_with_price("0");
+        actual.order_id = 987654321;
+        actual.client_order_id = child_client_order_id.to_string();
+        actual.side = BinanceSide::Sell;
+
+        let report = algo
+            .to_order_status_report_with_actual(
+                &actual,
+                AccountId::from("BINANCE-FUTURES-001"),
+                InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+                2,
+                3,
+                false,
+                UnixNanos::from(1_000_000_000u64),
+            )
+            .unwrap();
+
+        assert_eq!(
+            report.client_order_id,
+            Some(ClientOrderId::from("my-algo-order-1"))
+        );
+        assert_eq!(report.venue_order_id, VenueOrderId::from("987654321"));
+    }
+
+    #[rstest]
+    fn test_algo_report_with_actual_rejects_explicit_quantity_mismatch() {
+        let mut algo = algo_order_with_price(None);
+        algo.algo_status = Some(BinanceAlgoStatus::Triggered);
+        algo.actual_order_id = Some("987654321".to_string());
+
+        let mut actual = order_with_price("0");
+        actual.order_id = 987654321;
+        actual.side = BinanceSide::Sell;
+        actual.orig_qty = "0.002".to_string();
+
+        let error = algo
+            .to_order_status_report_with_actual(
+                &actual,
+                AccountId::from("BINANCE-FUTURES-001"),
+                InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+                2,
+                3,
+                false,
+                UnixNanos::from(1_000_000_000u64),
+            )
+            .unwrap_err();
+
+        assert!(error.to_string().contains("quantity mismatch"), "{error:#}");
+    }
+
+    #[rstest]
+    fn test_algo_report_with_actual_rejects_position_side_mismatch() {
+        let mut algo = algo_order_with_price(None);
+        algo.algo_status = Some(BinanceAlgoStatus::Triggered);
+        algo.actual_order_id = Some("987654321".to_string());
+
+        let mut actual = order_with_price("0");
+        actual.order_id = 987654321;
+        actual.side = BinanceSide::Sell;
+        actual.position_side = Some(BinancePositionSide::Short);
+
+        let error = algo
+            .to_order_status_report_with_actual(
+                &actual,
+                AccountId::from("BINANCE-FUTURES-001"),
+                InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+                2,
+                3,
+                false,
+                UnixNanos::from(1_000_000_000u64),
+            )
+            .unwrap_err();
+
+        assert!(
+            error.to_string().contains("position side mismatch"),
+            "{error:#}"
+        );
+    }
+
+    #[rstest]
+    fn test_algo_report_with_actual_rejects_update_before_trigger() {
+        let mut algo = algo_order_with_price(None);
+        algo.algo_status = Some(BinanceAlgoStatus::Triggered);
+        algo.actual_order_id = Some("987654321".to_string());
+        algo.trigger_time = Some(1_625_474_305_000);
+
+        let mut actual = order_with_price("0");
+        actual.order_id = 987654321;
+        actual.side = BinanceSide::Sell;
+        actual.update_time = Some(1_625_474_304_999);
+
+        let error = algo
+            .to_order_status_report_with_actual(
+                &actual,
+                AccountId::from("BINANCE-FUTURES-001"),
+                InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+                2,
+                3,
+                false,
+                UnixNanos::from(1_000_000_000u64),
+            )
+            .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("update time precedes trigger time"),
+            "{error:#}"
+        );
     }
 
     #[rstest]

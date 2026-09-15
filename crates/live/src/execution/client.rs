@@ -26,7 +26,7 @@ use std::{cell::RefCell, collections::VecDeque, fmt::Debug, rc::Rc};
 
 use async_trait::async_trait;
 use nautilus_common::{
-    clients::ExecutionClient,
+    clients::{ExecutionClient, ExecutionSafetyProbe},
     messages::execution::{
         BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
@@ -204,6 +204,34 @@ impl ExecutionClient for LiveExecutionClient {
 
     fn position_reconciliation_tolerance(&self) -> Decimal {
         self.client.borrow().position_reconciliation_tolerance()
+    }
+
+    fn requires_order_fill_reports(&self, report: &OrderStatusReport) -> bool {
+        self.client.borrow().requires_order_fill_reports(report)
+    }
+
+    fn execution_safety_error(&self) -> Option<String> {
+        self.client.borrow().execution_safety_error()
+    }
+
+    fn execution_safety_probe(&self) -> Option<ExecutionSafetyProbe> {
+        self.client.borrow().execution_safety_probe()
+    }
+
+    fn validate_order_fill_reports(
+        &self,
+        report: &OrderStatusReport,
+        fills: &[FillReport],
+    ) -> anyhow::Result<()> {
+        self.client
+            .borrow()
+            .validate_order_fill_reports(report, fills)
+    }
+
+    fn on_order_fill_report_query_error(&self, report: &OrderStatusReport, error: &anyhow::Error) {
+        self.client
+            .borrow()
+            .on_order_fill_report_query_error(report, error);
     }
 
     fn handles_order_venue(&self, venue: Venue) -> bool {

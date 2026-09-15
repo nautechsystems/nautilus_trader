@@ -25,7 +25,8 @@ use std::fmt::{Debug, Display};
 
 pub use data::DataClient;
 pub use execution::{
-    DEFAULT_POSITION_RECONCILIATION_TOLERANCE, ExecutionClient, generate_mass_status,
+    DEFAULT_POSITION_RECONCILIATION_TOLERANCE, ExecutionClient, ExecutionSafetyProbe,
+    generate_mass_status,
 };
 
 #[inline(always)]

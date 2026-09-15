@@ -4099,6 +4099,18 @@ impl Cache {
         }
     }
 
+    /// Waits until all changes already accepted by the backing database are persisted.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the backing database cannot persist an accepted change.
+    pub fn drain_database(&mut self) -> anyhow::Result<()> {
+        if let Some(database) = &mut self.database {
+            database.drain()?;
+        }
+        Ok(())
+    }
+
     /// Flushes the caches database which permanently removes all persisted data.
     ///
     /// If flushing the database connection fails, an error is logged.

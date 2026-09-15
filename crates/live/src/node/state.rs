@@ -15,7 +15,7 @@
 
 use std::sync::{
     Arc,
-    atomic::{AtomicU8, Ordering},
+    atomic::{AtomicBool, AtomicU8, Ordering},
 };
 
 use super::metrics::{RunnerMetrics, RunnerMetricsSnapshot};
@@ -116,6 +116,9 @@ pub(super) enum RunningTransition {
 #[derive(Clone, Debug)]
 pub struct LiveNodeHandle {
     control: Arc<AtomicU8>,
+    halt_trading_requested: Arc<AtomicBool>,
+    trading_halted: Arc<AtomicBool>,
+    fail_stop_requested: Arc<AtomicBool>,
     pub(crate) metrics: Arc<RunnerMetrics>,
 }
 
@@ -131,6 +134,9 @@ impl LiveNodeHandle {
     pub fn new() -> Self {
         Self {
             control: Arc::new(AtomicU8::new(NodeState::Idle.as_u8())),
+            halt_trading_requested: Arc::new(AtomicBool::new(false)),
+            trading_halted: Arc::new(AtomicBool::new(false)),
+            fail_stop_requested: Arc::new(AtomicBool::new(false)),
             metrics: Arc::new(RunnerMetrics::default()),
         }
     }
@@ -186,6 +192,43 @@ impl LiveNodeHandle {
     #[must_use]
     pub fn is_running(&self) -> bool {
         self.state().is_running()
+    }
+
+    /// Requests the node thread to set the native risk engine to `Halted`.
+    pub fn halt_trading(&self) {
+        if !self.trading_halted.load(Ordering::Acquire) {
+            self.halt_trading_requested.store(true, Ordering::Release);
+        }
+    }
+
+    /// Returns whether the native risk engine has acknowledged a halt request.
+    #[must_use]
+    pub fn is_trading_halted(&self) -> bool {
+        self.trading_halted.load(Ordering::Acquire)
+    }
+
+    /// Requests an unsafe stop which preserves the previous state checkpoint.
+    ///
+    /// Unlike a controlled [`Self::halt_trading`] followed by [`Self::stop`], this also tells the
+    /// node thread to block actor and strategy state saving for the remainder of the run.
+    pub fn fail_stop(&self) {
+        self.fail_stop_requested.store(true, Ordering::Release);
+        self.halt_trading();
+        self.stop();
+    }
+
+    /// Returns whether an external unsafe stop has been requested.
+    #[must_use]
+    pub fn is_fail_stop_requested(&self) -> bool {
+        self.fail_stop_requested.load(Ordering::Acquire)
+    }
+
+    pub(super) fn take_halt_trading_request(&self) -> bool {
+        self.halt_trading_requested.swap(false, Ordering::AcqRel)
+    }
+
+    pub(super) fn set_trading_halted(&self) {
+        self.trading_halted.store(true, Ordering::Release);
     }
 
     /// Returns a by-value snapshot of `LiveNode::run` dispatch metrics after startup.

@@ -1290,9 +1290,11 @@ fn pydict_to_state(state: &Bound<'_, PyDict>) -> PyResult<IndexMap<String, Vec<u
     name = "Strategy",
     unsendable,
     subclass,
+    skip_from_py_object,
     weakref
 )]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.trading")]
+#[derive(Clone)]
 pub struct PyStrategy {
     inner: Rc<UnsafeCell<PyStrategyInner>>,
 }
@@ -1822,8 +1824,10 @@ impl PyStrategy {
     }
 
     #[pyo3(name = "fault")]
-    fn py_fault(&mut self) -> PyResult<()> {
-        Component::fault(self.inner_mut()).map_err(to_pyruntime_err)
+    fn py_fault(slf: PyRef<'_, Self>) -> PyResult<()> {
+        let strategy = slf.clone();
+        drop(slf);
+        Component::fault(strategy.inner_mut()).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "shutdown_system")]
@@ -3673,7 +3677,7 @@ mod tests {
     };
     use nautilus_portfolio::portfolio::Portfolio;
     use pyo3::{
-        Bound, Py, PyAny, PyResult, Python,
+        Bound, Py, PyAny, PyRef, PyResult, Python,
         ffi::c_str,
         types::{PyAnyMethods, PyBytes, PyDict, PyList, PyWeakrefMethods, PyWeakrefReference},
     };
@@ -3874,6 +3878,14 @@ class IndicatorEventStrategy:
 
     def on_bar(self, bar):
         self.events.append("strategy:bar")
+"#
+    );
+
+    const SELF_FAULTING_STRATEGY_CODE: &std::ffi::CStr = c_str!(
+        r#"
+class SelfFaultingStrategy(Strategy):
+    def on_bar(self, bar):
+        self.fault()
 "#
     );
 
@@ -4669,6 +4681,41 @@ class IndicatorEventStrategy:
                     "strategy:bar",
                 ]
             );
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_python_strategy_can_fault_from_its_own_bar_callback() {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let locals = PyDict::new(py);
+            locals
+                .set_item("Strategy", py.get_type::<PyStrategy>())
+                .unwrap();
+            py.run(SELF_FAULTING_STRATEGY_CODE, Some(&locals), Some(&locals))
+                .unwrap();
+            let instance = locals
+                .get_item("SelfFaultingStrategy")
+                .unwrap()
+                .call0()
+                .unwrap();
+            let mut strategy: PyStrategy =
+                instance.extract::<PyRef<'_, PyStrategy>>().unwrap().clone();
+            let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+            let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+            let portfolio = Rc::new(RefCell::new(Portfolio::new(
+                clock.clone(),
+                cache.clone(),
+                None,
+            )));
+
+            strategy
+                .register(TraderId::from("TRADER-001"), clock, cache, portfolio)
+                .unwrap();
+            Component::start(strategy.inner_mut()).unwrap();
+            DataActor::handle_bar(strategy.inner_mut(), &sample_bar());
+
+            assert_eq!(strategy.inner().core.actor.state(), ComponentState::Faulted);
         });
     }
 

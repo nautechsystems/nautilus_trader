@@ -338,7 +338,7 @@ pub(crate) async fn request_targeted_order_reports(
 
             match response {
                 Ok(Some(candidate)) if targeted_report_matches(&query, &candidate) => {
-                    if terminal_report_has_missing_fills(&candidate, query.filled_qty) {
+                    if order_report_has_missing_fills(&candidate, query.filled_qty, Some(*client)) {
                         let mut command = GenerateFillReports::new(
                             UUID4::new(),
                             query.command.ts_init,
@@ -353,6 +353,17 @@ pub(crate) async fn request_targeted_order_reports(
 
                         match client.generate_fill_reports(command).await {
                             Ok(reports) => {
+                                if let Err(e) =
+                                    client.validate_order_fill_reports(&candidate, &reports)
+                                {
+                                    coverage_complete = false;
+                                    log::warn!(
+                                        "Invalid fill reports from {client_id} for {}: {e}",
+                                        query.client_order_id,
+                                    );
+                                    break;
+                                }
+
                                 fills = reports
                                     .into_iter()
                                     .filter(|fill| {
@@ -365,10 +376,15 @@ pub(crate) async fn request_targeted_order_reports(
                                     })
                                     .collect();
                             }
-                            Err(e) => log::warn!(
-                                "Failed fill report query from {client_id} for {}: {e}",
-                                query.client_order_id,
-                            ),
+                            Err(e) => {
+                                coverage_complete = false;
+                                client.on_order_fill_report_query_error(&candidate, &e);
+                                log::warn!(
+                                    "Failed fill report query from {client_id} for {}: {e}",
+                                    query.client_order_id,
+                                );
+                                continue;
+                            }
                         }
                     }
 
@@ -430,15 +446,17 @@ fn targeted_report_matches(query: &TargetedOrderQuery, report: &OrderStatusRepor
     instrument_matches && order_matches
 }
 
-/// Checks whether a canceled or expired report has more fills than the cached order.
-pub(super) fn terminal_report_has_missing_fills(
+/// Checks whether a report requires authoritative fills beyond the cached order.
+pub(super) fn order_report_has_missing_fills(
     report: &OrderStatusReport,
     cached_filled_qty: Quantity,
+    client: Option<&dyn ExecutionClient>,
 ) -> bool {
-    matches!(
-        report.order_status,
-        OrderStatus::Canceled | OrderStatus::Expired
-    ) && report.filled_qty > cached_filled_qty
+    report.filled_qty > cached_filled_qty
+        && (matches!(
+            report.order_status,
+            OrderStatus::Canceled | OrderStatus::Expired
+        ) || client.is_some_and(|client| client.requires_order_fill_reports(report)))
 }
 
 /// Builds an order report from fills sharing the same order and venue position.
@@ -819,7 +837,7 @@ pub(super) fn create_cross_zero_leg_report(
 
 #[cfg(test)]
 pub(super) mod tests {
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
 
     use nautilus_core::Params;
     use nautilus_execution::reconciliation::inferred_fill_price_and_liquidity;
@@ -849,6 +867,8 @@ pub(super) mod tests {
     pub(crate) struct CommissionStubClient {
         outcome: CommissionOutcome,
         seen: RefCell<Option<(Quantity, Price, LiquiditySide)>>,
+        requires_fills: bool,
+        fill_query_error_count: Cell<usize>,
     }
 
     impl CommissionStubClient {
@@ -857,6 +877,8 @@ pub(super) mod tests {
             Self {
                 outcome,
                 seen: RefCell::new(None),
+                requires_fills: false,
+                fill_query_error_count: Cell::new(0),
             }
         }
 
@@ -873,6 +895,33 @@ pub(super) mod tests {
 
     #[async_trait::async_trait(?Send)]
     impl ExecutionClient for CommissionStubClient {
+        fn requires_order_fill_reports(&self, _report: &OrderStatusReport) -> bool {
+            self.requires_fills
+        }
+
+        fn execution_safety_error(&self) -> Option<String> {
+            (self.requires_fills || self.fill_query_error_count.get() > 0)
+                .then(|| "reconciliation failed".to_string())
+        }
+
+        fn on_order_fill_report_query_error(
+            &self,
+            _report: &OrderStatusReport,
+            _error: &anyhow::Error,
+        ) {
+            self.fill_query_error_count
+                .set(self.fill_query_error_count.get() + 1);
+        }
+
+        fn validate_order_fill_reports(
+            &self,
+            _report: &OrderStatusReport,
+            _fills: &[FillReport],
+        ) -> anyhow::Result<()> {
+            anyhow::ensure!(!self.requires_fills, "fill validation failed");
+            Ok(())
+        }
+
         fn is_connected(&self) -> bool {
             true
         }
@@ -1174,6 +1223,29 @@ pub(super) mod tests {
             )),
             "the resolver passes the inferred fill quantity, resolved price, and liquidity side"
         );
+    }
+
+    #[cfg(feature = "node")]
+    #[rstest]
+    fn test_live_execution_client_forwards_fill_report_requirement(
+        #[values(false, true)] required: bool,
+    ) {
+        use crate::execution::client::LiveExecutionClient;
+
+        let (_, report, _) = commission_fixtures();
+        let mut client = CommissionStubClient::new(CommissionOutcome::NoOverride);
+        client.requires_fills = required;
+        let client = LiveExecutionClient::new(Box::new(client));
+
+        assert_eq!(client.requires_order_fill_reports(&report), required);
+        assert_eq!(client.execution_safety_error().is_some(), required);
+        assert_eq!(
+            client.validate_order_fill_reports(&report, &[]).is_err(),
+            required
+        );
+        client
+            .on_order_fill_report_query_error(&report, &anyhow::anyhow!("fill query unavailable"));
+        assert!(client.execution_safety_error().is_some());
     }
 
     #[rstest]

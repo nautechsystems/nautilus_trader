@@ -905,9 +905,26 @@ impl Trader {
     ///
     /// Returns an error if the trader state transition or any component startup fails.
     pub fn start_with_component_callbacks(trader: &Rc<RefCell<Self>>) -> anyhow::Result<()> {
+        Self::start_with_component_callbacks_checked(trader, || Ok(()))
+    }
+
+    /// Starts the trader and checks a caller-supplied safety boundary between component callbacks.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the trader state transition, a component startup, or a safety check
+    /// fails.
+    pub(crate) fn start_with_component_callbacks_checked<F>(
+        trader: &Rc<RefCell<Self>>,
+        mut safety_check: F,
+    ) -> anyhow::Result<()>
+    where
+        F: FnMut() -> anyhow::Result<()>,
+    {
         trader
             .borrow_mut()
             .transition_state(ComponentTrigger::Start)?;
+        safety_check()?;
 
         let (actor_ids, strategy_ids, exec_algorithm_ids) = {
             let trader_ref = trader.borrow();
@@ -921,11 +938,13 @@ impl Trader {
         for actor_id in actor_ids {
             log::debug!("Starting actor {actor_id}");
             Self::start_component_if_not_running(actor_id.inner())?;
+            safety_check()?;
         }
 
         for strategy_id in strategy_ids {
             log::debug!("Starting strategy {strategy_id}");
             Self::start_component_if_not_running(strategy_id.inner())?;
+            safety_check()?;
         }
 
         let mut restored_exec_algorithm_ids = Vec::new();
@@ -947,6 +966,7 @@ impl Trader {
             };
 
             if component_state == ComponentState::Running {
+                safety_check()?;
                 continue;
             }
 
@@ -964,6 +984,7 @@ impl Trader {
                 return Err(e);
             }
             restored_exec_algorithm_ids.push(exec_algorithm_id);
+            safety_check()?;
 
             if let Err(start_err) = start_component(&exec_algorithm_id.inner()) {
                 let e = trader
@@ -975,8 +996,10 @@ impl Trader {
                     );
                 return Err(e);
             }
+            safety_check()?;
         }
 
+        safety_check()?;
         let mut trader_ref = trader.borrow_mut();
         let clock = trader_ref.clock_factory.clock();
         trader_ref.ts_started = Some(clock.borrow().timestamp_ns());
@@ -1109,7 +1132,7 @@ impl Trader {
     pub fn stop_after_start_failure(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Stop)?;
 
-        let stop_result = self.stop_components_after_start_failure();
+        let stop_result = self.stop_components_immediately();
         let clock = self.clock_factory.clock();
         self.ts_stopped = Some(clock.borrow().timestamp_ns());
         let transition_result = self.transition_state(ComponentTrigger::StopCompleted);
@@ -1125,18 +1148,23 @@ impl Trader {
         }
     }
 
-    fn stop_components_after_start_failure(&mut self) -> anyhow::Result<()> {
+    /// Stops active components without deferring shutdown for managed strategy market exits.
+    ///
+    /// # Errors
+    ///
+    /// Returns all component stop and execution algorithm subscription cleanup failures.
+    pub(crate) fn stop_components_immediately(&mut self) -> anyhow::Result<()> {
         let mut errors = Vec::new();
 
         for actor_id in &self.actor_ids {
-            log::debug!("Stopping actor {actor_id} after startup failure");
+            log::debug!("Stopping actor {actor_id} immediately");
             if let Err(e) = Self::stop_component_if_active(actor_id.inner()) {
                 errors.push(format!("actor {actor_id}: {e:#}"));
             }
         }
 
         for exec_algorithm_id in self.exec_algorithm_ids.clone() {
-            log::debug!("Stopping execution algorithm {exec_algorithm_id} after startup failure");
+            log::debug!("Stopping execution algorithm {exec_algorithm_id} immediately");
             if let Err(e) = Self::stop_component_if_active(exec_algorithm_id.inner()) {
                 errors.push(format!("execution algorithm {exec_algorithm_id}: {e:#}"));
             }
@@ -1149,7 +1177,7 @@ impl Trader {
         }
 
         for strategy_id in &self.strategy_ids {
-            log::debug!("Stopping strategy {strategy_id} after startup failure");
+            log::debug!("Stopping strategy {strategy_id} immediately");
             if let Err(e) = Self::stop_component_if_active(strategy_id.inner()) {
                 errors.push(format!("strategy {strategy_id}: {e:#}"));
             }
@@ -1159,7 +1187,7 @@ impl Trader {
             Ok(())
         } else {
             anyhow::bail!(
-                "Failed to stop one or more trader components after startup failure: {}",
+                "Failed to stop one or more trader components immediately: {}",
                 errors.join("; ")
             )
         }
@@ -1565,7 +1593,13 @@ impl Trader {
     /// # Errors
     ///
     /// Returns an error if state cannot be loaded or a component callback fails.
-    pub(crate) fn load_state(trader: &Rc<RefCell<Self>>) -> anyhow::Result<()> {
+    pub(crate) fn load_state<F>(
+        trader: &Rc<RefCell<Self>>,
+        mut safety_check: F,
+    ) -> anyhow::Result<()>
+    where
+        F: FnMut() -> anyhow::Result<()>,
+    {
         let (cache, actor_callbacks, strategy_callbacks) = {
             let trader = trader.borrow();
             let actor_callbacks = trader.actor_state_callbacks()?;
@@ -1578,6 +1612,8 @@ impl Trader {
             return Ok(());
         }
 
+        safety_check()?;
+
         for (actor_id, callbacks) in actor_callbacks {
             let state = cache
                 .borrow()
@@ -1589,9 +1625,11 @@ impl Trader {
 
             (callbacks.load)(actor_id.inner(), state)
                 .map_err(|e| anyhow::anyhow!("Failed to restore actor {actor_id} state: {e:#}"))?;
+            safety_check()?;
         }
 
         for (strategy_id, callbacks) in strategy_callbacks {
+            safety_check()?;
             let state = cache
                 .borrow()
                 .load_strategy_state(&strategy_id)
@@ -1605,6 +1643,7 @@ impl Trader {
             (callbacks.load)(strategy_id.inner(), state).map_err(|e| {
                 anyhow::anyhow!("Failed to restore strategy {strategy_id} state: {e:#}")
             })?;
+            safety_check()?;
         }
 
         Ok(())
@@ -1618,7 +1657,13 @@ impl Trader {
     /// # Errors
     ///
     /// Returns an error containing every component callback or persistence failure.
-    pub(crate) fn save_state(trader: &Rc<RefCell<Self>>) -> anyhow::Result<()> {
+    pub(crate) fn save_state<F>(
+        trader: &Rc<RefCell<Self>>,
+        mut safety_check: F,
+    ) -> anyhow::Result<()>
+    where
+        F: FnMut() -> anyhow::Result<()>,
+    {
         let (cache, actor_callbacks, strategy_callbacks) = {
             let trader = trader.borrow();
             let actor_callbacks = trader.actor_state_callbacks()?;
@@ -1632,26 +1677,43 @@ impl Trader {
         }
 
         let mut errors = Vec::new();
+        let mut actor_states = Vec::new();
+        let mut strategy_states = Vec::new();
+
+        safety_check()?;
 
         for (actor_id, callbacks) in actor_callbacks {
-            match (callbacks.save)(actor_id.inner()) {
-                Ok(state) => {
-                    if let Err(e) = cache.borrow().update_actor_state(&actor_id, &state) {
-                        errors.push(format!("actor {actor_id} persistence: {e:#}"));
-                    }
-                }
+            let result = (callbacks.save)(actor_id.inner());
+            safety_check()?;
+
+            match result {
+                Ok(state) => actor_states.push((actor_id, state)),
                 Err(e) => errors.push(format!("actor {actor_id} callback: {e:#}")),
             }
         }
 
         for (strategy_id, callbacks) in strategy_callbacks {
-            match (callbacks.save)(strategy_id.inner()) {
-                Ok(state) => {
-                    if let Err(e) = cache.borrow().update_strategy_state(&strategy_id, &state) {
-                        errors.push(format!("strategy {strategy_id} persistence: {e:#}"));
-                    }
-                }
+            safety_check()?;
+            let result = (callbacks.save)(strategy_id.inner());
+            safety_check()?;
+
+            match result {
+                Ok(state) => strategy_states.push((strategy_id, state)),
                 Err(e) => errors.push(format!("strategy {strategy_id} callback: {e:#}")),
+            }
+        }
+
+        safety_check()?;
+
+        for (actor_id, state) in actor_states {
+            if let Err(e) = cache.borrow().update_actor_state(&actor_id, &state) {
+                errors.push(format!("actor {actor_id} persistence: {e:#}"));
+            }
+        }
+
+        for (strategy_id, state) in strategy_states {
+            if let Err(e) = cache.borrow().update_strategy_state(&strategy_id, &state) {
+                errors.push(format!("strategy {strategy_id} persistence: {e:#}"));
             }
         }
 
@@ -4115,8 +4177,8 @@ class StateComponent:
                 .unwrap();
 
             let trader = Rc::new(RefCell::new(trader));
-            Trader::load_state(&trader).unwrap();
-            Trader::save_state(&trader).unwrap();
+            Trader::load_state(&trader, || Ok(())).unwrap();
+            Trader::save_state(&trader, || Ok(())).unwrap();
 
             let actor_loaded = py_actor
                 .getattr(py, "loaded")

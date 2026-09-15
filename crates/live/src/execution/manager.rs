@@ -106,8 +106,8 @@ use super::{
         InflightCheck, PositionQuantityComparison, PositionReconciliationState,
         PositionReportShape, ReconciliationFillQueue, RetainedFillState,
         create_cross_zero_leg_report, create_orphan_fill_order_report, has_active_inferred_fill,
-        is_exact_order_match, position_avg_px, position_qty_aggregates,
-        resolve_inferred_fill_commission, should_project_fill, terminal_report_has_missing_fills,
+        is_exact_order_match, order_report_has_missing_fills, position_avg_px,
+        position_qty_aggregates, resolve_inferred_fill_commission, should_project_fill,
     },
 };
 
@@ -1905,6 +1905,41 @@ impl ExecutionManager {
         }
     }
 
+    fn order_report_source_is_covered(
+        &self,
+        check: &OpenOrderReportCheck,
+        sourced: &SourcedOrderStatusReport,
+    ) -> bool {
+        let report = &sourced.report;
+        let order = match report.client_order_id {
+            Some(client_order_id) => self.get_order(client_order_id),
+            None => self.get_order_by_venue_order_id(report.venue_order_id),
+        };
+        let Some(order) = order else {
+            return true;
+        };
+        let client_order_id = order.client_order_id();
+        let Some(coverage) = check.client_coverage.get(&client_order_id) else {
+            return true;
+        };
+        let covered = match coverage {
+            ReportClientCoverage::Resolved(client_ids)
+            | ReportClientCoverage::Unavailable(client_ids) => {
+                client_ids.contains(&sourced.client_id)
+            }
+            ReportClientCoverage::Unresolved => false,
+        };
+
+        if !covered {
+            log::warn!(
+                "Ignoring order status report for {client_order_id} from non-responsible execution client {}",
+                sourced.client_id,
+            );
+        }
+
+        covered
+    }
+
     /// Builds per-order venue queries for fallback open-order reconciliation.
     pub fn check_open_order_queries(&mut self) -> Vec<TradingCommand> {
         self.check_open_order_queries_for_clients(None)
@@ -1999,6 +2034,7 @@ impl ExecutionManager {
         clients: &[&dyn ExecutionClient],
     ) -> OpenOrderReconciliationResult {
         all_reports.retain(|sourced| !self.should_skip_order_report(&sourced.report));
+        all_reports.retain(|sourced| self.order_report_source_is_covered(check, sourced));
         let mut venue_reported_ids = IndexSet::new();
 
         for sourced in &all_reports {
@@ -2061,8 +2097,12 @@ impl ExecutionManager {
             }
 
             let instrument = self.get_instrument(&report.instrument_id);
+            let commission_client = clients
+                .iter()
+                .find(|client| client.client_id() == sourced.client_id)
+                .copied();
 
-            if terminal_report_has_missing_fills(&report, order.filled_qty()) {
+            if order_report_has_missing_fills(&report, order.filled_qty(), commission_client) {
                 targeted_candidates.push((
                     order,
                     IndexSet::from([sourced.client_id]),
@@ -2070,11 +2110,6 @@ impl ExecutionManager {
                 ));
                 continue;
             }
-
-            let commission_client = clients
-                .iter()
-                .find(|client| client.client_id() == sourced.client_id)
-                .copied();
 
             match self.reconcile_order_report(
                 &order,
@@ -2302,6 +2337,13 @@ impl ExecutionManager {
                         .find(|client| client.client_id() == client_id)
                         .copied()
                 });
+
+                if let Some(client) = commission_client
+                    && let Err(e) = client.validate_order_fill_reports(&report, &result.fills)
+                {
+                    log::warn!("Deferring fill reconciliation for {client_order_id}: {e}");
+                    continue;
+                }
 
                 log::info!(
                     color = LogColor::Blue as u8;
@@ -4111,10 +4153,11 @@ impl ExecutionManager {
         instrument: Option<&InstrumentAny>,
         commission_client: Option<&dyn ExecutionClient>,
     ) -> anyhow::Result<Vec<OrderEventAny>> {
-        let has_missing_fills = terminal_report_has_missing_fills(report, order.filled_qty());
+        let has_missing_fills =
+            order_report_has_missing_fills(report, order.filled_qty(), commission_client);
         anyhow::ensure!(
             !has_missing_fills,
-            "terminal report for {} has unaccounted fills; waiting for fill reports",
+            "order report for {} has unaccounted fills; waiting for fill reports",
             order.client_order_id(),
         );
         let ts_now = self.clock.borrow().timestamp_ns();
@@ -4253,9 +4296,9 @@ impl ExecutionManager {
             return events;
         }
 
-        if terminal_report_has_missing_fills(report, working.filled_qty()) {
+        if order_report_has_missing_fills(report, working.filled_qty(), commission_client) {
             log::warn!(
-                "Deferring terminal reconciliation for {}: fill reports are incomplete",
+                "Deferring order reconciliation for {}: fill reports are incomplete",
                 order.client_order_id(),
             );
             return events;

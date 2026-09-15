@@ -28,7 +28,7 @@
 //! avoids cross-runtime I/O issues since the WRITE connection is always
 //! created on the Nautilus runtime.
 //!
-//! Synchronous callers (`close`, `flushdb_sync`) use `std::sync::mpsc` reply
+//! Synchronous callers (`close`, `drain_sync`, `flushdb_sync`) use `std::sync::mpsc` reply
 //! channels to block until the background task confirms completion. When
 //! called from the Nautilus runtime itself, `block_in_place` is used
 //! automatically to avoid stalling the worker thread.
@@ -257,6 +257,7 @@ pub enum DatabaseOperation {
     UpdateOrder,
     ReplaceList,
     Delete,
+    Drain(SyncSender<Result<(), String>>),
     Flush(SyncSender<()>),
     Close,
 }
@@ -396,6 +397,27 @@ impl RedisCacheDatabase {
         let _ = blocking_recv(&rx);
 
         log::debug!("Closed");
+    }
+
+    /// Waits until every command accepted before this call has reached Redis.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the worker stopped, its reply was lost, or Redis rejected any of the
+    /// preceding buffered changes.
+    pub fn drain_sync(&self) -> anyhow::Result<()> {
+        let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+        let command = DatabaseCommand {
+            op_type: DatabaseOperation::Drain(reply_tx),
+            key: None,
+            payload: None,
+        };
+        self.tx
+            .send(command)
+            .map_err(|e| anyhow::anyhow!("{FAILED_TX_CHANNEL}: {e}"))?;
+        blocking_recv(&reply_rx)
+            .map_err(|e| anyhow::anyhow!("Failed to drain Redis cache database: {e}"))?
+            .map_err(anyhow::Error::msg)
     }
 
     pub async fn flushdb(&mut self) {
@@ -687,7 +709,7 @@ async fn process_commands(
                     &mut con,
                     &trader_key,
                     config.encoding,
-                ).await;
+                ).await?;
 
                 if result.is_break() {
                     break;
@@ -701,14 +723,14 @@ async fn process_commands(
                     config.encoding,
                     &mut flush_timer,
                     buffer_interval,
-                ).await;
+                ).await?;
             }
         }
     }
 
     // Drain any remaining messages
     if !buffer.is_empty() {
-        drain_buffer(&mut con, &trader_key, config.encoding, &mut buffer).await;
+        drain_buffer(&mut con, &trader_key, config.encoding, &mut buffer).await?;
     }
 
     log_task_stopped(CACHE_PROCESS);
@@ -722,10 +744,10 @@ async fn handle_command(
     con: &mut ConnectionManager,
     trader_key: &str,
     encoding: SerializationEncoding,
-) -> ControlFlow<()> {
+) -> anyhow::Result<ControlFlow<()>> {
     let Some(cmd) = maybe_cmd else {
         log::debug!("Command channel closed");
-        return ControlFlow::Break(());
+        return Ok(ControlFlow::Break(()));
     };
 
     log::trace!("Received {cmd:?}");
@@ -733,20 +755,32 @@ async fn handle_command(
     match cmd.op_type {
         DatabaseOperation::Close => {
             if !buffer.is_empty() {
-                drain_buffer(con, trader_key, encoding, buffer).await;
+                drain_buffer(con, trader_key, encoding, buffer).await?;
             }
-            return ControlFlow::Break(());
+            return Ok(ControlFlow::Break(()));
+        }
+        DatabaseOperation::Drain(reply_tx) => {
+            let result = if buffer.is_empty() {
+                Ok(())
+            } else {
+                drain_buffer(con, trader_key, encoding, buffer).await
+            };
+            let reply = result.as_ref().map_err(ToString::to_string).copied();
+            let _ = reply_tx.send(reply);
+            result?;
+            return Ok(ControlFlow::Continue(()));
         }
         DatabaseOperation::Flush(reply_tx) => {
             if !buffer.is_empty() {
-                drain_buffer(con, trader_key, encoding, buffer).await;
+                drain_buffer(con, trader_key, encoding, buffer).await?;
             }
 
-            if let Err(e) = redis::cmd(REDIS_FLUSHDB).query_async::<()>(con).await {
-                log::error!("Failed to flush database: {e:?}");
-            }
+            redis::cmd(REDIS_FLUSHDB)
+                .query_async::<()>(con)
+                .await
+                .context("Failed to flush database")?;
             let _ = reply_tx.send(());
-            return ControlFlow::Continue(());
+            return Ok(ControlFlow::Continue(()));
         }
         _ => {}
     }
@@ -754,10 +788,10 @@ async fn handle_command(
     buffer.push_back(cmd);
 
     if buffer_interval.is_zero() {
-        drain_buffer(con, trader_key, encoding, buffer).await;
+        drain_buffer(con, trader_key, encoding, buffer).await?;
     }
 
-    ControlFlow::Continue(())
+    Ok(ControlFlow::Continue(()))
 }
 
 async fn flush_buffer(
@@ -767,13 +801,14 @@ async fn flush_buffer(
     encoding: SerializationEncoding,
     flush_timer: &mut Pin<&mut tokio::time::Sleep>,
     buffer_interval: Duration,
-) {
+) -> anyhow::Result<()> {
     if !buffer.is_empty() {
-        drain_buffer(con, trader_key, encoding, buffer).await;
+        drain_buffer(con, trader_key, encoding, buffer).await?;
     }
     flush_timer
         .as_mut()
         .reset(tokio::time::Instant::now() + buffer_interval);
+    Ok(())
 }
 
 async fn drain_buffer(
@@ -781,76 +816,52 @@ async fn drain_buffer(
     trader_key: &str,
     encoding: SerializationEncoding,
     buffer: &mut VecDeque<DatabaseCommand>,
-) {
+) -> anyhow::Result<()> {
     let mut pipe = redis::pipe();
     pipe.atomic();
     let mut has_pending_ops = false;
 
     for msg in buffer.drain(..) {
-        let Some(key) = msg.key else {
-            log::error!("Null key found for message: {msg:?}");
-            continue;
-        };
-        let collection = match get_collection_key(&key) {
-            Ok(collection) => collection,
-            Err(e) => {
-                log::error!("{e}");
-                continue; // Continue to next message
-            }
-        };
+        if msg.key.is_none() {
+            anyhow::bail!("Null key found for message: {msg:?}");
+        }
+        let key = msg.key.expect("validated non-null Redis cache key");
+        let collection = get_collection_key(&key)?;
 
         let key = format!("{trader_key}{REDIS_DELIMITER}{key}");
 
         match msg.op_type {
             DatabaseOperation::Insert => {
-                if let Some(payload) = msg.payload {
-                    log::debug!("Processing INSERT for collection: {collection}, key: {key}");
-                    if let Err(e) = insert(&mut pipe, collection, &key, &payload) {
-                        log::error!("{e}");
-                    } else {
-                        has_pending_ops = true;
-                    }
-                } else {
-                    log::error!("Null `payload` for `insert`");
-                }
+                let payload = msg
+                    .payload
+                    .ok_or_else(|| anyhow::anyhow!("Null `payload` for `insert`"))?;
+                log::debug!("Processing INSERT for collection: {collection}, key: {key}");
+                insert(&mut pipe, collection, &key, &payload)?;
+                has_pending_ops = true;
             }
             DatabaseOperation::Update => {
-                if let Some(payload) = msg.payload {
-                    log::debug!("Processing UPDATE for collection: {collection}, key: {key}");
-                    if let Err(e) = update(&mut pipe, collection, &key, &payload) {
-                        log::error!("{e}");
-                    } else {
-                        has_pending_ops = true;
-                    }
-                } else {
-                    log::error!("Null `payload` for `update`");
-                }
+                let payload = msg
+                    .payload
+                    .ok_or_else(|| anyhow::anyhow!("Null `payload` for `update`"))?;
+                log::debug!("Processing UPDATE for collection: {collection}, key: {key}");
+                update(&mut pipe, collection, &key, &payload)?;
+                has_pending_ops = true;
             }
             DatabaseOperation::UpdateOrder => {
-                flush_pending_pipeline(conn, &mut pipe, &mut has_pending_ops).await;
-
-                if let Some(payload) = msg.payload {
-                    log::debug!("Processing UPDATE_ORDER for key: {key}");
-                    if let Err(e) =
-                        update_order_event_log(conn, trader_key, encoding, &key, &payload).await
-                    {
-                        log::error!("{e}");
-                    }
-                } else {
-                    log::error!("Null `payload` for `update_order`");
-                }
+                flush_pending_pipeline(conn, &mut pipe, &mut has_pending_ops).await?;
+                let payload = msg
+                    .payload
+                    .ok_or_else(|| anyhow::anyhow!("Null `payload` for `update_order`"))?;
+                log::debug!("Processing UPDATE_ORDER for key: {key}");
+                update_order_event_log(conn, trader_key, encoding, &key, &payload).await?;
             }
             DatabaseOperation::ReplaceList => {
-                if let Some(payload) = msg.payload {
-                    log::debug!("Processing REPLACE_LIST for key: {key}");
-                    if let Err(e) = replace_list_operation(&mut pipe, collection, &key, &payload) {
-                        log::error!("{e}");
-                    } else {
-                        has_pending_ops = true;
-                    }
-                } else {
-                    log::error!("Null `payload` for `replace_list`");
-                }
+                let payload = msg
+                    .payload
+                    .ok_or_else(|| anyhow::anyhow!("Null `payload` for `replace_list`"))?;
+                log::debug!("Processing REPLACE_LIST for key: {key}");
+                replace_list_operation(&mut pipe, collection, &key, &payload)?;
+                has_pending_ops = true;
             }
             DatabaseOperation::Delete => {
                 log::debug!(
@@ -860,36 +871,33 @@ async fn drain_buffer(
                     msg.payload.as_ref().map(std::vec::Vec::len)
                 );
                 // `payload` can be `None` for a delete operation
-                if let Err(e) = delete(&mut pipe, collection, &key, msg.payload) {
-                    log::error!("{e}");
-                } else {
-                    has_pending_ops = true;
-                }
+                delete(&mut pipe, collection, &key, msg.payload)?;
+                has_pending_ops = true;
             }
             DatabaseOperation::Close => panic!("Close command should not be drained"),
+            DatabaseOperation::Drain(_) => panic!("Drain command should not be drained"),
             DatabaseOperation::Flush(_) => panic!("Flush command should not be drained"),
         }
     }
 
-    flush_pending_pipeline(conn, &mut pipe, &mut has_pending_ops).await;
+    flush_pending_pipeline(conn, &mut pipe, &mut has_pending_ops).await
 }
 
 async fn flush_pending_pipeline(
     conn: &mut ConnectionManager,
     pipe: &mut Pipeline,
     has_pending_ops: &mut bool,
-) {
+) -> anyhow::Result<()> {
     if !*has_pending_ops {
-        return;
+        return Ok(());
     }
 
-    if let Err(e) = pipe.query_async::<()>(conn).await {
-        log::error!("{e}");
-    }
+    pipe.query_async::<()>(conn).await?;
 
     *pipe = redis::pipe();
     pipe.atomic();
     *has_pending_ops = false;
+    Ok(())
 }
 
 async fn update_order_event_log(
@@ -1319,6 +1327,10 @@ impl CacheDatabaseFactory for RedisCacheConfig {
 
 #[async_trait::async_trait]
 impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
+    fn drain(&mut self) -> anyhow::Result<()> {
+        self.database.drain_sync()
+    }
+
     fn close(&mut self) -> anyhow::Result<()> {
         self.database.close();
         Ok(())

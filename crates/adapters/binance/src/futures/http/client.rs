@@ -89,7 +89,7 @@ use crate::{
             BINANCE_RETRY_AFTER_HEADER, BinanceRateLimitQuota,
         },
         credential::SigningCredential,
-        encoder::encode_broker_id,
+        encoder::{decode_client_order_id, encode_broker_id},
         enums::{
             BinanceAlgoType, BinanceEnvironment, BinanceFuturesOrderType, BinancePositionSide,
             BinancePriceMatch, BinanceProductType, BinanceRateLimitInterval, BinanceRateLimitType,
@@ -2749,13 +2749,15 @@ impl BinanceFuturesHttpClient {
 
     /// Queries an algo order by venue ID, falling back to recent history when needed.
     ///
-    /// Uses the client order ID only when no venue order ID is available.
+    /// Uses the client order ID for lookup only when no venue order ID is available.
+    /// Validates the symbol and every supplied identity before matching-engine enrichment.
     /// Matching-engine details are best-effort; remote enrichment failures fall back to the
     /// Algo Service execution fields.
     ///
     /// # Errors
     ///
-    /// Returns an error if an ID is invalid, the Algo Service request fails, or matching-engine
+    /// Returns an error if an ID is invalid, the result identity differs from the query,
+    /// the Algo Service request fails, or matching-engine
     /// enrichment fails because of a local configuration or validation error.
     pub async fn query_algo_order_with_history(
         &self,
@@ -2793,6 +2795,29 @@ impl BinanceFuturesHttpClient {
         let Some(order) = order else {
             return Ok(None);
         };
+
+        if order.symbol != format_binance_symbol(&instrument_id) {
+            return Err(BinanceFuturesHttpError::ValidationError(
+                "Algo query returned a different symbol".to_string(),
+            ));
+        }
+
+        if algo_venue_order_id.is_some_and(|id| id.as_str() != order.algo_id.to_string()) {
+            return Err(BinanceFuturesHttpError::ValidationError(
+                "Algo query returned a different Algo ID".to_string(),
+            ));
+        }
+
+        if let Some(expected) = client_order_id {
+            let actual =
+                decode_client_order_id(&order.client_algo_id, BINANCE_NAUTILUS_FUTURES_BROKER_ID)
+                    .map_err(|e| BinanceFuturesHttpError::ValidationError(e.to_string()))?;
+            if actual != expected {
+                return Err(BinanceFuturesHttpError::ValidationError(
+                    "Algo query returned a different client ID".to_string(),
+                ));
+            }
+        }
         let actual = if let Some(actual_order_id) = order
             .actual_order_id
             .as_deref()

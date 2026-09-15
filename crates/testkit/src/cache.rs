@@ -60,6 +60,7 @@ struct TestCacheDatabaseState {
     fail_update_actor: bool,
     fail_update_strategy: bool,
     fail_update_position: bool,
+    fail_drain: bool,
 }
 
 /// Shared control and observation handle for [`TestCacheDatabase`].
@@ -154,6 +155,11 @@ impl TestCacheDatabaseControl {
     pub fn set_fail_update_position(&self, fail: bool) {
         self.state.lock().fail_update_position = fail;
     }
+
+    /// Configures draining accepted writes to fail.
+    pub fn set_fail_drain(&self, fail: bool) {
+        self.state.lock().fail_drain = fail;
+    }
 }
 
 /// Stateful cache database adapter for lifecycle tests.
@@ -164,6 +170,13 @@ pub struct TestCacheDatabase {
 
 #[async_trait::async_trait]
 impl CacheDatabaseAdapter for TestCacheDatabase {
+    fn drain(&mut self) -> anyhow::Result<()> {
+        if self.control.state.lock().fail_drain {
+            anyhow::bail!("database drain failed");
+        }
+        Ok(())
+    }
+
     fn close(&mut self) -> anyhow::Result<()> {
         self.control.record("database.close");
         Ok(())

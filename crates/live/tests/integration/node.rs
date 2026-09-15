@@ -24,7 +24,7 @@ use std::{
     fmt::Debug,
     rc::Rc,
     sync::{
-        Arc,
+        Arc, OnceLock,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
@@ -33,27 +33,36 @@ use std::{
 use async_trait::async_trait;
 use nautilus_common::{
     actor::{DataActor, DataActorCore, data_actor::DataActorConfig, registry::get_actor_unchecked},
-    cache::CacheView,
-    clients::{DataClient, ExecutionClient},
+    cache::{Cache, CacheView},
+    clients::{DataClient, ExecutionClient, ExecutionSafetyProbe},
     clock::Clock,
     component::Component,
-    enums::Environment,
+    enums::{ComponentState, Environment},
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
-    live::{dst, runner::get_exec_event_sender},
+    live::{
+        dst,
+        runner::{get_data_event_sender, get_exec_event_sender},
+    },
     logging::{logger::LoggerConfig, logging_sync_to_disk, writer::FileWriterConfig},
     messages::{
-        ExecutionEvent,
+        DataEvent, ExecutionEvent,
         execution::{
-            CancelOrder, GenerateFillReports, GenerateOrderStatusReport,
-            GenerateOrderStatusReports, GeneratePositionStatusReports, QueryOrder,
+            BatchModifyOrders, CancelOrder, GenerateFillReports, GenerateOrderStatusReport,
+            GenerateOrderStatusReports, GeneratePositionStatusReports, ModifyOrder, QueryOrder,
+            SubmitOrder, SubmitOrderList, TradingCommand,
         },
         system::{QueueStateChanged, ShutdownSystem},
     },
-    msgbus::{self, MessagingSwitchboard, ShareableMessageHandler, switchboard},
+    msgbus::{self, MessagingSwitchboard, ShareableMessageHandler, TypedHandler, switchboard},
     nautilus_actor,
+    runner::{
+        TimeEventMessage, TradingCommandMessage, get_time_event_sender, get_trading_cmd_sender,
+    },
     testing::{wait_until, wait_until_async},
+    timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{Params, UUID4, UnixNanos};
+use nautilus_execution::engine::SnapshotAnchorer;
 use nautilus_live::{
     builder::LiveNodeBuilder,
     config::{LiveExecutionEngineConfig, LiveNodeConfig},
@@ -61,19 +70,25 @@ use nautilus_live::{
 };
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
+    data::QuoteTick,
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
-    events::{OrderEventAny, account::state::AccountState},
+    events::{OrderEventAny, OrderPendingUpdate, account::state::AccountState},
     identifiers::{
-        AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, StrategyId,
-        TradeId, TraderId, Venue, VenueOrderId,
+        AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId,
+        StrategyId, TradeId, TraderId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     orders::{
-        Order, OrderAny, OrderTestBuilder,
+        Order, OrderAny, OrderList, OrderTestBuilder,
         stubs::{OrderFilledTestBuilder, TestOrderEventStubs},
     },
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
+};
+use nautilus_system::{KernelEventStore, RegisteredComponents};
+use nautilus_testkit::{
+    cache::TestCacheDatabaseControl,
+    components::{StateActor, StateStrategy},
 };
 use nautilus_trading::{
     ExecutionAlgorithmConfig, ExecutionAlgorithmCore, nautilus_execution_algorithm,
@@ -180,6 +195,52 @@ impl DataActor for StopOnStartStrategy {
 }
 
 nautilus_strategy!(StopOnStartStrategy);
+
+#[derive(Debug)]
+struct SubmitOnStopStrategy {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    submitted_order_id: Rc<RefCell<Option<ClientOrderId>>>,
+    stop_calls: Rc<Cell<usize>>,
+}
+
+impl SubmitOnStopStrategy {
+    fn new(
+        config: StrategyConfig,
+        instrument_id: InstrumentId,
+        submitted_order_id: Rc<RefCell<Option<ClientOrderId>>>,
+        stop_calls: Rc<Cell<usize>>,
+    ) -> Self {
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            submitted_order_id,
+            stop_calls,
+        }
+    }
+}
+
+impl DataActor for SubmitOnStopStrategy {
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        self.stop_calls.set(self.stop_calls.get() + 1);
+        let order = self.order().market(
+            self.instrument_id,
+            OrderSide::Buy,
+            Quantity::from("1.000"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        *self.submitted_order_id.borrow_mut() = Some(order.client_order_id());
+        self.submit_order(order, None, Some(ClientId::from("LIFECYCLE-EXEC")), None)
+    }
+}
+
+nautilus_strategy!(SubmitOnStopStrategy);
 
 #[derive(Debug)]
 struct ClaimingTestStrategy {
@@ -310,6 +371,66 @@ fn test_builder_accepts_live() {
 pub(crate) mod serial_tests {
     use super::*;
 
+    #[derive(Debug)]
+    struct SafetyEventStore {
+        cache: Rc<RefCell<Option<CacheView>>>,
+        trades_at_seal: Rc<RefCell<Vec<Vec<TradeId>>>>,
+        opened: bool,
+    }
+
+    impl KernelEventStore for SafetyEventStore {
+        fn restore_parent_cache(
+            &mut self,
+            _instance_id: UUID4,
+            _cache: &mut Cache,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn open(
+            &mut self,
+            _instance_id: UUID4,
+            _components: &RegisteredComponents,
+            _environment: Environment,
+        ) -> anyhow::Result<()> {
+            self.opened = true;
+            Ok(())
+        }
+
+        fn snapshot_anchorer(&self) -> Option<SnapshotAnchorer> {
+            None
+        }
+
+        fn seal(&mut self, _ts_init: UnixNanos) {
+            if self.opened {
+                let trades = self
+                    .cache
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .borrow()
+                    .orders(None, None, None, None, None)
+                    .into_iter()
+                    .flat_map(|order| order.trade_ids().into_iter().copied().collect::<Vec<_>>())
+                    .collect();
+                self.trades_at_seal.borrow_mut().push(trades);
+                self.opened = false;
+            }
+        }
+
+        fn run_id(&self) -> Option<&str> {
+            None
+        }
+
+        fn parent_run_id(&self) -> Option<&str> {
+            None
+        }
+
+        fn is_halted(&self) -> bool {
+            false
+        }
+    }
+
     #[derive(Clone, Debug, Default)]
     struct StartupMassStatusClientState {
         connected: Arc<AtomicBool>,
@@ -333,6 +454,9 @@ pub(crate) mod serial_tests {
         connected: Arc<AtomicBool>,
         connect_attempted: Arc<AtomicBool>,
         disconnect_attempted: Arc<AtomicBool>,
+        safety_error: Arc<OnceLock<String>>,
+        submits_received: Arc<AtomicUsize>,
+        modifies_received: Arc<AtomicUsize>,
     }
 
     #[derive(Clone, Copy, Debug)]
@@ -891,6 +1015,32 @@ pub(crate) mod serial_tests {
             self.state.connected.load(Ordering::Relaxed)
         }
 
+        fn execution_safety_error(&self) -> Option<String> {
+            self.state.safety_error.get().cloned()
+        }
+
+        fn execution_safety_probe(&self) -> Option<ExecutionSafetyProbe> {
+            let safety_error = self.state.safety_error.clone();
+            Some(Rc::new(move || safety_error.get().cloned()))
+        }
+
+        fn submit_order(&self, _command: SubmitOrder) -> anyhow::Result<()> {
+            self.state.submits_received.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+
+        fn modify_order(&self, _command: ModifyOrder) -> anyhow::Result<()> {
+            self.state.modifies_received.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+
+        fn batch_modify_orders(&self, command: BatchModifyOrders) -> anyhow::Result<()> {
+            self.state
+                .modifies_received
+                .fetch_add(command.modifies.len(), Ordering::Relaxed);
+            Ok(())
+        }
+
         fn client_id(&self) -> ClientId {
             ClientId::from("LIFECYCLE-EXEC")
         }
@@ -983,6 +1133,931 @@ pub(crate) mod serial_tests {
             exec_behavior,
             Duration::from_millis(50),
         )
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_execution_safety_failure_preserves_live_checkpoint(
+        #[values(false, true)] run_loop: bool,
+        #[values(false, true)] before_start: bool,
+        #[values(false, true)] external_fail_stop: bool,
+    ) {
+        let state = LifecycleClientState::default();
+        let config = LiveNodeConfig {
+            load_state: true,
+            save_state: true,
+            exec_engine: LiveExecutionEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("SafetyCheckpointNode")
+            .add_exec_client(
+                Some("lifecycle-exec".to_string()),
+                Box::new(LifecycleExecutionClientFactory::new(
+                    state.clone(),
+                    LifecycleClientBehavior::Connects,
+                )),
+                Box::new(LifecycleExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        let actor_id = "SAFE-ACTOR".into();
+        let strategy_id = StrategyId::from("SAFE-STRATEGY-001");
+        let checkpoint = indexmap::IndexMap::from([("saved".to_string(), b"safe".to_vec())]);
+        let unsafe_state = indexmap::IndexMap::from([("saved".to_string(), b"unsafe".to_vec())]);
+        let (database, control) = TestCacheDatabaseControl::create();
+        control.set_actor_state(actor_id, &checkpoint);
+        control.set_strategy_state(strategy_id, &checkpoint);
+        node.set_cache_database(Box::new(database)).unwrap();
+        node.add_actor(StateActor::new(
+            actor_id,
+            control.clone(),
+            unsafe_state.clone(),
+        ))
+        .unwrap();
+        node.add_strategy(StateStrategy::new(
+            strategy_id,
+            control.clone(),
+            unsafe_state,
+        ))
+        .unwrap();
+
+        let handle = node.handle();
+        let request_failure = || {
+            if external_fail_stop {
+                handle.fail_stop();
+            } else {
+                state
+                    .safety_error
+                    .set("Algo fill history incomplete".to_string())
+                    .unwrap();
+            }
+        };
+
+        if before_start {
+            request_failure();
+        }
+
+        let result = if run_loop {
+            let driver = async {
+                if !before_start {
+                    wait_until_async(|| async { handle.is_running() }, Duration::from_secs(2))
+                        .await;
+                    request_failure();
+
+                    if !external_fail_stop {
+                        handle.stop();
+                    }
+                }
+            };
+            let ((), result) = tokio::join!(driver, node.run());
+            result
+        } else if before_start {
+            node.start().await
+        } else {
+            node.start().await.unwrap();
+            request_failure();
+            node.stop().await
+        };
+        node.dispose();
+
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains(if external_fail_stop {
+                    "external fail-stop"
+                } else {
+                    "LIFECYCLE-EXEC: Algo fill history incomplete"
+                })
+        );
+        assert_eq!(control.actor_state(&actor_id), Some(checkpoint.clone()));
+        assert_eq!(control.strategy_state(&strategy_id), Some(checkpoint));
+        assert!(state.disconnect_attempted.load(Ordering::Relaxed));
+        assert!(!state.connected.load(Ordering::Relaxed));
+        assert_eq!(node.state(), NodeState::Stopped);
+
+        let mut expected = Vec::new();
+
+        if !before_start {
+            expected.extend([
+                "actor.load:SAFE-ACTOR",
+                "actor.on_load",
+                "strategy.load:SAFE-STRATEGY-001",
+                "strategy.on_load",
+                "actor.on_start",
+                "strategy.on_start",
+                "actor.on_stop",
+                "strategy.on_stop",
+            ]);
+        }
+        expected.push("database.close");
+        assert_eq!(control.events(), expected);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_execution_safety_failure_stops_without_market_exit(
+        #[values(false, true)] run_loop: bool,
+        #[values(false, true)] manage_stop: bool,
+    ) {
+        let (mut node, data_state, exec_state) = live_node_with_lifecycle_clients(
+            "SafetyRuntimeNode",
+            LifecycleClientBehavior::Connects,
+            LifecycleClientBehavior::Connects,
+        );
+        let strategy_id = StrategyId::from("SAFETY-RUNTIME-001");
+        node.add_strategy(TestStrategy::new(StrategyConfig {
+            strategy_id: Some(strategy_id),
+            manage_stop,
+            ..Default::default()
+        }))
+        .unwrap();
+
+        let result = if run_loop {
+            let handle = node.handle();
+            let driver = async {
+                wait_until_async(|| async { handle.is_running() }, Duration::from_secs(2)).await;
+                exec_state
+                    .safety_error
+                    .set("Algo fill history incomplete".to_string())
+                    .unwrap();
+            };
+            let ((), result) = tokio::join!(
+                driver,
+                dst::time::timeout(Duration::from_secs(3), node.run()),
+            );
+            result.expect("execution safety failure must stop the node without a stop request")
+        } else {
+            node.start().await.unwrap();
+            exec_state
+                .safety_error
+                .set("Algo fill history incomplete".to_string())
+                .unwrap();
+            node.stop().await
+        };
+        let (strategy_state, is_exiting) = {
+            let strategy = get_actor_unchecked::<TestStrategy>(&strategy_id.inner());
+            (strategy.state(), strategy.is_exiting())
+        };
+        node.dispose();
+
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("LIFECYCLE-EXEC: Algo fill history incomplete")
+        );
+        assert_eq!(node.state(), NodeState::Stopped);
+        assert_eq!(strategy_state, ComponentState::Stopped);
+        assert!(
+            !is_exiting,
+            "safety shutdown must not start a managed market exit"
+        );
+        assert!(data_state.disconnect_attempted.load(Ordering::Relaxed));
+        assert!(exec_state.disconnect_attempted.load(Ordering::Relaxed));
+        assert!(!data_state.connected.load(Ordering::Relaxed));
+        assert!(!exec_state.connected.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_execution_safety_failure_stops_message_fanout_between_subscribers() {
+        let (mut node, _data_state, exec_state) = live_node_with_lifecycle_clients(
+            "SafetyMessageFanoutNode",
+            LifecycleClientBehavior::Connects,
+            LifecycleClientBehavior::Connects,
+        );
+        let instrument = crypto_perpetual_ethusdt();
+        let instrument_id = instrument.id();
+        node.kernel()
+            .cache()
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CryptoPerpetual(instrument))
+            .unwrap();
+
+        let first_callbacks = Rc::new(Cell::new(0));
+        let second_callbacks = Rc::new(Cell::new(0));
+        let first_count = first_callbacks.clone();
+        let first_safety_error = exec_state.safety_error.clone();
+        msgbus::subscribe_quotes(
+            "data.quotes.*".into(),
+            TypedHandler::from_with_id("safety-first", move |_: &QuoteTick| {
+                first_count.set(first_count.get() + 1);
+                first_safety_error
+                    .set("Algo fill history incomplete".to_string())
+                    .unwrap();
+            }),
+            Some(10),
+        );
+        let second_count = second_callbacks.clone();
+        msgbus::subscribe_quotes(
+            "data.quotes.*".into(),
+            TypedHandler::from_with_id("safety-second", move |_: &QuoteTick| {
+                second_count.set(second_count.get() + 1);
+            }),
+            None,
+        );
+
+        let handle = node.handle();
+        let driver = async {
+            wait_until_async(|| async { handle.is_running() }, Duration::from_secs(2)).await;
+            get_data_event_sender()
+                .send(DataEvent::Data(
+                    QuoteTick::new(
+                        instrument_id,
+                        Price::from("2000.00"),
+                        Price::from("2001.00"),
+                        Quantity::from("1.000"),
+                        Quantity::from("2.000"),
+                        UnixNanos::from(100),
+                        UnixNanos::from(100),
+                    )
+                    .into(),
+                ))
+                .unwrap();
+        };
+        let ((), result) = tokio::join!(
+            driver,
+            dst::time::timeout(Duration::from_secs(3), node.run())
+        );
+        let result = result.expect("execution safety failure must stop the node");
+        node.dispose();
+
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Algo fill history incomplete")
+        );
+        assert_eq!(first_callbacks.get(), 1);
+        assert_eq!(second_callbacks.get(), 0);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_execution_safety_failure_stops_order_event_fanout_while_engine_borrowed() {
+        let (mut node, _data_state, exec_state) = live_node_with_lifecycle_clients(
+            "SafetyOrderFanoutNode",
+            LifecycleClientBehavior::Connects,
+            LifecycleClientBehavior::Connects,
+        );
+        let instrument = crypto_perpetual_ethusdt();
+        let instrument_id = instrument.id();
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .price(Price::from("2000.00"))
+            .quantity(Quantity::from("1.000"))
+            .build();
+        let client_order_id = order.client_order_id();
+        let submitted =
+            TestOrderEventStubs::submitted(&order, AccountId::from("LIFECYCLE-EXEC-001"));
+        let cache = node.kernel().cache();
+        cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CryptoPerpetual(instrument))
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+
+        let first_callbacks = Rc::new(Cell::new(0));
+        let second_callbacks = Rc::new(Cell::new(0));
+        let first_count = first_callbacks.clone();
+        let first_safety_error = exec_state.safety_error.clone();
+        let order_topic = switchboard::get_event_order_topic(order.strategy_id());
+        msgbus::subscribe_order_events(
+            order_topic.into(),
+            TypedHandler::from_with_id("safety-order-first", move |_: &OrderEventAny| {
+                first_count.set(first_count.get() + 1);
+                first_safety_error
+                    .set("Algo fill history incomplete".to_string())
+                    .unwrap();
+            }),
+            Some(10),
+        );
+        let second_count = second_callbacks.clone();
+        msgbus::subscribe_order_events(
+            order_topic.into(),
+            TypedHandler::from_with_id("safety-order-second", move |_: &OrderEventAny| {
+                second_count.set(second_count.get() + 1);
+            }),
+            None,
+        );
+
+        let handle = node.handle();
+        let driver = async {
+            wait_until_async(|| async { handle.is_running() }, Duration::from_secs(2)).await;
+            get_exec_event_sender()
+                .send(ExecutionEvent::Order(submitted))
+                .unwrap();
+        };
+        let ((), result) = tokio::join!(
+            driver,
+            dst::time::timeout(Duration::from_secs(3), node.run())
+        );
+        let result = result.expect("execution safety failure must stop the node");
+        let final_order = cache.borrow().order_owned(&client_order_id).unwrap();
+        node.dispose();
+
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Algo fill history incomplete")
+        );
+        assert_eq!(first_callbacks.get(), 1);
+        assert_eq!(second_callbacks.get(), 0);
+        assert_eq!(final_order.status(), OrderStatus::Submitted);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_safety_shutdown_drains_facts_without_data_callbacks(
+        #[values(false, true)] run_loop: bool,
+        #[values(false, true)] with_exec_event: bool,
+        #[values(false, true)] order_list: bool,
+        #[values(false, true)] external_fail_stop: bool,
+    ) {
+        let exec_state = LifecycleClientState::default();
+        let store_cache = Rc::new(RefCell::new(None));
+        let trades_at_seal = Rc::new(RefCell::new(Vec::new()));
+        let event_store = SafetyEventStore {
+            cache: store_cache.clone(),
+            trades_at_seal: trades_at_seal.clone(),
+            opened: false,
+        };
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecutionEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("SafetyQueuedEventsNode")
+            .with_event_store(move |_, _| Ok(Box::new(event_store)))
+            .add_exec_client(
+                Some("lifecycle-exec".to_string()),
+                Box::new(LifecycleExecutionClientFactory::new(
+                    exec_state.clone(),
+                    LifecycleClientBehavior::Connects,
+                )),
+                Box::new(LifecycleExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        *store_cache.borrow_mut() = Some(CacheView::new(node.kernel().cache()));
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instrument_id = instrument.id();
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .price(Price::from("2000.00"))
+            .quantity(Quantity::from("1.000"))
+            .build();
+        let client_order_id = order.client_order_id();
+        let submitted =
+            TestOrderEventStubs::submitted(&order, AccountId::from("LIFECYCLE-EXEC-001"));
+        let account_id = AccountId::from("LIFECYCLE-EXEC-001");
+        let mut venue_order = order.clone();
+        venue_order.apply(submitted.clone()).unwrap();
+        let accepted =
+            TestOrderEventStubs::accepted(&venue_order, account_id, VenueOrderId::from("51001"));
+        venue_order.apply(accepted.clone()).unwrap();
+        let trade_id = TradeId::from("SAFETY-FILL-1");
+        let fill = TestOrderEventStubs::filled(
+            &venue_order,
+            &instrument,
+            Some(trade_id),
+            None,
+            Some(Price::from("2000.00")),
+            Some(Quantity::from("0.400")),
+            Some(LiquiditySide::Taker),
+            Some(Money::from("0.04 USDT")),
+            None,
+            Some(account_id),
+        );
+        let submit = SubmitOrder::new(
+            order.trader_id(),
+            Some(ClientId::from("LIFECYCLE-EXEC")),
+            order.strategy_id(),
+            instrument_id,
+            client_order_id,
+            order.init_event().clone(),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::from(101),
+            None,
+        );
+        let submit_command = if order_list {
+            TradingCommand::SubmitOrderList(SubmitOrderList::new(
+                submit.trader_id,
+                submit.client_id,
+                submit.strategy_id,
+                OrderList::new(
+                    OrderListId::from("SAFETY-LIST-1"),
+                    instrument_id,
+                    submit.strategy_id,
+                    vec![client_order_id],
+                    UnixNanos::from(101),
+                ),
+                vec![submit.order_init.clone()],
+                None,
+                None,
+                None,
+                UUID4::new(),
+                UnixNanos::from(101),
+                None,
+            ))
+        } else {
+            TradingCommand::SubmitOrder(submit)
+        };
+        let cache = node.kernel().cache();
+        cache.borrow_mut().add_instrument(instrument).unwrap();
+        cache
+            .borrow_mut()
+            .add_account(AccountAny::Margin(MarginAccount::new(
+                AccountState::new(
+                    account_id,
+                    AccountType::Margin,
+                    vec![AccountBalance::new(
+                        Money::from("10000 USDT"),
+                        Money::from("0 USDT"),
+                        Money::from("10000 USDT"),
+                    )],
+                    Vec::new(),
+                    true,
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    UnixNanos::default(),
+                    Some(Currency::USDT()),
+                ),
+                true,
+            )))
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+        let callbacks = Rc::new(Cell::new(0));
+        let time_callbacks = Rc::new(Cell::new(0));
+        let callback_count = callbacks.clone();
+        msgbus::subscribe_quotes(
+            "data.quotes.*".into(),
+            TypedHandler::from(move |_: &QuoteTick| callback_count.set(callback_count.get() + 1)),
+            None,
+        );
+        let handle = node.handle();
+        let queue_after_fault = || {
+            if external_fail_stop {
+                handle.fail_stop();
+            } else {
+                exec_state
+                    .safety_error
+                    .set("Algo fill history incomplete".to_string())
+                    .unwrap();
+            }
+
+            let time_count = time_callbacks.clone();
+            get_time_event_sender().send(TimeEventMessage::new(
+                TimeEvent::new(
+                    "SAFETY-TIMER".into(),
+                    UUID4::new(),
+                    UnixNanos::from(101),
+                    UnixNanos::from(101),
+                ),
+                TimeEventCallback::RustLocal(Rc::new(move |_| {
+                    time_count.set(time_count.get() + 1);
+                })),
+            ));
+            get_trading_cmd_sender().execute(TradingCommandMessage::new(
+                MessagingSwitchboard::exec_engine_execute(),
+                submit_command.clone(),
+            ));
+
+            if with_exec_event {
+                get_exec_event_sender()
+                    .send(ExecutionEvent::Order(submitted.clone()))
+                    .unwrap();
+                get_exec_event_sender()
+                    .send(ExecutionEvent::Order(accepted.clone()))
+                    .unwrap();
+                get_exec_event_sender()
+                    .send(ExecutionEvent::Order(fill.clone()))
+                    .unwrap();
+                get_exec_event_sender()
+                    .send(ExecutionEvent::Order(fill.clone()))
+                    .unwrap();
+            }
+            get_data_event_sender()
+                .send(DataEvent::Data(
+                    QuoteTick::new(
+                        instrument_id,
+                        Price::from("2000.00"),
+                        Price::from("2001.00"),
+                        Quantity::from("1.000"),
+                        Quantity::from("2.000"),
+                        UnixNanos::from(100),
+                        UnixNanos::from(100),
+                    )
+                    .into(),
+                ))
+                .unwrap();
+        };
+
+        let result = if run_loop {
+            let driver = async {
+                wait_until_async(|| async { handle.is_running() }, Duration::from_secs(2)).await;
+                queue_after_fault();
+            };
+            let ((), result) = tokio::join!(
+                driver,
+                dst::time::timeout(Duration::from_secs(3), node.run())
+            );
+            result.expect("execution safety failure must stop the node")
+        } else {
+            node.start().await.unwrap();
+            queue_after_fault();
+            node.stop().await
+        };
+        let final_order = cache.borrow().order_owned(&client_order_id).unwrap();
+        let positions: Vec<_> = cache
+            .borrow()
+            .positions(None, None, None, None, None)
+            .into_iter()
+            .map(|position| position.cloned())
+            .collect();
+        let quote_count = cache.borrow().quote_count(&instrument_id);
+        node.dispose();
+
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains(if external_fail_stop {
+                    "external fail-stop"
+                } else {
+                    "Algo fill history incomplete"
+                })
+        );
+        assert_eq!(callbacks.get(), 0);
+        assert_eq!(time_callbacks.get(), 0);
+        assert_eq!(exec_state.submits_received.load(Ordering::Relaxed), 0);
+        assert_eq!(quote_count, 0);
+        assert_eq!(
+            *trades_at_seal.borrow(),
+            vec![if with_exec_event {
+                vec![trade_id]
+            } else {
+                Vec::new()
+            }]
+        );
+        assert_eq!(
+            final_order.status(),
+            if with_exec_event {
+                OrderStatus::PartiallyFilled
+            } else if external_fail_stop {
+                OrderStatus::Initialized
+            } else {
+                OrderStatus::Denied
+            }
+        );
+
+        if with_exec_event {
+            assert_eq!(final_order.trade_ids(), vec![&trade_id]);
+            assert_eq!(final_order.filled_qty(), Quantity::from("0.400"));
+            assert_eq!(
+                final_order.commissions().get(&Currency::USDT()),
+                Some(&Money::from("0.04 USDT"))
+            );
+            assert_eq!(positions.len(), 1);
+            assert_eq!(positions[0].quantity, Quantity::from("0.400"));
+            assert_eq!(positions[0].avg_px_open, 2000.0);
+            assert_eq!(positions[0].trade_ids(), vec![trade_id]);
+            assert_eq!(positions[0].commissions(), vec![Money::from("0.04 USDT")]);
+            assert_eq!(positions[0].strategy_id, final_order.strategy_id());
+        } else if external_fail_stop {
+            assert_eq!(final_order.event_count(), 1);
+            assert!(positions.is_empty());
+            assert!(final_order.trade_ids().is_empty());
+        } else {
+            let OrderEventAny::Denied(denied) = final_order.last_event() else {
+                panic!("queued submit must end with a native OrderDenied event");
+            };
+            assert!(denied.reason.contains("Algo fill history incomplete"));
+            assert!(positions.is_empty());
+            assert!(final_order.trade_ids().is_empty());
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_execution_safety_rejects_queued_modify_without_client_dispatch(
+        #[values(false, true)] run_loop: bool,
+        #[values(false, true)] batch: bool,
+    ) {
+        let (mut node, _data_state, exec_state) = live_node_with_lifecycle_clients(
+            "SafetyQueuedModifyNode",
+            LifecycleClientBehavior::Connects,
+            LifecycleClientBehavior::Connects,
+        );
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instrument_id = instrument.id();
+        let account_id = AccountId::from("LIFECYCLE-EXEC-001");
+        let venue_order_id = VenueOrderId::from("SAFETY-MODIFY-1");
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .price(Price::from("2000.00"))
+            .quantity(Quantity::from("1.000"))
+            .build();
+        let client_order_id = order.client_order_id();
+        order
+            .apply(TestOrderEventStubs::submitted(&order, account_id))
+            .unwrap();
+        order
+            .apply(TestOrderEventStubs::accepted(
+                &order,
+                account_id,
+                venue_order_id,
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::PendingUpdate(OrderPendingUpdate::new(
+                order.trader_id(),
+                order.strategy_id(),
+                instrument_id,
+                client_order_id,
+                Some(account_id),
+                UUID4::new(),
+                UnixNanos::from(100),
+                UnixNanos::from(100),
+                false,
+                Some(venue_order_id),
+            )))
+            .unwrap();
+        let modify = ModifyOrder::new(
+            order.trader_id(),
+            Some(ClientId::from("LIFECYCLE-EXEC")),
+            order.strategy_id(),
+            instrument_id,
+            client_order_id,
+            Some(venue_order_id),
+            Some(Quantity::from("2.000")),
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::from(101),
+            None,
+            None,
+        );
+        let command = if batch {
+            TradingCommand::ModifyOrders(BatchModifyOrders::new(
+                modify.trader_id,
+                modify.client_id,
+                modify.strategy_id,
+                modify.instrument_id,
+                vec![modify],
+                UUID4::new(),
+                UnixNanos::from(101),
+                None,
+                None,
+            ))
+        } else {
+            TradingCommand::ModifyOrder(modify)
+        };
+        let cache = node.kernel().cache();
+        cache.borrow_mut().add_instrument(instrument).unwrap();
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+        let queue_after_fault = || {
+            exec_state
+                .safety_error
+                .set("Algo fill history incomplete".to_string())
+                .unwrap();
+            get_trading_cmd_sender().execute(TradingCommandMessage::new(
+                MessagingSwitchboard::exec_engine_execute(),
+                command.clone(),
+            ));
+        };
+
+        let result = if run_loop {
+            let handle = node.handle();
+            let driver = async {
+                wait_until_async(|| async { handle.is_running() }, Duration::from_secs(2)).await;
+                queue_after_fault();
+            };
+            let ((), result) = tokio::join!(
+                driver,
+                dst::time::timeout(Duration::from_secs(3), node.run())
+            );
+            result.expect("execution safety failure must stop the node")
+        } else {
+            node.start().await.unwrap();
+            queue_after_fault();
+            node.stop().await
+        };
+        let final_order = cache.borrow().order_owned(&client_order_id).unwrap();
+        node.dispose();
+
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Algo fill history incomplete")
+        );
+        assert_eq!(exec_state.modifies_received.load(Ordering::Relaxed), 0);
+        assert_eq!(final_order.status(), OrderStatus::Accepted);
+        let OrderEventAny::ModifyRejected(rejected) = final_order.last_event() else {
+            panic!("queued modify must end with a native OrderModifyRejected event");
+        };
+        assert!(rejected.reason.contains("Algo fill history incomplete"));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_execution_safety_shutdown_is_bounded_when_disconnect_fails_and_data_requeues() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecutionEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_disconnection: Duration::ZERO,
+            ..Default::default()
+        };
+        let data_state = LifecycleClientState::default();
+        let exec_state = LifecycleClientState::default();
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("SafetyBoundedDrainNode")
+            .add_data_client(
+                Some("lifecycle-data".to_string()),
+                Box::new(LifecycleDataClientFactory::new(
+                    data_state.clone(),
+                    LifecycleClientBehavior::DisconnectKeepsConnected,
+                )),
+                Box::new(LifecycleDataClientConfig),
+            )
+            .unwrap()
+            .add_exec_client(
+                Some("lifecycle-exec".to_string()),
+                Box::new(LifecycleExecutionClientFactory::new(
+                    exec_state.clone(),
+                    LifecycleClientBehavior::Connects,
+                )),
+                Box::new(LifecycleExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        let handle = node.handle();
+        let stop_producer = Arc::new(AtomicBool::new(false));
+        let producer_deadline_reached = Arc::new(AtomicBool::new(false));
+        let producer_slot = Arc::new(Mutex::new(None));
+        let producer_stop = stop_producer.clone();
+        let deadline_reached = producer_deadline_reached.clone();
+        let producer_handle = producer_slot.clone();
+        let driver = async {
+            wait_until_async(|| async { handle.is_running() }, Duration::from_secs(2)).await;
+            let sender = get_data_event_sender();
+            let quote = QuoteTick::new(
+                crypto_perpetual_ethusdt().id(),
+                Price::from("2000.00"),
+                Price::from("2001.00"),
+                Quantity::from("1.000"),
+                Quantity::from("2.000"),
+                UnixNanos::from(100),
+                UnixNanos::from(100),
+            );
+
+            *producer_handle.lock() = Some(std::thread::spawn(move || {
+                let deadline = std::time::Instant::now() + Duration::from_millis(500);
+                let mut sent = 0_u64;
+
+                while !producer_stop.load(Ordering::Relaxed) && std::time::Instant::now() < deadline
+                {
+                    if sender.send(DataEvent::Data(quote.into())).is_err() {
+                        break;
+                    }
+                    sent += 1;
+                    if sent.is_multiple_of(64) {
+                        std::thread::yield_now();
+                    }
+                }
+
+                if std::time::Instant::now() >= deadline {
+                    deadline_reached.store(true, Ordering::Relaxed);
+                }
+            }));
+            exec_state
+                .safety_error
+                .set("Algo fill history incomplete".to_string())
+                .unwrap();
+        };
+        let started_at = std::time::Instant::now();
+        let ((), result) = tokio::join!(driver, node.run());
+        let elapsed = started_at.elapsed();
+        stop_producer.store(true, Ordering::Relaxed);
+
+        if let Some(producer) = producer_slot.lock().take() {
+            producer.join().unwrap();
+        }
+        node.dispose();
+
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("Algo fill history incomplete"));
+        assert!(error.contains("disconnect readiness"));
+        assert!(data_state.disconnect_attempted.load(Ordering::Relaxed));
+        assert!(
+            !producer_deadline_reached.load(Ordering::Relaxed),
+            "bounded shutdown followed a producer until it stopped: {elapsed:?}"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_execution_safety_rejects_order_submitted_by_user_stop_callback(
+        #[values(false, true)] manage_stop: bool,
+    ) {
+        let (mut node, _data_state, exec_state) = live_node_with_lifecycle_clients(
+            "SafetyUserStopSideEffectNode",
+            LifecycleClientBehavior::Connects,
+            LifecycleClientBehavior::Connects,
+        );
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instrument_id = instrument.id();
+        let submitted_order_id = Rc::new(RefCell::new(None));
+        let stop_calls = Rc::new(Cell::new(0));
+        node.kernel()
+            .cache()
+            .borrow_mut()
+            .add_instrument(instrument)
+            .unwrap();
+        node.add_strategy(SubmitOnStopStrategy::new(
+            StrategyConfig {
+                strategy_id: Some(StrategyId::from("SAFETY-STOP-SIDE-EFFECT-001")),
+                manage_stop,
+                ..Default::default()
+            },
+            instrument_id,
+            submitted_order_id.clone(),
+            stop_calls.clone(),
+        ))
+        .unwrap();
+
+        let handle = node.handle();
+        let driver = async {
+            wait_until_async(|| async { handle.is_running() }, Duration::from_secs(2)).await;
+            exec_state
+                .safety_error
+                .set("Algo fill history incomplete".to_string())
+                .unwrap();
+        };
+        let ((), result) = tokio::join!(
+            driver,
+            dst::time::timeout(Duration::from_secs(3), node.run())
+        );
+        let result = result.expect("execution safety failure must stop the node");
+        let client_order_id = submitted_order_id
+            .borrow()
+            .expect("strategy stop callback must create an order");
+        let final_order = node
+            .kernel()
+            .cache()
+            .borrow()
+            .order_owned(&client_order_id)
+            .unwrap();
+        node.dispose();
+
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Algo fill history incomplete")
+        );
+        assert_eq!(stop_calls.get(), 1);
+        assert_eq!(exec_state.submits_received.load(Ordering::Relaxed), 0);
+        assert_eq!(final_order.status(), OrderStatus::Denied);
+        let OrderEventAny::Denied(denied) = final_order.last_event() else {
+            panic!("user stop side-effect order must end with OrderDenied");
+        };
+        assert!(denied.reason.contains("Algo fill history incomplete"));
     }
 
     fn live_node_with_lifecycle_clients_timeout(

@@ -108,6 +108,7 @@ use nautilus_core::{
 #[cfg(test)]
 use nautilus_model::reports::OrderStatusReport;
 use nautilus_model::{
+    enums::TradingState,
     events::OrderEventAny,
     identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId},
     orders::Order,
@@ -493,6 +494,8 @@ impl LiveNode {
             return Err(e);
         }
 
+        self.apply_control_requests();
+
         if let Some(reason) = self.startup_abort_reason() {
             self.abort_startup(reason).await?;
             return Ok(());
@@ -530,6 +533,7 @@ impl LiveNode {
             anyhow::bail!("Not running");
         }
 
+        self.apply_control_requests();
         self.handle.set_shutting_down();
 
         #[cfg(feature = "plugin")]
@@ -565,6 +569,7 @@ impl LiveNode {
 
     /// Disposes the live node kernel and releases resources.
     pub fn dispose(&mut self) {
+        self.apply_control_requests();
         self.close_external_ingress();
         self.handle.set_stopped();
         self.kernel.dispose();
@@ -581,6 +586,10 @@ impl LiveNode {
         let mut processed = 0;
 
         loop {
+            if self.stop_on_execution_safety_error() {
+                break;
+            }
+
             tokio::select! {
                 biased;
 
@@ -612,6 +621,15 @@ impl LiveNode {
     }
 
     fn process_runner_event(&mut self, event: PendingRunnerEvent) {
+        if self.stop_on_execution_safety_error()
+            && !matches!(&event, PendingRunnerEvent::ExecEvent(_))
+        {
+            if let PendingRunnerEvent::ExecCommand(command) = event {
+                self.reject_queued_command_after_safety_failure(&command);
+            }
+            return;
+        }
+
         match event {
             PendingRunnerEvent::TimeEvent(message) => {
                 let _ = AsyncRunner::handle_time_event(message);
@@ -1077,7 +1095,7 @@ impl LiveNode {
                 let result = self
                     .abort_startup("External message bus ingress failed to start")
                     .await;
-                Self::drain_channels(
+                self.drain_channels(
                     &mut time_evt_rx,
                     &mut system_evt_rx,
                     &mut system_cmd_rx,
@@ -1133,7 +1151,7 @@ impl LiveNode {
             let result = self
                 .abort_startup_with_error("Data client connection timed out", e)
                 .await;
-            Self::drain_channels(
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1195,7 +1213,7 @@ impl LiveNode {
                 let result = self
                     .abort_startup_with_error("Execution client connection timed out", e)
                     .await;
-                Self::drain_channels(
+                self.drain_channels(
                     &mut time_evt_rx,
                     &mut system_evt_rx,
                     &mut system_cmd_rx,
@@ -1216,7 +1234,7 @@ impl LiveNode {
                     anyhow::anyhow!("readiness timeout while waiting for engine connections"),
                 )
                 .await;
-            Self::drain_channels(
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1234,7 +1252,7 @@ impl LiveNode {
             .or_else(|| self.startup_abort_reason())
         {
             self.abort_startup(reason).await?;
-            Self::drain_channels(
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1252,7 +1270,7 @@ impl LiveNode {
         // Run reconciliation now that instruments are in cache and start trader
         if let Err(e) = self.perform_startup_reconciliation().await {
             let result = self.abort_startup("Startup reconciliation failed").await;
-            Self::drain_channels(
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1272,9 +1290,11 @@ impl LiveNode {
             return Err(e);
         }
 
+        self.apply_control_requests();
+
         if let Some(reason) = self.startup_abort_reason() {
             let result = self.abort_startup(reason).await;
-            Self::drain_channels(
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1289,7 +1309,7 @@ impl LiveNode {
 
         if let Err(e) = self.kernel.start_trader() {
             let result = self.abort_after_trader_start_failure(e).await;
-            Self::drain_channels(
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1305,7 +1325,7 @@ impl LiveNode {
         #[cfg(feature = "plugin")]
         if let Err(e) = self.plugins.start_controllers() {
             let result = self.abort_after_trader_start_failure(e).await;
-            Self::drain_channels(
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1508,6 +1528,12 @@ impl LiveNode {
         let mut dispatches_since_yield = 0usize;
 
         loop {
+            self.apply_control_requests();
+
+            if self.stop_on_execution_safety_error() {
+                break;
+            }
+
             let shutdown_deadline = self.shutdown_deadline;
             let is_shutting_down = self.state() == NodeState::ShuttingDown;
             let is_running = self.state() == NodeState::Running;
@@ -1531,6 +1557,10 @@ impl LiveNode {
                     self.initiate_shutdown();
                 }
                 _ = stop_check_timer.tick(), if is_running => {
+                    if self.stop_on_execution_safety_error() {
+                        break;
+                    }
+
                     if stop_handle.should_stop() {
                         log::info!("Received stop signal from handle");
                         self.initiate_shutdown();
@@ -1553,6 +1583,10 @@ impl LiveNode {
                         None => std::future::pending::<ReportTaskOutcome<OpenOrderReportResult>>().await,
                     }
                 }, if open_order_report_task.is_some() => {
+                    if self.stop_on_execution_safety_error() {
+                        break;
+                    }
+
                     let maintenance_start = dst::time::Instant::now();
 
                     drop(open_order_report_task.take());
@@ -1596,6 +1630,10 @@ impl LiveNode {
                         None => std::future::pending::<ReportTaskOutcome<Vec<TargetedOrderReportResult>>>().await,
                     }
                 }, if targeted_order_report_task.is_some() => {
+                    if self.stop_on_execution_safety_error() {
+                        break;
+                    }
+
                     let maintenance_start = dst::time::Instant::now();
 
                     let planned_client_order_ids = targeted_order_report_task
@@ -1632,6 +1670,10 @@ impl LiveNode {
                         None => std::future::pending::<ReportTaskOutcome<PositionReportTaskResult>>().await,
                     }
                 }, if position_report_task.is_some() => {
+                    if self.stop_on_execution_safety_error() {
+                        break;
+                    }
+
                     let maintenance_start = dst::time::Instant::now();
 
                     drop(position_report_task.take());
@@ -1657,6 +1699,10 @@ impl LiveNode {
                 // Maintenance dispatcher (before event processing to avoid
                 // starvation). See module docs for design rationale.
                 _ = maintenance_timer.tick(), if is_running => {
+                    if self.stop_on_execution_safety_error() {
+                        break;
+                    }
+
                     let maintenance_start = dst::time::Instant::now();
                     metrics.publish_queue_depths(
                         RunnerChannelQueueDepths::from_receivers(
@@ -1736,6 +1782,10 @@ impl LiveNode {
                 // submit, etc.) is not delayed behind a market data backlog
                 // when the biased select polls receivers each iteration.
                 Some(handler) = time_evt_rx.recv() => {
+                    if self.stop_on_execution_safety_error() {
+                        break;
+                    }
+
                     let dispatch_start = dst::time::Instant::now();
                     let dispatched = AsyncRunner::handle_time_event(handler);
 
@@ -1754,6 +1804,10 @@ impl LiveNode {
                     }
                 }
                 Some(event) = system_evt_rx.recv() => {
+                    if self.stop_on_execution_safety_error() {
+                        break;
+                    }
+
                     if is_shutting_down {
                         log::debug!("Residual system event: {event}");
                         residual_events += 1;
@@ -1761,6 +1815,10 @@ impl LiveNode {
                     self.process_system_event(event);
                 }
                 Some(command) = system_cmd_rx.recv() => {
+                    if self.stop_on_execution_safety_error() {
+                        break;
+                    }
+
                     if is_shutting_down {
                         log::debug!("Residual system command: {command}");
                         residual_events += 1;
@@ -1800,6 +1858,10 @@ impl LiveNode {
                     );
                 }
                 message = recv_external_msgbus_message(&mut external_msgbus_rx) => {
+                    if self.stop_on_execution_safety_error() {
+                        break;
+                    }
+
                     let external_msgbus_start = dst::time::Instant::now();
 
                     match message {
@@ -1824,6 +1886,10 @@ impl LiveNode {
                     );
                 }
                 Some(evt) = data_evt_rx.recv() => {
+                    if self.stop_on_execution_safety_error() {
+                        break;
+                    }
+
                     let dispatch_start = dst::time::Instant::now();
 
                     if is_shutting_down {
@@ -1839,6 +1905,10 @@ impl LiveNode {
                     );
                 }
                 Some(cmd) = data_cmd_rx.recv() => {
+                    if self.stop_on_execution_safety_error() {
+                        break;
+                    }
+
                     let dispatch_start = dst::time::Instant::now();
 
                     if is_shutting_down {
@@ -1874,10 +1944,22 @@ impl LiveNode {
         drop(external_msgbus_rx.take());
         let _ = self.kernel.cache().borrow().check_residuals();
 
-        let stop_result = self.finalize_stop().await;
+        let stop_result = {
+            let mut receivers = RunnerReceivers {
+                time_evt: &mut time_evt_rx,
+                system_evt: &mut system_evt_rx,
+                system_cmd: &mut system_cmd_rx,
+                exec_evt: &mut exec_evt_rx,
+                exec_cmd: &mut exec_cmd_rx,
+                data_evt: &mut data_evt_rx,
+                data_cmd: &mut data_cmd_rx,
+            };
+            self.finalize_stop_with_receivers(Some(&mut receivers))
+                .await
+        };
 
         // Handle events that arrived during finalize_stop
-        Self::drain_channels(
+        self.drain_channels(
             &mut time_evt_rx,
             &mut system_evt_rx,
             &mut system_cmd_rx,
@@ -2028,6 +2110,10 @@ impl LiveNode {
     }
 
     fn process_reconciliation_events(&mut self, events: &[OrderEventAny]) {
+        if self.stop_on_execution_safety_error() {
+            return;
+        }
+
         if events.is_empty() {
             return;
         }
@@ -2054,6 +2140,8 @@ impl LiveNode {
     }
 
     fn process_exec_event(&mut self, event: ExecutionEvent) {
+        self.stop_on_execution_safety_error();
+
         let Some(close_ids) = self.observe_exec_event_before_dispatch(&event) else {
             return;
         };
@@ -2077,11 +2165,30 @@ impl LiveNode {
     fn process_exec_command(&mut self, message: TradingCommandMessage) {
         let mut messages = vec![message];
         while let Some(message) = messages.pop() {
+            if self.stop_on_execution_safety_error() {
+                self.reject_queued_command_after_safety_failure(&message);
+                continue;
+            }
+
             if message.endpoint() == MessagingSwitchboard::exec_engine_execute() {
                 self.observe_exec_command_before_dispatch(message.command());
             }
 
             messages.extend(message.dispatch().into_iter().rev());
+        }
+    }
+
+    fn reject_queued_command_after_safety_failure(&self, message: &TradingCommandMessage) {
+        let rejected = self
+            .kernel
+            .exec_engine()
+            .borrow_mut()
+            .reject_queued_command_on_execution_safety(message.command());
+
+        if rejected {
+            log::warn!("Rejected queued write command locally after safety failure: {message}");
+        } else {
+            log::warn!("Not dispatching queued command after safety failure: {message}");
         }
     }
 
@@ -2247,7 +2354,7 @@ impl LiveNode {
         let finalize_result = self.finalize_stop().await;
 
         if let Some(receivers) = receivers {
-            Self::drain_channels(
+            self.drain_channels(
                 receivers.time_evt,
                 receivers.system_evt,
                 receivers.system_cmd,
@@ -2293,20 +2400,24 @@ impl LiveNode {
         let mut processed = 0;
 
         loop {
+            if self.stop_on_execution_safety_error() {
+                break;
+            }
+
             tokio::select! {
                 biased;
 
                 () = dst::time::sleep_until(deadline) => break,
                 Some(message) = receivers.time_evt.recv() => {
-                    let _ = AsyncRunner::handle_time_event(message);
+                    self.process_runner_event(PendingRunnerEvent::TimeEvent(message));
                     processed += 1;
                 }
                 Some(event) = receivers.system_evt.recv() => {
-                    self.process_system_event(event);
+                    self.process_runner_event(PendingRunnerEvent::SystemEvent(event));
                     processed += 1;
                 }
                 Some(command) = receivers.system_cmd.recv() => {
-                    self.process_system_command(command);
+                    self.process_runner_event(PendingRunnerEvent::SystemCommand(command));
                     processed += 1;
                 }
                 Some(event) = receivers.exec_evt.recv() => {
@@ -2318,11 +2429,11 @@ impl LiveNode {
                     processed += 1;
                 }
                 Some(event) = receivers.data_evt.recv() => {
-                    AsyncRunner::handle_data_event(event);
+                    self.process_runner_event(PendingRunnerEvent::DataEvent(event));
                     processed += 1;
                 }
                 Some(command) = receivers.data_cmd.recv() => {
-                    AsyncRunner::handle_data_command(command);
+                    self.process_runner_event(PendingRunnerEvent::DataCommand(command));
                     processed += 1;
                 }
             }
@@ -2371,7 +2482,55 @@ impl LiveNode {
         self.handle.set_shutting_down();
     }
 
+    fn stop_on_execution_safety_error(&mut self) -> bool {
+        // External host fail-stop (for example a lost single-writer lease) must share the
+        // runtime shutdown boundary with a client execution-safety failure. In both cases user
+        // callbacks and queued writes stop immediately, while already-received execution facts
+        // are drained before the event store is sealed.
+        if !self.handle.is_fail_stop_requested() && self.kernel.check_execution_safety().is_ok() {
+            return false;
+        }
+
+        if self.state() != NodeState::Stopped {
+            if self.state() == NodeState::ShuttingDown {
+                self.kernel.stop_trader();
+            } else {
+                self.initiate_shutdown();
+            }
+            self.shutdown_deadline = Some(dst::time::Instant::now());
+            self.close_external_ingress();
+        }
+        true
+    }
+
+    fn apply_requested_trading_halt(&self) {
+        if !self.handle.take_halt_trading_request() {
+            return;
+        }
+
+        self.kernel
+            .risk_engine()
+            .borrow_mut()
+            .set_trading_state(TradingState::Halted);
+        self.handle.set_trading_halted();
+    }
+
+    fn apply_control_requests(&mut self) {
+        if self.handle.is_fail_stop_requested() {
+            self.kernel.block_state_save();
+        }
+        self.apply_requested_trading_halt();
+    }
+
     async fn finalize_stop(&mut self) -> anyhow::Result<()> {
+        self.finalize_stop_with_receivers(None).await
+    }
+
+    async fn finalize_stop_with_receivers(
+        &mut self,
+        receivers: Option<&mut RunnerReceivers<'_>>,
+    ) -> anyhow::Result<()> {
+        self.apply_control_requests();
         self.close_external_ingress();
 
         let timeout = self.config.timeout_disconnection;
@@ -2390,6 +2549,22 @@ impl LiveNode {
         }
 
         let readiness_result = self.await_engines_disconnected(deadline).await;
+
+        if self.handle.is_fail_stop_requested() || self.kernel.check_execution_safety().is_err() {
+            if let Some(receivers) = receivers {
+                self.drain_channels(
+                    receivers.time_evt,
+                    receivers.system_evt,
+                    receivers.system_cmd,
+                    receivers.exec_evt,
+                    receivers.exec_cmd,
+                    receivers.data_evt,
+                    receivers.data_cmd,
+                );
+            } else {
+                self.drain_runner_pending();
+            }
+        }
         let kernel_result = self.kernel.finalize_stop().await;
 
         self.handle.set_stopped();
@@ -2414,7 +2589,12 @@ impl LiveNode {
         }
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "all runner receivers are drained together"
+    )]
     fn drain_channels(
+        &mut self,
         time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
         system_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
         system_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemCommand>,
@@ -2425,41 +2605,51 @@ impl LiveNode {
     ) {
         let mut drained = 0;
 
-        while let Ok(handler) = time_evt_rx.try_recv() {
-            let _ = AsyncRunner::handle_time_event(handler);
-            drained += 1;
-        }
+        drained += drain_channel_snapshot(time_evt_rx, |handler| {
+            self.process_runner_event(PendingRunnerEvent::TimeEvent(handler));
+        });
 
-        while system_evt_rx.try_recv().is_ok() {
-            drained += 1;
-        }
+        drained += drain_channel_snapshot(system_evt_rx, drop);
 
-        while system_cmd_rx.try_recv().is_ok() {
-            drained += 1;
-        }
+        drained += drain_channel_snapshot(system_cmd_rx, drop);
 
-        while let Ok(evt) = data_evt_rx.try_recv() {
-            AsyncRunner::handle_data_event(evt);
-            drained += 1;
-        }
+        drained += drain_channel_snapshot(data_evt_rx, |evt| {
+            self.process_runner_event(PendingRunnerEvent::DataEvent(evt));
+        });
 
-        while let Ok(cmd) = data_cmd_rx.try_recv() {
-            AsyncRunner::handle_data_command(cmd);
-            drained += 1;
-        }
+        drained += drain_channel_snapshot(data_cmd_rx, |cmd| {
+            self.process_runner_event(PendingRunnerEvent::DataCommand(cmd));
+        });
 
-        while let Ok(evt) = exec_evt_rx.try_recv() {
+        drained += drain_channel_snapshot(exec_evt_rx, |evt| {
+            self.stop_on_execution_safety_error();
             AsyncRunner::handle_exec_event(evt);
-            drained += 1;
-        }
+        });
 
-        while let Ok(cmd) = exec_cmd_rx.try_recv() {
-            AsyncRunner::handle_trading_command(cmd);
-            drained += 1;
-        }
+        drained += drain_channel_snapshot(exec_cmd_rx, |cmd| {
+            if self.stop_on_execution_safety_error() {
+                self.reject_queued_command_after_safety_failure(&cmd);
+            } else {
+                AsyncRunner::handle_trading_command(cmd);
+            }
+        });
 
         if drained > 0 {
             log::info!("Drained {drained} remaining events during shutdown");
+        }
+
+        let arrived_during_drain = time_evt_rx.len()
+            + system_evt_rx.len()
+            + system_cmd_rx.len()
+            + exec_evt_rx.len()
+            + exec_cmd_rx.len()
+            + data_evt_rx.len()
+            + data_cmd_rx.len();
+
+        if arrived_during_drain > 0 {
+            log::warn!(
+                "Leaving {arrived_during_drain} events queued beyond the bounded shutdown drain snapshot"
+            );
         }
     }
 
@@ -3255,6 +3445,24 @@ fn render_client_statuses(rows: Vec<ClientStatus>) -> String {
     builder.build().with(Style::rounded()).to_string()
 }
 
+fn drain_channel_snapshot<T>(
+    receiver: &mut tokio::sync::mpsc::UnboundedReceiver<T>,
+    mut process: impl FnMut(T),
+) -> usize {
+    let pending = receiver.len();
+    let mut processed = 0;
+
+    for _ in 0..pending {
+        let Ok(message) = receiver.try_recv() else {
+            break;
+        };
+        process(message);
+        processed += 1;
+    }
+
+    processed
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -3346,6 +3554,20 @@ mod tests {
         execution::manager::{PositionFillReportQuery, ReportClientCoverage},
         socket::SocketControl,
     };
+
+    #[rstest]
+    fn test_drain_channel_snapshot_is_bounded_when_handler_requeues() {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        sender.send(1_u8).unwrap();
+
+        let processed = drain_channel_snapshot(&mut receiver, |value| {
+            sender.send(value + 1).unwrap();
+        });
+
+        assert_eq!(processed, 1);
+        assert_eq!(receiver.len(), 1);
+        assert_eq!(receiver.try_recv().unwrap(), 2);
+    }
 
     struct ExternalIngressLogCapture {
         messages: Mutex<Vec<String>>,
@@ -6401,8 +6623,8 @@ mod tests {
                 "actor.on_stop",
                 "strategy.on_stop",
                 "actor.on_save",
-                "actor.update:LIVE-STATE-ACTOR",
                 "strategy.on_save",
+                "actor.update:LIVE-STATE-ACTOR",
                 "strategy.update:LIVE-STATE-STRATEGY-001",
                 "database.close",
             ]
@@ -6724,6 +6946,64 @@ mod tests {
         handle.stop();
 
         assert!(handle.should_stop());
+    }
+
+    #[rstest]
+    fn test_handle_trading_halt_is_shared_and_acknowledged_once() {
+        let handle = LiveNodeHandle::new();
+        let clone = handle.clone();
+
+        handle.halt_trading();
+
+        assert!(clone.take_halt_trading_request());
+        assert!(!handle.take_halt_trading_request());
+        assert!(!clone.is_trading_halted());
+
+        clone.set_trading_halted();
+        assert!(handle.is_trading_halted());
+
+        handle.halt_trading();
+        assert!(!clone.take_halt_trading_request());
+    }
+
+    #[rstest]
+    fn test_node_applies_handle_trading_halt_to_native_risk_engine() {
+        let node = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Sandbox)
+            .unwrap()
+            .build()
+            .unwrap();
+        let handle = node.handle();
+
+        handle.halt_trading();
+        node.apply_requested_trading_halt();
+
+        assert_eq!(
+            node.kernel.risk_engine().borrow().trading_state(),
+            TradingState::Halted
+        );
+        assert!(handle.is_trading_halted());
+    }
+
+    #[rstest]
+    fn test_handle_fail_stop_halts_stops_and_blocks_state_save() {
+        let mut node = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Sandbox)
+            .unwrap()
+            .build()
+            .unwrap();
+        let handle = node.handle();
+
+        handle.fail_stop();
+        node.apply_control_requests();
+
+        assert!(handle.should_stop());
+        assert!(handle.is_fail_stop_requested());
+        assert!(handle.is_trading_halted());
+        assert_eq!(
+            node.kernel.risk_engine().borrow().trading_state(),
+            TradingState::Halted
+        );
+        let error = node.kernel.save_trader_state().unwrap_err();
+        assert!(error.to_string().contains("external fail-stop"));
     }
 
     #[rstest]

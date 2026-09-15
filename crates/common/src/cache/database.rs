@@ -76,6 +76,18 @@ pub trait CacheDatabaseFactory: Debug + Send + Sync {
 
 #[async_trait::async_trait]
 pub trait CacheDatabaseAdapter {
+    /// Drains all changes accepted before this call to the backing database.
+    ///
+    /// Synchronous adapters can retain the default no-op implementation. Buffered adapters must
+    /// override this and return only after the preceding writes are durably acknowledged.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any preceding accepted change cannot be persisted.
+    fn drain(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Closes the cache database connection.
     ///
     /// # Errors

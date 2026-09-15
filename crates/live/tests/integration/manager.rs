@@ -11279,8 +11279,12 @@ struct MockExecutionClient {
     order_report: RefCell<Option<OrderStatusReport>>,
     order_reports: RefCell<Vec<OrderStatusReport>>,
     fill_reports: Vec<FillReport>,
+    requires_fills: bool,
+    fill_validation_limit: usize,
+    fill_validation_count: Cell<usize>,
     fill_report_queries: RefCell<Vec<GenerateFillReports>>,
     fail_fill_reports: Cell<bool>,
+    fill_query_error_count: Cell<usize>,
     on_fill_reports_query: RefCell<Option<Box<dyn FnOnce()>>>,
     order_report_query_count: Cell<usize>,
     fail_order_report: bool,
@@ -11301,8 +11305,12 @@ impl MockExecutionClient {
             order_report: RefCell::new(None),
             order_reports: RefCell::new(order_reports),
             fill_reports: Vec::new(),
+            requires_fills: false,
+            fill_validation_limit: usize::MAX,
+            fill_validation_count: Cell::new(0),
             fill_report_queries: RefCell::new(Vec::new()),
             fail_fill_reports: Cell::new(false),
+            fill_query_error_count: Cell::new(0),
             on_fill_reports_query: RefCell::new(None),
             order_report_query_count: Cell::new(0),
             fail_order_report: false,
@@ -11323,8 +11331,12 @@ impl MockExecutionClient {
             order_report: RefCell::new(None),
             order_reports: RefCell::new(order_reports),
             fill_reports: Vec::new(),
+            requires_fills: false,
+            fill_validation_limit: usize::MAX,
+            fill_validation_count: Cell::new(0),
             fill_report_queries: RefCell::new(Vec::new()),
             fail_fill_reports: Cell::new(false),
+            fill_query_error_count: Cell::new(0),
             on_fill_reports_query: RefCell::new(None),
             order_report_query_count: Cell::new(0),
             fail_order_report: false,
@@ -11345,8 +11357,12 @@ impl MockExecutionClient {
             order_report: RefCell::new(None),
             order_reports: RefCell::new(Vec::new()),
             fill_reports: Vec::new(),
+            requires_fills: false,
+            fill_validation_limit: usize::MAX,
+            fill_validation_count: Cell::new(0),
             fill_report_queries: RefCell::new(Vec::new()),
             fail_fill_reports: Cell::new(false),
+            fill_query_error_count: Cell::new(0),
             on_fill_reports_query: RefCell::new(None),
             order_report_query_count: Cell::new(0),
             fail_order_report: false,
@@ -11378,6 +11394,16 @@ impl MockExecutionClient {
         self
     }
 
+    fn with_required_fill_reports(mut self, required: bool) -> Self {
+        self.requires_fills = required;
+        self
+    }
+
+    fn with_fill_validation_limit(mut self, limit: usize) -> Self {
+        self.fill_validation_limit = limit;
+        self
+    }
+
     fn with_failed_order_report(mut self) -> Self {
         self.fail_order_report = true;
         self
@@ -11402,6 +11428,33 @@ impl MockExecutionClient {
 
 #[async_trait(?Send)]
 impl ExecutionClient for MockExecutionClient {
+    fn requires_order_fill_reports(&self, _report: &OrderStatusReport) -> bool {
+        self.requires_fills
+    }
+
+    fn validate_order_fill_reports(
+        &self,
+        _report: &OrderStatusReport,
+        _fills: &[FillReport],
+    ) -> anyhow::Result<()> {
+        let count = self.fill_validation_count.get() + 1;
+        self.fill_validation_count.set(count);
+        anyhow::ensure!(
+            count <= self.fill_validation_limit,
+            "fill validation failed"
+        );
+        Ok(())
+    }
+
+    fn on_order_fill_report_query_error(
+        &self,
+        _report: &OrderStatusReport,
+        _error: &anyhow::Error,
+    ) {
+        self.fill_query_error_count
+            .set(self.fill_query_error_count.get() + 1);
+    }
+
     fn is_connected(&self) -> bool {
         true
     }
@@ -12237,6 +12290,107 @@ async fn test_terminal_reconciliation_and_stream_fill_apply_once(
 }
 
 #[rstest]
+#[case::bulk_partial(false, OrderStatus::PartiallyFilled, "4.0")]
+#[case::bulk_filled(false, OrderStatus::Filled, "10.0")]
+#[case::targeted_partial(true, OrderStatus::PartiallyFilled, "4.0")]
+#[case::targeted_filled(true, OrderStatus::Filled, "10.0")]
+#[tokio::test]
+async fn test_required_fill_reconciliation_observes_stream_fill_during_query(
+    #[case] targeted: bool,
+    #[case] status: OrderStatus,
+    #[case] filled_qty: Quantity,
+) {
+    let mut ctx = TestContext::with_config(ExecutionManagerConfig {
+        open_check_open_only: false,
+        open_check_missing_retries: 1,
+        open_check_threshold_ns: DurationNanos::ZERO,
+        ..Default::default()
+    });
+
+    let instrument = test_instrument();
+    ctx.add_instrument(instrument.clone());
+    let client_order_id = ClientOrderId::from("O-REQUIRED-STREAM-INFLIGHT");
+    let venue_order_id = VenueOrderId::from("V-REQUIRED-STREAM-INFLIGHT");
+    insert_accepted_limit_order(&ctx, client_order_id, venue_order_id, test_client_id());
+    let report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument.id(),
+        status,
+        Quantity::from("10.0"),
+        filled_qty,
+    )
+    .with_price(Price::from("100.0"))
+    .with_avg_px(dec!(3000.0));
+    let filled_qty_text = filled_qty.to_string();
+    let fill = create_fill_report(
+        client_order_id,
+        venue_order_id,
+        instrument.id(),
+        TradeId::from("T-REQUIRED-STREAM-INFLIGHT"),
+        &filled_qty_text,
+    );
+    let order = ctx.get_order(&client_order_id).unwrap();
+    let streamed = OrderFilledTestBuilder::new(&order, &instrument)
+        .trade_id(fill.trade_id)
+        .last_qty(fill.last_qty)
+        .last_px(fill.last_px)
+        .liquidity_side(fill.liquidity_side)
+        .commission(fill.commission)
+        .ts_event(fill.ts_event)
+        .without_position_id()
+        .build();
+    let client = if targeted {
+        MockExecutionClient::new(Vec::new()).with_order_report(report.clone())
+    } else {
+        MockExecutionClient::new(vec![report.clone()])
+    }
+    .with_fill_reports(vec![fill])
+    .with_required_fill_reports(true);
+    let engine = ctx.exec_engine.clone();
+    let streamed_during_query = streamed.clone();
+    *client.on_fill_reports_query.borrow_mut() = Some(Box::new(move || {
+        engine.borrow_mut().process(&streamed_during_query);
+    }));
+
+    let events = ctx.manager.check_open_orders(&[&client]).await;
+
+    for event in &events {
+        ctx.exec_engine.borrow_mut().process(event);
+    }
+    ctx.exec_engine.borrow_mut().process(&streamed);
+    let repeated = ctx.manager.check_open_orders(&[&client]).await;
+    let order = ctx.get_order(&client_order_id).unwrap();
+    let cache = ctx.cache.borrow();
+    let position_id = cache.position_id(&client_order_id).unwrap();
+    let position = cache.position(position_id).unwrap();
+
+    assert!(events.is_empty());
+    assert!(repeated.is_empty());
+    assert_eq!(client.fill_report_queries.borrow().len(), 1);
+    assert_eq!(
+        client.fill_validation_count.get(),
+        if targeted && status == OrderStatus::PartiallyFilled {
+            3
+        } else {
+            2
+        }
+    );
+    assert_eq!(client.fill_query_error_count.get(), 0);
+    assert_eq!(order.status(), status);
+    assert_eq!(order.filled_qty(), filled_qty);
+    assert_eq!(
+        order.trade_ids(),
+        vec![&TradeId::from("T-REQUIRED-STREAM-INFLIGHT")]
+    );
+    assert_eq!(
+        order.commissions().get(&Currency::USDT()),
+        Some(&Money::from("0.50 USDT"))
+    );
+    assert_eq!(position.quantity, filled_qty);
+}
+
+#[rstest]
 #[case::bulk_empty("bulk", "empty")]
 #[case::bulk_partial("bulk", "partial")]
 #[case::bulk_failed("bulk", "failed")]
@@ -12418,6 +12572,22 @@ async fn test_terminal_reconciliation_defers_unexplained_fill_gap(
 #[case::targeted_expired(true, OrderStatus::Expired, "4.5", OrderStatus::Expired, 2)]
 #[case::bulk_canceled_full(false, OrderStatus::Canceled, "10.0", OrderStatus::Filled, 1)]
 #[case::bulk_expired_full(false, OrderStatus::Expired, "10.0", OrderStatus::Filled, 1)]
+#[case::required_bulk_partial(
+    false,
+    OrderStatus::PartiallyFilled,
+    "4.5",
+    OrderStatus::PartiallyFilled,
+    1
+)]
+#[case::required_targeted_partial(
+    true,
+    OrderStatus::PartiallyFilled,
+    "4.5",
+    OrderStatus::PartiallyFilled,
+    1
+)]
+#[case::required_bulk_filled(false, OrderStatus::Filled, "10.0", OrderStatus::Filled, 1)]
+#[case::required_targeted_filled(true, OrderStatus::Filled, "10.0", OrderStatus::Filled, 1)]
 #[tokio::test]
 async fn test_check_open_orders_terminal_report_applies_fills(
     #[case] targeted: bool,
@@ -12463,13 +12633,18 @@ async fn test_check_open_orders_terminal_report_applies_fills(
     } else {
         MockExecutionClient::new(vec![report.clone()])
     }
-    .with_fill_reports(vec![reported_fill]);
+    .with_fill_reports(vec![reported_fill])
+    .with_required_fill_reports(matches!(
+        report_status,
+        OrderStatus::PartiallyFilled | OrderStatus::Filled
+    ));
 
     client.fail_fill_reports.set(true);
 
     let failed = ctx.manager.check_open_orders(&[&client]).await;
 
     assert!(failed.is_empty());
+    assert_eq!(client.fill_query_error_count.get(), 1);
     assert_eq!(
         ctx.get_order(&client_order_id).unwrap().status(),
         OrderStatus::Accepted
@@ -12506,11 +12681,138 @@ async fn test_check_open_orders_terminal_report_applies_fills(
     assert_eq!(fill.trade_id, TradeId::from("T-TERMINAL-REPORTED"));
     assert_eq!(order.status(), expected_status);
     assert_eq!(order.filled_qty(), filled_qty);
+    assert_eq!(repeated_client.fill_query_error_count.get(), 0);
+    assert!(repeated_client.fill_report_queries.borrow().is_empty());
     assert_eq!(
         order.commissions().get(&Currency::USDT()),
         Some(&commission)
     );
     assert!(repeated.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_periodic_fill_validation_blocks_before_any_events(
+    #[values(false, true)] targeted: bool,
+    #[values(0, 1)] allowed_validations: usize,
+) {
+    let mut ctx = TestContext::with_config(ExecutionManagerConfig {
+        open_check_open_only: false,
+        open_check_missing_retries: 1,
+        ..Default::default()
+    });
+    ctx.add_instrument(test_instrument());
+    let client_order_id = ClientOrderId::from("O-VALIDATE-FILLS");
+    let venue_order_id = VenueOrderId::from("V-VALIDATE-FILLS");
+    insert_accepted_limit_order(&ctx, client_order_id, venue_order_id, test_client_id());
+    let original = ctx.get_order(&client_order_id).unwrap();
+    let report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        test_instrument_id(),
+        OrderStatus::PartiallyFilled,
+        Quantity::from("10.0"),
+        Quantity::from("3.0"),
+    )
+    .with_avg_px(dec!(3000));
+    let fill = create_fill_report(
+        client_order_id,
+        venue_order_id,
+        test_instrument_id(),
+        TradeId::from("T-VALIDATE-FILLS"),
+        "3.0",
+    );
+    let client = if targeted {
+        MockExecutionClient::new(Vec::new()).with_order_report(report)
+    } else {
+        MockExecutionClient::new(vec![report])
+    }
+    .with_fill_reports(vec![fill])
+    .with_required_fill_reports(true)
+    .with_fill_validation_limit(allowed_validations);
+    let events = ctx.manager.check_open_orders(&[&client]).await;
+
+    assert!(events.is_empty());
+    assert_eq!(client.fill_validation_count.get(), allowed_validations + 1);
+    assert_eq!(
+        ctx.get_order(&client_order_id).unwrap().events(),
+        original.events()
+    );
+    assert!(
+        ctx.cache
+            .borrow()
+            .positions(None, None, None, None, None)
+            .is_empty()
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_authoritative_order_report_does_not_infer_residual(
+    #[values(false, true)] targeted: bool,
+    #[values(OrderStatus::PartiallyFilled, OrderStatus::Filled)] status: OrderStatus,
+) {
+    let mut ctx = TestContext::with_config(ExecutionManagerConfig {
+        open_check_open_only: false,
+        open_check_missing_retries: 1,
+        ..Default::default()
+    });
+    ctx.add_instrument(test_instrument());
+    let client_order_id = ClientOrderId::from("O-AUTHORITATIVE-FILLS");
+    let venue_order_id = VenueOrderId::from("V-AUTHORITATIVE-FILLS");
+    insert_accepted_limit_order(&ctx, client_order_id, venue_order_id, test_client_id());
+    let report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        test_instrument_id(),
+        status,
+        Quantity::from("10.0"),
+        Quantity::from(if status == OrderStatus::Filled {
+            "10.0"
+        } else {
+            "6.0"
+        }),
+    )
+    .with_price(Price::from("100.0"))
+    .with_avg_px(dec!(101.25));
+    let mut fill = create_fill_report(
+        client_order_id,
+        venue_order_id,
+        test_instrument_id(),
+        TradeId::from("T-AUTHORITATIVE-FILLS"),
+        "4.5",
+    );
+    fill.last_px = Price::from("101.25");
+    fill.commission = Money::from("1.23 USDT");
+    let client = if targeted {
+        MockExecutionClient::new(Vec::new()).with_order_report(report)
+    } else {
+        MockExecutionClient::new(vec![report])
+    }
+    .with_fill_reports(vec![fill])
+    .with_required_fill_reports(true);
+    let events = ctx.manager.check_open_orders(&[&client]).await;
+
+    for event in &events {
+        ctx.exec_engine.borrow_mut().process(event);
+    }
+    let repeated = ctx.manager.check_open_orders(&[&client]).await;
+    let order = ctx.get_order(&client_order_id).unwrap();
+
+    assert_eq!(events.len(), 1, "Only the real fill may be applied");
+    assert!(matches!(events[0], OrderEventAny::Filled(_)));
+    assert!(repeated.is_empty());
+    assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(order.filled_qty(), Quantity::from("4.5"));
+    assert_eq!(
+        order.trade_ids(),
+        vec![&TradeId::from("T-AUTHORITATIVE-FILLS")]
+    );
+    assert_eq!(
+        order.commissions().get(&Currency::USDT()),
+        Some(&Money::from("1.23 USDT"))
+    );
+    assert_eq!(client.fill_report_queries.borrow().len(), 2);
 }
 
 #[rstest]
@@ -13154,6 +13456,49 @@ async fn test_check_open_orders_failed_client_does_not_suppress_healthy_client_s
     assert_eq!(
         ctx.get_order(&failed_order_id).unwrap().status(),
         OrderStatus::Accepted,
+    );
+}
+
+#[rstest]
+#[case::client_id(true)]
+#[case::venue_id(false)]
+#[tokio::test]
+async fn test_check_open_orders_ignores_report_from_non_responsible_client(
+    #[case] has_client_order_id: bool,
+) {
+    let config = ExecutionManagerConfig {
+        open_check_threshold_ns: DurationNanos::ZERO,
+        open_check_open_only: true,
+        ..Default::default()
+    };
+
+    let mut ctx = TestContext::with_config(config);
+    ctx.add_instrument(test_instrument());
+
+    let client_order_id = ClientOrderId::from("O-OWNED-CLIENT");
+    let venue_order_id = VenueOrderId::from("V-OWNED-CLIENT");
+    let owner_client_id = ClientId::from("OWNER");
+    let other_client_id = ClientId::from("OTHER");
+    insert_accepted_limit_order(&ctx, client_order_id, venue_order_id, owner_client_id);
+
+    let report = create_order_status_report(
+        has_client_order_id.then_some(client_order_id),
+        venue_order_id,
+        test_instrument_id(),
+        OrderStatus::Canceled,
+        Quantity::from("10.0"),
+        Quantity::from("0.0"),
+    );
+    let owner_client = MockExecutionClient::for_venue(owner_client_id, test_venue(), Vec::new());
+    let other_client = MockExecutionClient::for_venue(other_client_id, test_venue(), vec![report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&owner_client, &other_client];
+
+    let events = ctx.manager.check_open_orders(&clients).await;
+
+    assert!(events.is_empty());
+    assert_eq!(
+        ctx.get_order(&client_order_id).unwrap().status(),
+        OrderStatus::Accepted
     );
 }
 

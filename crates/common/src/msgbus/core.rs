@@ -286,6 +286,7 @@ pub struct MessageBus {
     req_count: u64,
     res_count: u64,
     pub_count: u64,
+    dispatch_guard: Option<Rc<dyn Fn() -> bool>>,
     external_egress: Option<Rc<RefCell<Box<dyn MessageBusExternalEgress>>>>,
     has_external_streams: bool,
     encoding: SerializationEncoding,
@@ -382,6 +383,7 @@ impl MessageBus {
             req_count: 0,
             res_count: 0,
             pub_count: 0,
+            dispatch_guard: None,
             external_egress: None,
             has_external_streams: false,
             encoding: SerializationEncoding::Json,
@@ -529,6 +531,23 @@ impl MessageBus {
         &self.types_filter
     }
 
+    /// Sets a guard invoked before each pub/sub handler in a message fanout.
+    ///
+    /// Returning `false` stops the remaining local handlers for that message. The dispatch tap
+    /// and external egress still observe the message so durable execution facts are retained.
+    pub fn set_dispatch_guard(&mut self, guard: Rc<dyn Fn() -> bool>) {
+        self.dispatch_guard = Some(guard);
+    }
+
+    /// Clears the pub/sub dispatch guard.
+    pub fn clear_dispatch_guard(&mut self) {
+        self.dispatch_guard = None;
+    }
+
+    pub(crate) fn dispatch_guard(&self) -> Option<Rc<dyn Fn() -> bool>> {
+        self.dispatch_guard.clone()
+    }
+
     /// Disposes of the message bus, clearing all subscriptions, endpoints,
     /// and handler references.
     pub fn dispose(&mut self) {
@@ -585,6 +604,7 @@ impl MessageBus {
         self.req_count = 0;
         self.res_count = 0;
         self.pub_count = 0;
+        self.dispatch_guard = None;
 
         if let Some(external_egress) = self.external_egress.take() {
             external_egress.borrow_mut().close();

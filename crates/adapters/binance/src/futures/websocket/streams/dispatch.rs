@@ -66,7 +66,7 @@ use crate::{
     },
     futures::{
         conversions::normalize_futures_asset,
-        http::client::{BinanceFuturesHttpClient, BinanceFuturesInstrument},
+        http::client::{BinanceFuturesHttpClient, BinanceFuturesInstrument, is_algo_order_type},
     },
 };
 
@@ -362,6 +362,9 @@ pub(crate) fn dispatch_order_update(
         .map(|r| r.clone());
 
     if let Some(identity) = identity {
+        // Algo accounting requires the authoritative commission which TRADE_LITE
+        // omits. Keep its full order update as the sole source of fills.
+        let use_trade_lite = use_trade_lite && !is_algo_order_type(identity.order_type);
         let venue_order_id = VenueOrderId::new(order.order_id.to_string());
         if dispatch_state.promote_algo_order_id(client_order_id, venue_order_id) == Some(true) {
             emit_venue_order_id_update(
@@ -1043,6 +1046,10 @@ pub(crate) fn dispatch_trade_lite(
         return;
     };
 
+    if is_algo_order_type(identity.order_type) {
+        return;
+    }
+
     let venue_order_id = VenueOrderId::new(msg.order_id.to_string());
     if dispatch_state.promote_algo_order_id(client_order_id, venue_order_id) == Some(true) {
         emit_venue_order_id_update(
@@ -1525,7 +1532,33 @@ pub(crate) fn dispatch_algo_update(
         }
         BinanceAlgoStatus::Finished => {
             triggered_algo_ids.remove(&client_order_id);
-            dispatch_state.cleanup_terminal(client_order_id);
+
+            // FINISHED is terminal for the Algo Service order, but the spawned
+            // matching-engine order can still deliver NEW/TRADE updates. Keep
+            // the client identity until that order reaches its own terminal
+            // state so a missing TRIGGERED update cannot orphan late fills.
+            let actual_order_id = algo_data
+                .actual_order_id
+                .as_ref()
+                .filter(|id| !id.is_empty())
+                .map(|id| VenueOrderId::new(id.clone()));
+            if let Some(actual_order_id) = actual_order_id {
+                let should_emit = dispatch_state
+                    .promote_algo_order_id(client_order_id, actual_order_id)
+                    .unwrap_or(true);
+
+                if should_emit && let Some(identity) = identity {
+                    emit_venue_order_id_update(
+                        &identity,
+                        client_order_id,
+                        actual_order_id,
+                        account_id,
+                        ts_event,
+                        ts_init,
+                        emitter,
+                    );
+                }
+            }
 
             let executed_qty = match algo_data.executed_qty.as_deref() {
                 Some(raw) => match parse_required_decimal(raw, "executed_qty") {
@@ -1538,17 +1571,18 @@ pub(crate) fn dispatch_algo_update(
                 None => None,
             };
 
-            if let Some(executed_qty) = executed_qty.filter(|qty| *qty > Decimal::ZERO) {
-                log::debug!(
-                    "Algo order finished with fills: client_order_id={}, executed_qty={}",
-                    algo_data.client_algo_id,
-                    executed_qty
-                );
+            log::debug!(
+                "Algo Service finished: client_order_id={}, executed_qty={executed_qty:?}",
+                algo_data.client_algo_id
+            );
+
+            // A partial fill may be reported before the matching-engine ID or
+            // its TRADE update. Keep the identity until the order update can
+            // promote the ID and deliver the actual fill.
+            if actual_order_id.is_none() && executed_qty == Some(Decimal::ZERO) {
+                dispatch_state.cleanup_terminal(client_order_id);
             } else {
-                log::debug!(
-                    "Algo order finished without fills: client_order_id={}",
-                    algo_data.client_algo_id
-                );
+                dispatch_state.retain_finished_algo_order(client_order_id);
             }
         }
         BinanceAlgoStatus::Unknown => {
@@ -2071,6 +2105,144 @@ mod tests {
                 assert_eq!(updated.causation_id, None);
             }
             other => panic!("Expected OrderUpdated, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    #[case::actual_id_known(true, Some("0.001"))]
+    #[case::actual_id_missing(false, Some("0.001"))]
+    #[case::actual_id_and_qty_missing(false, None)]
+    fn test_dispatch_algo_finished_without_triggered_keeps_identity_for_late_trade(
+        #[case] actual_id_known: bool,
+        #[case] reported_qty: Option<&str>,
+    ) {
+        let ts_init = UnixNanos::from(42);
+        let clock = Box::leak(Box::new(AtomicTime::new(false, ts_init)));
+        let mut algo_msg: BinanceFuturesAlgoUpdateMsg =
+            load_user_data_fixture("algo_update_new.json");
+        let trade_msg: BinanceFuturesOrderUpdateMsg =
+            load_user_data_fixture("order_update_trade_partial.json");
+        let client_order_id = ClientOrderId::from("TEST");
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let account_id = AccountId::from("BINANCE-001");
+        let actual_order_id = VenueOrderId::from(trade_msg.order.order_id.to_string());
+        algo_msg.algo_order.client_algo_id = client_order_id.to_string();
+        algo_msg.algo_order.symbol = trade_msg.order.symbol;
+        algo_msg.algo_order.algo_status = BinanceAlgoStatus::New;
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let http_client = create_test_http_client(clock);
+        let dispatch_state = create_tracked_state_with_price_and_qty(
+            client_order_id,
+            instrument_id,
+            Some(Price::from("7100.50")),
+            Quantity::from("0.002"),
+        );
+        let triggered_algo_ids = Arc::new(AtomicSet::new());
+        let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
+
+        dispatch_algo_update(
+            &algo_msg,
+            &emitter,
+            &http_client,
+            account_id,
+            BinanceProductType::UsdM,
+            clock,
+            &dispatch_state,
+            &triggered_algo_ids,
+            false,
+        );
+
+        // Simulate a lost TRIGGERED update: FINISHED is the first message that
+        // exposes the spawned matching-engine order ID.
+        algo_msg.algo_order.algo_status = BinanceAlgoStatus::Finished;
+        algo_msg.algo_order.actual_order_id = actual_id_known.then(|| actual_order_id.to_string());
+        algo_msg.algo_order.executed_qty = reported_qty.map(str::to_string);
+        dispatch_algo_update(
+            &algo_msg,
+            &emitter,
+            &http_client,
+            account_id,
+            BinanceProductType::UsdM,
+            clock,
+            &dispatch_state,
+            &triggered_algo_ids,
+            false,
+        );
+
+        assert_eq!(
+            dispatch_state.promoted_algo_order_id(&client_order_id),
+            actual_id_known.then_some(actual_order_id)
+        );
+        assert!(
+            dispatch_state
+                .order_identities
+                .contains_key(&client_order_id)
+        );
+
+        // A duplicate FINISHED must not emit a second ID promotion.
+        dispatch_algo_update(
+            &algo_msg,
+            &emitter,
+            &http_client,
+            account_id,
+            BinanceProductType::UsdM,
+            clock,
+            &dispatch_state,
+            &triggered_algo_ids,
+            false,
+        );
+
+        dispatch_order_update(
+            &trade_msg,
+            &emitter,
+            &http_client,
+            account_id,
+            BinanceProductType::UsdM,
+            clock,
+            &dispatch_state,
+            false,
+            Decimal::new(4, 4),
+            Currency::USDT(),
+            false,
+            false,
+            &seen_trade_ids,
+        );
+        // A replay of the same venue trade must not produce another fill
+        dispatch_order_update(
+            &trade_msg,
+            &emitter,
+            &http_client,
+            account_id,
+            BinanceProductType::UsdM,
+            clock,
+            &dispatch_state,
+            false,
+            Decimal::new(4, 4),
+            Currency::USDT(),
+            false,
+            false,
+            &seen_trade_ids,
+        );
+
+        let events = collect_events(&mut rx);
+        assert_eq!(events.len(), 3);
+        assert!(matches!(
+            events[0],
+            ExecutionEvent::Order(OrderEventAny::Accepted(_))
+        ));
+        assert!(matches!(
+            events[1],
+            ExecutionEvent::Order(OrderEventAny::Updated(_))
+        ));
+
+        match &events[2] {
+            ExecutionEvent::Order(OrderEventAny::Filled(filled)) => {
+                assert_eq!(filled.client_order_id, client_order_id);
+                assert_eq!(filled.venue_order_id, actual_order_id);
+                assert_eq!(filled.trade_id, TradeId::new("12345678"));
+                assert_eq!(filled.last_qty, Quantity::from("0.001"));
+            }
+            other => panic!("Expected late OrderFilled, was {other:?}"),
         }
     }
 
@@ -3815,4 +3987,6 @@ mod tests {
             .expect("expected OrderFilled event");
         assert_eq!(fill.currency, Currency::from("BUSD"));
     }
+
+    include!("algo_accounting_tests.rs");
 }

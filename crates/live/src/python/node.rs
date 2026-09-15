@@ -196,6 +196,32 @@ impl PyLiveNodeHandle {
         self.inner.is_running()
     }
 
+    /// Requests the native risk engine to halt new submissions and modifications.
+    #[pyo3(name = "halt_trading")]
+    fn py_halt_trading(&self) {
+        self.inner.halt_trading();
+    }
+
+    /// Requests an unsafe stop which blocks actor and strategy state saving.
+    #[pyo3(name = "fail_stop")]
+    fn py_fail_stop(&self) {
+        self.inner.fail_stop();
+    }
+
+    /// Returns whether the node thread has applied the requested trading halt.
+    #[getter]
+    #[pyo3(name = "is_trading_halted")]
+    fn py_is_trading_halted(&self) -> bool {
+        self.inner.is_trading_halted()
+    }
+
+    /// Returns whether an unsafe stop has been requested.
+    #[getter]
+    #[pyo3(name = "is_fail_stop_requested")]
+    fn py_is_fail_stop_requested(&self) -> bool {
+        self.inner.is_fail_stop_requested()
+    }
+
     /// Returns the node's current lifecycle state.
     #[getter]
     #[pyo3(name = "state")]
@@ -1141,37 +1167,49 @@ impl PyLiveNode {
             return Err(to_pyruntime_err("LiveNode is already running"));
         }
 
-        // Get a handle for coordinating with the signal checker
-        let handle = this.node()?.handle();
-
-        // Import signal module
         let signal_module = py.import("signal")?;
-        let original_handler =
-            signal_module.call_method1("signal", (2, signal_module.getattr("SIG_DFL")?))?; // Save original SIGINT handler (signal 2)
+        let threading = py.import("threading")?;
+        let is_main = threading
+            .call_method0("current_thread")?
+            .is(&threading.call_method0("main_thread")?);
 
-        // Set up a custom signal handler that uses our handle
-        let handle_for_signal = handle;
-
-        let signal_callback = new_sync_py_callback(
-            py,
-            move |_args: &pyo3::Bound<'_, PyTuple>,
-                  _kwargs: Option<&pyo3::Bound<'_, PyDict>>|
-                  -> PyResult<()> {
-                log::info!("Python signal handler called");
-                handle_for_signal.stop();
-                Ok(())
-            },
-        )?;
-
-        // Install our signal handler
-        signal_module.call_method1("signal", (2, signal_callback))?;
+        // Python rejects signal registration outside the main thread. Native-only nodes can still
+        // own and drive a worker thread (for example when a blocking Redis cache backing is
+        // configured), with shutdown coordinated through the thread-safe handle.
+        let original_handler = if is_main {
+            let handle = this.node()?.handle();
+            let original =
+                signal_module.call_method1("signal", (2, signal_module.getattr("SIG_DFL")?))?;
+            let signal_callback = new_sync_py_callback(
+                py,
+                move |_args: &pyo3::Bound<'_, PyTuple>,
+                      _kwargs: Option<&pyo3::Bound<'_, PyDict>>|
+                      -> PyResult<()> {
+                    log::info!("Python signal handler called");
+                    handle.stop();
+                    Ok(())
+                },
+            )?;
+            signal_module.call_method1("signal", (2, signal_callback))?;
+            Some(original)
+        } else {
+            None
+        };
 
         // Run the node and restore signal handler afterward
         let mut node = this.node_mut()?;
-        let result = run_live_node_detached(py, &mut node);
+        let mode = if is_main {
+            NodeRunMode::Owned
+        } else {
+            // A worker thread has no Python signal authority. Its host must coordinate
+            // shutdown through LiveNodeHandle, so do not install process-global Tokio handlers.
+            NodeRunMode::Hosted
+        };
+        let result = run_live_node_detached(py, &mut node, mode);
 
-        // Restore original signal handler
-        signal_module.call_method1("signal", (2, original_handler))?;
+        if let Some(original_handler) = original_handler {
+            signal_module.call_method1("signal", (2, original_handler))?;
+        }
 
         result
     }
@@ -1867,7 +1905,7 @@ where
 }
 
 #[allow(unsafe_code)]
-fn run_live_node_detached(py: Python<'_>, node: &mut LiveNode) -> PyResult<()> {
+fn run_live_node_detached(py: Python<'_>, node: &mut LiveNode, mode: NodeRunMode) -> PyResult<()> {
     let node_ptr = SendPtr(std::ptr::from_mut::<LiveNode>(node));
 
     // SAFETY: `py_run` holds the only mutable reference to `LiveNode` until
@@ -1876,7 +1914,7 @@ fn run_live_node_detached(py: Python<'_>, node: &mut LiveNode) -> PyResult<()> {
     unsafe {
         py.detach(move || {
             let ptr = node_ptr;
-            get_runtime().block_on(async { (*ptr.0).run().await })
+            get_runtime().block_on(async { (*ptr.0).run_with_mode(mode).await })
         })
     }
     .map_err(to_pyruntime_err)
@@ -2771,7 +2809,7 @@ mod tests {
     use rstest::rstest;
 
     use super::{
-        BUILDER_OPERATION_IN_PROGRESS, LiveNode, PyLiveNode, PyLiveNodeBuilder,
+        BUILDER_OPERATION_IN_PROGRESS, LiveNode, NodeRunMode, PyLiveNode, PyLiveNodeBuilder,
         PyLiveNodeBuilderState, finish_owned_run, get_global_pyo3_registry,
     };
     use crate::node::config::RoutingConfig;
@@ -4232,8 +4270,12 @@ class ClaimsStrategy(Strategy):
                 .block_on(node.node_mut().unwrap().run())
                 .expect("native LiveNode run should stop cleanly"),
             ShutdownRunPath::PyO3 => Python::attach(|py| {
-                super::run_live_node_detached(py, &mut node.node_mut().unwrap())
-                    .expect("Python LiveNode run should stop cleanly");
+                super::run_live_node_detached(
+                    py,
+                    &mut node.node_mut().unwrap(),
+                    NodeRunMode::Owned,
+                )
+                .expect("Python LiveNode run should stop cleanly");
             }),
         }
 
@@ -4277,7 +4319,7 @@ class ClaimsStrategy(Strategy):
         });
 
         Python::attach(|py| {
-            super::run_live_node_detached(py, &mut node.node_mut().unwrap())
+            super::run_live_node_detached(py, &mut node.node_mut().unwrap(), NodeRunMode::Owned)
                 .expect("node should run cleanly");
         });
 
@@ -4550,6 +4592,46 @@ class ClaimsStrategy(Strategy):
     }
 
     #[rstest]
+    fn test_owned_native_run_can_execute_off_main_thread() {
+        Python::initialize();
+
+        thread::spawn(|| {
+            let node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+                .unwrap()
+                .with_reconciliation(false)
+                .with_delay_post_stop_secs(0)
+                .with_delay_shutdown_secs(0)
+                .with_timeout_connection(0)
+                .with_timeout_disconnection_secs(0)
+                .build()
+                .map(PyLiveNode::new)
+                .unwrap();
+            let handle = node.handle.clone();
+
+            Python::attach(|py| {
+                let py_node = Py::new(py, node).unwrap();
+
+                let stopper = thread::spawn(move || {
+                    thread::sleep(Duration::from_millis(50));
+                    handle.stop();
+                });
+
+                py_node.call_method0(py, "run").unwrap();
+                stopper.join().unwrap();
+
+                assert_eq!(
+                    py_node.borrow(py).node().unwrap().state(),
+                    crate::node::NodeState::Stopped
+                );
+            });
+
+            get_message_bus().borrow_mut().dispose();
+        })
+        .join()
+        .unwrap();
+    }
+
+    #[rstest]
     fn test_build_routes_venue_less_data_client_with_venue_routing() {
         Python::initialize();
 
@@ -4751,7 +4833,7 @@ class ClaimsStrategy(Strategy):
         });
 
         Python::attach(|py| {
-            super::run_live_node_detached(py, &mut node.node_mut().unwrap())
+            super::run_live_node_detached(py, &mut node.node_mut().unwrap(), NodeRunMode::Owned)
                 .expect("node should run cleanly");
         });
 

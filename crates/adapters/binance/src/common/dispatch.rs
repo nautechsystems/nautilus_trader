@@ -21,6 +21,8 @@
 //! - Tracked orders produce proper order events (OrderAccepted, OrderFilled, etc.).
 //! - Untracked orders fall back to execution reports for reconciliation.
 
+use std::collections::VecDeque;
+
 use dashmap::DashMap;
 use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
 use nautilus_core::{UUID4, UnixNanos};
@@ -33,6 +35,8 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use parking_lot::Mutex;
+
+pub(crate) const FINISHED_ALGO_ORDER_CAPACITY: usize = 10_000;
 
 /// The type of operation a pending WS API request represents.
 #[derive(Debug, Clone, Copy)]
@@ -101,6 +105,7 @@ pub struct WsDispatchState {
     pub order_identities: DashMap<ClientOrderId, OrderIdentity>,
     pub pending_requests: DashMap<String, PendingRequest>,
     algo_order_ids: DashMap<ClientOrderId, AlgoOrderIds>,
+    finished_algo_orders: Mutex<VecDeque<ClientOrderId>>,
     order_updates: DashMap<ClientOrderId, OrderUpdate>,
     replacements: DashMap<ClientOrderId, PendingReplacement>,
     emitted_accepted: Mutex<FifoCache<ClientOrderId, 10_000>>,
@@ -116,6 +121,7 @@ impl Default for WsDispatchState {
             order_identities: DashMap::new(),
             pending_requests: DashMap::new(),
             algo_order_ids: DashMap::new(),
+            finished_algo_orders: Mutex::new(VecDeque::new()),
             order_updates: DashMap::new(),
             replacements: DashMap::new(),
             emitted_accepted: Mutex::new(FifoCache::new()),
@@ -287,7 +293,34 @@ impl WsDispatchState {
             .and_then(|(_, pending)| pending.canceled)
     }
 
-    /// Removes all tracking state for a terminal order.
+    /// Bounds retained routing metadata for Algo Service orders awaiting late updates.
+    ///
+    /// Duplicate FINISHED messages do not refresh retention. Eviction removes only
+    /// dispatch metadata; complete late order updates use the native report path.
+    pub(crate) fn retain_finished_algo_order(&self, cid: ClientOrderId) {
+        let evicted = {
+            let mut finished = self.finished_algo_orders.lock();
+            if finished.contains(&cid)
+                || !self.order_identities.contains_key(&cid)
+                    && !self.algo_order_ids.contains_key(&cid)
+            {
+                return;
+            }
+
+            finished.push_back(cid);
+            if finished.len() > FINISHED_ALGO_ORDER_CAPACITY {
+                finished.pop_front()
+            } else {
+                None
+            }
+        };
+
+        if let Some(evicted) = evicted {
+            self.cleanup_terminal(evicted);
+        }
+    }
+
+    /// Removes all routing state for a terminal or evicted order, not its native cached events.
     pub fn cleanup_terminal(&self, cid: ClientOrderId) {
         self.order_identities.remove(&cid);
         self.algo_order_ids.remove(&cid);
@@ -295,6 +328,7 @@ impl WsDispatchState {
         self.replacements.remove(&cid);
         self.emitted_accepted.lock().remove(&cid);
         self.filled_orders.lock().remove(&cid);
+        self.finished_algo_orders.lock().retain(|id| *id != cid);
     }
 }
 
@@ -341,4 +375,49 @@ pub fn ensure_accepted_emitted(
         false,
     );
     emitter.send_order_event(OrderEventAny::Accepted(accepted));
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_finished_algo_retention_is_bounded_without_refreshing_duplicates() {
+        let state = WsDispatchState::default();
+        let oldest = ClientOrderId::from("FINISHED-0");
+
+        for index in 0..FINISHED_ALGO_ORDER_CAPACITY {
+            let cid = ClientOrderId::new(format!("FINISHED-{index}"));
+            state.insert_algo_order_id(cid, VenueOrderId::new(index.to_string()));
+            state.retain_finished_algo_order(cid);
+        }
+
+        state.retain_finished_algo_order(oldest);
+        let newest = ClientOrderId::from("FINISHED-NEWEST");
+        state.insert_algo_order_id(newest, VenueOrderId::from("10001"));
+        state.retain_finished_algo_order(newest);
+
+        assert_eq!(
+            state.finished_algo_orders.lock().len(),
+            FINISHED_ALGO_ORDER_CAPACITY
+        );
+        assert_eq!(state.algo_order_ids.len(), FINISHED_ALGO_ORDER_CAPACITY);
+        assert!(!state.algo_order_ids.contains_key(&oldest));
+        assert!(state.algo_order_ids.contains_key(&newest));
+    }
+
+    #[rstest]
+    fn test_terminal_cleanup_removes_finished_algo_retention() {
+        let state = WsDispatchState::default();
+        let cid = ClientOrderId::from("FINISHED-CLEANUP");
+        state.insert_algo_order_id(cid, VenueOrderId::from("1234"));
+        state.retain_finished_algo_order(cid);
+        state.cleanup_terminal(cid);
+        state.retain_finished_algo_order(cid);
+
+        assert!(state.finished_algo_orders.lock().is_empty());
+        assert!(state.algo_order_ids.is_empty());
+    }
 }

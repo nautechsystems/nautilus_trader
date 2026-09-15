@@ -49,6 +49,7 @@ use nautilus_binance::{
         parse::parse_usdm_instrument,
     },
     config::{BinanceExecutionClientConfig, BinanceInstrumentProviderConfig},
+    factories::BinanceExecutionClientFactory,
     futures::{
         execution::{BINANCE_VENUE_ORDER_ID_IS_ALGO_ID_PARAM, BinanceFuturesExecutionClient},
         http::models::BinanceFuturesUsdExchangeInfo,
@@ -60,6 +61,7 @@ use nautilus_common::{
     clock::TestClock,
     enums::LogLevel,
     live::runner::{replace_system_event_sender, set_exec_event_sender},
+    logging::logger::LoggerConfig,
     messages::{
         ExecutionEvent, SystemEvent,
         execution::{
@@ -75,6 +77,8 @@ use nautilus_core::{DurationNanos, Params, UnixNanos};
 use nautilus_execution::engine::ExecutionEngine;
 use nautilus_live::{
     ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome,
+    builder::LiveNodeBuilder,
+    config::{LiveExecutionEngineConfig, LiveNodeConfig},
     manager::{ExecutionManager, ExecutionManagerConfig},
 };
 use nautilus_model::{
@@ -155,7 +159,27 @@ enum CommandResponse {
 struct CommandResponses {
     submit: CommandResponse,
     actual_order_query: CommandResponse,
+    algo_order_query: CommandResponse,
+    open_orders_query: CommandResponse,
+    open_algo_orders_query: CommandResponse,
+    user_trades_query: CommandResponse,
     invalid_actual_order: bool,
+    mismatched_algo_client_id: bool,
+    mismatched_algo_symbol: bool,
+    mismatched_algo_id: bool,
+    mismatched_algo_side: bool,
+    mismatched_actual_id: bool,
+    missing_actual_identity: bool,
+    open_algo_actual_id: Option<i64>,
+    stale_open_algo: bool,
+    mismatched_open_order_side: bool,
+    missing_algo_fills: bool,
+    split_algo_fills: bool,
+    extra_algo_fill: bool,
+    conflicting_algo_trade_side: bool,
+    algo_query_fills: bool,
+    partial_algo_fill: bool,
+    periodic_algo_report: bool,
     cancel: CommandResponse,
     modify: CommandResponse,
     batch_cancel: CommandResponse,
@@ -166,7 +190,27 @@ impl Default for CommandResponses {
         Self {
             submit: CommandResponse::Success,
             actual_order_query: CommandResponse::Success,
+            algo_order_query: CommandResponse::Success,
+            open_orders_query: CommandResponse::Success,
+            open_algo_orders_query: CommandResponse::Success,
+            user_trades_query: CommandResponse::Success,
             invalid_actual_order: false,
+            mismatched_algo_client_id: false,
+            mismatched_algo_symbol: false,
+            mismatched_algo_id: false,
+            mismatched_algo_side: false,
+            mismatched_actual_id: false,
+            missing_actual_identity: false,
+            open_algo_actual_id: None,
+            stale_open_algo: false,
+            mismatched_open_order_side: false,
+            missing_algo_fills: false,
+            split_algo_fills: false,
+            extra_algo_fill: false,
+            conflicting_algo_trade_side: false,
+            algo_query_fills: false,
+            partial_algo_fill: false,
+            periodic_algo_report: false,
             cancel: CommandResponse::Success,
             modify: CommandResponse::Success,
             batch_cancel: CommandResponse::Success,
@@ -180,6 +224,7 @@ struct CommandResponseState {
     request_count: Arc<AtomicUsize>,
     captured_queries: Option<CapturedQueries>,
     captured_ws_trading_messages: Option<CapturedWsTradingMessages>,
+    user_trades_release: Option<Arc<tokio::sync::Notify>>,
     report_fixture_mode: ReportFixtureMode,
     hedge_mode: bool,
 }
@@ -334,6 +379,7 @@ fn create_exec_test_router() -> Router {
         request_count: Arc::new(AtomicUsize::new(0)),
         captured_queries: None,
         captured_ws_trading_messages: None,
+        user_trades_release: None,
         report_fixture_mode: ReportFixtureMode::Empty,
         hedge_mode: false,
     })
@@ -533,8 +579,16 @@ async fn handle_position_risk_query(
         | ReportFixtureMode::PaginatedFills
         | ReportFixtureMode::PreBoundaryFill
         | ReportFixtureMode::Populated
-        | ReportFixtureMode::MismatchedAlgoId
-        | ReportFixtureMode::DirectAlgo => json_response(&load_fixture("position_risk.json")),
+        | ReportFixtureMode::MismatchedAlgoId => json_response(&load_fixture("position_risk.json")),
+        ReportFixtureMode::DirectAlgo => {
+            let mut positions = load_fixture("position_risk.json");
+            if state.responses.split_algo_fills {
+                positions[0]["positionAmt"] = json!("0.002");
+                positions[0]["notional"] = json!("102.0");
+                positions[0]["unRealizedProfit"] = json!("2.00000000");
+            }
+            json_response(&positions)
+        }
     }
 }
 
@@ -547,8 +601,44 @@ async fn handle_open_orders_query(
         return unauthorized_response();
     }
     record_query(&state, "openOrders", query);
+
+    if !matches!(state.responses.open_orders_query, CommandResponse::Success) {
+        return command_response(state.responses.open_orders_query, &json!([]));
+    }
+
+    if let Some(actual_id) = state.responses.open_algo_actual_id {
+        let mut order = load_fixture("order_response.json");
+        order["orderId"] = json!(actual_id);
+        order["clientOrderId"] = json!("test-algo-order-1");
+
+        if state.responses.periodic_algo_report {
+            order["type"] = json!("MARKET");
+            order["status"] = json!(if state.responses.partial_algo_fill {
+                "PARTIALLY_FILLED"
+            } else {
+                "FILLED"
+            });
+            order["origQty"] = json!(if state.responses.partial_algo_fill {
+                "0.010"
+            } else {
+                "0.001"
+            });
+            order["executedQty"] = json!("0.001");
+            if state.responses.extra_algo_fill {
+                order["executedQty"] = json!("0.003");
+            }
+            order["avgPrice"] = json!("50000.00");
+        }
+
+        if state.responses.mismatched_open_order_side {
+            order["side"] = json!("SELL");
+        }
+        return json_response(&json!([order]));
+    }
+
     match state.report_fixture_mode {
         ReportFixtureMode::ClosePosition
+        | ReportFixtureMode::DirectAlgo
         | ReportFixtureMode::Empty
         | ReportFixtureMode::FillsOnly
         | ReportFixtureMode::HedgePositions
@@ -571,8 +661,7 @@ async fn handle_open_orders_query(
         | ReportFixtureMode::PaginatedFills
         | ReportFixtureMode::PreBoundaryFill
         | ReportFixtureMode::Populated
-        | ReportFixtureMode::MismatchedAlgoId
-        | ReportFixtureMode::DirectAlgo => {
+        | ReportFixtureMode::MismatchedAlgoId => {
             json_response(&json!([load_fixture("order_response.json")]))
         }
     }
@@ -587,6 +676,18 @@ async fn handle_open_algo_orders_query(
         return unauthorized_response();
     }
     record_query(&state, "openAlgoOrders", query);
+
+    if !matches!(
+        state.responses.open_algo_orders_query,
+        CommandResponse::Success
+    ) {
+        return command_response(state.responses.open_algo_orders_query, &json!([]));
+    }
+
+    if state.responses.stale_open_algo {
+        return json_response(&load_fixture("open_algo_orders.json"));
+    }
+
     match state.report_fixture_mode {
         ReportFixtureMode::Empty
         | ReportFixtureMode::FillsOnly
@@ -665,8 +766,10 @@ async fn handle_open_algo_orders_query(
         | ReportFixtureMode::PaginatedFills
         | ReportFixtureMode::PreBoundaryFill
         | ReportFixtureMode::Populated
-        | ReportFixtureMode::MismatchedAlgoId
-        | ReportFixtureMode::DirectAlgo => json_response(&load_fixture("open_algo_orders.json")),
+        | ReportFixtureMode::MismatchedAlgoId => {
+            json_response(&load_fixture("open_algo_orders.json"))
+        }
+        ReportFixtureMode::DirectAlgo => json_response(&json!([])),
     }
 }
 
@@ -681,11 +784,41 @@ async fn handle_algo_order_query(
     record_query(&state, "algoOrder", query);
     if matches!(state.report_fixture_mode, ReportFixtureMode::DirectAlgo) {
         let mut orders = load_fixture("open_algo_orders.json");
+        if state.responses.mismatched_algo_client_id {
+            orders[0]["clientAlgoId"] = json!("another-client-id");
+        }
+
+        if state.responses.mismatched_algo_symbol {
+            orders[0]["symbol"] = json!("ETHUSDT");
+        }
+
+        if state.responses.mismatched_algo_id {
+            orders[0]["algoId"] = json!(987654321);
+        }
+
+        if state.responses.mismatched_algo_side {
+            orders[0]["side"] = json!("SELL");
+        }
         orders[0]["actualOrderId"] = json!(22542179_i64.to_string());
         orders[0]["actualQty"] = json!("0.001");
+        if state.responses.split_algo_fills {
+            orders[0]["quantity"] = json!("0.002");
+            orders[0]["actualQty"] = json!("0.002");
+        }
+
+        if state.responses.partial_algo_fill {
+            orders[0]["quantity"] = json!("0.010");
+        }
+
+        if state.responses.extra_algo_fill {
+            orders[0]["actualQty"] = json!("0.003");
+        }
         orders[0]["actualPrice"] = json!("50000.00");
         orders[0]["algoStatus"] = json!("FINISHED");
-        return json_response(&orders[0]);
+        if state.responses.missing_actual_identity {
+            orders[0].as_object_mut().unwrap().remove("actualOrderId");
+        }
+        return command_response(state.responses.algo_order_query, &orders[0]);
     }
 
     command_response(
@@ -774,6 +907,15 @@ async fn handle_user_trades_query(
         .as_millis() as i64
         - 30_000;
     record_query(&state, "userTrades", query);
+
+    if let Some(release) = &state.user_trades_release {
+        release.notified().await;
+    }
+
+    if !matches!(state.responses.user_trades_query, CommandResponse::Success) {
+        return command_response(state.responses.user_trades_query, &json!([]));
+    }
+
     match state.report_fixture_mode {
         ReportFixtureMode::ClosePosition
         | ReportFixtureMode::Delivery
@@ -813,6 +955,36 @@ async fn handle_user_trades_query(
         | ReportFixtureMode::DirectAlgo => {
             let mut trade = load_fixture("user_trade.json");
             trade["time"] = json!(trade_time);
+
+            if matches!(state.report_fixture_mode, ReportFixtureMode::DirectAlgo)
+                || state.responses.algo_query_fills
+            {
+                if state.responses.missing_algo_fills {
+                    return json_response(&json!([]));
+                }
+                trade["orderId"] = json!(22542179);
+                trade["price"] = json!("50000.00");
+                trade["quoteQty"] = json!("50.00");
+                trade["positionSide"] = json!("BOTH");
+                if state.responses.split_algo_fills {
+                    let mut next_trade = trade.clone();
+                    next_trade["id"] = json!(12345679);
+                    next_trade["time"] = json!(trade_time + 1);
+
+                    if state.responses.extra_algo_fill {
+                        let mut third_trade = trade.clone();
+                        third_trade["id"] = json!(12345680);
+                        third_trade["time"] = json!(trade_time + 2);
+
+                        if state.responses.conflicting_algo_trade_side {
+                            trade["side"] = json!("SELL");
+                            trade["buyer"] = json!(false);
+                        }
+                        return json_response(&json!([trade, next_trade, third_trade]));
+                    }
+                    return json_response(&json!([trade, next_trade]));
+                }
+            }
             json_response(&json!([trade]))
         }
         ReportFixtureMode::InvalidFill => {
@@ -902,8 +1074,28 @@ async fn handle_order_query(
     if is_actual_order {
         let mut order = load_fixture("order_response.json");
         order["orderId"] = json!(22542179_i64);
+        if state.responses.mismatched_actual_id {
+            order["orderId"] = json!(22542180_i64);
+        }
+
+        if state.responses.mismatched_algo_side {
+            order["side"] = json!("SELL");
+        }
         order["status"] = json!("FILLED");
         order["executedQty"] = json!("0.001");
+        if state.responses.split_algo_fills {
+            order["origQty"] = json!("0.002");
+            order["executedQty"] = json!("0.002");
+        }
+
+        if state.responses.partial_algo_fill {
+            order["origQty"] = json!("0.010");
+            order["status"] = json!("PARTIALLY_FILLED");
+        }
+
+        if state.responses.extra_algo_fill {
+            order["executedQty"] = json!("0.003");
+        }
         order["avgPrice"] = json!(if state.responses.invalid_actual_order {
             "invalid"
         } else {
@@ -1003,6 +1195,7 @@ fn create_exec_test_router_with_algo_capture_and_hedge_mode(
         request_count: Arc::new(AtomicUsize::new(0)),
         captured_queries: None,
         captured_ws_trading_messages: None,
+        user_trades_release: None,
         report_fixture_mode: ReportFixtureMode::Empty,
         hedge_mode,
     })
@@ -1119,6 +1312,7 @@ async fn start_exec_test_server_with_command_responses(
         request_count: request_count.clone(),
         captured_queries: None,
         captured_ws_trading_messages: None,
+        user_trades_release: None,
         report_fixture_mode: ReportFixtureMode::Empty,
         hedge_mode: false,
     });
@@ -1177,6 +1371,7 @@ async fn start_exec_test_server_with_query_capture_and_responses_and_hedge_mode(
         request_count: Arc::new(AtomicUsize::new(0)),
         captured_queries: Some(captured_queries.clone()),
         captured_ws_trading_messages: None,
+        user_trades_release: None,
         report_fixture_mode,
         hedge_mode,
     });
@@ -1218,6 +1413,7 @@ async fn start_exec_test_server_with_ws_trading_capture_and_hedge_mode(
         request_count: Arc::new(AtomicUsize::new(0)),
         captured_queries: None,
         captured_ws_trading_messages: Some(captured_ws_trading_messages.clone()),
+        user_trades_release: None,
         report_fixture_mode: ReportFixtureMode::Empty,
         hedge_mode,
     });
@@ -1297,6 +1493,7 @@ async fn start_exec_test_server_with_gtd_algo_and_ws_capture() -> (
         request_count: Arc::new(AtomicUsize::new(0)),
         captured_queries: None,
         captured_ws_trading_messages: Some(captured_ws_trading_messages.clone()),
+        user_trades_release: None,
         report_fixture_mode: ReportFixtureMode::Empty,
         hedge_mode: false,
     })
@@ -3934,6 +4131,111 @@ async fn test_historical_algo_report_client_id_not_found_returns_none() {
 
 #[rstest]
 #[tokio::test]
+async fn test_runtime_unknown_order_not_found_does_not_latch_trading_stop() {
+    let (addr, captured_queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses {
+            submit: CommandResponse::VenueReject {
+                code: -2013,
+                msg: "Order does not exist.",
+            },
+            ..Default::default()
+        },
+        ReportFixtureMode::Empty,
+    )
+    .await;
+    let (mut client, mut rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let client_order_id = ClientOrderId::from("missing-runtime-client-id");
+    client
+        .query_order(QueryOrder::new(
+            test_trader_id(),
+            Some(*BINANCE_CLIENT_ID),
+            test_strategy_id(),
+            test_instrument_id(),
+            client_order_id,
+            None,
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    let algo_query = wait_for_query(&captured_queries, "algoOrder").await;
+
+    assert!(algo_query.query.contains_key("clientAlgoId"));
+    assert!(!algo_query.query.contains_key("algoId"));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(200), rx.recv())
+            .await
+            .is_err(),
+        "Confirmed missing unknown order must not emit a report"
+    );
+    assert!(client.execution_safety_error().is_none());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_runtime_unknown_order_algo_query_failure_latches_trading_stop() {
+    let (addr, captured_queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses {
+            submit: CommandResponse::VenueReject {
+                code: -2013,
+                msg: "Order does not exist.",
+            },
+            algo_order_query: CommandResponse::AmbiguousFailure,
+            ..Default::default()
+        },
+        ReportFixtureMode::DirectAlgo,
+    )
+    .await;
+    let (mut client, mut rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    client
+        .query_order(QueryOrder::new(
+            test_trader_id(),
+            Some(*BINANCE_CLIENT_ID),
+            test_strategy_id(),
+            test_instrument_id(),
+            ClientOrderId::from("unknown-runtime-client-id"),
+            None,
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while client.execution_safety_error().is_none() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("Ambiguous unknown-order Algo query must latch the safety error");
+
+    let fault = client.execution_safety_error().unwrap();
+    assert!(fault.contains("Algo"), "{fault}");
+    assert!(
+        captured_queries
+            .lock()
+            .iter()
+            .any(|query| query.path == "algoOrder")
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_unknown_order_id_collision_does_not_query_algo_by_venue_id() {
     let (addr, captured_queries) = start_exec_test_server_with_query_capture_and_responses(
         CommandResponses {
@@ -3980,6 +4282,107 @@ async fn test_unknown_order_id_collision_does_not_query_algo_by_venue_id() {
             .lock()
             .iter()
             .all(|query| query.path != "allAlgoOrders")
+    );
+}
+
+#[rstest]
+#[case::client_id(
+    ClientOrderId::from("different-client-order"),
+    VenueOrderId::from("12345678"),
+    "client order ID mismatch"
+)]
+#[case::venue_id(
+    ClientOrderId::from("testOrder123"),
+    VenueOrderId::from("87654321"),
+    "venue order ID mismatch"
+)]
+#[tokio::test]
+async fn test_single_regular_report_rejects_mismatched_requested_identity(
+    #[case] client_order_id: ClientOrderId,
+    #[case] venue_order_id: VenueOrderId,
+    #[case] expected_error: &str,
+) {
+    let (addr, _) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses::default(),
+        ReportFixtureMode::Empty,
+    )
+    .await;
+    let (mut client, _rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let command = GenerateOrderStatusReport::new(
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        Some(test_instrument_id()),
+        Some(client_order_id),
+        Some(venue_order_id),
+        None,
+        None,
+    );
+
+    let error = client
+        .generate_order_status_report(&command)
+        .await
+        .unwrap_err();
+
+    assert!(error.to_string().contains(expected_error), "{error:#}");
+}
+
+#[rstest]
+#[case::client_id(
+    ClientOrderId::from("different-client-order"),
+    VenueOrderId::from("12345678")
+)]
+#[case::venue_id(ClientOrderId::from("testOrder123"), VenueOrderId::from("87654321"))]
+#[tokio::test]
+async fn test_runtime_regular_query_rejects_mismatched_requested_identity(
+    #[case] client_order_id: ClientOrderId,
+    #[case] venue_order_id: VenueOrderId,
+) {
+    let (addr, captured_queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses::default(),
+        ReportFixtureMode::Empty,
+    )
+    .await;
+    let (mut client, mut rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    add_limit_order_to_cache(&cache, client_order_id);
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    client
+        .query_order(QueryOrder::new(
+            test_trader_id(),
+            Some(*BINANCE_CLIENT_ID),
+            test_strategy_id(),
+            test_instrument_id(),
+            client_order_id,
+            Some(venue_order_id),
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    wait_for_query(&captured_queries, "order").await;
+
+    assert!(
+        tokio::time::timeout(Duration::from_millis(200), rx.recv())
+            .await
+            .is_err(),
+        "Mismatched regular order identity must not emit a report"
+    );
+    assert!(client.execution_safety_error().is_none());
+    assert!(
+        captured_queries
+            .lock()
+            .iter()
+            .all(|query| query.path != "algoOrder" && query.path != "allAlgoOrders")
     );
 }
 
@@ -4088,7 +4491,7 @@ async fn test_algo_report_by_client_id_enriches_from_actual_order() {
 
 #[rstest]
 #[tokio::test]
-async fn test_algo_report_by_client_id_falls_back_when_actual_order_enrichment_fails() {
+async fn test_algo_report_rejects_failed_actual_order_enrichment() {
     let (addr, captured_queries) = start_exec_test_server_with_query_capture_and_responses(
         CommandResponses {
             submit: CommandResponse::VenueReject {
@@ -4119,21 +4522,16 @@ async fn test_algo_report_by_client_id_falls_back_when_actual_order_enrichment_f
         None,
     );
 
-    let result = client
+    let error = client
         .generate_order_status_report(&report)
         .await
-        .unwrap()
-        .unwrap();
-
-    assert_eq!(
-        result.client_order_id,
-        Some(ClientOrderId::from("test-algo-order-1"))
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("unresolved matching-engine order"),
+        "{error:#}"
     );
-    assert_eq!(result.order_type, OrderType::StopMarket);
-    assert_eq!(result.order_status, OrderStatus::Filled);
-    assert_eq!(result.venue_order_id, VenueOrderId::from("22542179"));
-    assert_eq!(result.filled_qty, Quantity::from("0.001"));
-    assert_eq!(result.avg_px, Some(rust_decimal_macros::dec!(50000.00)));
     let actual_query = wait_for_queries(&captured_queries, "order", 2).await;
     assert!(
         actual_query
@@ -4144,7 +4542,7 @@ async fn test_algo_report_by_client_id_falls_back_when_actual_order_enrichment_f
 
 #[rstest]
 #[tokio::test]
-async fn test_algo_report_falls_back_when_actual_order_conversion_fails() {
+async fn test_algo_report_rejects_invalid_actual_order_conversion() {
     let (addr, captured_queries) = start_exec_test_server_with_query_capture_and_responses(
         CommandResponses {
             submit: CommandResponse::VenueReject {
@@ -4175,26 +4573,578 @@ async fn test_algo_report_falls_back_when_actual_order_conversion_fails() {
         None,
     );
 
-    let result = client
+    let error = client
         .generate_order_status_report(&report)
         .await
-        .unwrap()
-        .unwrap();
-
-    assert_eq!(
-        result.client_order_id,
-        Some(ClientOrderId::from("test-algo-order-1"))
-    );
-    assert_eq!(result.order_type, OrderType::StopMarket);
-    assert_eq!(result.order_status, OrderStatus::Filled);
-    assert_eq!(result.venue_order_id, VenueOrderId::from("22542179"));
-    assert_eq!(result.filled_qty, Quantity::from("0.001"));
-    assert_eq!(result.avg_px, Some(rust_decimal_macros::dec!(50000.00)));
+        .unwrap_err();
+    assert!(error.to_string().contains("avg_price"), "{error:#}");
     let actual_queries = wait_for_queries(&captured_queries, "order", 2).await;
     assert!(
         actual_queries
             .iter()
             .any(|query| query.query.get("orderId").map(String::as_str) == Some("22542179"))
+    );
+}
+
+#[rstest]
+#[case::wrong_client_id(CommandResponses { mismatched_algo_client_id: true, ..Default::default() }, "different client ID")]
+#[case::wrong_symbol(CommandResponses { mismatched_algo_symbol: true, ..Default::default() }, "different symbol")]
+#[case::wrong_actual_id(CommandResponses { mismatched_actual_id: true, ..Default::default() }, "actual order ID mismatch")]
+#[case::missing_actual_id(CommandResponses { missing_actual_identity: true, ..Default::default() }, "fills without a matching-engine identity")]
+#[tokio::test]
+async fn test_single_algo_report_rejects_unverified_identity(
+    #[case] mut responses: CommandResponses,
+    #[case] expected_error: &str,
+    #[values(false, true)] explicit_algo_id: bool,
+) {
+    responses.submit = CommandResponse::VenueReject {
+        code: -2013,
+        msg: "Order does not exist.",
+    };
+    let (addr, _) = start_exec_test_server_with_query_capture_and_responses(
+        responses,
+        ReportFixtureMode::DirectAlgo,
+    )
+    .await;
+    let (mut client, _rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let cmd = GenerateOrderStatusReport::new(
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        Some(test_instrument_id()),
+        Some(ClientOrderId::from("test-algo-order-1")),
+        explicit_algo_id.then(|| VenueOrderId::from("123456789")),
+        explicit_algo_id.then(algo_order_query_params),
+        None,
+    );
+    let error = client.generate_order_status_report(&cmd).await.unwrap_err();
+
+    assert!(error.to_string().contains(expected_error), "{error:#}");
+    assert!(
+        cache
+            .borrow()
+            .orders(None, None, None, None, None)
+            .is_empty()
+    );
+    assert!(
+        cache
+            .borrow()
+            .positions(None, None, None, None, None)
+            .is_empty()
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_single_algo_report_rejects_wrong_requested_algo_id() {
+    let (addr, _) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses {
+            mismatched_algo_id: true,
+            ..Default::default()
+        },
+        ReportFixtureMode::DirectAlgo,
+    )
+    .await;
+    let (mut client, _rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let cmd = GenerateOrderStatusReport::new(
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        Some(test_instrument_id()),
+        None,
+        Some(VenueOrderId::from("123456789")),
+        Some(algo_order_query_params()),
+        None,
+    );
+    let error = client.generate_order_status_report(&cmd).await.unwrap_err();
+
+    assert!(error.to_string().contains("different Algo ID"), "{error:#}");
+    assert!(
+        cache
+            .borrow()
+            .orders(None, None, None, None, None)
+            .is_empty()
+    );
+}
+
+#[rstest]
+#[case::matching(CommandResponses::default(), None)]
+#[case::wrong_side(CommandResponses { mismatched_algo_side: true, ..Default::default() }, Some("cached order side"))]
+#[case::wrong_algo_id(CommandResponses { mismatched_algo_id: true, ..Default::default() }, Some("conflicting venue identity"))]
+#[case::wrong_quantity(CommandResponses { split_algo_fills: true, ..Default::default() }, Some("cached order quantity"))]
+#[tokio::test]
+async fn test_single_algo_report_checks_cached_identity(
+    #[case] responses: CommandResponses,
+    #[case] expected_error: Option<&str>,
+    #[values(false, true)] promoted: bool,
+    #[values(false, true)] venue_id_only: bool,
+) {
+    let (addr, queries) = start_exec_test_server_with_query_capture_and_responses(
+        responses,
+        ReportFixtureMode::DirectAlgo,
+    )
+    .await;
+    let (mut client, _rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    let client_order_id = ClientOrderId::from("test-algo-order-1");
+    let venue_order_id = VenueOrderId::from(if promoted { "22542179" } else { "123456789" });
+    let original = add_triggered_stop_market_order_to_cache(
+        &cache,
+        client_order_id,
+        VenueOrderId::from("123456789"),
+        venue_order_id,
+    );
+    cache.borrow_mut().build_index();
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let command = GenerateOrderStatusReport::new(
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        Some(test_instrument_id()),
+        (!venue_id_only).then_some(client_order_id),
+        Some(venue_order_id),
+        None,
+        None,
+    );
+    let result = client.generate_order_status_report(&command).await;
+
+    if let Some(expected) = expected_error {
+        let error = result.expect_err("Cached Algo identity conflicts must reject the report");
+        assert!(error.to_string().contains(expected), "{error:#}");
+    } else {
+        let report = result.unwrap().unwrap();
+        assert_eq!(report.client_order_id, Some(client_order_id));
+        assert_eq!(report.venue_order_id, VenueOrderId::from("22542179"));
+        assert_eq!(report.filled_qty, Quantity::from("0.001"));
+    }
+
+    let queries = queries.lock();
+    assert!(queries.iter().any(|query| {
+        query.path == "algoOrder"
+            && query
+                .query
+                .get("clientAlgoId")
+                .is_some_and(|id| id.ends_with(client_order_id.as_str()))
+            && !query.query.contains_key("algoId")
+    }));
+    let cache = cache.borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    assert_eq!(order.events(), original.events());
+    assert!(order.trade_ids().is_empty());
+    assert!(cache.positions(None, None, None, None, None).is_empty());
+}
+
+#[rstest]
+#[case::only_algo_id(false, "50000.00", Some("0.01000000 USDT"), false)]
+#[case::cached_fill_echo(true, "50000.00", Some("0.01000000 USDT"), false)]
+#[case::conflicting_price(true, "49000.00", Some("0.01000000 USDT"), true)]
+#[case::conflicting_fee(true, "50000.00", Some("0.02000000 USDT"), true)]
+#[case::missing_fee(true, "50000.00", None, true)]
+#[tokio::test]
+async fn test_mass_status_promotes_cached_algo_id_after_restart(
+    #[case] cached_fill: bool,
+    #[case] cached_price: &str,
+    #[case] cached_fee: Option<&str>,
+    #[case] conflicting_fill: bool,
+) {
+    let (addr, captured_queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses {
+            split_algo_fills: cached_fill,
+            ..Default::default()
+        },
+        ReportFixtureMode::DirectAlgo,
+    )
+    .await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    add_test_instrument_to_cache(&cache);
+    let client_order_id = ClientOrderId::from("test-algo-order-1");
+    let order = add_stop_market_order_to_cache(&cache, client_order_id, OrderSide::Buy, false);
+    let accepted = OrderAccepted::new(
+        test_trader_id(),
+        test_strategy_id(),
+        test_instrument_id(),
+        client_order_id,
+        VenueOrderId::from("123456789"),
+        AccountId::from("BINANCE-001"),
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        true,
+    );
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Accepted(accepted))
+        .unwrap();
+    assert_eq!(
+        cache
+            .borrow()
+            .order(&client_order_id)
+            .unwrap()
+            .venue_order_id(),
+        Some(VenueOrderId::from("123456789"))
+    );
+    assert_eq!(order.order_type(), OrderType::StopMarket);
+
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let mut engine = ExecutionEngine::new(clock.clone(), cache.clone(), None);
+    engine.register_oms_type(test_strategy_id(), OmsType::Netting);
+
+    if cached_fill {
+        let updated = OrderUpdated::new(
+            test_trader_id(),
+            test_strategy_id(),
+            test_instrument_id(),
+            client_order_id,
+            Quantity::from("0.002"),
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            true,
+            Some(VenueOrderId::from("22542179")),
+            Some(AccountId::from("BINANCE-001")),
+            None,
+            None,
+            None,
+            false,
+        );
+        engine.process(&OrderEventAny::Updated(updated));
+        let fill = OrderFilledSpec::builder()
+            .trader_id(test_trader_id())
+            .strategy_id(test_strategy_id())
+            .instrument_id(test_instrument_id())
+            .client_order_id(client_order_id)
+            .venue_order_id(VenueOrderId::from("22542179"))
+            .account_id(AccountId::from("BINANCE-001"))
+            .trade_id(TradeId::from("12345678"))
+            .order_side(OrderSide::Buy)
+            .order_type(OrderType::StopMarket)
+            .last_qty(Quantity::from("0.001"))
+            .last_px(Price::from(cached_price))
+            .currency(Currency::USDT())
+            .maybe_commission(cached_fee.map(Money::from))
+            .build();
+        engine.process(&OrderEventAny::Filled(fill));
+        let cache = cache.borrow();
+        assert_eq!(
+            cache.order(&client_order_id).unwrap().status(),
+            OrderStatus::PartiallyFilled
+        );
+        assert_eq!(
+            cache.positions_open(None, None, None, None, None)[0].quantity,
+            Quantity::from("0.001")
+        );
+    }
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let mass_status = client.generate_mass_status(Some(60)).await;
+
+    if conflicting_fill {
+        let error = mass_status.unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("conflicting retained trade 12345678"),
+            "{error:#}"
+        );
+        let cache = cache.borrow();
+        let order = cache.order(&client_order_id).unwrap();
+        assert_eq!(order.filled_qty(), Quantity::from("0.001"));
+        assert_eq!(order.trade_ids(), vec![&TradeId::from("12345678")]);
+        assert_eq!(cache.orders(None, None, None, None, None).len(), 1);
+        assert_eq!(
+            cache.positions_open(None, None, None, None, None)[0].quantity,
+            Quantity::from("0.001")
+        );
+        return;
+    }
+
+    let mass_status = mass_status.unwrap().unwrap();
+
+    let order_reports = mass_status.order_reports();
+    let report = order_reports
+        .get(&VenueOrderId::from("22542179"))
+        .expect("cached Algo order should be promoted to its matching-engine ID");
+    assert_eq!(report.client_order_id, Some(client_order_id));
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    let algo_query = wait_for_query(&captured_queries, "algoOrder").await;
+    assert!(algo_query.query.contains_key("clientAlgoId"));
+    assert!(!algo_query.query.contains_key("algoId"));
+
+    let replay_status = mass_status.clone();
+    let mut manager = ExecutionManager::new(
+        clock.clone(),
+        cache.clone(),
+        ExecutionManagerConfig::default(),
+    )
+    .unwrap();
+    engine.register_client(Box::new(client)).unwrap();
+    let engine = Rc::new(RefCell::new(engine));
+
+    let result = manager.reconcile_execution_mass_status(&mass_status, engine.as_ref());
+    assert!(!result.events.is_empty());
+    let expected_qty = Quantity::from(if cached_fill { "0.002" } else { "0.001" });
+    let expected_fee = Money::from(if cached_fill {
+        "0.02000000 USDT"
+    } else {
+        "0.01000000 USDT"
+    });
+    let expected_trades = if cached_fill {
+        vec![TradeId::from("12345678"), TradeId::from("12345679")]
+    } else {
+        vec![TradeId::from("12345678")]
+    };
+    {
+        let cache = cache.borrow();
+        let order = cache.order(&client_order_id).unwrap();
+        assert_eq!(cache.orders(None, None, None, None, None).len(), 1);
+        assert_eq!(order.venue_order_id(), Some(VenueOrderId::from("22542179")));
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.filled_qty(), expected_qty);
+        assert_eq!(
+            order.trade_ids(),
+            expected_trades.iter().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            order.commissions().get(&Currency::USDT()),
+            Some(&expected_fee)
+        );
+        let positions = cache.positions_open(None, None, None, None, None);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity, expected_qty);
+        assert_eq!(positions[0].avg_px_open, 50000.0);
+        assert_eq!(positions[0].trade_ids(), expected_trades);
+        assert_eq!(positions[0].commissions(), vec![expected_fee]);
+        assert_eq!(positions[0].strategy_id, test_strategy_id());
+    }
+    let replay = manager.reconcile_execution_mass_status(&replay_status, engine.as_ref());
+    assert!(replay.events.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_mass_status_fails_when_cached_algo_cannot_be_resolved() {
+    let (addr, captured_queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses::default(),
+        ReportFixtureMode::Empty,
+    )
+    .await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    let client_order_id = ClientOrderId::from("missing-algo-order");
+    add_stop_market_order_to_cache(&cache, client_order_id, OrderSide::Buy, false);
+    let accepted = OrderAccepted::new(
+        test_trader_id(),
+        test_strategy_id(),
+        test_instrument_id(),
+        client_order_id,
+        VenueOrderId::from("123456789"),
+        AccountId::from("BINANCE-001"),
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        true,
+    );
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Accepted(accepted))
+        .unwrap();
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let error = client.generate_mass_status(Some(60)).await.unwrap_err();
+
+    assert!(error.to_string().contains("missing-algo-order"));
+    let algo_query = wait_for_query(&captured_queries, "algoOrder").await;
+    assert!(
+        algo_query
+            .query
+            .get("clientAlgoId")
+            .is_some_and(|id| id.ends_with("missing-algo-order"))
+    );
+}
+
+#[rstest]
+#[case::wrong_client_id(CommandResponses { mismatched_algo_client_id: true, ..Default::default() }, "different client ID")]
+#[case::wrong_symbol(CommandResponses { mismatched_algo_symbol: true, ..Default::default() }, "different symbol")]
+#[case::wrong_algo_id(CommandResponses { mismatched_algo_id: true, ..Default::default() }, "conflicting venue identity")]
+#[case::wrong_side(CommandResponses { mismatched_algo_side: true, ..Default::default() }, "cached order side")]
+#[case::wrong_actual_id(CommandResponses { mismatched_actual_id: true, ..Default::default() }, "actual order ID mismatch")]
+#[case::algo_query_failure(CommandResponses { algo_order_query: CommandResponse::AmbiguousFailure, ..Default::default() }, "503")]
+#[case::actual_order_unavailable(CommandResponses { actual_order_query: CommandResponse::AmbiguousFailure, ..Default::default() }, "unresolved matching-engine order")]
+#[case::actual_order_invalid(CommandResponses { invalid_actual_order: true, ..Default::default() }, "avg_price")]
+#[case::missing_fills(CommandResponses { missing_algo_fills: true, ..Default::default() }, "authoritative fills")]
+#[tokio::test]
+async fn test_mass_status_rejects_unverified_algo_report(
+    #[case] responses: CommandResponses,
+    #[case] expected_error: &str,
+    #[values(false, true)] promoted: bool,
+) {
+    let (addr, _) = start_exec_test_server_with_query_capture_and_responses(
+        responses,
+        ReportFixtureMode::DirectAlgo,
+    )
+    .await;
+    let (mut client, _rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    let client_order_id = ClientOrderId::from("test-algo-order-1");
+    add_stop_market_order_to_cache(&cache, client_order_id, OrderSide::Buy, false);
+    let accepted = OrderAccepted::new(
+        test_trader_id(),
+        test_strategy_id(),
+        test_instrument_id(),
+        client_order_id,
+        VenueOrderId::from("123456789"),
+        AccountId::from("BINANCE-001"),
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        true,
+    );
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Accepted(accepted))
+        .unwrap();
+
+    if promoted {
+        let updated = OrderUpdated::new(
+            test_trader_id(),
+            test_strategy_id(),
+            test_instrument_id(),
+            client_order_id,
+            Quantity::from("0.001"),
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            true,
+            Some(VenueOrderId::from("22542179")),
+            Some(AccountId::from("BINANCE-001")),
+            None,
+            None,
+            None,
+            false,
+        );
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::Updated(updated))
+            .unwrap();
+    }
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let error = client.generate_mass_status(Some(60)).await.unwrap_err();
+    assert!(error.to_string().contains(expected_error), "{error:#}");
+    assert!(client.execution_safety_error().is_some());
+    let cache = cache.borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    assert_eq!(
+        order.venue_order_id(),
+        Some(VenueOrderId::from(if promoted {
+            "22542179"
+        } else {
+            "123456789"
+        }))
+    );
+    assert!(order.trade_ids().is_empty());
+    assert!(cache.positions(None, None, None, None, None).is_empty());
+}
+
+#[rstest]
+#[case::success(CommandResponses::default(), false)]
+#[case::ordinary_query_failure(CommandResponses { open_orders_query: CommandResponse::AmbiguousFailure, ..Default::default() }, true)]
+#[case::algo_query_failure(CommandResponses { open_algo_orders_query: CommandResponse::AmbiguousFailure, ..Default::default() }, true)]
+#[tokio::test]
+async fn test_bulk_algo_query_failure_latches_trading_stop(
+    #[case] responses: CommandResponses,
+    #[case] should_fail: bool,
+    #[values(false, true)] mass_status: bool,
+    #[values(false, true)] cached_algo: bool,
+) {
+    let (addr, _) = start_exec_test_server_with_query_capture_and_responses(
+        responses,
+        ReportFixtureMode::DirectAlgo,
+    )
+    .await;
+    let (mut client, mut rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    let client_order_id = ClientOrderId::from("test-algo-order-1");
+    let original = cached_algo.then(|| {
+        add_triggered_stop_market_order_to_cache(
+            &cache,
+            client_order_id,
+            VenueOrderId::from("123456789"),
+            VenueOrderId::from("22542179"),
+        )
+    });
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let result = if mass_status {
+        client.generate_mass_status(Some(60)).await.map(|_| ())
+    } else {
+        client
+            .generate_order_status_reports(&GenerateOrderStatusReports::new(
+                nautilus_core::UUID4::new(),
+                UnixNanos::default(),
+                true,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ))
+            .await
+            .map(|_| ())
+    };
+
+    if should_fail {
+        let error = result.expect_err("Failed snapshot query must not return an empty account");
+        assert!(error.to_string().contains("503"), "{error:#}");
+        let fault = client
+            .execution_safety_error()
+            .expect("Failed recovery must stop trading");
+        let order = add_limit_order_to_cache(&cache, ClientOrderId::from("AFTER-BULK-FAULT"));
+        client.submit_order(submit_order_command(&order)).unwrap();
+        let event = recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Order(_))).await;
+        let ExecutionEvent::Order(OrderEventAny::Denied(event)) = event else {
+            panic!("Expected native denial, was {event:?}");
+        };
+        assert_eq!(event.client_order_id, order.client_order_id());
+        assert!(event.reason.contains(&fault));
+    } else {
+        result.unwrap();
+        assert!(client.execution_safety_error().is_none());
+    }
+
+    if let Some(original) = original {
+        assert_eq!(
+            cache.borrow().order(&client_order_id).unwrap().events(),
+            original.events()
+        );
+    }
+    assert!(
+        cache
+            .borrow()
+            .positions(None, None, None, None, None)
+            .is_empty()
     );
 }
 
@@ -4239,9 +5189,13 @@ async fn test_cached_algo_actual_order_id_uses_client_id_fallback() {
         None,
     );
 
-    let result = client.generate_order_status_report(&report).await.unwrap();
+    let error = client
+        .generate_order_status_report(&report)
+        .await
+        .unwrap_err();
 
-    assert!(result.is_none());
+    assert!(error.to_string().contains("Unresolved cached"));
+    assert!(client.execution_safety_error().is_some());
     let algo_query = wait_for_query(&captured_queries, "algoOrder").await;
     assert!(
         algo_query
@@ -4260,9 +5214,1187 @@ async fn test_cached_algo_actual_order_id_uses_client_id_fallback() {
 
 #[rstest]
 #[tokio::test]
+async fn test_cached_algo_query_uses_original_identity(
+    #[values(false, true)] promoted: bool,
+    #[values(false, true)] live_query: bool,
+) {
+    let (addr, queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses::default(),
+        ReportFixtureMode::DirectAlgo,
+    )
+    .await;
+    let (mut client, mut rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    let client_order_id = ClientOrderId::from("test-algo-order-1");
+    let venue_order_id = VenueOrderId::from(if promoted { "22542179" } else { "123456789" });
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    add_triggered_stop_market_order_to_cache(
+        &cache,
+        client_order_id,
+        VenueOrderId::from("123456789"),
+        venue_order_id,
+    );
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let report = if live_query {
+        client
+            .query_order(QueryOrder::new(
+                test_trader_id(),
+                Some(*BINANCE_CLIENT_ID),
+                test_strategy_id(),
+                test_instrument_id(),
+                client_order_id,
+                Some(venue_order_id),
+                nautilus_core::UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        let event = recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Report(_))).await;
+        let ExecutionEvent::Report(ExecutionReport::OrderWithFills(report, fills)) = event else {
+            panic!("Expected bundled Algo report, was {event:?}");
+        };
+        assert_eq!(fills.len(), 1);
+        assert_eq!(fills[0].trade_id, TradeId::from("12345678"));
+        *report
+    } else {
+        let command = GenerateOrderStatusReport::new(
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            Some(test_instrument_id()),
+            Some(client_order_id),
+            Some(venue_order_id),
+            None,
+            None,
+        );
+        client
+            .generate_order_status_report(&command)
+            .await
+            .unwrap()
+            .unwrap()
+    };
+
+    assert_eq!(report.client_order_id, Some(client_order_id));
+    assert_eq!(report.venue_order_id, VenueOrderId::from("22542179"));
+    assert_eq!(report.order_type, OrderType::StopMarket);
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    let queries = queries.lock();
+    assert!(queries.iter().any(|query| {
+        query.path == "algoOrder"
+            && query
+                .query
+                .get("clientAlgoId")
+                .is_some_and(|id| id.ends_with(client_order_id.as_str()))
+            && !query.query.contains_key("algoId")
+    }));
+    assert!(
+        queries
+            .iter()
+            .filter(|query| query.path == "order")
+            .all(
+                |query| query.query.get("orderId").map(String::as_str) == Some("22542179")
+                    && !query.query.contains_key("origClientOrderId")
+            )
+    );
+    let cache = cache.borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    assert_eq!(order.venue_order_id(), Some(venue_order_id));
+    assert!(order.trade_ids().is_empty());
+    assert!(cache.positions(None, None, None, None, None).is_empty());
+}
+
+#[rstest]
+#[case::query_failure(CommandResponses { algo_order_query: CommandResponse::AmbiguousFailure, ..Default::default() }, ReportFixtureMode::DirectAlgo)]
+#[case::missing_order(CommandResponses::default(), ReportFixtureMode::Empty)]
+#[case::wrong_identity(CommandResponses { mismatched_algo_side: true, ..Default::default() }, ReportFixtureMode::DirectAlgo)]
+#[tokio::test]
+async fn test_single_algo_failure_latches_trading_stop(
+    #[case] responses: CommandResponses,
+    #[case] mode: ReportFixtureMode,
+    #[values(false, true)] promoted: bool,
+    #[values(false, true)] venue_id_only: bool,
+    #[values(false, true)] explicit_algo_id: bool,
+) {
+    let (addr, _) = start_exec_test_server_with_query_capture_and_responses(responses, mode).await;
+    let (mut client, mut rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    let client_order_id = ClientOrderId::from("test-algo-order-1");
+    let venue_order_id = VenueOrderId::from(if promoted { "22542179" } else { "123456789" });
+    let original = add_triggered_stop_market_order_to_cache(
+        &cache,
+        client_order_id,
+        VenueOrderId::from("123456789"),
+        venue_order_id,
+    );
+    cache.borrow_mut().build_index();
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let command = GenerateOrderStatusReport::new(
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        Some(test_instrument_id()),
+        (!venue_id_only).then_some(client_order_id),
+        Some(if explicit_algo_id {
+            VenueOrderId::from("123456789")
+        } else {
+            venue_order_id
+        }),
+        explicit_algo_id.then(algo_order_query_params),
+        None,
+    );
+    let result = client.generate_order_status_report(&command).await;
+    assert!(
+        result.is_err(),
+        "Known Algo recovery must not silently return no report"
+    );
+    let fault = client
+        .execution_safety_error()
+        .expect("Failed Algo report must stop trading");
+    let order = add_limit_order_to_cache(&cache, ClientOrderId::from("AFTER-REPORT-FAULT"));
+    client.submit_order(submit_order_command(&order)).unwrap();
+    let event = recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Order(_))).await;
+    let ExecutionEvent::Order(OrderEventAny::Denied(event)) = event else {
+        panic!("Expected native denial, was {event:?}");
+    };
+    assert_eq!(event.client_order_id, order.client_order_id());
+    assert!(event.reason.contains(&fault));
+    assert_eq!(
+        cache.borrow().order(&client_order_id).unwrap().events(),
+        original.events()
+    );
+    assert!(
+        cache
+            .borrow()
+            .positions(None, None, None, None, None)
+            .is_empty()
+    );
+}
+
+#[rstest]
+#[case::missing_fills(CommandResponses { missing_algo_fills: true, ..Default::default() }, ReportFixtureMode::DirectAlgo)]
+#[case::query_failure(CommandResponses { algo_order_query: CommandResponse::AmbiguousFailure, ..Default::default() }, ReportFixtureMode::DirectAlgo)]
+#[case::missing_order(CommandResponses::default(), ReportFixtureMode::Empty)]
+#[case::wrong_identity(CommandResponses { mismatched_algo_side: true, ..Default::default() }, ReportFixtureMode::DirectAlgo)]
+#[tokio::test]
+async fn test_runtime_algo_failure_latches_trading_stop(
+    #[case] responses: CommandResponses,
+    #[case] mode: ReportFixtureMode,
+    #[values(false, true)] promoted: bool,
+) {
+    let (addr, _) = start_exec_test_server_with_query_capture_and_responses(responses, mode).await;
+    let (mut client, mut rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    add_test_instrument_to_cache(&cache);
+    let client_order_id = ClientOrderId::from("test-algo-order-1");
+    let venue_order_id = VenueOrderId::from(if promoted { "22542179" } else { "123456789" });
+    let original = add_triggered_stop_market_order_to_cache(
+        &cache,
+        client_order_id,
+        VenueOrderId::from("123456789"),
+        venue_order_id,
+    );
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    assert!(client.execution_safety_error().is_none());
+    client
+        .query_order(QueryOrder::new(
+            test_trader_id(),
+            Some(*BINANCE_CLIENT_ID),
+            test_strategy_id(),
+            test_instrument_id(),
+            client_order_id,
+            Some(venue_order_id),
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    // The default HTTP policy performs three retries with 1/2/4-second backoff
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while client.execution_safety_error().is_none() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("Unresolved Algo query must latch the safety error");
+    let fault = client.execution_safety_error().unwrap();
+    assert!(fault.contains("Algo"));
+    client.disconnect().await.unwrap();
+    client.connect().await.unwrap();
+    assert_eq!(
+        client.execution_safety_error().as_deref(),
+        Some(fault.as_str())
+    );
+    let first = add_limit_order_to_cache(&cache, ClientOrderId::from("AFTER-FAULT-1"));
+    let second = add_limit_order_to_cache(&cache, ClientOrderId::from("AFTER-FAULT-2"));
+    let third = add_limit_order_to_cache(&cache, ClientOrderId::from("AFTER-FAULT-3"));
+    client.submit_order(submit_order_command(&first)).unwrap();
+    client
+        .submit_order_list(submit_order_list_command(&[second, third]))
+        .unwrap();
+    client
+        .modify_order(modify_order_command(client_order_id))
+        .unwrap();
+    let mut denied = 0;
+    let mut modified = 0;
+
+    while let Ok(event) = rx.try_recv() {
+        match event {
+            ExecutionEvent::Order(OrderEventAny::Denied(event)) => {
+                assert!(event.reason.contains(&fault));
+                denied += 1;
+            }
+            ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
+                assert!(event.reason.contains(&fault));
+                modified += 1;
+            }
+            ExecutionEvent::Account(_) => {}
+            other => panic!("Unexpected post-fault event: {other:?}"),
+        }
+    }
+    assert_eq!(denied, 3);
+    assert_eq!(modified, 1);
+    assert_eq!(
+        cache.borrow().order(&client_order_id).unwrap().events(),
+        original.events()
+    );
+    assert!(
+        cache
+            .borrow()
+            .positions(None, None, None, None, None)
+            .is_empty()
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_runtime_algo_query_preserves_real_fills(
+    #[values(false, true)] promoted: bool,
+    #[values(false, true)] split_fills: bool,
+    #[values(false, true)] partial: bool,
+) {
+    let (addr, _) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses {
+            split_algo_fills: split_fills,
+            partial_algo_fill: partial,
+            ..Default::default()
+        },
+        ReportFixtureMode::DirectAlgo,
+    )
+    .await;
+    let (mut client, mut rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    let client_order_id = ClientOrderId::from("test-algo-order-1");
+    let venue_order_id = VenueOrderId::from(if promoted { "22542179" } else { "123456789" });
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    add_test_instrument_to_cache(&cache);
+    add_triggered_stop_market_order_to_cache(
+        &cache,
+        client_order_id,
+        VenueOrderId::from("123456789"),
+        venue_order_id,
+    );
+
+    if split_fills || partial {
+        let updated = OrderUpdated::new(
+            test_trader_id(),
+            test_strategy_id(),
+            test_instrument_id(),
+            client_order_id,
+            Quantity::from(if partial { "0.010" } else { "0.002" }),
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            true,
+            Some(venue_order_id),
+            Some(AccountId::from("BINANCE-001")),
+            None,
+            None,
+            None,
+            false,
+        );
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::Updated(updated))
+            .unwrap();
+    }
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    client
+        .query_order(QueryOrder::new(
+            test_trader_id(),
+            Some(*BINANCE_CLIENT_ID),
+            test_strategy_id(),
+            test_instrument_id(),
+            client_order_id,
+            Some(venue_order_id),
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    let event = recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Report(_))).await;
+    let ExecutionEvent::Report(report) = event else {
+        unreachable!();
+    };
+    let fills = client
+        .generate_fill_reports(GenerateFillReports::new(
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            Some(test_instrument_id()),
+            Some(VenueOrderId::from("22542179")),
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+    let mut engine =
+        ExecutionEngine::new(Rc::new(RefCell::new(TestClock::new())), cache.clone(), None);
+    engine.register_oms_type(test_strategy_id(), OmsType::Netting);
+    engine.register_client(Box::new(client)).unwrap();
+    engine.reconcile_execution_report(&report);
+
+    // The real trade reports may arrive after the query result, repeatedly.
+    for _ in 0..2 {
+        for fill in &fills {
+            engine.reconcile_fill_report(fill);
+        }
+        engine.reconcile_execution_report(&report);
+    }
+
+    let expected_trades = if split_fills {
+        vec![TradeId::from("12345678"), TradeId::from("12345679")]
+    } else {
+        vec![TradeId::from("12345678")]
+    };
+    let expected_qty = Quantity::from(if split_fills { "0.002" } else { "0.001" });
+    let expected_fee = Money::from(if split_fills {
+        "0.02 USDT"
+    } else {
+        "0.01 USDT"
+    });
+    let cache = cache.borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    assert_eq!(
+        order.trade_ids(),
+        expected_trades.iter().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        order.status(),
+        if partial {
+            OrderStatus::PartiallyFilled
+        } else {
+            OrderStatus::Filled
+        },
+    );
+    assert_eq!(order.filled_qty(), expected_qty);
+    assert_eq!(order.venue_order_id(), Some(VenueOrderId::from("22542179")));
+    assert_eq!(
+        order.commissions().get(&Currency::USDT()),
+        Some(&expected_fee)
+    );
+    assert_eq!(cache.orders(None, None, None, None, None).len(), 1);
+    let positions = cache.positions(None, None, None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].quantity, expected_qty);
+    assert_eq!(positions[0].trade_ids(), expected_trades);
+    assert_eq!(positions[0].commissions(), vec![expected_fee]);
+    assert_eq!(positions[0].avg_px_open, 50000.0);
+    assert_eq!(positions[0].strategy_id, test_strategy_id());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_periodic_algo_reconciliation_uses_real_fills(
+    #[values(false, true)] targeted: bool,
+    #[values(false, true)] promoted: bool,
+    #[values(false, true)] partial: bool,
+    #[values(false, true)] missing_fills: bool,
+) {
+    let (addr, queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses {
+            partial_algo_fill: partial,
+            missing_algo_fills: missing_fills,
+            open_algo_actual_id: (!targeted).then_some(22542179),
+            periodic_algo_report: !targeted,
+            ..Default::default()
+        },
+        ReportFixtureMode::DirectAlgo,
+    )
+    .await;
+    let (mut client, _rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    let client_order_id = ClientOrderId::from("test-algo-order-1");
+    let venue_order_id = VenueOrderId::from(if promoted { "22542179" } else { "123456789" });
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    add_test_instrument_to_cache(&cache);
+    add_triggered_stop_market_order_to_cache(
+        &cache,
+        client_order_id,
+        VenueOrderId::from("123456789"),
+        venue_order_id,
+    );
+
+    if partial {
+        let updated = OrderUpdated::new(
+            test_trader_id(),
+            test_strategy_id(),
+            test_instrument_id(),
+            client_order_id,
+            Quantity::from("0.010"),
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            true,
+            Some(venue_order_id),
+            Some(AccountId::from("BINANCE-001")),
+            None,
+            None,
+            None,
+            false,
+        );
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::Updated(updated))
+            .unwrap();
+    }
+    cache.borrow_mut().build_index();
+    assert_eq!(
+        cache
+            .borrow()
+            .orders_open(None, None, None, None, None)
+            .len(),
+        1
+    );
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let mut manager = ExecutionManager::new(
+        clock.clone(),
+        cache.clone(),
+        ExecutionManagerConfig {
+            open_check_open_only: !targeted,
+            open_check_missing_retries: 1,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let mut engine = ExecutionEngine::new(clock, cache.clone(), None);
+    engine.register_oms_type(test_strategy_id(), OmsType::Netting);
+    let events = manager.check_open_orders(&[&client]).await;
+
+    if missing_fills {
+        assert!(
+            events.is_empty(),
+            "Unexplained cumulative fills must not be inferred: {events:?}"
+        );
+        assert!(
+            cache
+                .borrow()
+                .positions(None, None, None, None, None)
+                .is_empty()
+        );
+        assert!(
+            cache
+                .borrow()
+                .order(&client_order_id)
+                .unwrap()
+                .trade_ids()
+                .is_empty()
+        );
+        assert!(
+            queries
+                .lock()
+                .iter()
+                .any(|query| query.path == "userTrades")
+        );
+        return;
+    }
+
+    for event in &events {
+        engine.process(event);
+    }
+    let fills = client
+        .generate_fill_reports(GenerateFillReports::new(
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            Some(test_instrument_id()),
+            Some(VenueOrderId::from("22542179")),
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+
+    for _ in 0..2 {
+        for fill in &fills {
+            engine.reconcile_fill_report(fill);
+        }
+        assert!(manager.check_open_orders(&[&client]).await.is_empty());
+    }
+
+    let cache = cache.borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    assert_eq!(order.trade_ids(), vec![&TradeId::from("12345678")]);
+    assert_eq!(order.filled_qty(), Quantity::from("0.001"));
+    assert_eq!(order.venue_order_id(), Some(VenueOrderId::from("22542179")));
+    assert_eq!(
+        order.status(),
+        if partial {
+            OrderStatus::PartiallyFilled
+        } else {
+            OrderStatus::Filled
+        }
+    );
+    assert_eq!(
+        order.commissions().get(&Currency::USDT()),
+        Some(&Money::from("0.01 USDT"))
+    );
+    assert_eq!(cache.orders(None, None, None, None, None).len(), 1);
+    let positions = cache.positions(None, None, None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].quantity, Quantity::from("0.001"));
+    assert_eq!(positions[0].trade_ids(), vec![TradeId::from("12345678")]);
+    assert_eq!(positions[0].commissions(), vec![Money::from("0.01 USDT")]);
+    assert_eq!(positions[0].avg_px_open, 50000.0);
+    assert_eq!(positions[0].strategy_id, test_strategy_id());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_live_node_periodic_algo_reconciliation_deduplicates_late_ws_trade() {
+    let (addr, ws_injector, queries, user_trades_release) = start_injectable_periodic_test_server(
+        CommandResponses {
+            partial_algo_fill: true,
+            open_algo_actual_id: Some(22542179),
+            periodic_algo_report: true,
+            ..Default::default()
+        },
+        ReportFixtureMode::DirectAlgo,
+    )
+    .await;
+    let node_config = LiveNodeConfig {
+        trader_id: test_trader_id(),
+        exec_engine: LiveExecutionEngineConfig {
+            reconciliation: false,
+            inflight_check_interval_ms: 0,
+            open_check_interval_secs: Some(0.1),
+            open_check_threshold_ms: 0,
+            open_check_missing_retries: 1,
+            single_order_query_delay_ms: 0,
+            ..Default::default()
+        },
+        timeout_connection: Duration::from_secs(5),
+        timeout_reconciliation: Duration::from_secs(2),
+        timeout_disconnection: Duration::from_secs(2),
+        delay_post_stop: Duration::ZERO,
+        logging: LoggerConfig {
+            bypass_logging: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let client_config = BinanceExecutionClientConfig {
+        account_id: AccountId::from("BINANCE-001"),
+        product_type: BinanceProductType::UsdM,
+        base_url_http: Some(format!("http://{addr}")),
+        base_url_ws: Some(format!("ws://{addr}/ws-inject")),
+        use_ws_trading: false,
+        instrument_refresh_interval_secs: 0,
+        max_retries: 0,
+        api_key: Some("test_api_key".into()),
+        api_secret: Some("test_api_secret".into()),
+        ..Default::default()
+    };
+    let mut node = LiveNodeBuilder::from_config(node_config)
+        .unwrap()
+        .with_name("BinanceAlgoRestWsRaceNode")
+        .add_exec_client(
+            Some(BINANCE_CLIENT_ID.to_string()),
+            Box::new(BinanceExecutionClientFactory::new()),
+            Box::new(client_config),
+        )
+        .unwrap()
+        .build()
+        .unwrap();
+    let cache = node.kernel().cache();
+    let client_order_id = ClientOrderId::from("test-algo-order-1");
+    let actual_order_id = VenueOrderId::from("22542179");
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    add_test_instrument_to_cache(&cache);
+    add_triggered_stop_market_order_to_cache(
+        &cache,
+        client_order_id,
+        VenueOrderId::from("123456789"),
+        actual_order_id,
+    );
+    let updated = OrderUpdated::new(
+        test_trader_id(),
+        test_strategy_id(),
+        test_instrument_id(),
+        client_order_id,
+        Quantity::from("0.010"),
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        true,
+        Some(actual_order_id),
+        Some(AccountId::from("BINANCE-001")),
+        None,
+        None,
+        None,
+        false,
+    );
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Updated(updated))
+        .unwrap();
+    cache.borrow_mut().build_index();
+    node.kernel()
+        .exec_engine()
+        .borrow_mut()
+        .register_oms_type(test_strategy_id(), OmsType::Netting);
+
+    let handle = node.handle();
+    let driver_handle = handle.clone();
+    let driver_cache = cache.clone();
+    let driver = async move {
+        wait_until_async(
+            || async { driver_handle.is_running() },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let encoded_client_order_id =
+            encode_broker_id(&client_order_id, BINANCE_NAUTILUS_FUTURES_BROKER_ID);
+        let event_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64;
+        let mut algo_update: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../test_data/futures/user_data_json/algo_update_new.json"
+        ))
+        .unwrap();
+        algo_update["T"] = json!(event_time);
+        algo_update["E"] = json!(event_time);
+        algo_update["o"]["caid"] = json!(encoded_client_order_id);
+        algo_update["o"]["aid"] = json!(123456789);
+        algo_update["o"]["o"] = json!("STOP_MARKET");
+        algo_update["o"]["s"] = json!("BTCUSDT");
+        algo_update["o"]["S"] = json!("BUY");
+        algo_update["o"]["ps"] = json!("BOTH");
+        algo_update["o"]["q"] = json!("0.010");
+        algo_update["o"]["X"] = json!("FINISHED");
+        algo_update["o"]["ai"] = json!("22542179");
+        algo_update["o"]["ap"] = json!("50000.00");
+        algo_update["o"]["aq"] = json!("0.001");
+        algo_update["o"]["tp"] = json!("45000.00");
+        algo_update["o"]["p"] = json!("0");
+        algo_update["o"]["wt"] = json!("MARK_PRICE");
+        assert!(ws_injector.send(algo_update.to_string()).unwrap() > 0);
+
+        wait_until_async(
+            || {
+                let queries = queries.clone();
+                async move {
+                    queries
+                        .lock()
+                        .iter()
+                        .any(|query| query.path == "userTrades")
+                }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let mut trade_update: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../test_data/futures/user_data_json/order_update_trade.json"
+        ))
+        .unwrap();
+        trade_update["T"] = json!(event_time + 1);
+        trade_update["E"] = json!(event_time + 1);
+        trade_update["o"]["T"] = json!(event_time + 1);
+        trade_update["o"]["c"] = json!(encoded_client_order_id);
+        trade_update["o"]["S"] = json!("BUY");
+        trade_update["o"]["o"] = json!("STOP_MARKET");
+        trade_update["o"]["ot"] = json!("STOP_MARKET");
+        trade_update["o"]["q"] = json!("0.010");
+        trade_update["o"]["p"] = json!("0");
+        trade_update["o"]["ap"] = json!("50000.00");
+        trade_update["o"]["sp"] = json!("45000.00");
+        trade_update["o"]["X"] = json!("PARTIALLY_FILLED");
+        trade_update["o"]["i"] = json!(22542179);
+        trade_update["o"]["l"] = json!("0.001");
+        trade_update["o"]["z"] = json!("0.001");
+        trade_update["o"]["L"] = json!("50000.00");
+        trade_update["o"]["N"] = json!("USDT");
+        trade_update["o"]["n"] = json!("0.01000000");
+        trade_update["o"]["t"] = json!(12345678);
+        trade_update["o"]["m"] = json!(true);
+        trade_update["o"]["wt"] = json!("MARK_PRICE");
+        trade_update["o"]["ps"] = json!("BOTH");
+        trade_update["o"]["rp"] = json!("0");
+        assert!(ws_injector.send(trade_update.to_string()).unwrap() > 0);
+
+        wait_until_async(
+            || {
+                let cache = driver_cache.clone();
+                async move {
+                    cache.borrow().order(&client_order_id).is_some_and(|order| {
+                        order.filled_qty() == Quantity::from("0.001")
+                            && order.trade_ids() == vec![&TradeId::from("12345678")]
+                    })
+                }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        user_trades_release.notify_one();
+        wait_until_async(
+            || {
+                let queries = queries.clone();
+                async move {
+                    queries
+                        .lock()
+                        .iter()
+                        .filter(|query| query.path == "openOrders")
+                        .count()
+                        >= 2
+                }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        driver_handle.stop();
+        user_trades_release.notify_waiters();
+    };
+
+    let ((), result) = tokio::join!(driver, node.run());
+    result.unwrap();
+    let cache = cache.borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(order.filled_qty(), Quantity::from("0.001"));
+    assert_eq!(order.trade_ids(), vec![&TradeId::from("12345678")]);
+    assert_eq!(order.venue_order_id(), Some(actual_order_id));
+    assert_eq!(
+        order.commissions().get(&Currency::USDT()),
+        Some(&Money::from("0.01 USDT"))
+    );
+    assert_eq!(cache.orders(None, None, None, None, None).len(), 1);
+    let positions = cache.positions(None, None, None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].quantity, Quantity::from("0.001"));
+    assert_eq!(positions[0].trade_ids(), vec![TradeId::from("12345678")]);
+    assert_eq!(positions[0].commissions(), vec![Money::from("0.01 USDT")]);
+    assert_eq!(positions[0].avg_px_open, 50000.0);
+    assert_eq!(positions[0].strategy_id, test_strategy_id());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_periodic_algo_fill_query_failure_latches_trading_stop(
+    #[values(false, true)] targeted: bool,
+    #[values(false, true)] promoted: bool,
+) {
+    let (addr, queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses {
+            open_algo_actual_id: (!targeted).then_some(22542179),
+            periodic_algo_report: !targeted,
+            user_trades_query: CommandResponse::AmbiguousFailure,
+            ..Default::default()
+        },
+        ReportFixtureMode::DirectAlgo,
+    )
+    .await;
+    let (mut client, mut rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    let client_order_id = ClientOrderId::from("test-algo-order-1");
+    let venue_order_id = VenueOrderId::from(if promoted { "22542179" } else { "123456789" });
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    add_test_instrument_to_cache(&cache);
+    let original = add_triggered_stop_market_order_to_cache(
+        &cache,
+        client_order_id,
+        VenueOrderId::from("123456789"),
+        venue_order_id,
+    );
+    cache.borrow_mut().build_index();
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let mut manager = ExecutionManager::new(
+        clock,
+        cache.clone(),
+        ExecutionManagerConfig {
+            open_check_open_only: !targeted,
+            open_check_missing_retries: 1,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let events = manager.check_open_orders(&[&client]).await;
+    let fault = client
+        .execution_safety_error()
+        .expect("Failed authoritative Algo fill query must stop trading");
+    let order = add_limit_order_to_cache(&cache, ClientOrderId::from("AFTER-FILL-FAULT"));
+    client.submit_order(submit_order_command(&order)).unwrap();
+    let event = recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Order(_))).await;
+    let ExecutionEvent::Order(OrderEventAny::Denied(event)) = event else {
+        panic!("Expected native denial, was {event:?}");
+    };
+
+    assert!(events.is_empty());
+    assert!(fault.contains("503"), "{fault}");
+    assert_eq!(event.client_order_id, order.client_order_id());
+    assert!(event.reason.contains(&fault));
+    assert_eq!(
+        cache.borrow().order(&client_order_id).unwrap().events(),
+        original.events()
+    );
+    assert!(
+        cache
+            .borrow()
+            .positions(None, None, None, None, None)
+            .is_empty()
+    );
+    assert!(
+        queries
+            .lock()
+            .iter()
+            .any(|query| query.path == "userTrades")
+    );
+}
+
+#[rstest]
+#[case::matching("0.001", "50000.00", Some("0.01 USDT"), false, false)]
+#[case::quantity("0.002", "50000.00", Some("0.01 USDT"), true, false)]
+#[case::price("0.001", "49000.00", Some("0.01 USDT"), true, false)]
+#[case::fee("0.001", "50000.00", Some("0.02 USDT"), true, false)]
+#[case::missing_fee("0.001", "50000.00", None, true, false)]
+#[case::reported_side("0.001", "50000.00", Some("0.01 USDT"), true, true)]
+#[tokio::test]
+async fn test_periodic_algo_reconciliation_validates_retained_fills(
+    #[case] cached_qty: Quantity,
+    #[case] cached_price: Price,
+    #[case] cached_fee: Option<&str>,
+    #[case] conflicting: bool,
+    #[case] conflicting_algo_trade_side: bool,
+    #[values(false, true)] targeted: bool,
+) {
+    let (addr, _) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses {
+            split_algo_fills: true,
+            extra_algo_fill: true,
+            conflicting_algo_trade_side,
+            partial_algo_fill: true,
+            open_algo_actual_id: (!targeted).then_some(22542179),
+            periodic_algo_report: !targeted,
+            ..Default::default()
+        },
+        ReportFixtureMode::DirectAlgo,
+    )
+    .await;
+    let (mut client, _rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    add_test_instrument_to_cache(&cache);
+    let client_order_id = ClientOrderId::from("test-algo-order-1");
+    let venue_order_id = VenueOrderId::from("22542179");
+    add_triggered_stop_market_order_to_cache(
+        &cache,
+        client_order_id,
+        VenueOrderId::from("123456789"),
+        venue_order_id,
+    );
+    cache.borrow_mut().build_index();
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let mut engine = ExecutionEngine::new(clock.clone(), cache.clone(), None);
+    engine.register_oms_type(test_strategy_id(), OmsType::Netting);
+    let updated = OrderUpdated::new(
+        test_trader_id(),
+        test_strategy_id(),
+        test_instrument_id(),
+        client_order_id,
+        Quantity::from("0.010"),
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        true,
+        Some(venue_order_id),
+        Some(AccountId::from("BINANCE-001")),
+        None,
+        None,
+        None,
+        false,
+    );
+    engine.process(&OrderEventAny::Updated(updated));
+    let retained_fill = OrderFilledSpec::builder()
+        .trader_id(test_trader_id())
+        .strategy_id(test_strategy_id())
+        .instrument_id(test_instrument_id())
+        .client_order_id(client_order_id)
+        .venue_order_id(venue_order_id)
+        .account_id(AccountId::from("BINANCE-001"))
+        .trade_id(TradeId::from("12345678"))
+        .order_side(OrderSide::Buy)
+        .order_type(OrderType::StopMarket)
+        .last_qty(cached_qty)
+        .last_px(cached_price)
+        .currency(Currency::USDT())
+        .maybe_commission(cached_fee.map(Money::from))
+        .build();
+    engine.process(&OrderEventAny::Filled(retained_fill));
+    let original_order = cache.borrow().order(&client_order_id).unwrap().clone();
+    let original_position = cache.borrow().positions(None, None, None, None, None)[0].clone();
+    assert_eq!(original_order.filled_qty(), cached_qty);
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let mut manager = ExecutionManager::new(
+        clock,
+        cache.clone(),
+        ExecutionManagerConfig {
+            open_check_open_only: !targeted,
+            open_check_missing_retries: 1,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let events = manager.check_open_orders(&[&client]).await;
+
+    if conflicting {
+        assert!(client.execution_safety_error().is_some());
+        assert!(
+            events.is_empty(),
+            "Conflicting report generated events: {events:?}"
+        );
+        assert!(manager.check_open_orders(&[&client]).await.is_empty());
+        let cache = cache.borrow();
+        let order = cache.order(&client_order_id).unwrap();
+        let positions = cache.positions(None, None, None, None, None);
+        assert_eq!(order.events(), original_order.events());
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity, original_position.quantity);
+        assert_eq!(positions[0].avg_px_open, original_position.avg_px_open);
+        assert_eq!(positions[0].trade_ids(), original_position.trade_ids());
+        assert_eq!(positions[0].commissions(), original_position.commissions());
+    } else {
+        assert_eq!(events.len(), 2);
+        assert!(client.execution_safety_error().is_none());
+
+        for event in &events {
+            engine.process(event);
+        }
+        assert!(manager.check_open_orders(&[&client]).await.is_empty());
+        let cache = cache.borrow();
+        let order = cache.order(&client_order_id).unwrap();
+        let positions = cache.positions(None, None, None, None, None);
+        assert_eq!(order.filled_qty(), Quantity::from("0.003"));
+        assert_eq!(order.trade_ids().len(), 3);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity, Quantity::from("0.003"));
+        assert_eq!(positions[0].commissions(), vec![Money::from("0.03 USDT")]);
+    }
+}
+
+#[rstest]
+#[case::excluded(Some("XAUUSDT-PERP.BINANCE"), false, false)]
+#[case::unresolved(None, true, false)]
+#[case::included(Some("BTCUSDT-PERP.BINANCE"), false, true)]
+#[tokio::test]
+async fn test_cached_algo_mass_status_respects_instrument_scope(
+    #[case] load_id: Option<&str>,
+    #[case] expect_error: bool,
+    #[case] expect_query: bool,
+) {
+    let (addr, queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses::default(),
+        if expect_query {
+            ReportFixtureMode::DirectAlgo
+        } else {
+            ReportFixtureMode::Empty
+        },
+    )
+    .await;
+    let provider = BinanceInstrumentProviderConfig {
+        load_all: false,
+        load_ids: load_id.map(|id| vec![id.to_string()]),
+        ..Default::default()
+    };
+    let (mut client, _rx, cache) = create_test_execution_client_with_provider(
+        format!("http://{addr}"),
+        format!("ws://{addr}/ws"),
+        provider,
+    );
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    add_test_instrument_to_cache(&cache);
+    let client_order_id = ClientOrderId::from("test-algo-order-1");
+    add_triggered_stop_market_order_to_cache(
+        &cache,
+        client_order_id,
+        VenueOrderId::from("123456789"),
+        VenueOrderId::from("22542179"),
+    );
+    cache.borrow_mut().build_index();
+    assert_eq!(
+        cache
+            .borrow()
+            .orders_open(None, None, None, None, None)
+            .len(),
+        1
+    );
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let result = client.generate_mass_status(Some(60)).await;
+
+    if expect_error {
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("unresolved instrument")
+        );
+    } else {
+        let report = result.unwrap().unwrap();
+        assert_eq!(report.order_reports().len(), usize::from(expect_query));
+    }
+    let queries = queries.lock();
+    assert_eq!(
+        queries.iter().any(|query| query.path == "algoOrder"),
+        expect_query
+    );
+    assert_eq!(
+        queries.iter().any(|query| query.path == "userTrades"),
+        expect_query
+    );
+    let cache = cache.borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    assert_eq!(order.venue_order_id(), Some(VenueOrderId::from("22542179")));
+    assert!(order.trade_ids().is_empty());
+}
+
+#[rstest]
+#[case::valid(22542179, false, None)]
+#[case::wrong_venue_id(22542180, false, Some("conflicting open order identity"))]
+#[case::wrong_side(22542179, true, Some("conflicting open order identity"))]
+#[tokio::test]
+async fn test_cached_algo_open_report_requires_verified_identity(
+    #[case] actual_id: i64,
+    #[case] wrong_side: bool,
+    #[case] expected_error: Option<&str>,
+    #[values(false, true)] promoted: bool,
+    #[values(false, true)] stale_open_algo: bool,
+) {
+    let (addr, queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses {
+            open_algo_actual_id: Some(actual_id),
+            stale_open_algo,
+            mismatched_open_order_side: wrong_side,
+            // The known-ID snapshot is still open without fills. For an unknown
+            // actual ID, the subsequent history query observes its later fill.
+            missing_algo_fills: promoted && !stale_open_algo,
+            ..Default::default()
+        },
+        ReportFixtureMode::DirectAlgo,
+    )
+    .await;
+    let (mut client, _rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    add_stop_market_order_to_cache(
+        &cache,
+        ClientOrderId::from("test-algo-order-1"),
+        OrderSide::Buy,
+        false,
+    );
+    let client_order_id = ClientOrderId::from("test-algo-order-1");
+    let cached_id = VenueOrderId::from(if promoted { "22542179" } else { "123456789" });
+    let accepted = OrderAccepted::new(
+        test_trader_id(),
+        test_strategy_id(),
+        test_instrument_id(),
+        client_order_id,
+        cached_id,
+        AccountId::from("BINANCE-001"),
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        true,
+    );
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Accepted(accepted))
+        .unwrap();
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let result = client.generate_mass_status(Some(60)).await;
+
+    if let Some(expected) = expected_error {
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains(expected), "{error:#}");
+    } else {
+        let report = result.unwrap().unwrap();
+        assert_eq!(report.order_reports().len(), 1);
+        let reports = report.order_reports();
+        let order = reports.get(&VenueOrderId::from("22542179")).unwrap();
+        assert_eq!(order.client_order_id, Some(client_order_id));
+        let requires_history = !promoted || stale_open_algo;
+        assert_eq!(
+            order.order_status,
+            if requires_history {
+                OrderStatus::Filled
+            } else {
+                OrderStatus::Accepted
+            }
+        );
+        assert_eq!(
+            order.filled_qty,
+            Quantity::from(if requires_history { "0.001" } else { "0.000" })
+        );
+        assert_eq!(
+            queries.lock().iter().any(|query| query.path == "algoOrder"),
+            requires_history
+        );
+    }
+    let cache = cache.borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    assert_eq!(order.venue_order_id(), Some(cached_id));
+    assert!(order.trade_ids().is_empty());
+    assert!(cache.positions(None, None, None, None, None).is_empty());
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_query_order_bypasses_regular_order_id_collision() {
     let (addr, captured_queries) = start_exec_test_server_with_query_capture_and_responses(
-        CommandResponses::default(),
+        CommandResponses {
+            algo_query_fills: true,
+            ..Default::default()
+        },
         ReportFixtureMode::Populated,
     )
     .await;
@@ -4277,7 +6409,7 @@ async fn test_query_order_bypasses_regular_order_id_collision() {
 
     while rx.try_recv().is_ok() {}
 
-    let client_order_id = ClientOrderId::new("synthetic-query-client-id");
+    let client_order_id = ClientOrderId::new("test-algo-order-1");
     let command = QueryOrder::new(
         test_trader_id(),
         Some(*BINANCE_CLIENT_ID),
@@ -4297,9 +6429,11 @@ async fn test_query_order_bypasses_regular_order_id_collision() {
         .await
         .expect("timed out waiting for query_order report")
         .expect("execution event channel closed");
-    let ExecutionEvent::Report(ExecutionReport::Order(report)) = event else {
-        panic!("Expected OrderStatusReport, was {event:?}");
+    let ExecutionEvent::Report(ExecutionReport::OrderWithFills(report, fills)) = event else {
+        panic!("Expected bundled Algo report, was {event:?}");
     };
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[0].trade_id, TradeId::from("12345678"));
     assert_eq!(
         report.client_order_id,
         Some(ClientOrderId::from("test-algo-order-1"))
@@ -4476,8 +6610,8 @@ async fn test_report_generation_uses_binance_symbol_for_futures_symbol() {
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
         Some(instrument_id),
-        Some(ClientOrderId::new("order-report-symbol-test-001")),
-        Some(VenueOrderId::from("12345")),
+        Some(ClientOrderId::new("testOrder123")),
+        Some(VenueOrderId::from("12345678")),
         None,
         None,
     );
@@ -7414,6 +9548,60 @@ async fn start_injectable_test_server() -> (SocketAddr, WsInjector) {
     .await;
 
     (addr, ws_injector)
+}
+
+async fn start_injectable_periodic_test_server(
+    responses: CommandResponses,
+    report_fixture_mode: ReportFixtureMode,
+) -> (
+    SocketAddr,
+    WsInjector,
+    CapturedQueries,
+    Arc<tokio::sync::Notify>,
+) {
+    let (tx, _) = tokio::sync::broadcast::channel::<String>(16);
+    let ws_injector: WsInjector = Arc::new(tx);
+    let captured_queries: CapturedQueries = Arc::new(parking_lot::Mutex::new(Vec::new()));
+    let user_trades_release = Arc::new(tokio::sync::Notify::new());
+
+    let inj = ws_injector.clone();
+    let injectable_ws = axum::routing::get(move |ws: axum::extract::WebSocketUpgrade| {
+        let inj = inj.clone();
+        async move { ws.on_upgrade(move |socket| handle_ws_injectable_connection(socket, inj)) }
+    });
+    let router = create_exec_test_router_with_command_responses(CommandResponseState {
+        responses,
+        request_count: Arc::new(AtomicUsize::new(0)),
+        captured_queries: Some(captured_queries.clone()),
+        captured_ws_trading_messages: None,
+        user_trades_release: Some(user_trades_release.clone()),
+        report_fixture_mode,
+        hedge_mode: false,
+    })
+    .route("/ws-inject", injectable_ws);
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    let health_url = format!("http://{addr}/fapi/v1/ping");
+    let http_client = HttpClient::builder().build().unwrap();
+    wait_until_async(
+        || {
+            let url = health_url.clone();
+            let client = http_client.clone();
+            async move { client.get(url, None, None, Some(1), None).await.is_ok() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    (addr, ws_injector, captured_queries, user_trades_release)
 }
 
 #[rstest]

@@ -285,6 +285,54 @@ fn prepare_reconciliation_order(
         events.push(accepted);
     }
 
+    // A conditional order can acquire a new matching-engine ID after triggering,
+    // retain its original client identity and never regress to a previously known ID.
+    if report_is_confirmed_state(report)
+        && local_accepts_amendment(&working)
+        && matches!(
+            working.order_type(),
+            OrderType::StopMarket
+                | OrderType::StopLimit
+                | OrderType::MarketIfTouched
+                | OrderType::LimitIfTouched
+                | OrderType::TrailingStopMarket
+                | OrderType::TrailingStopLimit
+        )
+        && report.client_order_id == Some(working.client_order_id())
+        && Some(report.account_id) == working.account_id()
+        && report.instrument_id == working.instrument_id()
+        && report.order_side == working.order_side().into()
+        && working.venue_order_id().is_some()
+        && !working.venue_order_ids().contains(&&report.venue_order_id)
+    {
+        let updated = OrderEventAny::Updated(OrderUpdated::new(
+            working.trader_id(),
+            working.strategy_id(),
+            working.instrument_id(),
+            working.client_order_id(),
+            working.quantity(),
+            UUID4::new(),
+            report.ts_last,
+            ts_now,
+            true,
+            Some(report.venue_order_id),
+            working.account_id(),
+            None,
+            None,
+            None,
+            working.is_quote_quantity(),
+        ));
+
+        if let Err(e) = working.apply(updated.clone()) {
+            log::warn!(
+                "Cannot promote conditional order identity for {}: {e}",
+                order.client_order_id()
+            );
+            return (working, events);
+        }
+        events.push(updated);
+    }
+
     if report_is_confirmed_state(report)
         && (local_accepts_amendment(&working)
             || (matches!(

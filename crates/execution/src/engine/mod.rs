@@ -38,7 +38,7 @@ use futures::future::join_all;
 use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
     cache::{Cache, PositionRef},
-    clients::ExecutionClient,
+    clients::{ExecutionClient, ExecutionSafetyProbe},
     clock::Clock,
     enums::LogColor,
     generators::position_id::PositionIdGenerator,
@@ -72,8 +72,8 @@ use nautilus_model::{
     },
     events::{
         OrderAccepted, OrderDenied, OrderDeniedReason, OrderEvent, OrderEventAny, OrderFillVoided,
-        OrderFilled, OrderInitialized, PositionChanged, PositionClosed, PositionEvent,
-        PositionOpened,
+        OrderFilled, OrderInitialized, OrderModifyRejected, PositionChanged, PositionClosed,
+        PositionEvent, PositionOpened,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId,
@@ -114,6 +114,7 @@ pub struct ExecutionEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     clients: IndexMap<ClientId, ExecutionClientAdapter>,
+    execution_safety_probes: IndexMap<ClientId, ExecutionSafetyProbe>,
     default_client_id: Option<ClientId>,
     routing_map: HashMap<Venue, ClientId>,
     oms_overrides: HashMap<StrategyId, OmsType>,
@@ -147,6 +148,7 @@ impl ExecutionEngine {
             clock: clock.clone(),
             cache,
             clients: IndexMap::new(),
+            execution_safety_probes: IndexMap::new(),
             default_client_id: None,
             routing_map: HashMap::new(),
             oms_overrides: HashMap::new(),
@@ -355,6 +357,7 @@ impl ExecutionEngine {
     pub fn register_client(&mut self, client: Box<dyn ExecutionClient>) -> anyhow::Result<()> {
         let client_id = client.client_id();
         let venue = client.venue();
+        let safety_probe = client.execution_safety_probe();
 
         if self.clients.contains_key(&client_id) {
             anyhow::bail!("Client already registered with ID {client_id}");
@@ -372,15 +375,18 @@ impl ExecutionEngine {
         self.routing_map.insert(venue, client_id);
         log::debug!("Registered client {client_id}");
         self.clients.insert(client_id, adapter);
+        self.set_execution_safety_probe(client_id, safety_probe);
         Ok(())
     }
 
     /// Registers a default execution client for fallback routing.
     pub fn register_default_client(&mut self, client: Box<dyn ExecutionClient>) {
         let client_id = client.client_id();
+        let safety_probe = client.execution_safety_probe();
         let adapter = ExecutionClientAdapter::new(client);
 
         self.clients.insert(client_id, adapter);
+        self.set_execution_safety_probe(client_id, safety_probe);
         self.default_client_id = Some(client_id);
         log::debug!("Registered default client {client_id}");
     }
@@ -476,6 +482,120 @@ impl ExecutionEngine {
     /// Returns all registered execution client IDs.
     pub fn client_ids(&self) -> Vec<ClientId> {
         self.clients.keys().copied().collect()
+    }
+
+    /// Returns the first registered client reporting an unresolved execution safety failure.
+    ///
+    /// Transport connectivity does not clear a safety failure. The healthy path traverses
+    /// registered clients without allocating a collection.
+    #[must_use]
+    pub fn execution_safety_error(&self) -> Option<(ClientId, String)> {
+        self.clients.iter().find_map(|(client_id, adapter)| {
+            adapter
+                .client
+                .execution_safety_error()
+                .map(|reason| (*client_id, reason))
+        })
+    }
+
+    /// Converts an unsafe queued submission or modification into a local native rejection.
+    ///
+    /// The command is consumed without reaching an execution client. Returns `true` when the
+    /// command is a write which this method owns, even when its order is stale or missing. Cancel
+    /// and query commands return `false` so their shutdown policy remains explicit at the caller.
+    pub fn reject_queued_command_on_execution_safety(&mut self, command: &TradingCommand) -> bool {
+        let Some((client_id, detail)) = self.execution_safety_error() else {
+            return false;
+        };
+        let reason = OrderDeniedReason::ValidationFailed {
+            detail: format!("Execution safety failure for {client_id}: {detail}"),
+        };
+        let reason_text = reason.to_string();
+
+        match command {
+            TradingCommand::SubmitOrder(cmd) => {
+                self.command_count.set(self.command_count.get() + 1);
+                let order = self
+                    .cache
+                    .borrow()
+                    .order_owned(&cmd.client_order_id)
+                    .or_else(|| self.add_order_from_init(&cmd.order_init, cmd.position_id, cmd));
+
+                if let Some(order) = order {
+                    if matches!(
+                        order.status(),
+                        OrderStatus::Initialized | OrderStatus::Released
+                    ) {
+                        self.deny_order(&order, &reason_text);
+                    } else {
+                        log::warn!(
+                            "Skipping stale queued submit command for {} in status {} after execution safety failure",
+                            order.client_order_id(),
+                            order.status(),
+                        );
+                    }
+                }
+                true
+            }
+            TradingCommand::SubmitOrderList(_) => {
+                self.command_count.set(self.command_count.get() + 1);
+                self.deny_submission(command, &reason);
+                true
+            }
+            TradingCommand::ModifyOrder(cmd) => {
+                self.command_count.set(self.command_count.get() + 1);
+                self.reject_modify_on_execution_safety(cmd, &reason_text);
+                true
+            }
+            TradingCommand::ModifyOrders(cmd) => {
+                self.command_count.set(self.command_count.get() + 1);
+                let mut rejected = AHashSet::new();
+                for modify in &cmd.modifies {
+                    if rejected.insert(modify.client_order_id) {
+                        self.reject_modify_on_execution_safety(modify, &reason_text);
+                    }
+                }
+                true
+            }
+            TradingCommand::CancelOrder(_)
+            | TradingCommand::CancelOrders(_)
+            | TradingCommand::CancelAllOrders(_)
+            | TradingCommand::QueryOrder(_)
+            | TradingCommand::QueryAccount(_) => false,
+        }
+    }
+
+    fn set_execution_safety_probe(
+        &mut self,
+        client_id: ClientId,
+        probe: Option<ExecutionSafetyProbe>,
+    ) {
+        if let Some(probe) = probe {
+            self.execution_safety_probes.insert(client_id, probe);
+        } else {
+            self.execution_safety_probes.shift_remove(&client_id);
+        }
+
+        self.refresh_message_dispatch_guard();
+    }
+
+    fn refresh_message_dispatch_guard(&self) {
+        let bus = get_message_bus();
+        let mut bus = bus.borrow_mut();
+
+        if self.execution_safety_probes.is_empty() {
+            bus.clear_dispatch_guard();
+            return;
+        }
+
+        let probes = self
+            .execution_safety_probes
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        bus.set_dispatch_guard(Rc::new(move || {
+            probes.iter().all(|probe| probe().is_none())
+        }));
     }
 
     #[must_use]
@@ -616,6 +736,9 @@ impl ExecutionEngine {
     /// Returns an error if no client is registered with the given ID.
     pub fn deregister_client(&mut self, client_id: ClientId) -> anyhow::Result<()> {
         if self.clients.shift_remove(&client_id).is_some() {
+            self.execution_safety_probes.shift_remove(&client_id);
+            self.refresh_message_dispatch_guard();
+
             if self.default_client_id == Some(client_id) {
                 self.default_client_id = None;
             }
@@ -4643,6 +4766,31 @@ impl ExecutionEngine {
         if self.config.snapshot_orders {
             self.create_order_state_snapshot(&order);
         }
+    }
+
+    fn reject_modify_on_execution_safety(&mut self, command: &ModifyOrder, reason: &str) {
+        let Some(order) = self.cache.borrow().order_owned(&command.client_order_id) else {
+            log::warn!(
+                "Cannot reject queued modify after execution safety failure: order {} not found",
+                command.client_order_id,
+            );
+            return;
+        };
+        let timestamp = self.clock.borrow().timestamp_ns();
+        let event = OrderEventAny::ModifyRejected(OrderModifyRejected::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            reason.into(),
+            UUID4::new(),
+            timestamp,
+            timestamp,
+            false,
+            order.venue_order_id(),
+            order.account_id(),
+        ));
+        self.handle_event(&event);
     }
 
     fn get_or_init_own_order_book(&self, instrument_id: &InstrumentId) -> RefMut<'_, OwnOrderBook> {

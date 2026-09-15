@@ -15,6 +15,8 @@
 
 //! Execution client trait definition.
 
+use std::rc::Rc;
+
 use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_core::{DurationNanos, Params, UnixNanos, time::get_atomic_clock_realtime};
@@ -42,6 +44,12 @@ use crate::messages::execution::{
 /// Default maximum absolute position difference tolerated during reconciliation.
 pub const DEFAULT_POSITION_RECONCILIATION_TOLERANCE: Decimal =
     Decimal::from_parts(1, 0, 0, false, 8);
+
+/// Cloneable read-only probe for an execution client's latched safety failure.
+///
+/// The probe must not borrow the client. Callers may invoke it while the execution engine or
+/// client wrapper is already borrowed during a synchronous message fanout.
+pub type ExecutionSafetyProbe = Rc<dyn Fn() -> Option<String>>;
 
 /// Defines the interface for an execution client managing order operations.
 ///
@@ -76,6 +84,59 @@ pub trait ExecutionClient {
     /// given instrument, so that an absent report is evidence the position is flat.
     fn provides_bulk_position_coverage(&self, _instrument_id: InstrumentId) -> bool {
         true
+    }
+
+    /// Returns whether this order report requires authoritative venue fill reports.
+    ///
+    /// Reconciliation requests real fills when the reported cumulative quantity advances,
+    /// and defers any unexplained remainder instead of inferring a fill or its commission.
+    /// The default preserves reconciliation inference for clients which do not opt in.
+    fn requires_order_fill_reports(&self, _report: &OrderStatusReport) -> bool {
+        false
+    }
+
+    /// Returns the latched execution safety failure, if trading must remain stopped.
+    ///
+    /// This is independent of network connectivity. Reconnecting must not silently
+    /// clear a failure which requires reconciliation or operator intervention.
+    fn execution_safety_error(&self) -> Option<String> {
+        None
+    }
+
+    /// Returns an independent probe for the latched execution safety failure.
+    ///
+    /// Clients which can latch [`Self::execution_safety_error`] during a synchronous subscriber
+    /// callback return a probe backed by the same state. The default preserves uninterrupted
+    /// message fanout for clients without a latch.
+    fn execution_safety_probe(&self) -> Option<ExecutionSafetyProbe> {
+        None
+    }
+
+    /// Validates order fill reports against the current client and cached order facts.
+    ///
+    /// Periodic reconciliation calls this before filtering queried fills and before applying them.
+    /// The default accepts reports without imposing venue-specific constraints.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the reports are incomplete or conflict with retained facts.
+    fn validate_order_fill_reports(
+        &self,
+        _report: &OrderStatusReport,
+        _fills: &[FillReport],
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Handles a failed query for authoritative order fill reports.
+    ///
+    /// Clients may retain a safety failure when proceeding without the venue response could
+    /// corrupt execution accounting. The default does not change client state.
+    fn on_order_fill_report_query_error(
+        &self,
+        _report: &OrderStatusReport,
+        _error: &anyhow::Error,
+    ) {
     }
 
     /// Generates and publishes the account state event.
@@ -631,6 +692,28 @@ mod tests {
             UnixNanos::from(3_000_000_000),
             None,
         )
+    }
+
+    #[rstest]
+    fn test_default_client_allows_fill_inference(
+        #[values(OrderType::Limit, OrderType::StopMarket)] order_type: OrderType,
+        #[values(OrderStatus::PartiallyFilled, OrderStatus::Filled)] status: OrderStatus,
+    ) {
+        let client = RecordingExecutionClient::new(Rc::new(RefCell::new(Vec::new())));
+        let mut report = test_order_report();
+        report.order_type = order_type;
+        report.order_status = status;
+        report.filled_qty = Quantity::from(if status == OrderStatus::Filled {
+            "10"
+        } else {
+            "5"
+        });
+
+        assert!(!client.requires_order_fill_reports(&report));
+        assert!(client.validate_order_fill_reports(&report, &[]).is_ok());
+        client.on_order_fill_report_query_error(&report, &anyhow::anyhow!("query failed"));
+        assert!(client.execution_safety_error().is_none());
+        assert!(client.execution_safety_probe().is_none());
     }
 
     fn test_fill_report() -> FillReport {

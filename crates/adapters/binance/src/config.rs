@@ -420,6 +420,7 @@ pub struct BinanceExecutionClientConfig {
     /// If true, drive fills from the lower-latency `TRADE_LITE` user data event
     /// and dedup the matching fill portion of `ORDER_TRADE_UPDATE`. If false,
     /// `TRADE_LITE` events are ignored and fills come from `ORDER_TRADE_UPDATE`.
+    /// Algo orders always use `ORDER_TRADE_UPDATE` so their fills retain authoritative fees.
     #[builder(default = false)]
     pub use_trade_lite: bool,
     /// WebSocket transport backend (defaults to `Tungstenite`).

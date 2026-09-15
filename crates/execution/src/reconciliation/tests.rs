@@ -2849,6 +2849,147 @@ fn test_is_within_single_unit_tolerance_high_precision() {
     ));
 }
 
+#[rstest]
+#[case(OrderType::StopMarket, true)]
+#[case(OrderType::StopLimit, true)]
+#[case(OrderType::MarketIfTouched, true)]
+#[case(OrderType::LimitIfTouched, true)]
+#[case(OrderType::TrailingStopMarket, true)]
+#[case(OrderType::TrailingStopLimit, true)]
+#[case(OrderType::Limit, false)]
+#[case(OrderType::Market, false)]
+fn test_conditional_report_promotes_venue_id_before_fills(
+    instrument: InstrumentAny,
+    #[case] order_type: OrderType,
+    #[case] expect_promotion: bool,
+    #[values(false, true)] delayed_report: bool,
+) {
+    let mut order = OrderTestBuilder::new(order_type)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .price(Price::from("1.00000"))
+        .trigger_price(Price::from("0.99000"))
+        .trailing_offset(Decimal::ONE)
+        .trailing_offset_type(TrailingOffsetType::Price)
+        .limit_offset(Decimal::ONE)
+        .build();
+    let old_id = VenueOrderId::from("CONDITIONAL-001");
+    let actual_id = VenueOrderId::from("ACTUAL-001");
+    submit_accept(&mut order, AccountId::from("SIM-001"), old_id);
+    let update = OrderUpdatedSpec::builder()
+        .trader_id(order.trader_id())
+        .strategy_id(order.strategy_id())
+        .instrument_id(order.instrument_id())
+        .client_order_id(order.client_order_id())
+        .quantity(order.quantity())
+        .venue_order_id(old_id)
+        .account_id(AccountId::from("SIM-001"))
+        .ts_event(UnixNanos::from(100))
+        .build();
+    order.apply(OrderEventAny::Updated(update)).unwrap();
+    let mut report = create_test_order_status_report(
+        order.client_order_id(),
+        actual_id,
+        instrument.id(),
+        order_type,
+        OrderStatus::Filled,
+        order.quantity(),
+        order.quantity(),
+    );
+    report.ts_last = UnixNanos::from(if delayed_report { 99 } else { 101 });
+    let events =
+        generate_reconciliation_order_pre_fill_events(&order, &report, UnixNanos::from(200));
+    assert_eq!(events.len(), usize::from(expect_promotion));
+
+    for event in events {
+        assert!(matches!(event, OrderEventAny::Updated(_)));
+        order.apply(event).unwrap();
+    }
+
+    assert_eq!(
+        order.venue_order_id(),
+        Some(if expect_promotion { actual_id } else { old_id })
+    );
+    assert_eq!(order.filled_qty(), Quantity::from(0));
+    assert!(order.commissions().is_empty());
+
+    // A duplicate or a late report from the previous ID cannot reverse promotion
+    let duplicate =
+        generate_reconciliation_order_pre_fill_events(&order, &report, UnixNanos::from(300));
+    assert!(duplicate.is_empty());
+    report.venue_order_id = old_id;
+    report.ts_last = UnixNanos::from(400);
+
+    for status in [
+        OrderStatus::Accepted,
+        OrderStatus::Filled,
+        OrderStatus::Canceled,
+    ] {
+        report.order_status = status;
+        assert!(
+            generate_reconciliation_order_pre_fill_events(&order, &report, UnixNanos::from(500))
+                .is_empty()
+        );
+    }
+}
+
+#[rstest]
+#[case("client")]
+#[case("missing_client")]
+#[case("account")]
+#[case("instrument")]
+#[case("side")]
+#[case("unconfirmed")]
+fn test_conditional_report_does_not_promote_unverified_identity(
+    instrument: InstrumentAny,
+    #[case] mismatch: &str,
+) {
+    let mut order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .trigger_price(Price::from("0.99000"))
+        .build();
+    let old_id = VenueOrderId::from("CONDITIONAL-001");
+    submit_accept(&mut order, AccountId::from("SIM-001"), old_id);
+    let update = OrderUpdatedSpec::builder()
+        .trader_id(order.trader_id())
+        .strategy_id(order.strategy_id())
+        .instrument_id(order.instrument_id())
+        .client_order_id(order.client_order_id())
+        .quantity(order.quantity())
+        .venue_order_id(old_id)
+        .account_id(AccountId::from("SIM-001"))
+        .ts_event(UnixNanos::from(100))
+        .build();
+    order.apply(OrderEventAny::Updated(update)).unwrap();
+    let mut report = create_test_order_status_report(
+        order.client_order_id(),
+        VenueOrderId::from("ACTUAL-001"),
+        instrument.id(),
+        OrderType::StopMarket,
+        OrderStatus::Accepted,
+        order.quantity(),
+        Quantity::from(0),
+    );
+    report.ts_last = UnixNanos::from(200);
+    match mismatch {
+        "client" => report.client_order_id = Some(ClientOrderId::from("ANOTHER")),
+        "missing_client" => report.client_order_id = None,
+        "account" => report.account_id = AccountId::from("SIM-002"),
+        "instrument" => report.instrument_id = InstrumentId::from("GBPUSD.SIM"),
+        "side" => report.order_side = OrderSide::Sell.into(),
+        "unconfirmed" => report.order_status = OrderStatus::Submitted,
+        other => panic!("Unknown test mismatch: {other}"),
+    }
+    let events =
+        generate_reconciliation_order_pre_fill_events(&order, &report, UnixNanos::from(300));
+
+    assert!(events.is_empty(), "{events:?}");
+    assert_eq!(order.venue_order_id(), Some(old_id));
+}
+
 fn create_test_order_status_report(
     client_order_id: ClientOrderId,
     venue_order_id: VenueOrderId,

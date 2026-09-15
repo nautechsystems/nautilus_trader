@@ -941,14 +941,19 @@ pub fn publish_any(topic: MStr<Topic>, message: &dyn Any) {
     // Take buffer (re-entrancy safe)
     let mut handlers = ANY_HANDLERS.with_borrow_mut(std::mem::take);
 
-    {
+    let dispatch_guard = {
         let bus_rc = get_message_bus();
         let mut bus = bus_rc.borrow_mut();
         bus.fill_matching_any_handlers(topic, &mut handlers);
         bus.increment_pub_count();
-    }
+        bus.dispatch_guard()
+    };
 
     for handler in &handlers {
+        if dispatch_guard.as_ref().is_some_and(|guard| !guard()) {
+            break;
+        }
+
         handler.0.handle(message);
     }
 
@@ -981,9 +986,14 @@ pub fn try_publish_any(topic: MStr<Topic>, message: &dyn Any) -> bool {
 
     bus.fill_matching_any_handlers(topic, &mut handlers);
     bus.increment_pub_count();
+    let dispatch_guard = bus.dispatch_guard();
     drop(bus);
 
     for handler in &handlers {
+        if dispatch_guard.as_ref().is_some_and(|guard| !guard()) {
+            break;
+        }
+
         handler.0.handle(message);
     }
 
@@ -1295,13 +1305,18 @@ fn publish_typed<T: 'static>(
 
     // Borrow scope ends before dispatch to support re-entrant publishes
     let bus_rc = get_message_bus();
-    {
+    let dispatch_guard = {
         let mut bus = bus_rc.borrow_mut();
         fill_fn(&mut bus, &mut handlers);
         bus.increment_pub_count();
-    }
+        bus.dispatch_guard()
+    };
 
     for handler in &handlers {
+        if dispatch_guard.as_ref().is_some_and(|guard| !guard()) {
+            break;
+        }
+
         handler.handle(message);
     }
 
@@ -4374,6 +4389,57 @@ mod tests {
         clear_bus_tap();
 
         assert_eq!(tap.publish_topics(), vec!["data.any.tap.test"]);
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn dispatch_guard_stops_any_fanout_but_preserves_tap(#[case] use_try_publish: bool) {
+        let msgbus = Rc::new(RefCell::new(MessageBus::default()));
+        set_message_bus(msgbus.clone());
+        clear_bus_tap();
+
+        let allow_dispatch = Rc::new(Cell::new(true));
+        let guard_state = allow_dispatch.clone();
+        msgbus
+            .borrow_mut()
+            .set_dispatch_guard(Rc::new(move || guard_state.get()));
+
+        let first_calls = Rc::new(Cell::new(0));
+        let first_count = first_calls.clone();
+        let first_guard_state = allow_dispatch;
+        subscribe_any(
+            "data.any.guard.test".into(),
+            ShareableMessageHandler::from_typed(move |_: &u32| {
+                first_count.set(first_count.get() + 1);
+                first_guard_state.set(false);
+            }),
+            Some(10),
+        );
+        let second_calls = Rc::new(Cell::new(0));
+        let second_count = second_calls.clone();
+        subscribe_any(
+            "data.any.guard.test".into(),
+            ShareableMessageHandler::from_typed(move |_: &u32| {
+                second_count.set(second_count.get() + 1);
+            }),
+            None,
+        );
+
+        let tap = Rc::new(RecordingTap::default());
+        set_bus_tap(tap.clone());
+        let payload = 42_u32;
+
+        if use_try_publish {
+            assert!(try_publish_any("data.any.guard.test".into(), &payload));
+        } else {
+            publish_any("data.any.guard.test".into(), &payload);
+        }
+        clear_bus_tap();
+
+        assert_eq!(first_calls.get(), 1);
+        assert_eq!(second_calls.get(), 0);
+        assert_eq!(tap.publish_topics(), vec!["data.any.guard.test"]);
     }
 
     #[rstest]

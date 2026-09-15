@@ -126,6 +126,7 @@ pub struct NautilusKernel {
     event_store: Option<Box<dyn KernelEventStore>>,
     event_store_replay: bool,
     state_save_armed: bool,
+    state_save_blocked: bool,
     #[cfg(feature = "streaming")]
     streaming_writer: Option<Rc<RefCell<FeatherWriter>>>,
     #[cfg(feature = "streaming")]
@@ -435,6 +436,7 @@ impl NautilusKernel {
             shutdown_requested,
             event_store_replay: false,
             state_save_armed: false,
+            state_save_blocked: false,
             #[cfg(feature = "streaming")]
             streaming_writer,
             #[cfg(feature = "streaming")]
@@ -777,9 +779,12 @@ impl NautilusKernel {
     ///
     /// # Errors
     ///
-    /// Returns an error if the trader or a registered component fails to start. A failed partial
-    /// start is stopped immediately before the error is returned.
+    /// Returns an error if an execution client reports a safety failure, or the trader or a
+    /// registered component fails to start. A failed partial start is stopped immediately
+    /// before the error is returned.
     pub fn start_trader(&mut self) -> anyhow::Result<()> {
+        self.check_execution_safety()?;
+
         log::info!("Starting trader...");
 
         let load_state = self.config.load_state();
@@ -792,14 +797,17 @@ impl NautilusKernel {
         }
 
         if load_state {
-            Trader::load_state(&self.trader)
+            Trader::load_state(&self.trader, || self.check_execution_safety())
                 .map_err(|e| anyhow::anyhow!("Failed to load actor and strategy state: {e:#}"))?;
         }
+        self.check_execution_safety()?;
 
-        self.state_save_armed = save_state;
+        self.state_save_armed = save_state && !self.state_save_blocked;
         self.order_emulator.start();
 
-        if let Err(start_err) = Trader::start_with_component_callbacks(&self.trader) {
+        if let Err(start_err) = Trader::start_with_component_callbacks_checked(&self.trader, || {
+            self.check_execution_safety()
+        }) {
             let stop_result = self.stop_trader_after_start_failure();
             self.order_emulator.stop();
             let save_result = self.save_trader_state();
@@ -824,8 +832,29 @@ impl NautilusKernel {
     /// This method initiates a graceful shutdown of trading components (strategies, actors)
     /// which may trigger residual events such as order cancellations. The caller should
     /// continue processing events after calling this method to handle these residual events.
+    /// A known execution safety failure instead stops components immediately without managed
+    /// strategy market exits and disarms component state saving.
     pub fn stop_trader(&mut self) {
         disarm_shutdown_on_error();
+
+        if self.state_save_blocked || self.check_execution_safety().is_err() {
+            self.state_save_armed = false;
+            let mut trader = self.trader.borrow_mut();
+
+            let result = if matches!(
+                trader.state(),
+                ComponentState::Starting | ComponentState::Running
+            ) {
+                trader.stop_after_start_failure()
+            } else {
+                trader.stop_components_immediately()
+            };
+
+            if let Err(e) = result {
+                log::error!("Error stopping trader after execution safety failure: {e}");
+            }
+            return;
+        }
 
         if !self.trader.borrow().is_running() {
             return;
@@ -864,7 +893,9 @@ impl NautilusKernel {
     ///
     /// # Errors
     ///
-    /// Returns an error if actor or strategy state cannot be saved.
+    /// Returns an error if an execution client reports a safety failure, actor or strategy state
+    /// cannot be saved, or a buffered cache backing cannot durably drain the save. Engines still
+    /// stop and the event-store run is sealed on failure.
     #[allow(unknown_lints)]
     #[expect(
         clippy::unused_async,
@@ -873,6 +904,10 @@ impl NautilusKernel {
     )]
     pub async fn finalize_stop(&mut self) -> anyhow::Result<()> {
         disarm_shutdown_on_error();
+
+        if self.check_execution_safety().is_err() {
+            self.stop_trader();
+        }
 
         // Execution and data clients are stopped by their engines via `stop_engines` below
 
@@ -889,21 +924,60 @@ impl NautilusKernel {
         }
         self.ts_shutdown = Some(ts_shutdown);
         log::info!("Stopped");
-        save_result?;
-        self.flush_streaming()
+
+        let flush_result = self.flush_streaming();
+        let cache_drain_result = self.cache.borrow_mut().drain_database();
+        save_result.and(flush_result).and(cache_drain_result)
+    }
+
+    /// Checks registered execution clients for an unresolved safety failure.
+    ///
+    /// Disconnected clients remain part of this check; transport state does not establish
+    /// that their order and fill history is safe to use.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error identifying the first registered client reporting a safety failure.
+    pub fn check_execution_safety(&self) -> anyhow::Result<()> {
+        if let Some((client_id, reason)) = self.exec_engine.borrow().execution_safety_error() {
+            anyhow::bail!("Execution safety failure for {client_id}: {reason}");
+        }
+        Ok(())
     }
 
     /// Saves actor and strategy state at most once for the current trader run.
     ///
+    /// A client safety failure disarms saving without invoking component save callbacks or
+    /// replacing the previous checkpoint. Order events and the event-store run are retained.
+    ///
     /// # Errors
     ///
-    /// Returns an error if a component callback or cache persistence operation fails.
+    /// Returns an error if an execution client reports a safety failure, or a component callback
+    /// or cache persistence operation fails.
     pub fn save_trader_state(&mut self) -> anyhow::Result<()> {
-        if !std::mem::take(&mut self.state_save_armed) {
+        let save_armed = std::mem::take(&mut self.state_save_armed);
+
+        if self.state_save_blocked {
+            anyhow::bail!("State save blocked by external fail-stop request");
+        }
+        self.check_execution_safety()?;
+
+        if !save_armed {
             return Ok(());
         }
 
-        Trader::save_state(&self.trader)
+        Trader::save_state(&self.trader, || self.check_execution_safety())
+    }
+
+    /// Permanently blocks actor and strategy state saving for the current node run.
+    ///
+    /// This is the host-side fail-stop boundary for failures such as losing an external
+    /// single-writer lease. It is intentionally separate from a normal trading halt: a
+    /// controlled shutdown may still save, while an unsafe shutdown must preserve the previous
+    /// checkpoint. The block remains active through finalization and disposal.
+    pub fn block_state_save(&mut self) {
+        self.state_save_armed = false;
+        self.state_save_blocked = true;
     }
 
     /// Returns the kernel-managed event-store integration, when one was injected.
@@ -948,6 +1022,7 @@ impl NautilusKernel {
         self.ts_started = None;
         self.ts_shutdown = None;
         self.state_save_armed = false;
+        self.state_save_blocked = false;
 
         log::info!("Reset");
     }
@@ -956,6 +1031,10 @@ impl NautilusKernel {
     pub fn dispose(&mut self) {
         disarm_shutdown_on_error();
         log::info!("Disposing");
+
+        if self.check_execution_safety().is_err() {
+            self.stop_trader();
+        }
 
         let trader_state = self.trader.borrow().state();
         match trader_state {
@@ -1440,23 +1519,28 @@ mod streaming_tests {
 
 #[cfg(test)]
 mod lifecycle_tests {
+    use std::cell::OnceCell;
+
     use futures::FutureExt;
     use indexmap::IndexMap;
     use nautilus_common::{
         actor::registry::get_actor_unchecked,
         cache::Cache,
+        clients::ExecutionClient,
         messages::data::{DataCommand, SubscribeCommand, UnsubscribeCommand},
         msgbus::stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
     };
+    use nautilus_core::Params;
     use nautilus_execution::engine::SnapshotAnchorer;
     use nautilus_model::{
-        enums::{OrderSide, OrderStatus, OrderType, TriggerType},
-        identifiers::{ActorId, ClientOrderId, StrategyId},
+        accounts::AccountAny,
+        enums::{OmsType, OrderSide, OrderStatus, OrderType, TriggerType},
+        identifiers::{AccountId, ActorId, ClientOrderId, StrategyId, Venue},
         instruments::{
             CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt,
         },
         orders::{Order, OrderAny, OrderTestBuilder},
-        types::{Price, Quantity},
+        types::{AccountBalance, MarginBalance, Price, Quantity},
     };
     use nautilus_testkit::{
         cache::TestCacheDatabaseControl,
@@ -1470,6 +1554,85 @@ mod lifecycle_tests {
         builder::NautilusKernelBuilder,
         event_store::{KernelEventStore, RegisteredComponents},
     };
+
+    struct SafetyClient {
+        error: Rc<OnceCell<String>>,
+        fault_after: Option<(TestCacheDatabaseControl, String)>,
+    }
+
+    impl SafetyClient {
+        fn new(error: Rc<OnceCell<String>>) -> Self {
+            Self {
+                error,
+                fault_after: None,
+            }
+        }
+
+        fn fault_after(control: TestCacheDatabaseControl, event: &str) -> Self {
+            Self {
+                error: Rc::new(OnceCell::new()),
+                fault_after: Some((control, event.to_string())),
+            }
+        }
+    }
+
+    #[async_trait::async_trait(?Send)]
+    impl ExecutionClient for SafetyClient {
+        fn is_connected(&self) -> bool {
+            false
+        }
+
+        fn client_id(&self) -> ClientId {
+            ClientId::from("SAFETY")
+        }
+
+        fn account_id(&self) -> AccountId {
+            AccountId::from("SAFETY-001")
+        }
+
+        fn venue(&self) -> Venue {
+            Venue::from("SAFETY")
+        }
+
+        fn oms_type(&self) -> OmsType {
+            OmsType::Netting
+        }
+
+        fn get_account(&self) -> Option<AccountAny> {
+            None
+        }
+
+        fn execution_safety_error(&self) -> Option<String> {
+            self.error.get().cloned().or_else(|| {
+                self.fault_after.as_ref().and_then(|(control, event)| {
+                    control
+                        .events()
+                        .iter()
+                        .any(|recorded| recorded == event)
+                        .then(|| format!("Algo safety failure after {event}"))
+                })
+            })
+        }
+
+        fn generate_account_state(
+            &self,
+            _balances: Vec<AccountBalance>,
+            _margins: Vec<MarginBalance>,
+            _reported: bool,
+            _ts_event: UnixNanos,
+            _info: Option<Params>,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn start(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
 
     #[derive(Debug)]
     struct RecordingEventStore {
@@ -1626,8 +1789,8 @@ mod lifecycle_tests {
                 "actor.on_stop",
                 "strategy.on_stop",
                 "actor.on_save",
-                "actor.update:STATE-ACTOR",
                 "strategy.on_save",
+                "actor.update:STATE-ACTOR",
                 "strategy.update:STATE-STRATEGY-001",
                 "event_store.seal",
                 "database.close",
@@ -1666,6 +1829,25 @@ mod lifecycle_tests {
     }
 
     #[rstest]
+    fn test_state_persistence_propagates_cache_drain_failure() {
+        let (database, control) = TestCacheDatabaseControl::create();
+        control.set_fail_drain(true);
+        let mut kernel = NautilusKernelBuilder::default()
+            .with_cache_database(Box::new(database))
+            .build()
+            .unwrap();
+
+        kernel.start();
+        kernel.start_trader().unwrap();
+        kernel.stop_trader();
+
+        let error = finalize(&mut kernel).unwrap_err();
+
+        assert_eq!(error.to_string(), "database drain failed");
+        kernel.dispose();
+    }
+
+    #[rstest]
     fn test_state_persistence_skips_empty_load_and_persists_empty_save() {
         let actor_id = ActorId::from("EMPTY-STATE-ACTOR");
         let strategy_id = StrategyId::from("EMPTY-STATE-STRATEGY-001");
@@ -1694,8 +1876,8 @@ mod lifecycle_tests {
                 "actor.on_stop",
                 "strategy.on_stop",
                 "actor.on_save",
-                "actor.update:EMPTY-STATE-ACTOR",
                 "strategy.on_save",
+                "actor.update:EMPTY-STATE-ACTOR",
                 "strategy.update:EMPTY-STATE-STRATEGY-001",
             ]
         );
@@ -1831,8 +2013,8 @@ mod lifecycle_tests {
                 "actor.on_stop",
                 "strategy.on_stop",
                 "actor.on_save",
-                "actor.update:FAIL-UPDATE-ACTOR",
                 "strategy.on_save",
+                "actor.update:FAIL-UPDATE-ACTOR",
                 "strategy.update:FAIL-UPDATE-STRATEGY-001",
                 "database.close",
             ]
@@ -1873,8 +2055,8 @@ mod lifecycle_tests {
                 "actor.on_stop",
                 "strategy.on_stop",
                 "actor.on_save",
-                "actor.update:PARTIAL-ACTOR",
                 "strategy.on_save",
+                "actor.update:PARTIAL-ACTOR",
                 "strategy.update:PARTIAL-STRATEGY-001",
                 "database.close",
             ]
@@ -1918,11 +2100,241 @@ mod lifecycle_tests {
                 "actor.on_stop",
                 "strategy.on_stop",
                 "actor.on_save",
-                "actor.update:FORCED-ACTOR",
                 "strategy.on_save",
+                "actor.update:FORCED-ACTOR",
                 "strategy.update:FORCED-STRATEGY-001",
                 "database.close",
             ]
+        );
+    }
+
+    #[rstest]
+    fn test_external_fail_stop_preserves_previous_component_checkpoint() {
+        let actor_id = ActorId::from("EXTERNAL-FAIL-STOP-ACTOR");
+        let strategy_id = StrategyId::from("EXTERNAL-FAIL-STOP-STRATEGY-001");
+        let (database, control) = TestCacheDatabaseControl::create();
+        let actor_checkpoint = state("actor", b"last-safe");
+        let strategy_checkpoint = state("strategy", b"last-safe");
+        control.set_actor_state(actor_id, &actor_checkpoint);
+        control.set_strategy_state(strategy_id, &strategy_checkpoint);
+
+        let mut kernel = NautilusKernelBuilder::default()
+            .with_cache_database(Box::new(database))
+            .build()
+            .unwrap();
+        add_state_components(
+            &kernel,
+            &control,
+            StateActor::new(actor_id, control.clone(), state("actor", b"unsafe")),
+            StateStrategy::new(strategy_id, control.clone(), state("strategy", b"unsafe")),
+        );
+        kernel.start();
+        kernel.start_trader().unwrap();
+
+        kernel.block_state_save();
+        kernel.stop_trader();
+        let error = finalize(&mut kernel).unwrap_err();
+        assert!(error.to_string().contains("external fail-stop"));
+        kernel.dispose();
+
+        let events = control.events();
+        assert!(!events.iter().any(|event| event.contains("on_save")));
+        assert!(!events.iter().any(|event| event.starts_with("actor.update")));
+        assert!(
+            !events
+                .iter()
+                .any(|event| event.starts_with("strategy.update"))
+        );
+        assert_eq!(control.actor_state(&actor_id), Some(actor_checkpoint));
+        assert_eq!(
+            control.strategy_state(&strategy_id),
+            Some(strategy_checkpoint)
+        );
+    }
+
+    #[rstest]
+    #[case("save")]
+    #[case("finalize")]
+    #[case("dispose")]
+    fn test_execution_safety_failure_preserves_component_checkpoint(
+        #[case] shutdown: &str,
+        #[values(false, true)] before_start: bool,
+    ) {
+        let actor_id = ActorId::from("SAFETY-ACTOR");
+        let strategy_id = StrategyId::from("SAFETY-STRATEGY-001");
+        let (database, control) = TestCacheDatabaseControl::create();
+        let actor_checkpoint = state("actor", b"last-safe");
+        let strategy_checkpoint = state("strategy", b"last-safe");
+        control.set_actor_state(actor_id, &actor_checkpoint);
+        control.set_strategy_state(strategy_id, &strategy_checkpoint);
+
+        let event_store_control = control.clone();
+        let mut kernel = NautilusKernelBuilder::default()
+            .with_cache_database(Box::new(database))
+            .with_event_store(move |_, _| {
+                Ok(Box::new(RecordingEventStore {
+                    control: event_store_control,
+                    opened: false,
+                }))
+            })
+            .build()
+            .unwrap();
+        let fault = Rc::new(OnceCell::new());
+        kernel
+            .exec_engine
+            .borrow_mut()
+            .register_client(Box::new(SafetyClient::new(fault.clone())))
+            .unwrap();
+        add_state_components(
+            &kernel,
+            &control,
+            StateActor::new(actor_id, control.clone(), state("actor", b"unsafe")),
+            StateStrategy::new(strategy_id, control.clone(), state("strategy", b"unsafe")),
+        );
+        kernel.start();
+
+        if !before_start {
+            kernel.start_trader().unwrap();
+        }
+        fault
+            .set("Algo fill history incomplete".to_string())
+            .unwrap();
+
+        if before_start {
+            let error = kernel.start_trader().unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains("SAFETY: Algo fill history incomplete")
+            );
+        }
+
+        match shutdown {
+            "save" => {
+                let error = kernel.save_trader_state().unwrap_err();
+                assert!(
+                    error
+                        .to_string()
+                        .contains("SAFETY: Algo fill history incomplete")
+                );
+            }
+            "finalize" => {
+                kernel.stop_trader();
+                let error = finalize(&mut kernel).unwrap_err();
+                assert!(
+                    error
+                        .to_string()
+                        .contains("SAFETY: Algo fill history incomplete")
+                );
+            }
+            "dispose" => {}
+            _ => panic!("Unexpected shutdown route"),
+        }
+        kernel.dispose();
+
+        let mut expected = vec![
+            "components.registered",
+            "event_store.restore",
+            "event_store.open",
+        ];
+
+        if !before_start {
+            expected.extend([
+                "actor.load:SAFETY-ACTOR",
+                "actor.on_load",
+                "strategy.load:SAFETY-STRATEGY-001",
+                "strategy.on_load",
+                "actor.on_start",
+                "strategy.on_start",
+                "actor.on_stop",
+                "strategy.on_stop",
+            ]);
+        }
+        expected.extend(["event_store.seal", "database.close"]);
+
+        assert_eq!(control.events(), expected);
+        assert_eq!(control.actor_state(&actor_id), Some(actor_checkpoint));
+        assert_eq!(
+            control.strategy_state(&strategy_id),
+            Some(strategy_checkpoint)
+        );
+    }
+
+    #[rstest]
+    #[case::actor_load("actor.on_load")]
+    #[case::strategy_load("strategy.on_load")]
+    #[case::actor_start("actor.on_start")]
+    #[case::strategy_start("strategy.on_start")]
+    #[case::actor_save("actor.on_save")]
+    #[case::strategy_save("strategy.on_save")]
+    fn test_execution_safety_failure_stops_between_component_callbacks(#[case] phase: &str) {
+        let actor_id = ActorId::from("CALLBACK-SAFETY-ACTOR");
+        let strategy_id = StrategyId::from("CALLBACK-SAFETY-STRATEGY-001");
+        let (database, control) = TestCacheDatabaseControl::create();
+        let actor_checkpoint = state("actor", b"last-safe");
+        let strategy_checkpoint = state("strategy", b"last-safe");
+        control.set_actor_state(actor_id, &actor_checkpoint);
+        control.set_strategy_state(strategy_id, &strategy_checkpoint);
+
+        let mut kernel = NautilusKernelBuilder::default()
+            .with_cache_database(Box::new(database))
+            .build()
+            .unwrap();
+        kernel
+            .exec_engine
+            .borrow_mut()
+            .register_client(Box::new(SafetyClient::fault_after(control.clone(), phase)))
+            .unwrap();
+        add_state_components(
+            &kernel,
+            &control,
+            StateActor::new(actor_id, control.clone(), state("actor", b"unsafe")),
+            StateStrategy::new(strategy_id, control.clone(), state("strategy", b"unsafe")),
+        );
+        kernel.start();
+
+        let error = if phase.ends_with("on_save") {
+            kernel.start_trader().unwrap();
+            kernel.stop_trader();
+            finalize(&mut kernel).unwrap_err()
+        } else {
+            kernel.start_trader().unwrap_err()
+        };
+        kernel.dispose();
+
+        let events = control.events();
+        assert!(error.to_string().contains("Algo safety failure"));
+        assert!(events.iter().any(|event| event == phase));
+        match phase {
+            "actor.on_load" => {
+                assert!(!events.iter().any(|event| event == "strategy.on_load"));
+                assert!(!events.iter().any(|event| event == "actor.on_start"));
+            }
+            "strategy.on_load" => {
+                assert!(!events.iter().any(|event| event == "actor.on_start"));
+            }
+            "actor.on_start" => {
+                assert!(!events.iter().any(|event| event == "strategy.on_start"));
+                assert!(events.iter().any(|event| event == "actor.on_stop"));
+            }
+            "strategy.on_start" => {
+                assert!(events.iter().any(|event| event == "actor.on_stop"));
+                assert!(events.iter().any(|event| event == "strategy.on_stop"));
+            }
+            "actor.on_save" => {
+                assert!(!events.iter().any(|event| event == "strategy.on_save"));
+                assert!(!events.iter().any(|event| event.contains(".update:")));
+            }
+            "strategy.on_save" => {
+                assert!(events.iter().any(|event| event == "actor.on_save"));
+                assert!(!events.iter().any(|event| event.contains(".update:")));
+            }
+            _ => unreachable!(),
+        }
+        assert_eq!(control.actor_state(&actor_id), Some(actor_checkpoint));
+        assert_eq!(
+            control.strategy_state(&strategy_id),
+            Some(strategy_checkpoint)
         );
     }
 
