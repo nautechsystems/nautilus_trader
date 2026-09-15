@@ -184,7 +184,7 @@ hyper-util = { version = "0.1.20", default-features = false, features = [
 implied-vol = { version = "2.0.0" }
 indexmap = { version = "2.14.2", features = ["serde"] }
 itchy = "0.3"
-jiff = { version = "0.2.35", default-features = false, features = [
+jiff = { version = "0.2.37", default-features = false, features = [
   "perf-inline",
   "serde",
   "std",

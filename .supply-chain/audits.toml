@@ -2515,6 +2515,26 @@ criteria = "safe-to-deploy"
 delta = "1.0.17 -> 1.0.18"
 notes = "Performance optimization for 128-bit integer formatting, pointer simplification in Buffer::format. No new unsafe patterns."
 
+[[audits.jiff]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.2.35 -> 0.2.37"
+importable = false
+notes = "Reviewed the published crate delta for the root and fuzz feature graphs, which do not enable arbitrary. Corrects optional Serde serialization to preserve Some tags, retains time zone serialization validation, removes a redundant cast, and repairs packaged documentation. The new arbitrary integration is outside this certification. No new unsafe, build script, network, process, or credential behavior in the enabled paths."
+
+[[audits.jiff-core]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.1.0 -> 0.1.1"
+importable = false
+notes = "Reviewed the published crate delta for the root and fuzz feature graphs, which do not enable arbitrary. Fixes offset subtraction with widened i64 arithmetic and range validation, forwards std to the optional log dependency, and scopes a test import. The new arbitrary integration is outside this certification. No new unsafe, build script, filesystem, network, process, or credential behavior in the enabled paths."
+
+[[audits.jiff-static]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.2.35 -> 0.2.37"
+notes = "Reviewed the published crate delta. Proc-macro source is unchanged; changes are package version, VCS metadata, and the packaged lockfile. No new dependencies or build behavior."
+
 [[audits.js-sys]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
