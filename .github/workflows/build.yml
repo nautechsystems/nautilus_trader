@@ -58,7 +58,7 @@ jobs:
       wheel_version: ${{ steps.wheel-publication.outputs.wheel_version }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: >-
             ${{ env.AUDIT_PR == 'true' && 'audit'
@@ -122,7 +122,7 @@ jobs:
       || fromJson('["self-hosted", "Linux", "X64", "build"]') }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: >-
             ${{ env.AUDIT_PR == 'true' && 'audit'
@@ -213,7 +213,7 @@ jobs:
         ${{ github.event.pull_request.base.sha || github.event.before }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: >-
             ${{ env.AUDIT_PR == 'true' && 'audit'
@@ -254,7 +254,7 @@ jobs:
 
       - name: Install lychee
         # https://github.com/taiki-e/install-action
-        uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d # v2.87.0
+        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2.87.2
         with:
           tool: lychee@${{ env.LYCHEE_VERSION }}
         env:
@@ -268,7 +268,7 @@ jobs:
 
       - name: Install cargo-machete
         # https://github.com/taiki-e/install-action
-        uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d # v2.87.0
+        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2.87.2
         with:
           tool: cargo-machete@${{ env.CARGO_MACHETE_VERSION }}
 
@@ -343,7 +343,7 @@ jobs:
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: >-
             ${{ env.AUDIT_PR == 'true' && 'audit'
@@ -488,7 +488,7 @@ jobs:
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: >-
             ${{ env.AUDIT_PR == 'true' && 'audit'
@@ -582,7 +582,7 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-linux-arm
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -654,7 +654,7 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-macos
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -782,7 +782,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/nightly'
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -888,7 +888,7 @@ jobs:
       PUBLISH_WHEEL_VERSION: ${{ needs.plan.outputs.wheel_version }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -977,7 +977,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1007,7 +1007,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1042,7 +1042,7 @@ jobs:
       contents: read
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1086,7 +1086,7 @@ jobs:
       CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/release-docs-features-preflight
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1111,7 +1111,7 @@ jobs:
 
       - name: Install cargo-hack
         # https://github.com/taiki-e/install-action
-        uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d # v2.87.0
+        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2.87.2
         with:
           tool: cargo-hack
 
@@ -1145,7 +1145,7 @@ jobs:
       tag_name: ${{ steps.metadata.outputs.tag_name }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1211,7 +1211,7 @@ jobs:
         id: create-release
         # zizmor: ignore[superfluous-actions] Retains idempotent draft updates and retries
         # https://github.com/softprops/action-gh-release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -1230,7 +1230,7 @@ jobs:
       contents: read
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1278,7 +1278,7 @@ jobs:
       contents: write # Required for uploading release assets
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1327,7 +1327,7 @@ jobs:
       PUBLISH_WHEEL_VERSION: ${{ needs.tag-release.outputs.package_version }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1394,7 +1394,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1487,7 +1487,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1550,7 +1550,7 @@ jobs:
       attestations: write # Required for GitHub artifact attestations
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1642,7 +1642,7 @@ jobs:
       contents: write # Required for uploading release integrity assets
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1753,7 +1753,7 @@ jobs:
       contents: write # Required for publishing the draft release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-

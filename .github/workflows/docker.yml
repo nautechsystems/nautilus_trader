@@ -35,7 +35,7 @@ jobs:
       BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           # Docker Buildx still pulls its Moby BuildKit image from Docker Hub.
@@ -83,7 +83,7 @@ jobs:
 
       - name: Set up Docker Buildx
         # https://github.com/docker/setup-buildx-action
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Preload Dockerfile images with retry
         run: >-
@@ -160,7 +160,7 @@ jobs:
       digest_hex: ${{ steps.push.outputs.digest_hex }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           # Docker Buildx still pulls its Moby BuildKit image from Docker Hub.
@@ -187,7 +187,7 @@ jobs:
 
       - name: Set up Docker Buildx
         # https://github.com/docker/setup-buildx-action
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
@@ -278,7 +278,7 @@ jobs:
       BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -319,7 +319,7 @@ jobs:
 
       - name: Set up Docker Buildx
         # https://github.com/docker/setup-buildx-action
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Preload JupyterLab base images with retry
         env:
@@ -405,7 +405,7 @@ jobs:
     needs: build-docker-images-jupyterlab
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -431,7 +431,7 @@ jobs:
 
       - name: Set up Docker Buildx
         # https://github.com/docker/setup-buildx-action
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
