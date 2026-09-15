@@ -2982,7 +2982,7 @@ impl Cache {
     /// serialization succeeds, the complete operation is committed to memory before persistence
     /// is attempted, so a persistence error leaves the cache internally consistent.
     pub fn add_position(&mut self, position: &Position, oms_type: OmsType) -> anyhow::Result<()> {
-        self.add_position_inner(position, oms_type, true)
+        self.add_position_inner(position.clone(), oms_type, true, false)
     }
 
     /// Adds a position whose opening fill intentionally has no backing order.
@@ -2997,14 +2997,43 @@ impl Cache {
         position: &Position,
         oms_type: OmsType,
     ) -> anyhow::Result<()> {
-        self.add_position_inner(position, oms_type, false)
+        self.add_position_inner(position.clone(), oms_type, false, false)
+    }
+
+    /// Replaces a cached position by value, optionally carrying its durable replay state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if validating or persisting the position fails.
+    pub fn replace_position(
+        &mut self,
+        position: Position,
+        oms_type: OmsType,
+        carry_replay_state: bool,
+    ) -> anyhow::Result<()> {
+        self.add_position_inner(position, oms_type, true, carry_replay_state)
+    }
+
+    /// Replaces an orderless cached position by value, optionally carrying its replay state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if validating or persisting the position fails.
+    pub fn replace_position_without_order(
+        &mut self,
+        position: Position,
+        oms_type: OmsType,
+        carry_replay_state: bool,
+    ) -> anyhow::Result<()> {
+        self.add_position_inner(position, oms_type, false, carry_replay_state)
     }
 
     fn add_position_inner(
         &mut self,
-        position: &Position,
+        mut position: Position,
         oms_type: OmsType,
         index_order: bool,
+        carry_replay_state: bool,
     ) -> anyhow::Result<()> {
         // Validate and serialize the OMS entry up front: both are construction failures, and
         // committing the position before they run would leave the cache mutated by one.
@@ -3013,43 +3042,59 @@ impl Cache {
         let value = Bytes::from(serde_json::to_vec(&oms_type)?);
         check_predicate_false(value.is_empty(), stringify!(value))?;
 
-        self.positions
-            .insert(position.id, SharedCell::new(position.clone()));
-        self.index.position_oms.insert(position.id, oms_type);
-        self.index.positions.insert(position.id);
-        self.index.positions_open.insert(position.id);
-        self.index.positions_closed.remove(&position.id); // Cleanup for NETTING reopen
-        self.index.strategies.insert(position.strategy_id);
-        self.index
-            .strategy_orders
-            .entry(position.strategy_id)
-            .or_default();
+        let position_id = position.id;
+        if let Some(position_cell) = self.positions.get(&position_id) {
+            let mut prior = position_cell.borrow_mut();
+            if carry_replay_state {
+                position.transfer_replay_state_from(&mut prior);
+            }
+            *prior = position;
+        } else {
+            self.positions
+                .insert(position_id, SharedCell::new(position));
+        }
 
-        log::debug!("Adding {position}");
+        let (strategy_id, instrument_id, account_id, opening_order_id) = {
+            let position = self
+                .positions
+                .get(&position_id)
+                .expect("Inserted position is missing")
+                .borrow();
+            (
+                position.strategy_id,
+                position.instrument_id,
+                position.account_id,
+                position.opening_order_id,
+            )
+        };
+
+        self.index.position_oms.insert(position_id, oms_type);
+        self.index.positions.insert(position_id);
+        self.index.positions_open.insert(position_id);
+        self.index.positions_closed.remove(&position_id); // Cleanup for NETTING reopen
+        self.index.strategies.insert(strategy_id);
+        self.index.strategy_orders.entry(strategy_id).or_default();
+
+        log::debug!("Adding position {position_id}");
 
         if index_order {
             self.index_position_id_in_memory(
-                &position.id,
-                &position.instrument_id.venue,
-                &position.opening_order_id,
-                &position.strategy_id,
+                &position_id,
+                &instrument_id.venue,
+                &opening_order_id,
+                &strategy_id,
             );
         } else {
-            self.index_position(
-                &position.id,
-                &position.instrument_id.venue,
-                &position.strategy_id,
-            );
+            self.index_position(&position_id, &instrument_id.venue, &strategy_id);
         }
 
         // Index: InstrumentId -> AHashSet
-        let instrument_id = position.instrument_id;
         let instrument_positions = self
             .index
             .instrument_positions
             .entry(instrument_id)
             .or_default();
-        instrument_positions.insert(position.id);
+        instrument_positions.insert(position_id);
         self.index
             .instrument_orders
             .entry(instrument_id)
@@ -3058,19 +3103,24 @@ impl Cache {
         // Index: AccountId -> AHashSet<PositionId>
         self.index
             .account_positions
-            .entry(position.account_id)
+            .entry(account_id)
             .or_default()
-            .insert(position.id);
+            .insert(position_id);
 
         log::debug!("Adding general {key}");
         self.general.insert(key.clone(), value.clone());
 
         if index_order {
-            self.persist_position_id(&position.id, &position.opening_order_id)?;
+            self.persist_position_id(&position_id, &opening_order_id)?;
         }
 
         if let Some(database) = &mut self.database {
-            database.add_position(position)?;
+            let position = self
+                .positions
+                .get(&position_id)
+                .expect("Inserted position is missing")
+                .borrow();
+            database.add_position(&position)?;
             // TODO: Implement position snapshots
             // if self.snapshot_positions {
             //     database.snapshot_position_state(
