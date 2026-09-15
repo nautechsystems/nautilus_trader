@@ -115,11 +115,28 @@ pub struct UserFillsParams {
     pub user: String,
 }
 
+/// Parameters for a time-bounded user fills request.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserFillsByTimeParams {
+    pub user: String,
+    pub start_time: u64,
+    pub end_time: u64,
+    pub aggregate_by_time: bool,
+}
+
 /// Parameters for order status request.
 #[derive(Debug, Clone, Serialize)]
 pub struct OrderStatusParams {
     pub user: String,
     pub oid: u64,
+}
+
+/// Parameters for an order status request identified by venue CLOID.
+#[derive(Debug, Clone, Serialize)]
+pub struct OrderStatusByCloidParams {
+    pub user: String,
+    pub oid: String,
 }
 
 /// Parameters for open orders request.
@@ -177,7 +194,9 @@ pub enum InfoRequestParams {
     L2Book(L2BookParams),
     RecentTrades(RecentTradesParams),
     UserFills(UserFillsParams),
+    UserFillsByTime(UserFillsByTimeParams),
     OrderStatus(OrderStatusParams),
+    OrderStatusByCloid(OrderStatusByCloidParams),
     OpenOrders(OpenOrdersParams),
     ClearinghouseState(ClearinghouseStateParams),
     SpotClearinghouseState(SpotClearinghouseStateParams),
@@ -282,6 +301,19 @@ impl InfoRequest {
         }
     }
 
+    /// Creates a request to get user fills in an inclusive time range.
+    pub(crate) fn user_fills_by_time(user: &str, start_time: u64, end_time: u64) -> Self {
+        Self {
+            request_type: HyperliquidInfoRequestType::UserFillsByTime,
+            params: InfoRequestParams::UserFillsByTime(UserFillsByTimeParams {
+                user: user.to_string(),
+                start_time,
+                end_time,
+                aggregate_by_time: false,
+            }),
+        }
+    }
+
     /// Creates a request to get order status for a user.
     pub fn order_status(user: &str, oid: u64) -> Self {
         Self {
@@ -289,6 +321,17 @@ impl InfoRequest {
             params: InfoRequestParams::OrderStatus(OrderStatusParams {
                 user: user.to_string(),
                 oid,
+            }),
+        }
+    }
+
+    /// Creates a request to get order status by venue CLOID.
+    pub(crate) fn order_status_by_cloid(user: &str, cloid: &str) -> Self {
+        Self {
+            request_type: HyperliquidInfoRequestType::OrderStatus,
+            params: InfoRequestParams::OrderStatusByCloid(OrderStatusByCloidParams {
+                user: user.to_string(),
+                oid: cloid.to_string(),
             }),
         }
     }
@@ -653,6 +696,50 @@ mod tests {
         assert!(
             !json.contains("endTime"),
             "endTime must be omitted when None; json={json}",
+        );
+    }
+
+    #[rstest]
+    fn test_info_request_user_fills_by_time_serialization() {
+        let value = serde_json::to_value(InfoRequest::user_fills_by_time(
+            "0xabc",
+            1_700_000_000_000,
+            1_700_003_600_000,
+        ))
+        .unwrap();
+
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "type": "userFillsByTime",
+                "user": "0xabc",
+                "startTime": 1_700_000_000_000_u64,
+                "endTime": 1_700_003_600_000_u64,
+                "aggregateByTime": false,
+            })
+        );
+    }
+
+    #[rstest]
+    fn test_info_request_order_status_identifier_serialization() {
+        let by_oid = serde_json::to_value(InfoRequest::order_status("0xabc", 42)).unwrap();
+        let by_cloid = serde_json::to_value(InfoRequest::order_status_by_cloid(
+            "0xabc",
+            "0x1234567890abcdef1234567890abcdef",
+        ))
+        .unwrap();
+
+        assert_eq!(
+            by_oid,
+            serde_json::json!({"type": "orderStatus", "user": "0xabc", "oid": 42})
+        );
+        assert_eq!(
+            by_cloid,
+            serde_json::json!({
+                "type": "orderStatus",
+                "user": "0xabc",
+                "oid": "0x1234567890abcdef1234567890abcdef",
+            })
         );
     }
 
