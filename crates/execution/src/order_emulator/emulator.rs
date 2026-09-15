@@ -1352,11 +1352,7 @@ impl OrderEmulator {
 
             let original_events = order.events();
 
-            // Insert each event at the beginning in reverse
-            // to preserve the correct order of events.
-            for event in original_events.into_iter().rev() {
-                transformed.events.insert(0, event.clone());
-            }
+            transformed.prepend_events(original_events.into_iter().cloned());
 
             let add_result = {
                 let mut cache = self.cache.borrow_mut();
@@ -1490,11 +1486,7 @@ impl OrderEmulator {
 
             let original_events = order.events();
 
-            // Insert each event at the beginning in reverse
-            // to preserve the correct order of events.
-            for event in original_events.into_iter().rev() {
-                transformed.events.insert(0, event.clone());
-            }
+            transformed.prepend_events(original_events.into_iter().cloned());
 
             let add_result = {
                 let mut cache = self.cache.borrow_mut();

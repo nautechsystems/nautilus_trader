@@ -15,11 +15,9 @@
 
 //! Benchmarks for applying fills to an order.
 //!
-//! Targets the average-price hot path of `Order::apply`: each fill folds every surviving fill
-//! event into a `Decimal` notional and quantity, so per-fill cost grows with the fills already
-//! recorded. The fill counts span a single fill through a heavily worked algorithmic order,
-//! which is the range that decides whether a persisted accumulator is worth its serialization
-//! and replay contract.
+//! Measures complete fill batches applied through `Order::apply`.
+//! Average-price arithmetic extends a cached `Decimal` fold, while duplicate detection scans
+//! prior events. The fill counts expose both small-order overhead and history-dependent cost.
 //!
 //! Run with `cargo bench -p nautilus-model --bench order_fills_criterion`.
 

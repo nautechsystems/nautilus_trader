@@ -6,6 +6,8 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 
+- Changed Rust `OrderCore.events` to read-only `events()`; construct cores with `OrderCore::new`
+
 ### Security
 
 ### Fixes
@@ -16,6 +18,7 @@ Released on TBD (UTC).
 
 - Improved cache order query benchmark coverage
 - Optimized cache order queries and exchange-rate lookups from bars
+- Optimized average-price calculation for orders with many fills
 - Upgraded `datafusion` crates to v55.1.0
 - Upgraded `smallvec` crate to v1.16.1
 - Upgraded `ty` package (dev) to v0.0.79

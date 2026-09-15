@@ -802,6 +802,14 @@ Account for these differences from v1:
 - `Order.to_dict()` returns `avg_px` and `slippage` as strings, matching how the other decimal
   fields already serialize. Wrap the value in `Decimal(...)` before doing arithmetic on it.
 
+### Rust order history
+
+Rust callers construct `OrderCore` with `OrderCore::new`, apply events with `OrderCore::apply`, and
+inspect history with `OrderCore::events()`. Direct field access to `events` and struct-literal
+construction are no longer available. Use `OrderCore::prepend_events` to retain history when transforming an order;
+it preserves event order without applying state transitions. Use `OrderAny::from_events` to reconstruct
+an order from replacement history. The serialized order format is unchanged.
+
 ### PostgreSQL schema changes
 
 Postgres-backed deployments must run `nautilus database init` before starting a v2 node. The
