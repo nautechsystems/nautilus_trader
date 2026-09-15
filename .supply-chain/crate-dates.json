@@ -896,129 +896,129 @@
       "published": "2026-09-01T20:30:35.978059Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "datafusion-catalog-listing@55.0.0": {
-      "published": "2026-08-18T21:12:50.222685Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-catalog-listing@55.1.0": {
+      "published": "2026-09-11T15:02:00.737836Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-catalog@55.0.0": {
-      "published": "2026-08-18T21:11:43.932199Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-catalog@55.1.0": {
+      "published": "2026-09-11T15:00:39.996122Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-common-runtime@55.0.0": {
-      "published": "2026-08-18T21:03:53.070381Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-common-runtime@55.1.0": {
+      "published": "2026-09-11T14:11:29.089460Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-common@55.0.0": {
-      "published": "2026-08-18T21:03:48.503941Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-common@55.1.0": {
+      "published": "2026-09-11T14:11:20.686965Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-datasource-arrow@55.0.0": {
-      "published": "2026-08-18T21:11:48.054739Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-datasource-arrow@55.1.0": {
+      "published": "2026-09-11T15:00:44.629337Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-datasource-csv@55.0.0": {
-      "published": "2026-08-18T21:11:57.967956Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-datasource-csv@55.1.0": {
+      "published": "2026-09-11T15:00:54.793366Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-datasource-json@55.0.0": {
-      "published": "2026-08-18T21:12:01.777764Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-datasource-json@55.1.0": {
+      "published": "2026-09-11T15:00:58.804650Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-datasource-parquet@55.0.0": {
-      "published": "2026-08-18T21:12:29.304727Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-datasource-parquet@55.1.0": {
+      "published": "2026-09-11T15:01:40.727491Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-datasource@55.0.0": {
-      "published": "2026-08-18T21:11:16.086841Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-datasource@55.1.0": {
+      "published": "2026-09-11T15:00:14.032543Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-doc@55.0.0": {
-      "published": "2026-08-18T21:03:55.770808Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-doc@55.1.0": {
+      "published": "2026-09-11T14:11:40.123791Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-execution@55.0.0": {
-      "published": "2026-08-18T21:08:48.294055Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-execution@55.1.0": {
+      "published": "2026-09-11T14:57:31.556616Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-expr-common@55.0.0": {
-      "published": "2026-08-18T21:04:02.288020Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-expr-common@55.1.0": {
+      "published": "2026-09-11T14:11:47.030572Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-expr@55.0.0": {
-      "published": "2026-08-18T21:07:30.294649Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-expr@55.1.0": {
+      "published": "2026-09-11T14:57:12.549531Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-functions-aggregate-common@55.0.0": {
-      "published": "2026-08-18T21:07:13.160223Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-functions-aggregate-common@55.1.0": {
+      "published": "2026-09-11T14:56:54.947389Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-functions-aggregate@55.0.0": {
-      "published": "2026-08-18T21:09:25.584197Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-functions-aggregate@55.1.0": {
+      "published": "2026-09-11T14:58:18.915063Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-functions-nested@55.0.0": {
-      "published": "2026-08-18T21:10:00.824892Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-functions-nested@55.1.0": {
+      "published": "2026-09-11T14:58:53.618196Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-functions-table@55.0.0": {
-      "published": "2026-08-18T21:12:38.493450Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-functions-table@55.1.0": {
+      "published": "2026-09-11T15:01:49.604499Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-functions-window-common@55.0.0": {
-      "published": "2026-08-18T21:07:16.003663Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-functions-window-common@55.1.0": {
+      "published": "2026-09-11T14:56:57.985095Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-functions-window@55.0.0": {
-      "published": "2026-08-18T21:09:33.756609Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-functions-window@55.1.0": {
+      "published": "2026-09-11T14:58:27.327174Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-functions@55.0.0": {
-      "published": "2026-08-18T21:09:04.877590Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-functions@55.1.0": {
+      "published": "2026-09-11T14:57:47.553285Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-macros@55.0.0": {
-      "published": "2026-08-18T21:04:06.986724Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-macros@55.1.0": {
+      "published": "2026-09-11T14:11:51.356380Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-optimizer@55.0.0": {
-      "published": "2026-08-18T21:11:31.470314Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-optimizer@55.1.0": {
+      "published": "2026-09-11T15:00:28.223629Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-physical-expr-adapter@55.0.0": {
-      "published": "2026-08-18T21:09:41.569516Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-physical-expr-adapter@55.1.0": {
+      "published": "2026-09-11T14:58:34.573673Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-physical-expr-common@55.0.0": {
-      "published": "2026-08-18T21:07:08.137841Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-physical-expr-common@55.1.0": {
+      "published": "2026-09-11T14:56:49.564709Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-physical-expr@55.0.0": {
-      "published": "2026-08-18T21:09:14.528250Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-physical-expr@55.1.0": {
+      "published": "2026-09-11T14:58:06.533621Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-physical-optimizer@55.0.0": {
-      "published": "2026-08-18T21:12:43.165263Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-physical-optimizer@55.1.0": {
+      "published": "2026-09-11T15:01:54.578626Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-physical-plan@55.0.0": {
-      "published": "2026-08-18T21:10:26.686354Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-physical-plan@55.1.0": {
+      "published": "2026-09-11T14:59:17.312085Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-pruning@55.0.0": {
-      "published": "2026-08-18T21:12:04.689941Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-pruning@55.1.0": {
+      "published": "2026-09-11T15:01:16.760110Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-session@55.0.0": {
-      "published": "2026-08-18T21:10:38.649541Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-session@55.1.0": {
+      "published": "2026-09-11T14:59:28.076244Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion-sql@55.0.0": {
-      "published": "2026-08-18T21:10:56.434487Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion-sql@55.1.0": {
+      "published": "2026-09-11T14:59:55.043248Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
-    "datafusion@55.0.0": {
-      "published": "2026-08-18T21:14:45.419994Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "datafusion@55.1.0": {
+      "published": "2026-09-11T15:03:52.556812Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
     "dbn-macros@0.69.0": {
       "published": "2026-09-01T15:54:14.086166Z",
@@ -2640,9 +2640,9 @@
       "published": "2026-01-31T12:59:22.609198Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "smallvec@1.16.0": {
-      "published": "2026-09-01T15:26:29.894397Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "smallvec@1.16.1": {
+      "published": "2026-09-11T13:46:31.582594Z",
+      "verified_at": "2026-09-15T06:28:37Z"
     },
     "snap@1.1.2": {
       "published": "2026-07-15T11:40:42.657953Z",

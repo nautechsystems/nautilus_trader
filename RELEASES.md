@@ -1,3 +1,27 @@
+# NautilusTrader 2.0.0rc6
+
+Released on TBD (UTC).
+
+### Enhancements
+
+### Breaking Changes
+
+### Security
+
+### Fixes
+
+### Internal Improvements
+
+- Upgraded `datafusion` crates to v55.1.0
+- Upgraded `smallvec` crate to v1.16.1
+- Upgraded `ty` package (dev) to v0.0.79
+
+### Documentation Updates
+
+### Deprecations
+
+---
+
 # NautilusTrader 2.0.0rc5
 
 Released on 15th September 2026 (UTC).

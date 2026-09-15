@@ -1198,7 +1198,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1230,7 +1230,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1253,7 +1253,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cryptography"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "anyhow",
  "aws-lc-rs",
@@ -1268,7 +1268,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-execution"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1292,7 +1292,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-lighter"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1337,7 +1337,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-live"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1365,7 +1365,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1392,7 +1392,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -2119,9 +2119,9 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "smallvec"
-version = "1.16.0"
+version = "1.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9be42f50aa861c555654aa3a37f52f4b1074bacf4e48fe0ef7fa584e80f1f0f"
+checksum = "ba467056f1b547ed52077911161fc86985becbc60e8e1857c8a144dab0def891"
 dependencies = [
  "serde",
 ]

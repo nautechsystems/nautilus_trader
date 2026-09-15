@@ -2663,9 +2663,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96f76f0167ed0842b29a3d1e41be3c034c0a46409a3a703cc4cc84ee8c24abf4"
+checksum = "14313430439ef858ed5f52ca9c840e9eea9844da34d3716d05a476449634da5d"
 dependencies = [
  "arrow 59.3.0",
  "arrow-schema",
@@ -2712,9 +2712,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-catalog"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d79ec3460f6ed5c58f9b3f2d873fbc77748b82653bff1b4cdaf06de33bb4e05f"
+checksum = "2c0756ebc770bcebae366dfd273dad50935f6103b4d212253cb17e2e53c5427f"
 dependencies = [
  "arrow 59.3.0",
  "async-trait",
@@ -2737,9 +2737,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-catalog-listing"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b48cef241e2efcfd496fe05ae4d0d5de20793451862faefe406c397a467e12d4"
+checksum = "bbde2961698705d8402f0f382f08876fc6f1126ffde790ef17833cf0ab87cd59"
 dependencies = [
  "arrow 59.3.0",
  "async-trait",
@@ -2761,9 +2761,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-common"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f72810485975c258f1b4d00baab31728470676c60c5546f366ebd0d99f05ab6"
+checksum = "a6e06fe711ff815c8cf3143158547aea599702fd43f76f5866c70d5a5b3693a0"
 dependencies = [
  "arrow 59.3.0",
  "arrow-ipc",
@@ -2787,9 +2787,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-common-runtime"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "533c28e75dba52f41bde187d23a1cb24ab91c7c097966824fa471e67b60320ea"
+checksum = "f7a5107acff4e3ed50a7732acec06bba40e74ab49df021397ed250d60f04e42a"
 dependencies = [
  "futures",
  "log",
@@ -2798,9 +2798,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-datasource"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b00a1fa0da26f6087136a82fea7f13c76a672cbab452d4086952a7cf770a19b"
+checksum = "f69f45d2d700785be8df9d4b44410e1c8e4a856f10cc728b418a1066c0b594fb"
 dependencies = [
  "arrow 59.3.0",
  "async-trait",
@@ -2828,9 +2828,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-datasource-arrow"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ad17ec881bff2ed7768b4bfe971d3efbf3473f2fd1f9d365447bccbdf908678"
+checksum = "81650af64894ef34b46d2ef818ef244b40a81d90818f3bc642bf8fbf6758f8e0"
 dependencies = [
  "arrow 59.3.0",
  "arrow-ipc",
@@ -2852,9 +2852,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-datasource-csv"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5345285b0c3eaab412e7539b706973c083bd7e5bce575de5e0a3da488d08d1d"
+checksum = "b5e2519bed59a6907c79298b9c21fe807bbc34e4ff8414577d699b0741083593"
 dependencies = [
  "arrow 59.3.0",
  "async-trait",
@@ -2875,9 +2875,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-datasource-json"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da02fb9324f56bd8c53f1ee2e949547425cb66f76adc6832b10d44f80a1221d2"
+checksum = "635e61290e171597f6e50427e0cb486eda468ab47e880fa24d15bbb0fa24ac7e"
 dependencies = [
  "arrow 59.3.0",
  "async-trait",
@@ -2898,9 +2898,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-datasource-parquet"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c0b0dc1453952952fd5c69ad1c7f6042176e69ed233011d47e07cf74ed0949e"
+checksum = "07cd518f85b3a027d913047b4ab0811111a2b734fdf84a51b78234455f10d8fa"
 dependencies = [
  "arrow 59.3.0",
  "arrow-schema",
@@ -2930,15 +2930,15 @@ dependencies = [
 
 [[package]]
 name = "datafusion-doc"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a88fd985bc0550c36f557db69543cc9d6393b1509783520b30e902f23c555da6"
+checksum = "d44c5919b560862dd1cb20a5c75b3e48c3d9e49719c91d78da5c38eaad5495c4"
 
 [[package]]
 name = "datafusion-execution"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a98f1052f91b4991f0bf2ce1e4e36dfbdcda454a956b8c8d562c7c845e8fce1d"
+checksum = "7620ad535af8730186bdec05d720e40d9a4584b40c7eb75f72c43aa7978e5484"
 dependencies = [
  "arrow 59.3.0",
  "arrow-buffer",
@@ -2962,9 +2962,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-expr"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "464625a1f0e4b9df552d894fafcc8aac953ebbc8b0fa0acdaf20975fd615040e"
+checksum = "ea229af8b73e566fc6ebb1c8dd42ab250f8855c5304bd173f4b50ead78b64304"
 dependencies = [
  "arrow 59.3.0",
  "arrow-schema",
@@ -2984,9 +2984,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-expr-common"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2604994999d5aeca1d1df645ffc98bc787447aaff05dde27aad0342b48fc1fe0"
+checksum = "6a18baa840f77760dcc9eaad281329bc57536c5c39e65e8649596f2a51216be7"
 dependencies = [
  "arrow 59.3.0",
  "datafusion-common",
@@ -2996,9 +2996,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-functions"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "051e97533e6af53e4aa0a0667cadc886abcaf36c4a5925019c55c0aa4c218fde"
+checksum = "763bbfeec40b55a8a961d7349c0fcfcec4f3f66cc234d6295250b95371b85e34"
 dependencies = [
  "arrow 59.3.0",
  "arrow-buffer",
@@ -3024,9 +3024,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-functions-aggregate"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d0f1bb166d3572b6ed40e1afb2faaacade962abc08c2fcf04babee74681c56b"
+checksum = "46c0c2b2e856883ecf6a4fa8b23e7c6041183af8a68d0583dc95d1d21e4eaee0"
 dependencies = [
  "arrow 59.3.0",
  "datafusion-common",
@@ -3045,9 +3045,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-functions-aggregate-common"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ed756770f5f98369e181d692fd5ee6b1127ffd7322caba92f3730f9f5c92333"
+checksum = "e35e42c87dfbff06934ea0e99cfed3440ac614c3f3bfb8c33be35ca0587d4140"
 dependencies = [
  "arrow 59.3.0",
  "datafusion-common",
@@ -3057,9 +3057,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-functions-nested"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91173fdb5c0ff2a41169a8ffa1b385b8844f18728747bb0a37e35ad7d5772a4f"
+checksum = "08079b0604cdcc43c7d6cf006cfd5d3ed9c235ade0c1ebe91085a62f875603df"
 dependencies = [
  "arrow 59.3.0",
  "arrow-ord",
@@ -3082,9 +3082,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-functions-table"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1bcdfb286a745461b126719c32700777e83df4f17cc44db5d71ebce5731e840"
+checksum = "fe2070ecf5638a93c81c8babc7858339ef52165a9f54da1411afd69adf7d85ce"
 dependencies = [
  "arrow 59.3.0",
  "async-trait",
@@ -3098,9 +3098,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-functions-window"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ec4b508f1f93f00038ba3e737e894ec6c775528b4369413386655ae6125f0fc"
+checksum = "0e9a164ebe1998c5c3f9e15c9a0c4e6b599a0c8739b5471bfb089752441963f1"
 dependencies = [
  "arrow 59.3.0",
  "datafusion-common",
@@ -3115,9 +3115,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-functions-window-common"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b352020834140073fbf5b46ee0ceb926e5074a9d0bcae1dbd91d0586d999cde"
+checksum = "98965b183f92201c16798994820ae032649c4821e089c4c80e7d0f4485d41df5"
 dependencies = [
  "datafusion-common",
  "datafusion-physical-expr-common",
@@ -3125,9 +3125,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-macros"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15192effab05d38cce10e92a6fb48c967b5f166b27b7195a165a72b232569c58"
+checksum = "3a711bd5a06ec85d9683e142d28a98ad0679a7220669f5c1b8589e57e9b29e46"
 dependencies = [
  "datafusion-doc",
  "quote",
@@ -3136,9 +3136,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-optimizer"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "854445d9f7847e1e46089cf61b8d341a64382f14484e912c83a0f23b31216896"
+checksum = "ff3256b62ff44616ec83c7f04741d21124970833bb377ed56d9abc5ec6f707ec"
 dependencies = [
  "arrow 59.3.0",
  "chrono",
@@ -3155,11 +3155,12 @@ dependencies = [
 
 [[package]]
 name = "datafusion-physical-expr"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "671558dad1d2aa253c39c0a4c52515958b99eb91abf649f4b88d5e69cc55282f"
+checksum = "c1e37a25b5aa1f3a1db114f0ee3605bf01639b83a831dcde35119ee61f0b11d6"
 dependencies = [
  "arrow 59.3.0",
+ "arrow-schema",
  "datafusion-common",
  "datafusion-expr",
  "datafusion-expr-common",
@@ -3176,9 +3177,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-physical-expr-adapter"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ffae3d78c2da80ecc829cb58536cc5aca2e99cf1365eda694fc75bfe288861e0"
+checksum = "3a4d12787d42e88b26b0d3ec006192fa23ceb832ef2a9e87439ce820a8e038cc"
 dependencies = [
  "arrow 59.3.0",
  "datafusion-common",
@@ -3191,9 +3192,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-physical-expr-common"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d9092ed15e7203fbd0903215172f7c9d18f10d94cba35137f3b3836f7c46f16"
+checksum = "d13bf7f50fd902f5afc46d50759f5185b5620c40b24054f80f7c648897d3e5a6"
 dependencies = [
  "arrow 59.3.0",
  "chrono",
@@ -3208,9 +3209,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-physical-optimizer"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9005b6cf50b57b72d476c6ed4662b04be7ca6be5320ba9127c6d0b7e4218095b"
+checksum = "11fbe7e6665072957d44ed9587676e17a1f9ab3acfadfc287dac23750585f18a"
 dependencies = [
  "arrow 59.3.0",
  "datafusion-common",
@@ -3227,9 +3228,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-physical-plan"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5787e4fcff4adc4fce8948441103a99705018b49c8dff0720b650bd7a15da112"
+checksum = "1265d58e5bce07d154e642a51ff43033b576a6ae40d50a29ac2b9f311004eb52"
 dependencies = [
  "arrow 59.3.0",
  "arrow-data",
@@ -3262,9 +3263,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-pruning"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e651c8df0b90daed6a7be5921ec0ee379e6909705f063eeff70fd4e35010e4c"
+checksum = "74b06b333405c05015836ed36cea02cc29d1e2ee8fb414a77532d8346fb56492"
 dependencies = [
  "arrow 59.3.0",
  "datafusion-common",
@@ -3278,9 +3279,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-session"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb56667ee38217efab19b895d9a936052cfb47ed438a19663351bdc42a6214a1"
+checksum = "e7616b17b1d2fee3e9b13c651eac91b768d153265e6ba88e06e0b4af7883f69c"
 dependencies = [
  "arrow-schema",
  "async-trait",
@@ -3293,9 +3294,9 @@ dependencies = [
 
 [[package]]
 name = "datafusion-sql"
-version = "55.0.0"
+version = "55.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c29067cb9d32f8e603c45e15d61ea18f1069f96ceafeceb4e18466b8e5b31d9"
+checksum = "5b4848be66dd008d55adbe1dbc8cbd6a2502588ad0c0b8483bab0f43fd4495d0"
 dependencies = [
  "arrow 59.3.0",
  "bigdecimal",
@@ -5382,7 +5383,7 @@ checksum = "034a0ad7deebf0c2abcf2435950a6666c3c15ea9d8fad0c0f48efa8a7f843fed"
 
 [[package]]
 name = "nautilus-analysis"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -5398,7 +5399,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-architect-ax"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -5445,7 +5446,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -5483,7 +5484,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-betfair"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -5528,7 +5529,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-binance"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -5579,7 +5580,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-bitmex"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -5625,7 +5626,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-blockchain"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "alloy",
@@ -5669,7 +5670,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-bybit"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -5717,7 +5718,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cli"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -5738,7 +5739,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-coinbase"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -5782,7 +5783,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "alloy-primitives",
@@ -5831,7 +5832,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -5865,7 +5866,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cryptography"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "anyhow",
  "aws-lc-rs",
@@ -5883,7 +5884,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-data"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "alloy-primitives",
@@ -5914,7 +5915,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-databento"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -5953,7 +5954,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-deribit"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -6002,7 +6003,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-derive"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "alloy",
@@ -6046,7 +6047,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-dydx"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -6095,7 +6096,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-event-store"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -6124,7 +6125,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-execution"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -6157,7 +6158,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-hyperliquid"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "alloy",
@@ -6210,7 +6211,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "anyhow",
  "arraydeque",
@@ -6225,7 +6226,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-infrastructure"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -6264,7 +6265,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-interactive-brokers"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -6305,7 +6306,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-kraken"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -6357,7 +6358,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-lighter"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -6406,7 +6407,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-live"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -6450,7 +6451,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "alloy-primitives",
@@ -6486,7 +6487,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -6541,7 +6542,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-okx"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -6590,7 +6591,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -6628,7 +6629,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence-macros"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6638,7 +6639,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-plugin"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "log",
  "nautilus-core",
@@ -6648,7 +6649,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-polymarket"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "alloy",
@@ -6704,7 +6705,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-portfolio"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -6726,7 +6727,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "mimalloc",
  "nautilus-analysis",
@@ -6773,7 +6774,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-risk"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "bon",
@@ -6795,7 +6796,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-sandbox"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -6825,7 +6826,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-serialization"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "anyhow",
  "arrow 59.3.0",
@@ -6851,7 +6852,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-system"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -6888,7 +6889,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-tardis"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -6937,7 +6938,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-testkit"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -6975,7 +6976,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-trader"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "nautilus-common",
  "nautilus-core",
@@ -6984,7 +6985,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-trading"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -7013,7 +7014,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-tutorials"
-version = "0.64.0"
+version = "0.65.0"
 dependencies = [
  "dotenvy",
  "nautilus-common",
@@ -9236,9 +9237,9 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "smallvec"
-version = "1.16.0"
+version = "1.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9be42f50aa861c555654aa3a37f52f4b1074bacf4e48fe0ef7fa584e80f1f0f"
+checksum = "ba467056f1b547ed52077911161fc86985becbc60e8e1857c8a144dab0def891"
 dependencies = [
  "serde",
 ]

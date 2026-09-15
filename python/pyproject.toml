@@ -1,6 +1,6 @@
 [project]
 name = "nautilus-trader"
-version = "2.0.0rc5"
+version = "2.0.0rc6"
 description = "Production-grade Rust-native trading engine with deterministic event-driven architecture"
 authors = [{ name = "Nautech Systems", email = "info@nautechsystems.io" }]
 classifiers = [
@@ -147,7 +147,7 @@ no-build-package = [
 ]
 
 [dependency-groups]
-dev = ["maturin==1.15.0", "ruff>=0.16.7", "ty>=0.0.78"]
+dev = ["maturin==1.15.0", "ruff>=0.16.7", "ty>=0.0.79"]
 test = [
   "pytest>=9.1.1",
   "pytest-asyncio>=1.4.0",
