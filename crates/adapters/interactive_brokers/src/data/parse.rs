@@ -27,16 +27,35 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 
+/// A size which cannot be represented at the instrument's size precision.
+///
+/// This is an expected condition rather than a decode failure. FINRA-reported odd lots and
+/// fractional-share fills arrive continuously in the US consolidated tape with sub-increment
+/// sizes, for instruments which only support whole units. Dropping these prints is deliberate
+/// (they carry no actionable size for a whole-unit instrument), so callers should report them
+/// separately from genuine parse errors.
+#[derive(Debug, Clone, Copy, thiserror::Error)]
+#[error("size {size} cannot be represented at size_precision={precision}")]
+pub struct UnrepresentableSize {
+    /// The size as reported by IB.
+    pub size: f64,
+    /// The instrument's size precision.
+    pub precision: u8,
+}
+
+/// Returns whether `error` was caused by a size which cannot be represented at the
+/// instrument's size precision (see [`UnrepresentableSize`]).
+#[must_use]
+pub fn is_unrepresentable_size(error: &anyhow::Error) -> bool {
+    error.downcast_ref::<UnrepresentableSize>().is_some()
+}
+
 fn checked_quantity(size: f64, precision: u8) -> anyhow::Result<Quantity> {
     let quantity = Quantity::new_checked(size, precision)
         .map_err(|e| anyhow::anyhow!("invalid quantity size={size}: {e}"))?;
     let tolerance = 10_f64.powi(-i32::from(precision)) * 1e-9;
     if (quantity.as_f64() - size).abs() > tolerance {
-        anyhow::bail!(
-            "quantity size={} cannot be represented with precision={}",
-            size,
-            precision
-        );
+        return Err(UnrepresentableSize { size, precision }.into());
     }
     Ok(quantity)
 }
@@ -314,6 +333,47 @@ mod tests {
     }
 
     #[rstest]
+    fn test_fractional_size_parses_when_precision_allows_it() {
+        // The same 0.5 size is valid when the instrument supports fractional units, so the
+        // drop is precision-dependent rather than a blanket rejection of fractional sizes.
+        assert!(
+            parse_trade_tick(
+                create_test_instrument_id(),
+                150.25,
+                0.5,
+                2,
+                1,
+                UnixNanos::new(0),
+                UnixNanos::new(0),
+                None,
+            )
+            .is_ok()
+        );
+    }
+
+    #[rstest]
+    fn test_invalid_size_is_not_flagged_unrepresentable() {
+        // A negative size is a genuine decode failure and must keep its WARN level,
+        // so it must NOT be classified as an expected unrepresentable-size drop.
+        let result = parse_trade_tick(
+            create_test_instrument_id(),
+            150.25,
+            -1.0,
+            2,
+            0,
+            UnixNanos::new(0),
+            UnixNanos::new(0),
+            None,
+        );
+
+        let error = result.expect_err("a negative size should not parse");
+        assert!(
+            !is_unrepresentable_size(&error),
+            "a genuine parse failure must not be treated as an expected drop: {error:?}"
+        );
+    }
+
+    #[rstest]
     fn test_parse_trade_tick_with_trade_id() {
         let instrument_id = create_test_instrument_id();
         let trade_id = TradeId::from("TRADE-001");
@@ -369,7 +429,17 @@ mod tests {
             None,
         );
 
-        assert!(result.is_err());
+        let error = result.expect_err("sub-increment size should not parse");
+        assert!(
+            is_unrepresentable_size(&error),
+            "expected an UnrepresentableSize error, got: {error:?}"
+        );
+        assert!(
+            error
+                .downcast_ref::<UnrepresentableSize>()
+                .is_some_and(|e| (e.size - 0.5).abs() < f64::EPSILON && e.precision == 0),
+            "error should carry the reported size and precision"
+        );
     }
 
     #[rstest]
@@ -387,7 +457,8 @@ mod tests {
             UnixNanos::new(0),
         );
 
-        assert!(result.is_err());
+        let error = result.expect_err("sub-increment size should not parse");
+        assert!(is_unrepresentable_size(&error));
     }
 
     #[rstest]
