@@ -77,7 +77,7 @@ use nautilus_model::{
     events::{AccountState, OrderEventAny, OrderFilled},
     identifiers::{
         AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId,
-        PositionId, StrategyId, Venue, VenueOrderId,
+        OutcomeGroupId, PositionId, StrategyId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orderbook::{
@@ -86,6 +86,7 @@ use nautilus_model::{
     },
     orders::{Order, OrderAny, OrderError, OrderList},
     position::Position,
+    prediction::OutcomeGroup,
     types::{Currency, Money, Price, Quantity},
 };
 pub use position::CacheSnapshotRef;
@@ -1561,6 +1562,12 @@ impl<'a> CacheApi<'a> {
         self.cache().instrument_close(instrument_id).copied()
     }
 
+    /// Returns the cached outcome group for `group_id`, if any.
+    #[must_use]
+    pub fn outcome_group(&self, group_id: &OutcomeGroupId) -> Option<OutcomeGroup> {
+        self.cache().outcome_group(group_id).cloned()
+    }
+
     /// Returns the latest bar for the `bar_type` (if found).
     ///
     /// # Panics
@@ -1741,6 +1748,12 @@ impl<'a> CacheApi<'a> {
     #[must_use]
     pub fn has_instrument_close(&self, instrument_id: &InstrumentId) -> bool {
         self.cache().has_instrument_close(instrument_id)
+    }
+
+    /// Returns whether the cache contains the outcome group for `group_id`.
+    #[must_use]
+    pub fn has_outcome_group(&self, group_id: &OutcomeGroupId) -> bool {
+        self.cache().has_outcome_group(group_id)
     }
 
     /// Returns whether the cache contains bars for the `bar_type`.
@@ -2200,6 +2213,8 @@ pub struct Cache {
     currencies: AHashMap<Ustr, Currency>,
     instruments: AHashMap<InstrumentId, InstrumentAny>,
     instrument_closes: AHashMap<InstrumentId, InstrumentClose>,
+    outcome_groups: AHashMap<OutcomeGroupId, OutcomeGroup>,
+    outcome_group_legs: AHashMap<InstrumentId, OutcomeGroupId>,
     synthetics: AHashMap<InstrumentId, SyntheticInstrument>,
     books: AHashMap<InstrumentId, OrderBook>,
     own_books: AHashMap<InstrumentId, OwnOrderBook>,
@@ -2244,6 +2259,8 @@ impl Debug for Cache {
             .field("funding_rates", &self.funding_rates)
             .field("instrument_statuses", &self.instrument_statuses)
             .field("instrument_closes", &self.instrument_closes)
+            .field("outcome_groups", &self.outcome_groups)
+            .field("outcome_group_legs", &self.outcome_group_legs)
             .field("bars", &self.bars)
             .field("greeks", &self.greeks)
             .field("option_greeks", &self.option_greeks)
@@ -2302,6 +2319,8 @@ impl Cache {
             currencies: AHashMap::new(),
             instruments: AHashMap::new(),
             instrument_closes: AHashMap::new(),
+            outcome_groups: AHashMap::new(),
+            outcome_group_legs: AHashMap::new(),
             synthetics: AHashMap::new(),
             books: AHashMap::new(),
             own_books: AHashMap::new(),
@@ -2485,6 +2504,8 @@ impl Cache {
         self.currencies = cache_map.currencies;
         self.instruments = cache_map.instruments;
         self.instrument_closes = cache_map.instrument_closes;
+        self.outcome_groups = cache_map.outcome_groups;
+        self.reindex_outcome_group_legs();
         self.synthetics = cache_map.synthetics;
         self.accounts = cache_map
             .accounts
@@ -4058,6 +4079,8 @@ impl Cache {
         self.funding_rates.clear();
         self.instrument_statuses.clear();
         self.instrument_closes.clear();
+        self.outcome_groups.clear();
+        self.outcome_group_legs.clear();
         self.bars.clear();
         self.accounts.clear();
         self.orders.clear();
@@ -4297,6 +4320,45 @@ impl Cache {
 
         self.instrument_closes.insert(close.instrument_id, close);
         Ok(())
+    }
+
+    /// Adds an outcome group to the cache.
+    ///
+    /// Outcome groups are venue contract terms rather than market data, so they are held in
+    /// memory and are not written to the cache database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the group violates its declared payout terms.
+    pub fn add_outcome_group(&mut self, group: OutcomeGroup) -> anyhow::Result<()> {
+        group.validate()?;
+        log::debug!("Adding `OutcomeGroup` {}", group.group_id);
+
+        // Drop index entries this version no longer declares, so a removed leg stops resolving
+        // to the group.
+        let group_id = group.group_id.clone();
+        self.outcome_group_legs
+            .retain(|_, indexed| indexed != &group_id);
+
+        for leg in &group.legs {
+            self.outcome_group_legs
+                .insert(leg.instrument_id, group_id.clone());
+        }
+
+        self.outcome_groups.insert(group.group_id.clone(), group);
+        Ok(())
+    }
+
+    /// Rebuilds the instrument to group index from the cached outcome groups.
+    fn reindex_outcome_group_legs(&mut self) {
+        self.outcome_group_legs.clear();
+
+        for group in self.outcome_groups.values() {
+            for leg in &group.legs {
+                self.outcome_group_legs
+                    .insert(leg.instrument_id, group.group_id.clone());
+            }
+        }
     }
 
     /// Adds the `quote` tick to the cache.
@@ -7824,6 +7886,31 @@ impl Cache {
         self.instrument_closes.keys().collect()
     }
 
+    /// Returns the cached outcome group for `group_id`, if any.
+    #[must_use]
+    pub fn outcome_group(&self, group_id: &OutcomeGroupId) -> Option<&OutcomeGroup> {
+        self.outcome_groups.get(group_id)
+    }
+
+    /// Returns references to all cached outcome groups listed on `venue`.
+    #[must_use]
+    pub fn outcome_groups(&self, venue: &Venue) -> Vec<&OutcomeGroup> {
+        self.outcome_groups
+            .values()
+            .filter(|group| &group.group_id.venue == venue)
+            .collect()
+    }
+
+    /// Returns the cached outcome group that declares `instrument_id` as a leg, if any.
+    #[must_use]
+    pub fn outcome_group_for_instrument(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> Option<&OutcomeGroup> {
+        let group_id = self.outcome_group_legs.get(instrument_id)?;
+        self.outcome_groups.get(group_id)
+    }
+
     /// Gets a reference to the latest bar for the `bar_type`.
     #[must_use]
     pub fn bar(&self, bar_type: &BarType) -> Option<&Bar> {
@@ -7946,6 +8033,12 @@ impl Cache {
     #[must_use]
     pub fn has_instrument_close(&self, instrument_id: &InstrumentId) -> bool {
         self.instrument_closes.contains_key(instrument_id)
+    }
+
+    /// Returns whether the cache contains the outcome group for `group_id`.
+    #[must_use]
+    pub fn has_outcome_group(&self, group_id: &OutcomeGroupId) -> bool {
+        self.outcome_groups.contains_key(group_id)
     }
 
     /// Returns whether the cache contains bars for the `bar_type`.

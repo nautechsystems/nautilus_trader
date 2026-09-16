@@ -274,15 +274,17 @@ impl DatabaseQueries {
             )
             .map_err(|e| anyhow::anyhow!("Error loading cache data: {e}"))?;
 
-        // For now, we don't load greeks and yield curves from the database
+        // For now, we don't load greeks, yield curves or outcome groups from the database
         // This will be implemented in the future
         let greeks = AHashMap::new();
         let yield_curves = AHashMap::new();
+        let outcome_groups = AHashMap::new();
 
         Ok(CacheMap {
             currencies,
             instruments,
             instrument_closes,
+            outcome_groups,
             synthetics,
             accounts,
             orders,

@@ -501,9 +501,18 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
             Currency::register(*currency, false)?;
         }
 
-        let (instruments, instrument_closes, synthetics, accounts, orders, positions) = try_join!(
+        let (
+            instruments,
+            instrument_closes,
+            outcome_groups,
+            synthetics,
+            accounts,
+            orders,
+            positions,
+        ) = try_join!(
             self.load_instruments(),
             self.load_instrument_closes(),
+            self.load_outcome_groups(),
             self.load_synthetics(),
             self.load_accounts(),
             self.load_orders(),
@@ -520,6 +529,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
             currencies,
             instruments,
             instrument_closes,
+            outcome_groups,
             synthetics,
             accounts,
             orders,

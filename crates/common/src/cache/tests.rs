@@ -56,7 +56,7 @@ use nautilus_model::{
     },
     identifiers::{
         AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId,
-        PositionId, StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
+        OutcomeGroupId, PositionId, StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
     instruments::{
         CurrencyPair, Instrument, InstrumentAny, OptionContract, SyntheticInstrument, stubs::*,
@@ -68,6 +68,7 @@ use nautilus_model::{
         stubs::{TestOrderEventStubs, TestOrdersGenerator},
     },
     position::{Position, PositionReplayEvent},
+    prediction::{Exclusivity, Exhaustiveness, OutcomeGroup, OutcomeLeg},
     stubs::TestDefault,
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
@@ -4791,6 +4792,56 @@ fn test_reset_clears_instrument_close(mut cache: Cache) {
     cache.reset();
 
     assert!(!cache.has_instrument_close(&close.instrument_id));
+}
+
+fn outcome_group_for_venue(venue: &str) -> OutcomeGroup {
+    let venue = Venue::from(venue);
+    let instrument_id = InstrumentId::from(format!("BINARY-1.{venue}").as_str());
+
+    OutcomeGroup::new_checked(
+        OutcomeGroupId::from_parts(venue, "0xCONDITION").unwrap(),
+        None,
+        vec![OutcomeLeg::new(
+            Ustr::from("Yes"),
+            instrument_id,
+            Money::from("1.00 USDC"),
+        )],
+        Exclusivity::Proven,
+        Exhaustiveness::Proven,
+        Money::from("1.00 USDC"),
+        1,
+        None,
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    )
+    .unwrap()
+}
+
+#[rstest]
+fn test_add_outcome_group_lists_only_same_venue_groups(mut cache: Cache) {
+    let polymarket = outcome_group_for_venue("POLYMARKET");
+    let kalshi = outcome_group_for_venue("KALSHI");
+
+    cache.add_outcome_group(polymarket.clone()).unwrap();
+    cache.add_outcome_group(kalshi).unwrap();
+
+    assert_eq!(cache.outcome_group(&polymarket.group_id), Some(&polymarket));
+    assert!(cache.has_outcome_group(&polymarket.group_id));
+
+    let listed = cache.outcome_groups(&Venue::from("POLYMARKET"));
+
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].group_id, polymarket.group_id);
+}
+
+#[rstest]
+fn test_reset_clears_outcome_groups(mut cache: Cache) {
+    let group = outcome_group_for_venue("POLYMARKET");
+    cache.add_outcome_group(group.clone()).unwrap();
+
+    cache.reset();
+
+    assert!(!cache.has_outcome_group(&group.group_id));
 }
 
 #[rstest]
