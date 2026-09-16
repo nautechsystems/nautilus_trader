@@ -1,0 +1,84 @@
+[package]
+name = "nautilus-kalshi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Kalshi integration adapter for the Nautilus trading engine"
+categories.workspace = true
+keywords.workspace = true
+documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+name = "nautilus_kalshi"
+crate-type = ["rlib"]
+
+[features]
+default = ["high-precision"]
+extension-module = [
+  "nautilus-common/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-live/extension-module",
+  "nautilus-model/extension-module",
+  "nautilus-network/extension-module",
+  "pyo3/extension-module",
+  "python",
+]
+python = [
+  "dep:nautilus-system",
+  "nautilus-common/python",
+  "nautilus-core/python",
+  "nautilus-live/python",
+  "nautilus-model/python",
+  "nautilus-network/python",
+  "nautilus-system/python",
+  "pyo3",
+  "pyo3-stub-gen",
+]
+high-precision = ["nautilus-model/high-precision"]
+
+[dependencies]
+nautilus-common = { workspace = true, features = ["live"] }
+nautilus-core = { workspace = true }
+nautilus-cryptography = { workspace = true }
+nautilus-live = { workspace = true }
+nautilus-model = { workspace = true }
+nautilus-network = { workspace = true }
+nautilus-system = { workspace = true, optional = true }
+
+ahash = { workspace = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+bon = { workspace = true }
+jiff = { workspace = true }
+log = { workspace = true }
+parking_lot = { workspace = true }
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+ustr = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
+
+[dev-dependencies]
+nautilus-live = { workspace = true, features = ["node", "test-support"] }
+nautilus-model = { workspace = true, features = ["test-support"] }
+nautilus-trading = { workspace = true }
+
+aws-lc-rs = { workspace = true }
+axum = { workspace = true }
+base64 = { workspace = true }
+parking_lot = { workspace = true }
+pem = { workspace = true }
+rstest = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }

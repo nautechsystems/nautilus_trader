@@ -15,6 +15,7 @@ members = [
   "crates/adapters/dydx",
   "crates/adapters/hyperliquid",
   "crates/adapters/interactive_brokers",
+  "crates/adapters/kalshi",
   "crates/adapters/kraken",
   "crates/adapters/lighter",
   "crates/adapters/okx",
@@ -106,6 +107,7 @@ nautilus-derive = { path = "crates/adapters/derive", version = "0.64.0", default
 nautilus-dydx = { path = "crates/adapters/dydx", version = "0.64.0", default-features = false }
 nautilus-hyperliquid = { path = "crates/adapters/hyperliquid", version = "0.64.0", default-features = false }
 nautilus-interactive-brokers = { path = "crates/adapters/interactive_brokers", version = "0.64.0" }
+nautilus-kalshi = { path = "crates/adapters/kalshi", version = "0.64.0", default-features = false }
 nautilus-kraken = { path = "crates/adapters/kraken", version = "0.64.0", default-features = false }
 nautilus-lighter = { path = "crates/adapters/lighter", version = "0.64.0", default-features = false }
 nautilus-okx = { path = "crates/adapters/okx", version = "0.64.0", default-features = false }

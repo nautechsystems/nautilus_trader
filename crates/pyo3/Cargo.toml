@@ -56,6 +56,7 @@ extension-module = [
   "nautilus-indicators/extension-module",
   "nautilus-infrastructure/extension-module",
   "nautilus-interactive-brokers/extension-module",
+  "nautilus-kalshi/extension-module",
   "nautilus-kraken/extension-module",
   "nautilus-lighter/extension-module",
   "nautilus-live/extension-module",
@@ -86,6 +87,7 @@ high-precision = [
   "nautilus-derive/high-precision",
   "nautilus-dydx/high-precision",
   "nautilus-hyperliquid/high-precision",
+  "nautilus-kalshi/high-precision",
   "nautilus-kraken/high-precision",
   "nautilus-lighter/high-precision",
   "nautilus-okx/high-precision",
@@ -149,6 +151,7 @@ nautilus-derive = { workspace = true, features = ["python"] }
 nautilus-dydx = { workspace = true, features = ["python"] }
 nautilus-hyperliquid = { workspace = true, features = ["python"] }
 nautilus-interactive-brokers = { workspace = true, features = ["python"] }
+nautilus-kalshi = { workspace = true, features = ["python"] }
 nautilus-kraken = { workspace = true, features = ["python"] }
 nautilus-lighter = { workspace = true, features = ["python"] }
 nautilus-okx = { workspace = true, features = ["python"] }

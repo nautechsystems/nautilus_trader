@@ -14,6 +14,7 @@ from . import derive
 from . import dydx
 from . import hyperliquid
 from . import interactive_brokers
+from . import kalshi
 from . import kraken
 from . import lighter
 from . import okx
@@ -35,6 +36,7 @@ __all__ = [
     "dydx",
     "hyperliquid",
     "interactive_brokers",
+    "kalshi",
     "kraken",
     "lighter",
     "okx",
