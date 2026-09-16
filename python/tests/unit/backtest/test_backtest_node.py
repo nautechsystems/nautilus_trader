@@ -592,13 +592,21 @@ def test_node_post_run_inspection_unknown_config_raises(
     with pytest.raises(
         RuntimeError,
         match="No engine for run config 'missing': unknown run config ID",
-    ):
+    ) as exc_info:
         getattr(node, method_name)("missing", *args)
 
+    assert config.id in str(exc_info.value)
 
-def test_node_add_strategy_before_build_raises_with_build_hint() -> None:
+
+@pytest.mark.parametrize("build_state", ["not_built", "suppressed_failure", "raised_failure"])
+@pytest.mark.parametrize("method_name", ["get_engine_cache", "add_strategy_from_config"])
+def test_node_missing_engine_explains_build_requirement(
+    tmp_path: Path,
+    build_state: str,
+    method_name: str,
+) -> None:
     """
-    Test node add strategy before build raises with build hint.
+    Test missing engine diagnostics before building and after build failures.
     """
     venue = BacktestVenueConfig(
         name="SIM",
@@ -607,21 +615,51 @@ def test_node_add_strategy_before_build_raises_with_build_hint() -> None:
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USD"],
     )
-    config = BacktestRunConfig(venues=[venue], data=[])
+    data = BacktestDataConfig(
+        data_type="QuoteTick",
+        catalog_path=str(tmp_path),
+        instrument_id=InstrumentId.from_str("AAA.SIM"),
+    )
+    config = BacktestRunConfig(
+        venues=[venue],
+        data=[data],
+        raise_exception=build_state == "raised_failure",
+    )
     node = BacktestNode([config])
 
-    with pytest.raises(
-        RuntimeError,
-        match=rf"No engine for run config '{config.id}': call build\(\) first",
-    ):
-        node.add_strategy_from_config(
-            config.id,
+    if build_state == "raised_failure":
+        with pytest.raises(RuntimeError, match="No instruments found"):
+            node.build()
+    elif build_state == "suppressed_failure":
+        node.build()
+
+    args = ()
+    if method_name == "add_strategy_from_config":
+        args = (
             ImportableStrategyConfig(
                 strategy_path="tests.strategies.backtest_surface:StreamingWhipsaw",
                 config_path="tests.strategies.backtest_surface:StreamingWhipsawConfig",
                 config={"instrument_id": "AAA.SIM", "trade_size": "1.00000"},
             ),
         )
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"call build.*failed.*disposed",
+    ):
+        getattr(node, method_name)(config.id, *args)
+
+
+def test_node_inspection_after_dispose_explains_missing_engine(tmp_path: Path) -> None:
+    """
+    Test explicit disposal removes a previously usable engine.
+    """
+    node, config, _, _ = _build_component_node(tmp_path, quote_count=1)
+    node.get_engine_cache(config.id)
+    node.dispose()
+
+    with pytest.raises(RuntimeError, match="engine was disposed"):
+        node.get_engine_cache(config.id)
 
 
 def test_node_post_run_inspection_retains_exact_engine_state(tmp_path: Path) -> None:

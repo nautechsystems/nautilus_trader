@@ -355,13 +355,13 @@ impl BacktestNode {
             .configs()
             .iter()
             .any(|config| config.id() == run_config_id);
-        let reason = if !known {
+        let reason = if known {
+            "call build() before accessing the engine; if build() already ran, \
+             it may have failed (check the log) or the engine was disposed"
+                .to_string()
+        } else {
             let ids: Vec<&str> = self.configs().iter().map(BacktestRunConfig::id).collect();
             format!("unknown run config ID (known IDs: {ids:?})")
-        } else if self.get_engines().is_empty() {
-            "call build() first".to_string()
-        } else {
-            "the engine failed to build, see the log".to_string()
         };
         to_pyruntime_err(format!(
             "No engine for run config '{run_config_id}': {reason}"
