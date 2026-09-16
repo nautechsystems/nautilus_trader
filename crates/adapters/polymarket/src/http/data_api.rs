@@ -143,6 +143,65 @@ enum OffsetCeilingSource {
     Remote(String),
 }
 
+/// How completely a paginated Polymarket trades request covered its window.
+///
+/// The Data API caps offset-based pagination on high-activity markets, so a truncated result is
+/// not a complete history. Reporting the stop reason is what keeps a capture from presenting one
+/// as the other.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TradeFetchCompleteness {
+    /// Every trade in the requested window was returned.
+    Complete,
+    /// The request's own `limit` stopped pagination.
+    CallerCapped,
+    /// The historical offset ceiling stopped pagination before the window was exhausted.
+    VenueOffsetCeiling {
+        /// The venue's response when the venue reported the ceiling itself, `None` when the
+        /// ceiling is the client's own offset bound.
+        reason: Option<String>,
+    },
+}
+
+impl TradeFetchCompleteness {
+    /// Returns whether pagination covered the whole requested window.
+    #[must_use]
+    pub const fn is_complete(&self) -> bool {
+        matches!(self, Self::Complete)
+    }
+}
+
+/// [`TradeTick`]s with the completeness of the pagination that produced them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TradeTickFetch {
+    /// The trades returned, in chronological order.
+    pub ticks: Vec<TradeTick>,
+    /// How completely pagination covered the requested window.
+    pub completeness: TradeFetchCompleteness,
+}
+
+impl TradeTickFetch {
+    /// Returns whether the fetch covered the whole requested window.
+    #[must_use]
+    pub const fn is_complete(&self) -> bool {
+        self.completeness.is_complete()
+    }
+}
+
+fn trade_fetch_completeness(completion: &Completion<TradeTickStop>) -> TradeFetchCompleteness {
+    match completion {
+        Completion::WireExhausted => TradeFetchCompleteness::Complete,
+        Completion::Stopped(TradeTickStop::CallerCapped) => TradeFetchCompleteness::CallerCapped,
+        Completion::Stopped(TradeTickStop::VenueOffsetCeiling(OffsetCeilingSource::Local)) => {
+            TradeFetchCompleteness::VenueOffsetCeiling { reason: None }
+        }
+        Completion::Stopped(TradeTickStop::VenueOffsetCeiling(OffsetCeilingSource::Remote(
+            error,
+        ))) => TradeFetchCompleteness::VenueOffsetCeiling {
+            reason: Some(error.clone()),
+        },
+    }
+}
+
 struct TradeTickReducer {
     rows: Vec<DataApiTrade>,
     instrument_id: InstrumentId,
@@ -376,18 +435,24 @@ impl PolymarketDataApiHttpClient {
         decode_response(&response)
     }
 
-    /// Fetches trades and converts them to [`TradeTick`] for the given instrument.
+    /// Fetches trades and converts them to [`TradeTick`], reporting pagination completeness.
     ///
     /// Automatically paginates through all available results (up to `limit`
     /// if specified). Filters by `token_id` (since the API returns trades for
     /// all outcomes of the condition) and returns results in chronological
     /// order.
     ///
-    /// The Polymarket Data API caps offset-based pagination on high-activity
-    /// markets; when this ceiling is hit a warning is logged and the trades
-    /// fetched so far are returned.
+    /// The Polymarket Data API caps offset-based pagination on high-activity markets. A ceiling
+    /// stops pagination and leaves a truncated history, which is reported through
+    /// [`TradeTickFetch::completeness`] so a caller never presents a partial history as a
+    /// complete one.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the window is inverted, `limit` is zero, a page cannot be fetched, or
+    /// the window is start-anchored and its completeness cannot be guaranteed.
     #[expect(clippy::too_many_arguments)]
-    pub async fn request_trade_ticks(
+    pub async fn request_trade_ticks_with_completeness(
         &self,
         instrument_id: InstrumentId,
         condition_id: &str,
@@ -397,7 +462,7 @@ impl PolymarketDataApiHttpClient {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         limit: Option<u32>,
-    ) -> anyhow::Result<Vec<TradeTick>> {
+    ) -> anyhow::Result<TradeTickFetch> {
         const PAGE_SIZE: u32 = 500;
         const MAX_OFFSET: u32 = 10_000;
 
@@ -463,25 +528,71 @@ impl PolymarketDataApiHttpClient {
             )
             .await?;
 
-        match completed.completion {
-            Completion::WireExhausted | Completion::Stopped(TradeTickStop::CallerCapped) => {
-                Ok(completed.output)
-            }
-            Completion::Stopped(TradeTickStop::VenueOffsetCeiling(OffsetCeilingSource::Local)) => {
+        let completeness = trade_fetch_completeness(&completed.completion);
+
+        Ok(TradeTickFetch {
+            ticks: completed.output,
+            completeness,
+        })
+    }
+
+    /// Fetches trades and converts them to [`TradeTick`] for the given instrument.
+    ///
+    /// Automatically paginates through all available results (up to `limit`
+    /// if specified). Filters by `token_id` (since the API returns trades for
+    /// all outcomes of the condition) and returns results in chronological
+    /// order.
+    ///
+    /// This drops pagination completeness, so a truncated history is indistinguishable from a
+    /// complete one. Use [`PolymarketDataApiHttpClient::request_trade_ticks_with_completeness`]
+    /// when the result feeds a capture or a replay.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error under the same conditions as
+    /// [`PolymarketDataApiHttpClient::request_trade_ticks_with_completeness`].
+    #[expect(clippy::too_many_arguments)]
+    pub async fn request_trade_ticks(
+        &self,
+        instrument_id: InstrumentId,
+        condition_id: &str,
+        token_id: &str,
+        price_precision: u8,
+        size_precision: u8,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<TradeTick>> {
+        let fetch = self
+            .request_trade_ticks_with_completeness(
+                instrument_id,
+                condition_id,
+                token_id,
+                price_precision,
+                size_precision,
+                start,
+                end,
+                limit,
+            )
+            .await?;
+
+        match &fetch.completeness {
+            TradeFetchCompleteness::Complete | TradeFetchCompleteness::CallerCapped => {}
+            TradeFetchCompleteness::VenueOffsetCeiling { reason: None } => {
                 log::warn!(
                     "Polymarket public trades API reached the historical offset ceiling for condition {condition_id}; returning partial results"
                 );
-                Ok(completed.output)
             }
-            Completion::Stopped(TradeTickStop::VenueOffsetCeiling(
-                OffsetCeilingSource::Remote(error),
-            )) => {
+            TradeFetchCompleteness::VenueOffsetCeiling {
+                reason: Some(error),
+            } => {
                 log::warn!(
                     "Polymarket public trades API hit its historical offset ceiling for condition {condition_id}; returning partial results: {error}"
                 );
-                Ok(completed.output)
             }
         }
+
+        Ok(fetch.ticks)
     }
 }
 
@@ -1069,5 +1180,43 @@ mod tests {
             "failed to convert Data API trade size -1.5 with precision 2"
         );
         assert_eq!(error.chain().count(), 2);
+    }
+
+    #[rstest]
+    fn test_trade_fetch_completeness_reports_every_stop_reason() {
+        let cases = [
+            (Completion::WireExhausted, TradeFetchCompleteness::Complete),
+            (
+                Completion::Stopped(TradeTickStop::CallerCapped),
+                TradeFetchCompleteness::CallerCapped,
+            ),
+            (
+                Completion::Stopped(TradeTickStop::VenueOffsetCeiling(
+                    OffsetCeilingSource::Local,
+                )),
+                TradeFetchCompleteness::VenueOffsetCeiling { reason: None },
+            ),
+            (
+                Completion::Stopped(TradeTickStop::VenueOffsetCeiling(
+                    OffsetCeilingSource::Remote(
+                        "max historical activity offset reached".to_string(),
+                    ),
+                )),
+                TradeFetchCompleteness::VenueOffsetCeiling {
+                    reason: Some("max historical activity offset reached".to_string()),
+                },
+            ),
+        ];
+
+        for (completion, expected) in cases {
+            let completeness = trade_fetch_completeness(&completion);
+
+            assert_eq!(completeness, expected);
+            assert_eq!(
+                completeness.is_complete(),
+                expected == TradeFetchCompleteness::Complete,
+                "only an exhausted wire is a complete history"
+            );
+        }
     }
 }
