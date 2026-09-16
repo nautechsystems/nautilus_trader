@@ -49,6 +49,7 @@ use nautilus_risk::engine::config::RiskEngineConfig;
 use nautilus_system::config::{NautilusKernelConfig, StreamingConfig};
 use nautilus_trading::ImportableControllerConfig;
 use rust_decimal::Decimal;
+use strum::{AsRefStr, EnumIter, IntoEnumIterator};
 use ustr::Ustr;
 
 use crate::modules::{SimulationModuleAny, SimulationModuleHandle};
@@ -56,7 +57,7 @@ use crate::modules::{SimulationModuleAny, SimulationModuleHandle};
 pub(crate) const MAX_BACKTEST_CHUNK_SIZE: usize = 1_000_000;
 
 /// Represents a type of market data for catalog queries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, AsRefStr, EnumIter)]
 pub enum NautilusDataType {
     QuoteTick,
     TradeTick,
@@ -71,23 +72,6 @@ pub enum NautilusDataType {
     InstrumentClose,
 }
 
-impl NautilusDataType {
-    /// All variants, in declaration order.
-    pub const ALL: [Self; 11] = [
-        Self::QuoteTick,
-        Self::TradeTick,
-        Self::Bar,
-        Self::OrderBookDelta,
-        Self::OrderBookDepth10,
-        Self::MarkPriceUpdate,
-        Self::IndexPriceUpdate,
-        Self::FundingRateUpdate,
-        Self::InstrumentStatus,
-        Self::OptionGreeks,
-        Self::InstrumentClose,
-    ];
-}
-
 impl Display for NautilusDataType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Debug::fmt(self, f)
@@ -98,11 +82,13 @@ impl FromStr for NautilusDataType {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> anyhow::Result<Self> {
-        Self::ALL
-            .into_iter()
-            .find(|data_type| data_type.to_string() == s)
+        Self::iter()
+            .find(|data_type| data_type.as_ref() == s)
             .ok_or_else(|| {
-                let expected = Self::ALL.map(|data_type| data_type.to_string()).join(", ");
+                let expected = Self::iter()
+                    .map(|data_type| data_type.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 anyhow::anyhow!("Invalid `NautilusDataType`: '{s}' (expected one of: {expected})")
             })
     }
@@ -1240,7 +1226,7 @@ mod tests {
 
     #[rstest]
     fn test_nautilus_data_type_from_str_round_trips_every_variant() {
-        for data_type in NautilusDataType::ALL {
+        for data_type in NautilusDataType::iter() {
             assert_eq!(
                 data_type.to_string().parse::<NautilusDataType>().unwrap(),
                 data_type
