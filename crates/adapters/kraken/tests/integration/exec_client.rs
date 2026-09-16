@@ -23,7 +23,7 @@ use std::{
     rc::Rc,
     sync::{
         Arc,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -134,6 +134,8 @@ struct TestServerState {
     orders_status_response: Arc<tokio::sync::Mutex<Option<String>>>,
     orders_status_request_body: Arc<tokio::sync::Mutex<Option<String>>>,
     fills_response: Arc<tokio::sync::Mutex<Option<String>>>,
+    /// When true, `/0/private/TradeVolume` returns a Kraken API permission error.
+    trade_volume_api_error: Arc<AtomicBool>,
     ws_message_tx: tokio::sync::broadcast::Sender<String>,
 }
 
@@ -142,6 +144,7 @@ impl Default for TestServerState {
         let (ws_message_tx, _) = tokio::sync::broadcast::channel(8);
         Self {
             command_responses: Arc::new(tokio::sync::Mutex::new(CommandResponses::default())),
+            trade_volume_api_error: Arc::new(AtomicBool::new(false)),
             submit_request_count: Arc::new(AtomicUsize::new(0)),
             modify_request_count: Arc::new(AtomicUsize::new(0)),
             batch_submit_request_count: Arc::new(AtomicUsize::new(0)),
@@ -397,18 +400,24 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
             }
         }
         "/0/public/AssetPairs" => {
-            let query = Query::<HashMap<String, String>>::try_from_uri(req.uri())
-                .unwrap_or_default();
+            let query =
+                Query::<HashMap<String, String>>::try_from_uri(req.uri()).unwrap_or_default();
             let filename = match query.get("aclass_base").map(String::as_str) {
                 Some("tokenized_asset") => "http_asset_pairs_tokenized.json",
                 _ => "http_asset_pairs.json",
             };
             json_response(load_test_data(filename))
         }
-        "/0/private/TradeVolume" => json_response(
-            r#"{"error":[],"result":{"fees":{"XBTUSDT":{"fee":"0.2900"},"AAPLZUSD.EQ":{"fee":"0.1900"}},"fees_maker":{"XBTUSDT":{"fee":"0.1700"},"AAPLZUSD.EQ":{"fee":"0.0300"}}}}"#
-                .to_string(),
-        ),
+        "/0/private/TradeVolume" => {
+            if state.trade_volume_api_error.load(Ordering::Relaxed) {
+                json_response(r#"{"error":["EGeneral:Permission denied"],"result":{}}"#.to_string())
+            } else {
+                json_response(
+                    r#"{"error":[],"result":{"fees":{"XBTUSDT":{"fee":"0.2900"},"AAPLZUSD.EQ":{"fee":"0.1900"}},"fees_maker":{"XBTUSDT":{"fee":"0.1700"},"AAPLZUSD.EQ":{"fee":"0.0300"}}}}"#
+                        .to_string(),
+                )
+            }
+        }
         "/0/private/GetWebSocketsToken" => json_response(
             r#"{"error":[],"result":{"token":"TEST-TOKEN","expires":900}}"#.to_string(),
         ),
@@ -427,8 +436,7 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
                 OrderCommandResponse::StructuredReject => {
                     json_response(r#"{"error":["EOrder:Insufficient funds"]}"#.to_string())
                 }
-                OrderCommandResponse::UnknownStatus
-                | OrderCommandResponse::IocWouldNotExecute => {
+                OrderCommandResponse::UnknownStatus | OrderCommandResponse::IocWouldNotExecute => {
                     json_response(r#"{"error":[],"result":{"txid":[]}}"#.to_string())
                 }
             }
@@ -446,8 +454,7 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
                 OrderCommandResponse::StructuredReject => {
                     json_response(r#"{"error":["EOrder:Unknown order"]}"#.to_string())
                 }
-                OrderCommandResponse::UnknownStatus
-                | OrderCommandResponse::IocWouldNotExecute => {
+                OrderCommandResponse::UnknownStatus | OrderCommandResponse::IocWouldNotExecute => {
                     json_response(r#"{"error":[],"result":{}}"#.to_string())
                 }
             }
@@ -700,6 +707,28 @@ async fn connected_spot_client_with_command_responses(
     client.connect().await.unwrap();
 
     (client, rx, cache, state)
+}
+
+/// A denied `TradeVolume` request must not stop the spot execution client connecting.
+///
+/// The account fee request runs inside `connect()` while loading instruments, so aborting it costs
+/// the execution client entirely: the node comes up with no account state and no reconciliation.
+/// Instruments must load on the public `AssetPairs` rates instead.
+#[rstest]
+#[tokio::test]
+async fn test_spot_execution_client_connects_when_trade_volume_denied() {
+    let (addr, state) = start_test_server().await.unwrap();
+    state.trade_volume_api_error.store(true, Ordering::Relaxed);
+
+    let (mut client, _rx, cache) = create_test_spot_execution_client(addr);
+    add_test_spot_account_to_cache(&cache);
+
+    client
+        .connect()
+        .await
+        .expect("execution client must connect when the account fee request is denied");
+
+    assert!(client.is_connected());
 }
 
 fn add_test_account_to_cache(cache: &Rc<RefCell<Cache>>) {
