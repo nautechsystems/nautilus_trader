@@ -21,7 +21,7 @@ use axum::http::{HeaderMap, HeaderName, StatusCode};
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
-    clock::TestClock,
+    clock::VirtualClock,
     enums::LogLevel,
     live::runner::{replace_system_event_sender, set_exec_event_sender},
     messages::{
@@ -15326,7 +15326,7 @@ async fn test_account_refresh_uses_own_order_reservations(#[case] fill_remaining
     client.start().unwrap();
     client.connect().await.unwrap();
     let mut engine = ExecutionEngine::new(
-        Rc::new(RefCell::new(TestClock::new())),
+        Rc::new(RefCell::new(VirtualClock::new())),
         Rc::clone(&cache),
         None,
     );

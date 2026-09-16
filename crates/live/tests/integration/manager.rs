@@ -31,7 +31,7 @@ use log::{Level, LevelFilter, Log, Metadata, Record};
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
-    clock::{Clock, TestClock},
+    clock::{Clock, VirtualClock},
     live::dst,
     messages::{
         ExecutionReport,
@@ -103,7 +103,7 @@ async fn advance_clock(d: dst::time::Duration) {
 }
 
 struct TestContext {
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     manager: ExecutionManager,
     exec_engine: Rc<RefCell<ExecutionEngine>>,
@@ -115,7 +115,7 @@ impl TestContext {
     }
 
     fn with_config(config: ExecutionManagerConfig) -> Self {
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         // Add test account to cache (required for position creation in ExecutionEngine)

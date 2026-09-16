@@ -4667,7 +4667,7 @@ enum SubmissionValidationResult {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::clock::TestClock;
+    use nautilus_common::clock::VirtualClock;
     use nautilus_model::{
         enums::{LiquiditySide, OrderSide, OrderType, PositionSide},
         events::order::spec::OrderFilledSpec,
@@ -4801,7 +4801,7 @@ mod tests {
             .add_venue_order_id(&owner_id, &venue_order_id, false)
             .unwrap();
         let engine = ExecutionEngine::new(
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
             Rc::clone(&cache),
             None,
         );

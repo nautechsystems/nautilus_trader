@@ -13,10 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Real-time and test timers for use with `Clock` implementations.
+//! Real-time and virtual timers for use with `Clock` implementations.
 //!
 //! Defines [`TimeEvent`] values, callback and handler types, heap scheduling order, and the
-//! deterministic [`TestTimer`] iterator. The event and callback primitives are shared by test and
+//! deterministic [`VirtualTimer`] iterator. The event and callback primitives are shared by virtual and
 //! live clock implementations.
 
 use std::{
@@ -185,7 +185,7 @@ impl Debug for PythonTimeEventCallback {
 /// - The callback captures `Rc<RefCell<...>>` for shared mutable state.
 /// - Thread safety constraints prevent using `Arc`.
 ///
-/// `RustLocal` works with `TestClock` and with `LiveClock` when its event channel
+/// `RustLocal` works with `VirtualClock` and with `LiveClock` when its event channel
 /// is drained on the callback's originating thread.
 ///
 /// # Automatic Conversion
@@ -342,12 +342,12 @@ pub(crate) trait Timer {
     fn cancel(&mut self);
 }
 
-/// A deterministic interval timer for use with a [`TestClock`](crate::clock::TestClock).
+/// A deterministic interval timer for use with a [`VirtualClock`](crate::clock::VirtualClock).
 ///
 /// The timer generates scheduled events through an optional inclusive stop time as its iterator is
 /// consumed.
 #[derive(Clone, Debug)]
-pub struct TestTimer {
+pub struct VirtualTimer {
     /// The name of the timer.
     pub name: Ustr,
     /// The interval between timer events in nanoseconds.
@@ -362,8 +362,8 @@ pub struct TestTimer {
     is_expired: bool,
 }
 
-impl TestTimer {
-    /// Creates a test timer with the supplied schedule.
+impl VirtualTimer {
+    /// Creates a virtual timer with the supplied schedule.
     ///
     /// # Panics
     ///
@@ -431,7 +431,7 @@ impl TestTimer {
     }
 }
 
-impl Timer for TestTimer {
+impl Timer for VirtualTimer {
     fn is_expired(&self) -> bool {
         Self::is_expired(self)
     }
@@ -441,7 +441,7 @@ impl Timer for TestTimer {
     }
 }
 
-impl Iterator for TestTimer {
+impl Iterator for VirtualTimer {
     type Item = (TimeEvent, UnixNanos);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -502,7 +502,7 @@ mod tests {
     use ustr::Ustr;
 
     use super::{
-        ScheduledTimeEvent, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandler,
+        ScheduledTimeEvent, TimeEvent, TimeEventCallback, TimeEventHandler, VirtualTimer,
         create_valid_interval,
     };
     use crate::msgbus::{
@@ -521,8 +521,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_test_timer_advance_within_next_time_ns() {
-        let mut timer = TestTimer::new(
+    fn test_virtual_timer_advance_within_next_time_ns() {
+        let mut timer = VirtualTimer::new(
             Ustr::from("TEST_TIMER"),
             NonZeroU64::new(5).unwrap(),
             UnixNanos::default(),
@@ -538,8 +538,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_test_timer_advance_up_to_next_time_ns() {
-        let mut timer = TestTimer::new(
+    fn test_virtual_timer_advance_up_to_next_time_ns() {
+        let mut timer = VirtualTimer::new(
             Ustr::from("TEST_TIMER"),
             NonZeroU64::new(1).unwrap(),
             UnixNanos::default(),
@@ -551,8 +551,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_test_timer_advance_up_to_next_time_ns_with_stop_time() {
-        let mut timer = TestTimer::new(
+    fn test_virtual_timer_advance_up_to_next_time_ns_with_stop_time() {
+        let mut timer = VirtualTimer::new(
             Ustr::from("TEST_TIMER"),
             NonZeroU64::new(1).unwrap(),
             UnixNanos::default(),
@@ -564,8 +564,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_test_timer_advance_beyond_next_time_ns() {
-        let mut timer = TestTimer::new(
+    fn test_virtual_timer_advance_beyond_next_time_ns() {
+        let mut timer = VirtualTimer::new(
             Ustr::from("TEST_TIMER"),
             NonZeroU64::new(1).unwrap(),
             UnixNanos::default(),
@@ -577,8 +577,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_test_timer_advance_beyond_stop_time() {
-        let mut timer = TestTimer::new(
+    fn test_virtual_timer_advance_beyond_stop_time() {
+        let mut timer = VirtualTimer::new(
             Ustr::from("TEST_TIMER"),
             NonZeroU64::new(1).unwrap(),
             UnixNanos::default(),
@@ -590,8 +590,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_test_timer_advance_exact_boundary() {
-        let mut timer = TestTimer::new(
+    fn test_virtual_timer_advance_exact_boundary() {
+        let mut timer = VirtualTimer::new(
             Ustr::from("TEST_TIMER"),
             NonZeroU64::new(5).unwrap(),
             UnixNanos::from(0),
@@ -611,8 +611,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_test_timer_fire_immediately_true() {
-        let mut timer = TestTimer::new(
+    fn test_virtual_timer_fire_immediately_true() {
+        let mut timer = VirtualTimer::new(
             Ustr::from("TEST_TIMER"),
             NonZeroU64::new(5).unwrap(),
             UnixNanos::from(10),
@@ -633,8 +633,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_test_timer_fire_immediately_false() {
-        let mut timer = TestTimer::new(
+    fn test_virtual_timer_fire_immediately_false() {
+        let mut timer = VirtualTimer::new(
             Ustr::from("TEST_TIMER"),
             NonZeroU64::new(5).unwrap(),
             UnixNanos::from(10),
@@ -954,7 +954,7 @@ mod tests {
         operations: Vec<TimerOperation>,
         (interval_ns, start_time_ns, stop_time_ns, fire_immediately): (u64, u64, Option<u64>, bool),
     ) -> TestCaseResult {
-        let mut timer = TestTimer::new(
+        let mut timer = VirtualTimer::new(
             Ustr::from("PROP_TEST_TIMER"),
             NonZeroU64::new(interval_ns).unwrap(),
             UnixNanos::from(start_time_ns),
@@ -1078,7 +1078,7 @@ mod tests {
             fire_immediately in prop::bool::ANY,
             advance_count in 1u64..=20,
         ) {
-            let mut timer = TestTimer::new(
+            let mut timer = VirtualTimer::new(
                 Ustr::from("CONSISTENCY_TEST"),
                 NonZeroU64::new(interval_ns).unwrap(),
                 UnixNanos::from(start_time_ns),
@@ -1131,7 +1131,7 @@ mod tests {
             } else {
                 event_time_ns - interval_ns
             };
-            let mut timer = TestTimer::new(
+            let mut timer = VirtualTimer::new(
                 Ustr::from("TERMINAL_STOP_TEST"),
                 NonZeroU64::new(interval_ns).unwrap(),
                 UnixNanos::from(start_time_ns),

@@ -958,7 +958,7 @@ impl<'a> PortfolioApi<'a> {
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use nautilus_common::{cache::Cache, clock::TestClock, factories::OrderFactory};
+    use nautilus_common::{cache::Cache, clock::VirtualClock, factories::OrderFactory};
     use nautilus_model::{
         enums::{OrderSide, OrderType},
         identifiers::{AccountId, InstrumentId, StrategyId, TraderId, Venue},
@@ -972,7 +972,7 @@ mod tests {
     fn test_order_api_creates_market_order() {
         let trader_id = TraderId::from("TRADER-001");
         let strategy_id = StrategyId::from("S-001");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let order_factory = RefCell::new(OrderFactory::new(
             trader_id,
             strategy_id,
@@ -1010,7 +1010,7 @@ mod tests {
     fn test_order_api_creates_bracket_orders() {
         let trader_id = TraderId::from("TRADER-001");
         let strategy_id = StrategyId::from("S-001");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let order_factory = RefCell::new(OrderFactory::new(
             trader_id,
             strategy_id,
@@ -1058,7 +1058,7 @@ mod tests {
     #[rstest]
     fn test_portfolio_api_empty_reads_return_empty_values() {
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let portfolio = RefCell::new(Portfolio::new(clock, cache, None));
         let api = PortfolioApi::new(&portfolio);
         let venue = Venue::from("SIM");

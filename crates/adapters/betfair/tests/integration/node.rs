@@ -21,7 +21,7 @@
 //! processes it and stops clean.
 //!
 //! These complement the deterministic seam harness in `live.rs`. The seam harness exercises the
-//! routing fork in isolation on a `TestClock` with manual pumping; this exercises the same fork
+//! routing fork in isolation on a `VirtualClock` with manual pumping; this exercises the same fork
 //! wrapped in the `ExecutionManager` bookkeeping that `LiveNode::run` adds (fill-dedup,
 //! post-dispatch close handling), at the cost of a wall-clock run loop. The factory injects the
 //! mock URLs because `BetfairExecutionClientConfig` has no HTTP base-URL override; everything else (the

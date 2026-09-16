@@ -227,7 +227,7 @@ mod tests {
 
     use nautilus_common::{
         cache::Cache,
-        clock::TestClock,
+        clock::VirtualClock,
         factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
         live::runner::set_data_event_sender,
     };
@@ -293,7 +293,7 @@ mod tests {
         let factory = BetfairDataClientFactory::new();
         let config = data_config();
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         set_data_event_sender(tx);
 
@@ -315,7 +315,7 @@ mod tests {
             BETFAIR,
             &config,
             cache.into(),
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
         );
         assert!(result.is_ok());
 
@@ -334,7 +334,7 @@ mod tests {
             BETFAIR,
             &wrong_config,
             cache.into(),
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
         );
         assert!(result.is_err());
         assert!(
@@ -354,7 +354,7 @@ mod tests {
             ..Default::default()
         };
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let result = factory.create(BETFAIR, &config, cache.into(), clock);
         assert!(result.is_err());

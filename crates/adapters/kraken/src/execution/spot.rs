@@ -1906,7 +1906,7 @@ mod tests {
     use axum::{Router, http::StatusCode, routing::post};
     use nautilus_common::{
         cache::{Cache, InstrumentLookupError},
-        clock::TestClock,
+        clock::VirtualClock,
         factories::ExecutionClientFactory,
         messages::execution::CancelOrder,
     };
@@ -2104,7 +2104,7 @@ mod tests {
             ..Default::default()
         };
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let result = factory.create(
             TraderId::from("TRADER-001"),

@@ -3272,7 +3272,7 @@ mod tests {
     use nautilus_common::{
         actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
         cache::Cache,
-        clock::{Clock, TestClock},
+        clock::{Clock, VirtualClock},
         enums::SerializationEncoding,
         live::{
             runner::{get_data_event_sender, get_exec_event_sender, get_system_event_sender},
@@ -5330,7 +5330,7 @@ mod tests {
             .with_reconciliation(false)
             .with_clock_factory(move || {
                 calls_in_factory.set(calls_in_factory.get() + 1);
-                let mut clock = TestClock::new();
+                let mut clock = VirtualClock::new();
                 clock.advance_time(sentinel, true);
                 Rc::new(RefCell::new(clock)) as Rc<RefCell<dyn Clock>>
             })

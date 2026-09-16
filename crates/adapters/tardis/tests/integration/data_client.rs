@@ -28,7 +28,7 @@ use std::{
 
 use nautilus_common::{
     cache::Cache,
-    clock::TestClock,
+    clock::VirtualClock,
     factories::{ClientConfig, DataClientFactory},
     live::runner::set_data_event_sender,
     messages::DataEvent,
@@ -91,7 +91,7 @@ fn test_tardis_data_client_factory_creates_client() {
     let config = TardisDataClientConfig::default();
 
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
     let result = factory.create(TARDIS, &config, cache.into(), clock);
     assert!(result.is_ok());
@@ -108,7 +108,7 @@ fn test_client_initial_state() {
     let config = TardisDataClientConfig::default();
 
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
     let client = factory
         .create(TARDIS, &config, cache.into(), clock)
@@ -126,7 +126,7 @@ fn test_factory_create_wrong_config_type_errors() {
     let config = WrongConfig;
 
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
     let result = factory.create(TARDIS, &config, cache.into(), clock);
     assert!(result.is_err());
@@ -145,7 +145,7 @@ async fn test_stop_then_disconnect_completes() {
     let factory = TardisDataClientFactory::new();
     let config = TardisDataClientConfig::default();
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let mut client = factory
         .create(TARDIS, &config, cache.into(), clock)
         .unwrap();
@@ -232,7 +232,7 @@ async fn test_connect_uses_tardis_http_url_override() {
 
     let factory = TardisDataClientFactory::new();
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let mut client = factory
         .create(TARDIS, &config, cache.into(), clock)
         .unwrap();

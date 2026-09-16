@@ -3013,7 +3013,7 @@ mod tests {
     use crate::{
         actor::{DataActor, data_actor::DataActorConfig, registry::actor_exists},
         cache::Cache,
-        clock::TestClock,
+        clock::VirtualClock,
         component::{Component, get_component},
         enums::ComponentState,
         live::runner::replace_system_command_sender,
@@ -3032,8 +3032,8 @@ mod tests {
     };
 
     #[fixture]
-    fn clock() -> Rc<RefCell<TestClock>> {
-        Rc::new(RefCell::new(TestClock::new()))
+    fn clock() -> Rc<RefCell<VirtualClock>> {
+        Rc::new(RefCell::new(VirtualClock::new()))
     }
 
     #[fixture]
@@ -3071,7 +3071,7 @@ mod tests {
     }
 
     fn create_registered_actor(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) -> PyDataActor {
@@ -3233,7 +3233,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_registration_success(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3245,7 +3245,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_registered_actor_basic_properties(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3263,7 +3263,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_basic_subscription_methods_compile(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         data_type: DataType,
@@ -3300,7 +3300,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_shutdown_system_passes_through(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3316,7 +3316,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_publish_data_delivers_to_any_subscriber(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3348,7 +3348,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_publish_signal_delivers_to_customdata_subscriber(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3400,7 +3400,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_publish_signal_accepts_numeric_py_values(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3449,7 +3449,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_subscribe_and_unsubscribe_signal_compile(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3466,7 +3466,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_py_subscribe_signal_forwards_priority(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3486,7 +3486,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_register_in_global_registries_retains_python_wrapper(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3515,7 +3515,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_register_in_global_registries_rejects_missing_python_wrapper(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3541,7 +3541,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_publish_data_dispatches_to_python_on_data(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3575,7 +3575,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_publish_signal_dispatches_to_python_on_signal(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3611,7 +3611,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_unsubscribe_signal_stops_python_dispatch(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3650,7 +3650,7 @@ class PreparedActor(DataActor):
     #[case(None)]
     #[case(Some(SystemChannel::ExecCommands))]
     fn test_queue_state_changed_subscription_dispatches_and_unsubscribes(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         #[case] channel: Option<SystemChannel>,
@@ -3713,7 +3713,7 @@ class PreparedActor(DataActor):
         Some("binance-futures-market-streams")
     )]
     fn test_socket_state_changed_subscription_dispatches_and_unsubscribes(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         #[case] client_id: Option<ClientId>,
@@ -3777,7 +3777,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_subscribe_signal_wildcard_dispatches_all_names_to_python(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3810,7 +3810,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_signal_customdata_unwraps_to_python_signal(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3883,7 +3883,7 @@ class CapturingActor:
 
     #[rstest]
     fn test_add_and_update_synthetic_via_pyo3(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3945,7 +3945,7 @@ class CapturingActor:
 
     #[rstest]
     fn test_book_at_interval_invalid_interval_ms(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         audusd_sim: CurrencyPair,
@@ -3981,7 +3981,7 @@ class CapturingActor:
 
     #[rstest]
     fn test_book_depth10_subscription_methods_manage_handler(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         audusd_sim: CurrencyPair,
@@ -4011,7 +4011,7 @@ class CapturingActor:
 
     #[rstest]
     fn test_data_actor_trait_implementation(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -4022,7 +4022,7 @@ class CapturingActor:
 
     #[rstest]
     fn test_python_reconnect_socket_enqueues_typed_command(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -4654,7 +4654,7 @@ class IndicatorEventActor:
 
     fn assert_python_dispatch<F>(
         py: Python<'_>,
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         method_name: &str,
@@ -4687,7 +4687,7 @@ class IndicatorEventActor:
     #[case("on_degrade")]
     #[case("on_fault")]
     fn test_python_dispatch_lifecycle_matrix(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         #[case] method_name: &str,
@@ -4714,7 +4714,7 @@ class IndicatorEventActor:
     #[case("on_save")]
     #[case("on_load")]
     fn test_python_dispatch_persistence_matrix(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         #[case] method_name: &str,
@@ -4745,7 +4745,7 @@ class IndicatorEventActor:
 
     #[rstest]
     fn test_python_persistence_methods_convert_state(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -4835,7 +4835,7 @@ class IndicatorEventActor:
 
     #[rstest]
     fn test_registered_indicators_receive_quote_trade_and_bar_before_actor_callbacks(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -4901,7 +4901,7 @@ class IndicatorEventActor:
 
     #[rstest]
     fn test_registered_indicators_receive_live_data_when_actor_not_running(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -5033,7 +5033,7 @@ class IndicatorEventActor:
 
     #[rstest]
     fn test_duplicate_indicator_registration_does_not_duplicate_callbacks(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -5092,7 +5092,7 @@ class IndicatorEventActor:
 
     #[rstest]
     fn test_indicator_error_prevents_actor_callback(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -5140,7 +5140,7 @@ class IndicatorEventActor:
     #[case("on_option_greeks")]
     #[case("on_option_chain")]
     fn test_python_dispatch_typed_callback_matrix(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         #[case] method_name: &str,
@@ -5243,7 +5243,7 @@ class IndicatorEventActor:
     #[case("on_historical_mark_prices")]
     #[case("on_historical_index_prices")]
     fn test_python_dispatch_historical_callback_matrix(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         #[case] method_name: &str,
@@ -5303,7 +5303,7 @@ class IndicatorEventActor:
 
     #[rstest]
     fn test_python_dispatch_historical_book_deltas_preserves_batch(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -5334,7 +5334,7 @@ class IndicatorEventActor:
 
     #[rstest]
     fn test_python_dispatch_historical_book_depth_preserves_batch(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -5377,7 +5377,7 @@ class IndicatorEventActor:
     #[case("on_pool_fee_collect")]
     #[case("on_pool_flash")]
     fn test_python_dispatch_defi_callback_matrix(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         #[case] method_name: &str,
@@ -5419,7 +5419,7 @@ class IndicatorEventActor:
 
     #[rstest]
     fn test_python_dispatch_multiple_calls_tracked(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         audusd_sim: CurrencyPair,
@@ -5453,7 +5453,7 @@ class IndicatorEventActor:
 
     #[rstest]
     fn test_python_dispatch_historical_custom_data_preserves_payload_shape(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         client_id: ClientId,
@@ -5562,7 +5562,7 @@ class IndicatorEventActor:
 
     #[rstest]
     fn test_python_dispatch_no_call_when_py_self_not_set(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -5580,7 +5580,7 @@ class IndicatorEventActor:
 
     #[rstest]
     fn test_python_on_historical_data_rejects_non_custom_data(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {

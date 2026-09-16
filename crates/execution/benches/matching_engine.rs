@@ -31,7 +31,7 @@ use std::{
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_common::{
     cache::Cache,
-    clock::TestClock,
+    clock::VirtualClock,
     messages::execution::{CancelOrder, ModifyOrder},
 };
 use nautilus_core::{UUID4, UnixNanos};
@@ -749,7 +749,7 @@ fn build_engine_with_config(book_type: BookType, config: OrderMatchingEngineConf
         book_type,
         OmsType::Netting,
         AccountType::Margin,
-        Rc::new(RefCell::new(TestClock::new())),
+        Rc::new(RefCell::new(VirtualClock::new())),
         cache.clone(),
         config,
     );

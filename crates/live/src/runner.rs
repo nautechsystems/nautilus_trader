@@ -722,7 +722,7 @@ mod tests {
     use nautilus_common::live::LiveTimer;
     use nautilus_common::{
         cache::Cache,
-        clock::TestClock,
+        clock::VirtualClock,
         live::{
             dispatch::DispatchMessage,
             runner::{
@@ -1784,7 +1784,7 @@ mod tests {
     fn test_async_runner_preserves_deferred_follow_up_order() {
         std::thread::spawn(|| {
             msgbus::get_message_bus().borrow_mut().dispose();
-            let clock = Rc::new(RefCell::new(TestClock::new()));
+            let clock = Rc::new(RefCell::new(VirtualClock::new()));
             let cache = Rc::new(RefCell::new(Cache::default()));
             let exec_engine = Rc::new(RefCell::new(ExecutionEngine::new(clock, cache, None)));
             ExecutionEngine::register_msgbus_handlers(&exec_engine);
@@ -1866,7 +1866,7 @@ mod tests {
     fn test_async_runner_dispatches_deferred_exec_command_once() {
         std::thread::spawn(|| {
             msgbus::get_message_bus().borrow_mut().dispose();
-            let clock = Rc::new(RefCell::new(TestClock::new()));
+            let clock = Rc::new(RefCell::new(VirtualClock::new()));
             let cache = Rc::new(RefCell::new(Cache::default()));
             let exec_engine = Rc::new(RefCell::new(ExecutionEngine::new(clock, cache, None)));
             ExecutionEngine::register_msgbus_handlers(&exec_engine);

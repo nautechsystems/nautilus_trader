@@ -174,10 +174,10 @@ mod tests {
     };
     use rstest::rstest;
 
-    use crate::{clock::TestClock, generators::order_list_id::OrderListIdGenerator};
+    use crate::{clock::VirtualClock, generators::order_list_id::OrderListIdGenerator};
 
     fn get_order_list_id_generator(initial_count: Option<usize>) -> OrderListIdGenerator {
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         OrderListIdGenerator::new(
             TraderId::test_default(),
             StrategyId::test_default(),
@@ -244,7 +244,7 @@ mod tests {
 
     #[rstest]
     fn test_generate_refreshes_persistent_fixed_prefix_when_second_changes() {
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let mut generator = OrderListIdGenerator::new(
             TraderId::test_default(),
             StrategyId::test_default(),

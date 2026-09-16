@@ -1832,7 +1832,7 @@ mod tests {
             registry::{actor_exists, get_actor_unchecked, try_get_actor_unchecked},
         },
         cache::Cache,
-        clock::TestClock,
+        clock::VirtualClock,
         component::get_component,
         enums::{ComponentState, Environment},
         messages::execution::SubmitOrder,
@@ -2158,8 +2158,8 @@ mod tests {
         let mut clock_ref = clock.borrow_mut();
         let test_clock = clock_ref
             .as_any_mut()
-            .downcast_mut::<TestClock>()
-            .expect("test default clock must be TestClock");
+            .downcast_mut::<VirtualClock>()
+            .expect("test default clock must be VirtualClock");
         test_clock.set_time(1_000_000_000u64.into());
         drop(clock_ref);
         let msgbus = Rc::new(RefCell::new(MessageBus::new(
@@ -2182,7 +2182,7 @@ mod tests {
 
         // Create separate cache and clock instances for RiskEngine to avoid borrowing conflicts
         let risk_cache = Rc::new(RefCell::new(Cache::new(None, None)));
-        let risk_clock = Rc::new(RefCell::new(TestClock::new()));
+        let risk_clock = Rc::new(RefCell::new(VirtualClock::new()));
         let risk_portfolio = Portfolio::new(
             risk_clock.clone() as Rc<RefCell<dyn Clock>>,
             risk_cache.clone(),
@@ -3383,8 +3383,8 @@ mod tests {
             let mut clock_ref = clock.borrow_mut();
             let test_clock = clock_ref
                 .as_any_mut()
-                .downcast_mut::<TestClock>()
-                .expect("component clock must be TestClock");
+                .downcast_mut::<VirtualClock>()
+                .expect("component clock must be VirtualClock");
             let events = test_clock.advance_time(to_time_ns, true);
             test_clock.match_handlers(events)
         };
@@ -3795,7 +3795,7 @@ mod tests {
         let calls_in_closure = calls.clone();
         let clock_factory = ClockFactory::new(move || {
             calls_in_closure.set(calls_in_closure.get() + 1);
-            Rc::new(RefCell::new(TestClock::new())) as Rc<RefCell<dyn Clock>>
+            Rc::new(RefCell::new(VirtualClock::new())) as Rc<RefCell<dyn Clock>>
         });
 
         let mut trader = Trader::new(
@@ -4993,7 +4993,7 @@ class ModuleStrategy(Strategy):
 
             // An already registered algorithm fails `register`, which the trader only reaches after
             // it has created the component clock
-            let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+            let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
             algorithm
                 .exec_algorithm_core_mut()
                 .register(trader_id, clock, cache)

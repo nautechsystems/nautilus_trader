@@ -646,7 +646,7 @@ mod tests {
     use nautilus_common::{
         cache::Cache,
         clients::{DataClient, ExecutionClient},
-        clock::{Clock, TestClock},
+        clock::{Clock, VirtualClock},
         live::runner::{replace_data_event_sender, replace_exec_event_sender},
         messages::{
             DataEvent, ExecutionEvent,
@@ -1780,13 +1780,13 @@ mod tests {
     struct ChurnSandbox {
         client: SandboxExecutionClient,
         cache: Rc<RefCell<Cache>>,
-        test_clock: Rc<RefCell<TestClock>>,
+        test_clock: Rc<RefCell<VirtualClock>>,
         rx: tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     }
 
     fn setup_churn_sandbox() -> ChurnSandbox {
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let test_clock = Rc::new(RefCell::new(TestClock::new()));
+        let test_clock = Rc::new(RefCell::new(VirtualClock::new()));
         let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
 
         let config = SandboxExecutionClientConfig::builder()

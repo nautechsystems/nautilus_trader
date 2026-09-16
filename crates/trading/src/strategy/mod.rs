@@ -2478,7 +2478,7 @@ mod tests {
             registry::{deregister_actor, try_get_actor_unchecked},
         },
         cache::{Cache, ORDER_NOT_FOUND},
-        clock::{Clock, TestClock},
+        clock::{Clock, VirtualClock},
         component::{Component, deregister_component, register_component_actor},
         enums::ComponentState,
         msgbus::{
@@ -2687,9 +2687,9 @@ mod tests {
         let _clock = register_strategy_with_clock(strategy);
     }
 
-    fn register_strategy_with_clock(strategy: &mut TestStrategy) -> Rc<RefCell<TestClock>> {
+    fn register_strategy_with_clock(strategy: &mut TestStrategy) -> Rc<RefCell<VirtualClock>> {
         let trader_id = TraderId::from("TRADER-001");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
             clock.clone(),
@@ -2705,7 +2705,7 @@ mod tests {
         clock
     }
 
-    fn register_gtd_strategy(strategy: &mut TestStrategy) -> Rc<RefCell<TestClock>> {
+    fn register_gtd_strategy(strategy: &mut TestStrategy) -> Rc<RefCell<VirtualClock>> {
         let clock = register_strategy_with_clock(strategy);
         clock
             .borrow_mut()
@@ -4296,7 +4296,7 @@ mod tests {
             modified_quantity,
         };
         let trader_id = TraderId::from("TRADER-001");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
             clock.clone(),
@@ -6204,7 +6204,7 @@ mod tests {
         let mut strategy = MarketExitHookTrackingStrategy::new(config);
 
         let trader_id = TraderId::from("TRADER-001");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
             clock.clone(),
@@ -6233,7 +6233,7 @@ mod tests {
         let mut strategy = MarketExitHookTrackingStrategy::new(config);
 
         let trader_id = TraderId::from("TRADER-001");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
             clock.clone(),
@@ -6282,7 +6282,7 @@ mod tests {
         let mut strategy = FailingPostExitStrategy::new(config);
 
         let trader_id = TraderId::from("TRADER-001");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
             clock.clone(),
@@ -6514,7 +6514,7 @@ mod tests {
         let mut strategy = MarketExitHookTrackingStrategy::new(config);
 
         let trader_id = TraderId::from("TRADER-001");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
             clock.clone(),
@@ -6595,7 +6595,7 @@ mod tests {
 
         // Custom setup with a default callback so timer scheduling succeeds
         let trader_id = TraderId::from("TRADER-001");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         clock
             .borrow_mut()
             .register_default_handler(TimeEventCallback::from(|_event: TimeEvent| {}));

@@ -5062,11 +5062,11 @@ impl DataEngine {
 
         // For TimeBarAggregator, set clock and start timer
         if bar_type.spec().is_time_aggregated() {
-            use nautilus_common::clock::TestClock;
+            use nautilus_common::clock::VirtualClock;
 
             if historical {
                 // Each aggregator gets its own independent clock
-                let test_clock = Rc::new(RefCell::new(TestClock::new()));
+                let test_clock = Rc::new(RefCell::new(VirtualClock::new()));
                 aggregator.borrow_mut().set_clock(test_clock);
                 // Set weak reference for historical mode (start_timer called later from preprocess_historical_events)
                 // Store weak reference so start_timer can use it when called later

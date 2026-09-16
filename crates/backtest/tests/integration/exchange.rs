@@ -37,7 +37,7 @@ use nautilus_backtest::{
 };
 use nautilus_common::{
     cache::Cache,
-    clock::TestClock,
+    clock::VirtualClock,
     messages::execution::{ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand},
     msgbus::{
         self, MessagingSwitchboard,
@@ -109,7 +109,7 @@ fn get_exchange_with_oms(
     cache: Option<Rc<RefCell<Cache>>>,
 ) -> Rc<RefCell<SimulatedExchange>> {
     let cache = cache.unwrap_or(Rc::new(RefCell::new(Cache::default())));
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let config = SimulatedVenueConfig::builder()
         .venue(venue)
         .oms_type(oms_type)
@@ -125,7 +125,7 @@ fn get_exchange_with_oms(
     ));
     SimulatedExchange::register_spread_quote_endpoint(&exchange);
 
-    let clock = TestClock::new();
+    let clock = VirtualClock::new();
     let execution_client = BacktestExecutionClient::new(
         TraderId::test_default(),
         AccountId::test_default(),
@@ -305,7 +305,7 @@ fn test_liquidation_closes_all_breached_currencies_in_one_pass(
         "200.00000",
     );
     let cache = Rc::new(RefCell::new(raw_cache));
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let config = SimulatedVenueConfig::builder()
         .venue(Venue::new("SIM"))
         .oms_type(OmsType::Netting)
@@ -2423,7 +2423,7 @@ fn build_exchange_with_options(
     allow_cash_borrowing: bool,
     cache: Rc<RefCell<Cache>>,
 ) -> Rc<RefCell<SimulatedExchange>> {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let config = SimulatedVenueConfig::builder()
         .venue(venue)
         .oms_type(OmsType::Netting)
@@ -3637,7 +3637,7 @@ fn get_exchange_with_modules(
     modules: Vec<SimulationModuleHandle>,
 ) -> Rc<RefCell<SimulatedExchange>> {
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
     // Register msgbus handler so generate_account_state works during reset
     let (handler, _saving_handler) = get_typed_message_saving_handler::<AccountState>(None);
@@ -3658,7 +3658,7 @@ fn get_exchange_with_modules(
         SimulatedExchange::new(config, cache.clone(), clock).unwrap(),
     ));
 
-    let exec_clock = TestClock::new();
+    let exec_clock = VirtualClock::new();
     let execution_client = BacktestExecutionClient::new(
         TraderId::test_default(),
         AccountId::test_default(),
@@ -3830,7 +3830,7 @@ fn test_process_modules_skips_when_account_adjustments_are_unavailable(
         sequence: sequence.clone(),
     })];
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let config = SimulatedVenueConfig::builder()
         .venue(Venue::new("SIM"))
         .oms_type(OmsType::Netting)

@@ -512,7 +512,7 @@ mod tests {
     use indexmap::IndexMap;
     use nautilus_common::{
         cache::Cache,
-        clock::{Clock, TestClock},
+        clock::{Clock, VirtualClock},
         component::Component,
         enums::ComponentTrigger,
         messages::execution::{ModifyOrder, SubmitOrder, TradingCommand},
@@ -541,11 +541,11 @@ mod tests {
         TwapAlgorithm::new(config)
     }
 
-    fn register_algorithm_with_clock(algo: &mut TwapAlgorithm) -> Rc<RefCell<TestClock>> {
+    fn register_algorithm_with_clock(algo: &mut TwapAlgorithm) -> Rc<RefCell<VirtualClock>> {
         use nautilus_common::timer::TimeEventCallback;
 
         let trader_id = TraderId::from("TRADER-001");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         // Register a no-op default handler for timer callbacks
@@ -1735,7 +1735,7 @@ mod tests {
         add_instrument_to_cache(&algo);
         DataActorNative::clock_mut(&mut algo)
             .as_any_mut()
-            .downcast_mut::<TestClock>()
+            .downcast_mut::<VirtualClock>()
             .unwrap()
             .set_time(UnixNanos::new(u64::MAX - 500_000_000));
 

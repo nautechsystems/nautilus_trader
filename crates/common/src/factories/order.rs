@@ -1770,13 +1770,13 @@ pub mod tests {
     use rust_decimal::Decimal;
     use ustr::Ustr;
 
-    use crate::{clock::TestClock, factories::OrderFactory};
+    use crate::{clock::VirtualClock, factories::OrderFactory};
 
     #[fixture]
     pub fn order_factory() -> OrderFactory {
         let trader_id = trader_id();
         let strategy_id = strategy_id_ema_cross();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         OrderFactory::new(
             trader_id,
             strategy_id,
@@ -1853,7 +1853,7 @@ pub mod tests {
     pub fn order_factory_with_uuids() -> OrderFactory {
         let trader_id = trader_id();
         let strategy_id = strategy_id_ema_cross();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         OrderFactory::new(
             trader_id,
             strategy_id,
@@ -1869,7 +1869,7 @@ pub mod tests {
     pub fn order_factory_with_hyphens_removed() -> OrderFactory {
         let trader_id = trader_id();
         let strategy_id = strategy_id_ema_cross();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         OrderFactory::new(
             trader_id,
             strategy_id,
@@ -1885,7 +1885,7 @@ pub mod tests {
     pub fn order_factory_with_uuids_and_hyphens_removed() -> OrderFactory {
         let trader_id = trader_id();
         let strategy_id = strategy_id_ema_cross();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         OrderFactory::new(
             trader_id,
             strategy_id,

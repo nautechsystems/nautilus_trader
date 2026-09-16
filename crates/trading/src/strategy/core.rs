@@ -425,7 +425,7 @@ fn strategy_id_with_order_id_tag(
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use nautilus_common::{cache::Cache, clock::TestClock};
+    use nautilus_common::{cache::Cache, clock::VirtualClock};
     use nautilus_core::UnixNanos;
     use nautilus_model::{
         enums::{OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
@@ -749,7 +749,7 @@ mod tests {
         core.config.order_id_tag = Some("A-B".to_string());
 
         let trader_id = TraderId::from("TRADER-001");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
             clock.clone(),
@@ -777,7 +777,7 @@ mod tests {
         let mut core = StrategyCore::new(config);
 
         let trader_id = TraderId::from("TRADER-001");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
             clock.clone(),
@@ -804,7 +804,7 @@ mod tests {
         let mut core = StrategyCore::new(config);
 
         let trader_id = TraderId::from("TRADER-001");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
             clock.clone(),
@@ -1229,7 +1229,7 @@ mod tests {
         let mut core = StrategyCore::new(config);
 
         let trader_id = TraderId::from("TRADER-001");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
             clock.clone(),

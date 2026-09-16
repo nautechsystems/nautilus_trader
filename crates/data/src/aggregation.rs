@@ -29,7 +29,7 @@ use std::{
 use ahash::AHashMap;
 use jiff::SignedDuration;
 use nautilus_common::{
-    clock::{Clock, TestClock},
+    clock::{Clock, VirtualClock},
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
@@ -1771,13 +1771,13 @@ impl TimeBarAggregator {
 
     fn preprocess_historical_events(&mut self, ts_init: UnixNanos) {
         if self.clock.borrow().timestamp_ns() == UnixNanos::default() {
-            // In historical mode, clock is always a TestClock (set by data engine)
+            // In historical mode, clock is always a VirtualClock (set by data engine)
             {
                 let mut clock_borrow = self.clock.borrow_mut();
                 let test_clock = clock_borrow
                     .as_any_mut()
-                    .downcast_mut::<TestClock>()
-                    .expect("Expected TestClock in historical mode");
+                    .downcast_mut::<VirtualClock>()
+                    .expect("Expected VirtualClock in historical mode");
                 test_clock.set_time(ts_init);
             }
             // In historical mode, weak reference should already be set
@@ -1789,8 +1789,8 @@ impl TimeBarAggregator {
             let mut clock_borrow = self.clock.borrow_mut();
             let test_clock = clock_borrow
                 .as_any_mut()
-                .downcast_mut::<TestClock>()
-                .expect("Expected TestClock in historical mode");
+                .downcast_mut::<VirtualClock>()
+                .expect("Expected VirtualClock in historical mode");
             test_clock.advance_time(ts_init, true)
         };
 
@@ -2281,8 +2281,8 @@ impl SpreadQuoteAggregator {
             let mut clock_borrow = self.clock.borrow_mut();
             let test_clock = clock_borrow
                 .as_any_mut()
-                .downcast_mut::<TestClock>()
-                .expect("Expected TestClock in historical mode");
+                .downcast_mut::<VirtualClock>()
+                .expect("Expected VirtualClock in historical mode");
             test_clock.set_time(ts_init);
             drop(clock_borrow);
             self.start_timer(None);
@@ -2301,8 +2301,8 @@ impl SpreadQuoteAggregator {
             let mut clock_borrow = self.clock.borrow_mut();
             let test_clock = clock_borrow
                 .as_any_mut()
-                .downcast_mut::<TestClock>()
-                .expect("Expected TestClock in historical mode");
+                .downcast_mut::<VirtualClock>()
+                .expect("Expected VirtualClock in historical mode");
             test_clock.advance_time(ts_init, true)
         };
 
@@ -2515,7 +2515,7 @@ impl SpreadQuoteAggregator {
 mod tests {
     use std::sync::Arc;
 
-    use nautilus_common::{clock::TestClock, timer::TimeEvent};
+    use nautilus_common::{clock::VirtualClock, timer::TimeEvent};
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         data::{BarSpecification, BarType, QuoteTick},
@@ -4762,7 +4762,7 @@ mod tests {
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut aggregator = TimeBarAggregator::new(
             bar_type,
@@ -4808,7 +4808,7 @@ mod tests {
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let timer_name = format!("TIME_BAR_{bar_type}");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let aggregator = TimeBarAggregator::new(
             bar_type,
@@ -4844,7 +4844,7 @@ mod tests {
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let interval_ns = get_bar_interval_ns(&bar_type);
         let timer_name = format!("TIME_BAR_{bar_type}");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         clock.borrow_mut().set_time(UnixNanos::from(1));
         let aggregator = TimeBarAggregator::new(
             bar_type,
@@ -4876,7 +4876,7 @@ mod tests {
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut aggregator = TimeBarAggregator::new(
             bar_type,
@@ -4933,7 +4933,7 @@ mod tests {
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let mut aggregator = TimeBarAggregator::new(
             bar_type,
             instrument.price_precision(),
@@ -4990,7 +4990,7 @@ mod tests {
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         // First test with build_with_no_updates = false
         let mut aggregator = TimeBarAggregator::new(
@@ -5064,7 +5064,7 @@ mod tests {
         let instrument = InstrumentAny::Equity(equity_aapl);
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let (handler, record) = recording_handler();
 
         let mut aggregator = TimeBarAggregator::new(
@@ -6577,7 +6577,7 @@ mod tests {
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut agg = TimeBarAggregator::new(
             bar_type,
@@ -6647,7 +6647,7 @@ mod tests {
         let spread_id = InstrumentId::from("SPREAD.XNAS");
         let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut agg = SpreadQuoteAggregator::new(
             spread_id,
@@ -6701,7 +6701,7 @@ mod tests {
         let spread_id = InstrumentId::from("SPREAD.XNAS");
         let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut agg = SpreadQuoteAggregator::new(
             spread_id,
@@ -6755,7 +6755,7 @@ mod tests {
         let spread_id = InstrumentId::from("SPREAD.XNAS");
         let legs = vec![(leg1, 2_i64), (leg2, -1_i64)];
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut agg = SpreadQuoteAggregator::new(
             spread_id,
@@ -6808,7 +6808,7 @@ mod tests {
         let spread_id = InstrumentId::from("SPREAD.XNAS");
         let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         clock.borrow_mut().set_time(UnixNanos::from(0));
 
         let agg = SpreadQuoteAggregator::new(
@@ -6884,7 +6884,7 @@ mod tests {
         let spread_id = InstrumentId::from("SPREAD.XNAS");
         let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let agg = SpreadQuoteAggregator::new(
             spread_id,
@@ -6957,7 +6957,7 @@ mod tests {
         let spread_id = InstrumentId::from("SPREAD.XNAS");
         let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let agg = SpreadQuoteAggregator::new(
             spread_id,
@@ -7022,7 +7022,7 @@ mod tests {
         let spread_id = InstrumentId::from("SPREAD.XNAS");
         let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut vega_provider = MapVegaProvider::new();
         vega_provider.insert(leg1, 0.15);
@@ -7084,7 +7084,7 @@ mod tests {
         let spread_id = InstrumentId::from("SPREAD.XNAS");
         let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut vega_provider = MapVegaProvider::new();
         vega_provider.insert(leg1, 0.0);
@@ -7223,7 +7223,7 @@ mod tests {
             instrument.price_precision(),
             0,
             Box::new(record),
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
             false,
             None,
             0,
@@ -7267,7 +7267,7 @@ mod tests {
         let spread_id = InstrumentId::from("SPREAD.XNAS");
         let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let rounder = FixedTickSchemeRounder::new(0.01).unwrap();
 
         let mut agg = SpreadQuoteAggregator::new(
@@ -7329,7 +7329,7 @@ mod tests {
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         clock.borrow_mut().set_time(UnixNanos::from(1_000_000_000));
         let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
 
@@ -7394,7 +7394,7 @@ mod tests {
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         clock.borrow_mut().set_time(UnixNanos::from(1_500_000_000));
         let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
 
@@ -7455,7 +7455,7 @@ mod tests {
         let bar_spec = BarSpecification::new(10, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         clock.borrow_mut().set_time(UnixNanos::from(5_000_000_000));
         let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
 
@@ -7527,7 +7527,7 @@ mod tests {
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         clock.borrow_mut().set_time(UnixNanos::from(2_000_000_000));
         let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
 
@@ -7602,7 +7602,7 @@ mod tests {
         let bar_spec = BarSpecification::new(1, aggregation, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         clock.borrow_mut().set_time(UnixNanos::from(start_ns));
         let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
 
@@ -7648,7 +7648,7 @@ mod tests {
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut agg = TimeBarAggregator::new(
             bar_type,
@@ -7828,7 +7828,7 @@ mod tests {
             BarAggregation::Minute,
             AggregationSource::External,
         );
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let aggregator = TimeBarAggregator::new(
             bar_type,
@@ -7867,7 +7867,7 @@ mod tests {
 mod property_tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use nautilus_common::{clock::TestClock, timer::TimeEvent};
+    use nautilus_common::{clock::VirtualClock, timer::TimeEvent};
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         data::{Bar, BarSpecification, BarType, TradeTick, bar::get_bar_interval_ns},
@@ -7913,7 +7913,7 @@ mod property_tests {
             let now_ns = UnixNanos::default() + interval_ns + interval_ns / 2;
 
             let (handler, record) = recording_handler();
-            let clock = Rc::new(RefCell::new(TestClock::new()));
+            let clock = Rc::new(RefCell::new(VirtualClock::new()));
             clock.borrow_mut().set_time(now_ns);
             let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
 
@@ -7990,7 +7990,7 @@ mod property_tests {
             // bar that reaches build_and_send must emit regardless of skip_first.
             let now_ns = UnixNanos::default() + interval_ns;
             let (handler, record) = recording_handler();
-            let clock = Rc::new(RefCell::new(TestClock::new()));
+            let clock = Rc::new(RefCell::new(VirtualClock::new()));
             clock.borrow_mut().set_time(now_ns);
             let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
 

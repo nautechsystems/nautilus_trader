@@ -7039,7 +7039,7 @@ mod tests {
 
     use nautilus_common::{
         cache::Cache,
-        clock::TestClock,
+        clock::VirtualClock,
         messages::execution::{CancelAllOrders, ModifyOrder},
     };
     use nautilus_core::{UUID4, UnixNanos, correctness::CorrectnessError};
@@ -7214,7 +7214,7 @@ mod tests {
             BookType::L1_MBP,
             OmsType::Netting,
             AccountType::Margin,
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
             cache.clone(),
             Default::default(),
         );
@@ -7253,7 +7253,7 @@ mod tests {
             BookType::L1_MBP,
             oms_type,
             AccountType::Margin,
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
             cache.clone(),
             Default::default(),
         );
@@ -7370,7 +7370,7 @@ mod tests {
             BookType::L1_MBP,
             OmsType::Netting,
             AccountType::Cash,
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
             cache.clone(),
             Default::default(),
         );
@@ -7433,7 +7433,7 @@ mod tests {
             BookType::L1_MBP,
             OmsType::Netting,
             AccountType::Margin,
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
             cache.clone(),
             Default::default(),
         );
@@ -7542,7 +7542,7 @@ mod tests {
             BookType::L2_MBP,
             oms_type,
             AccountType::Margin,
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
             cache.clone(),
             OrderMatchingEngineConfig {
                 support_contingent_orders,
@@ -7856,7 +7856,7 @@ mod tests {
             BookType::L2_MBP,
             OmsType::Hedging,
             AccountType::Margin,
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
             cache.clone(),
             OrderMatchingEngineConfig {
                 use_reduce_only,
@@ -8081,7 +8081,7 @@ mod tests {
             BookType::L2_MBP,
             OmsType::Hedging,
             AccountType::Margin,
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
             cache.clone(),
             OrderMatchingEngineConfig {
                 support_contingent_orders,
@@ -8392,7 +8392,7 @@ mod tests {
             BookType::L2_MBP,
             OmsType::Hedging,
             AccountType::Margin,
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
             cache.clone(),
             Default::default(),
         );
@@ -8551,7 +8551,7 @@ mod tests {
             BookType::L2_MBP,
             OmsType::Hedging,
             AccountType::Margin,
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
             cache.clone(),
             Default::default(),
         );
@@ -8747,7 +8747,7 @@ mod tests {
             BookType::L2_MBP,
             OmsType::Hedging,
             AccountType::Margin,
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
             cache.clone(),
             Default::default(),
         );
@@ -9023,7 +9023,7 @@ mod tests {
             BookType::L2_MBP,
             OmsType::Hedging,
             AccountType::Margin,
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
             cache.clone(),
             Default::default(),
         );
@@ -9213,7 +9213,7 @@ mod tests {
             BookType::L2_MBP,
             OmsType::Hedging,
             AccountType::Margin,
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
             cache.clone(),
             Default::default(),
         );
@@ -9386,7 +9386,7 @@ mod tests {
             BookType::L2_MBP,
             OmsType::Netting,
             AccountType::Margin,
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
             cache.clone(),
             OrderMatchingEngineConfig::default(),
         );
@@ -9483,7 +9483,7 @@ mod tests {
             BookType::L1_MBP,
             OmsType::Netting,
             AccountType::Margin,
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
             Rc::new(RefCell::new(Cache::default())),
             OrderMatchingEngineConfig::builder()
                 .use_reduce_only(false)
@@ -9626,7 +9626,7 @@ mod tests {
     fn test_fill_order_calculates_commission_from_fill_liquidity_side() {
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let mut engine = OrderMatchingEngine::new(
             instrument.clone(),
             1,
@@ -9686,7 +9686,7 @@ mod tests {
     fn test_custom_fee_model_handle_is_called_by_fill_order() {
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let calls = Rc::new(Cell::new(0));
         let expected_commission = Money::from("1.23 USDT");
         let fee_model = FeeModelHandle::new(RecordingFeeModel {
@@ -9749,7 +9749,7 @@ mod tests {
     fn test_fill_order_does_not_cache_filled_qty_when_fee_model_fails() {
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let mut engine = OrderMatchingEngine::new(
             instrument.clone(),
             1,
@@ -9797,7 +9797,7 @@ mod tests {
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let instrument_id = instrument.id();
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let mut engine = OrderMatchingEngine::new(
             instrument,
             1,
@@ -9900,7 +9900,7 @@ mod tests {
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let instrument_id = instrument.id();
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let mut engine = OrderMatchingEngine::new(
             instrument,
             1,
@@ -9994,7 +9994,7 @@ mod tests {
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let instrument_id = instrument.id();
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let mut engine = OrderMatchingEngine::new(
             instrument,
             1,
@@ -10102,7 +10102,7 @@ mod tests {
             BookType::L1_MBP,
             OmsType::Netting,
             AccountType::Margin,
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
             Rc::clone(&cache),
             Default::default(),
         );
@@ -10202,7 +10202,7 @@ mod tests {
     fn test_custom_fill_model_handle_is_called_by_market_fill() {
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let calls = Rc::new(Cell::new(0));
         let fill_model = FillModelHandle::new(RecordingFillModel {
             calls: Rc::clone(&calls),
@@ -10245,7 +10245,7 @@ mod tests {
     fn test_l1_depth10_skips_padding_for_last_quote_tracking() {
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let mut engine = OrderMatchingEngine::new(
             instrument.clone(),
             1,
@@ -10347,7 +10347,7 @@ mod tests {
             underlying_price: Some(50_000.0),
             ..Default::default()
         });
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let engine = OrderMatchingEngine::new(
             instrument,
             1,
@@ -10384,7 +10384,7 @@ mod tests {
             underlying_price: Some(f64::NAN),
             ..Default::default()
         });
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let engine = OrderMatchingEngine::new(
             instrument,
             1,
@@ -10509,7 +10509,7 @@ mod tests {
         instrument: InstrumentAny,
         book_type: BookType,
     ) -> (OrderMatchingEngine, Rc<RefCell<Cache>>) {
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let config = OrderMatchingEngineConfig {
             trade_execution: true,

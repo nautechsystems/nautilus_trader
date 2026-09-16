@@ -291,7 +291,7 @@ impl LiveTimer {
             loop {
                 // Never fire an event scheduled past the stop time. The event's
                 // `ts_event` is the scheduled `next_time_ns`, so the bound is
-                // enforced on the scheduled time (matching `TestTimer`), not on
+                // enforced on the scheduled time (matching `VirtualTimer`), not on
                 // the wall-clock read used only for `ts_init`.
                 if !should_fire_scheduled_time(next_time_ns, stop_time_ns) {
                     if let (Some(sender), WorkerDispatch::Registered(token)) =

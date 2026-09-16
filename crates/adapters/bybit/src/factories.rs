@@ -18,7 +18,7 @@
 use std::{any::Any, cell::RefCell, rc::Rc};
 
 #[cfg(test)]
-use nautilus_common::clock::TestClock;
+use nautilus_common::clock::VirtualClock;
 use nautilus_common::{
     cache::CacheView,
     clients::{DataClient, ExecutionClient},
@@ -256,7 +256,7 @@ mod tests {
             "BYBIT-TEST",
             &config,
             cache.into(),
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
         );
         assert!(result.is_ok());
 
@@ -281,7 +281,7 @@ mod tests {
             "BYBIT-DERIV",
             &config,
             cache.into(),
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
         );
         result.unwrap();
     }
@@ -298,7 +298,7 @@ mod tests {
             "BYBIT-TEST",
             &wrong_config,
             cache.into(),
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
         );
         assert!(result.is_err());
         assert!(

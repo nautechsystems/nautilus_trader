@@ -3614,7 +3614,7 @@ mod tests {
     use nautilus_common::{
         actor::{DataActor, DataActorNative, registry::actor_exists},
         cache::Cache,
-        clock::{Clock, TestClock},
+        clock::{Clock, VirtualClock},
         component::{Component, get_component},
         enums::ComponentState,
         live::runner::replace_system_command_sender,
@@ -4241,7 +4241,7 @@ class IndicatorEventStrategy:
             .set_python_instance(py_strategy.bind(py))
             .unwrap();
 
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
             clock.clone(),
@@ -4362,8 +4362,8 @@ class IndicatorEventStrategy:
             let mut clock_ref = clock.borrow_mut();
             let test_clock = clock_ref
                 .as_any_mut()
-                .downcast_mut::<TestClock>()
-                .expect("strategy clock must be TestClock");
+                .downcast_mut::<VirtualClock>()
+                .expect("strategy clock must be VirtualClock");
             let events = test_clock.advance_time(to_time_ns, true);
             test_clock.match_handlers(events)
         };
@@ -4386,7 +4386,7 @@ class IndicatorEventStrategy:
                 ..Default::default()
             }));
 
-            let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+            let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
             let cache = Rc::new(RefCell::new(Cache::new(None, None)));
             let portfolio = Rc::new(RefCell::new(Portfolio::new(
                 clock.clone(),
@@ -4611,7 +4611,7 @@ class IndicatorEventStrategy:
                 .set_python_instance(py_strategy.bind(py))
                 .unwrap();
 
-            let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+            let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
             let cache = Rc::new(RefCell::new(Cache::new(None, None)));
             let portfolio = Rc::new(RefCell::new(Portfolio::new(
                 clock.clone(),

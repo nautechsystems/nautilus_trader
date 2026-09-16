@@ -6168,7 +6168,7 @@ mod tests {
     };
     use nautilus_common::{
         cache::Cache,
-        clock::TestClock,
+        clock::VirtualClock,
         factories::OrderFactory,
         messages::{ExecutionEvent, ExecutionReport as EngineExecutionReport},
         testing::wait_until_async,
@@ -6489,7 +6489,7 @@ mod tests {
     }
 
     fn test_order_factory() -> OrderFactory {
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         OrderFactory::new(
             trader_id(),
             strategy_id(),

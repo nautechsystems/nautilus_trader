@@ -791,7 +791,7 @@ fn add_money_map(
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use nautilus_common::{cache::Cache, clock::TestClock};
+    use nautilus_common::{cache::Cache, clock::VirtualClock};
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         enums::{AccountType, OmsType, OrderSide},
@@ -868,7 +868,7 @@ mod tests {
         cache.add_instrument(instrument_sim.clone()).unwrap();
         cache.add_instrument(instrument_other.clone()).unwrap();
         let mut portfolio = Portfolio::new(
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
             Rc::new(RefCell::new(cache)),
             None,
         );
@@ -924,7 +924,7 @@ mod tests {
         let mut cache = Cache::new(None, None);
         cache.add_instrument(instrument.clone()).unwrap();
         let mut portfolio = Portfolio::new(
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
             Rc::new(RefCell::new(cache)),
             None,
         );

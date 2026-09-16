@@ -57,7 +57,7 @@ use nautilus_binance::{
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
-    clock::TestClock,
+    clock::VirtualClock,
     enums::LogLevel,
     live::runner::{replace_system_event_sender, set_exec_event_sender},
     messages::{
@@ -5604,7 +5604,7 @@ async fn test_startup_reconciliation_preserves_both_hedge_legs(
     }
     assert_eq!(mass_status.position_reports()[&instrument_id].len(), 2);
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let mut manager = ExecutionManager::new(
         clock.clone(),
         cache.clone(),
@@ -5768,7 +5768,7 @@ async fn test_position_report_failures_warn_with_count_and_mass_status_counts_he
     let count_cache = Rc::new(RefCell::new(Cache::default()));
     add_test_account_to_cache(&count_cache, account_id);
     add_test_instrument_to_cache(&count_cache);
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let mut manager = ExecutionManager::new(
         clock.clone(),
         count_cache.clone(),

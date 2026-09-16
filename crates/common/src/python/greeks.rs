@@ -320,7 +320,7 @@ mod tests {
     use super::*;
     use crate::{
         cache::{Cache, INSTRUMENT_NOT_FOUND},
-        clock::TestClock,
+        clock::VirtualClock,
     };
 
     #[derive(Clone, Copy)]
@@ -461,7 +461,7 @@ mod tests {
     }
 
     fn make_calculator(cache: Rc<RefCell<Cache>>) -> PyGreeksCalculator {
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         PyGreeksCalculator(GreeksCalculator::new(cache, clock))
     }
 }

@@ -16,7 +16,7 @@
 use std::{cell::RefCell, collections::HashSet, fs::File, rc::Rc, sync::Arc};
 
 use datafusion::arrow::ipc::reader::StreamReader;
-use nautilus_common::clock::{Clock, TestClock};
+use nautilus_common::clock::{Clock, VirtualClock};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
@@ -38,7 +38,7 @@ async fn test_write_data_enum_quote() {
     let base_path = temp_dir.path().to_str().unwrap().to_string();
     let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
     let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
 
     let mut writer = FeatherWriter::new(
         base_path,
@@ -71,7 +71,7 @@ async fn test_write_data_enum_all_types() {
     let base_path = temp_dir.path().to_str().unwrap().to_string();
     let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
     let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
 
     let mut writer = FeatherWriter::new(
         base_path,
@@ -139,7 +139,7 @@ async fn test_write_data_orderbook_deltas() {
     let base_path = temp_dir.path().to_str().unwrap().to_string();
     let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
     let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
 
     let mut writer = FeatherWriter::new(
         base_path,
@@ -182,7 +182,7 @@ async fn test_auto_flush() {
     let base_path = temp_dir.path().to_str().unwrap().to_string();
     let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
     let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
 
     let mut writer = FeatherWriter::new(
         base_path,
@@ -207,7 +207,7 @@ async fn test_auto_flush() {
     // Write first quote
     writer.write(quote).await.unwrap();
 
-    // Note: TestClock doesn't have set_time_ns, so we can't easily test auto-flush
+    // Note: VirtualClock doesn't have set_time_ns, so we can't easily test auto-flush
     // with time advancement. Instead, we test that check_flush is called during write.
     // For a proper test, we'd need a mock clock or use LiveClock with time advancement.
 
@@ -234,7 +234,7 @@ async fn test_close() {
     let base_path = temp_dir.path().to_str().unwrap().to_string();
     let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
     let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
 
     let mut writer = FeatherWriter::new(
         base_path,
@@ -276,7 +276,7 @@ async fn test_write_orderbook_deltas_clear_first_preserves_precision() {
     let base_path = temp_dir.path().to_str().unwrap().to_string();
     let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
     let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
 
     let mut per_instrument = HashSet::new();
     per_instrument.insert("order_book_deltas".to_string());
@@ -348,7 +348,7 @@ async fn test_write_orderbook_deltas_all_sentinel_metadata_fallback() {
     let base_path = temp_dir.path().to_str().unwrap().to_string();
     let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
     let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
 
     let mut per_instrument = HashSet::new();
     per_instrument.insert("order_book_deltas".to_string());
@@ -404,7 +404,7 @@ async fn test_write_batch_partitions_by_instrument() {
     let base_path = temp_dir.path().to_str().unwrap().to_string();
     let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
     let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
 
     let mut per_instrument = HashSet::new();
     per_instrument.insert("order_book_deltas".to_string());

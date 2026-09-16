@@ -31,7 +31,7 @@ use log::{Level, LevelFilter, Log, Metadata, Record};
 use nautilus_common::{
     cache::{Cache, CacheSnapshotRef},
     clients::ExecutionClient,
-    clock::{self, Clock, TestClock},
+    clock::{self, Clock, VirtualClock},
     messages::{
         ExecutionReport,
         execution::{
@@ -102,7 +102,7 @@ use crate::cache_database::{FailNthAddOrderDatabase, FailNthAddOrderDatabaseCont
 
 #[fixture]
 fn test_clock() -> Rc<RefCell<dyn clock::Clock>> {
-    Rc::new(RefCell::new(TestClock::new()))
+    Rc::new(RefCell::new(VirtualClock::new()))
 }
 
 #[fixture]
@@ -112,7 +112,7 @@ fn test_cache() -> Rc<RefCell<Cache>> {
 
 #[fixture]
 fn execution_engine() -> ExecutionEngine {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     ExecutionEngine::new(clock, cache, None)
@@ -120,7 +120,7 @@ fn execution_engine() -> ExecutionEngine {
 
 #[fixture]
 fn execution_engine_with_config() -> ExecutionEngine {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         debug: true,
@@ -689,7 +689,7 @@ fn test_external_client_command_publishes_to_client_topic_and_skips_local_routin
     *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
 
     let external_client_id = ClientId::from("EXTERNAL");
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         external_clients: Some(vec![external_client_id]),
@@ -733,7 +733,7 @@ fn test_external_client_submit_order_publishes_only_while_eligible() {
     let instrument = audusd_sim();
     let external_client_id = ClientId::from("EXTERNAL");
     let mut execution_engine = ExecutionEngine::new(
-        Rc::new(RefCell::new(TestClock::new())),
+        Rc::new(RefCell::new(VirtualClock::new())),
         Rc::new(RefCell::new(Cache::default())),
         Some(ExecutionEngineConfig {
             external_clients: Some(vec![external_client_id]),
@@ -809,7 +809,7 @@ fn test_cancel_all_orders_fans_out_with_one_resolved_client_and_shared_lineage()
         None,
     );
     let other_cancel_all = other_client.cancel_all_commands();
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let mut execution_engine = ExecutionEngine::new(clock, Rc::clone(&cache), None);
     execution_engine
@@ -1436,7 +1436,7 @@ fn test_submit_order_list_mixed_instruments_routes_per_order_own_book(
     audusd_sim: CurrencyPair,
     gbpusd_sim: CurrencyPair,
 ) {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         debug: true,
@@ -9153,7 +9153,7 @@ fn test_reduce_only_netting_fill_reduces_external_position(
     let (database, control) = FailNthAddOrderDatabase::create();
     let cache = Rc::new(RefCell::new(Cache::new(None, Some(Box::new(database)))));
     let mut execution_engine =
-        ExecutionEngine::new(Rc::new(RefCell::new(TestClock::new())), cache, None);
+        ExecutionEngine::new(Rc::new(RefCell::new(VirtualClock::new())), cache, None);
 
     let instrument = audusd_sim();
     let account_id = AccountId::test_default();
@@ -10494,7 +10494,7 @@ fn test_handle_updated_order_event(mut execution_engine: ExecutionEngine) {
 
 #[rstest]
 fn test_submit_market_should_not_add_to_own_book() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         debug: true,
@@ -10573,7 +10573,7 @@ fn test_submit_market_should_not_add_to_own_book() {
 #[case(TimeInForce::Fok)]
 #[case(TimeInForce::Ioc)]
 fn test_submit_ioc_fok_should_not_add_to_own_book(#[case] time_in_force: TimeInForce) {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         debug: true,
@@ -10652,7 +10652,7 @@ fn test_submit_ioc_fok_should_not_add_to_own_book(#[case] time_in_force: TimeInF
 
 #[rstest]
 fn test_submit_order_adds_to_own_book_bid() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         debug: true,
@@ -10801,7 +10801,7 @@ fn test_submit_order_adds_to_own_book_bid() {
 
 #[rstest]
 fn test_submit_order_adds_to_own_book_ask() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         debug: true,
@@ -10950,7 +10950,7 @@ fn test_submit_order_adds_to_own_book_ask() {
 
 #[rstest]
 fn test_cancel_order_removes_from_own_book() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         debug: true,
@@ -11122,7 +11122,7 @@ fn test_cancel_order_removes_from_own_book() {
 
 #[rstest]
 fn test_own_book_status_filtering() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         debug: true,
@@ -11332,7 +11332,7 @@ fn test_own_book_status_filtering() {
 
 #[rstest]
 fn test_filled_order_removes_from_own_book() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         debug: true,
@@ -11528,7 +11528,7 @@ fn test_filled_order_removes_from_own_book() {
 
 #[rstest]
 fn test_partially_filled_order_shrinks_own_book_quantity() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         debug: true,
@@ -11715,7 +11715,7 @@ fn test_partially_filled_order_shrinks_own_book_quantity() {
 
 #[rstest]
 fn test_order_updates_in_own_book() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         debug: true,
@@ -11944,7 +11944,7 @@ fn test_order_updates_in_own_book() {
 
 #[rstest]
 fn test_position_flip_with_own_order_book() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         debug: true,
@@ -12188,7 +12188,7 @@ fn test_position_flip_with_own_order_book() {
 
 #[rstest]
 fn test_own_book_with_crossed_orders() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         debug: true,
@@ -12350,7 +12350,7 @@ fn test_own_book_with_crossed_orders() {
 
 #[rstest]
 fn test_own_book_with_contingent_orders() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         debug: false,
@@ -12626,7 +12626,7 @@ fn test_own_book_order_status_filtering_parameterized(
     #[case] process_steps: Vec<OrderStatus>,
     #[case] expected_in_book: bool,
 ) {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         debug: false,
@@ -12804,7 +12804,7 @@ fn test_own_book_order_status_filtering_parameterized(
 
 #[rstest]
 fn test_own_book_combined_status_filtering() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         debug: false,
@@ -13102,7 +13102,7 @@ fn test_own_book_combined_status_filtering() {
 
 #[rstest]
 fn test_own_book_status_integrity_during_transitions() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         debug: false,
@@ -13449,7 +13449,7 @@ fn test_own_book_status_integrity_during_transitions() {
 
     #[rstest]
     fn test_get_external_client_ids_returns_configured_ids() {
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let config = ExecutionEngineConfig {
             external_clients: Some(vec![
@@ -17450,7 +17450,7 @@ fn test_submit_order_list_with_no_client_denies_all_orders(execution_engine: Exe
 
 #[rstest]
 fn test_start_purge_timers_registers_when_configured() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         purge_closed_orders_interval_mins: Some(5),
@@ -17476,7 +17476,7 @@ fn test_start_purge_timers_registers_when_configured() {
 
 #[rstest]
 fn test_start_purge_timers_not_registered_when_unconfigured() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let mut engine = ExecutionEngine::new(clock.clone(), cache, None);
@@ -17487,7 +17487,7 @@ fn test_start_purge_timers_not_registered_when_unconfigured() {
 
 #[rstest]
 fn test_start_purge_timers_zero_interval_skipped() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         purge_closed_orders_interval_mins: Some(0),
@@ -17504,7 +17504,7 @@ fn test_start_purge_timers_zero_interval_skipped() {
 
 #[rstest]
 fn test_start_purge_timers_overflowing_interval_skipped() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         purge_closed_orders_interval_mins: Some(u32::MAX),
@@ -17530,7 +17530,7 @@ fn test_start_purge_timers_overflowing_interval_skipped() {
 
 #[rstest]
 fn test_start_purge_timers_first_event_time_overflow_skipped() {
-    let test_clock = TestClock::new();
+    let test_clock = VirtualClock::new();
     test_clock.set_time(UnixNanos::from(1_000_000_000_000_u64));
     let clock = Rc::new(RefCell::new(test_clock));
     let cache = Rc::new(RefCell::new(Cache::default()));
@@ -17558,7 +17558,7 @@ fn test_start_purge_timers_first_event_time_overflow_skipped() {
 
 #[rstest]
 fn test_stop_purge_timers_cancels_timers() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         purge_closed_orders_interval_mins: Some(5),
@@ -17577,7 +17577,7 @@ fn test_stop_purge_timers_cancels_timers() {
 
 #[rstest]
 fn test_purge_closed_orders_timer_fires_callback() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let instrument = InstrumentAny::CurrencyPair(audusd_sim());
@@ -17658,7 +17658,7 @@ fn test_purge_closed_orders_timer_fires_callback() {
 
 #[rstest]
 fn test_start_snapshot_timer_registers_when_configured() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         snapshot_positions_interval_secs: Some(1.0),
@@ -17679,7 +17679,7 @@ fn test_start_snapshot_timer_registers_when_configured() {
 
 #[rstest]
 fn test_start_snapshot_timer_zero_interval_skipped() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         snapshot_positions_interval_secs: Some(0.0),
@@ -17697,7 +17697,7 @@ fn test_start_snapshot_timer_zero_interval_skipped() {
 #[case::reset("reset")]
 #[case::dispose("dispose")]
 fn test_snapshot_timer_canceled_on_lifecycle_transition(#[case] action: &str) {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         snapshot_positions_interval_secs: Some(1.0),
@@ -17722,7 +17722,7 @@ fn test_snapshot_timer_canceled_on_lifecycle_transition(#[case] action: &str) {
 fn test_snapshot_open_position_states_publishes_position_state_snapshot() {
     *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let position = stub_position_long(audusd_sim());
@@ -17775,7 +17775,7 @@ fn test_snapshot_open_position_states_publishes_position_state_snapshot() {
 fn test_snapshot_open_position_states_publishes_snapshot_without_quote() {
     *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let position = stub_position_long(audusd_sim());
@@ -17913,7 +17913,7 @@ fn test_order_submit_denial_snapshots_persist() {
 }
 
 fn order_snapshot_engine() -> (ExecutionEngine, FailNthAddOrderDatabaseControl) {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let (database, control) = FailNthAddOrderDatabase::create();
     cache.borrow_mut().set_database(Box::new(database));
@@ -17929,7 +17929,7 @@ fn order_snapshot_engine() -> (ExecutionEngine, FailNthAddOrderDatabaseControl) 
 fn test_snapshot_timer_publishes_and_persists_all_open_positions() {
     *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let (database, control) = FailNthAddOrderDatabase::create();
     cache.borrow_mut().set_database(Box::new(database));
@@ -18015,7 +18015,7 @@ fn test_snapshot_timer_publishes_and_persists_all_open_positions() {
 fn test_position_lifecycle_snapshots_publish_and_persist() {
     *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let (database, control) = FailNthAddOrderDatabase::create();
     cache.borrow_mut().set_database(Box::new(database));
@@ -18445,7 +18445,7 @@ fn test_reset_clears_filtered_unclaimed_external_order_count() {
 fn execution_engine_with_unclaimed_external_order_filter(
     filter_unclaimed_external_orders: bool,
 ) -> ExecutionEngine {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         filter_unclaimed_external_orders,
@@ -18487,7 +18487,7 @@ fn test_reconcile_order_status_report_creates_external_order_accepted(
 
 #[rstest]
 fn test_reconcile_order_status_report_external_order_bootstraps_own_book() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         manage_own_order_books: true,
@@ -19242,7 +19242,7 @@ fn poll_to_completion<F: Future>(fut: F) -> F::Output {
 #[case::own_books_enabled(true)]
 #[case::own_books_disabled(false)]
 fn test_load_cache_no_reentrant_panic(#[case] manage_own_order_books: bool) {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         manage_own_order_books,
@@ -19595,7 +19595,7 @@ fn test_repeated_stop_invokes_client_each_time(
 
 #[rstest]
 fn test_reset_leaves_unrelated_clock_timers_intact() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         purge_closed_orders_interval_mins: Some(5),
@@ -19642,7 +19642,7 @@ fn test_reset_leaves_unrelated_clock_timers_intact() {
 
 #[rstest]
 fn test_dispose_leaves_unrelated_clock_timers_intact() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         purge_closed_orders_interval_mins: Some(5),
@@ -19742,7 +19742,7 @@ fn test_netting_flip_bounds_replay_events_by_default(mut execution_engine: Execu
 
 #[rstest]
 fn test_netting_flip_carries_replay_events_when_enabled() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         carry_replay_events_on_reopen: true,
@@ -19865,7 +19865,7 @@ fn build_fill_void_from_cached_fill(
 
 #[rstest]
 fn test_closed_netting_position_ignores_duplicate_from_prior_cycle() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         carry_replay_events_on_reopen: true,
@@ -19958,7 +19958,7 @@ fn test_netting_reopen_leaves_snapshot_unencoded_without_anchorer(
 
 #[rstest]
 fn test_flip_fill_void_reaching_the_closing_fragment_settles_snapshots() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         carry_replay_events_on_reopen: true,
@@ -19999,7 +19999,7 @@ fn test_flip_fill_void_reaching_the_closing_fragment_settles_snapshots() {
 
 #[rstest]
 fn test_successive_flip_fill_voids_within_the_reopening_fragment_keep_snapshots() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         carry_replay_events_on_reopen: true,
@@ -20091,7 +20091,7 @@ fn test_prior_cycle_fill_void_rejected_without_carried_replay(
 
 #[rstest]
 fn test_prior_cycle_fill_void_applied_with_carried_replay() {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         carry_replay_events_on_reopen: true,

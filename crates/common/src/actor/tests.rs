@@ -73,7 +73,7 @@ use super::{Actor, DataActor, DataActorCore, DataActorNative, data_actor::DataAc
 use crate::{
     actor::registry::{get_actor, get_actor_unchecked, register_actor},
     cache::Cache,
-    clock::{Clock, TestClock},
+    clock::{Clock, VirtualClock},
     component::Component,
     logging::{logger::LogGuard, logging_is_initialized},
     messages::{
@@ -560,8 +560,8 @@ impl TestDataActor {
 }
 
 #[fixture]
-pub fn clock() -> Rc<RefCell<TestClock>> {
-    Rc::new(RefCell::new(TestClock::new()))
+pub fn clock() -> Rc<RefCell<VirtualClock>> {
+    Rc::new(RefCell::new(VirtualClock::new()))
 }
 
 #[fixture]
@@ -614,7 +614,7 @@ impl Actor for DummyActor {
 }
 
 fn register_data_actor(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) -> Ustr {
@@ -684,7 +684,7 @@ fn test_data_actor_component_id_erases_actor_id() {
 
 #[rstest]
 fn test_registered_clock_dispatches_time_events_only_while_actor_is_running(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -720,7 +720,7 @@ fn test_registered_clock_dispatches_time_events_only_while_actor_is_running(
 
 #[rstest]
 fn test_data_actor_rejects_second_registration_without_replacing_dependencies(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -730,7 +730,7 @@ fn test_data_actor_rejects_second_registration_without_replacing_dependencies(
         ..Default::default()
     });
     let initial_clock: Rc<RefCell<dyn Clock>> = clock;
-    let replacement_clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let replacement_clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let replacement_cache = Rc::new(RefCell::new(Cache::new(None, None)));
     let replacement_trader_id = TraderId::from("REPLACEMENT-TRADER");
 
@@ -752,7 +752,7 @@ fn test_data_actor_rejects_second_registration_without_replacing_dependencies(
 
 #[rstest]
 fn test_data_actor_clock_api(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -817,7 +817,7 @@ fn test_data_actor_clock_api(
 
 #[rstest]
 fn test_data_actor_cache_api_returns_owned_point_reads(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -907,7 +907,7 @@ fn test_data_actor_cache_api_returns_owned_point_reads(
 
 #[rstest]
 fn test_data_actor_cache_api_returns_owned_market_data_point_reads(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -1111,7 +1111,7 @@ fn test_data_actor_cache_api_returns_owned_market_data_point_reads(
 
 #[rstest]
 fn test_data_actor_cache_api_returns_owned_market_data_collection_reads(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -1332,7 +1332,7 @@ fn test_data_actor_cache_api_returns_owned_market_data_collection_reads(
 #[cfg(feature = "defi")]
 #[rstest]
 fn test_data_actor_cache_api_returns_owned_pool(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -1410,7 +1410,7 @@ fn test_data_actor_cache_api_returns_owned_pool(
 
 #[rstest]
 fn test_data_actor_cache_api_surface_returns_owned_values(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -1709,7 +1709,7 @@ fn test_get_actor_unchecked_mutate() {
 
 #[rstest]
 fn test_subscription_facade_sends_exact_command_matrix(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2086,7 +2086,7 @@ fn test_subscription_facade_sends_exact_command_matrix(
 
 #[rstest]
 fn test_release_subscriptions_emits_retained_unsubscribe_commands(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2421,7 +2421,7 @@ fn test_release_subscriptions_emits_retained_unsubscribe_commands(
 
 #[rstest]
 fn test_release_subscriptions_emits_commands_in_topic_order(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -2470,7 +2470,7 @@ fn test_release_subscriptions_emits_commands_in_topic_order(
 
 #[rstest]
 fn test_duplicate_subscription_keeps_first_identity(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2517,7 +2517,7 @@ fn test_duplicate_subscription_keeps_first_identity(
 
 #[rstest]
 fn test_repeated_unsubscribe_does_not_emit_fallback_command(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2548,7 +2548,7 @@ fn test_repeated_unsubscribe_does_not_emit_fallback_command(
 
 #[rstest]
 fn test_reset_releases_subscription_before_restart(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2591,7 +2591,7 @@ fn test_reset_releases_subscription_before_restart(
 
 #[rstest]
 fn test_option_chain_resubscription_sends_edit_and_retains_latest_identity(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -2684,7 +2684,7 @@ fn test_option_chain_resubscription_sends_edit_and_retains_latest_identity(
 
 #[rstest]
 fn test_subscribe_and_receive_custom_data(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -2706,7 +2706,7 @@ fn test_subscribe_and_receive_custom_data(
 
 #[rstest]
 fn test_local_custom_subscription_upgrades_to_client_backed(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -2754,7 +2754,7 @@ fn test_local_custom_subscription_upgrades_to_client_backed(
 
 #[rstest]
 fn test_unsubscribe_custom_data(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -2785,7 +2785,7 @@ fn test_unsubscribe_custom_data(
 
 #[rstest]
 fn test_subscribe_and_receive_book_deltas(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2822,7 +2822,7 @@ fn test_subscribe_and_receive_book_deltas(
 
 #[rstest]
 fn test_subscribe_and_receive_book_depth10(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2845,7 +2845,7 @@ fn test_subscribe_and_receive_book_depth10(
 
 #[rstest]
 fn test_unsubscribe_book_depth10_stops_delivery(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2869,7 +2869,7 @@ fn test_unsubscribe_book_depth10_stops_delivery(
 
 #[rstest]
 fn test_stopped_actor_does_not_receive_book_depth10(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2890,7 +2890,7 @@ fn test_stopped_actor_does_not_receive_book_depth10(
 
 #[rstest]
 fn test_duplicate_book_depth10_subscription_delivers_once(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2912,7 +2912,7 @@ fn test_duplicate_book_depth10_subscription_delivers_once(
 
 #[rstest]
 fn test_book_depth10_facade_sends_subscribe_and_unsubscribe_commands(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2964,7 +2964,7 @@ fn parent_params() -> Params {
 
 #[rstest]
 fn test_parent_book_depth10_subscription_receives_and_unsubscribes(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -2996,7 +2996,7 @@ fn test_parent_book_depth10_subscription_receives_and_unsubscribes(
 
 #[rstest]
 fn test_parent_book_deltas_subscription_receives_per_underlying(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -3042,7 +3042,7 @@ fn test_parent_book_deltas_subscription_receives_per_underlying(
 
 #[rstest]
 fn test_parent_book_deltas_unsubscribe_removes_per_underlying_handler(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -3091,7 +3091,7 @@ fn test_parent_book_deltas_unsubscribe_removes_per_underlying_handler(
 
 #[rstest]
 fn test_betfair_runner_subscription_does_not_cross_leak(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -3155,7 +3155,7 @@ fn test_betfair_runner_subscription_does_not_cross_leak(
 
 #[rstest]
 fn test_unsubscribe_book_deltas(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3210,7 +3210,7 @@ fn test_unsubscribe_book_deltas(
 
 #[rstest]
 fn test_subscribe_and_receive_book_at_interval(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3234,7 +3234,7 @@ fn test_subscribe_and_receive_book_at_interval(
 
 #[rstest]
 fn test_unsubscribe_book_at_interval(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3267,7 +3267,7 @@ fn test_unsubscribe_book_at_interval(
 
 #[rstest]
 fn test_unsubscribe_book_at_interval_keeps_other_intervals(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3302,7 +3302,7 @@ fn test_unsubscribe_book_at_interval_keeps_other_intervals(
 
 #[rstest]
 fn test_subscribe_and_receive_quotes(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3323,7 +3323,7 @@ fn test_subscribe_and_receive_quotes(
 
 #[rstest]
 fn test_unsubscribe_quotes(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3351,7 +3351,7 @@ fn test_unsubscribe_quotes(
 
 #[rstest]
 fn test_subscribe_and_receive_trades(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3372,7 +3372,7 @@ fn test_subscribe_and_receive_trades(
 
 #[rstest]
 fn test_unsubscribe_trades(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3400,7 +3400,7 @@ fn test_unsubscribe_trades(
 
 #[rstest]
 fn test_subscribe_and_receive_bars(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3421,7 +3421,7 @@ fn test_subscribe_and_receive_bars(
 
 #[rstest]
 fn test_unsubscribe_bars(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3450,7 +3450,7 @@ fn test_unsubscribe_bars(
 
 #[rstest]
 fn test_request_instrument(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3487,7 +3487,7 @@ fn test_request_instrument(
 
 #[rstest]
 fn test_request_instruments(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3528,7 +3528,7 @@ fn test_request_instruments(
 
 #[rstest]
 fn test_request_quotes(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3565,7 +3565,7 @@ fn test_request_quotes(
 
 #[rstest]
 fn test_request_quotes_accepts_equal_start_and_end(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3616,7 +3616,7 @@ fn test_request_quotes_accepts_equal_start_and_end(
 #[case(None, Some(1), "end was > now")]
 #[case(Some(-1), Some(-2), "start was > end")]
 fn test_request_quotes_rejects_invalid_time_range(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3649,7 +3649,7 @@ fn test_request_quotes_rejects_invalid_time_range(
 
 #[rstest]
 fn test_request_bars_rejects_composite_type_without_registering_or_sending(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -3679,7 +3679,7 @@ fn test_request_bars_rejects_composite_type_without_registering_or_sending(
 
 #[rstest]
 fn test_request_facade_sends_exact_command_matrix(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -4002,7 +4002,7 @@ fn test_request_facade_sends_exact_command_matrix(
 
 #[rstest]
 fn test_request_trades(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -4039,7 +4039,7 @@ fn test_request_trades(
 
 #[rstest]
 fn test_request_book_deltas(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -4073,7 +4073,7 @@ fn test_request_book_deltas(
 
 #[rstest]
 fn test_request_book_depth(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -4108,7 +4108,7 @@ fn test_request_book_depth(
 
 #[rstest]
 fn test_request_funding_rates(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -4152,7 +4152,7 @@ fn test_request_funding_rates(
 
 #[rstest]
 fn test_request_bars(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -4191,7 +4191,7 @@ fn test_request_bars(
 
 #[rstest]
 fn test_subscribe_and_receive_instruments(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -4218,7 +4218,7 @@ fn test_subscribe_and_receive_instruments(
 
 #[rstest]
 fn test_subscribe_and_receive_instrument(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -4243,7 +4243,7 @@ fn test_subscribe_and_receive_instrument(
 
 #[rstest]
 fn test_subscribe_and_receive_mark_prices(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -4277,7 +4277,7 @@ fn test_subscribe_and_receive_mark_prices(
 
 #[rstest]
 fn test_subscribe_and_receive_index_prices(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -4303,7 +4303,7 @@ fn test_subscribe_and_receive_index_prices(
 
 #[rstest]
 fn test_subscribe_and_receive_funding_rates(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -4341,7 +4341,7 @@ fn test_subscribe_and_receive_funding_rates(
 
 #[rstest]
 fn test_subscribe_and_receive_instrument_status(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     stub_instrument_status: InstrumentStatus,
@@ -4362,7 +4362,7 @@ fn test_subscribe_and_receive_instrument_status(
 
 #[rstest]
 fn test_subscribe_and_receive_instrument_close(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     stub_instrument_close: InstrumentClose,
@@ -4383,7 +4383,7 @@ fn test_subscribe_and_receive_instrument_close(
 
 #[rstest]
 fn test_subscribe_and_receive_option_greeks(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -4422,7 +4422,7 @@ fn test_subscribe_and_receive_option_greeks(
 
 #[rstest]
 fn test_subscribe_and_receive_option_chain(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -4460,7 +4460,7 @@ fn test_subscribe_and_receive_option_chain(
 
 #[rstest]
 fn test_unsubscribe_instruments(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -4494,7 +4494,7 @@ fn test_unsubscribe_instruments(
 
 #[rstest]
 fn test_unsubscribe_instrument(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -4525,7 +4525,7 @@ fn test_unsubscribe_instrument(
 
 #[rstest]
 fn test_unsubscribe_mark_prices(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -4576,7 +4576,7 @@ fn test_unsubscribe_mark_prices(
 
 #[rstest]
 fn test_unsubscribe_index_prices(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -4613,7 +4613,7 @@ fn test_unsubscribe_index_prices(
 
 #[rstest]
 fn test_unsubscribe_funding_rates(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -4654,7 +4654,7 @@ fn test_unsubscribe_funding_rates(
 
 #[rstest]
 fn test_unsubscribe_instrument_status(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     stub_instrument_status: InstrumentStatus,
@@ -4681,7 +4681,7 @@ fn test_unsubscribe_instrument_status(
 
 #[rstest]
 fn test_unsubscribe_instrument_close(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     stub_instrument_close: InstrumentClose,
@@ -4708,7 +4708,7 @@ fn test_unsubscribe_instrument_close(
 
 #[rstest]
 fn test_unsubscribe_option_greeks(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -4752,7 +4752,7 @@ fn test_unsubscribe_option_greeks(
 
 #[rstest]
 fn test_unsubscribe_option_chain(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -4795,7 +4795,7 @@ fn test_unsubscribe_option_chain(
 
 #[rstest]
 fn test_request_book_snapshot(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -4835,7 +4835,7 @@ fn test_request_book_snapshot(
 
 #[rstest]
 fn test_request_data(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -4880,7 +4880,7 @@ fn test_request_data(
 
 #[rstest]
 fn test_handle_data_response_preserves_custom_data_payload_shape(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -4954,7 +4954,7 @@ fn test_handle_data_response_preserves_custom_data_payload_shape(
 #[cfg(feature = "defi")]
 #[rstest]
 fn test_defi_subscription_facade_sends_exact_command_matrix(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -5133,7 +5133,7 @@ fn test_defi_subscription_facade_sends_exact_command_matrix(
 #[cfg(feature = "defi")]
 #[rstest]
 fn test_release_subscriptions_emits_every_defi_unsubscribe_shape(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -5229,7 +5229,7 @@ fn test_release_subscriptions_emits_every_defi_unsubscribe_shape(
 #[cfg(feature = "defi")]
 #[rstest]
 fn test_subscribe_and_receive_blocks(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -5260,7 +5260,7 @@ fn test_subscribe_and_receive_blocks(
 #[cfg(feature = "defi")]
 #[rstest]
 fn test_unsubscribe_blocks(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -5307,7 +5307,7 @@ fn test_unsubscribe_blocks(
 #[cfg(feature = "defi")]
 #[rstest]
 fn test_subscribe_and_receive_pools(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -5376,7 +5376,7 @@ fn test_subscribe_and_receive_pools(
 #[cfg(feature = "defi")]
 #[rstest]
 fn test_subscribe_and_receive_pool_swaps(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -5435,7 +5435,7 @@ fn test_subscribe_and_receive_pool_swaps(
 #[cfg(feature = "defi")]
 #[rstest]
 fn test_unsubscribe_pool_swaps(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -5517,7 +5517,7 @@ fn test_unsubscribe_pool_swaps(
 #[cfg(feature = "defi")]
 #[rstest]
 fn test_subscribe_receive_and_unsubscribe_remaining_pool_events(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -5554,7 +5554,7 @@ fn test_subscribe_receive_and_unsubscribe_remaining_pool_events(
 
 #[rstest]
 fn test_duplicate_subscribe_custom_data(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -5579,7 +5579,7 @@ fn test_duplicate_subscribe_custom_data(
 
 #[rstest]
 fn test_unsubscribe_before_subscribe_custom_data(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -5622,7 +5622,7 @@ impl DataActor for FailingRetirementActor {
 
 #[rstest]
 fn test_failed_reset_retains_subscriptions(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -5660,7 +5660,7 @@ enum Retirement {
 #[case::fault(Retirement::Fault, "fault failed", 0)]
 #[case::dispose(Retirement::Dispose, "dispose failed", 1)]
 fn test_failed_retirement_subscription_release(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -5739,7 +5739,7 @@ impl DataActor for SaveLoadActor {
 #[case::with_reason(Some("graceful exit".to_string()))]
 #[case::no_reason(None)]
 fn test_shutdown_system_publishes_command(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     #[case] reason: Option<String>,
@@ -5769,7 +5769,7 @@ fn test_shutdown_system_publishes_command(
 
 #[rstest]
 fn test_on_save_and_on_load(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -5798,7 +5798,7 @@ fn test_on_save_and_on_load(
 
 #[rstest]
 fn test_data_actor_core_tracks_quote_handlers(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -5819,7 +5819,7 @@ fn test_data_actor_core_tracks_quote_handlers(
 
 #[rstest]
 fn test_data_actor_core_removes_quote_handler_on_unsubscribe(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -5840,7 +5840,7 @@ fn test_data_actor_core_removes_quote_handler_on_unsubscribe(
 
 #[rstest]
 fn test_data_actor_core_tracks_trade_handlers(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -5861,7 +5861,7 @@ fn test_data_actor_core_tracks_trade_handlers(
 
 #[rstest]
 fn test_data_actor_core_removes_trade_handler_on_unsubscribe(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -5879,7 +5879,7 @@ fn test_data_actor_core_removes_trade_handler_on_unsubscribe(
 
 #[rstest]
 fn test_data_actor_core_tracks_bar_handlers(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -5901,7 +5901,7 @@ fn test_data_actor_core_tracks_bar_handlers(
 
 #[rstest]
 fn test_data_actor_core_removes_bar_handler_on_unsubscribe(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -5920,7 +5920,7 @@ fn test_data_actor_core_removes_bar_handler_on_unsubscribe(
 
 #[rstest]
 fn test_data_actor_core_tracks_deltas_handlers(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -5941,7 +5941,7 @@ fn test_data_actor_core_tracks_deltas_handlers(
 
 #[rstest]
 fn test_data_actor_core_removes_deltas_handler_on_unsubscribe(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -5959,7 +5959,7 @@ fn test_data_actor_core_removes_deltas_handler_on_unsubscribe(
 
 #[rstest]
 fn test_data_actor_core_multiple_subscriptions_tracked(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -5989,7 +5989,7 @@ fn test_data_actor_core_multiple_subscriptions_tracked(
 
 #[rstest]
 fn test_release_subscriptions_removes_every_handler_family_and_is_idempotent(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -6089,7 +6089,7 @@ fn test_release_subscriptions_removes_every_handler_family_and_is_idempotent(
 
 #[rstest]
 fn test_publish_data_reaches_subscriber(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -6217,7 +6217,7 @@ fn test_update_synthetic_panics_when_unregistered() {
 
 #[rstest]
 fn test_subscribe_signal_multi_word_name_matches_published_topic(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -6247,7 +6247,7 @@ fn test_subscribe_signal_multi_word_name_matches_published_topic(
 #[case("example", "1.5", 0)]
 #[case("risk", "HIGH", 1_700_000_000_000_000_000)]
 fn test_publish_signal_reaches_subscriber(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     #[case] name: &str,
@@ -6282,7 +6282,7 @@ fn test_publish_signal_reaches_subscriber(
 #[case(Some("BINANCE"), Some("market"), vec![0])]
 #[case(Some("MISSING"), None, vec![])]
 fn test_socket_state_filters_route_matching_events(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     #[case] client_id: Option<&str>,
@@ -6328,7 +6328,7 @@ fn test_socket_state_filters_route_matching_events(
 #[case(Some(SystemChannel::ExecCommands), vec![2])]
 #[case(Some(SystemChannel::DataEvents), vec![3])]
 fn test_queue_state_filters_route_matching_events(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     #[case] channel: Option<SystemChannel>,
@@ -6370,7 +6370,7 @@ fn test_queue_state_filters_route_matching_events(
 
 #[rstest]
 fn test_socket_state_unsubscribe_preserves_other_filters(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -6403,7 +6403,7 @@ fn test_socket_state_unsubscribe_preserves_other_filters(
 
 #[rstest]
 fn test_queue_state_unsubscribe_preserves_other_filters(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -6434,7 +6434,7 @@ fn test_queue_state_unsubscribe_preserves_other_filters(
 
 #[rstest]
 fn test_queue_state_changed_reaches_typed_subscriber(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -6456,7 +6456,7 @@ fn test_queue_state_changed_reaches_typed_subscriber(
 
 #[rstest]
 fn test_socket_state_changed_reaches_typed_subscriber(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -6482,7 +6482,7 @@ fn test_socket_state_changed_reaches_typed_subscriber(
 #[cfg(feature = "live")]
 #[rstest]
 fn test_reconnect_socket_enqueues_typed_command(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -6507,7 +6507,7 @@ fn test_reconnect_socket_enqueues_typed_command(
 
 #[rstest]
 fn test_socket_state_changed_skips_delivery_when_not_running(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -6531,7 +6531,7 @@ fn test_socket_state_changed_skips_delivery_when_not_running(
 
 #[rstest]
 fn test_unsubscribe_socket_state_stops_delivery(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -6569,7 +6569,7 @@ fn test_unsubscribe_socket_state_stops_delivery(
 
 #[rstest]
 fn test_subscribe_socket_state_dispatches_in_priority_order(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -6624,7 +6624,7 @@ fn test_subscribe_socket_state_dispatches_in_priority_order(
 
 #[rstest]
 fn test_subscribe_socket_state_resubscribe_does_not_update_priority(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -6646,7 +6646,7 @@ fn test_subscribe_socket_state_resubscribe_does_not_update_priority(
 
 #[rstest]
 fn test_queue_state_changed_skips_delivery_when_not_running(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -6667,7 +6667,7 @@ fn test_queue_state_changed_skips_delivery_when_not_running(
 
 #[rstest]
 fn test_unsubscribe_queue_state_stops_delivery(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -6699,7 +6699,7 @@ fn test_unsubscribe_queue_state_stops_delivery(
 
 #[rstest]
 fn test_subscribe_queue_state_dispatches_in_priority_order(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -6751,7 +6751,7 @@ fn test_subscribe_queue_state_dispatches_in_priority_order(
 
 #[rstest]
 fn test_subscribe_queue_state_resubscribe_does_not_update_priority(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -6770,7 +6770,7 @@ fn test_subscribe_queue_state_resubscribe_does_not_update_priority(
 
 #[rstest]
 fn test_subscribe_signal_wildcard_matches_all_names(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -6795,7 +6795,7 @@ fn test_subscribe_signal_wildcard_matches_all_names(
 
 #[rstest]
 fn test_unsubscribe_signal_stops_delivery(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -6829,7 +6829,7 @@ fn test_unsubscribe_signal_stops_delivery(
 #[case(1_000_000, 10)] // Above old u8 ceiling: locks in u32 widening
 #[case(u32::MAX, 0)] // Saturated boundary
 fn test_subscribe_signal_dispatches_in_priority_order(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     #[case] high_priority: u32,
@@ -6889,7 +6889,7 @@ fn test_subscribe_signal_dispatches_in_priority_order(
 
 #[rstest]
 fn test_subscribe_signal_resubscribe_does_not_update_priority(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -6912,7 +6912,7 @@ fn test_subscribe_signal_resubscribe_does_not_update_priority(
 
 #[rstest]
 fn test_add_synthetic_stores_in_cache(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -6951,7 +6951,7 @@ fn test_add_synthetic_stores_in_cache(
 
 #[rstest]
 fn test_update_synthetic_replaces_existing(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {

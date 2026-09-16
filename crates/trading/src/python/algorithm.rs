@@ -1519,7 +1519,7 @@ mod tests {
 
     use nautilus_common::{
         cache::Cache,
-        clock::{Clock, TestClock},
+        clock::{Clock, VirtualClock},
         messages::system::{
             QueueCondition, QueueState, QueueStateChanged, SocketState, SocketStateChanged,
         },
@@ -1554,7 +1554,7 @@ mod tests {
             *get_message_bus().borrow_mut() = MessageBus::default();
 
             let mut algorithm = PyExecutionAlgorithm::new(None);
-            let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+            let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
             let cache = Rc::new(RefCell::new(Cache::default()));
             Component::register(&mut algorithm, TraderId::from("TRADER-001"), clock, cache)
                 .unwrap();
@@ -1705,7 +1705,7 @@ class SocketStateTracker:
         *get_message_bus().borrow_mut() = MessageBus::default();
 
         let mut algorithm = PyExecutionAlgorithm::new(None);
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         Component::register(&mut algorithm, TraderId::from("TRADER-001"), clock, cache).unwrap();
 
@@ -1731,7 +1731,7 @@ class SocketStateTracker:
         *get_message_bus().borrow_mut() = MessageBus::default();
 
         let mut algorithm = PyExecutionAlgorithm::new(None);
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         Component::register(&mut algorithm, TraderId::from("TRADER-001"), clock, cache).unwrap();
 
@@ -1773,7 +1773,7 @@ class SocketStateTracker:
         *get_message_bus().borrow_mut() = MessageBus::default();
 
         let mut algorithm = PyExecutionAlgorithm::new(None);
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         Component::register(&mut algorithm, TraderId::from("TRADER-001"), clock, cache).unwrap();
 

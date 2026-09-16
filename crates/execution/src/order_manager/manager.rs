@@ -805,7 +805,7 @@ fn initialized_action(order: &OrderAny) -> OrderManagerAction {
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use nautilus_common::{cache::Cache, clock::TestClock};
+    use nautilus_common::{cache::Cache, clock::VirtualClock};
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         enums::{ContingencyType, OmsType, OrderSide, OrderStatus, OrderType, TriggerType},
@@ -933,7 +933,7 @@ mod tests {
     }
 
     fn create_test_components() -> (Rc<RefCell<dyn Clock>>, Rc<RefCell<Cache>>) {
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
         (clock, cache)
     }

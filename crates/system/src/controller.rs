@@ -444,7 +444,7 @@ mod tests {
     use nautilus_common::{
         actor::data_actor::ImportableActorConfig,
         cache::Cache,
-        clock::TestClock,
+        clock::VirtualClock,
         enums::{ComponentState, Environment},
         msgbus::{MessageBus, set_message_bus},
     };
@@ -604,8 +604,8 @@ mod tests {
         let mut clock_ref = clock.borrow_mut();
         let test_clock = clock_ref
             .as_any_mut()
-            .downcast_mut::<TestClock>()
-            .expect("test default clock must be TestClock");
+            .downcast_mut::<VirtualClock>()
+            .expect("test default clock must be VirtualClock");
         test_clock.set_time(1_000_000_000u64.into());
         drop(clock_ref);
 

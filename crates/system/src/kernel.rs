@@ -1235,7 +1235,7 @@ mod streaming_tests {
     use std::{cell::RefCell, rc::Rc, sync::Arc};
 
     use nautilus_common::{
-        clock::TestClock,
+        clock::VirtualClock,
         messages::data::{DataCommand, QuotesResponse, RequestCommand, RequestQuotes},
         msgbus::{self, MStr, ShareableMessageHandler},
     };
@@ -1361,7 +1361,7 @@ mod streaming_tests {
             .clock
             .borrow_mut()
             .as_any_mut()
-            .downcast_mut::<TestClock>()
+            .downcast_mut::<VirtualClock>()
             .unwrap()
             .set_time(UnixNanos::from(3));
         let request_id = UUID4::new();

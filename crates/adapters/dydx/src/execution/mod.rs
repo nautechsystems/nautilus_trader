@@ -3047,7 +3047,7 @@ mod tests {
 
     use jiff::Timestamp;
     use nautilus_common::{
-        cache::Cache, clock::TestClock, factories::OrderFactory, messages::ExecutionEvent,
+        cache::Cache, clock::VirtualClock, factories::OrderFactory, messages::ExecutionEvent,
     };
     use nautilus_model::{
         enums::OrderSide,
@@ -3122,7 +3122,7 @@ mod tests {
     }
 
     fn test_order_factory() -> OrderFactory {
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         OrderFactory::new(
             TraderId::from("TRADER-001"),
             StrategyId::from("S-001"),

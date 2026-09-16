@@ -29,7 +29,7 @@ use nautilus_common::{
         Cache,
         database::{CacheDatabaseAdapter, CacheMap},
     },
-    clock::{Clock, TestClock},
+    clock::{Clock, VirtualClock},
     signal::Signal,
 };
 use nautilus_core::{UUID4, UnixNanos};
@@ -264,12 +264,12 @@ fn kernel_drop_after_start_seals_run_as_ended() {
 
         kernel.start();
 
-        // Advance the kernel's TestClock so the drop-seal ts is distinguishable from 0.
+        // Advance the kernel's VirtualClock so the drop-seal ts is distinguishable from 0.
         {
             let mut clock_borrow = kernel.clock.borrow_mut();
             let test_clock = (&mut *clock_borrow as &mut dyn std::any::Any)
-                .downcast_mut::<TestClock>()
-                .expect("kernel clock is a TestClock in Backtest environment");
+                .downcast_mut::<VirtualClock>()
+                .expect("kernel clock is a VirtualClock in Backtest environment");
             test_clock.advance_time(advanced_ts, true);
         }
 

@@ -22,7 +22,7 @@ use async_trait::async_trait;
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
-    clock::{Clock, TestClock},
+    clock::{Clock, VirtualClock},
     messages::execution::{
         BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
         QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
@@ -84,7 +84,7 @@ impl StubExecutionClient {
             venue,
             oms_type,
             is_connected: false,
-            clock: clock.unwrap_or_else(|| Rc::new(RefCell::new(TestClock::new()))),
+            clock: clock.unwrap_or_else(|| Rc::new(RefCell::new(VirtualClock::new()))),
             cache: Rc::new(RefCell::new(Cache::new(None, None))),
             received_instruments: Rc::new(RefCell::new(Vec::new())),
             start_count: Rc::new(Cell::new(0)),

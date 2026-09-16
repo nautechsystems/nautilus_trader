@@ -2203,7 +2203,7 @@ fn mass_status_matches(
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::{clock::TestClock, enums::LogLevel};
+    use nautilus_common::{clock::VirtualClock, enums::LogLevel};
     use nautilus_core::python::to_pyvalue_err;
     use nautilus_model::{
         enums::{OrderStatus, OrderType, TimeInForce},
@@ -2298,7 +2298,7 @@ class Runtime:
                     runtime,
                     output: ClientOutput::py_new(),
                     execution: None,
-                    clock: Rc::new(RefCell::new(TestClock::default())),
+                    clock: Rc::new(RefCell::new(VirtualClock::default())),
                 },
                 identity: ExecutionIdentity {
                     tolerance: Decimal::ZERO,

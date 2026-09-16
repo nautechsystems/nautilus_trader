@@ -24,7 +24,7 @@ use std::{
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
-    clock::{Clock, TestClock},
+    clock::{Clock, VirtualClock},
     live::set_exec_event_sender,
     messages::{
         ExecutionEvent,
@@ -158,7 +158,7 @@ struct TestContext {
     client: SandboxExecutionClient,
     cache: Rc<RefCell<Cache>>,
     /// The clock the client was built on, retained so a test can advance it and fire its alerts.
-    test_clock: Rc<RefCell<TestClock>>,
+    test_clock: Rc<RefCell<VirtualClock>>,
 }
 
 fn create_test_context(trader_id: TraderId, account_id: AccountId, venue: Venue) -> TestContext {
@@ -182,7 +182,7 @@ fn create_test_context_with(
     customize: impl FnOnce(&mut SandboxExecutionClientConfig),
 ) -> TestContext {
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let test_clock = Rc::new(RefCell::new(TestClock::new()));
+    let test_clock = Rc::new(RefCell::new(VirtualClock::new()));
     let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
     let mut config = create_config(trader_id, account_id, venue);
     customize(&mut config);
@@ -579,7 +579,7 @@ fn submit_market_open_order(
 struct BinaryOptionLifecycleHarness {
     client: SandboxExecutionClient,
     cache: Rc<RefCell<Cache>>,
-    test_clock: Rc<RefCell<TestClock>>,
+    test_clock: Rc<RefCell<VirtualClock>>,
     instrument: InstrumentAny,
     rx: tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
 }
@@ -595,7 +595,7 @@ fn setup_binary_option_lifecycle_harness(
     let instrument = make_binary_option_instrument(condition_id, token_id, outcome, expiration_ns);
     let venue = instrument.id().venue;
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let test_clock = Rc::new(RefCell::new(TestClock::new()));
+    let test_clock = Rc::new(RefCell::new(VirtualClock::new()));
     let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
     let config = create_config(trader_id, account_id, venue);
     let core = ExecutionClientCore::new(
@@ -631,7 +631,7 @@ fn setup_binary_option_lifecycle_harness(
 }
 
 fn publish_expired_close(
-    test_clock: &Rc<RefCell<TestClock>>,
+    test_clock: &Rc<RefCell<VirtualClock>>,
     instrument: &InstrumentAny,
     close_price: Price,
     ts_ns: u64,
@@ -671,7 +671,7 @@ fn setup_pending_resolution_harness(
     let instrument = InstrumentAny::BinaryOption(binary);
     let venue = instrument.id().venue;
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let test_clock = Rc::new(RefCell::new(TestClock::new()));
+    let test_clock = Rc::new(RefCell::new(VirtualClock::new()));
     let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
 
     let mut config = create_config(trader_id, account_id, venue);
@@ -883,7 +883,7 @@ fn static_latency_model(insert_ns: u64, update_ns: u64, delete_ns: u64) -> Laten
 /// Advances the test clock to `to`, running any inbound-drain alerts that fire exactly as the live
 /// runner would (`advance_time` -> `match_handlers` -> `handler.run()`), and returns the number of
 /// alert handlers that ran.
-fn advance_and_fire(test_clock: &Rc<RefCell<TestClock>>, to: UnixNanos) -> usize {
+fn advance_and_fire(test_clock: &Rc<RefCell<VirtualClock>>, to: UnixNanos) -> usize {
     let events = test_clock.borrow_mut().advance_time(to, true);
     let handlers = test_clock.borrow().match_handlers(events);
     let count = handlers.len();
@@ -1050,7 +1050,7 @@ impl DeferredCommand {
 struct EngineHarness {
     engine: Rc<RefCell<ExecutionEngine>>,
     cache: Rc<RefCell<Cache>>,
-    test_clock: Rc<RefCell<TestClock>>,
+    test_clock: Rc<RefCell<VirtualClock>>,
     rx: tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     /// Every order event the engine published, in the order it processed them.
     published: Rc<RefCell<Vec<OrderEventAny>>>,
@@ -1085,7 +1085,7 @@ fn setup_engine_harness(
     let venue = instrument.id().venue;
     let client_id = ClientId::new("SANDBOX");
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let test_clock = Rc::new(RefCell::new(TestClock::new()));
+    let test_clock = Rc::new(RefCell::new(VirtualClock::new()));
     let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
     cache
         .borrow_mut()
@@ -1507,7 +1507,7 @@ fn assert_fee_model_config_drives_sandbox_commission(
     let instrument = InstrumentAny::BinaryOption(binary);
     let venue = instrument.id().venue;
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
 
     let mut config = create_config(trader_id, account_id, venue);
     config.base_currency = Some(Currency::USDC());
@@ -3006,7 +3006,7 @@ fn test_instrument_close_sync_cleanup_handles_synchronous_position_closed_reentr
         let account_id = AccountId::from("BINANCE-001");
         let client_id = ClientId::new("SANDBOX");
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let test_clock = Rc::new(RefCell::new(TestClock::new()));
+        let test_clock = Rc::new(RefCell::new(VirtualClock::new()));
         let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
 
         let mut binary = binary_option();
@@ -3349,7 +3349,7 @@ fn test_paper_binary_option_multiple_instruments_close_settlement_via_data_engin
     ];
     let venue = instruments[0].0.id().venue;
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let test_clock = Rc::new(RefCell::new(TestClock::new()));
+    let test_clock = Rc::new(RefCell::new(VirtualClock::new()));
     let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
 
     let mut config = create_config(trader_id, account_id, venue);
@@ -3714,7 +3714,7 @@ fn test_process_bar_drops_precision_mismatch(
     setup_order_event_handler();
 
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let mut config = create_config(trader_id, account_id, venue);
     config.bar_execution = true;
 
@@ -3762,7 +3762,7 @@ fn test_message_handler_drops_precision_mismatched_bar(
     setup_order_event_handler();
 
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let mut config = create_config(trader_id, account_id, instrument.id().venue);
     config.bar_execution = true;
 
@@ -3993,7 +3993,7 @@ fn test_cancel_all_orders_routes_by_client_account_and_side(
     let account_a_id = AccountId::from("BINANCE-001");
     let account_b_id = AccountId::from("BINANCE-002");
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
 
     {
         let mut cache = cache.borrow_mut();
@@ -4258,7 +4258,7 @@ fn test_submit_order_through_exec_engine_no_reentrant_panic(
     let client_id = ClientId::new("SANDBOX");
 
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let test_clock = Rc::new(RefCell::new(TestClock::new()));
+    let test_clock = Rc::new(RefCell::new(VirtualClock::new()));
     let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
 
     cache
@@ -5863,8 +5863,11 @@ fn test_batch_reduce_only_modifies_share_pending_position_quantity(
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     nautilus_common::live::runner::replace_exec_event_sender(tx);
     client.start().unwrap();
-    let mut engine =
-        ExecutionEngine::new(Rc::new(RefCell::new(TestClock::new())), cache.clone(), None);
+    let mut engine = ExecutionEngine::new(
+        Rc::new(RefCell::new(VirtualClock::new())),
+        cache.clone(),
+        None,
+    );
     engine.register_client(Box::new(client)).unwrap();
 
     // Releases whatever the client holds in flight, then processes the channel in arrival order,

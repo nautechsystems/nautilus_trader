@@ -212,7 +212,7 @@ mod tests {
 
     use nautilus_common::{
         cache::Cache,
-        clock::TestClock,
+        clock::VirtualClock,
         factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
         live::runner::set_data_event_sender,
         messages::DataEvent,
@@ -266,7 +266,7 @@ mod tests {
         };
 
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let result = factory.create("KRAKEN-TEST", &config, cache.into(), clock);
         assert!(result.is_ok());
@@ -289,7 +289,7 @@ mod tests {
             "KRAKEN-TEST",
             &config,
             cache.into(),
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
         );
         assert!(result.is_ok());
 
@@ -313,7 +313,7 @@ mod tests {
             "KRAKEN-TEST",
             &config,
             cache.into(),
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
         );
         assert!(result.is_ok());
 
@@ -339,7 +339,7 @@ mod tests {
             "KRAKEN-TEST",
             &config,
             cache.into(),
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
         );
         let err = match result {
             Ok(_) => panic!("expected validation error, factory returned Ok"),
@@ -363,7 +363,7 @@ mod tests {
         };
 
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let result = factory.create("KRAKEN-TEST", &config, cache.into(), clock);
         let err = match result {
@@ -392,7 +392,7 @@ mod tests {
             "KRAKEN-TEST",
             &config,
             cache.into(),
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
         );
         assert!(result.is_ok());
     }

@@ -1834,7 +1834,7 @@ mod tests {
 
     use nautilus_common::{
         cache::Cache,
-        clock::TestClock,
+        clock::VirtualClock,
         messages::data::{DataCommand, SubscribeCommand, UnsubscribeCommand},
         msgbus::{
             MessagingSwitchboard,
@@ -1875,7 +1875,7 @@ mod tests {
         Rc<RefCell<Cache>>,
         Rc<RefCell<OrderEmulator>>,
     ) {
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
         let emulator = Rc::new(RefCell::new(OrderEmulator::new(
             clock.clone(),

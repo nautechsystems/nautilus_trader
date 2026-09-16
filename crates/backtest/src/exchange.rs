@@ -27,7 +27,7 @@ use indexmap::IndexMap;
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
-    clock::{Clock, TestClock},
+    clock::{Clock, VirtualClock},
     messages::execution::{ModifyOrder, TradingCommand},
     msgbus::{self, MessagingSwitchboard, TypedHandler, switchboard},
 };
@@ -817,13 +817,13 @@ impl SimulatedExchange {
     ///
     /// # Panics
     ///
-    /// Panics if the clock is not a [`TestClock`].
+    /// Panics if the clock is not a [`VirtualClock`].
     pub fn set_clock_time(&self, ts_now: UnixNanos) {
         let mut clock_ref = self.clock.borrow_mut();
         let test_clock = clock_ref
             .as_any_mut()
-            .downcast_mut::<TestClock>()
-            .expect("SimulatedExchange requires TestClock");
+            .downcast_mut::<VirtualClock>()
+            .expect("SimulatedExchange requires VirtualClock");
         test_clock.set_time(ts_now);
     }
 
@@ -1583,7 +1583,7 @@ impl SimulatedExchange {
     ///
     /// # Panics
     ///
-    /// Panics if the exchange clock is not a [`TestClock`] or popping an inflight command fails
+    /// Panics if the exchange clock is not a [`VirtualClock`] or popping an inflight command fails
     /// during processing.
     pub fn process(&mut self, ts_now: UnixNanos) {
         self.process_commands(ts_now, SettlementScope::All);
@@ -2121,7 +2121,7 @@ mod tests {
 
     fn setup_exchange(dispatch: Dispatch) -> SimulatedExchange {
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let mut config = SimulatedVenueConfig::builder()
             .venue(Venue::new("SIM"))
             .oms_type(OmsType::Netting)
@@ -2152,7 +2152,7 @@ mod tests {
     #[case(true)]
     fn test_liquidation_enabled(#[case] expected: bool) {
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let config = SimulatedVenueConfig::builder()
             .venue(Venue::new("SIM"))
             .oms_type(OmsType::Netting)
@@ -2183,7 +2183,7 @@ mod tests {
             .build()
             .unwrap();
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
 
         let exchange = SimulatedExchange::new(config, cache, clock).unwrap();
 

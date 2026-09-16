@@ -31,7 +31,7 @@ use std::{cell::RefCell, hint::black_box, rc::Rc};
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_common::{
     cache::Cache,
-    clock::{Clock, TestClock},
+    clock::{Clock, VirtualClock},
     msgbus::{self, MessageBus},
 };
 use nautilus_data::engine::{DataEngine, config::DataEngineConfig};
@@ -83,7 +83,7 @@ fn build_engine() -> Rc<RefCell<DataEngine>> {
 
 fn build_engine_with_config(config: Option<DataEngineConfig>) -> Rc<RefCell<DataEngine>> {
     install_thread_local_msgbus();
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let engine = Rc::new(RefCell::new(DataEngine::new(clock, cache, config)));
     DataEngine::register_msgbus_handlers(&engine);

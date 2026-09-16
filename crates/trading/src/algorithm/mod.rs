@@ -1911,7 +1911,7 @@ mod tests {
     use nautilus_common::{
         actor::DataActor,
         cache::Cache,
-        clock::TestClock,
+        clock::VirtualClock,
         component::Component,
         enums::ComponentTrigger,
         msgbus::{
@@ -2032,7 +2032,7 @@ mod tests {
 
     fn register_algorithm(algo: &mut TestAlgorithm) {
         let trader_id = TraderId::from("TRADER-001");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         algo.core.register(trader_id, clock, cache).unwrap();
@@ -3770,7 +3770,7 @@ mod tests {
         algo.core
             .register(
                 TraderId::from("TRADER-001"),
-                Rc::new(RefCell::new(TestClock::new())),
+                Rc::new(RefCell::new(VirtualClock::new())),
                 Rc::new(RefCell::new(Cache::default())),
             )
             .unwrap();

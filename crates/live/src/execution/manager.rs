@@ -4878,7 +4878,7 @@ impl ExecutionManager {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::{clock::TestClock, config::ConfigError};
+    use nautilus_common::{clock::VirtualClock, config::ConfigError};
     use nautilus_core::{DurationNanos, Params};
     use nautilus_execution::reconciliation::generate_reconciliation_order_events;
     use nautilus_model::{
@@ -4905,7 +4905,7 @@ mod tests {
     fn test_new_validates_open_check_lookback_mins_boundaries() {
         let create_manager = |mins| {
             ExecutionManager::new(
-                Rc::new(RefCell::new(TestClock::new())),
+                Rc::new(RefCell::new(VirtualClock::new())),
                 Rc::new(RefCell::new(Cache::default())),
                 ExecutionManagerConfig {
                     open_check_lookback_mins: Some(mins),
@@ -4926,7 +4926,7 @@ mod tests {
     fn test_new_validates_reconciliation_lookback_mins_boundaries() {
         let create_manager = |mins| {
             ExecutionManager::new(
-                Rc::new(RefCell::new(TestClock::new())),
+                Rc::new(RefCell::new(VirtualClock::new())),
                 Rc::new(RefCell::new(Cache::default())),
                 ExecutionManagerConfig {
                     lookback_mins: Some(mins),
@@ -4946,7 +4946,7 @@ mod tests {
     #[rstest]
     fn test_new_reports_every_invalid_lookback_field() {
         let error = ExecutionManager::new(
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
             Rc::new(RefCell::new(Cache::default())),
             ExecutionManagerConfig {
                 lookback_mins: Some(307_445_734_561_825_861),
@@ -5039,7 +5039,7 @@ mod tests {
         InstrumentAny,
     ) {
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         cache
             .borrow_mut()
@@ -5141,7 +5141,7 @@ mod tests {
     #[rstest]
     fn test_handle_external_order_applies_venue_commission_to_inferred_fill() {
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         cache
             .borrow_mut()
@@ -5172,7 +5172,7 @@ mod tests {
     #[rstest]
     fn test_handle_external_order_skips_inferred_fill_when_commission_fails() {
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         cache
             .borrow_mut()
@@ -5234,7 +5234,7 @@ mod tests {
     #[rstest]
     fn test_handle_external_order_without_explicit_fills_resolves_commission_before_cache() {
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         cache
             .borrow_mut()
@@ -5294,7 +5294,7 @@ mod tests {
     #[rstest]
     fn test_handle_external_order_with_no_override_emits_fill_without_commission() {
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         cache
             .borrow_mut()
@@ -5734,7 +5734,7 @@ mod tests {
         let venue_order_id = VenueOrderId::from("V-LOOKBACK-OLD");
         let client_id = ClientId::from("BINANCE");
         let instrument_id = crypto_perpetual_ethusdt().id();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         insert_accepted_limit_order(
             &cache,
@@ -5838,7 +5838,7 @@ mod tests {
         let queried_clients = IndexSet::new();
 
         let mut manager = ExecutionManager::new(
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
             cache,
             ExecutionManagerConfig {
                 open_check_open_only: false,
@@ -5917,7 +5917,7 @@ mod tests {
         };
 
         let mut manager = ExecutionManager::new(
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
             cache,
             ExecutionManagerConfig {
                 open_check_open_only: false,
@@ -5995,7 +5995,7 @@ mod tests {
         };
 
         let mut manager = ExecutionManager::new(
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
             cache,
             ExecutionManagerConfig {
                 open_check_open_only: false,
@@ -6080,7 +6080,7 @@ mod tests {
 
     #[rstest]
     fn test_clear_recon_tracking_removes_targeted_query() {
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let mut manager = ExecutionManager::new(clock, cache, ExecutionManagerConfig::default())
             .expect("valid config");
@@ -6097,7 +6097,7 @@ mod tests {
     #[rstest]
     fn test_register_inflight_skips_filtered_order() {
         let client_order_id = ClientOrderId::from("O-FILTERED-REGISTER");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         let mut manager = ExecutionManager::new(
@@ -6124,7 +6124,7 @@ mod tests {
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn test_inflight_check_retires_order_filtered_after_registration() {
         let client_order_id = ClientOrderId::from("O-FILTERED-LATE");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         let mut manager = ExecutionManager::new(
@@ -6173,7 +6173,7 @@ mod tests {
         #[case] expect_last_query: bool,
     ) {
         let client_order_id = ClientOrderId::from("O-STATUS-MATRIX");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let mut manager = ExecutionManager::new(clock, cache, ExecutionManagerConfig::default())
             .expect("valid config");
@@ -6249,7 +6249,7 @@ mod tests {
         let account_id = AccountId::from("TEST-001");
         let client_id = ClientId::from("TEST");
         let instrument_id = crypto_perpetual_ethusdt().id();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         insert_accepted_limit_order(
             &cache,
@@ -6337,7 +6337,7 @@ mod tests {
         let account_id = AccountId::from("TEST-001");
         let client_id = ClientId::from("TEST");
         let instrument_id = crypto_perpetual_ethusdt().id();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         insert_accepted_limit_order(
             &cache,
@@ -6435,7 +6435,7 @@ mod tests {
     async fn test_prune_order_local_activity_uses_open_check_threshold() {
         let old_id = ClientOrderId::from("O-ACTIVITY-OLD");
         let fresh_id = ClientOrderId::from("O-ACTIVITY-FRESH");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         let mut manager = ExecutionManager::new(
@@ -6462,7 +6462,7 @@ mod tests {
     fn test_prepare_open_order_report_check_builds_bulk_command_with_config() {
         let lookback_mins = 5_u64;
         let lookback = DurationNanos::from_mins(lookback_mins);
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         let mut manager = ExecutionManager::new(
@@ -6525,7 +6525,7 @@ mod tests {
 
     #[rstest]
     fn test_prepare_position_report_check_builds_bulk_command_with_coverage() {
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         let manager = ExecutionManager::new(
@@ -6590,7 +6590,7 @@ mod tests {
 
     #[rstest]
     fn test_position_reconciliation_preserves_unavailable_spot_coverage() {
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let mut manager =
             ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default())
@@ -6639,7 +6639,7 @@ mod tests {
 
     #[rstest]
     fn test_position_reconciliation_preserves_spot_position_when_client_query_fails() {
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let mut manager =
             ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default())
@@ -6692,7 +6692,7 @@ mod tests {
     )]
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn test_position_report_check_defers_activity_recorded_during_delayed_request() {
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         let mut manager = ExecutionManager::new(
@@ -6770,7 +6770,7 @@ mod tests {
 
     #[rstest]
     fn test_position_report_check_does_not_defer_activity_recorded_before_request() {
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         let mut manager = ExecutionManager::new(
@@ -6833,7 +6833,7 @@ mod tests {
 
     #[rstest]
     fn test_mass_status_projects_companion_fill_before_void_correction() {
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let mut manager =
             ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default())
@@ -7043,7 +7043,7 @@ mod tests {
         fn test_plan_position_fill_reports_uses_configured_lookback() {
             let lookback_mins = 7_u64;
             let lookback = DurationNanos::from_mins(lookback_mins);
-            let clock = Rc::new(RefCell::new(TestClock::new()));
+            let clock = Rc::new(RefCell::new(VirtualClock::new()));
             let cache = Rc::new(RefCell::new(Cache::default()));
 
             let mut manager = ExecutionManager::new(
@@ -7125,7 +7125,7 @@ mod tests {
 
         #[rstest]
         fn test_plan_position_fill_reports_defers_position_opened_during_request() {
-            let clock = Rc::new(RefCell::new(TestClock::new()));
+            let clock = Rc::new(RefCell::new(VirtualClock::new()));
             let cache = Rc::new(RefCell::new(Cache::default()));
 
             let mut manager = ExecutionManager::new(
@@ -7191,7 +7191,7 @@ mod tests {
 
         #[rstest]
         fn test_prepare_position_report_check_uses_live_client_bulk_coverage() {
-            let clock = Rc::new(RefCell::new(TestClock::new()));
+            let clock = Rc::new(RefCell::new(VirtualClock::new()));
             let cache = Rc::new(RefCell::new(Cache::default()));
             let manager =
                 ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default())

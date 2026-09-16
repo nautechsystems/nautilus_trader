@@ -18,7 +18,7 @@ use std::{cell::RefCell, collections::HashSet, rc::Rc};
 use jiff::{Timestamp, civil::Date, tz::Offset};
 use nautilus_common::{
     cache::Cache,
-    clock::TestClock,
+    clock::VirtualClock,
     messages::execution::{BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder},
     msgbus::{
         self, MessagingSwitchboard, TypedIntoHandler,
@@ -85,8 +85,8 @@ fn utc_timestamp(year: i16, month: i8, day: i8, hour: i8, minute: i8, second: i8
 }
 
 #[fixture]
-pub fn test_clock() -> Rc<RefCell<TestClock>> {
-    Rc::new(RefCell::new(TestClock::new()))
+pub fn test_clock() -> Rc<RefCell<VirtualClock>> {
+    Rc::new(RefCell::new(VirtualClock::new()))
 }
 
 #[expect(clippy::too_many_arguments)]
@@ -240,12 +240,12 @@ fn engine_config() -> OrderMatchingEngineConfig {
 
 fn get_order_matching_engine(
     instrument: InstrumentAny,
-    clock: Option<Rc<RefCell<TestClock>>>,
+    clock: Option<Rc<RefCell<VirtualClock>>>,
     cache: Option<Rc<RefCell<Cache>>>,
     account_type: Option<AccountType>,
     config: Option<OrderMatchingEngineConfig>,
 ) -> OrderMatchingEngine {
-    let clock = clock.unwrap_or(Rc::new(RefCell::new(TestClock::new())));
+    let clock = clock.unwrap_or(Rc::new(RefCell::new(VirtualClock::new())));
     let cache = cache.unwrap_or(Rc::new(RefCell::new(Cache::default())));
     let config = config.unwrap_or_default();
 
@@ -265,12 +265,12 @@ fn get_order_matching_engine(
 
 fn get_order_matching_engine_l2(
     instrument: InstrumentAny,
-    clock: Option<Rc<RefCell<TestClock>>>,
+    clock: Option<Rc<RefCell<VirtualClock>>>,
     cache: Option<Rc<RefCell<Cache>>>,
     account_type: Option<AccountType>,
     config: Option<OrderMatchingEngineConfig>,
 ) -> OrderMatchingEngine {
-    let clock = clock.unwrap_or(Rc::new(RefCell::new(TestClock::new())));
+    let clock = clock.unwrap_or(Rc::new(RefCell::new(VirtualClock::new())));
     let cache = cache.unwrap_or(Rc::new(RefCell::new(Cache::default())));
     let config = config.unwrap_or_default();
 
@@ -361,7 +361,7 @@ fn test_process_order_when_instrument_already_expired(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
     mut market_order_buy: OrderAny,
-    test_clock: Rc<RefCell<TestClock>>,
+    test_clock: Rc<RefCell<VirtualClock>>,
 ) {
     let instrument = InstrumentAny::FuturesContract(futures_contract_es(None, None));
 
@@ -573,7 +573,7 @@ fn test_process_order_when_invalid_price_precision(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
     instrument_es: InstrumentAny,
-    test_clock: Rc<RefCell<TestClock>>,
+    test_clock: Rc<RefCell<VirtualClock>>,
 ) {
     // Create engine and process order
     // Set current timestamp ns to be higher than es instrument activation (1.1.2024)
@@ -611,7 +611,7 @@ fn test_process_order_when_invalid_trigger_price_precision(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
     instrument_es: InstrumentAny,
-    test_clock: Rc<RefCell<TestClock>>,
+    test_clock: Rc<RefCell<VirtualClock>>,
 ) {
     // Create engine and process order
     // Set current timestamp ns to be higher than es instrument activation (1.1.2024)
@@ -861,7 +861,7 @@ fn test_process_order_when_invalid_contingent_orders(
     account_id: AccountId,
     instrument_es: InstrumentAny,
     engine_config: OrderMatchingEngineConfig,
-    test_clock: Rc<RefCell<TestClock>>,
+    test_clock: Rc<RefCell<VirtualClock>>,
 ) {
     let cache = Rc::new(RefCell::new(Cache::default()));
     // Set current timestamp ns to be higher than es instrument activation (1.1.2024)
@@ -936,7 +936,7 @@ fn test_process_order_when_closed_linked_order(
     account_id: AccountId,
     instrument_es: InstrumentAny,
     engine_config: OrderMatchingEngineConfig,
-    test_clock: Rc<RefCell<TestClock>>,
+    test_clock: Rc<RefCell<VirtualClock>>,
 ) {
     // Set current timestamp ns to be higher than es instrument activation (1.1.2024)
     test_clock
@@ -5154,7 +5154,7 @@ fn test_hedging_reduce_only_order_without_cached_position_id_uses_open_position(
         BookType::L2_MBP,
         OmsType::Hedging,
         AccountType::Margin,
-        Rc::new(RefCell::new(TestClock::new())),
+        Rc::new(RefCell::new(VirtualClock::new())),
         cache.clone(),
         OrderMatchingEngineConfig::default(),
     );
@@ -5262,7 +5262,7 @@ fn test_hedging_reduce_only_fallback_scopes_open_position_to_order_strategy(
         BookType::L2_MBP,
         OmsType::Hedging,
         AccountType::Margin,
-        Rc::new(RefCell::new(TestClock::new())),
+        Rc::new(RefCell::new(VirtualClock::new())),
         cache.clone(),
         OrderMatchingEngineConfig::default(),
     );
@@ -5373,7 +5373,7 @@ fn test_hedging_non_reduce_only_market_order_keeps_empty_position_id(
         BookType::L2_MBP,
         OmsType::Hedging,
         AccountType::Margin,
-        Rc::new(RefCell::new(TestClock::new())),
+        Rc::new(RefCell::new(VirtualClock::new())),
         cache,
         OrderMatchingEngineConfig::default(),
     );
@@ -5432,7 +5432,7 @@ fn test_hedging_reduce_only_fallback_covers_short_position(
         BookType::L2_MBP,
         OmsType::Hedging,
         AccountType::Margin,
-        Rc::new(RefCell::new(TestClock::new())),
+        Rc::new(RefCell::new(VirtualClock::new())),
         cache.clone(),
         OrderMatchingEngineConfig::default(),
     );
@@ -5523,7 +5523,7 @@ fn test_hedging_reduce_only_uses_cached_position_id_before_open_position_scan(
         BookType::L2_MBP,
         OmsType::Hedging,
         AccountType::Margin,
-        Rc::new(RefCell::new(TestClock::new())),
+        Rc::new(RefCell::new(VirtualClock::new())),
         cache.clone(),
         OrderMatchingEngineConfig::default(),
     );
@@ -8685,7 +8685,7 @@ fn test_trade_execution_fill_model_at_limit_with_prob_zero_does_not_fill(
         ..Default::default()
     };
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let mut engine = OrderMatchingEngine::new(
@@ -8769,7 +8769,7 @@ fn test_trade_execution_fill_model_at_limit_with_prob_one_fills(
         ..Default::default()
     };
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let mut engine = OrderMatchingEngine::new(
@@ -8861,7 +8861,7 @@ fn test_trade_execution_crossing_limit_fills_regardless_of_fill_model(
         ..Default::default()
     };
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let mut engine = OrderMatchingEngine::new(
@@ -9036,7 +9036,7 @@ fn test_trade_execution_fill_model_rejection_still_applies_liquidity_consumption
         ..Default::default()
     };
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let mut engine = OrderMatchingEngine::new(
@@ -10432,7 +10432,7 @@ fn get_l1_queue_position_engine(
     Rc<RefCell<Cache>>,
     TypedIntoMessageSavingHandler<OrderEventAny>,
 ) {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let handler = order_event_handler_with_cache(Rc::clone(&cache));
@@ -11172,7 +11172,7 @@ fn get_l3_queue_position_engine(
     Rc<RefCell<Cache>>,
     TypedIntoMessageSavingHandler<OrderEventAny>,
 ) {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let handler = order_event_handler_with_cache(Rc::clone(&cache));
@@ -11582,7 +11582,7 @@ fn get_l2_queue_position_engine(
     Rc<RefCell<Cache>>,
     TypedIntoMessageSavingHandler<OrderEventAny>,
 ) {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let handler = order_event_handler_with_cache(Rc::clone(&cache));
@@ -12410,7 +12410,7 @@ fn test_l1_trade_only_no_initial_quote_ask_tracks_price(
         trade_execution: true,
         ..Default::default()
     };
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let mut engine = OrderMatchingEngine::new(
@@ -12533,7 +12533,7 @@ fn test_l1_no_aggressor_trades_track_price(
 
 #[rstest]
 fn test_stale_trade_tick_does_not_mutate_book(instrument_eth_usdt: InstrumentAny) {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let mut engine = OrderMatchingEngine::new(
@@ -12580,7 +12580,7 @@ fn test_stale_trade_tick_does_not_mutate_book(instrument_eth_usdt: InstrumentAny
 
 #[rstest]
 fn test_stale_quote_tick_does_not_mutate_book(instrument_eth_usdt: InstrumentAny) {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let mut engine = OrderMatchingEngine::new(
@@ -13101,7 +13101,7 @@ fn test_trailing_stop_recompute_after_maker_fill_uses_mutated_core(
 
 #[rstest]
 fn test_update_instrument_resets_market_state(instrument_eth_usdt: InstrumentAny) {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let mut engine = OrderMatchingEngine::new(
@@ -13148,7 +13148,7 @@ fn test_update_instrument_resets_market_state(instrument_eth_usdt: InstrumentAny
 fn test_update_instrument_without_precision_change_keeps_market_state(
     instrument_eth_usdt: InstrumentAny,
 ) {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let mut engine = OrderMatchingEngine::new(
@@ -13683,7 +13683,7 @@ fn test_option_cash_settlement_at_intrinsic_value(
         Price::from("5.00"),
     );
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock.borrow_mut().set_time(expiration_ns);
 
     let mut engine = OrderMatchingEngine::new(
@@ -13791,7 +13791,7 @@ fn test_deferred_option_expiry_cancels_orders_and_rejects_submissions(account_id
     let instrument_id = option.id();
     cache.borrow_mut().add_instrument(option.clone()).unwrap();
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock.borrow_mut().set_time(UnixNanos::from(1));
 
     let mut engine = get_order_matching_engine(
@@ -13922,7 +13922,7 @@ fn test_reset_restores_market_status_after_option_expiry(account_id: AccountId) 
         Price::from("5.00"),
     );
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock.borrow_mut().set_time(expiration_ns);
 
     let mut engine = OrderMatchingEngine::new(
@@ -13998,7 +13998,7 @@ fn test_option_physical_settlement_delivers_underlying(
         Price::from("5.00"),
     );
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock.borrow_mut().set_time(expiration_ns);
 
     let mut engine = OrderMatchingEngine::new(
@@ -14119,7 +14119,7 @@ fn test_option_physical_settlement_second_registration_failure_dispatches_nothin
     let (database, database_control) = FailNthAddOrderDatabase::create();
     cache.borrow_mut().set_database(Box::new(database));
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     // Start one tick before expiry: `process_order` rejects orders on an
     // already-expired instrument, so the resting order must be accepted first.
     clock
@@ -14203,7 +14203,7 @@ fn test_option_physical_settlement_second_registration_failure_dispatches_nothin
         TradeId::from("OPT-OPEN-2"),
     );
 
-    let option_b_clock = Rc::new(RefCell::new(TestClock::new()));
+    let option_b_clock = Rc::new(RefCell::new(VirtualClock::new()));
     option_b_clock.borrow_mut().set_time(expiration_ns);
     let mut option_b_engine = OrderMatchingEngine::new(
         option_b,
@@ -14337,7 +14337,7 @@ fn test_marketable_resting_limit_at_expiration_boundary_fills_before_close(accou
     let instrument =
         InstrumentAny::FuturesContract(futures_contract_es(Some(activation), Some(expiration_ns)));
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock
         .borrow_mut()
         .set_time(UnixNanos::from(activation.as_u64() + 1));
@@ -14502,7 +14502,7 @@ fn run_otm_expiry_case(
         Price::from("5.00"),
     );
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock.borrow_mut().set_time(expiration_ns);
 
     let mut engine = OrderMatchingEngine::new(
@@ -14618,7 +14618,7 @@ fn test_option_cash_settlement_put_pays_strike_minus_spot(account_id: AccountId)
         Price::from("5.00"),
     );
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock.borrow_mut().set_time(expiration_ns);
 
     let mut engine = OrderMatchingEngine::new(
@@ -14695,7 +14695,7 @@ fn test_option_physical_settlement_put_flips_underlying_side(account_id: Account
         Price::from("5.00"),
     );
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock.borrow_mut().set_time(expiration_ns);
 
     let mut engine = OrderMatchingEngine::new(
@@ -14750,7 +14750,7 @@ fn test_check_instrument_expiration_fallback_uses_book(account_id: AccountId) {
     let instrument =
         InstrumentAny::FuturesContract(futures_contract_es(Some(activation), Some(expiration_ns)));
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock
         .borrow_mut()
         .set_time(UnixNanos::from(activation.as_u64() + 1));
@@ -14891,7 +14891,7 @@ fn test_process_option_expiry_no_positions_is_noop(account_id: AccountId) {
 
     cache.borrow_mut().add_instrument(option.clone()).unwrap();
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock.borrow_mut().set_time(expiration_ns);
 
     let mut engine = OrderMatchingEngine::new(
@@ -14943,7 +14943,7 @@ fn test_process_option_expiry_missing_underlying_instrument_defers(account_id: A
         Price::from("5.00"),
     );
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock.borrow_mut().set_time(expiration_ns);
 
     let mut engine = OrderMatchingEngine::new(
@@ -15006,7 +15006,7 @@ fn test_process_option_expiry_missing_underlying_price_retries_with_close_preser
         Price::from("5.00"),
     );
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     // Start one tick before expiry: `process_order` rejects orders on an
     // already-expired instrument, so the resting order must be accepted first.
     // The instrument close below triggers expiration regardless of clock time.
@@ -15189,7 +15189,7 @@ fn test_option_expiration_cancellation_latched_across_deferred_retries(account_i
         .add_order(resting_order, None, None, false)
         .unwrap();
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock.borrow_mut().set_time(expiration_ns);
     let mut engine = OrderMatchingEngine::new(
         option,
@@ -15268,7 +15268,7 @@ fn test_check_instrument_expiration_idempotent_after_processed(account_id: Accou
         Price::from("5.00"),
     );
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock.borrow_mut().set_time(expiration_ns);
 
     let mut engine = OrderMatchingEngine::new(
@@ -15324,7 +15324,7 @@ fn test_instrument_close_price_used_on_contract_expiration(account_id: AccountId
     let instrument =
         InstrumentAny::FuturesContract(futures_contract_es(Some(activation), Some(expiration_ns)));
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock
         .borrow_mut()
         .set_time(UnixNanos::from(activation.as_u64() + 1));
@@ -15438,7 +15438,7 @@ fn test_check_instrument_expiration_restored_position_closes_without_prior_order
         TradeId::from("RESTORED-1"),
     );
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock
         .borrow_mut()
         .set_time(UnixNanos::from(expiration_ns.as_u64() + 1));
@@ -15518,7 +15518,7 @@ fn test_binary_option_pending_resolution_then_instrument_close_settles_position(
 
     let activation_ns = instrument.activation_ns().unwrap();
     let expiration_ns = instrument.expiration_ns().unwrap();
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock
         .borrow_mut()
         .set_time(UnixNanos::from(activation_ns.as_u64() + 1));
@@ -15676,7 +15676,7 @@ fn test_binary_option_expiration_check_uses_engine_clock_not_order_ts_init(accou
 
     let activation_ns = instrument.activation_ns().unwrap();
     let expiration_ns = instrument.expiration_ns().unwrap();
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock
         .borrow_mut()
         .set_time(UnixNanos::from(activation_ns.as_u64() + 1));
@@ -15791,7 +15791,7 @@ fn test_crypto_option_cash_settlement(account_id: AccountId) {
         Price::from("100.00"),
     );
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock.borrow_mut().set_time(expiration_ns);
     let mut engine = OrderMatchingEngine::new(
         option.clone(),
@@ -15856,7 +15856,7 @@ fn test_capped_option_fee_uses_underlying_mid_quote(
     let fee_model = FeeModelAny::CappedOption(
         CappedOptionFeeModel::new(Some(dec!(0.0001)), Some(dec!(0.0003)), None).unwrap(),
     );
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
     let mut engine = OrderMatchingEngine::new(
         option.clone(),
@@ -15935,7 +15935,7 @@ fn test_capped_option_fee_uses_option_greeks_underlying_price(
     let fee_model = FeeModelAny::CappedOption(
         CappedOptionFeeModel::new(Some(dec!(0.0001)), Some(dec!(0.0003)), None).unwrap(),
     );
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
     let mut engine = OrderMatchingEngine::new(
         option.clone(),
@@ -16026,7 +16026,7 @@ fn test_option_cash_settlement_uses_instrument_close_price(account_id: AccountId
         Price::from("5.00"),
     );
 
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock.borrow_mut().set_time(expiration_ns);
 
     let mut engine = OrderMatchingEngine::new(
@@ -16677,7 +16677,7 @@ fn test_fixed_fee_model_charges_once_across_multiple_book_levels(
         BookType::L2_MBP,
         OmsType::Netting,
         AccountType::Cash,
-        Rc::new(RefCell::new(TestClock::new())),
+        Rc::new(RefCell::new(VirtualClock::new())),
         Rc::new(RefCell::new(Cache::default())),
         OrderMatchingEngineConfig::default(),
     );
@@ -16876,7 +16876,7 @@ fn test_deferred_marketable_modify_partial_fills(
         BookType::L2_MBP,
         OmsType::Netting,
         AccountType::Margin,
-        Rc::new(RefCell::new(TestClock::new())),
+        Rc::new(RefCell::new(VirtualClock::new())),
         cache.clone(),
         OrderMatchingEngineConfig {
             liquidity_consumption: true,
@@ -16996,7 +16996,7 @@ fn test_deferred_stop_limit_modify_preserves_prices_when_triggered(
         BookType::L1_MBP,
         OmsType::Netting,
         AccountType::Margin,
-        Rc::new(RefCell::new(TestClock::new())),
+        Rc::new(RefCell::new(VirtualClock::new())),
         cache.clone(),
         Default::default(),
     );
@@ -17631,7 +17631,7 @@ fn test_option_physical_settlement_scales_quantity_and_side(
         .add_position(&position, OmsType::Netting)
         .unwrap();
     let handler = order_event_handler_with_cache(cache.clone());
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock.borrow_mut().set_time(expiry);
     let mut engine = get_order_matching_engine(
         option.clone(),

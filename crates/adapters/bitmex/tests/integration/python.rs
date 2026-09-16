@@ -25,7 +25,7 @@ use nautilus_bitmex::{
 };
 use nautilus_common::{
     cache::Cache,
-    clock::TestClock,
+    clock::VirtualClock,
     live::runner::{replace_data_event_sender, replace_exec_event_sender},
     messages::{DataEvent, ExecutionEvent},
 };
@@ -91,7 +91,7 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
         .downcast_ref::<BitmexDataClientConfig>()
         .expect("data config should downcast");
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let client = extracted_factory
         .create(
             "BITMEX-DATA-EXTRACTED",
@@ -144,7 +144,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
             "BITMEX-EXEC-EXTRACTED",
             extracted_config.as_ref(),
             cache.into(),
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
         )
         .expect("extracted factory should create exec client");
 

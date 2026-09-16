@@ -19,7 +19,7 @@ use nautilus_common::{
     actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
     cache::Cache,
     clients::DataClient,
-    clock::TestClock,
+    clock::VirtualClock,
     component::Component,
     messages::data::{DataCommand, SubscribeCustomData, UnsubscribeCustomData},
     msgbus::{self, MessageBus, TypedIntoHandler, switchboard::MessagingSwitchboard},
@@ -207,7 +207,7 @@ impl SubscriptionFixture {
         let trader_id = TraderId::from("TRADER-001");
         let bus = MessageBus::new(trader_id, UUID4::new(), None, None).register_message_bus();
         set_data_cmd_sender(Arc::new(SyncDataCommandSender));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let engine = Rc::new(RefCell::new(DataEngine::new(
             clock.clone(),

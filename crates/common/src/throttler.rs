@@ -653,7 +653,7 @@ mod tests {
 
     use super::{MAX_INITIAL_TIMESTAMPS_CAPACITY, RateLimit, Throttler, ThrottlerProcess};
     use crate::{
-        clock::{Clock, TestClock},
+        clock::{Clock, VirtualClock},
         msgbus::{self, Handler},
     };
     type SharedThrottler = Rc<UnsafeCell<Throttler<u64, Box<dyn Fn(u64)>>>>;
@@ -665,7 +665,7 @@ mod tests {
     #[derive(Clone)]
     struct TestThrottler {
         throttler: SharedThrottler,
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         interval: DurationNanos,
     }
 
@@ -727,7 +727,7 @@ mod tests {
         let output_send: Box<dyn Fn(u64)> = Box::new(|msg: u64| {
             log::debug!("Sent: {msg}");
         });
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let inner_clock = Rc::clone(&clock);
         let rate_limit = RateLimit::new(5, DurationNanos::new(10));
         let interval = rate_limit.interval_ns();
@@ -756,7 +756,7 @@ mod tests {
         let output_drop: Box<dyn Fn(u64)> = Box::new(|msg: u64| {
             log::debug!("Dropped: {msg}");
         });
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let inner_clock = Rc::clone(&clock);
         let rate_limit = RateLimit::new(5, DurationNanos::new(10));
         let interval = rate_limit.interval_ns();
@@ -883,7 +883,7 @@ mod tests {
 
     #[rstest]
     fn test_try_reserve_rejects_batch_larger_than_limit() {
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let mut throttler = Throttler::<u64, Box<dyn Fn(u64)>>::new(
             RateLimit::new(5, DurationNanos::new(10)),
             clock,
@@ -905,7 +905,7 @@ mod tests {
 
     #[rstest]
     fn test_try_reserve_zero_count_is_noop() {
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let mut throttler = Throttler::<u64, Box<dyn Fn(u64)>>::new(
             RateLimit::new(5, DurationNanos::new(10)),
             clock,
@@ -1132,7 +1132,7 @@ mod tests {
 
     #[rstest]
     fn test_embedded_dropping_auto_resets_after_window_without_actor_callback() {
-        let clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let sent = Rc::new(RefCell::new(0));
         let dropped = Rc::new(RefCell::new(0));
 
@@ -1171,7 +1171,7 @@ mod tests {
 
     #[rstest]
     fn test_large_limit_fast_path_admits_until_limit_then_limits() {
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let limit = MAX_INITIAL_TIMESTAMPS_CAPACITY + 1;
         let mut throttler = Throttler::<u64, Box<dyn Fn(u64)>>::new(
             RateLimit::new(limit, DurationNanos::new(10)),
@@ -1197,7 +1197,7 @@ mod tests {
 
     #[rstest]
     fn test_new_preserves_rate_limit() {
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let rate_limit = RateLimit::new(5, DurationNanos::new(10));
 
         let throttler = Throttler::<u64, Box<dyn Fn(u64)>>::new(
@@ -1216,7 +1216,7 @@ mod tests {
 
     #[rstest]
     fn test_debug_output_includes_identity_and_state() {
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let actor_id = Ustr::from("debug-actor");
         let mut throttler = Throttler::<u64, Box<dyn Fn(u64)>>::new(
             RateLimit::new(5, DurationNanos::new(10)),
@@ -1264,7 +1264,7 @@ mod tests {
 
     #[rstest]
     fn test_two_throttlers_share_clock_without_timer_collision() {
-        let clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let interval = 10u64;
 
         let mk = |base: &str| -> SharedThrottler {
@@ -1350,7 +1350,7 @@ mod tests {
 
     #[rstest]
     fn test_try_reserve_then_buffered_sends_drain_in_order_after_window() {
-        let clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let sent: Rc<RefCell<Vec<u64>>> = Rc::new(RefCell::new(Vec::new()));
         let sent_cb = {
             let sent = Rc::clone(&sent);
@@ -1520,7 +1520,7 @@ mod tests {
         // and sent_count tracks the send callback exactly. Catches conservation
         // violations and panics under random send/advance sequences.
         proptest!(|(inputs in throttler_test_strategy())| {
-            let clock = Rc::new(RefCell::new(TestClock::new()));
+            let clock = Rc::new(RefCell::new(VirtualClock::new()));
             let sent: Rc<RefCell<usize>> = Rc::new(RefCell::new(0));
             let dropped: Rc<RefCell<usize>> = Rc::new(RefCell::new(0));
 

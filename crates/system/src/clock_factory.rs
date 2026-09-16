@@ -22,7 +22,7 @@ use std::{
 };
 
 use nautilus_common::{
-    clock::{Clock, TestClock},
+    clock::{Clock, VirtualClock},
     enums::Environment,
 };
 
@@ -59,7 +59,7 @@ impl ClockFactory {
     #[must_use]
     pub fn for_environment(environment: Environment) -> Self {
         match environment {
-            Environment::Backtest => Self::new(|| Rc::new(RefCell::new(TestClock::new()))),
+            Environment::Backtest => Self::new(|| Rc::new(RefCell::new(VirtualClock::new()))),
             Environment::Live | Environment::Sandbox => Self::live_default(),
         }
     }
@@ -117,7 +117,7 @@ mod tests {
         let calls_in_factory = calls.clone();
         let factory = ClockFactory::new(move || {
             calls_in_factory.set(calls_in_factory.get() + 1);
-            Rc::new(RefCell::new(TestClock::new()))
+            Rc::new(RefCell::new(VirtualClock::new()))
         });
 
         let first = factory.clock();
@@ -142,7 +142,7 @@ mod tests {
         let factory = ClockFactory::for_environment(Environment::Backtest);
         let clock = factory.clock();
 
-        assert!(clock.borrow_mut().as_any_mut().is::<TestClock>());
+        assert!(clock.borrow_mut().as_any_mut().is::<VirtualClock>());
     }
 
     #[rstest]
@@ -150,6 +150,6 @@ mod tests {
         let factory = ClockFactory::test_default();
         let clock = factory.clock();
 
-        assert!(clock.borrow_mut().as_any_mut().is::<TestClock>());
+        assert!(clock.borrow_mut().as_any_mut().is::<VirtualClock>());
     }
 }

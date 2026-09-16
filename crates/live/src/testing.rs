@@ -35,7 +35,7 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc, time::Duration};
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
-    clock::{Clock, TestClock},
+    clock::{Clock, VirtualClock},
     live::{
         dst,
         runner::{replace_data_event_sender, replace_exec_event_sender},
@@ -103,7 +103,7 @@ impl ExecutionHarness {
         instrument: InstrumentAny,
     ) -> Self {
         let _bus = MessageBus::new(trader_id, UUID4::new(), None, None).register_message_bus();
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let instrument_id = instrument.id();
         cache

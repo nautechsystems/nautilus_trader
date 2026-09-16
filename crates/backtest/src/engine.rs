@@ -29,7 +29,7 @@ use nautilus_analysis::analyzer::PortfolioAnalyzer;
 use nautilus_common::{
     actor::{DataActor, DataActorNative},
     cache::Cache,
-    clock::{Clock, TestClock},
+    clock::{Clock, VirtualClock},
     component::{Component, component_state},
     enums::{ComponentState, LogColor},
     log_info,
@@ -2063,8 +2063,8 @@ impl BacktestEngine {
         let mut clock_ref = clock.borrow_mut();
         let test_clock = clock_ref
             .as_any_mut()
-            .downcast_mut::<TestClock>()
-            .expect("BacktestEngine requires TestClock");
+            .downcast_mut::<VirtualClock>()
+            .expect("BacktestEngine requires VirtualClock");
         accumulator.advance_clock(test_clock, to_time_ns, set_time);
     }
 
@@ -2073,8 +2073,8 @@ impl BacktestEngine {
             let mut clock_ref = clock.borrow_mut();
             let test_clock = clock_ref
                 .as_any_mut()
-                .downcast_mut::<TestClock>()
-                .expect("BacktestEngine requires TestClock");
+                .downcast_mut::<VirtualClock>()
+                .expect("BacktestEngine requires VirtualClock");
             test_clock.set_time(time_ns);
         }
     }

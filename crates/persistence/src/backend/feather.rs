@@ -1282,7 +1282,7 @@ mod tests {
     use std::{io::Cursor, sync::Arc};
 
     use datafusion::arrow::ipc::reader::StreamReader;
-    use nautilus_common::clock::TestClock;
+    use nautilus_common::clock::VirtualClock;
     use nautilus_model::{
         data::{Data, QuoteTick, TradeTick},
         enums::AggressorSide,
@@ -1309,7 +1309,7 @@ mod tests {
         let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
 
         // Create a test clock
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let timestamp = clock.borrow().timestamp_ns();
 
         let quote_type_str = QuoteTick::path_prefix();
@@ -1376,7 +1376,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
         let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let timestamp = clock.borrow().timestamp_ns();
         let mut per_instrument = HashSet::new();
         per_instrument.insert(QuoteTick::path_prefix().to_string());
@@ -1416,7 +1416,7 @@ mod tests {
     #[rstest]
     fn test_per_instrument_path_preserves_nested_type_prefix() {
         let store: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new());
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let manager = FeatherWriter::new(
             String::new(),
             store,
@@ -1484,7 +1484,7 @@ mod tests {
         let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
 
         // Create a test clock
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
 
         let quote_type_str = QuoteTick::path_prefix();
         let trade_type_str = TradeTick::path_prefix();
@@ -1570,7 +1570,7 @@ mod tests {
         let base_path = temp_dir.path().to_str().unwrap().to_string();
         let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
         let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut writer = FeatherWriter::new(
             base_path,
@@ -1606,7 +1606,7 @@ mod tests {
         let base_path = temp_dir.path().to_str().unwrap().to_string();
         let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
         let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut writer = FeatherWriter::new(
             base_path,
@@ -1660,7 +1660,7 @@ mod tests {
         let base_path = temp_dir.path().to_str().unwrap().to_string();
         let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
         let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut writer = FeatherWriter::new(
             base_path,
@@ -1691,7 +1691,7 @@ mod tests {
         clock
             .borrow_mut()
             .as_any_mut()
-            .downcast_mut::<TestClock>()
+            .downcast_mut::<VirtualClock>()
             .unwrap()
             .advance_time(interval_end, true);
         writer.check_flush().await.unwrap();
@@ -1705,7 +1705,7 @@ mod tests {
         let base_path = temp_dir.path().to_str().unwrap().to_string();
         let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
         let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let mut writer = FeatherWriter::new(
             base_path.clone(),
             store,
@@ -1744,7 +1744,7 @@ mod tests {
         let base_path = temp_dir.path().to_str().unwrap().to_string();
         let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
         let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut writer = FeatherWriter::new(
             base_path,
@@ -1784,7 +1784,7 @@ mod tests {
         let base_path = temp_dir.path().to_str().unwrap().to_string();
         let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
         let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut writer = FeatherWriter::new(
             base_path,
@@ -1842,7 +1842,7 @@ mod tests {
         let base_path = temp_dir.path().to_str().unwrap().to_string();
         let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
         let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut writer = FeatherWriter::new(
             base_path.clone(),

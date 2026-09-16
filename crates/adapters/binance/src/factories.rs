@@ -18,7 +18,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 #[cfg(test)]
-use nautilus_common::clock::TestClock;
+use nautilus_common::clock::VirtualClock;
 use nautilus_common::{
     cache::CacheView,
     clients::{DataClient, ExecutionClient},
@@ -271,7 +271,7 @@ mod tests {
                 "BINANCE-TEST",
                 &config,
                 cache.into(),
-                Rc::new(RefCell::new(TestClock::new())),
+                Rc::new(RefCell::new(VirtualClock::new())),
             )
             .unwrap();
 

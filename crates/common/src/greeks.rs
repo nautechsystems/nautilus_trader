@@ -1268,7 +1268,7 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
-    use crate::{cache::Cache, clock::TestClock};
+    use crate::{cache::Cache, clock::VirtualClock};
 
     fn utc_timestamp(year: i16, month: i8, day: i8, hour: i8, minute: i8, second: i8) -> Timestamp {
         Offset::UTC
@@ -1282,7 +1282,7 @@ mod tests {
 
     fn create_test_calculator() -> GreeksCalculator {
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         GreeksCalculator::new(cache, clock)
     }
 
@@ -2005,7 +2005,7 @@ mod tests {
             1
         );
 
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         clock.borrow_mut().set_time(now_ns);
         let calculator = GreeksCalculator::new(cache, clock);
         let expected = calculator
@@ -2098,7 +2098,7 @@ mod tests {
             .add_position(&short_position, OmsType::Hedging)
             .unwrap();
 
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         clock.borrow_mut().set_time(now_ns);
         let calculator = GreeksCalculator::new(cache, clock);
         let long_greeks = calculator
@@ -2179,7 +2179,7 @@ mod tests {
         let option_id = option.id();
         let underlying_id = InstrumentId::from("AAPL.OPRA");
         let cache = setup_cache_with_option_and_quotes(option, underlying_id, now_ns);
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let calculator = GreeksCalculator::new(cache, clock);
 
         let greeks = calculator
@@ -2219,7 +2219,7 @@ mod tests {
         let option_id = option.id();
         let underlying_id = InstrumentId::from("AAPL.OPRA");
         let cache = setup_cache_with_option_and_quotes(option, underlying_id, now_ns);
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let calculator = GreeksCalculator::new(cache, clock);
 
         let greeks = calculator
@@ -2273,7 +2273,7 @@ mod tests {
             ))
             .unwrap();
 
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let calculator = GreeksCalculator::new(cache, clock);
         let greeks = calculator
             .instrument_greeks(
@@ -2350,7 +2350,7 @@ mod tests {
         let vol_index_id = InstrumentId::from("VIX.XCBF");
         let cache = setup_cache_with_option_and_quotes(option, underlying_id, now_ns);
 
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let calculator = GreeksCalculator::new(cache, clock);
         let error = calculator
             .instrument_greeks(
@@ -2531,7 +2531,7 @@ mod tests {
         cache.borrow_mut().add_quote(call_quote).unwrap();
         cache.borrow_mut().add_quote(put_quote).unwrap();
 
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         clock.borrow_mut().set_time(now_ns);
         let calculator = GreeksCalculator::new(cache, clock);
 
@@ -2639,7 +2639,7 @@ mod tests {
             .add_quote(reference_future_quote)
             .unwrap();
 
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         clock.borrow_mut().set_time(now_ns);
         let calculator = GreeksCalculator::new(cache, clock);
 
@@ -2756,7 +2756,7 @@ mod tests {
             .add_quote(reference_future_quote)
             .unwrap();
 
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         clock.borrow_mut().set_time(now_ns);
         let calculator = GreeksCalculator::new(cache, clock);
         calculator
@@ -2839,7 +2839,7 @@ mod tests {
             ))
             .unwrap();
 
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         clock.borrow_mut().set_time(now_ns);
         let calculator = GreeksCalculator::new(cache, clock);
 
@@ -2928,7 +2928,7 @@ mod tests {
         );
         cache.borrow_mut().add_quote(call_quote).unwrap();
 
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         clock.borrow_mut().set_time(now_ns);
         let calculator = GreeksCalculator::new(cache, clock);
 

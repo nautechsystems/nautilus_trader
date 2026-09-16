@@ -171,7 +171,7 @@ mod tests {
 
     use nautilus_common::{
         cache::Cache,
-        clock::TestClock,
+        clock::VirtualClock,
         factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
         live::runner::replace_data_event_sender,
         messages::DataEvent,
@@ -236,7 +236,7 @@ mod tests {
             "LIGHTER-TEST",
             &wrong_config,
             cache.into(),
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
         );
         assert!(result.is_err());
         assert!(
@@ -260,7 +260,7 @@ mod tests {
                 "LIGHTER-TEST",
                 &config,
                 cache.into(),
-                Rc::new(RefCell::new(TestClock::new())),
+                Rc::new(RefCell::new(VirtualClock::new())),
             )
             .expect("expected client to construct");
 
@@ -283,7 +283,7 @@ mod tests {
             .build();
 
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let (data_tx, _data_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         replace_data_event_sender(data_tx);
 
@@ -296,7 +296,7 @@ mod tests {
                 "RH-EXEC",
                 &exec_config,
                 cache.into(),
-                Rc::new(RefCell::new(TestClock::new())),
+                Rc::new(RefCell::new(VirtualClock::new())),
             )
             .expect("expected execution client to construct");
 
@@ -337,7 +337,7 @@ mod tests {
                 LIGHTER_CLIENT_ID.as_str(),
                 &lighter_data_config,
                 cache.clone().into(),
-                Rc::new(RefCell::new(TestClock::new())),
+                Rc::new(RefCell::new(VirtualClock::new())),
             )
             .expect("expected Lighter data client to construct");
 
@@ -346,7 +346,7 @@ mod tests {
                 LIGHTER_ROBINHOOD_CLIENT_ID.as_str(),
                 &robinhood_data_config,
                 cache.clone().into(),
-                Rc::new(RefCell::new(TestClock::new())),
+                Rc::new(RefCell::new(VirtualClock::new())),
             )
             .expect("expected Robinhood data client to construct");
 
@@ -356,7 +356,7 @@ mod tests {
                 LIGHTER_CLIENT_ID.as_str(),
                 &lighter_exec_config,
                 cache.clone().into(),
-                Rc::new(RefCell::new(TestClock::new())),
+                Rc::new(RefCell::new(VirtualClock::new())),
             )
             .expect("expected Lighter execution client to construct");
 
@@ -366,7 +366,7 @@ mod tests {
                 LIGHTER_ROBINHOOD_CLIENT_ID.as_str(),
                 &robinhood_exec_config,
                 cache.into(),
-                Rc::new(RefCell::new(TestClock::new())),
+                Rc::new(RefCell::new(VirtualClock::new())),
             )
             .expect("expected Robinhood execution client to construct");
 
@@ -398,7 +398,7 @@ mod tests {
             "RH-EXEC",
             &config,
             cache.into(),
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
         );
 
         let error = match result {
@@ -416,7 +416,7 @@ mod tests {
         let factory = LighterDataClientFactory::new();
         let wrong_config = exec_config();
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let result = factory.create("LIGHTER-TEST", &wrong_config, cache.into(), clock);
         assert!(result.is_err());

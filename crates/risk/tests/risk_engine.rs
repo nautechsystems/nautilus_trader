@@ -23,7 +23,7 @@ use std::{cell::RefCell, rc::Rc, str::FromStr, sync::Arc};
 use ahash::{AHashMap, AHashSet};
 use nautilus_common::{
     cache::Cache,
-    clock::{Clock, TestClock},
+    clock::{Clock, VirtualClock},
     messages::{
         execution::{
             BatchModifyOrders, CancelOrder, ModifyOrder, PARAMS_CLOSE_POSITION, SubmitOrder,
@@ -275,8 +275,8 @@ fn simple_cache() -> Cache {
 }
 
 #[fixture]
-fn clock() -> TestClock {
-    TestClock::new()
+fn clock() -> VirtualClock {
+    VirtualClock::new()
 }
 
 #[fixture]
@@ -455,7 +455,7 @@ pub fn instrument_xbtusd_with_high_size_precision() -> InstrumentAny {
 fn get_risk_engine(
     cache: Option<Rc<RefCell<Cache>>>,
     config: Option<RiskEngineConfig>,
-    clock: Option<Rc<RefCell<TestClock>>>,
+    clock: Option<Rc<RefCell<VirtualClock>>>,
     bypass: bool,
 ) -> RiskEngine {
     let cache = cache.unwrap_or(Rc::new(RefCell::new(Cache::default())));
@@ -467,7 +467,7 @@ fn get_risk_engine(
         max_notional_per_order: AHashMap::new(),
         full_position_exit_venues: AHashSet::new(),
     });
-    let clock = clock.unwrap_or(Rc::new(RefCell::new(TestClock::new())));
+    let clock = clock.unwrap_or(Rc::new(RefCell::new(VirtualClock::new())));
     let portfolio = Portfolio::new(clock.clone(), cache.clone(), None);
     RiskEngine::new(config, portfolio, clock, cache)
 }
@@ -489,11 +489,11 @@ fn get_risk_engine_for_full_position_exit(
 
 fn get_exec_engine(
     cache: Option<Rc<RefCell<Cache>>>,
-    clock: Option<Rc<RefCell<TestClock>>>,
+    clock: Option<Rc<RefCell<VirtualClock>>>,
     config: Option<ExecutionEngineConfig>,
 ) -> ExecutionEngine {
     let cache = cache.unwrap_or(Rc::new(RefCell::new(Cache::default())));
-    let clock = clock.unwrap_or(Rc::new(RefCell::new(TestClock::new())));
+    let clock = clock.unwrap_or(Rc::new(RefCell::new(VirtualClock::new())));
     ExecutionEngine::new(clock, cache, config)
 }
 
@@ -640,7 +640,7 @@ fn test_deferred_risk_denial_does_not_reenter_engine(
         msgbus::get_message_bus().borrow_mut().dispose();
         replace_exec_cmd_sender(Arc::new(SyncTradingCommandSender));
 
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         {
             let mut cache = cache.borrow_mut();
@@ -721,7 +721,7 @@ fn test_deferred_risk_approval_preserves_command_order(
         msgbus::get_message_bus().borrow_mut().dispose();
         replace_exec_cmd_sender(Arc::new(SyncTradingCommandSender));
 
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let exec_engine = Rc::new(RefCell::new(get_exec_engine(
             Some(cache.clone()),
@@ -1206,7 +1206,7 @@ fn test_submit_reduce_only_order_when_position_already_closed_then_denies(
     venue_order_id: VenueOrderId,
     process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
-    clock: TestClock,
+    clock: VirtualClock,
     simple_cache: Cache,
 ) {
     consume_fixture(process_order_event_handler);
@@ -1356,7 +1356,7 @@ fn test_submit_reduce_only_order_when_position_would_be_increased_then_denies(
     venue_order_id: VenueOrderId,
     process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
-    clock: TestClock,
+    clock: VirtualClock,
     simple_cache: Cache,
 ) {
     consume_fixture(process_order_event_handler);
@@ -7267,7 +7267,7 @@ fn test_partial_fill_and_full_fill_account_balance_correct() {}
 
 #[rstest]
 fn test_submit_order_with_gtd_expire_time_already_passed(
-    clock: TestClock,
+    clock: VirtualClock,
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
     trader_id: TraderId,

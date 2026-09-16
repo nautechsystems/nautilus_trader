@@ -193,7 +193,7 @@ mod tests {
 
     use nautilus_common::{
         cache::Cache,
-        clock::TestClock,
+        clock::VirtualClock,
         factories::{ClientConfig, DataClientFactory},
         live::runner::set_data_event_sender,
         messages::DataEvent,
@@ -241,7 +241,7 @@ mod tests {
         let factory = CoinbaseDataClientFactory::new();
         let config = CoinbaseDataClientConfig::default();
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let result = factory.create("COINBASE-TEST", &config, cache.into(), clock);
         assert!(result.is_ok());
@@ -263,7 +263,7 @@ mod tests {
 
         let factory = CoinbaseDataClientFactory::new();
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let result = factory.create("COINBASE-TEST", &WrongConfig, cache.into(), clock);
         let err = match result {
@@ -316,7 +316,7 @@ mod tests {
                 "COINBASE-TEST",
                 &config,
                 cache.into(),
-                Rc::new(RefCell::new(TestClock::new())),
+                Rc::new(RefCell::new(VirtualClock::new())),
             )
             .expect("factory should create exec client with valid config");
 
@@ -343,7 +343,7 @@ mod tests {
                 "COINBASE-DERIV",
                 &config,
                 cache.into(),
-                Rc::new(RefCell::new(TestClock::new())),
+                Rc::new(RefCell::new(VirtualClock::new())),
             )
             .expect("factory should create margin exec client when configured for derivatives");
 
@@ -370,7 +370,7 @@ mod tests {
                 "COINBASE-TEST",
                 &config,
                 cache.into(),
-                Rc::new(RefCell::new(TestClock::new())),
+                Rc::new(RefCell::new(VirtualClock::new())),
             )
             .err()
             .expect("unsupported account type must be rejected");
@@ -394,7 +394,7 @@ mod tests {
             "COINBASE-TEST",
             &wrong_config,
             cache.into(),
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
         );
         let err = match result {
             Ok(_) => panic!("wrong config type should be rejected"),

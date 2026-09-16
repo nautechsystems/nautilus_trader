@@ -161,12 +161,12 @@ mod tests {
     };
     use rstest::rstest;
 
-    use crate::{clock::TestClock, generators::position_id::PositionIdGenerator};
+    use crate::{clock::VirtualClock, generators::position_id::PositionIdGenerator};
 
     fn get_position_id_generator() -> PositionIdGenerator {
         PositionIdGenerator::new(
             TraderId::test_default(),
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
         )
     }
 
@@ -250,7 +250,7 @@ mod tests {
 
     #[rstest]
     fn test_generate_refreshes_persistent_fixed_prefix_when_second_changes() {
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let mut generator = PositionIdGenerator::new(TraderId::test_default(), clock.clone());
 
         let result1 = generator.generate(StrategyId::from("S-001"), false);

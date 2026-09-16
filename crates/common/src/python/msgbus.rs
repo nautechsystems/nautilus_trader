@@ -1016,7 +1016,7 @@ mod tests {
     use crate::{
         actor::registry::with_actor_registry,
         cache::Cache,
-        clock::TestClock,
+        clock::VirtualClock,
         component::{release_component_subscriptions, with_component_registry},
         msgbus::set_message_bus,
         python::{actor::PyDataActor, wrappers::release_python_wrapper},
@@ -1582,7 +1582,7 @@ class Actor(DataActor):
             borrowed
                 .register(
                     TraderId::from("TRADER-001"),
-                    Rc::new(RefCell::new(TestClock::new())),
+                    Rc::new(RefCell::new(VirtualClock::new())),
                     Rc::new(RefCell::new(Cache::default())),
                 )
                 .unwrap();
