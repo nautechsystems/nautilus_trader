@@ -21,11 +21,12 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 
+- Standardized network config field layouts across adapters: URL override block, then `proxy_url`
 - Improved cache order query benchmark coverage
-- Optimized cache order queries and exchange-rate lookups from bars
+- Optimized cache order queries and exchange rate lookups from bars
 - Optimized average-price calculation for orders with many fills
 - Optimized allocation overhead in Rust cache `orders` and `orders_refs` queries
-- Standardized network config field layouts across adapters: URL override block, then `proxy_url`
+- Optimized allocation overhead in Rust exchange rate calculations
 - Upgraded `datafusion` crate to v55.1.0
 - Upgraded `jiff` crate to v0.2.37
 - Upgraded `smallvec` crate to v1.16.1

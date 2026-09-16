@@ -8029,6 +8029,7 @@ impl Cache {
         let mut ask_quotes = AHashMap::new();
         let mut quote_sources = AHashMap::new();
         let mut bar_quotes = None;
+        let mut pair_buffer = String::new();
 
         for (instrument_id, instrument) in &self.instruments {
             if instrument_id.venue != *venue {
@@ -8056,11 +8057,14 @@ impl Cache {
                 }
             };
 
-            let pair = Ustr::from(&format!(
-                "{}/{}",
-                base_currency.code,
-                instrument.quote_currency().code
-            ));
+            let base = base_currency.code.as_str();
+            let quote = instrument.quote_currency().code.as_str();
+            pair_buffer.clear();
+            pair_buffer.reserve(base.len() + 1 + quote.len());
+            pair_buffer.push_str(base);
+            pair_buffer.push('/');
+            pair_buffer.push_str(quote);
+            let pair = Ustr::from(pair_buffer.as_str());
             let preference = (
                 bid_price.is_positive() && ask_price.is_positive(),
                 instrument.instrument_class() == InstrumentClass::Spot,
