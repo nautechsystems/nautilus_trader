@@ -72,7 +72,7 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        bar::{binance_bar_data_type, parse_binance_bar_type},
+        bar::{binance_bar_data_type, binance_bars_to_custom_data, parse_binance_bar_type},
         consts::{BINANCE_BOOK_DEPTHS, BINANCE_VENUE, BINANCE_WS_HEARTBEAT_SECS},
         enums::{BinanceEnvironment, BinanceProductType},
         parse::{
@@ -2854,7 +2854,7 @@ impl DataClient for BinanceFuturesDataClient {
                             client_id,
                             Some(venue),
                             data_type,
-                            bars,
+                            binance_bars_to_custom_data(bar_type, bars),
                             start_nanos,
                             end_nanos,
                             clock.get_time_ns(),

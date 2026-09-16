@@ -21,7 +21,7 @@ use nautilus_model::{
     data::{
         DataType, HasTsInit,
         bar::{Bar, BarType},
-        custom::CustomDataTrait,
+        custom::{CustomData, CustomDataTrait},
     },
     types::{Price, Quantity},
 };
@@ -159,6 +159,16 @@ pub(crate) fn binance_bar_data_type(bar_type: BarType) -> DataType {
         serde_json::Value::String(bar_type.instrument_id().to_string()),
     );
     DataType::new("BinanceBar", Some(metadata), Some(bar_type.to_string()))
+}
+
+pub(crate) fn binance_bars_to_custom_data(
+    bar_type: BarType,
+    bars: Vec<BinanceBar>,
+) -> Vec<CustomData> {
+    let data_type = binance_bar_data_type(bar_type);
+    bars.into_iter()
+        .map(|bar| CustomData::new(Arc::new(bar), data_type.clone()))
+        .collect()
 }
 
 pub(crate) fn parse_binance_bar_type(data_type: &DataType) -> anyhow::Result<BarType> {
