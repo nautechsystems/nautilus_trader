@@ -79,7 +79,7 @@ use nautilus_polymarket::{
 use nautilus_testkit::events::{collect_data_events_until_response, drain_data_events};
 use rstest::rstest;
 use rust_decimal_macros::dec;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 const TEST_CONDITION_ID: &str =
     "0x78443f961b9a65869dcb39359de9960165c7e5cbad0904eac7f29cd77872a63b";
@@ -172,13 +172,23 @@ async fn handle_trades(State(state): State<TestServerState>) -> Response {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
 
-    let body = state
+    // Overrides carry the page's rows; the envelope is the v2 response shape.
+    let rows = state
         .trades_response
         .lock()
         .await
         .clone()
-        .unwrap_or_else(|| load_json("data_api_trades_response.json"));
-    Json(body).into_response()
+        .unwrap_or_else(|| json!([]));
+    Json(json!({
+        "data": rows,
+        "pagination": {
+            "limit": 500,
+            "offset": 0,
+            "has_more": false,
+            "next_cursor": null,
+        },
+    }))
+    .into_response()
 }
 
 async fn handle_market_upgrade(
@@ -262,7 +272,7 @@ fn create_router(state: TestServerState) -> Router {
         .route("/markets", get(handle_gamma_markets))
         .route("/markets/keyset", get(handle_gamma_markets_keyset))
         .route("/book", get(handle_book))
-        .route("/trades", get(handle_trades))
+        .route("/v2/trades", get(handle_trades))
         .route("/ws/market", get(handle_market_upgrade))
         .route("/rtds", get(handle_rtds_upgrade))
         .with_state(state)
@@ -904,38 +914,38 @@ async fn test_request_trades_returns_trades_response() {
     let other_token = "0".repeat(76);
     let trades_fixture = serde_json::json!([
         {
-            "asset": TEST_TOKEN_ID_YES,
-            "conditionId": TEST_CONDITION_ID,
+            "token_id": TEST_TOKEN_ID_YES,
+            "condition_id": TEST_CONDITION_ID,
             "side": "BUY",
             "price": 0.55,
             "size": 100.0,
             "timestamp": 1_710_000_000,
-            "transactionHash": "0xabc123def456789012345678901234567890abcdef1234567890abcdef123456",
-            "proxyWallet": "0x1111111111111111111111111111111111111111",
+            "transaction_hash": "0xabc123def456789012345678901234567890abcdef1234567890abcdef123456",
+            "proxy_wallet": "0x1111111111111111111111111111111111111111",
             "title": "GTA VI",
             "slug": "gta-vi"
         },
         {
-            "asset": other_token,
-            "conditionId": TEST_CONDITION_ID,
+            "token_id": other_token,
+            "condition_id": TEST_CONDITION_ID,
             "side": "SELL",
             "price": 0.45,
             "size": 50.0,
             "timestamp": 1_710_000_010,
-            "transactionHash": "0xdef456789012345678901234567890abcdef1234567890abcdef123456789abc",
-            "proxyWallet": "0x2222222222222222222222222222222222222222",
+            "transaction_hash": "0xdef456789012345678901234567890abcdef1234567890abcdef123456789abc",
+            "proxy_wallet": "0x2222222222222222222222222222222222222222",
             "title": "GTA VI",
             "slug": "gta-vi"
         },
         {
-            "asset": TEST_TOKEN_ID_YES,
-            "conditionId": TEST_CONDITION_ID,
+            "token_id": TEST_TOKEN_ID_YES,
+            "condition_id": TEST_CONDITION_ID,
             "side": "SELL",
             "price": 0.53,
             "size": 25.0,
             "timestamp": 1_710_000_020,
-            "transactionHash": "0xfeedface789012345678901234567890abcdef1234567890abcdef123456beef",
-            "proxyWallet": "0x3333333333333333333333333333333333333333",
+            "transaction_hash": "0xfeedface789012345678901234567890abcdef1234567890abcdef123456beef",
+            "proxy_wallet": "0x3333333333333333333333333333333333333333",
             "title": "GTA VI",
             "slug": "gta-vi"
         }

@@ -86,13 +86,32 @@ def _clob_market(slug: str) -> dict[str, object]:
 
 def _trade(asset: str, timestamp: int, suffix: str) -> dict[str, object]:
     return {
-        "asset": asset,
-        "conditionId": CONDITION_ID,
+        "token_id": asset,
+        "condition_id": CONDITION_ID,
         "side": "BUY",
         "price": 0.60,
         "size": 10.0,
         "timestamp": timestamp,
-        "transactionHash": f"0x{suffix}",
+        "transaction_hash": f"0x{suffix}",
+    }
+
+
+def _trades_page() -> dict[str, object]:
+    return {
+        "data": [
+            _trade(YES_TOKEN, 1_710_000_005, "f"),
+            _trade(YES_TOKEN, 1_710_000_004, "e"),
+            _trade(YES_TOKEN, 1_710_000_003, "d"),
+            _trade(YES_TOKEN, 1_710_000_002, "c"),
+            _trade(NO_TOKEN, 1_710_000_001, "b"),
+            _trade(YES_TOKEN, 1_710_000_000, "a"),
+        ],
+        "pagination": {
+            "limit": 1000,
+            "offset": 0,
+            "has_more": False,
+            "next_cursor": None,
+        },
     }
 
 
@@ -121,17 +140,8 @@ class _PolymarketRequestHandler(BaseHTTPRequestHandler):
             self._send_json([{"id": "1", "label": "Test", "slug": "test"}])
         elif parsed.path == "/public-search":
             self._send_json({"markets": [_gamma_market()], "events": [self._event()]})
-        elif parsed.path == "/trades":
-            self._send_json(
-                [
-                    _trade(YES_TOKEN, 1_710_000_000, "a"),
-                    _trade(NO_TOKEN, 1_710_000_001, "b"),
-                    _trade(YES_TOKEN, 1_710_000_002, "c"),
-                    _trade(YES_TOKEN, 1_710_000_003, "d"),
-                    _trade(YES_TOKEN, 1_710_000_004, "e"),
-                    _trade(YES_TOKEN, 1_710_000_005, "f"),
-                ],
-            )
+        elif parsed.path == "/v2/trades":
+            self._send_json(_trades_page())
         elif parsed.path.startswith("/markets/"):
             self._send_json(_clob_market(self.current_slug))
         else:
@@ -248,8 +258,14 @@ async def test_loader_factory_and_historical_window(polymarket_api: SimpleNamesp
     assert "closed" not in loader.instrument.info
     assert "winner" not in loader.instrument.info
     assert any("condition_ids" in query for _, query in polymarket_api.query_log)
-    assert any(query.get("start") == ["1710000002"] for _, query in polymarket_api.query_log)
-    assert any(query.get("end") == ["1710000004"] for _, query in polymarket_api.query_log)
+    trades_queries = [query for path, query in polymarket_api.query_log if path == "/v2/trades"]
+    assert trades_queries
+    # The v2 condition feed ignores start/end bounds, so the window filters
+    # locally and the wire carries neither parameter.
+    for query in trades_queries:
+        assert query.get("condition") == [CONDITION_ID]
+        assert "start" not in query
+        assert "end" not in query
 
 
 @pytest.mark.asyncio

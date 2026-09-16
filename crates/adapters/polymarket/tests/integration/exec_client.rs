@@ -1777,10 +1777,10 @@ async fn test_generate_mass_status_applies_load_ids_to_all_report_types() {
         "next_cursor": "LTE=",
     }));
     *state.positions_response_override.lock().await = Some(json!([{
-        "asset": TEST_TOKEN_ID,
-        "conditionId": TEST_CONDITION_ID,
-        "size": "25.0000",
-        "avgPrice": "0.5000",
+        "token_id": TEST_TOKEN_ID,
+        "condition_id": TEST_CONDITION_ID,
+        "current_size": "25.0000",
+        "avg_price": "0.5000",
     }]));
     let addr = start_mock_server(state).await;
     let loaded_instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
@@ -1816,16 +1816,16 @@ async fn test_generate_position_status_reports_drops_unmapped_dust_before_mappin
     let state = TestServerState::default();
     *state.positions_response_override.lock().await = Some(json!([
         {
-            "asset": "11111111111111111111111111111111111111111111111111111111111111111",
-            "conditionId": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "size": "0.0000",
-            "avgPrice": "0.5000",
+            "token_id": "11111111111111111111111111111111111111111111111111111111111111111",
+            "condition_id": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "current_size": "0.0000",
+            "avg_price": "0.5000",
         },
         {
-            "asset": "22222222222222222222222222222222222222222222222222222222222222222",
-            "conditionId": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            "size": "0.0050",
-            "avgPrice": "0.5000",
+            "token_id": "22222222222222222222222222222222222222222222222222222222222222222",
+            "condition_id": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "current_size": "0.0050",
+            "avg_price": "0.5000",
         },
     ]));
     let addr = start_mock_server(state).await;
@@ -1864,10 +1864,10 @@ async fn test_generate_mass_status_rejects_malformed_in_scope_unmapped_position(
     let condition_id = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     let token_id = "99999999999999999999999999999999999999999999999999999999999999999";
     *state.positions_response_override.lock().await = Some(json!([{
-        "asset": token_id,
-        "conditionId": condition_id,
-        "size": "79228162514264337593543950335",
-        "avgPrice": "0.5000",
+        "token_id": token_id,
+        "condition_id": condition_id,
+        "current_size": "79228162514264337593543950335",
+        "avg_price": "0.5000",
     }]));
     let addr = start_mock_server(state).await;
     let position_instrument_id =
@@ -1906,10 +1906,10 @@ async fn test_generate_mass_status_rejects_malformed_position_with_wrong_loaded_
     let reported_condition = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     let token_id = "99999999999999999999999999999999999999999999999999999999999999999";
     *state.positions_response_override.lock().await = Some(json!([{
-        "asset": token_id,
-        "conditionId": reported_condition,
-        "size": "79228162514264337593543950335",
-        "avgPrice": "0.5000",
+        "token_id": token_id,
+        "condition_id": reported_condition,
+        "current_size": "79228162514264337593543950335",
+        "avg_price": "0.5000",
     }]));
     let addr = start_mock_server(state).await;
     let (mut client, _rx, cache) = create_test_execution_client(addr);
@@ -3571,10 +3571,10 @@ async fn test_generate_position_status_reports_always_empty() {
 async fn test_generate_position_status_reports_explicit_target_ignores_load_ids_scope() {
     let state = TestServerState::default();
     *state.positions_response_override.lock().await = Some(json!([{
-        "asset": TEST_TOKEN_ID,
-        "conditionId": TEST_CONDITION_ID,
-        "size": "25.0000",
-        "avgPrice": "0.5000",
+        "token_id": TEST_TOKEN_ID,
+        "condition_id": TEST_CONDITION_ID,
+        "current_size": "25.0000",
+        "avg_price": "0.5000",
     }]));
     let addr = start_mock_server(state).await;
     let instrument_id =

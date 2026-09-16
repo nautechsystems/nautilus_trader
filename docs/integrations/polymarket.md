@@ -886,7 +886,7 @@ user WebSocket, so the same fill deduplicates across sources. A maker trade can 
 of the user's resting orders, so maker reports combine the venue trade ID with the maker venue
 order ID. The same venue event yields the same trade ID across replays.
 For historical Data API trades, the loader uses
-`{transactionHash[-24:]}-{asset[-4:]}-{seq:06d}` to distinguish fills in one transaction.
+`{transaction_hash[-24:]}-{token_id[-4:]}-{seq:06d}` to distinguish fills in one transaction.
 
 ## Instrument metadata
 
@@ -2021,14 +2021,26 @@ trades = await loader.load_trades(
 ```
 
 The window is inclusive. The Data API records trade timestamps in whole seconds, so Rust keeps all
-trades in the `start` and `end` boundary seconds. The public API caps offset-based pagination at 10,000:
+trades in the `start` and `end` boundary seconds. The v2 condition feed serves a
+[fixed three-year window](https://data-api.polymarket.com/v2/docs) and ignores
+`start`/`end` bounds, so the adapter never sends them and filters the window locally instead. The
+feed serves pages newest-first; with a `start` bound the walk continues until a whole page precedes
+`start`:
 
-| Request         | Meaning of `limit`                     | Behavior at the pagination ceiling                       |
-| --------------- | -------------------------------------- | -------------------------------------------------------- |
-| With `start`    | Earliest matching trades in the window | Error; completeness from the requested start is unproven |
-| Without `start` | Most recent matching trades            | Available partial result and a warning                   |
+| Request         | Meaning of `limit`                     | Walk termination                                                                                           |
+| --------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| With `start`    | Earliest matching trades in the window | A whole page precedes `start`, or the cursor exhausts                                                      |
+| Without `start` | Most recent matching trades            | The matching-trade count reaches `limit`; without `limit`, the 10,000-row walk cap; or the cursor exhausts |
 
-If a start-anchored request reaches the ceiling, narrow the time window and retry.
+When the cursor exhausts and `start` predates the approximate three-year retention horizon,
+Rust logs a warning that results may be incomplete. History outside the venue's retention window
+cannot be recovered through this feed. A request with neither `start` nor `limit` stops after a page brings the retained count to
+at least 10,000 window-matching rows and returns the newest partial results with a logged warning.
+The final page can add up to 999 rows beyond that threshold.
+
+An end-only request traverses all pages newer than `end` before collecting matching trades.
+Its duration therefore grows with the volume newer than `end`: the cap bounds retained history,
+not the number of requests.
 
 ### Closed market cleanup
 

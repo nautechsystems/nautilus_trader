@@ -798,14 +798,21 @@ async fn handle_health() -> impl IntoResponse {
 }
 
 async fn handle_get_positions(State(state): State<TestServerState>) -> impl IntoResponse {
-    Json(
-        state
+    // Overrides carry the page's rows; the envelope is the v2 response shape.
+    Json(json!({
+        "data": state
             .positions_response_override
             .lock()
             .await
             .clone()
             .unwrap_or_else(|| json!([])),
-    )
+        "pagination": {
+            "limit": 500,
+            "offset": 0,
+            "has_more": false,
+            "next_cursor": null,
+        },
+    }))
 }
 
 fn create_test_router(state: TestServerState) -> Router {
@@ -830,7 +837,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/fee-rate", get(handle_get_fee_rate))
         .route("/v1/heartbeats", post(handle_heartbeat))
         .route("/health", get(handle_health))
-        .route("/positions", get(handle_get_positions))
+        .route("/v2/positions", get(handle_get_positions))
         .route("/ws", get(handle_user_upgrade))
         .with_state(state)
 }

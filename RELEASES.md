@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 
+- Migrated Polymarket trade and position history to Data API v2 with cursor pagination
 - Added `historical_base_url` and `live_gateway_addr` overrides to `DatabentoDataClientConfig`
 - Added `tardis_http_url` override to `TardisDataClientConfig` and `TardisReplayConfig`
 
@@ -11,6 +12,7 @@ Released on TBD (UTC).
 
 - Changed Rust `OrderCore.events` to read-only `events()`; construct cores with `OrderCore::new`
 - Changed Python Hyperliquid data and execution client config parameter order to `base_url_http` before `base_url_ws`
+- Changed Polymarket `polymarket_trade_sort_key` inputs to v2 `transaction_hash` and `token_id` fields
 
 ### Security
 

@@ -15,12 +15,9 @@
 
 use std::{collections::HashSet, future::Future};
 
-use aws_lc_rs::digest::{self, Context};
-
 #[derive(Debug)]
-pub(crate) enum FetchOutcome<T, W, S> {
+pub(crate) enum FetchOutcome<T, W> {
     Page { rows: Vec<T>, wire: W },
-    Stop(S),
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -35,13 +32,12 @@ pub(crate) struct Completed<O, S> {
     pub(crate) completion: Completion<S>,
 }
 
-pub(crate) enum PageObservation<P, C, S> {
+pub(crate) enum PageObservation<P, C> {
     Terminal,
     Continue { next: P, commit: C },
-    Stop(S),
 }
 
-pub(crate) type ObservationResult<P, C, S> = Result<PageObservation<P, C, S>, PaginationError>;
+pub(crate) type ObservationResult<P, C> = Result<PageObservation<P, C>, PaginationError>;
 
 pub(crate) trait PageProtocol<T> {
     type Position: Clone;
@@ -57,7 +53,7 @@ pub(crate) trait PageProtocol<T> {
         page_index: usize,
         rows: &[T],
         wire: Self::Wire,
-    ) -> ObservationResult<Self::Position, Self::Commit, Self::Stop>;
+    ) -> ObservationResult<Self::Position, Self::Commit>;
 
     fn commit_continue(&mut self, commit: Self::Commit);
 }
@@ -69,119 +65,6 @@ pub(crate) trait PageReducer<T, E> {
     fn consume(&mut self, rows: Vec<T>) -> Result<Option<Self::Stop>, E>;
 
     fn finish(self, completion: &Completion<Self::Stop>) -> Result<Self::Output, E>;
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) struct PageFingerprint([u8; 32]);
-
-pub(crate) fn encode_length_prefixed(output: &mut Vec<u8>, value: &[u8]) {
-    let length = u64::try_from(value.len()).expect("fingerprint field length exceeds u64");
-    output.extend_from_slice(&length.to_be_bytes());
-    output.extend_from_slice(value);
-}
-
-pub(crate) fn fingerprint_multiset(version: u8, mut descriptors: Vec<Vec<u8>>) -> PageFingerprint {
-    descriptors.sort_unstable();
-    let mut context = Context::new(&digest::SHA256);
-    context.update(&[version]);
-
-    for descriptor in descriptors {
-        encode_length_prefixed_digest(&mut context, &descriptor);
-    }
-    let digest = context.finish();
-    let mut fingerprint = [0; 32];
-    fingerprint.copy_from_slice(digest.as_ref());
-    PageFingerprint(fingerprint)
-}
-
-fn encode_length_prefixed_digest(context: &mut Context, value: &[u8]) {
-    let length = u64::try_from(value.len()).expect("fingerprint row length exceeds u64");
-    context.update(&length.to_be_bytes());
-    context.update(value);
-}
-
-pub(crate) struct OffsetProtocol<T, S> {
-    endpoint: &'static str,
-    page_size: usize,
-    fingerprint: fn(&[T]) -> PageFingerprint,
-    local_ceiling: Option<(u32, S)>,
-    seen: HashSet<PageFingerprint>,
-}
-
-impl<T, S> OffsetProtocol<T, S> {
-    pub(crate) fn new(
-        endpoint: &'static str,
-        page_size: usize,
-        fingerprint: fn(&[T]) -> PageFingerprint,
-        local_ceiling: Option<(u32, S)>,
-    ) -> Self {
-        Self {
-            endpoint,
-            page_size,
-            fingerprint,
-            local_ceiling,
-            seen: HashSet::new(),
-        }
-    }
-}
-
-impl<T, S> PageProtocol<T> for OffsetProtocol<T, S>
-where
-    S: Clone,
-{
-    type Commit = PageFingerprint;
-    type Position = u32;
-    type Stop = S;
-    type Wire = ();
-
-    fn initial_position(&self) -> Self::Position {
-        0
-    }
-
-    fn observe(
-        &mut self,
-        position: &Self::Position,
-        page_index: usize,
-        rows: &[T],
-        (): Self::Wire,
-    ) -> ObservationResult<Self::Position, Self::Commit, Self::Stop> {
-        if rows.len() < self.page_size {
-            return Ok(PageObservation::Terminal);
-        }
-
-        let fingerprint = (self.fingerprint)(rows);
-        if self.seen.contains(&fingerprint) {
-            return Err(PaginationError::RepeatedPage {
-                endpoint: self.endpoint,
-                page: page_index,
-                offset: *position,
-            });
-        }
-
-        let count = u32::try_from(rows.len()).map_err(|_| PaginationError::OffsetOverflow {
-            endpoint: self.endpoint,
-        })?;
-        let next = position
-            .checked_add(count)
-            .ok_or(PaginationError::OffsetOverflow {
-                endpoint: self.endpoint,
-            })?;
-
-        if let Some((ceiling, stop)) = &self.local_ceiling
-            && next >= *ceiling
-        {
-            return Ok(PageObservation::Stop(stop.clone()));
-        }
-
-        Ok(PageObservation::Continue {
-            next,
-            commit: fingerprint,
-        })
-    }
-
-    fn commit_continue(&mut self, commit: Self::Commit) {
-        self.seen.insert(commit);
-    }
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -252,7 +135,7 @@ impl<T, S> PageProtocol<T> for CursorProtocol<S> {
         _page_index: usize,
         _rows: &[T],
         wire: Self::Wire,
-    ) -> ObservationResult<Self::Position, Self::Commit, Self::Stop> {
+    ) -> ObservationResult<Self::Position, Self::Commit> {
         let raw = match (&self.dialect, wire) {
             (CursorDialect::Gamma, None) => return Ok(PageObservation::Terminal),
             (CursorDialect::Clob { .. }, None) => {
@@ -400,20 +283,13 @@ impl<P, R> Paginator<P, R> {
         P: PageProtocol<T, Stop = R::Stop>,
         R: PageReducer<T, E>,
         F: FnMut(P::Position) -> Fut,
-        Fut: Future<Output = Result<FetchOutcome<T, P::Wire, R::Stop>, E>>,
+        Fut: Future<Output = Result<FetchOutcome<T, P::Wire>, E>>,
         M: FnMut(PaginationError) -> E,
     {
         let mut position = self.protocol.initial_position();
 
         loop {
-            let (rows, wire) = match fetch(position.clone()).await? {
-                FetchOutcome::Page { rows, wire } => (rows, wire),
-                FetchOutcome::Stop(stop) => {
-                    let completion = Completion::Stopped(stop);
-                    let output = self.reducer.finish(&completion)?;
-                    return Ok(Completed { output, completion });
-                }
-            };
+            let FetchOutcome::Page { rows, wire } = fetch(position.clone()).await?;
 
             let page = self.pages.checked_add(1).ok_or_else(|| {
                 map_pagination_error(PaginationError::PageCounterOverflow {
@@ -440,11 +316,6 @@ impl<P, R> Paginator<P, R> {
                     let output = self.reducer.finish(&completion)?;
                     return Ok(Completed { output, completion });
                 }
-                PageObservation::Stop(stop) => {
-                    let completion = Completion::Stopped(stop);
-                    let output = self.reducer.finish(&completion)?;
-                    return Ok(Completed { output, completion });
-                }
                 PageObservation::Continue { next, commit } => {
                     self.protocol.commit_continue(commit);
                     position = next;
@@ -468,14 +339,6 @@ pub(crate) enum PaginationError {
         endpoint: &'static str,
         cursor: String,
     },
-    #[error("{endpoint} pagination repeated a full page at page {page} offset {offset}")]
-    RepeatedPage {
-        endpoint: &'static str,
-        page: usize,
-        offset: u32,
-    },
-    #[error("{endpoint} pagination offset overflowed u32")]
-    OffsetOverflow { endpoint: &'static str },
     #[error("{endpoint} pagination page counter overflowed usize")]
     PageCounterOverflow { endpoint: &'static str },
 }

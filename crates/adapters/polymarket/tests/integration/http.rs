@@ -659,38 +659,19 @@ async fn handle_data_api_trades(
     if let Some(body) = state.data_api_trade_raw_responses.lock().await.pop_front() {
         return ([("content-type", "application/json")], body).into_response();
     }
+    // The v2 condition feed ignores start/end bounds, so pages are served
+    // verbatim from the queue and window filtering happens client-side.
     let all_trades = state.data_api_trade_pages.lock().await;
-    let start = params
-        .get("start")
-        .and_then(|value| value.parse::<i64>().ok());
-    let end = params
-        .get("end")
-        .and_then(|value| value.parse::<i64>().ok());
-    let pool: Vec<Value> = all_trades
-        .iter()
-        .filter_map(|v| v.as_array())
-        .flatten()
-        .filter(|trade| {
-            let timestamp = trade.get("timestamp").and_then(Value::as_i64);
-            timestamp.is_some_and(|timestamp| {
-                start.is_none_or(|start| timestamp >= start)
-                    && end.is_none_or(|end| timestamp <= end)
-            })
-        })
-        .cloned()
-        .collect();
-
-    let offset: usize = params
-        .get("offset")
-        .and_then(|s| s.parse().ok())
+    let page_index: usize = params
+        .get("cursor")
+        .and_then(|value| value.parse().ok())
         .unwrap_or(0);
-    let limit: usize = params
-        .get("limit")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(pool.len());
 
-    let page: Vec<Value> = pool.into_iter().skip(offset).take(limit).collect();
-    Json(json!(page)).into_response()
+    let data = all_trades
+        .get(page_index)
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    Json(data_api_page(&data, page_index, all_trades.len())).into_response()
 }
 
 async fn handle_data_api_positions(
@@ -700,9 +681,23 @@ async fn handle_data_api_positions(
     if let Some(r) = maybe_rate_limit(&state).await {
         return r;
     }
-    state.data_api_position_query_log.lock().await.push(params);
-    let mut pages = state.data_api_position_pages.lock().await;
-    Json(pages.pop_front().unwrap_or_else(|| json!([]))).into_response()
+
+    if let Some((status, body)) = state.data_api_error_response.lock().await.clone() {
+        return (status, Json(body)).into_response();
+    }
+    state
+        .data_api_position_query_log
+        .lock()
+        .await
+        .push(params.clone());
+    let pages = state.data_api_position_pages.lock().await;
+    let page_index: usize = params
+        .get("cursor")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0);
+
+    let data = pages.get(page_index).cloned().unwrap_or_else(|| json!([]));
+    Json(data_api_page(&data, page_index, pages.len())).into_response()
 }
 
 async fn handle_get_order(State(state): State<TestServerState>) -> Response {
@@ -756,8 +751,8 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/events/keyset", get(handle_gamma_events_keyset))
         .route("/tags", get(handle_gamma_tags))
         .route("/public-search", get(handle_public_search))
-        .route("/positions", get(handle_data_api_positions))
-        .route("/trades", get(handle_data_api_trades))
+        .route("/v2/positions", get(handle_data_api_positions))
+        .route("/v2/trades", get(handle_data_api_trades))
         .route("/health", get(handle_health))
         .with_state(state)
 }
@@ -4687,28 +4682,47 @@ async fn test_get_order_empty_body_returns_error() {
 
 fn make_data_api_trade(asset: &str, price: f64, timestamp: i64, tx_suffix: &str) -> Value {
     json!({
-        "asset": asset,
-        "conditionId": "0xcondition_test",
+        "token_id": asset,
+        "condition_id": "0xcondition_test",
         "side": "BUY",
         "price": price,
         "size": 10.0,
         "timestamp": timestamp,
-        "transactionHash": format!("0x{tx_suffix:0>66}")
+        "transaction_hash": format!("0x{tx_suffix:0>66}")
     })
 }
 
 fn make_data_api_position(index: usize) -> Value {
     json!({
-        "asset": index.to_string(),
-        "conditionId": format!("0xcondition{index:064x}"),
-        "size": 1.0,
-        "avgPrice": 0.5
+        "token_id": index.to_string(),
+        "condition_id": format!("0xcondition{index:064x}"),
+        "current_size": 1.0,
+        "avg_price": 0.5
+    })
+}
+
+// Serves the v2 cursor contract: `cursor` names the page to serve (as an
+// opaque index) and `next_cursor` is null only on the last page.
+fn data_api_page(data: &Value, page_index: usize, page_count: usize) -> Value {
+    let next_cursor = if page_index + 1 < page_count {
+        Some((page_index + 1).to_string())
+    } else {
+        None
+    };
+    json!({
+        "data": data,
+        "pagination": {
+            "limit": 500,
+            "offset": 0,
+            "has_more": next_cursor.is_some(),
+            "next_cursor": next_cursor,
+        },
     })
 }
 
 #[rstest]
 #[tokio::test]
-async fn test_get_positions_paginates_distinct_pages_with_offset() {
+async fn test_get_positions_paginates_distinct_pages_with_cursor() {
     let state = TestServerState::default();
     let first = Value::Array((0..100).map(make_data_api_position).collect());
     let second = Value::Array((100..200).map(make_data_api_position).collect());
@@ -4727,54 +4741,32 @@ async fn test_get_positions_paginates_distinct_pages_with_offset() {
 
     assert_eq!(positions.len(), 201);
     assert_eq!(queries.len(), 3);
-    assert_eq!(queries[0].get("offset").map(String::as_str), Some("0"));
-    assert_eq!(queries[1].get("offset").map(String::as_str), Some("100"));
-    assert_eq!(queries[2].get("offset").map(String::as_str), Some("200"));
+    assert!(!queries[0].contains_key("cursor"));
+    assert_eq!(queries[1].get("cursor").map(String::as_str), Some("1"));
+    assert_eq!(queries[2].get("cursor").map(String::as_str), Some("2"));
+
+    // The v2 positions cursor binds status/sort/direction but re-sending the
+    // same filters alongside it is required behavior, not an error.
+    for query in queries.iter() {
+        assert_eq!(query.get("user").map(String::as_str), Some(TEST_ADDRESS));
+        assert_eq!(query.get("filter_type").map(String::as_str), Some("TOKENS"));
+        assert_eq!(query.get("filter_amount").map(String::as_str), Some("0"));
+        assert_eq!(query.get("sort_by").map(String::as_str), Some("TOKENS"));
+        assert_eq!(
+            query.get("sort_direction").map(String::as_str),
+            Some("DESC")
+        );
+    }
 }
 
 #[rstest]
 #[tokio::test]
-async fn test_get_positions_fails_closed_at_offset_ceiling() {
+async fn test_get_positions_continues_after_short_page_when_has_more() {
     let state = TestServerState::default();
-    let pages = (0..=100).map(|page| {
-        let start = page * 100;
-        Value::Array((start..start + 100).map(make_data_api_position).collect())
-    });
-    state.data_api_position_pages.lock().await.extend(pages);
-
-    let addr = start_mock_server(state.clone()).await;
-    let client = create_data_api_client(&addr);
-
-    let error = client.get_positions(TEST_ADDRESS).await.unwrap_err();
-    let queries = state.data_api_position_query_log.lock().await;
-
-    assert_eq!(
-        error.to_string(),
-        "decode error: /positions pagination exhausted the maximum supported offset 10000",
-    );
-    assert_eq!(queries.len(), 101);
-    assert_eq!(
-        queries
-            .last()
-            .and_then(|query| query.get("offset"))
-            .map(String::as_str),
-        Some("10000"),
-    );
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_get_positions_accepts_partial_page_at_offset_ceiling() {
-    let state = TestServerState::default();
-    let full_pages = (0..100).map(|page| {
-        let start = page * 100;
-        Value::Array((start..start + 100).map(make_data_api_position).collect())
-    });
-    state
-        .data_api_position_pages
-        .lock()
-        .await
-        .extend(full_pages.chain([Value::Array(vec![make_data_api_position(10_000)])]));
+    state.data_api_position_pages.lock().await.extend([
+        Value::Array(vec![make_data_api_position(0)]),
+        Value::Array(vec![make_data_api_position(1)]),
+    ]);
 
     let addr = start_mock_server(state.clone()).await;
     let client = create_data_api_client(&addr);
@@ -4782,50 +4774,9 @@ async fn test_get_positions_accepts_partial_page_at_offset_ceiling() {
     let positions = client.get_positions(TEST_ADDRESS).await.unwrap();
     let queries = state.data_api_position_query_log.lock().await;
 
-    assert_eq!(positions.len(), 10_001);
-    assert_eq!(queries.len(), 101);
-    assert_eq!(
-        queries
-            .last()
-            .and_then(|query| query.get("offset"))
-            .map(String::as_str),
-        Some("10000"),
-    );
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_get_positions_rejects_repeated_identities_with_changed_values() {
-    let state = TestServerState::default();
-    let first = Value::Array((0..100).map(make_data_api_position).collect());
-    let second = Value::Array(
-        (0..100)
-            .map(|index| {
-                json!({
-                    "avgPrice": 0.75,
-                    "size": 2.0,
-                    "conditionId": format!("0xcondition{index:064x}"),
-                    "asset": index.to_string(),
-                })
-            })
-            .collect(),
-    );
-    state
-        .data_api_position_pages
-        .lock()
-        .await
-        .extend([first, second]);
-
-    let addr = start_mock_server(state.clone()).await;
-    let client = create_data_api_client(&addr);
-
-    let error = client.get_positions(TEST_ADDRESS).await.unwrap_err();
-
-    assert_eq!(
-        error.to_string(),
-        "decode error: /positions pagination repeated a full page at page 2 offset 100"
-    );
-    assert_eq!(*state.request_count.lock().await, 2);
+    // A short page never ends a v2 walk; only a null next_cursor does.
+    assert_eq!(positions.len(), 2);
+    assert_eq!(queries.len(), 2);
 }
 
 #[rstest]
@@ -4840,10 +4791,7 @@ async fn test_data_api_http_error_preserves_status_and_clean_reason() {
     let addr = start_mock_server(state).await;
     let client = create_data_api_client(&addr);
 
-    let error = client
-        .get_trades("0xmissing", Some(10), Some(0))
-        .await
-        .unwrap_err();
+    let error = client.get_trades("0xmissing", Some(10)).await.unwrap_err();
 
     assert!(matches!(
         &error,
@@ -4864,20 +4812,23 @@ async fn test_request_trade_ticks_paginates_multiple_pages() {
     let token = "token_aaa";
     let condition_id = "0xcondition_test";
 
-    let mut trades = Vec::new();
+    let mut newest = Vec::new();
     for i in 0..8u32 {
-        trades.push(make_data_api_trade(
+        newest.push(make_data_api_trade(
             token,
             0.50 + (i as f64) * 0.01,
             1710000008 - i as i64,
             &format!("aaa{i}"),
         ));
     }
+    let oldest = (0..4u32)
+        .map(|i| make_data_api_trade(token, 0.40, 1710000000 - i as i64, &format!("aaa_old{i}")))
+        .collect::<Vec<_>>();
     state
         .data_api_trade_pages
         .lock()
         .await
-        .push_back(Value::Array(trades));
+        .extend([Value::Array(newest), Value::Array(oldest)]);
 
     let addr = start_mock_server(state.clone()).await;
     let client = create_data_api_client(&addr);
@@ -4891,12 +4842,23 @@ async fn test_request_trade_ticks_paginates_multiple_pages() {
             2,
             None,
             None,
-            Some(5),
+            None,
         )
         .await
         .unwrap();
+    let queries = state.data_api_trade_query_log.lock().await;
 
-    assert_eq!(ticks.len(), 5);
+    assert_eq!(ticks.len(), 12);
+    assert_eq!(queries.len(), 2);
+    assert!(!queries[0].contains_key("cursor"));
+    assert_eq!(queries[1].get("cursor").map(String::as_str), Some("1"));
+    for query in queries.iter() {
+        assert_eq!(
+            query.get("condition").map(String::as_str),
+            Some(condition_id)
+        );
+    }
+
     for i in 1..ticks.len() {
         assert!(ticks[i - 1].ts_event <= ticks[i].ts_event);
     }
@@ -4904,91 +4866,35 @@ async fn test_request_trade_ticks_paginates_multiple_pages() {
 
 #[rstest]
 #[tokio::test]
-async fn test_request_trade_ticks_rejects_repeated_economics_with_restamped_metadata() {
+async fn test_request_trade_ticks_rejects_repeated_cursor() {
     let state = TestServerState::default();
-    let token = "token_restamped";
-    let first = (0..500)
-        .map(|index| {
-            make_data_api_trade(
-                token,
-                0.50,
-                1_710_000_000 + index as i64,
-                &format!("restamped{index}"),
-            )
-        })
-        .collect::<Vec<_>>();
-    let second = first
-        .iter()
-        .rev()
-        .cloned()
-        .map(|mut trade| {
-            trade["title"] = json!("Restamped presentation metadata");
-            trade["proxyWallet"] = json!("0x1111111111111111111111111111111111111111");
-            trade
-        })
-        .collect::<Vec<_>>();
-    state
-        .data_api_trade_pages
-        .lock()
-        .await
-        .extend([Value::Array(first), Value::Array(second)]);
-
-    let addr = start_mock_server(state.clone()).await;
-    let client = create_data_api_client(&addr);
-
-    let error = client
-        .request_trade_ticks(
-            InstrumentId::from("0xcondition_test-token_restamped.POLYMARKET"),
-            "0xcondition_test",
-            token,
-            2,
-            2,
-            None,
-            None,
-            None,
-        )
-        .await
-        .unwrap_err();
-
-    assert_eq!(
-        error.to_string(),
-        "/trades pagination repeated a full page at page 2 offset 500"
-    );
-    assert_eq!(state.data_api_trade_query_log.lock().await.len(), 2);
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_request_trade_ticks_rejects_repeated_economics_with_rescaled_decimals() {
-    let state = TestServerState::default();
-    let token = "token_rescaled";
-    let page = (0..500)
-        .map(|index| {
-            make_data_api_trade(
-                token,
-                0.50,
-                1_710_000_000 + index as i64,
-                &format!("rescaled{index}"),
-            )
-        })
-        .collect::<Vec<_>>();
-    let first = serde_json::to_string(&page).unwrap();
-    let second = first
-        .replace("\"price\":0.5", "\"price\":0.5000")
-        .replace("\"size\":10.0", "\"size\":10.0000");
-    assert_ne!(first, second);
+    let token = "token_repeat_cursor";
+    let first = serde_json::to_string(&data_api_page(
+        &json!([make_data_api_trade(token, 0.50, 1_710_000_000, "repeat-a")]),
+        0,
+        2,
+    ))
+    .unwrap();
+    let second = serde_json::to_string(&data_api_page(
+        &json!([make_data_api_trade(token, 0.50, 1_709_999_999, "repeat-b")]),
+        1,
+        3,
+    ))
+    .unwrap();
+    // Re-serve cursor "1" instead of advancing, forcing a cursor cycle.
+    let second = second.replace("\"next_cursor\":\"2\"", "\"next_cursor\":\"1\"");
     state
         .data_api_trade_raw_responses
         .lock()
         .await
-        .extend([first, second, "[]".to_string()]);
+        .extend([first, second]);
 
     let addr = start_mock_server(state.clone()).await;
     let client = create_data_api_client(&addr);
 
     let error = client
         .request_trade_ticks(
-            InstrumentId::from("0xcondition_test-token_rescaled.POLYMARKET"),
+            InstrumentId::from("0xcondition_test-token_repeat_cursor.POLYMARKET"),
             "0xcondition_test",
             token,
             2,
@@ -5002,49 +4908,9 @@ async fn test_request_trade_ticks_rejects_repeated_economics_with_rescaled_decim
 
     assert_eq!(
         error.to_string(),
-        "/trades pagination repeated a full page at page 2 offset 500"
+        "/v2/trades pagination repeated cursor \"1\""
     );
     assert_eq!(state.data_api_trade_query_log.lock().await.len(), 2);
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_request_trade_ticks_preserves_page_multiplicity_in_progress() {
-    let state = TestServerState::default();
-    let token = "token_multiplicity";
-    let first_trade = make_data_api_trade(token, 0.50, 1_710_000_000, "multiplicity-a");
-    let second_trade = make_data_api_trade(token, 0.60, 1_710_000_001, "multiplicity-b");
-    let first = std::iter::repeat_n(first_trade.clone(), 250)
-        .chain(std::iter::repeat_n(second_trade.clone(), 250))
-        .collect::<Vec<_>>();
-    let second = std::iter::repeat_n(first_trade, 249)
-        .chain(std::iter::repeat_n(second_trade, 251))
-        .collect::<Vec<_>>();
-    state
-        .data_api_trade_pages
-        .lock()
-        .await
-        .extend([Value::Array(first), Value::Array(second)]);
-
-    let addr = start_mock_server(state.clone()).await;
-    let client = create_data_api_client(&addr);
-
-    let ticks = client
-        .request_trade_ticks(
-            InstrumentId::from("0xcondition_test-token_multiplicity.POLYMARKET"),
-            "0xcondition_test",
-            token,
-            2,
-            2,
-            None,
-            None,
-            None,
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(ticks.len(), 1_000);
-    assert_eq!(state.data_api_trade_query_log.lock().await.len(), 3);
 }
 
 #[rstest]
@@ -5053,7 +4919,7 @@ async fn test_request_trade_ticks_rejects_trade_outside_requested_condition() {
     let state = TestServerState::default();
     let token = "token_wrong_condition";
     let mut trade = make_data_api_trade(token, 0.50, 1_710_000_000, "wrong-condition");
-    trade["conditionId"] = json!("0xother_condition");
+    trade["condition_id"] = json!("0xother_condition");
     state
         .data_api_trade_pages
         .lock()
@@ -5090,7 +4956,7 @@ async fn test_request_trade_ticks_accepts_equivalent_condition_id_hex_case() {
     let token = "token_condition_case";
     let condition_id = format!("0x{}", "ab".repeat(32));
     let mut trade = make_data_api_trade(token, 0.50, 1_710_000_000, "condition-case");
-    trade["conditionId"] = json!(condition_id.to_ascii_uppercase());
+    trade["condition_id"] = json!(condition_id.to_ascii_uppercase());
     state
         .data_api_trade_pages
         .lock()
@@ -5107,67 +4973,6 @@ async fn test_request_trade_ticks_accepts_equivalent_condition_id_hex_case() {
         .unwrap();
 
     assert_eq!(ticks.len(), 1);
-}
-
-#[rstest]
-#[case::transaction_hash("transactionHash", 1_000)]
-#[case::asset("asset", 999)]
-#[case::side("side", 1_000)]
-#[case::price("price", 1_000)]
-#[case::size("size", 1_000)]
-#[case::timestamp("timestamp", 1_000)]
-#[tokio::test]
-async fn test_request_trade_ticks_accepts_page_with_changed_economic_field(
-    #[case] field: &str,
-    #[case] expected_ticks: usize,
-) {
-    let state = TestServerState::default();
-    let token = "token_changed_economics";
-    let first = (0..500)
-        .map(|index| {
-            make_data_api_trade(
-                token,
-                0.50,
-                1_710_000_000 + index as i64,
-                &format!("economics{index}"),
-            )
-        })
-        .collect::<Vec<_>>();
-    let mut second = first.clone();
-    match field {
-        "transactionHash" => second[0][field] = json!(format!("0x{:064x}", 1)),
-        "asset" => second[0][field] = json!("other_token"),
-        "side" => second[0][field] = json!("SELL"),
-        "price" => second[0][field] = json!(0.75),
-        "size" => second[0][field] = json!(11.0),
-        "timestamp" => second[0][field] = json!(1_720_000_000),
-        _ => unreachable!(),
-    }
-    state
-        .data_api_trade_pages
-        .lock()
-        .await
-        .extend([Value::Array(first), Value::Array(second)]);
-
-    let addr = start_mock_server(state.clone()).await;
-    let client = create_data_api_client(&addr);
-
-    let ticks = client
-        .request_trade_ticks(
-            InstrumentId::from("0xcondition_test-token_changed_economics.POLYMARKET"),
-            "0xcondition_test",
-            token,
-            2,
-            2,
-            None,
-            None,
-            None,
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(ticks.len(), expected_ticks);
-    assert_eq!(state.data_api_trade_query_log.lock().await.len(), 3);
 }
 
 #[rstest]
@@ -5386,44 +5191,34 @@ async fn test_request_trade_ticks_honors_start_end_and_limit_after_token_filteri
     assert_eq!(ticks[0].ts_event.as_u64() / 1_000_000_000, 1_710_000_002);
     assert_eq!(ticks[1].ts_event.as_u64() / 1_000_000_000, 1_710_000_003);
     assert_eq!(queries.len(), 1);
+    // The v2 condition feed ignores start/end bounds, so the window is
+    // filtered locally rather than sent on the wire.
+    assert!(!queries[0].contains_key("start"));
+    assert!(!queries[0].contains_key("end"));
     assert_eq!(
-        queries[0].get("start").map(String::as_str),
-        Some("1710000002")
+        queries[0].get("condition").map(String::as_str),
+        Some("0xcondition_test")
     );
-    assert_eq!(
-        queries[0].get("end").map(String::as_str),
-        Some("1710000004")
-    );
-    assert_eq!(queries[0].get("limit").map(String::as_str), Some("500"));
+    assert_eq!(queries[0].get("limit").map(String::as_str), Some("1000"));
 }
 
 #[rstest]
 #[tokio::test]
-async fn test_request_trade_ticks_stops_at_data_api_offset_ceiling() {
+async fn test_request_trade_ticks_caps_unbounded_walk() {
     let state = TestServerState::default();
-    let token = "token_ceiling";
-    let trades = (0..10_000)
-        .map(|index| {
-            make_data_api_trade(
-                token,
-                0.50,
-                1_710_000_000 + index as i64,
-                &format!("ceiling{index}"),
-            )
-        })
-        .collect::<Vec<_>>();
-    state
-        .data_api_trade_pages
-        .lock()
-        .await
-        .push_back(Value::Array(trades));
+    let token = "token_unbounded";
+    let row = make_data_api_trade(token, 0.50, 1_710_000_000, "unbounded");
+    // Twelve queued pages: without a caller bound the walk must stop at the
+    // 10,000-row cap with pages still available to fetch.
+    let pages = (0..12).map(|_| Value::Array(vec![row.clone(); 1000]));
+    state.data_api_trade_pages.lock().await.extend(pages);
 
     let addr = start_mock_server(state.clone()).await;
     let client = create_data_api_client(&addr);
 
     let ticks = client
         .request_trade_ticks(
-            InstrumentId::from("0xcondition_test-token_ceiling.POLYMARKET"),
+            InstrumentId::from("0xcondition_test-token_unbounded.POLYMARKET"),
             "0xcondition_test",
             token,
             2,
@@ -5436,87 +5231,241 @@ async fn test_request_trade_ticks_stops_at_data_api_offset_ceiling() {
         .unwrap();
     let queries = state.data_api_trade_query_log.lock().await;
 
+    assert_eq!(queries.len(), 10);
+    assert_eq!(
+        queries
+            .last()
+            .and_then(|query| query.get("cursor"))
+            .map(String::as_str),
+        Some("9"),
+    );
     assert_eq!(ticks.len(), 10_000);
-    assert_eq!(queries.len(), 20);
-    assert_eq!(queries[0].get("offset").map(String::as_str), Some("0"));
-    assert_eq!(queries[19].get("offset").map(String::as_str), Some("9500"));
 }
 
 #[rstest]
 #[tokio::test]
-async fn test_request_trade_ticks_preserves_remote_offset_ceiling_partial_result() {
+async fn test_request_trade_ticks_cap_counts_window_rows_for_end_only_walk() {
     let state = TestServerState::default();
-    *state.data_api_error_response.lock().await = Some((
-        StatusCode::TOO_MANY_REQUESTS,
-        json!({"error": "max historical activity offset reached"}),
-    ));
-    let addr = start_mock_server(state).await;
-    let client = create_data_api_client(&addr);
-
-    let ticks = client
-        .request_trade_ticks(
-            InstrumentId::from("0xcondition_test-token_remote_ceiling.POLYMARKET"),
-            "0xcondition_test",
-            "token_remote_ceiling",
-            2,
-            2,
-            None,
-            None,
-            None,
-        )
-        .await
-        .unwrap();
-
-    assert!(ticks.is_empty());
-}
-
-#[rstest]
-#[tokio::test]
-#[case(Some(100))]
-#[case(None)]
-async fn test_request_trade_ticks_rejects_start_at_offset_ceiling(#[case] limit: Option<u32>) {
-    let state = TestServerState::default();
-    let token = "token_ceiling";
-    let trades = (0..10_000)
-        .map(|index| {
-            make_data_api_trade(
-                token,
-                0.50,
-                1_710_000_000 + index as i64,
-                &format!("ceiling{index}"),
-            )
-        })
-        .collect::<Vec<_>>();
-    state
-        .data_api_trade_pages
-        .lock()
-        .await
-        .push_back(Value::Array(trades));
+    let token = "token_end_only";
+    // Newest-first feed with eleven out-of-window pages above `end`, then
+    // in-window pages: a raw-row cap would abort before the window and
+    // return nothing, the window-matching cap reaches it.
+    let end = 1_710_000_000_i64;
+    let newer_page = |page: usize| {
+        (0..1000)
+            .map(|index| {
+                make_data_api_trade(
+                    token,
+                    0.50,
+                    end + 11_000 - (page * 1000) as i64 - index as i64,
+                    &format!("end-only-new-{page}-{index}"),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let window_page = |page: usize| {
+        (0..1000)
+            .map(|index| {
+                make_data_api_trade(
+                    token,
+                    0.50,
+                    end - (page * 1000) as i64 - index as i64,
+                    &format!("end-only-win-{page}-{index}"),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let pages = (0..11)
+        .map(newer_page)
+        .chain((0..12).map(window_page))
+        .map(Value::Array);
+    state.data_api_trade_pages.lock().await.extend(pages);
 
     let addr = start_mock_server(state.clone()).await;
     let client = create_data_api_client(&addr);
 
-    let error = client
+    let ticks = client
         .request_trade_ticks(
-            InstrumentId::from("0xcondition_test-token_ceiling.POLYMARKET"),
+            InstrumentId::from("0xcondition_test-token_end_only.POLYMARKET"),
+            "0xcondition_test",
+            token,
+            2,
+            2,
+            None,
+            Some(nautilus_core::UnixNanos::from((end as u64) * 1_000_000_000)),
+            None,
+        )
+        .await
+        .unwrap();
+    let queries = state.data_api_trade_query_log.lock().await;
+
+    // Eleven newer pages plus ten in-window pages reach the 10,000-row cap
+    // with two pages still unfetched.
+    assert_eq!(queries.len(), 21);
+    assert_eq!(ticks.len(), 10_000);
+    assert!(
+        ticks
+            .iter()
+            .all(|tick| tick.ts_event.as_u64() / 1_000_000_000 <= end as u64)
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_trade_ticks_start_bound_stops_when_whole_page_precedes_start() {
+    let state = TestServerState::default();
+    let token = "token_start_stop";
+    let newest = (0..5)
+        .map(|index| {
+            make_data_api_trade(
+                token,
+                0.50,
+                1_710_000_010 - index as i64,
+                &format!("start-stop-new{index}"),
+            )
+        })
+        .collect::<Vec<_>>();
+    // Straddles the start bound: 1_710_000_005 is retained, the rest precede it.
+    let straddling = (0..3)
+        .map(|index| {
+            make_data_api_trade(
+                token,
+                0.50,
+                1_710_000_005 - index as i64,
+                &format!("start-stop-mid{index}"),
+            )
+        })
+        .collect::<Vec<_>>();
+    let oldest = (0..5)
+        .map(|index| {
+            make_data_api_trade(
+                token,
+                0.50,
+                1_710_000_002 - index as i64,
+                &format!("start-stop-old{index}"),
+            )
+        })
+        .collect::<Vec<_>>();
+    // A trailing page proves the walk stopped on the all-older page rather
+    // than on a terminal cursor.
+    let trailing = (0..5)
+        .map(|index| {
+            make_data_api_trade(
+                token,
+                0.50,
+                1_709_999_000 - index as i64,
+                &format!("start-stop-trailing{index}"),
+            )
+        })
+        .collect::<Vec<_>>();
+    state.data_api_trade_pages.lock().await.extend([
+        Value::Array(newest),
+        Value::Array(straddling),
+        Value::Array(oldest),
+        // A trailing page proves the walk stopped on the all-older page
+        // rather than on a terminal cursor.
+        Value::Array(trailing),
+    ]);
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_data_api_client(&addr);
+
+    let ticks = client
+        .request_trade_ticks(
+            InstrumentId::from("0xcondition_test-token_start_stop.POLYMARKET"),
             "0xcondition_test",
             token,
             2,
             2,
             Some(nautilus_core::UnixNanos::from(
-                1_710_000_000_000_000_000_u64,
+                1_710_000_005_000_000_000_u64,
             )),
             None,
-            limit,
+            None,
         )
         .await
-        .unwrap_err();
+        .unwrap();
     let queries = state.data_api_trade_query_log.lock().await;
 
-    assert!(
-        error
-            .to_string()
-            .contains("cannot guarantee complete start-anchored results")
+    // The second page straddles the start bound, so the walk continues; the
+    // third page lies entirely before start and ends it.
+    assert_eq!(queries.len(), 3);
+    let ticks_secs: Vec<u64> = ticks
+        .iter()
+        .map(|tick| tick.ts_event.as_u64() / 1_000_000_000)
+        .collect();
+    assert_eq!(
+        ticks_secs,
+        vec![
+            1_710_000_005,
+            1_710_000_006,
+            1_710_000_007,
+            1_710_000_008,
+            1_710_000_009,
+            1_710_000_010
+        ]
     );
-    assert_eq!(queries.len(), 20);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_trade_ticks_start_bound_returns_complete_results_across_pages() {
+    let state = TestServerState::default();
+    let token = "token_start_complete";
+    // Newest-first pages spanning the start bound, plus an all-older tail.
+    let page = |ts_start: i64, count: i64| {
+        (0..count)
+            .map(|index| {
+                make_data_api_trade(
+                    token,
+                    0.50,
+                    ts_start - index,
+                    &format!("complete-{ts_start}-{index}"),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    state.data_api_trade_pages.lock().await.extend([
+        Value::Array(page(1_710_000_020, 10)),
+        Value::Array(page(1_710_000_010, 10)),
+        Value::Array(page(1_709_999_990, 10)),
+        // Trailing page: the walk must stop on the all-older third page,
+        // not on a terminal cursor.
+        Value::Array(page(1_709_999_980, 10)),
+    ]);
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_data_api_client(&addr);
+
+    let ticks = client
+        .request_trade_ticks(
+            InstrumentId::from("0xcondition_test-token_start_complete.POLYMARKET"),
+            "0xcondition_test",
+            token,
+            2,
+            2,
+            Some(nautilus_core::UnixNanos::from(
+                1_710_000_005_000_000_000_u64,
+            )),
+            None,
+            Some(100),
+        )
+        .await
+        .unwrap();
+    let queries = state.data_api_trade_query_log.lock().await;
+
+    // The old offset contract bailed with "cannot guarantee complete
+    // start-anchored results" past its ceiling; the cursor contract walks
+    // every page until it passes the bound.
+    assert_eq!(queries.len(), 3);
+    assert_eq!(ticks.len(), 16);
+    assert_eq!(ticks[0].ts_event.as_u64() / 1_000_000_000, 1_710_000_005);
+    assert_eq!(
+        ticks[ticks.len() - 1].ts_event.as_u64() / 1_000_000_000,
+        1_710_000_020
+    );
+
+    for i in 1..ticks.len() {
+        assert!(ticks[i - 1].ts_event <= ticks[i].ts_event);
+    }
 }

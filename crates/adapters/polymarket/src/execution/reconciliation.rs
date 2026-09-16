@@ -1898,10 +1898,11 @@ mod tests {
     }
 
     fn data_api_positions() -> Vec<DataApiPosition> {
-        serde_json::from_str(include_str!(
-            "../../test_data/data_api_positions_response.json"
-        ))
-        .expect("valid Data API position fixture")
+        let page: crate::http::models::DataApiPage<DataApiPosition> = serde_json::from_str(
+            include_str!("../../test_data/data_api_positions_response.json"),
+        )
+        .expect("valid Data API position fixture");
+        page.data
     }
 
     #[rstest]

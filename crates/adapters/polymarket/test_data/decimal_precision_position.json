@@ -1,6 +1,6 @@
 {
-  "asset": "precision-asset",
-  "conditionId": "0xprecision",
-  "size": 12345678901.123456,
-  "avgPrice": 0.1234567890123456789012345678
+  "token_id": "precision-asset",
+  "condition_id": "0xprecision",
+  "current_size": 12345678901.123456,
+  "avg_price": 0.1234567890123456789012345678
 }
