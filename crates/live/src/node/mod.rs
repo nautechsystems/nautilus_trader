@@ -123,6 +123,7 @@ use nautilus_trading::{
 use tabled::{builder::Builder, settings::Style};
 
 use crate::{
+    dispatch::drain_callbacks,
     execution::{
         client::LiveExecutionClient,
         manager::{ExecutionManager, ExecutionManagerConfig, TargetedOrderReportResult},
@@ -1513,7 +1514,22 @@ impl LiveNode {
             .map(|config| QueueMonitor::new(config, metrics.snapshot()));
         let mut dispatches_since_yield = 0usize;
 
-        loop {
+        let dispatch_result = loop {
+            let callbacks_pending = match drain_callbacks().await {
+                Ok(pending) => pending,
+                Err(e) => {
+                    if self.state() == NodeState::Running {
+                        self.initiate_shutdown();
+                    }
+
+                    log::warn!(
+                        "Skipping residual events and final buffered dispatch after callback failure"
+                    );
+
+                    break Err(e);
+                }
+            };
+
             let shutdown_deadline = self.shutdown_deadline;
             let is_shutting_down = self.state() == NodeState::ShuttingDown;
             let is_running = self.state() == NodeState::Running;
@@ -1551,8 +1567,9 @@ impl LiveNode {
                         None => std::future::pending::<()>().await,
                     }
                 }, if self.state() == NodeState::ShuttingDown => {
-                    break;
+                    break Ok(());
                 }
+                () = std::future::ready(()), if callbacks_pending => {},
                 result = async {
                     match open_order_report_task.as_mut() {
                         Some(task) => task.future.as_mut().await,
@@ -1866,7 +1883,7 @@ impl LiveNode {
                 dispatches_since_yield = 0;
                 tokio::task::yield_now().await;
             }
-        }
+        };
 
         if residual_events > 0 {
             log::debug!("Processed {residual_events} residual events during shutdown");
@@ -1881,6 +1898,14 @@ impl LiveNode {
         let _ = self.kernel.cache().borrow().check_residuals();
 
         let stop_result = self.finalize_stop().await;
+
+        if let Err(e) = dispatch_result {
+            if let Err(stop_err) = stop_result {
+                log::error!("Failed to finalize node after callback failure: {stop_err}");
+            }
+
+            return Err(e.into());
+        }
 
         // Handle events that arrived during finalize_stop
         Self::drain_channels(
@@ -3270,7 +3295,9 @@ mod tests {
         SyncDataCommandSender, replace_data_cmd_sender, replace_exec_cmd_sender,
     };
     use nautilus_common::{
-        actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
+        actor::{
+            self, CallbackDispatchError, DataActor, DataActorCore, data_actor::DataActorConfig,
+        },
         cache::Cache,
         clock::{Clock, VirtualClock},
         enums::SerializationEncoding,
@@ -3293,6 +3320,7 @@ mod tests {
         nautilus_actor,
         runner::{SyncTradingCommandSender, TradingCommandSender},
         testing::wait_until_async,
+        timer::{TimeEvent, TimeEventCallback},
     };
     use nautilus_core::{Params, UUID4, UnixNanos};
     use nautilus_execution::{
@@ -3470,6 +3498,91 @@ mod tests {
         }
 
         fn flush(&self) {}
+    }
+
+    #[derive(Debug)]
+    struct FailingTimerActor {
+        core: DataActorCore,
+        received: Rc<RefCell<Vec<u64>>>,
+    }
+
+    nautilus_actor!(FailingTimerActor);
+
+    impl DataActor for FailingTimerActor {
+        fn on_start(&mut self) -> anyhow::Result<()> {
+            for timestamp in [17, 23] {
+                let received = self.received.clone();
+
+                let callback = TimeEventCallback::RustLocal(Rc::new(move |_| {
+                    received.borrow_mut().push(timestamp);
+
+                    if timestamp == 17 {
+                        crate::dispatch::tests::latch_callback_failure();
+                    }
+                }));
+
+                nautilus_common::runner::get_time_event_sender().send(TimeEventMessage::new(
+                    TimeEvent::new(
+                        "callback-failure".into(),
+                        UUID4::new(),
+                        timestamp.into(),
+                        timestamp.into(),
+                    ),
+                    callback,
+                ));
+            }
+
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_callback_failure_stops_later_live_events() {
+        actor::clear_callbacks().unwrap();
+
+        let config = LiveNodeConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            timeout_connection: Duration::ZERO,
+            timeout_reconciliation: Duration::ZERO,
+            timeout_portfolio: Duration::ZERO,
+            timeout_disconnection: Duration::ZERO,
+            delay_post_stop: Duration::ZERO,
+            timeout_shutdown: Duration::ZERO,
+            ..Default::default()
+        };
+
+        let mut node = LiveNode::build("CallbackFailureNode".to_string(), Some(config)).unwrap();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        node.add_actor(FailingTimerActor {
+            core: DataActorCore::new(DataActorConfig {
+                actor_id: Some(ActorId::from("CALLBACK-FAILURE")),
+                ..Default::default()
+            }),
+            received: received.clone(),
+        })
+        .unwrap();
+
+        let result = node.run_with_mode(NodeRunMode::Hosted).await;
+
+        let error = result.unwrap_err();
+        let state = node.state();
+        let trader_stopped = node.kernel.trader.borrow().is_stopped();
+        let failure = actor::callback_failure();
+        let cleanup = actor::clear_callbacks();
+        node.dispose();
+
+        assert_eq!(
+            error.downcast_ref::<CallbackDispatchError>(),
+            Some(&CallbackDispatchError::DeliveryUnwound)
+        );
+        assert_eq!(*received.borrow(), [17]);
+        assert_eq!(state, NodeState::Stopped);
+        assert!(trader_stopped);
+        assert_eq!(failure, Some(CallbackDispatchError::DeliveryUnwound));
+        assert_eq!(cleanup, Ok(()));
     }
 
     #[rstest]

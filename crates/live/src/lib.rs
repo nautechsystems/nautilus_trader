@@ -140,6 +140,8 @@ pub mod python;
 #[cfg(feature = "test-support")]
 pub mod testing;
 
+mod dispatch;
+
 // Re-exports for adapters
 pub use execution::{emitter, emitter::ExecutionEventEmitter, manager};
 pub use nautilus_common::factories::OrderEventFactory;
