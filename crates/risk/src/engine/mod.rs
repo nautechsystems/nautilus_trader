@@ -52,14 +52,17 @@ use nautilus_model::{
         OrderDenied, OrderDeniedReason, OrderEventAny, OrderModifyRejected, OrderPriceField,
         PositionEvent,
     },
-    identifiers::{AccountId, InstrumentId},
+    identifiers::{AccountId, InstrumentId, OutcomeGroupId},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
+    prediction::OutcomeGroup,
     types::{Currency, Money, Price, Quantity, quantity::QuantityRaw},
 };
 use nautilus_portfolio::Portfolio;
 use rust_decimal::Decimal;
 use ustr::Ustr;
+
+use crate::exposure::{GroupLegExposure, compute_group_exposure};
 
 // Returns cash and wallet accounts for sell-balance checks; margin and betting accounts
 // follow their own sell paths.
@@ -105,6 +108,7 @@ pub struct RiskEngine {
     pub throttled_submit: Throttler<TradingCommand, SubmitCommandFn>,
     pub throttled_modify_order: Throttler<ModifyOrder, ModifyOrderFn>,
     max_notional_per_order: AHashMap<InstrumentId, Decimal>,
+    max_notional_per_group: AHashMap<OutcomeGroupId, Decimal>,
     trading_state: TradingState,
     config: RiskEngineConfig,
     command_count: u64,
@@ -137,6 +141,7 @@ impl RiskEngine {
             throttled_submit,
             throttled_modify_order,
             max_notional_per_order: config.max_notional_per_order.clone(),
+            max_notional_per_group: config.max_notional_per_group.clone(),
             trading_state: TradingState::Active,
             config,
             command_count: 0,
@@ -477,6 +482,7 @@ impl RiskEngine {
         self.throttled_submit.reset();
         self.throttled_modify_order.reset();
         self.max_notional_per_order = self.config.max_notional_per_order.clone();
+        self.max_notional_per_group = self.config.max_notional_per_group.clone();
         self.trading_state = TradingState::Active;
         self.command_count = 0;
         self.event_count = 0;
@@ -551,6 +557,13 @@ impl RiskEngine {
         for (instrument_id, value) in &self.max_notional_per_order {
             map.insert(
                 format!("max_notional_per_order.{instrument_id}"),
+                value.to_string(),
+            );
+        }
+
+        for (group_id, value) in &self.max_notional_per_group {
+            map.insert(
+                format!("max_notional_per_group.{group_id}"),
                 value.to_string(),
             );
         }
@@ -1125,6 +1138,100 @@ impl RiskEngine {
         true
     }
 
+    /// Computes the bounded worst-case exposure of `group` for `account_id`, in the group's
+    /// settlement currency.
+    ///
+    /// Every leg is valued at its declared unit payout, which never understates what a leg can
+    /// lose and never credits more offset than the group's terms support. The bound covers open
+    /// positions, the worst-case fill of every outstanding order in every leg, and `candidate`.
+    ///
+    /// Returns `None` when the basket cannot be bounded, for example when a leg settles in another
+    /// collateral pool or has no cached instrument. The caller then measures the order on its own,
+    /// so the limit still binds without crediting an offset.
+    fn bounded_group_exposure(
+        &self,
+        group: &OutcomeGroup,
+        account_id: Option<AccountId>,
+        candidate: Option<(&OrderAny, Quantity)>,
+    ) -> Option<Money> {
+        let currency = group.unit_total.currency;
+        let cache = self.cache.borrow();
+        let mut legs = Vec::with_capacity(group.legs.len());
+
+        for leg in &group.legs {
+            let leg_instrument = cache.instrument(&leg.instrument_id)?;
+
+            if leg_instrument.quote_currency() != currency {
+                return None;
+            }
+
+            let mut long_qty = Decimal::ZERO;
+            let mut short_qty = Decimal::ZERO;
+
+            for position in cache.positions_open(
+                None,
+                Some(&leg.instrument_id),
+                None,
+                account_id.as_ref(),
+                None,
+            ) {
+                if position.is_short() {
+                    short_qty += position.quantity.as_decimal();
+                } else {
+                    long_qty += position.quantity.as_decimal();
+                }
+            }
+
+            for open_order in cache.orders_open(
+                None,
+                Some(&leg.instrument_id),
+                None,
+                account_id.as_ref(),
+                None,
+            ) {
+                // The candidate is measured separately at its effective quantity.
+                if candidate.is_some_and(|(order, _)| {
+                    order.client_order_id() == open_order.client_order_id()
+                }) {
+                    continue;
+                }
+
+                let leaves = open_order.leaves_qty();
+                if leaves.raw() == 0 {
+                    continue;
+                }
+
+                match open_order.order_side() {
+                    OrderSide::Buy => long_qty += leaves.as_decimal(),
+                    OrderSide::Sell => short_qty += leaves.as_decimal(),
+                }
+            }
+
+            if let Some((order, quantity)) = candidate
+                && order.instrument_id() == leg.instrument_id
+            {
+                match order.order_side() {
+                    OrderSide::Buy => long_qty += quantity.as_decimal(),
+                    OrderSide::Sell => short_qty += quantity.as_decimal(),
+                }
+            }
+
+            let unit_payout = leg.unit_payout.as_decimal();
+            let long_notional = Money::from_decimal(long_qty * unit_payout, currency).ok()?;
+            let short_notional = Money::from_decimal(short_qty * unit_payout, currency).ok()?;
+
+            legs.push(GroupLegExposure {
+                instrument_id: leg.instrument_id,
+                long_notional,
+                short_notional,
+                // Valued at payout, so the cash a leg can lose and the cash it can return agree.
+                long_payout: long_notional,
+            });
+        }
+
+        compute_group_exposure(group, &legs).map(|exposure| exposure.net())
+    }
+
     fn check_orders_risk(
         &self,
         instrument: &InstrumentAny,
@@ -1186,6 +1293,16 @@ impl RiskEngine {
             };
             max_notional = Some(max_notional_value);
         }
+
+        // Resolve the outcome group this instrument belongs to, and any configured group limit.
+        let group = self
+            .cache
+            .borrow()
+            .outcome_group_for_instrument(&instrument.id())
+            .cloned();
+        let group_limit = group
+            .as_ref()
+            .and_then(|group| self.max_notional_per_group.get(&group.group_id).copied());
 
         let mut market_prices = Vec::with_capacity(orders.len());
 
@@ -1606,6 +1723,50 @@ impl RiskEngine {
                     .to_string(),
                 );
                 return false; // Denied
+            }
+
+            // Check the bounded exposure across every leg of the order's outcome group
+            if !full_position_exit
+                && let (Some(group), Some(group_limit)) = (group.as_ref(), group_limit)
+            {
+                let Ok(max_group_notional) =
+                    Money::from_decimal(group_limit, group.unit_total.currency)
+                else {
+                    for checked in orders {
+                        self.deny_order(
+                            checked,
+                            &OrderDeniedReason::InvalidMaxNotionalPerGroup {
+                                group_id: group.group_id.clone(),
+                                value: group_limit,
+                            }
+                            .to_string(),
+                        );
+                    }
+                    return false; // Denied
+                };
+
+                let exposure = self
+                    .bounded_group_exposure(group, account_id, Some((order, effective_quantity)))
+                    .or_else(|| {
+                        // A basket that cannot be bounded contributes the order's own notional,
+                        // so the group limit still binds without granting an offset.
+                        (notional.currency == group.unit_total.currency).then_some(notional)
+                    });
+
+                if let Some(exposure) = exposure
+                    && exposure > max_group_notional
+                {
+                    self.deny_order(
+                        order,
+                        &OrderDeniedReason::GroupNotionalExceedsMaximum {
+                            group_id: Box::new(group.group_id.clone()),
+                            max_notional: max_group_notional,
+                            exposure,
+                        }
+                        .to_string(),
+                    );
+                    return false; // Denied
+                }
             }
 
             // Whole-position and reduce-only orders may close residual positions below the

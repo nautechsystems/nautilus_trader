@@ -28,7 +28,7 @@ use thiserror::Error;
 
 use crate::{
     enums::{OrderSide, OrderType, TimeInForce, TrailingOffsetType},
-    identifiers::{ClientId, InstrumentId, OrderListId, PositionId, Venue},
+    identifiers::{ClientId, InstrumentId, OrderListId, OutcomeGroupId, PositionId, Venue},
     types::{Money, Price, Quantity},
 };
 
@@ -275,6 +275,29 @@ pub enum OrderDeniedReason {
         cumulative_notional: Money,
     },
 
+    /// The bounded group exposure exceeds the configured maximum for the outcome group.
+    #[error(
+        "GROUP_NOTIONAL_EXCEEDS_MAXIMUM: group_id={group_id}, max={max_notional}, exposure={exposure}"
+    )]
+    GroupNotionalExceedsMaximum {
+        /// The outcome group identity, boxed to keep the denial type within the large-error
+        /// threshold.
+        group_id: Box<OutcomeGroupId>,
+        /// The configured maximum bounded exposure for the group.
+        max_notional: Money,
+        /// The bounded worst-case exposure across the group's legs.
+        exposure: Money,
+    },
+
+    /// The configured maximum exposure per outcome group is invalid.
+    #[error("INVALID_MAX_NOTIONAL_PER_GROUP: group_id={group_id}, value={value}")]
+    InvalidMaxNotionalPerGroup {
+        /// The outcome group the setting applies to.
+        group_id: OutcomeGroupId,
+        /// The invalid configured value.
+        value: Decimal,
+    },
+
     /// The cumulative initial margin could not be calculated.
     #[error("CUMULATIVE_INITIAL_MARGIN_CALCULATION_FAILED: {detail}")]
     CumulativeInitialMarginCalculationFailed {
@@ -452,6 +475,8 @@ impl OrderDeniedCode {
             Self::InitialMarginExceedsFreeBalance => "The order initial margin exceeds the account free balance.",
             Self::BettingBalanceLockedCalculationFailed => "The balance to lock for the betting order could not be calculated.",
             Self::CumulativeNotionalExceedsFreeBalance => "The cumulative order notional exceeds the account free balance.",
+            Self::GroupNotionalExceedsMaximum => "The bounded group exposure exceeds the configured maximum for the outcome group.",
+            Self::InvalidMaxNotionalPerGroup => "The configured maximum exposure per outcome group is invalid.",
             Self::CumulativeInitialMarginCalculationFailed => "The cumulative initial margin could not be calculated.",
             Self::CumulativeInitialMarginExceedsFreeBalance => "The cumulative initial margin exceeds the account free balance.",
             Self::ReduceOnlyWouldIncreasePosition => "A reduce-only order would increase the position.",
@@ -879,6 +904,17 @@ mod tests {
             OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
                 free_balance: usd(),
                 cumulative_notional: usd(),
+            },
+            OrderDeniedReason::GroupNotionalExceedsMaximum {
+                group_id: Box::new(
+                    OutcomeGroupId::new_checked("POLYMARKET", "0xCONDITION").unwrap(),
+                ),
+                max_notional: usd(),
+                exposure: usd(),
+            },
+            OrderDeniedReason::InvalidMaxNotionalPerGroup {
+                group_id: OutcomeGroupId::new_checked("POLYMARKET", "0xCONDITION").unwrap(),
+                value: Decimal::ONE,
             },
             OrderDeniedReason::CumulativeInitialMarginCalculationFailed {
                 detail: "boom".to_string(),

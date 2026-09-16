@@ -417,6 +417,8 @@ cross or immediately match. Other venue rejections leave it `false`.
 | `INITIAL_MARGIN_EXCEEDS_FREE_BALANCE`            | The order initial margin exceeds the account free balance.                            |
 | `BETTING_BALANCE_LOCKED_CALCULATION_FAILED`      | The balance to lock for the betting order could not be calculated.                    |
 | `CUMULATIVE_NOTIONAL_EXCEEDS_FREE_BALANCE`       | The cumulative order notional exceeds the account free balance.                       |
+| `GROUP_NOTIONAL_EXCEEDS_MAXIMUM`                 | The bounded group exposure exceeds the configured maximum for the outcome group.      |
+| `INVALID_MAX_NOTIONAL_PER_GROUP`                 | The configured maximum exposure per outcome group is invalid.                         |
 | `CUMULATIVE_INITIAL_MARGIN_CALCULATION_FAILED`   | The cumulative initial margin could not be calculated.                                |
 | `CUMULATIVE_INITIAL_MARGIN_EXCEEDS_FREE_BALANCE` | The cumulative initial margin exceeds the account free balance.                       |
 | `REDUCE_ONLY_WOULD_INCREASE_POSITION`            | A reduce-only order would increase the position.                                      |

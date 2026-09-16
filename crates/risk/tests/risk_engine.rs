@@ -52,9 +52,9 @@ use nautilus_model::{
         stubs::{quote_audusd, quote_ethusdt_binance},
     },
     enums::{
-        AccountType, AggregationSource, AggressorSide, BarAggregation, CurrencyType, LiquiditySide,
-        OmsType, OrderSide, OrderStatus, OrderType, PositionSide, PriceType, TimeInForce,
-        TradingState, TrailingOffsetType, TriggerType,
+        AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, CurrencyType,
+        LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, PriceType,
+        TimeInForce, TradingState, TrailingOffsetType, TriggerType,
     },
     events::{
         AccountState, OrderAccepted, OrderDeniedReason, OrderEventAny, OrderEventType, OrderFilled,
@@ -63,16 +63,16 @@ use nautilus_model::{
         order::spec::{OrderAcceptedSpec, OrderFilledSpec, OrderSubmittedSpec},
     },
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
-        Symbol, TradeId, TraderId, Venue, VenueOrderId,
+        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, OutcomeGroupId, PositionId,
+        StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
         stubs::{
             account_id, client_id_binance, client_order_id, strategy_id_ema_cross, trader_id,
             uuid4, venue_order_id,
         },
     },
     instruments::{
-        Commodity, CryptoPerpetual, CurrencyPair, FuturesSpread, Instrument, InstrumentAny,
-        OptionSpread, PerpetualContract,
+        BinaryOption, Commodity, CryptoPerpetual, CurrencyPair, FuturesSpread, Instrument,
+        InstrumentAny, OptionSpread, PerpetualContract,
         stubs::{
             audusd_sim, betting, commodity_gold, crypto_perpetual_ethusdt, currency_pair_btcusdt,
             futures_spread_es, gbpusd_sim, option_spread, perpetual_contract_eurusd, xbtusd_bitmex,
@@ -80,6 +80,7 @@ use nautilus_model::{
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder},
     position::Position,
+    prediction::{Exclusivity, Exhaustiveness, OutcomeGroup, OutcomeLeg},
     types::{
         AccountBalance, Currency, MONEY_MAX, Money, Price, Quantity,
         fixed::{FIXED_PRECISION, check_fixed_precision},
@@ -198,6 +199,7 @@ fn test_deny_order_exceeding_max_notional(
         max_order_submit: RateLimit::new(10, DurationNanos::new(1000)),
         max_order_modify: RateLimit::new(5, DurationNanos::new(1000)),
         max_notional_per_order: AHashMap::new(),
+        max_notional_per_group: AHashMap::new(),
         full_position_exit_venues: AHashSet::new(),
     };
 
@@ -352,6 +354,7 @@ fn config_fixture(
         max_order_submit,
         max_order_modify,
         max_notional_per_order,
+        max_notional_per_group: AHashMap::new(),
         full_position_exit_venues: AHashSet::new(),
     }
 }
@@ -465,6 +468,7 @@ fn get_risk_engine(
         max_order_submit: RateLimit::new(10, DurationNanos::new(1000)),
         max_order_modify: RateLimit::new(5, DurationNanos::new(1000)),
         max_notional_per_order: AHashMap::new(),
+        max_notional_per_group: AHashMap::new(),
         full_position_exit_venues: AHashSet::new(),
     });
     let clock = clock.unwrap_or(Rc::new(RefCell::new(TestClock::new())));
@@ -482,6 +486,7 @@ fn get_risk_engine_for_full_position_exit(
         max_order_submit: RateLimit::new(10, DurationNanos::new(1000)),
         max_order_modify: RateLimit::new(5, DurationNanos::new(1000)),
         max_notional_per_order: AHashMap::new(),
+        max_notional_per_group: AHashMap::new(),
         full_position_exit_venues: [venue].into_iter().collect(),
     };
     get_risk_engine(cache, Some(config), None, false)
@@ -4297,6 +4302,408 @@ fn add_position_for_close_position(
     cache.add_position(&position, OmsType::Hedging).unwrap();
 }
 
+// ---------------------------------------------------------------------------------------------
+// Prediction market outcome group exposure limits
+// ---------------------------------------------------------------------------------------------
+
+fn prediction_leg(symbol: &str) -> InstrumentAny {
+    let price_increment = Price::from("0.001");
+    let size_increment = Quantity::from("0.01");
+
+    InstrumentAny::BinaryOption(
+        BinaryOption::builder()
+            .instrument_id(InstrumentId::from(format!("{symbol}.POLYMARKET").as_str()))
+            .raw_symbol(Symbol::from(symbol))
+            .asset_class(AssetClass::Alternative)
+            .currency(Currency::USDC())
+            .activation_ns(UnixNanos::from(1_700_000_000_000_000_000))
+            .expiration_ns(UnixNanos::from(4_102_444_800_000_000_000))
+            .price_precision(price_increment.precision)
+            .size_precision(size_increment.precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .ts_event(UnixNanos::from(1))
+            .ts_init(UnixNanos::from(1))
+            .build()
+            .unwrap(),
+    )
+}
+
+fn prediction_group(
+    condition: &str,
+    yes: &InstrumentAny,
+    no: &InstrumentAny,
+    exclusivity: Exclusivity,
+    exhaustiveness: Exhaustiveness,
+) -> OutcomeGroup {
+    // A proven exclusive and exhaustive set must declare the total its legs pay out.
+    let unit_total =
+        if exclusivity == Exclusivity::Proven && exhaustiveness == Exhaustiveness::Proven {
+            "2.00 USDC"
+        } else {
+            "1.00 USDC"
+        };
+
+    OutcomeGroup::new_checked(
+        OutcomeGroupId::new_checked("POLYMARKET", condition).unwrap(),
+        None,
+        vec![
+            OutcomeLeg::new(Ustr::from("Yes"), yes.id(), Money::from("1.00 USDC")),
+            OutcomeLeg::new(Ustr::from("No"), no.id(), Money::from("1.00 USDC")),
+        ],
+        exclusivity,
+        exhaustiveness,
+        Money::from(unit_total),
+        1,
+        None,
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    )
+    .unwrap()
+}
+
+fn prediction_cache(yes: &InstrumentAny, no: &InstrumentAny, group: &OutcomeGroup) -> Cache {
+    let mut cache = Cache::default();
+    cache.add_instrument(yes.clone()).unwrap();
+    cache.add_instrument(no.clone()).unwrap();
+    cache
+        .add_account(AccountAny::Cash(CashAccount::new(
+            AccountState::new(
+                AccountId::from("POLYMARKET-001"),
+                AccountType::Cash,
+                vec![AccountBalance::new(
+                    Money::from("1000000 USDC"),
+                    Money::from("0 USDC"),
+                    Money::from("1000000 USDC"),
+                )],
+                vec![],
+                true,
+                UUID4::new(),
+                UnixNanos::from(0),
+                UnixNanos::from(0),
+                None,
+            ),
+            true,
+            false,
+        )))
+        .unwrap();
+    cache.add_outcome_group(group.clone()).unwrap();
+    cache
+}
+
+fn add_leg_position(
+    cache: &mut Cache,
+    instrument: &InstrumentAny,
+    quantity: &str,
+    position_id: &str,
+) {
+    let entry_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(quantity))
+        .build();
+    let mut fill = order_filled(
+        &entry_order,
+        instrument,
+        None,
+        Some(AccountId::from("POLYMARKET-001")),
+        Some(VenueOrderId::from("V-LEG")),
+        None,
+        None,
+        Some(Price::from("0.500")),
+        None,
+        None,
+        None,
+    );
+    fill.position_id = Some(PositionId::from(position_id));
+
+    cache
+        .add_position(&Position::new(instrument, fill), OmsType::Hedging)
+        .unwrap();
+}
+
+fn usdc(amount: i64) -> Money {
+    Money::from_decimal(Decimal::from(amount), Currency::USDC()).unwrap()
+}
+
+fn group_risk_engine(cache: Cache, group: &OutcomeGroup, limit: i64) -> RiskEngine {
+    let mut limits = AHashMap::new();
+    limits.insert(group.group_id.clone(), Decimal::from(limit));
+
+    let config = RiskEngineConfig {
+        debug: true,
+        bypass: false,
+        max_order_submit: RateLimit::new(10, DurationNanos::new(1000)),
+        max_order_modify: RateLimit::new(5, DurationNanos::new(1000)),
+        max_notional_per_order: AHashMap::new(),
+        max_notional_per_group: limits,
+        full_position_exit_venues: AHashSet::new(),
+    };
+
+    get_risk_engine(
+        Some(Rc::new(RefCell::new(cache))),
+        Some(config),
+        None,
+        false,
+    )
+}
+
+fn submit_leg_order(
+    risk_engine: &mut RiskEngine,
+    instrument_id: InstrumentId,
+    quantity: &str,
+    price: &str,
+    client_order_id: &str,
+    trader_id: TraderId,
+    client_id: ClientId,
+) {
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from(client_order_id))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(quantity))
+        .price(Price::from(price))
+        .build();
+
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id), false)
+        .unwrap();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id),
+        StrategyId::from("S-PREDICTION"),
+        instrument_id,
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+}
+
+fn add_outstanding_leg_order(
+    cache: &mut Cache,
+    instrument: &InstrumentAny,
+    quantity: &str,
+    price: &str,
+    client_order_id: &str,
+    client_id: ClientId,
+) {
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from(client_order_id))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(quantity))
+        .price(Price::from(price))
+        .build();
+
+    cache
+        .add_order(order.clone(), None, Some(client_id), false)
+        .unwrap();
+    cache
+        .update_order(&OrderEventAny::Submitted(order_submitted(&order)))
+        .unwrap();
+    // Only an accepted order is open in the cache for exposure queries.
+    cache
+        .update_order(&OrderEventAny::Accepted(order_accepted(
+            &order,
+            Some(VenueOrderId::from("V-LEG")),
+            Some(account_id()),
+        )))
+        .unwrap();
+}
+
+fn assert_group_denied(
+    handler: &TypedIntoMessageSavingHandler<OrderEventAny>,
+    group_id: &OutcomeGroupId,
+    max_notional: Money,
+    exposure: Money,
+) {
+    let messages = get_process_order_event_handler_messages(handler);
+
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].event_type(), OrderEventType::Denied);
+    assert_eq!(
+        messages[0].message().unwrap(),
+        Ustr::from(
+            &OrderDeniedReason::GroupNotionalExceedsMaximum {
+                group_id: Box::new(group_id.clone()),
+                max_notional,
+                exposure,
+            }
+            .to_string()
+        )
+    );
+}
+
+#[rstest]
+fn test_group_exposure_limit_credits_proven_complement_basket(
+    trader_id: TraderId,
+    client_id_binance: ClientId,
+) {
+    let handler = register_process_handler();
+    let yes = prediction_leg("BINARY-YES");
+    let no = prediction_leg("BINARY-NO");
+    let group = prediction_group(
+        "0xBASKET",
+        &yes,
+        &no,
+        Exclusivity::Proven,
+        Exhaustiveness::Proven,
+    );
+
+    let mut cache = prediction_cache(&yes, &no, &group);
+    add_outstanding_leg_order(
+        &mut cache,
+        &yes,
+        "100.00",
+        "0.400",
+        "O-YES",
+        client_id_binance,
+    );
+
+    let mut risk_engine = group_risk_engine(cache, &group, 150);
+    submit_leg_order(
+        &mut risk_engine,
+        no.id(),
+        "100.00",
+        "0.600",
+        "O-NO",
+        trader_id,
+        client_id_binance,
+    );
+
+    // 100 Yes against 100 No pays 100 in every scenario, so the basket is inside the limit.
+    assert!(get_process_order_event_handler_messages(&handler).is_empty());
+}
+
+#[rstest]
+fn test_group_exposure_limit_denies_unproven_basket(
+    trader_id: TraderId,
+    client_id_binance: ClientId,
+) {
+    let handler = register_process_handler();
+    let yes = prediction_leg("BINARY-YES");
+    let no = prediction_leg("BINARY-NO");
+    // Without a proven relationship the legs cannot be offset.
+    let group = prediction_group(
+        "0xBASKET",
+        &yes,
+        &no,
+        Exclusivity::Claimed,
+        Exhaustiveness::Claimed,
+    );
+
+    let mut cache = prediction_cache(&yes, &no, &group);
+    add_outstanding_leg_order(
+        &mut cache,
+        &yes,
+        "100.00",
+        "0.400",
+        "O-YES",
+        client_id_binance,
+    );
+
+    let mut risk_engine = group_risk_engine(cache, &group, 150);
+    submit_leg_order(
+        &mut risk_engine,
+        no.id(),
+        "100.00",
+        "0.600",
+        "O-NO",
+        trader_id,
+        client_id_binance,
+    );
+
+    assert_group_denied(&handler, &group.group_id, usdc(150), usdc(200));
+}
+
+#[rstest]
+#[case::partially_built_basket("100.00", None)]
+#[case::over_filled_leg("200.00", Some(200))]
+fn test_group_exposure_limit_binds_as_legs_fill(
+    #[case] held: &str,
+    #[case] expected_exposure: Option<i64>,
+    trader_id: TraderId,
+    client_id_binance: ClientId,
+) {
+    let handler = register_process_handler();
+    let yes = prediction_leg("BINARY-YES");
+    let no = prediction_leg("BINARY-NO");
+    let group = prediction_group(
+        "0xBASKET",
+        &yes,
+        &no,
+        Exclusivity::Proven,
+        Exhaustiveness::Proven,
+    );
+
+    let mut cache = prediction_cache(&yes, &no, &group);
+    add_leg_position(&mut cache, &yes, held, "P-YES");
+
+    let mut risk_engine = group_risk_engine(cache, &group, 150);
+    submit_leg_order(
+        &mut risk_engine,
+        no.id(),
+        "100.00",
+        "0.600",
+        "O-NO",
+        trader_id,
+        client_id_binance,
+    );
+
+    match expected_exposure {
+        // 100 Yes against 100 No floors at 100 against a 200 outlay.
+        None => assert!(get_process_order_event_handler_messages(&handler).is_empty()),
+        // 200 Yes against 100 No floors at 100 against a 300 outlay.
+        Some(exposure) => {
+            assert_group_denied(&handler, &group.group_id, usdc(150), usdc(exposure));
+        }
+    }
+}
+
+#[rstest]
+fn test_group_exposure_limit_uses_independent_exposure_for_unbounded_basket(
+    trader_id: TraderId,
+    client_id_binance: ClientId,
+) {
+    let handler = register_process_handler();
+    let yes = prediction_leg("BINARY-YES");
+    let no = prediction_leg("BINARY-NO");
+    let group = prediction_group(
+        "0xBASKET",
+        &yes,
+        &no,
+        Exclusivity::Proven,
+        Exhaustiveness::Proven,
+    );
+
+    let mut cache = prediction_cache(&yes, &no, &group);
+    // An unavailable leg makes the basket unbounded, so no offset can be credited.
+    cache.purge_instrument(no.id());
+
+    let mut risk_engine = group_risk_engine(cache, &group, 50);
+    submit_leg_order(
+        &mut risk_engine,
+        yes.id(),
+        "100.00",
+        "0.600",
+        "O-YES",
+        trader_id,
+        client_id_binance,
+    );
+
+    assert_group_denied(&handler, &group.group_id, usdc(50), usdc(60));
+}
+
 fn close_position_params(close_position: bool) -> Params {
     let mut params = Params::new();
     params.insert(PARAMS_CLOSE_POSITION.to_string(), close_position.into());
@@ -8075,6 +8482,7 @@ fn test_set_trading_state_publishes_trading_state_changed_event() {
         max_order_submit: RateLimit::new(100, DurationNanos::from_secs(1)),
         max_order_modify: RateLimit::new(50, DurationNanos::from_secs(1)),
         max_notional_per_order: AHashMap::new(),
+        max_notional_per_group: AHashMap::new(),
         full_position_exit_venues: [Venue::from("BINANCE")].into_iter().collect(),
     };
 
@@ -8142,6 +8550,7 @@ fn test_reset_restores_trading_state_and_config_notionals() {
         max_order_submit: RateLimit::new(10, DurationNanos::new(1000)),
         max_order_modify: RateLimit::new(5, DurationNanos::new(1000)),
         max_notional_per_order: config_notionals,
+        max_notional_per_group: AHashMap::new(),
         full_position_exit_venues: AHashSet::new(),
     };
 

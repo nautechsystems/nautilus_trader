@@ -21,7 +21,7 @@ use nautilus_common::{
     throttler::RateLimit,
 };
 use nautilus_core::DurationNanos;
-use nautilus_model::identifiers::{InstrumentId, Venue};
+use nautilus_model::identifiers::{InstrumentId, OutcomeGroupId, Venue};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -53,6 +53,13 @@ pub struct RiskEngineConfig {
     pub max_order_modify: RateLimit,
     #[builder(default)]
     pub max_notional_per_order: AHashMap<InstrumentId, Decimal>,
+    /// Maximum bounded worst-case exposure per prediction market outcome group, in the group's
+    /// settlement currency.
+    ///
+    /// The bound nets the legs of a group only when the group proves an exclusive and exhaustive
+    /// relationship, so an unproven or unknown group contributes its legs independently.
+    #[builder(default)]
+    pub max_notional_per_group: AHashMap<OutcomeGroupId, Decimal>,
     /// Venues whose execution clients enforce whole-position conditional exits.
     ///
     /// Validated exits skip bounds that apply only to their placeholder quantity and notional.
@@ -92,6 +99,16 @@ impl RiskEngineConfig {
                 ConfigError::range(
                     "max_notional_per_order",
                     format!("notional for {instrument_id} must be positive, was {notional}"),
+                ),
+            );
+        }
+
+        for (group_id, notional) in &self.max_notional_per_group {
+            errors.check(
+                *notional > Decimal::ZERO,
+                ConfigError::range(
+                    "max_notional_per_group",
+                    format!("notional for {group_id} must be positive, was {notional}"),
                 ),
             );
         }
@@ -141,6 +158,36 @@ mod tests {
         notionals.insert(InstrumentId::from("ESZ21.GLBX"), Decimal::from(1_000_000));
         let result = RiskEngineConfig::builder()
             .max_notional_per_order(notionals)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    #[case(Decimal::ZERO)]
+    #[case(Decimal::from(-1))]
+    fn test_non_positive_group_notional_rejected(#[case] notional: Decimal) {
+        let mut notionals = AHashMap::new();
+        notionals.insert(
+            OutcomeGroupId::new_checked("POLYMARKET", "0xCONDITION").unwrap(),
+            notional,
+        );
+        let result = RiskEngineConfig::builder()
+            .max_notional_per_group(notionals)
+            .build();
+        assert!(
+            matches!(result, Err(ConfigError::Range { field, .. }) if field == "max_notional_per_group")
+        );
+    }
+
+    #[rstest]
+    fn test_positive_group_notional_accepted() {
+        let mut notionals = AHashMap::new();
+        notionals.insert(
+            OutcomeGroupId::new_checked("POLYMARKET", "0xCONDITION").unwrap(),
+            Decimal::from(10_000),
+        );
+        let result = RiskEngineConfig::builder()
+            .max_notional_per_group(notionals)
             .build();
         assert!(result.is_ok());
     }

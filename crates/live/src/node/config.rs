@@ -243,6 +243,7 @@ impl From<LiveRiskEngineConfig> for RiskEngineConfig {
             )
             .expect("validate_runtime_support must run before RiskEngineConfig conversion"),
             max_notional_per_order,
+            max_notional_per_group: AHashMap::new(),
             full_position_exit_venues,
             debug: config.debug,
         }
