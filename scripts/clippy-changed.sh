@@ -148,6 +148,11 @@ for p in data['packages']:
   done
 done
 
+# Blockchain enables DeFi in dependencies without exposing a local defi feature
+if [[ " $seen " == *" nautilus-blockchain "* && " $feat_seen " != *" defi "* ]]; then
+  feat_seen="$feat_seen defi"
+fi
+
 # When 'defi' is enabled for any selected package, Cargo feature unification adds
 # DeFi variants to shared enums for all consumers. Backtest and live gate match
 # arms behind their local 'defi' features, so select both packages to apply the

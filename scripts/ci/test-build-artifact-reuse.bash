@@ -300,6 +300,46 @@ run_against_real_git() {
   ) > "$RUST_CHECK_LOG" 2>&1 || true
 }
 
+pre_commit_job=$(awk '
+  /^  pre-commit:/ { capture = 1 }
+  capture && /^  [[:alnum:]_-]+:/ && !/^  pre-commit:/ { exit }
+  capture { print }
+' "$REPO_ROOT/.github/workflows/build.yml")
+[[ "$pre_commit_job" == *"if: github.event_name == 'push' && github.ref == 'refs/heads/test-pre-commit'"$'\n        run: bash scripts/ci/set-pre-commit-base.bash'* ]] ||
+  fail "Pre-commit preview does not resolve its develop base in the workflow"
+
+preview_repo=$(real_git_repo "pre-commit-preview")
+preview_base=$(git -C "$preview_repo" rev-parse HEAD)
+git -C "$preview_repo" update-ref refs/remotes/origin/develop "$preview_base"
+printf '%s\n' 'pub fn added() {}' >> "$preview_repo/crates/core/src/lib.rs"
+git -C "$preview_repo" commit -aqm "Pending develop change"
+preview_env="$CASE_ROOT/preview.env"
+(
+  cd "$preview_repo"
+  GITHUB_ENV="$preview_env" bash "$REPO_ROOT/scripts/ci/set-pre-commit-base.bash"
+) > /dev/null
+[[ "$(cat "$preview_env")" == "CHANGED_BASE_SHA=$preview_base" ]] ||
+  fail "Preview did not select the develop tip"
+for script in clippy-changed.sh doc-changed.sh; do
+  run_against_real_git "$preview_repo" "$script" "$preview_base"
+  cp "$CARGO_LOG" "$CASE_ROOT/develop-command"
+  run_against_real_git "$preview_repo" "$script" "$(cut -d= -f2 "$preview_env")"
+  cmp -s "$CARGO_LOG" "$CASE_ROOT/develop-command" ||
+    fail "Preview and develop selected different Cargo commands: $script"
+  grep -Fq -- '-p nautilus-core' "$CARGO_LOG" ||
+    fail "Preview did not exercise changed-package selection: $script"
+done
+
+git -C "$preview_repo" update-ref refs/remotes/origin/develop "$(git -C "$preview_repo" rev-parse HEAD)"
+git -C "$preview_repo" checkout -q --detach "$preview_base"
+: > "$preview_env"
+if (cd "$preview_repo" && GITHUB_ENV="$preview_env" bash "$REPO_ROOT/scripts/ci/set-pre-commit-base.bash") > "$CASE_ROOT/stale-preview.log" 2>&1; then
+  fail "Preview accepted a candidate missing develop commits"
+fi
+[[ ! -s "$preview_env" ]] || fail "Stale preview exported a comparison base"
+grep -Fq 'must contain origin/develop' "$CASE_ROOT/stale-preview.log" ||
+  fail "Stale preview did not explain the required update"
+
 feature_repo=$(real_git_repo "feature-only")
 feature_base=$(git -C "$feature_repo" rev-parse HEAD)
 printf '%s\n' '# widen the shared set' >> "$feature_repo/scripts/cargo-features.bash"
@@ -398,6 +438,13 @@ run_changed_script doc-changed.sh "crates/model/src/lib.rs"
 grep -Fq \
   "doc --locked -p nautilus-model --no-deps --quiet --profile nextest" \
   "$CARGO_LOG" || fail "Crate Rust change did not select its Cargo doc package"
+
+# Blockchain enables DeFi through dependencies without a local feature of that name
+blockchain_inputs=$(printf '%s\n' "crates/adapters/blockchain/src/lib.rs" "crates/adapters/betfair/src/lib.rs")
+run_changed_script clippy-changed.sh "$blockchain_inputs"
+grep -Fq \
+  "clippy --locked -p nautilus-blockchain -p nautilus-betfair -p nautilus-backtest -p nautilus-live --lib --bins --tests --features defi --profile nextest -- -D warnings" \
+  "$CARGO_LOG" || fail "Blockchain dependency features did not enable DeFi in backtest and live"
 
 run_changed_script clippy-changed.sh "Cargo.lock"
 grep -Fq "clippy --locked --workspace" "$CARGO_LOG" || fail "Cargo.lock did not trigger workspace Clippy"

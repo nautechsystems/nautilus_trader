@@ -231,6 +231,10 @@ jobs:
           # Full history so changed-file scripts can resolve CHANGED_BASE_SHA.
           fetch-depth: 0
 
+      - name: Compare pre-commit test candidate against develop
+        if: github.event_name == 'push' && github.ref == 'refs/heads/test-pre-commit'
+        run: bash scripts/ci/set-pre-commit-base.bash
+
       - name: Verify immutable CI inputs (post-checkout)
         run: bash scripts/ci/verify-ci-inputs.sh post-checkout
 
