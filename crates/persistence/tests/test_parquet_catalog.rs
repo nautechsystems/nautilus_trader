@@ -52,6 +52,7 @@ use nautilus_persistence::{
 use nautilus_serialization::{
     arrow::{
         DecodeTypedFromRecordBatch, EncodeToRecordBatch, KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
+        timestamp_array, timestamp_data_type,
     },
     ensure_custom_data_registered,
 };
@@ -73,20 +74,20 @@ fn create_temp_catalog() -> (TempDir, ParquetDataCatalog) {
 
 fn generic_record_batch() -> arrow::record_batch::RecordBatch {
     use arrow::{
-        array::{Int32Array, UInt64Array},
+        array::Int32Array,
         datatypes::{DataType as ArrowDataType, Field, Schema},
         record_batch::RecordBatch,
     };
 
     let schema = Arc::new(Schema::new(vec![
-        Field::new("ts_init", ArrowDataType::UInt64, false),
+        Field::new("ts_init", timestamp_data_type(), false),
         Field::new("value", ArrowDataType::Int32, false),
     ]));
 
     RecordBatch::try_new(
         schema,
         vec![
-            Arc::new(UInt64Array::from(vec![10_u64, 20, 30])),
+            Arc::new(timestamp_array([10, 20, 30]).unwrap()),
             Arc::new(Int32Array::from(vec![1_i32, 2, 3])),
         ],
     )

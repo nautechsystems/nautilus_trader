@@ -906,6 +906,71 @@ mod tests {
     use super::*;
     use crate::enums::CurrencyType;
 
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    fn test_as_decimal_above_decimal_mantissa() {
+        // Regression: a precision-16 currency amount above roughly 7.92e12 rescales to a raw
+        // value beyond `Decimal`'s 96-bit mantissa, which used to panic during conversion.
+        let currency = Currency::new("XYZ", 16, 0, "XYZ", crate::enums::CurrencyType::Crypto);
+        let money = Money::from_raw(MONEY_RAW_MAX, currency);
+
+        assert_eq!(money.as_decimal(), dec!(17014118346046));
+    }
+
+    #[rstest]
+    fn test_money_ordering_is_structural_across_currencies() {
+        use std::collections::BTreeSet;
+
+        let aud_low = Money::new(-1.0, Currency::AUD());
+        let aud_high = Money::new(100.0, Currency::AUD());
+        let usd_low = Money::new(-100.0, Currency::USD());
+        let usd_high = Money::new(1.0, Currency::USD());
+
+        assert_eq!(aud_high.cmp(&usd_low), Ordering::Less);
+        assert_eq!(aud_high.partial_cmp(&usd_low), Some(Ordering::Less));
+        assert_eq!(
+            (
+                aud_high < usd_low,
+                aud_high <= usd_low,
+                aud_high > usd_low,
+                aud_high >= usd_low,
+                usd_low < aud_high,
+                usd_low <= aud_high,
+                usd_low > aud_high,
+                usd_low >= aud_high,
+            ),
+            (true, true, false, false, false, false, true, true),
+        );
+
+        let expected = vec![aud_low, aud_high, usd_low, usd_high];
+        let mut sorted = vec![usd_high, aud_high, usd_low, aud_low];
+        sorted.sort();
+        let ordered = BTreeSet::from([usd_high, aud_high, usd_low, aud_low]);
+
+        assert_eq!(sorted, expected);
+        assert_eq!(ordered.into_iter().collect::<Vec<_>>(), expected);
+    }
+
+    #[rstest]
+    fn test_money_cmp_equal_matches_equality() {
+        use crate::enums::CurrencyType;
+
+        let currency = Currency::new("TST", 2, 1, "Test fiat", CurrencyType::Fiat);
+        let same_code = Currency::new("TST", 8, 2, "Test crypto", CurrencyType::Crypto);
+        let other_code = Currency::new("TSU", 2, 1, "Other fiat", CurrencyType::Fiat);
+        let money = Money::from_raw(1, currency);
+        let cases = [
+            (Money::from_raw(1, same_code), true),
+            (Money::from_raw(2, same_code), false),
+            (Money::from_raw(1, other_code), false),
+        ];
+
+        for (other, expected_equal) in cases {
+            assert_eq!(money == other, expected_equal);
+            assert_eq!(money.cmp(&other) == Ordering::Equal, expected_equal);
+        }
+    }
+
     #[rstest]
     fn test_from_quantity_rejects_noncanonical_raw() {
         let precision = FIXED_PRECISION - 1;
@@ -1191,6 +1256,8 @@ mod tests {
         assert!(m2 > m1);
         assert!(m1 <= m2);
         assert!(m2 >= m1);
+        assert_eq!(m1.cmp(&m2), Ordering::Less);
+        assert_eq!(m2.cmp(&m1), Ordering::Greater);
 
         // Equality
         let m3 = Money::new(100.0, usd);
@@ -1877,21 +1944,19 @@ mod property_tests {
             money1 in money_strategy(),
             money2 in money_strategy(),
         ) {
-            if money1.currency == money2.currency {
-                let eq = money1 == money2;
-                let lt = money1 < money2;
-                let gt = money1 > money2;
-                let le = money1 <= money2;
-                let ge = money1 >= money2;
+            let eq = money1 == money2;
+            let lt = money1 < money2;
+            let gt = money1 > money2;
+            let le = money1 <= money2;
+            let ge = money1 >= money2;
 
-                let exclusive_count = [eq, lt, gt].iter().filter(|&&x| x).count();
-                prop_assert_eq!(exclusive_count, 1, "Exactly one of ==, <, > should be true");
+            let exclusive_count = [eq, lt, gt].iter().filter(|&&x| x).count();
+            prop_assert_eq!(exclusive_count, 1, "Exactly one of ==, <, > should be true");
 
-                prop_assert_eq!(le, eq || lt, "<= should equal == || <");
-                prop_assert_eq!(ge, eq || gt, ">= should equal == || >");
-                prop_assert_eq!(lt, money2 > money1, "< should be symmetric with >");
-                prop_assert_eq!(le, money2 >= money1, "<= should be symmetric with >=");
-            }
+            prop_assert_eq!(le, eq || lt, "<= should equal == || <");
+            prop_assert_eq!(ge, eq || gt, ">= should equal == || >");
+            prop_assert_eq!(lt, money2 > money1, "< should be symmetric with >");
+            prop_assert_eq!(le, money2 >= money1, "<= should be symmetric with >=");
         }
 
         #[rstest]

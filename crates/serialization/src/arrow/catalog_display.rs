@@ -40,7 +40,7 @@ use nautilus_model::{
     },
     enums::{AggressorSide, BookAction, InstrumentCloseType, OrderSide},
     instruments::InstrumentAny,
-    types::{Price, Quantity, fixed::MAX_FLOAT_PRECISION, price::PRICE_ERROR},
+    types::{Price, Quantity},
 };
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 
@@ -50,11 +50,13 @@ use super::{
     custom::CustomDataDecoder,
     decode_decimal_price, decode_decimal_quantity,
     depth_display::{DepthSideBuilder, schema as depth_schema},
+    display_conversion::{
+        float64_field, price_to_f64, quantity_to_f64, timestamp_field, utf8_field,
+    },
     extract_column, extract_column_string, fixed_decimal_data_type,
 };
 use crate::arrow::timestamp_data_type;
 
-const DISPLAY_MAX_PRECISION: u8 = 18;
 struct CatalogDisplayFns {
     schema: fn() -> Schema,
     convert: fn(&HashMap<String, String>, &RecordBatch) -> Result<RecordBatch, EncodingError>,
@@ -277,18 +279,6 @@ fn convert_instrument_status_with_metadata(
     convert_instrument_status(batch)
 }
 
-fn utf8_field(name: &str, nullable: bool) -> Field {
-    Field::new(name, DataType::Utf8, nullable)
-}
-
-fn float64_field(name: &str, nullable: bool) -> Field {
-    Field::new(name, DataType::Float64, nullable)
-}
-
-fn timestamp_field(name: &str, nullable: bool) -> Field {
-    Field::new(name, timestamp_data_type(), nullable)
-}
-
 fn append_identifier_column_if_present(
     display_batch: RecordBatch,
     catalog_batch: &RecordBatch,
@@ -329,31 +319,6 @@ fn append_identifier_column_if_present(
     columns.push(identifier_column);
 
     RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).map_err(EncodingError::from)
-}
-
-fn price_to_f64(price: &Price) -> f64 {
-    if price.is_undefined() || price.raw() == PRICE_ERROR || price.precision > DISPLAY_MAX_PRECISION
-    {
-        return f64::NAN;
-    }
-
-    if price.precision <= MAX_FLOAT_PRECISION {
-        price.as_f64()
-    } else {
-        price.as_decimal().to_f64().unwrap_or(f64::NAN)
-    }
-}
-
-fn quantity_to_f64(quantity: &Quantity) -> f64 {
-    if quantity.is_undefined() || quantity.precision > DISPLAY_MAX_PRECISION {
-        return f64::NAN;
-    }
-
-    if quantity.precision <= MAX_FLOAT_PRECISION {
-        quantity.as_f64()
-    } else {
-        quantity.as_decimal().to_f64().unwrap_or(f64::NAN)
-    }
 }
 
 fn parse_price_precision(metadata: &HashMap<String, String>) -> Result<u8, EncodingError> {
@@ -460,22 +425,8 @@ fn fixed_col<'a>(
     batch: &'a RecordBatch,
     name: &'static str,
 ) -> Result<FixedPrecisionColumn<'a>, EncodingError> {
-    let index = batch.schema().index_of(name)?;
-    let column = batch.column(index);
-    let expected = fixed_decimal_data_type();
-    if column.data_type() != &expected {
-        return Err(EncodingError::InvalidColumnType(
-            name,
-            index,
-            expected,
-            column.data_type().clone(),
-        ));
-    }
-    Ok(FixedPrecisionColumn(extract_column::<Decimal128Array>(
-        batch.columns(),
-        name,
-        index,
-        fixed_decimal_data_type(),
+    Ok(FixedPrecisionColumn(super::extract_decimal_column(
+        batch, name,
     )?))
 }
 

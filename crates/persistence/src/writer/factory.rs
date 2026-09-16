@@ -28,7 +28,7 @@ use object_store::{ObjectStoreExt, path::Path as ObjectPath};
 use super::{
     feather::{RotationConfig, WriterClock},
     filter::WriterRecordFilter,
-    traits::StreamingSinkBox,
+    traits::StreamingSink,
 };
 use crate::common::{backend_name::backend_type, storage::create_storage_backend_from_path};
 
@@ -80,7 +80,7 @@ impl WriterConnectConfig {
 
 /// Factory constructing a streaming writer from connection settings and a clock.
 pub type WriterFactory =
-    Arc<dyn Fn(&WriterConnectConfig, WriterClock) -> anyhow::Result<StreamingSinkBox>>;
+    Arc<dyn Fn(&WriterConnectConfig, WriterClock) -> anyhow::Result<StreamingSink>>;
 
 /// Ordered registry of writer factories keyed by name.
 pub type WriterFactoryRegistry = IndexMap<String, WriterFactory>;
@@ -97,7 +97,7 @@ pub fn create_writer(
     config: &WriterConnectConfig,
     clock: WriterClock,
     factories: &WriterFactoryRegistry,
-) -> anyhow::Result<StreamingSinkBox> {
+) -> anyhow::Result<StreamingSink> {
     let name = backend.to_string();
     factories
         .get(&name)

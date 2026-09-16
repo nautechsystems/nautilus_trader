@@ -20,7 +20,7 @@ use std::iter::Peekable;
 use ahash::{AHashMap, AHashSet};
 use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
-    data::{Data, HasTsInit, NautilusDataType as CatalogDataType},
+    data::{Data, HasTsInit, NautilusDataType},
     enums::{BookType, OtoTriggerMode},
     identifiers::{InstrumentId, Venue},
     types::Money,
@@ -31,7 +31,7 @@ use nautilus_persistence::{
 };
 
 use crate::{
-    config::{BacktestDataConfig, BacktestRunConfig, NautilusDataType, SimulatedVenueConfig},
+    config::{BacktestDataConfig, BacktestRunConfig, SimulatedVenueConfig},
     engine::BacktestEngine,
     result::BacktestResult,
 };
@@ -359,7 +359,7 @@ fn validate_configs(configs: &[BacktestRunConfig]) -> anyhow::Result<()> {
                 let has_book_data = config.data().iter().any(|dc| {
                     let is_book_type = matches!(
                         dc.data_type(),
-                        NautilusDataType::OrderBookDelta | NautilusDataType::OrderBookDepth10
+                        NautilusDataType::OrderBookDelta | NautilusDataType::OrderBookDepth
                     );
 
                     if !is_book_type {
@@ -569,11 +569,7 @@ fn dispatch_query(
     end: Option<UnixNanos>,
 ) -> anyhow::Result<Box<dyn Iterator<Item = anyhow::Result<Data>>>> {
     catalog.reset_session();
-    let data_type = match config.data_type() {
-        NautilusDataType::OrderBookDepth10 => CatalogDataType::OrderBookDepth,
-        other => other.to_string().parse::<CatalogDataType>()?,
-    };
-    let mut query = CatalogQuery::new(data_type)
+    let mut query = CatalogQuery::new(config.data_type().clone())
         .with_identifiers(config.query_identifiers())
         .with_range(
             max_opt(config.start_time(), start),

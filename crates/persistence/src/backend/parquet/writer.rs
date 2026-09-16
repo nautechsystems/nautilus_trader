@@ -40,7 +40,7 @@ use crate::{
         },
         run::{FeatherSessionSource, RunStatus},
         staged::{StagedFeatherWriter, StagedWriter},
-        traits::StreamingSinkBox,
+        traits::StreamingSink,
     },
 };
 
@@ -54,7 +54,7 @@ pub(crate) fn register_factory(registry: &mut WriterFactoryRegistry) {
 fn parquet_writer_factory(
     config: &WriterConnectConfig,
     clock: WriterClock,
-) -> anyhow::Result<StreamingSinkBox> {
+) -> anyhow::Result<StreamingSink> {
     let params = config.params.as_ref();
     let interval_ms = params.and_then(|params| params.get_u64("parquet_commit_interval_ms"));
     let promote_on_close = params

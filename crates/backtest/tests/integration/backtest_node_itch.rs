@@ -23,16 +23,13 @@
 use std::fmt::Debug;
 
 use nautilus_backtest::{
-    config::{
-        BacktestDataConfig, BacktestEngineConfig, BacktestRunConfig, BacktestVenueConfig,
-        NautilusDataType,
-    },
+    config::{BacktestDataConfig, BacktestEngineConfig, BacktestRunConfig, BacktestVenueConfig},
     node::BacktestNode,
 };
 use nautilus_common::{actor::DataActor, throttler::RateLimit};
 use nautilus_core::DurationNanos;
 use nautilus_model::{
-    data::QuoteTick,
+    data::{NautilusDataType, QuoteTick},
     enums::{AccountType, BookType, OmsType, OrderSide},
     identifiers::{InstrumentId, StrategyId},
     instruments::{Instrument, InstrumentAny},

@@ -1840,9 +1840,9 @@ impl DataEngine {
         self.data_count += 1;
 
         match data {
+            DataRef::Instrument(instrument) => self.handle_instrument(instrument),
             DataRef::BookDelta(delta) => self.handle_delta(*delta),
             DataRef::BookDeltas(deltas) => self.handle_deltas(deltas),
-            DataRef::Instrument(instrument) => self.handle_instrument(instrument),
             DataRef::BookDepth(depth) => self.handle_depth10(depth),
             DataRef::Quote(quote) => {
                 self.handle_quote(*quote);
@@ -1923,9 +1923,9 @@ impl DataEngine {
         self.data_count += 1;
 
         match data {
+            Data::Instrument(instrument) => self.handle_instrument(&instrument),
             Data::BookDelta(delta) => self.handle_delta_pipeline(delta),
             Data::BookDeltas(deltas) => self.handle_deltas_pipeline(&deltas),
-            Data::Instrument(instrument) => self.handle_instrument(&instrument),
             Data::BookDepth(depth) => self.handle_depth10_pipeline(&depth),
             Data::Quote(quote) => self.handle_quote_pipeline(quote),
             Data::Trade(trade) => self.handle_trade_pipeline(trade),

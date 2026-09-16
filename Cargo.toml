@@ -67,12 +67,6 @@ repository = "https://github.com/nautechsystems/nautilus_trader"
 homepage = "https://nautilustrader.io"
 
 [workspace.dependencies]
-proc-macro2 = "1.0.107"
-quote = "1.0.47"
-syn = { version = "3.0.4", features = ["full"] }
-
-nautilus-macros = { path = "crates/macros", version = "0.65.0" }
-
 nautilus-analysis = { path = "crates/analysis", version = "0.65.0" }
 nautilus-backtest = { path = "crates/backtest", version = "0.65.0" }
 nautilus-common = { path = "crates/common", version = "0.65.0" }
@@ -83,6 +77,7 @@ nautilus-execution = { path = "crates/execution", version = "0.65.0" }
 nautilus-indicators = { path = "crates/indicators", version = "0.65.0" }
 nautilus-infrastructure = { path = "crates/infrastructure", version = "0.65.0", default-features = false }
 nautilus-live = { path = "crates/live", version = "0.65.0", default-features = false }
+nautilus-macros = { path = "crates/macros", version = "0.65.0" }
 nautilus-model = { path = "crates/model", version = "0.65.0" }
 nautilus-network = { path = "crates/network", version = "0.65.0", default-features = false }
 nautilus-persistence = { path = "crates/persistence", version = "0.65.0" }
@@ -216,6 +211,7 @@ parquet = { version = "59.3.0", default-features = false, features = [
 ] }
 pem = "4.0.0"
 percent-encoding = "2.3.2"
+proc-macro2 = "1.0.107"
 pyo3 = { version = "0.29.2", default-features = false, features = [
   "hashbrown",
   "indexmap",
@@ -232,6 +228,7 @@ pyo3-async-runtimes = { version = "0.29.0", default-features = false, features =
 pyo3-stub-gen = { version = "=0.20.0", default-features = false, features = [
   "rust_decimal",
 ] }
+quote = "1.0.47"
 rand = { version = "0.10.2", default-features = false, features = [
   "std",
   "thread_rng",
@@ -287,6 +284,7 @@ sqlx = { version = "0.9.0", default-features = false, features = [
   "rust_decimal",
 ] }
 strum = { version = "0.28.0", features = ["derive"] }
+syn = { version = "3.0.4", features = ["full"] }
 sysinfo = { version = "0.39.6", default-features = false, features = [
   "system",
 ] }

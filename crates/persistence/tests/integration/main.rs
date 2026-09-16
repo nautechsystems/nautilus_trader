@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+mod fixtures;
 mod test_catalog;
 mod test_feather;
 mod test_pinned_data_direct_session;

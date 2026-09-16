@@ -33,7 +33,7 @@ from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import OrderBook
 from nautilus_trader.model import OrderBookDelta
 from nautilus_trader.model import OrderBookDeltas
-from nautilus_trader.model import OrderBookDepth10
+from nautilus_trader.model import OrderBookDepth
 from nautilus_trader.model import OrderSide
 from nautilus_trader.model import OrderStatus
 from nautilus_trader.model import OrderType
@@ -842,7 +842,7 @@ def depth10() -> object:
     """
     Depth10.
     """
-    return OrderBookDepth10.get_stub()
+    return OrderBookDepth.get_stub()
 
 
 def test_depth10_get_stub(depth10: object) -> None:
@@ -899,7 +899,7 @@ def test_depth10_to_dict_and_from_dict_roundtrip(depth10: object) -> None:
     Test depth10 to dict and from dict roundtrip.
     """
     d = depth10.to_dict()
-    restored = OrderBookDepth10.from_dict(d)
+    restored = OrderBookDepth.from_dict(d)
 
     assert d["instrument_id"] == "AAPL.XNAS"
     assert len(d["bids"]) == 10
@@ -911,7 +911,7 @@ def test_depth10_fully_qualified_name() -> None:
     """
     Test depth10 fully qualified name.
     """
-    assert OrderBookDepth10.fully_qualified_name() == "nautilus_trader.model:OrderBookDepth"
+    assert OrderBookDepth.fully_qualified_name() == "nautilus_trader.model:OrderBookDepth"
 
 
 def test_depth10_json_roundtrip(depth10: object) -> None:
@@ -919,7 +919,7 @@ def test_depth10_json_roundtrip(depth10: object) -> None:
     Test depth10 json roundtrip.
     """
     json_bytes = depth10.to_json_bytes()
-    restored = OrderBookDepth10.from_json(json_bytes)
+    restored = OrderBookDepth.from_json(json_bytes)
 
     assert restored == depth10
 
@@ -929,7 +929,7 @@ def test_depth10_msgpack_roundtrip(depth10: object) -> None:
     Test depth10 msgpack roundtrip.
     """
     msgpack_bytes = depth10.to_msgpack_bytes()
-    restored = OrderBookDepth10.from_msgpack(msgpack_bytes)
+    restored = OrderBookDepth.from_msgpack(msgpack_bytes)
 
     assert restored == depth10
 
@@ -939,7 +939,7 @@ def test_depth10_get_metadata() -> None:
     Test depth10 get metadata.
     """
     instrument_id = InstrumentId.from_str("AAPL.XNAS")
-    metadata = OrderBookDepth10.get_metadata(instrument_id, 2, 0)
+    metadata = OrderBookDepth.get_metadata(instrument_id, 2, 0)
 
     assert metadata["instrument_id"] == "AAPL.XNAS"
 
@@ -948,7 +948,7 @@ def test_depth10_get_fields() -> None:
     """
     Test depth10 get fields.
     """
-    fields = OrderBookDepth10.get_fields()
+    fields = OrderBookDepth.get_fields()
 
     assert "flags" in fields
     assert "sequence" in fields

@@ -23,16 +23,16 @@
 use std::{cell::RefCell, fmt::Debug, rc::Rc, str::FromStr};
 
 use nautilus_backtest::{
-    config::{
-        BacktestDataConfig, BacktestEngineConfig, BacktestRunConfig, BacktestVenueConfig,
-        NautilusDataType,
-    },
+    config::{BacktestDataConfig, BacktestEngineConfig, BacktestRunConfig, BacktestVenueConfig},
     node::BacktestNode,
 };
 use nautilus_common::actor::DataActor;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::{BarSpecification, BookOrder, FundingRateUpdate, OrderBookDelta, QuoteTick, TradeTick},
+    data::{
+        BarSpecification, BookOrder, FundingRateUpdate, NautilusDataType, OrderBookDelta,
+        QuoteTick, TradeTick,
+    },
     enums::{
         AccountType, AggressorSide, BarAggregation, BookAction, BookType, OmsType, OrderSide,
         PriceType,
@@ -1423,7 +1423,9 @@ fn test_l2_venue_without_book_data_rejected(crypto_perpetual_ethusdt: CryptoPerp
 }
 
 #[rstest]
-fn test_l2_venue_with_book_data_accepted() {
+#[case(NautilusDataType::OrderBookDelta)]
+#[case(NautilusDataType::OrderBookDepth)]
+fn test_l2_venue_with_book_data_accepted(#[case] data_type: NautilusDataType) {
     let venue_config = BacktestVenueConfig::builder()
         .name(Ustr::from("BINANCE"))
         .oms_type(OmsType::Netting)
@@ -1433,9 +1435,8 @@ fn test_l2_venue_with_book_data_accepted() {
         .build()
         .unwrap();
 
-    // OrderBookDelta data on the L2 venue satisfies its book-data requirement
     let book_data = BacktestDataConfig::builder()
-        .data_type(NautilusDataType::OrderBookDelta)
+        .data_type(data_type)
         .catalog_path("/tmp/catalog".to_string())
         .instrument_id(InstrumentId::from("ETH/USDT.BINANCE"))
         .build()

@@ -30,9 +30,12 @@ use nautilus_model::{
     events::AccountState,
 };
 use nautilus_persistence::{
-    backend::parquet::{
-        catalog::ParquetDataCatalog,
-        migration::{ParquetMigrationConfig, migrate_parquet_catalog},
+    backend::{
+        parquet::{
+            catalog::ParquetDataCatalog,
+            migration::{ParquetMigrationConfig, migrate_parquet_catalog},
+        },
+        session::DataBackendSession,
     },
     test_data::RustTestCustomData,
 };
@@ -42,6 +45,99 @@ use parquet::arrow::{ArrowWriter, arrow_reader::ParquetRecordBatchReaderBuilder}
 use rstest::rstest;
 use serde_json::Value;
 use tempfile::TempDir;
+
+#[rstest]
+#[case("typed")]
+#[case("pages")]
+#[case("records")]
+#[case("instruments")]
+#[case("instruments_sql")]
+#[case("custom")]
+fn runtime_queries_reject_legacy_catalogs(
+    #[case] query: &str,
+    #[values(None, Some("false"))] predicate: Option<&str>,
+) {
+    ensure_custom_data_registered::<RustTestCustomData>();
+    let temporary = TempDir::new().unwrap();
+
+    for (relative, bytes) in catalog_files(&fixture_path()) {
+        let relative = if let Ok(suffix) = relative.strip_prefix("data/instruments") {
+            Path::new("data/currency_pair").join(suffix)
+        } else {
+            relative
+        };
+        let target = temporary.path().join(relative);
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        fs::write(target, bytes).unwrap();
+    }
+    let mut catalog = ParquetDataCatalog::new(temporary.path(), None, None, None, None);
+
+    let result = match query {
+        "typed" => catalog
+            .query_typed_data::<QuoteTick>(None, None, None, predicate, None, true)
+            .map(|_| ()),
+        "pages" => catalog
+            .query::<QuoteTick>(None, None, None, predicate, None, true)
+            .map(|_| ()),
+        "records" => catalog
+            .query_record_batches("account_state", None, None, None, predicate, true)
+            .map(|_| ()),
+        "instruments" => catalog.query_instruments(None).map(|_| ()),
+        "instruments_sql" => catalog
+            .query_instruments_filtered_with_where(
+                None,
+                None,
+                None,
+                Some(predicate.unwrap_or("true")),
+            )
+            .map(|_| ()),
+        "custom" => catalog
+            .query_custom_data_dynamic(
+                "RustTestCustomData",
+                None,
+                None,
+                None,
+                predicate,
+                None,
+                true,
+            )
+            .map(|_| ()),
+        _ => unreachable!(),
+    };
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "Legacy catalog schema is not supported by runtime queries; run `nautilus catalog migrate-parquet` to migrate to a separate destination before reading"
+    );
+}
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn backend_session_rejects_legacy_before_filtering(#[case] raw: bool) {
+    let source = fixture_path();
+    let relative = catalog_files(&source)
+        .into_iter()
+        .find(|(path, _)| path.to_string_lossy().contains("data/quotes/"))
+        .unwrap()
+        .0;
+    let file = source.join(relative);
+    let mut session = DataBackendSession::new(10);
+    let query = Some("SELECT * FROM legacy_quotes WHERE false");
+
+    let result = if raw {
+        session
+            .collect_query_batches("legacy_quotes", file.to_str().unwrap(), query)
+            .map(|_| ())
+    } else {
+        session.add_file::<QuoteTick>("legacy_quotes", file.to_str().unwrap(), query, None)
+    };
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "External error: Legacy catalog schema is not supported by runtime queries; run `nautilus catalog migrate-parquet` to migrate to a separate destination before reading"
+    );
+}
 
 #[rstest]
 fn develop_catalog_migrates_to_final_arrow_without_changing_source() {

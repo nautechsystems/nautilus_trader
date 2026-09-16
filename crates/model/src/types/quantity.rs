@@ -1005,6 +1005,18 @@ mod tests {
 
     use super::*;
 
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    #[case(QUANTITY_RAW_MAX, dec!(34028236692093))]
+    #[case(80_000_000_000_000_000_000_000_000_000, dec!(8000000000000))]
+    fn test_as_decimal_above_decimal_mantissa(#[case] raw: QuantityRaw, #[case] expected: Decimal) {
+        // Regression: a precision-16 quantity above roughly 7.92e12 rescales to a raw value
+        // beyond `Decimal`'s 96-bit mantissa, which used to panic during conversion.
+        let qty = Quantity::from_raw(raw, 16);
+
+        assert_eq!(qty.as_decimal(), expected);
+    }
+
     #[rstest]
     fn test_max_quantity_round_trips_through_raw() {
         // Regression: a lossy `f64` scalar previously left `QUANTITY_RAW_MAX` below the raw

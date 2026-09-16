@@ -87,7 +87,7 @@ def _height(df) -> int:
 def _record_batch_arrow_bytes() -> bytes:
     batch = pa.record_batch(
         [
-            pa.array([10, 20, 30], type=pa.uint64()),
+            pa.array([10, 20, 30], type=pa.timestamp("ns", tz="UTC")),
             pa.array([1, 2, 3], type=pa.int32()),
         ],
         names=["ts_init", "value"],

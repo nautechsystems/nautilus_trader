@@ -31,7 +31,7 @@ mod allocator;
 use std::{fmt::Debug, path::Path, str::FromStr};
 
 use nautilus_backtest::{
-    config::{BacktestDataConfig, BacktestRunConfig, BacktestVenueConfig, NautilusDataType},
+    config::{BacktestDataConfig, BacktestRunConfig, BacktestVenueConfig},
     node::BacktestNode,
 };
 use nautilus_common::actor::DataActor;
@@ -41,7 +41,7 @@ use nautilus_execution::models::fee::{
 };
 use nautilus_model::{
     data::{
-        QuoteTick,
+        NautilusDataType, QuoteTick,
         option_chain::{OptionChainSlice, StrikeRange},
     },
     enums::{AccountType, BookType, OmsType, OrderSide, TimeInForce},

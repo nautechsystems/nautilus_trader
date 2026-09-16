@@ -592,7 +592,7 @@ def test_data_config_accepts_compatible_timestamp_inputs(value: object) -> None:
     assert config.end_time == 1_700_000_000_000_000_000
 
 
-@pytest.mark.parametrize("data_type", ["InvalidType", "nautilus_trader.model:TradeTick", "trades"])
+@pytest.mark.parametrize("data_type", ["InvalidType", "nautilus_trader.model:TradeTick"])
 def test_data_config_invalid_data_type(data_type: str) -> None:
     """
     Test data config invalid data type.
@@ -603,10 +603,40 @@ def test_data_config_invalid_data_type(data_type: str) -> None:
             catalog_path="/data/catalog",
         )
 
+    assert str(exc_info.value) == f"Invalid `NautilusDataType`: '{data_type}'"
+
+
+@pytest.mark.parametrize(
+    ("data_type", "expected"),
+    [("trades", "TradeTick"), ("OrderBookDepth", "OrderBookDepth")],
+)
+def test_data_config_uses_model_data_type(data_type: str, expected: str) -> None:
+    """
+    Resolve catalog aliases and canonical names through the model selector.
+    """
+    config = BacktestDataConfig(
+        data_type=data_type,
+        catalog_path="/data/catalog",
+        instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
+    )
+
+    assert config.data_type == expected
+
+
+@pytest.mark.parametrize("data_type", ["Instrument", "OrderBook", "Custom:Signal", "Defi"])
+def test_data_config_rejects_unsupported_family(data_type: str) -> None:
+    """
+    Reject model families that config-driven backtests cannot load.
+    """
+    with pytest.raises(ValueError, match="data_type has unsupported value") as exc_info:
+        BacktestDataConfig(
+            data_type=data_type,
+            catalog_path="/data/catalog",
+            instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
+        )
+
     assert str(exc_info.value) == (
-        f"Invalid `NautilusDataType`: '{data_type}' (expected one of: QuoteTick, TradeTick, Bar, "
-        "OrderBookDelta, OrderBookDepth10, MarkPriceUpdate, IndexPriceUpdate, "
-        "FundingRateUpdate, InstrumentStatus, OptionGreeks, InstrumentClose)"
+        f"data_type has unsupported value: {data_type} is not supported by BacktestDataConfig"
     )
 
 

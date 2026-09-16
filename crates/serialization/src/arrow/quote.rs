@@ -234,6 +234,59 @@ mod tests {
     }
 
     #[rstest]
+    #[case(38, 2)]
+    #[case(38, 9)]
+    #[case(38, 18)]
+    #[case(37, 16)]
+    fn test_decode_rejects_decimal_type(
+        #[case] precision: u8,
+        #[case] scale: i8,
+        #[values(0, 1, 2, 3)] column: usize,
+    ) {
+        let quote = QuoteTick {
+            instrument_id: InstrumentId::from("AAPL.XNAS"),
+            bid_price: Price::from("123.45"),
+            ask_price: Price::from("123.67"),
+            bid_size: Quantity::from(17),
+            ask_size: Quantity::from(29),
+            ts_event: 1.into(),
+            ts_init: 2.into(),
+        };
+        let metadata = quote.metadata();
+        let batch = QuoteTick::encode_batch(&metadata, &[quote]).unwrap();
+        let mut columns = batch.columns().to_vec();
+        let values = columns[column]
+            .as_any()
+            .downcast_ref::<Decimal128Array>()
+            .unwrap()
+            .clone()
+            .with_precision_and_scale(precision, scale)
+            .unwrap();
+        columns[column] = Arc::new(values);
+        let mut fields = batch.schema().fields().to_vec();
+        let name = fields[column].name().clone();
+        fields[column] = Arc::new(
+            fields[column]
+                .as_ref()
+                .clone()
+                .with_data_type(DataType::Decimal128(precision, scale)),
+        );
+        let batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
+
+        let error = QuoteTick::decode_batch(&metadata, batch).unwrap_err();
+
+        match error {
+            EncodingError::InvalidColumnType(field, index, expected, actual) => {
+                assert_eq!(field, name);
+                assert_eq!(index, column);
+                assert_eq!(expected, fixed_decimal_data_type());
+                assert_eq!(actual, DataType::Decimal128(precision, scale));
+            }
+            error => panic!("Unexpected error: {error}"),
+        }
+    }
+
+    #[rstest]
     fn test_get_schema() {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let metadata = QuoteTick::get_metadata(&instrument_id, 2, 0);

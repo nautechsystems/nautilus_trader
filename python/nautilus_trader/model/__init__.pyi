@@ -21,14 +21,12 @@ __all__ = [
     "DataType",
     "Dex",
     "DexType",
-    "OrderBookDepth10",
 ]
 
 HIGH_PRECISION: int
 FIXED_SCALAR: float
 FIXED_PRECISION: int
 PRECISION_BYTES: int
-OrderBookDepth10: typing.Any
 
 @typing.final
 class AccountBalance:

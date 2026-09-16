@@ -15,7 +15,7 @@
 
 //! Configuration types for the backtest engine, venues, data, and run parameters.
 
-use std::{fmt::Display, str::FromStr, time::Duration};
+use std::time::Duration;
 
 use ahash::AHashMap;
 use nautilus_common::{
@@ -37,7 +37,7 @@ use nautilus_execution::{
 };
 use nautilus_model::{
     accounts::margin_model::{MarginModelAny, MarginModelHandle},
-    data::{BarSpecification, BarType},
+    data::{BarSpecification, BarType, NautilusDataType},
     enums::{AccountType, BookType, OmsType, OtoTriggerMode},
     identifiers::{ClientId, InstrumentId, TraderId, Venue},
     types::{Currency, Money},
@@ -53,50 +53,11 @@ use nautilus_system::config::NautilusKernelConfig;
 use nautilus_system::config::StreamingConfig;
 use nautilus_trading::ImportableControllerConfig;
 use rust_decimal::Decimal;
-use strum::{AsRefStr, EnumIter, IntoEnumIterator};
 use ustr::Ustr;
 
 use crate::modules::{SimulationModuleAny, SimulationModuleHandle};
 
 pub(crate) const MAX_BACKTEST_CHUNK_SIZE: usize = 1_000_000;
-
-/// Represents a type of market data for catalog queries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, AsRefStr, EnumIter)]
-pub enum NautilusDataType {
-    QuoteTick,
-    TradeTick,
-    Bar,
-    OrderBookDelta,
-    OrderBookDepth10,
-    MarkPriceUpdate,
-    IndexPriceUpdate,
-    FundingRateUpdate,
-    InstrumentStatus,
-    OptionGreeks,
-    InstrumentClose,
-}
-
-impl Display for NautilusDataType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(self, f)
-    }
-}
-
-impl FromStr for NautilusDataType {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> anyhow::Result<Self> {
-        Self::iter()
-            .find(|data_type| data_type.as_ref() == s)
-            .ok_or_else(|| {
-                let expected = Self::iter()
-                    .map(|data_type| data_type.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                anyhow::anyhow!("Invalid `NautilusDataType`: '{s}' (expected one of: {expected})")
-            })
-    }
-}
 
 /// Configuration for ``BacktestEngine`` instances.
 #[cfg_attr(
@@ -906,6 +867,27 @@ impl BacktestDataConfig {
     pub fn validate(&self) -> ConfigResult<()> {
         let mut errors = ConfigErrorCollector::new();
 
+        errors.check(
+            matches!(
+                self.data_type,
+                NautilusDataType::OrderBookDelta
+                    | NautilusDataType::OrderBookDepth
+                    | NautilusDataType::QuoteTick
+                    | NautilusDataType::TradeTick
+                    | NautilusDataType::Bar
+                    | NautilusDataType::MarkPriceUpdate
+                    | NautilusDataType::IndexPriceUpdate
+                    | NautilusDataType::FundingRateUpdate
+                    | NautilusDataType::OptionGreeks
+                    | NautilusDataType::InstrumentStatus
+                    | NautilusDataType::InstrumentClose
+            ),
+            ConfigError::unsupported_value(
+                "data_type",
+                format!("{} is not supported by BacktestDataConfig", self.data_type),
+            ),
+        );
+
         if self.catalog_path.trim().is_empty() {
             errors.push(ConfigError::empty_field("catalog_path"));
         }
@@ -935,8 +917,8 @@ impl BacktestDataConfig {
     }
 
     #[must_use]
-    pub const fn data_type(&self) -> NautilusDataType {
-        self.data_type
+    pub const fn data_type(&self) -> &NautilusDataType {
+        &self.data_type
     }
 
     #[must_use]
@@ -1242,29 +1224,46 @@ mod tests {
     }
 
     #[rstest]
-    fn test_nautilus_data_type_from_str_round_trips_every_variant() {
-        for data_type in NautilusDataType::iter() {
-            assert_eq!(
-                data_type.to_string().parse::<NautilusDataType>().unwrap(),
-                data_type
-            );
-        }
+    #[case(NautilusDataType::OrderBookDelta)]
+    #[case(NautilusDataType::OrderBookDepth)]
+    #[case(NautilusDataType::QuoteTick)]
+    #[case(NautilusDataType::TradeTick)]
+    #[case(NautilusDataType::Bar)]
+    #[case(NautilusDataType::MarkPriceUpdate)]
+    #[case(NautilusDataType::IndexPriceUpdate)]
+    #[case(NautilusDataType::FundingRateUpdate)]
+    #[case(NautilusDataType::OptionGreeks)]
+    #[case(NautilusDataType::InstrumentStatus)]
+    #[case(NautilusDataType::InstrumentClose)]
+    fn test_data_config_accepts_supported_family(#[case] data_type: NautilusDataType) {
+        let config = BacktestDataConfig::builder()
+            .data_type(data_type.clone())
+            .catalog_path("/tmp/catalog".to_string())
+            .instrument_id(InstrumentId::from("ETH/USDT.BINANCE"))
+            .build()
+            .unwrap();
+
+        assert_eq!(config.data_type(), &data_type);
     }
 
     #[rstest]
-    #[case::fully_qualified_name("nautilus_trader.model:TradeTick")]
-    #[case::catalog_directory("trades")]
-    fn test_nautilus_data_type_from_str_error_lists_expected_values(#[case] input: &str) {
-        let error = input.parse::<NautilusDataType>().unwrap_err().to_string();
+    #[case(NautilusDataType::Instrument)]
+    #[case(NautilusDataType::OrderBook)]
+    #[case(NautilusDataType::Custom { type_name: "Signal".to_string() })]
+    fn test_data_config_rejects_unsupported_family(#[case] data_type: NautilusDataType) {
+        let error = BacktestDataConfig::builder()
+            .data_type(data_type.clone())
+            .catalog_path("/tmp/catalog".to_string())
+            .instrument_id(InstrumentId::from("ETH/USDT.BINANCE"))
+            .build()
+            .unwrap_err();
 
         assert_eq!(
             error,
-            concat!(
-                "Invalid `NautilusDataType`: '{input}' (expected one of: QuoteTick, TradeTick, Bar, ",
-                "OrderBookDelta, OrderBookDepth10, MarkPriceUpdate, IndexPriceUpdate, ",
-                "FundingRateUpdate, InstrumentStatus, OptionGreeks, InstrumentClose)"
-            )
-            .replace("{input}", input)
+            ConfigError::unsupported_value(
+                "data_type",
+                format!("{data_type} is not supported by BacktestDataConfig"),
+            ),
         );
     }
 

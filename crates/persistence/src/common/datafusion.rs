@@ -48,7 +48,7 @@ use tokio::{
 };
 use url::Url;
 
-use crate::common::storage::StorageBackend;
+use crate::common::{arrow::validate_catalog_schema, storage::StorageBackend};
 
 /// Batches buffered ahead of a blocking consumer.
 ///
@@ -202,6 +202,7 @@ impl DataBackendSession {
             let dataframe = block_on_nautilus_with(|| {
                 self.session_ctx.read_parquet(file_paths, parquet_options)
             })?;
+            validate_catalog_schema(dataframe.schema().as_arrow())?;
             self.session_ctx
                 .register_table(table_name, dataframe.into_view())?;
             self.registered_tables.insert(table_name.to_string());

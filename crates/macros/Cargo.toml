@@ -23,6 +23,5 @@ proc-macro2 = { workspace = true }
 quote = { workspace = true }
 syn = { workspace = true, features = ["extra-traits"] }
 
-
 [dev-dependencies]
 rstest = { workspace = true }

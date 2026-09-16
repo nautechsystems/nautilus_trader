@@ -50,13 +50,13 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
 };
 
-use super::traits::StreamingSinkBox;
+use super::traits::StreamingSink;
 
 type ClockBridge = Option<(Rc<RefCell<dyn Clock>>, Arc<AtomicU64>)>;
 
 /// Message-bus subscriptions forwarding supported messages into a streaming sink.
 pub struct StreamingSinkSubscription {
-    sink: Rc<RefCell<StreamingSinkBox>>,
+    sink: Rc<RefCell<StreamingSink>>,
     clock_bridge: ClockBridge,
     any_handler: ShareableMessageHandler,
     quotes_handler: TypedHandler<QuoteTick>,
@@ -83,13 +83,13 @@ impl Debug for StreamingSinkSubscription {
 
 impl StreamingSinkSubscription {
     /// Subscribes a streaming sink to typed and dynamic message-bus routes.
-    pub fn subscribe(sink: Rc<RefCell<StreamingSinkBox>>, clock_bridge: ClockBridge) -> Self {
+    pub fn subscribe(sink: Rc<RefCell<StreamingSink>>, clock_bridge: ClockBridge) -> Self {
         Self::subscribe_named(sink, clock_bridge, "streaming writer".to_string())
     }
 
     /// Subscribes a sink and includes its name in write-failure diagnostics.
     pub fn subscribe_named(
-        sink: Rc<RefCell<StreamingSinkBox>>,
+        sink: Rc<RefCell<StreamingSink>>,
         clock_bridge: ClockBridge,
         name: String,
     ) -> Self {
@@ -194,7 +194,7 @@ impl StreamingSinkSubscription {
 }
 
 fn typed_handler<T: 'static>(
-    sink: Rc<RefCell<StreamingSinkBox>>,
+    sink: Rc<RefCell<StreamingSink>>,
     clock_bridge: ClockBridge,
     name: Rc<str>,
 ) -> TypedHandler<T> {
@@ -204,7 +204,7 @@ fn typed_handler<T: 'static>(
 }
 
 fn any_handler(
-    sink: Rc<RefCell<StreamingSinkBox>>,
+    sink: Rc<RefCell<StreamingSink>>,
     clock_bridge: ClockBridge,
     name: Rc<str>,
 ) -> ShareableMessageHandler {
@@ -214,7 +214,7 @@ fn any_handler(
 }
 
 fn write_bus_message(
-    sink: &Rc<RefCell<StreamingSinkBox>>,
+    sink: &Rc<RefCell<StreamingSink>>,
     clock_bridge: &ClockBridge,
     name: &str,
     message: &dyn Any,

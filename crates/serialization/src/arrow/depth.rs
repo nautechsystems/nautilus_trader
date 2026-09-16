@@ -528,13 +528,17 @@ fn depth_struct_column<'a, T: Array + 'static>(
     let column = values
         .column_by_name(name)
         .ok_or_else(|| ArrowError::SchemaError(format!("Missing depth field `{side}.{name}`")))?;
-    column.as_any().downcast_ref::<T>().ok_or_else(|| {
-        ArrowError::CastError(format!(
-            "Invalid depth field `{side}.{name}`: expected {expected_type}, found {}",
-            column.data_type(),
-        ))
-        .into()
-    })
+    column
+        .as_any()
+        .downcast_ref::<T>()
+        .filter(|_| column.data_type() == expected_type)
+        .ok_or_else(|| {
+            ArrowError::CastError(format!(
+                "Invalid depth field `{side}.{name}`: expected {expected_type}, found {}",
+                column.data_type(),
+            ))
+            .into()
+        })
 }
 
 fn dynamic_column<'a, T: Array + 'static>(
@@ -867,6 +871,75 @@ mod tests {
         let decoded_data = OrderBookDepth::decode_batch(&metadata, record_batch).unwrap();
 
         assert_eq!(decoded_data.len(), 1);
+    }
+
+    #[rstest]
+    #[case(38, 2)]
+    #[case(38, 9)]
+    #[case(38, 18)]
+    #[case(37, 16)]
+    fn test_decode_rejects_nested_decimal_type(
+        stub_depth10: OrderBookDepth,
+        #[case] precision: u8,
+        #[case] scale: i8,
+        #[values("bids", "asks")] side: &str,
+        #[values("price", "size")] name: &str,
+    ) {
+        let metadata = stub_depth10.metadata();
+        let batch = OrderBookDepth::encode_batch(&metadata, &[stub_depth10]).unwrap();
+        let side_index = batch.schema().index_of(side).unwrap();
+        let list = batch
+            .column(side_index)
+            .as_any()
+            .downcast_ref::<ListArray>()
+            .unwrap();
+        let values = list
+            .values()
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+        let column = values
+            .fields()
+            .iter()
+            .position(|field| field.name() == name)
+            .unwrap();
+        let decimals = values
+            .column(column)
+            .as_any()
+            .downcast_ref::<Decimal128Array>()
+            .unwrap()
+            .clone()
+            .with_precision_and_scale(precision, scale)
+            .unwrap();
+        let mut value_fields = values.fields().to_vec();
+        value_fields[column] = Arc::new(Field::new(
+            name,
+            DataType::Decimal128(precision, scale),
+            false,
+        ));
+        let value_fields: Fields = value_fields.into();
+        let mut value_columns = values.columns().to_vec();
+        value_columns[column] = Arc::new(decimals);
+        let values = StructArray::try_new(value_fields.clone(), value_columns, None).unwrap();
+        let item = Arc::new(Field::new("item", DataType::Struct(value_fields), false));
+        let list = ListArray::try_new(item.clone(), list.offsets().clone(), Arc::new(values), None)
+            .unwrap();
+        let mut fields = batch.schema().fields().to_vec();
+        fields[side_index] = Arc::new(Field::new(side, DataType::List(item), false));
+        let mut columns = batch.columns().to_vec();
+        columns[side_index] = Arc::new(list);
+        let batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
+
+        let error = OrderBookDepth::decode_batch(&metadata, batch).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Arrow error: Cast error: Invalid depth field `{side}.{name}`: expected {}, found {}",
+                fixed_decimal_data_type(),
+                DataType::Decimal128(precision, scale),
+            )
+        );
     }
 
     #[rstest]

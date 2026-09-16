@@ -35,11 +35,12 @@ use std::{
 
 use anyhow::Context;
 use nautilus_backtest::{
-    config::{BacktestDataConfig, BacktestRunConfig, BacktestVenueConfig, NautilusDataType},
+    config::{BacktestDataConfig, BacktestRunConfig, BacktestVenueConfig},
     node::BacktestNode,
     result::{BacktestResult, CanonicalBacktestResult},
 };
 use nautilus_model::{
+    data::NautilusDataType,
     enums::{AccountType, BookType, OmsType},
     identifiers::InstrumentId,
     types::Quantity,

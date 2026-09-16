@@ -33,7 +33,7 @@ use nautilus_execution::{
 };
 use nautilus_model::{
     accounts::margin_model::MarginModelAny,
-    data::BarSpecification,
+    data::{BarSpecification, NautilusDataType},
     enums::{AccountType, BookType, OmsType, OtoTriggerMode},
     identifiers::{ClientId, InstrumentId, TraderId},
     types::Currency,
@@ -55,7 +55,6 @@ use super::{
 };
 use crate::config::{
     BacktestDataConfig, BacktestEngineConfig, BacktestRunConfig, BacktestVenueConfig,
-    NautilusDataType,
 };
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]

@@ -40,11 +40,25 @@ use nautilus_model::{
 #[cfg(feature = "python")]
 use nautilus_serialization::arrow::EncodeToRecordBatch;
 use nautilus_serialization::arrow::{
-    ArrowSchemaProvider, catalog_display::catalog_display_schema, schema_with_identifier_column,
+    ArrowSchemaProvider, catalog_display::catalog_display_schema, is_nautilus_legacy_schema,
+    schema_with_identifier_column, timestamp_data_type,
 };
 
 #[cfg(feature = "python")]
 use super::custom::{group_custom_data_by_type, prepare_custom_data_batch};
+
+pub(crate) fn validate_catalog_schema(schema: &Schema) -> anyhow::Result<()> {
+    let legacy_timestamps = ["ts_event", "ts_init"].iter().any(|name| {
+        schema
+            .field_with_name(name)
+            .is_ok_and(|field| field.data_type() != &timestamp_data_type())
+    });
+    anyhow::ensure!(
+        !legacy_timestamps && !is_nautilus_legacy_schema(schema),
+        "Legacy catalog schema is not supported by runtime queries; run `nautilus catalog migrate-parquet` to migrate to a separate destination before reading"
+    );
+    Ok(())
+}
 
 #[cfg(feature = "python")]
 pub(crate) fn data_to_arrow_batches(

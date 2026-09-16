@@ -43,8 +43,8 @@ use url::Url;
 use super::{
     compare::Compare,
     kmerge_batch::{EagerStream, ElementBatchIter, KMerge},
-    parquet::io::normalize_legacy_parquet_columns,
 };
+use crate::common::arrow::validate_catalog_schema;
 
 #[derive(Debug, Default)]
 pub struct TsInitComparator;
@@ -303,6 +303,11 @@ impl DataBackendSession {
                     .register_parquet(table_name, file_path, parquet_options),
             )?;
 
+            let table = super::block_on(&self.runtime, self.session_ctx.table(table_name))?;
+            if let Err(e) = validate_catalog_schema(table.schema().as_arrow()) {
+                self.session_ctx.deregister_table(table_name)?;
+                return Err(DataFusionError::External(e.into()));
+            }
             self.registered_tables.insert(table_name.to_string());
 
             // Only add batch stream for newly registered tables to avoid duplicates
@@ -344,6 +349,11 @@ impl DataBackendSession {
                     .register_parquet(table_name, file_path, parquet_options),
             )?;
 
+            let table = super::block_on(&self.runtime, self.session_ctx.table(table_name))?;
+            if let Err(e) = validate_catalog_schema(table.schema().as_arrow()) {
+                self.session_ctx.deregister_table(table_name)?;
+                return Err(DataFusionError::External(e.into()));
+            }
             self.registered_tables.insert(table_name.to_string());
         }
 
@@ -446,8 +456,8 @@ fn decode_batch<T>(
 where
     T: DecodeDataFromRecordBatch,
 {
-    let batch = normalize_legacy_parquet_columns(&result?)
-        .map_err(|e| DataFusionError::External(e.into()))?;
+    let batch = result?;
+    validate_catalog_schema(batch.schema_ref()).map_err(|e| DataFusionError::External(e.into()))?;
     let mut metadata: std::collections::HashMap<String, String> = batch.schema().metadata().clone();
 
     if let Some(type_name) = custom_type_name {

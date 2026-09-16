@@ -121,7 +121,7 @@ fn register_builtin_writer_factories(registry: &mut writer_factory::WriterFactor
                         config.flush_interval_ms,
                     )
                     .with_record_filter(config.record_filter.clone()),
-                ) as writer_traits::StreamingSinkBox)
+                ) as writer_traits::StreamingSink)
             },
         ),
     );

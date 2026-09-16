@@ -342,7 +342,11 @@ pub(crate) fn parse_decimal_mantissa(value: &str) -> Result<(i128, u8), String> 
     let (negative, unsigned) = value
         .strip_prefix('-')
         .map_or((false, value), |value| (true, value));
-    let unsigned = unsigned.strip_prefix('+').unwrap_or(unsigned);
+    let unsigned = if negative {
+        unsigned
+    } else {
+        unsigned.strip_prefix('+').unwrap_or(unsigned)
+    };
     let (whole, fraction) = unsigned.split_once('.').unwrap_or((unsigned, ""));
     if fraction.contains('.') {
         return Err(format!("Invalid decimal value '{value}'"));
@@ -1044,6 +1048,94 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case("1.00", 100, 2)]
+    #[case("+1.00", 100, 2)]
+    #[case("-1.00", -100, 2)]
+    #[case("-0.00", 0, 2)]
+    fn test_parse_decimal_mantissa_sign(
+        #[case] input: &str,
+        #[case] mantissa: i128,
+        #[case] precision: u8,
+    ) {
+        assert_eq!(parse_decimal_mantissa(input), Ok((mantissa, precision)));
+    }
+
+    #[rstest]
+    #[case("-+1.00")]
+    #[case("+-1.00")]
+    #[case("--1.00")]
+    #[case("++1.00")]
+    #[case("-+0.00")]
+    fn test_parse_decimal_mantissa_rejects_multiple_signs(#[case] input: &str) {
+        assert_eq!(
+            parse_decimal_mantissa(input),
+            Err(format!("Invalid decimal value '{input}'")),
+        );
+        assert!(input.parse::<crate::types::Price>().is_err());
+        assert!(input.parse::<crate::types::Quantity>().is_err());
+        assert!(
+            format!("{input} USD")
+                .parse::<crate::types::Money>()
+                .is_err()
+        );
+    }
+
+    #[rstest]
+    #[case(0, 0, "0")]
+    #[case(125, 2, "1.25")]
+    #[case(-1234, 2, "-12.34")]
+    #[case(1, 16, "0.0000000000000001")]
+    #[case(-1, 16, "-0.0000000000000001")]
+    #[case(1_000_000_000_000_000_000, 18, "1.000000000000000000")]
+    fn test_scaled_raw_to_decimal_matches_plain_conversion(
+        #[case] raw: i128,
+        #[case] precision: u8,
+        #[case] expected: &str,
+    ) {
+        let plain = Decimal::from_i128_with_scale(raw, u32::from(precision));
+        let result = scaled_raw_to_decimal(raw, precision);
+
+        assert_eq!(result, plain);
+        assert_eq!(result.scale(), plain.scale());
+        assert_eq!(result.to_string(), expected);
+    }
+
+    #[rstest]
+    #[case(80_000_000_000_000_000_000_000_000_000, 16, "8000000000000")]
+    #[case(340_282_366_920_930_000_000_000_000_000, 16, "34028236692093")]
+    #[case(170_141_183_460_460_000_000_000_000_000, 16, "17014118346046")]
+    #[case(-170_141_183_460_460_000_000_000_000_000, 16, "-17014118346046")]
+    // Non-zero remainders exercise the fractional addition, including sign composition across
+    // the truncating division, and a precision beyond `FIXED_PRECISION`.
+    #[case(
+        80_000_000_000_000_005_000_000_000_000,
+        16,
+        "8000000000000.000500000000000"
+    )]
+    #[case(-80_000_000_000_000_005_000_000_000_000, 16, "-8000000000000.000500000000000")]
+    #[case(
+        80_000_000_000_000_000_000_000_000_001,
+        16,
+        "8000000000000.000000000000000"
+    )]
+    #[case(
+        80_000_000_000_000_000_250_000_000_000,
+        18,
+        "80000000000.00000025000000000"
+    )]
+    #[case(-80_000_000_000_000_000_250_000_000_000, 18, "-80000000000.00000025000000000")]
+    fn test_scaled_raw_to_decimal_beyond_mantissa_rounds_rather_than_panics(
+        #[case] raw: i128,
+        #[case] precision: u8,
+        #[case] expected: &str,
+    ) {
+        // `Decimal::from_i128_with_scale` panics on each of these raw values. Splitting the whole
+        // and fractional parts lets `Decimal` drop scale instead, which is the only representable
+        // outcome once the value needs more than a 96-bit mantissa.
+        assert_eq!(scaled_raw_to_decimal(raw, precision).to_string(), expected);
+    }
 
     #[cfg(not(feature = "defi"))]
     #[rstest]

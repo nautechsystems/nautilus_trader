@@ -41,7 +41,7 @@ use super::{
     session::{MergedPages, TypedPages, decode_typed_pages},
     urisafe_instrument_id,
 };
-use crate::common::arrow::empty_display_batch_with_identifier;
+use crate::common::arrow::{empty_display_batch_with_identifier, validate_catalog_schema};
 
 impl ParquetDataCatalog {
     /// Queries one data family through the existing row iterator API.
@@ -178,6 +178,7 @@ impl ParquetDataCatalog {
             let (_, builder_schema) = self.execute_async(|| async {
                 read_parquet_from_object_store(self.object_store.clone(), &object_path).await
             })?;
+            validate_catalog_schema(&builder_schema)?;
             let metadata: std::collections::HashMap<String, String> =
                 builder_schema.metadata().clone();
             let target_schema = InstrumentAny::get_schema(Some(metadata.clone()));
@@ -293,6 +294,7 @@ impl ParquetDataCatalog {
             let (batches, builder_schema) = self.execute_async(|| async {
                 read_parquet_from_object_store(self.object_store.clone(), &object_path).await
             })?;
+            validate_catalog_schema(&builder_schema)?;
             let metadata = builder_schema.metadata().clone();
             let target_schema = InstrumentAny::get_schema(Some(metadata.clone()));
 
@@ -829,6 +831,7 @@ impl ParquetDataCatalog {
                 let schema =
                     read_parquet_schema_from_object_store(self.object_store.clone(), &object_path)
                         .await?;
+                validate_catalog_schema(&schema)?;
                 Ok::<HashMap<String, String>, anyhow::Error>(schema.metadata().clone())
             })?;
             decode_metadata.extend(lookup_metadata.clone());

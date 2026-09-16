@@ -921,6 +921,18 @@ mod tests {
 
     use super::*;
 
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    #[case(PRICE_RAW_MAX, dec!(17014118346046))]
+    #[case(PRICE_RAW_MIN, dec!(-17014118346046))]
+    fn test_as_decimal_above_decimal_mantissa(#[case] raw: PriceRaw, #[case] expected: Decimal) {
+        // Regression: a precision-16 price above roughly 7.92e12 rescales to a raw value beyond
+        // `Decimal`'s 96-bit mantissa, which used to panic during conversion.
+        let price = Price::from_raw(raw, 16);
+
+        assert_eq!(price.as_decimal(), expected);
+    }
+
     #[rstest]
     fn test_error_sentinel_comparisons_preserve_raw_zero_semantics() {
         let zero = Price::zero(FIXED_PRECISION);

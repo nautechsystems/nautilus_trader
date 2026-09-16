@@ -53,4 +53,4 @@ pub trait StreamingDataSink: Debug {
 }
 
 /// Boxed streaming sink trait object.
-pub type StreamingSinkBox = Box<dyn StreamingDataSink>;
+pub type StreamingSink = Box<dyn StreamingDataSink>;
