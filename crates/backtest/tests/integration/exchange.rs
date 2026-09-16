@@ -61,26 +61,30 @@ use nautilus_model::{
     },
     enums::{
         AccountType, AggressorSide, AssetClass, BookAction, BookType, ContingencyType,
-        LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OptionKind, OrderSide,
-        OrderStatus, OrderType, PositionAdjustmentType,
+        InstrumentCloseType, LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OptionKind,
+        OrderSide, OrderStatus, OrderType, PositionAdjustmentType,
     },
     events::{
         AccountState, FundingSettlement, OrderEventAny, OrderFilled, PositionEvent,
         order::spec::OrderPendingUpdateSpec,
     },
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, Symbol,
-        TradeId, TraderId, Venue,
+        AccountId, ClientOrderId, InstrumentId, OrderListId, OutcomeGroupId, PositionId,
+        StrategyId, Symbol, TradeId, TraderId, Venue,
     },
     instruments::{
         CryptoOption, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny, OptionContract,
         stubs::{
-            audusd_sim, cfd_gold, crypto_perpetual_ethusdt, futures_contract_es, gbpusd_sim,
-            xbtusd_bitmex,
+            audusd_sim, binary_option, cfd_gold, crypto_perpetual_ethusdt, futures_contract_es,
+            gbpusd_sim, xbtusd_bitmex,
         },
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
+    prediction::{
+        Exclusivity, Exhaustiveness, MarketResolution, OutcomeGroup, OutcomeLeg, OutcomePayout,
+        ResolutionOutcome, ResolutionSource,
+    },
     stubs::TestDefault,
     types::{
         AccountBalance, Currency, MarginBalance, Money, Price, Quantity, money::MONEY_RAW_MAX,
@@ -140,6 +144,221 @@ fn get_exchange_with_oms(
         .register_client(Rc::new(execution_client));
 
     exchange
+}
+
+fn binary_option_leg(symbol: &str) -> InstrumentAny {
+    let mut binary = binary_option();
+    binary.id = InstrumentId::from(format!("{symbol}.POLYMARKET").as_str());
+    binary.raw_symbol = Symbol::from(symbol);
+    binary.activation_ns = UnixNanos::default();
+    binary.expiration_ns = UnixNanos::from(100);
+    InstrumentAny::BinaryOption(binary)
+}
+
+#[rstest]
+fn test_process_market_resolution_settles_each_leg_at_its_declared_payout() {
+    let yes = binary_option_leg("0xYES");
+    let no = binary_option_leg("0xNO");
+    let venue = yes.id().venue;
+
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    cache.borrow_mut().add_instrument(yes.clone()).unwrap();
+    cache.borrow_mut().add_instrument(no.clone()).unwrap();
+
+    let exchange = get_exchange(venue, AccountType::Cash, BookType::L2_MBP, Some(cache));
+
+    let group = OutcomeGroup::new_checked(
+        OutcomeGroupId::from_parts(venue, "0xCONDITION").unwrap(),
+        None,
+        vec![
+            OutcomeLeg::new(Ustr::from("Yes"), yes.id(), Money::from("1.00 USDC")),
+            OutcomeLeg::new(Ustr::from("No"), no.id(), Money::from("0.00 USDC")),
+        ],
+        Exclusivity::Proven,
+        Exhaustiveness::Proven,
+        Money::from("1.00 USDC"),
+        1,
+        None,
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    )
+    .unwrap();
+
+    let resolution = MarketResolution {
+        group_id: group.group_id.clone(),
+        version: 1,
+        source: ResolutionSource::new(venue, "uma-request-1", None),
+        outcome: ResolutionOutcome::Payouts(vec![
+            OutcomePayout::new(Ustr::from("Yes"), Money::from("1.00 USDC")),
+            OutcomePayout::new(Ustr::from("No"), Money::from("0.00 USDC")),
+        ]),
+        effective_ns: UnixNanos::from(100),
+        observed_ns: UnixNanos::from(100),
+        ts_event: UnixNanos::from(100),
+        ts_init: UnixNanos::from(100),
+    };
+
+    let closes = exchange
+        .borrow_mut()
+        .process_market_resolution(&resolution, &group)
+        .unwrap();
+
+    assert_eq!(closes.len(), 2);
+    assert_eq!(closes[0].instrument_id, yes.id());
+    assert_eq!(closes[0].close_price, Price::from("1.000"));
+    assert_eq!(closes[0].close_type, InstrumentCloseType::ContractExpired);
+    assert_eq!(closes[1].instrument_id, no.id());
+    assert_eq!(closes[1].close_price, Price::from("0.000"));
+
+    // A resolution resolved against another group version must not settle.
+    let wrong_version = MarketResolution {
+        version: 2,
+        ..resolution.clone()
+    };
+    assert!(
+        exchange
+            .borrow_mut()
+            .process_market_resolution(&wrong_version, &group)
+            .is_err()
+    );
+
+    // A pending resolution settles nothing and reports why.
+    let pending = MarketResolution {
+        outcome: ResolutionOutcome::Pending,
+        ..resolution
+    };
+    assert!(
+        exchange
+            .borrow_mut()
+            .process_market_resolution(&pending, &group)
+            .is_err()
+    );
+}
+
+#[rstest]
+fn test_process_market_resolution_rejects_unknown_leg_instrument() {
+    let yes = binary_option_leg("0xYES");
+    let venue = yes.id().venue;
+
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    cache.borrow_mut().add_instrument(yes).unwrap();
+
+    let exchange = get_exchange(venue, AccountType::Cash, BookType::L2_MBP, Some(cache));
+
+    let missing = InstrumentId::from("0xMISSING.POLYMARKET");
+    let group = OutcomeGroup::new_checked(
+        OutcomeGroupId::from_parts(venue, "0xCONDITION").unwrap(),
+        None,
+        vec![OutcomeLeg::new(
+            Ustr::from("Yes"),
+            missing,
+            Money::from("1.00 USDC"),
+        )],
+        Exclusivity::Proven,
+        Exhaustiveness::Proven,
+        Money::from("1.00 USDC"),
+        1,
+        None,
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    )
+    .unwrap();
+
+    let resolution = MarketResolution {
+        group_id: group.group_id.clone(),
+        version: 1,
+        source: ResolutionSource::new(venue, "uma-request-1", None),
+        outcome: ResolutionOutcome::Payouts(vec![OutcomePayout::new(
+            Ustr::from("Yes"),
+            Money::from("1.00 USDC"),
+        )]),
+        effective_ns: UnixNanos::from(100),
+        observed_ns: UnixNanos::from(100),
+        ts_event: UnixNanos::from(100),
+        ts_init: UnixNanos::from(100),
+    };
+
+    let error = exchange
+        .borrow_mut()
+        .process_market_resolution(&resolution, &group)
+        .unwrap_err();
+
+    assert!(
+        error
+            .to_string()
+            .contains("not found in the instrument cache"),
+        "unexpected error: {error}"
+    );
+}
+
+#[rstest]
+fn test_process_market_resolution_data_settles_registered_group_and_rejects_unknown() {
+    let yes = binary_option_leg("0xYES");
+    let no = binary_option_leg("0xNO");
+    let venue = yes.id().venue;
+
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    cache.borrow_mut().add_instrument(yes.clone()).unwrap();
+    cache.borrow_mut().add_instrument(no.clone()).unwrap();
+
+    let exchange = get_exchange(
+        venue,
+        AccountType::Cash,
+        BookType::L2_MBP,
+        Some(cache.clone()),
+    );
+
+    let group = OutcomeGroup::new_checked(
+        OutcomeGroupId::from_parts(venue, "0xCONDITION").unwrap(),
+        None,
+        vec![
+            OutcomeLeg::new(Ustr::from("Yes"), yes.id(), Money::from("1.00 USDC")),
+            OutcomeLeg::new(Ustr::from("No"), no.id(), Money::from("0.00 USDC")),
+        ],
+        Exclusivity::Proven,
+        Exhaustiveness::Proven,
+        Money::from("1.00 USDC"),
+        1,
+        None,
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    )
+    .unwrap();
+
+    let resolution = MarketResolution {
+        group_id: group.group_id.clone(),
+        version: 1,
+        source: ResolutionSource::new(venue, "uma-request-1", None),
+        outcome: ResolutionOutcome::Payouts(vec![
+            OutcomePayout::new(Ustr::from("Yes"), Money::from("1.00 USDC")),
+            OutcomePayout::new(Ustr::from("No"), Money::from("0.00 USDC")),
+        ]),
+        effective_ns: UnixNanos::from(100),
+        observed_ns: UnixNanos::from(100),
+        ts_event: UnixNanos::from(100),
+        ts_init: UnixNanos::from(100),
+    };
+
+    let unknown = exchange
+        .borrow_mut()
+        .process_market_resolution_data(&resolution)
+        .unwrap_err();
+    assert!(
+        unknown.to_string().contains("not in the cache"),
+        "unexpected error: {unknown}"
+    );
+
+    cache.borrow_mut().add_outcome_group(group.clone()).unwrap();
+
+    let closes = exchange
+        .borrow_mut()
+        .process_market_resolution_data(&resolution)
+        .unwrap();
+
+    assert_eq!(closes.len(), 2);
+    assert_eq!(closes[0].close_price, Price::from("1.000"));
+    assert_eq!(closes[1].close_price, Price::from("0.000"));
+    assert!(cache.borrow().has_outcome_group(&group.group_id));
 }
 
 fn create_submit_order_command(

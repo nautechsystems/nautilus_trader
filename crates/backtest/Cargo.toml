@@ -129,3 +129,10 @@ name = "tardis-option-chain"
 path = "examples/tardis_option_chain.rs"
 required-features = ["examples", "streaming"]
 doc = false
+
+# Run with `cargo run -p nautilus-backtest --features examples,streaming --example prediction-market-replay`
+[[example]]
+name = "prediction-market-replay"
+path = "examples/prediction_market_replay.rs"
+required-features = ["examples", "streaming"]
+doc = false

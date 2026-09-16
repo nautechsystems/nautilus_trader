@@ -53,6 +53,7 @@ fn replay_key(data: DataRef<'_>) -> ReplayKey {
         | DataRef::OptionGreeks(_)
         | DataRef::InstrumentStatus(_)
         | DataRef::InstrumentClose(_)
+        | DataRef::MarketResolution(_)
         | DataRef::Custom(_) => ReplayKey {
             ts,
             block_number: 0,
@@ -105,6 +106,9 @@ fn sort_by_replay_key(batch: &mut DataBatch) {
         }
         DataBatch::InstrumentClose(data) => {
             sort_view_by_replay_key(data, |item| DataRef::InstrumentClose(item));
+        }
+        DataBatch::MarketResolution(data) => {
+            sort_view_by_replay_key(data, |item| DataRef::MarketResolution(item));
         }
         #[cfg(feature = "defi")]
         DataBatch::Defi(data) => sort_view_by_replay_key(data, |item| DataRef::Defi(item)),

@@ -13,19 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-mod backtest_engine;
-mod backtest_node;
-mod backtest_node_itch;
-#[cfg(feature = "streaming")]
-mod backtest_node_workload;
-mod book_imbalance;
-mod canonical_backtest_workloads;
-mod ema_cross;
-mod exchange;
-mod grid_mm;
-mod grid_mm_itch;
-mod netting_fill_void;
-mod option_chain_backtest;
-mod option_chain_data_client;
-#[cfg(feature = "streaming")]
-mod replay;
+//! Reproducible historical replay from captured catalog archives.
+//!
+//! A replay archive is described by a [`manifest::ReplayManifest`], which states where the data
+//! came from, when it was captured, which files belong to it, and what it is missing. The manifest
+//! turns its datasets into the catalog queries a `BacktestNode` replays, so an offline command can
+//! reproduce a run from the manifest and the catalog files alone.
+
+pub mod manifest;
+
+pub use manifest::{
+    REPLAY_CHECKSUM_PREFIX, REPLAY_MANIFEST_SCHEMA_VERSION, ReplayDataset, ReplayLimitation,
+    ReplayManifest, ReplaySource,
+};
