@@ -28,7 +28,7 @@ use nautilus_model::{
 };
 
 use super::{
-    traits::DataCatalogBox,
+    traits::CatalogBackend,
     types::{CatalogInstrumentQuery, CatalogQuery},
 };
 use crate::{catalog::session::DataBatchQueryResult, common::coverage::CoverageIntervals};
@@ -146,7 +146,7 @@ pub struct CatalogWorker {
 )]
 impl CatalogWorker {
     #[must_use]
-    pub fn start(mut catalog: DataCatalogBox) -> Self {
+    pub fn start(mut catalog: CatalogBackend) -> Self {
         let (sender, receiver) = mpsc::sync_channel(COMMAND_QUEUE_CAPACITY);
         let handle = thread::spawn(move || run_catalog_worker(&mut catalog, receiver));
 
@@ -322,7 +322,7 @@ impl Drop for CatalogWorker {
     clippy::too_many_lines,
     reason = "The worker thread owns the receiver for its whole lifetime"
 )]
-fn run_catalog_worker(catalog: &mut DataCatalogBox, receiver: Receiver<CatalogCommand>) {
+fn run_catalog_worker(catalog: &mut CatalogBackend, receiver: Receiver<CatalogCommand>) {
     let mut async_errors: Vec<anyhow::Error> = Vec::new();
     let mut sessions: AHashMap<UUID4, DataBatchQueryResult> = AHashMap::new();
 
@@ -461,7 +461,7 @@ fn run_catalog_worker(catalog: &mut DataCatalogBox, receiver: Receiver<CatalogCo
 }
 
 fn open_query_session(
-    catalog: &mut DataCatalogBox,
+    catalog: &mut CatalogBackend,
     query: &CatalogQuery,
     chunk_size: Option<usize>,
 ) -> anyhow::Result<DataBatchQueryResult> {

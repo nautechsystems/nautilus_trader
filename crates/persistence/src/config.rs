@@ -121,7 +121,7 @@ impl DataCatalogConfig {
     /// # Errors
     ///
     /// Returns an error if the backend is unavailable or its connection cannot be opened.
-    pub fn create_catalog(&self) -> anyhow::Result<crate::catalog::traits::DataCatalogBox> {
+    pub fn create_catalog(&self) -> anyhow::Result<crate::catalog::traits::CatalogBackend> {
         let mut connect = crate::catalog::factory::CatalogConnectConfig::from_path_and_protocol(
             &self.path,
             Some(&self.fs_protocol),

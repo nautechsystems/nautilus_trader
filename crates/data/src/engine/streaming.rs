@@ -34,9 +34,7 @@ use nautilus_model::{
     identifiers::{ClientId, Venue},
     instruments::{Instrument, InstrumentAny},
 };
-use nautilus_persistence::catalog::traits::{
-    CatalogInstrumentQuery, CatalogQuery, DataCatalog, DataCatalogBox,
-};
+use nautilus_persistence::catalog::traits::{CatalogBackend, CatalogInstrumentQuery, CatalogQuery};
 use serde_json::Value;
 use ustr::Ustr;
 
@@ -49,7 +47,7 @@ const PARAM_SUBSCRIPTION_NAME: &str = "subscription_name";
 const PARAM_FROM_DAY_START: &str = "from_day_start";
 const CATALOG_CLIENT_ID: &str = "CATALOG";
 
-pub(crate) type CatalogMap = AHashMap<Ustr, DataCatalogBox>;
+pub(crate) type CatalogMap = AHashMap<Ustr, CatalogBackend>;
 
 impl DataEngine {
     /// Registers the `catalog` with the engine with an optional specific `name`.
@@ -57,19 +55,7 @@ impl DataEngine {
     /// # Panics
     ///
     /// Panics if a catalog with the same `name` has already been registered.
-    pub fn register_catalog<T>(&mut self, catalog: T, name: Option<&str>)
-    where
-        T: DataCatalog + 'static,
-    {
-        self.register_catalog_box(Box::new(catalog), name);
-    }
-
-    /// Registers the boxed `catalog` with the engine with an optional specific `name`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if a catalog with the same `name` has already been registered.
-    pub fn register_catalog_box(&mut self, catalog: DataCatalogBox, name: Option<&str>) {
+    pub fn register_catalog(&mut self, catalog: CatalogBackend, name: Option<&str>) {
         let name = Ustr::from(name.unwrap_or("catalog_0"));
 
         check_key_not_in_map(&name, &self.catalogs, "name", "catalogs").expect(FAILED);
@@ -735,7 +721,7 @@ impl RequestCatalogKey {
 }
 
 fn catalog_missing_intervals(
-    catalog: &mut DataCatalogBox,
+    catalog: &mut CatalogBackend,
     start: u64,
     end: u64,
     key: &RequestCatalogKey,

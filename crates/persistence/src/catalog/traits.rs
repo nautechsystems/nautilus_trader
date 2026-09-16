@@ -38,7 +38,7 @@ use crate::{
 };
 
 /// Boxed runtime catalog backend.
-pub type DataCatalogBox = Box<dyn DataCatalog>;
+pub type CatalogBackend = Box<dyn DataCatalog>;
 
 /// Builds the error a backend returns for a catalog capability it does not implement.
 ///
@@ -89,7 +89,7 @@ pub trait CatalogReader: Debug + Send {
     /// # Errors
     ///
     /// Returns an error if the backend cannot create the query catalog.
-    fn fork_query_catalog(&self) -> anyhow::Result<Option<DataCatalogBox>> {
+    fn fork_query_catalog(&self) -> anyhow::Result<Option<CatalogBackend>> {
         Ok(None)
     }
 

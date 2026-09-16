@@ -114,8 +114,8 @@ use crate::{
     catalog::{
         session::{DEFAULT_DATA_BATCH_CHUNK_SIZE, DataBatchQueryResult, TypedDataBatchSession},
         traits::{
-            CatalogInstrumentQuery, CatalogMetadata, CatalogQuery, CatalogReader,
-            CatalogRecordQuery, CatalogWriter, DataCatalogBox, filter_instrument_query_result,
+            CatalogBackend, CatalogInstrumentQuery, CatalogMetadata, CatalogQuery, CatalogReader,
+            CatalogRecordQuery, CatalogWriter, filter_instrument_query_result,
             filter_instruments_for_request_range,
         },
         types::{
@@ -421,7 +421,7 @@ impl ParquetDataCatalog {
 }
 
 impl CatalogReader for ParquetDataCatalog {
-    fn fork_query_catalog(&self) -> anyhow::Result<Option<DataCatalogBox>> {
+    fn fork_query_catalog(&self) -> anyhow::Result<Option<CatalogBackend>> {
         Ok(Some(Box::new(Self {
             base_path: self.base_path.clone(),
             original_uri: self.original_uri.clone(),

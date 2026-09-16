@@ -26,7 +26,7 @@ use nautilus_model::{
     types::Money,
 };
 use nautilus_persistence::{
-    catalog::traits::{CatalogInstrumentQuery, CatalogQuery, DataCatalogBox},
+    catalog::traits::{CatalogBackend, CatalogInstrumentQuery, CatalogQuery},
     config::DataCatalogConfig,
 };
 
@@ -38,7 +38,7 @@ use crate::{
 
 /// Orchestrates catalog-driven backtests from run configurations.
 ///
-/// `BacktestNode` connects the a catalog with [`BacktestEngine`] to load
+/// `BacktestNode` connects the catalog with [`BacktestEngine`] to load
 /// historical data and run backtests. Supports both oneshot and streaming modes.
 #[derive(Debug)]
 #[cfg_attr(
@@ -182,12 +182,12 @@ impl BacktestNode {
         Ok(results)
     }
 
-    /// Creates a a catalog from a data config.
+    /// Creates a catalog from a data config.
     ///
     /// # Errors
     ///
     /// Returns an error if the catalog cannot be created from the URI.
-    pub fn load_catalog(config: &BacktestDataConfig) -> anyhow::Result<DataCatalogBox> {
+    pub fn load_catalog(config: &BacktestDataConfig) -> anyhow::Result<CatalogBackend> {
         create_catalog(config)
     }
 
@@ -537,7 +537,7 @@ fn take_aligned_chunk<I: Iterator<Item = anyhow::Result<Data>>>(
     Ok(chunk)
 }
 
-fn create_catalog(config: &BacktestDataConfig) -> anyhow::Result<DataCatalogBox> {
+fn create_catalog(config: &BacktestDataConfig) -> anyhow::Result<CatalogBackend> {
     DataCatalogConfig::new(
         config.catalog_path().to_string(),
         config.catalog_fs_protocol().map(str::to_string),
@@ -563,7 +563,7 @@ fn load_data(
 }
 
 fn dispatch_query(
-    catalog: &mut DataCatalogBox,
+    catalog: &mut CatalogBackend,
     config: &BacktestDataConfig,
     start: Option<UnixNanos>,
     end: Option<UnixNanos>,

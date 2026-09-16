@@ -394,7 +394,7 @@ impl NautilusKernel {
                         catalog_config.path()
                     )
                 })?;
-                data_engine.register_catalog_box(catalog, Some(&name));
+                data_engine.register_catalog(catalog, Some(&name));
             }
         }
         let data_engine = Rc::new(RefCell::new(data_engine));

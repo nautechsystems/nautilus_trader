@@ -389,7 +389,7 @@ impl Drop for CatalogTempDir {
 fn register_empty_catalog(data_engine: &mut DataEngine, label: &str) -> CatalogTempDir {
     let catalog_dir = CatalogTempDir::new(label);
     let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -417,7 +417,7 @@ fn register_quote_catalog(
             None,
         )
         .unwrap();
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -445,7 +445,7 @@ fn register_trade_catalog(
             None,
         )
         .unwrap();
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -474,7 +474,7 @@ fn register_bar_catalog(
             None,
         )
         .unwrap();
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -517,7 +517,7 @@ fn register_custom_catalog(
         last_timestamp,
     );
 
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -6738,7 +6738,7 @@ fn test_catalog_start_ns_prefill_custom_data_without_identifier_merges_catalog_i
         5_000,
         6_000,
     );
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     let data_type = DataType::new(type_name, None, None);
     let correlation_id = UUID4::new();
 
@@ -21515,7 +21515,7 @@ fn register_quote_catalog_with_quotes(
         None => (None, None),
     };
     catalog.write_to_parquet(quotes, start, end, None).unwrap();
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -21533,7 +21533,7 @@ fn register_trade_catalog_with_trades(
         None => (None, None),
     };
     catalog.write_to_parquet(trades, start, end, None).unwrap();
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -21551,7 +21551,7 @@ fn register_bar_catalog_with_bars(
         None => (None, None),
     };
     catalog.write_to_parquet(bars, start, end, None).unwrap();
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -21682,7 +21682,7 @@ fn register_funding_catalog_with_rates(
         None => (None, None),
     };
     catalog.write_to_parquet(rates, start, end, None).unwrap();
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -21739,7 +21739,7 @@ fn register_custom_catalog_with_data(
     catalog
         .write_custom_data_batch(data, start, end, None)
         .unwrap();
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -21775,7 +21775,7 @@ fn register_instrument_catalog_with_instruments(
     let catalog_dir = CatalogTempDir::new(label);
     let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
     catalog.write_instruments(instruments).unwrap();
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -23662,7 +23662,7 @@ fn register_deltas_catalog_with_deltas(
         None => (None, None),
     };
     catalog.write_to_parquet(deltas, start, end, None).unwrap();
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -23694,7 +23694,7 @@ fn register_depth_catalog_with_depths(
         None => (None, None),
     };
     catalog.write_to_parquet(depths, start, end, None).unwrap();
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 

@@ -48,7 +48,7 @@ pub(crate) fn register_catalog_factory(registry: &mut catalog_factory::CatalogFa
                     .and_then(|params| params.get_u64("compression"))
                     .map(compression_from_code),
                 params.and_then(|params| params.get_usize("max_row_group_size")),
-            )?) as catalog_traits::DataCatalogBox)
+            )?) as catalog_traits::CatalogBackend)
         }),
     );
 }
