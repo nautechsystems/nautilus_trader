@@ -261,33 +261,10 @@ impl PyRotationConfig {
     }
 }
 
-#[derive(Clone, Debug)]
-#[pyo3::pyclass(
-    frozen,
-    name = "StreamingConfig",
-    module = "nautilus_trader.persistence",
-    from_py_object
-)]
-#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.persistence")]
-pub struct PyStreamingConfig {
-    inner: StreamingConfig,
-}
-
-impl From<PyStreamingConfig> for StreamingConfig {
-    fn from(config: PyStreamingConfig) -> Self {
-        config.inner
-    }
-}
-
-impl From<StreamingConfig> for PyStreamingConfig {
-    fn from(config: StreamingConfig) -> Self {
-        Self { inner: config }
-    }
-}
-
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pyo3::pymethods]
-impl PyStreamingConfig {
+impl StreamingConfig {
+    /// Configuration streaming live or backtest runs to a persistence writer.
     #[new]
     #[expect(
         clippy::too_many_arguments,
@@ -362,14 +339,14 @@ impl PyStreamingConfig {
                 mode => return Err(to_pyvalue_err(format!("Invalid rotation_mode: '{mode}'"))),
             }
         };
-        let mut inner = StreamingConfig::new(
+        let mut config = Self::new(
             catalog_path,
             fs_protocol.unwrap_or_else(default_fs_protocol),
             flush_interval_ms,
             replace_existing,
             rotation_config,
         );
-        inner.writer_backend = writer_backend
+        config.writer_backend = writer_backend
             .map(|backend| backend.parse::<WriterBackendType>())
             .transpose()
             .map_err(to_pyvalue_err)?
@@ -381,42 +358,42 @@ impl PyStreamingConfig {
         parsed_types
             .instruments
             .extend(py_instrument_types_from_any(instrument_types)?.unwrap_or_default());
-        inner.data_types = (!parsed_types.data.is_empty()).then_some(parsed_types.data);
-        inner.record_types = (!parsed_types.records.is_empty()).then_some(parsed_types.records);
-        inner.instrument_types =
+        config.data_types = (!parsed_types.data.is_empty()).then_some(parsed_types.data);
+        config.record_types = (!parsed_types.records.is_empty()).then_some(parsed_types.records);
+        config.instrument_types =
             (!parsed_types.instruments.is_empty()).then_some(parsed_types.instruments);
-        inner.record_filters = py_record_filters_from_any(record_filters)?;
-        inner.params = Python::attach(|py| match params {
+        config.record_filters = py_record_filters_from_any(record_filters)?;
+        config.params = Python::attach(|py| match params {
             Some(params) => from_pydict(py, &params),
             None => Ok(None),
         })?;
 
-        Ok(Self { inner })
+        Ok(config)
     }
 
     #[getter]
     fn catalog_path(&self) -> &str {
-        &self.inner.catalog_path
+        &self.catalog_path
     }
 
     #[getter]
     fn fs_protocol(&self) -> &str {
-        &self.inner.fs_protocol
+        &self.fs_protocol
     }
 
     #[getter]
     const fn flush_interval_ms(&self) -> u64 {
-        self.inner.flush_interval_ms
+        self.flush_interval_ms
     }
 
     #[getter]
     const fn replace_existing(&self) -> bool {
-        self.inner.replace_existing
+        self.replace_existing
     }
 
     #[getter]
     fn rotation_config(&self) -> PyRotationConfig {
-        self.inner.rotation_config.clone().into()
+        self.rotation_config.clone().into()
     }
 
     #[getter]
@@ -441,14 +418,13 @@ impl PyStreamingConfig {
 
     #[getter]
     fn writer_backend(&self) -> String {
-        self.inner.writer_backend.to_string()
+        self.writer_backend.to_string()
     }
 
     #[getter]
     #[pyo3(name = "params")]
     fn py_params(&self, py: Python<'_>) -> PyResult<Option<Py<PyDict>>> {
-        self.inner
-            .params
+        self.params
             .as_ref()
             .map(|params| params_to_pydict(py, params))
             .transpose()
@@ -456,31 +432,28 @@ impl PyStreamingConfig {
 
     #[getter]
     fn data_types(&self) -> Option<Vec<String>> {
-        self.inner
-            .data_types
+        self.data_types
             .clone()
             .map(|values| values.into_iter().map(|value| value.to_string()).collect())
     }
 
     #[getter]
     fn record_types(&self) -> Option<Vec<String>> {
-        self.inner
-            .record_types
+        self.record_types
             .clone()
             .map(|values| values.into_iter().map(|value| value.to_string()).collect())
     }
 
     #[getter]
     fn instrument_types(&self) -> Option<Vec<String>> {
-        self.inner
-            .instrument_types
+        self.instrument_types
             .clone()
             .map(|values| values.into_iter().map(|value| value.to_string()).collect())
     }
 
     #[getter]
     fn record_filters(&self, py: Python<'_>) -> PyResult<Option<Py<PyDict>>> {
-        let Some(filters) = &self.inner.record_filters else {
+        let Some(filters) = &self.record_filters else {
             return Ok(None);
         };
         let result = PyDict::new(py);
@@ -491,7 +464,7 @@ impl PyStreamingConfig {
     }
 
     fn __repr__(&self) -> String {
-        format!("{:?}", self.inner)
+        format!("{self:?}")
     }
 }
 

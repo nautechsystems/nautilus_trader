@@ -13,4 +13,4 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub use nautilus_persistence::python::config::PyStreamingConfig as StreamingConfig;
+pub use nautilus_persistence::config::StreamingConfig;

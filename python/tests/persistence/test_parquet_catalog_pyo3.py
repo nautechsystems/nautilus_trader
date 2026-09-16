@@ -21,7 +21,6 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
@@ -559,55 +558,5 @@ def test_parquet_catalog_files_are_open_to_external_arrow_and_json_readers(
         "AUD/USD.SIM": "1.23456",
     }
 
-    with duckdb.connect() as connection:
-        connection.execute("SET TimeZone = 'UTC'")
-        connection.register("instruments", instrument_table)
-        instrument_info = connection.execute(
-            """
-            SELECT
-                json_extract_string(info, '$.venue_extra'),
-                CAST(json_extract(info, '$.count') AS INTEGER),
-                CAST(json_extract(info, '$.enabled') AS BOOLEAN)
-            FROM instruments
-            WHERE json_extract_string(info, '$.venue_extra') = 'external'
-            """,
-        ).fetchall()
-
-        connection.register("price_maps", price_map_table)
-        connection.register("account_states", account_table)
-        prices = connection.execute(
-            "SELECT json_extract_string(prices, '$.\"AUD/USD.SIM\"') FROM price_maps",
-        ).fetchall()
-        balances = connection.execute(
-            """
-            SELECT
-                json_extract_string(balances, '$[0].currency'),
-                json_extract_string(balances, '$[0].total')
-            FROM account_states
-            """,
-        ).fetchall()
-
-        connection.register("quotes", quote_table)
-        connection.register("custom_data", custom_table)
-        quote_timestamp = connection.execute(
-            """
-            SELECT epoch_ns(ts_init) FROM quotes
-            WHERE ts_init >= TIMESTAMP '2024-05-09'
-              AND ts_init < TIMESTAMP '2024-05-10'
-            """,
-        ).fetchone()
-        custom_timestamp = connection.execute(
-            """
-            SELECT epoch_ns(ts_init) FROM custom_data
-            WHERE ts_init >= TIMESTAMP '2024-05-09'
-              AND ts_init < TIMESTAMP '2024-05-10'
-            """,
-        ).fetchone()
-
-    assert instrument_info == [("external", 7, True)]
-    assert prices == [("1.23456",)]
-    assert balances == [("USD", "100.00")]
     assert quote_table.column("ts_init").cast(pa.int64())[0].as_py() == timestamp
-    assert quote_timestamp == (timestamp // 1_000 * 1_000,)
     assert custom_table.column("ts_init").cast(pa.int64())[0].as_py() == timestamp + 1
-    assert custom_timestamp == ((timestamp + 1) // 1_000 * 1_000,)

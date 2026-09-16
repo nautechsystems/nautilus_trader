@@ -33,22 +33,16 @@ from nautilus_trader.persistence.catalog_to_df import CatalogOutput
 from nautilus_trader.persistence.catalog_to_df import query_catalog
 
 
-@pytest.mark.parametrize(
-    ("output", "timestamp_resolution_ns"),
-    [(output, 1_000 if output == CatalogOutput.DUCKDB else 1) for output in CatalogOutput],
-)
+@pytest.mark.parametrize("output", list(CatalogOutput))
 def test_depth_display_keeps_all_nested_fields(
     tmp_path: Path,
     output: CatalogOutput,
-    timestamp_resolution_ns: int,
 ) -> None:
     """
     Verify every level and field survives each supported DataFrame output.
     """
     if output == CatalogOutput.POLARS:
         pytest.importorskip("polars")
-    if output == CatalogOutput.DUCKDB:
-        pytest.importorskip("duckdb")
     catalog = ParquetDataCatalog(str(tmp_path))
     instrument = InstrumentId.from_str("AAPL.XNAS")
     expected = []
@@ -103,8 +97,8 @@ def test_depth_display_keeps_all_nested_fields(
                 "asks": sides[1],
                 "flags": row + 1,
                 "sequence": row + 30,
-                "ts_event": (row + 40) // timestamp_resolution_ns * timestamp_resolution_ns,
-                "ts_init": (row + 50) // timestamp_resolution_ns * timestamp_resolution_ns,
+                "ts_event": row + 40,
+                "ts_init": row + 50,
                 "identifier": str(instrument),
             },
         )
@@ -120,12 +114,7 @@ def test_depth_display_keeps_all_nested_fields(
             row["ts_init"] = row["ts_init"].value
         assert actual == expected
         return
-    if output == CatalogOutput.POLARS:
-        table = result.to_arrow()
-    elif output == CatalogOutput.DUCKDB:
-        table = result.to_arrow_table()
-    else:
-        table = result
+    table = result.to_arrow() if output == CatalogOutput.POLARS else result
     for name in ("ts_event", "ts_init"):
         index = table.schema.get_field_index(name)
         table = table.set_column(

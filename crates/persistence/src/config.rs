@@ -121,7 +121,7 @@ impl DataCatalogConfig {
     /// # Errors
     ///
     /// Returns an error if the backend is unavailable or its connection cannot be opened.
-    pub fn create_catalog(&self) -> anyhow::Result<crate::catalog::traits::CatalogBackend> {
+    pub fn create_catalog(&self) -> anyhow::Result<crate::catalog::traits::DataCatalog> {
         let mut connect = crate::catalog::factory::CatalogConnectConfig::from_path_and_protocol(
             &self.path,
             Some(&self.fs_protocol),
@@ -254,6 +254,21 @@ pub struct StreamingRecordFilterConfig {
 }
 
 /// Configuration streaming live or backtest runs to a persistence writer.
+#[cfg_attr(
+    feature = "python",
+    expect(
+        clippy::unsafe_derive_deserialize,
+        reason = "config deserializes plain fields; unsafe methods come from generated PyO3 integration"
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(frozen, module = "nautilus_trader.persistence", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.persistence")
+)]
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[builder(finish_fn(name = build_inner, vis = ""))]
 #[serde(deny_unknown_fields)]

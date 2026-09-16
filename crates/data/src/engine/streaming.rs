@@ -34,7 +34,7 @@ use nautilus_model::{
     identifiers::{ClientId, Venue},
     instruments::{Instrument, InstrumentAny},
 };
-use nautilus_persistence::catalog::traits::{CatalogBackend, CatalogInstrumentQuery, CatalogQuery};
+use nautilus_persistence::catalog::traits::{CatalogInstrumentQuery, CatalogQuery, DataCatalog};
 use serde_json::Value;
 use ustr::Ustr;
 
@@ -47,7 +47,7 @@ const PARAM_SUBSCRIPTION_NAME: &str = "subscription_name";
 const PARAM_FROM_DAY_START: &str = "from_day_start";
 const CATALOG_CLIENT_ID: &str = "CATALOG";
 
-pub(crate) type CatalogMap = AHashMap<Ustr, CatalogBackend>;
+pub(crate) type CatalogMap = AHashMap<Ustr, DataCatalog>;
 
 impl DataEngine {
     /// Registers the `catalog` with the engine with an optional specific `name`.
@@ -55,7 +55,7 @@ impl DataEngine {
     /// # Panics
     ///
     /// Panics if a catalog with the same `name` has already been registered.
-    pub fn register_catalog(&mut self, catalog: CatalogBackend, name: Option<&str>) {
+    pub fn register_catalog(&mut self, catalog: DataCatalog, name: Option<&str>) {
         let name = Ustr::from(name.unwrap_or("catalog_0"));
 
         check_key_not_in_map(&name, &self.catalogs, "name", "catalogs").expect(FAILED);
@@ -175,7 +175,7 @@ impl DataEngine {
         identifier: Option<&str>,
     ) -> anyhow::Result<Option<u64>> {
         // `make_path_custom_data` / `get_directory_intervals` are inherent on
-        // `ParquetDataCatalog` and not exposed through `DataCatalog`. Use the
+        // `ParquetDataCatalog` and not exposed through `Catalog`. Use the
         // trait-level `query_last_timestamp` with `NautilusDataType::Custom` so the
         // path works for any backend that implements the trait.
         let data_type = NautilusDataType::Custom {
@@ -721,7 +721,7 @@ impl RequestCatalogKey {
 }
 
 fn catalog_missing_intervals(
-    catalog: &mut CatalogBackend,
+    catalog: &mut DataCatalog,
     start: u64,
     end: u64,
     key: &RequestCatalogKey,

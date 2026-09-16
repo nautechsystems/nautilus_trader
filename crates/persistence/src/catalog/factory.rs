@@ -21,7 +21,7 @@ use ahash::AHashMap;
 use indexmap::IndexMap;
 use nautilus_core::Params;
 
-use crate::catalog::traits::CatalogBackend;
+use crate::catalog::traits::DataCatalog;
 
 /// Conventional name of the Parquet catalog factory registration.
 pub const PARQUET_CATALOG_FACTORY_NAME: &str = "Parquet";
@@ -66,7 +66,7 @@ impl CatalogConnectConfig {
 
 /// Factory for a named catalog backend.
 pub type CatalogFactory =
-    Arc<dyn Fn(&CatalogConnectConfig) -> anyhow::Result<CatalogBackend> + Send + Sync>;
+    Arc<dyn Fn(&CatalogConnectConfig) -> anyhow::Result<DataCatalog> + Send + Sync>;
 
 /// Ordered registry of catalog factories keyed by name.
 pub type CatalogFactoryRegistry = IndexMap<String, CatalogFactory>;

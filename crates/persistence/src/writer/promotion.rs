@@ -37,7 +37,7 @@ use crate::{
     common::{conversion::FeatherConversionSummary, storage::StorageBackend},
     writer::{
         run::{FeatherSessionSource, RunStatus},
-        traits::StreamingDataSink,
+        traits::StreamingSink,
     },
 };
 
@@ -157,7 +157,7 @@ pub(crate) trait PromotionSink: Send {
     fn record_completed(&mut self);
 }
 
-impl<T> StreamingDataSink for T
+impl<T> StreamingSink for T
 where
     T: PromotionSink + std::fmt::Debug,
 {
@@ -907,7 +907,7 @@ mod tests {
         common::{conversion::FeatherConversionSummary, storage::create_storage_backend_from_path},
         writer::{
             run::{FeatherSessionSource, RunStatus},
-            traits::StreamingDataSink,
+            traits::StreamingSink,
         },
     };
 
@@ -1149,7 +1149,7 @@ mod tests {
     fn flush_finalizes_and_promotes_before_returning_background_error() {
         let mut sink = FailingBackgroundSink::new(true, false);
 
-        let e = StreamingDataSink::flush(&mut sink).unwrap_err();
+        let e = StreamingSink::flush(&mut sink).unwrap_err();
 
         assert_eq!(e.to_string(), "background promotion failed");
         assert_eq!(
@@ -1167,7 +1167,7 @@ mod tests {
     fn close_finalizes_and_promotes_before_returning_background_error() {
         let mut sink = FailingBackgroundSink::new(false, true);
 
-        let e = StreamingDataSink::close(&mut sink).unwrap_err();
+        let e = StreamingSink::close(&mut sink).unwrap_err();
 
         assert_eq!(e.to_string(), "background promotion failed");
         assert_eq!(

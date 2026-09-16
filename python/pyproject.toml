@@ -86,7 +86,6 @@ no-build-package = [
   "colorama",
   "coverage",
   "docutils",
-  "duckdb",
   "execnet",
   "furo",
   "h11",
@@ -155,7 +154,6 @@ dev = ["maturin==1.15.0", "ruff>=0.16.7", "ty>=0.0.79"]
 test = [
   "pyarrow>=25.0.0",
   "polars",
-  "duckdb",
   "pytest>=9.1.1",
   "pytest-asyncio>=1.4.0",
   "pytest-cov>=7.1.0",

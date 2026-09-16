@@ -80,7 +80,7 @@ use nautilus_persistence::{
         feather::{RotationConfig as WriterRotationConfig, WriterClock},
         filter::WriterRecordFilter,
         subscription::StreamingSinkSubscription,
-        traits::StreamingSink,
+        traits::StreamingDataSink,
     },
 };
 use nautilus_portfolio::portfolio::Portfolio;
@@ -136,7 +136,7 @@ pub struct NautilusKernel {
     event_store_replay: bool,
     state_save_armed: bool,
     #[cfg(feature = "streaming")]
-    streaming_writer: Option<Rc<RefCell<StreamingSink>>>,
+    streaming_writer: Option<Rc<RefCell<StreamingDataSink>>>,
     #[cfg(feature = "streaming")]
     streaming_subscriptions: Option<StreamingSinkSubscription>,
 }

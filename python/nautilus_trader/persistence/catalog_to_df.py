@@ -44,7 +44,6 @@ class CatalogOutput(Enum):
     ARROW = "arrow"
     PANDAS = "pandas"
     POLARS = "polars"
-    DUCKDB = "duckdb"
 
 
 class ArrowCStream:
@@ -82,7 +81,7 @@ def query_catalog(
     data_type : NautilusDataType, NautilusRecordType, or NautilusInstrumentType
         The typed Nautilus catalog family to query.
     output : CatalogOutput, default CatalogOutput.PANDAS
-        The Python result representation. Polars and DuckDB are imported lazily.
+        The Python result representation. Polars is imported lazily.
     identifiers : list[str], optional
         The identifiers to filter the query. Record queries accept at most one identifier.
     start : object, optional
@@ -104,7 +103,7 @@ def query_catalog(
     Returns
     -------
     Any
-        A PyArrow table, pandas DataFrame, Polars DataFrame, or DuckDB relation.
+        A PyArrow table, pandas DataFrame, or Polars DataFrame.
 
     Notes
     -----
@@ -295,11 +294,6 @@ def _convert_arrow_table(
         import polars as pl
 
         return pl.from_arrow(table)
-
-    if output is CatalogOutput.DUCKDB:
-        import duckdb
-
-        return duckdb.from_arrow(table)
 
     if output is CatalogOutput.PANDAS:
         import pandas as pd

@@ -584,7 +584,7 @@ data supplies its schema and encode/decode handlers at runtime.
 
 Instant timestamps use `Timestamp(Nanosecond, Some("UTC"))`; durations remain integers. Arrow readers
 and Nautilus queries preserve the nanoseconds and UTC annotation. SQL readers that map these columns
-to microsecond-precision `TIMESTAMPTZ`, including DuckDB, can truncate sub-microsecond values.
+to microsecond-precision `TIMESTAMPTZ` can truncate sub-microsecond values.
 
 Parquet provides compressed columnar storage and cross-language access. The catalog stores these
 files under one root without requiring a separate database service. A local path or object-store

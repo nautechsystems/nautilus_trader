@@ -1476,6 +1476,22 @@ mod tests {
     }
 
     #[rstest]
+    #[case("1.005 USD", dec!(1.00))]
+    #[case("1.015 USD", dec!(1.02))]
+    #[case("-1.005 USD", dec!(-1.00))]
+    #[case("-1.015 USD", dec!(-1.02))]
+    fn test_from_str_rounds_half_to_even(#[case] input: &str, #[case] expected: Decimal) {
+        let money = input.parse::<Money>().unwrap();
+
+        assert_eq!(
+            money,
+            Money::from_decimal(expected, Currency::USD()).unwrap()
+        );
+        assert_eq!(money.currency, Currency::USD());
+        assert_eq!(money.as_decimal(), expected);
+    }
+
+    #[rstest]
     fn test_money_from_str_negative() {
         let money = Money::from("-123.45 USD");
         assert!(approx_eq!(f64, money.as_f64(), -123.45, epsilon = 1e-9));

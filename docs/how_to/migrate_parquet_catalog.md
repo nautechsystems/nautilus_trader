@@ -56,7 +56,7 @@ preserves order IDs for subsequent writes.
 ## Read the result
 
 Point `ParquetDataCatalog`, backtest data configuration, or the live node's catalog configuration at the destination.
-Use the current Nautilus version to write additional data. PyArrow, DuckDB, pandas, and Polars can read the open Arrow
+Use the current Nautilus version to write additional data. PyArrow, pandas, and Polars can read the open Arrow
 values without a Nautilus-specific binary decoder.
 
 For new streamed data, see [Parquet streaming](stream_parquet_catalog.md).

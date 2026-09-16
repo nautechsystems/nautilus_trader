@@ -1004,6 +1004,8 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+    #[cfg(not(feature = "defi"))]
+    use crate::types::fixed::MAX_FLOAT_PRECISION;
 
     #[cfg(feature = "high-precision")]
     #[rstest]
@@ -1772,7 +1774,7 @@ mod tests {
         #[case] expected_debug: &str,
         #[case] expected_display: &str,
     ) {
-        let quantity = if precision > crate::types::fixed::MAX_FLOAT_PRECISION {
+        let quantity = if precision > MAX_FLOAT_PRECISION {
             // For high precision, use from_raw to avoid f64 conversion issues
             Quantity::from_raw(value as QuantityRaw, precision)
         } else {
@@ -2119,6 +2121,8 @@ mod property_tests {
     use rstest::rstest;
 
     use super::*;
+    #[cfg(not(feature = "defi"))]
+    use crate::types::fixed::MAX_FLOAT_PRECISION;
 
     /// Strategy to generate valid quantity values (non-negative).
     fn quantity_value_strategy() -> impl Strategy<Value = f64> {
@@ -2139,12 +2143,12 @@ mod property_tests {
 
     /// Strategy to generate valid precision values.
     fn precision_strategy() -> impl Strategy<Value = u8> {
-        let upper = FIXED_PRECISION.min(crate::types::fixed::MAX_FLOAT_PRECISION);
+        let upper = FIXED_PRECISION.min(MAX_FLOAT_PRECISION);
         prop_oneof![Just(0u8), 0u8..=upper, Just(FIXED_PRECISION),]
     }
 
     fn precision_strategy_non_zero() -> impl Strategy<Value = u8> {
-        let upper = FIXED_PRECISION.clamp(1, crate::types::fixed::MAX_FLOAT_PRECISION);
+        let upper = FIXED_PRECISION.clamp(1, MAX_FLOAT_PRECISION);
         prop_oneof![Just(upper), Just(FIXED_PRECISION.max(1)), 1u8..=upper,]
     }
 
@@ -2172,7 +2176,7 @@ mod property_tests {
     const DECIMAL_MAX_MANTISSA: u128 = 79_228_162_514_264_337_593_543_950_335;
 
     fn decimal_compatible(raw: QuantityRaw, precision: u8) -> bool {
-        if precision > crate::types::fixed::MAX_FLOAT_PRECISION {
+        if precision > MAX_FLOAT_PRECISION {
             return false;
         }
         let precision_diff = u32::from(FIXED_PRECISION.saturating_sub(precision));

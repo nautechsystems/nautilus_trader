@@ -76,7 +76,7 @@ use crate::{
         custom::{augment_batch_with_data_type_column, schema_with_data_type_column},
         paths::{CatalogPathPrefix, urisafe_instrument_id},
     },
-    writer::{filter::WriterRecordFilter, traits::StreamingDataSink},
+    writer::{filter::WriterRecordFilter, traits::StreamingSink},
 };
 
 pub(crate) type FeatherWriteCommand =
@@ -1451,7 +1451,7 @@ impl Debug for FeatherWriter {
     }
 }
 
-impl StreamingDataSink for FeatherWriter {
+impl StreamingSink for FeatherWriter {
     fn write_data(&mut self, data: Data) -> anyhow::Result<()> {
         Self::write_data(self, data).map_err(feather_error)
     }
@@ -1628,8 +1628,8 @@ mod tests {
             UnixNanos::from(1_000),
         );
 
-        StreamingDataSink::write_data(&mut writer, Data::Quote(quote)).unwrap();
-        StreamingDataSink::flush(&mut writer).unwrap();
+        StreamingSink::write_data(&mut writer, Data::Quote(quote)).unwrap();
+        StreamingSink::flush(&mut writer).unwrap();
 
         let files = get_runtime()
             .block_on(storage.list_files("quotes", Some(".feather")))

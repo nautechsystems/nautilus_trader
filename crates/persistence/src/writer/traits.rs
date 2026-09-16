@@ -20,7 +20,7 @@ use std::{any::Any, fmt::Debug};
 use nautilus_model::data::Data;
 
 /// Object-safe streaming sink boundary substitutable by streaming backends.
-pub trait StreamingDataSink: Debug {
+pub trait StreamingSink: Debug {
     /// Writes a single `Data` enum value.
     /// # Errors
     ///
@@ -53,4 +53,4 @@ pub trait StreamingDataSink: Debug {
 }
 
 /// Boxed streaming sink trait object.
-pub type StreamingSink = Box<dyn StreamingDataSink>;
+pub type StreamingDataSink = Box<dyn StreamingSink>;

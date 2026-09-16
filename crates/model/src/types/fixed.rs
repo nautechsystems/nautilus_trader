@@ -1083,6 +1083,88 @@ mod tests {
     }
 
     #[rstest]
+    #[case(i128::MIN)]
+    #[case(i128::MAX)]
+    fn test_parse_decimal_mantissa_integer_limits(#[case] value: i128) {
+        assert_eq!(parse_decimal_mantissa(&value.to_string()), Ok((value, 0)));
+    }
+
+    #[rstest]
+    #[case("170141183460469231731687303715884105728")]
+    #[case("-170141183460469231731687303715884105729")]
+    fn test_parse_decimal_mantissa_overflow(#[case] input: &str) {
+        assert_eq!(
+            parse_decimal_mantissa(input),
+            Err(format!("Decimal value '{input}' exceeds i128 range")),
+        );
+    }
+
+    #[rstest]
+    #[case(".5", 5, 1)]
+    #[case("-.5", -5, 1)]
+    #[case("1.", 1, 0)]
+    #[case("0001.0200", 10200, 4)]
+    fn test_parse_decimal_mantissa_syntax(
+        #[case] input: &str,
+        #[case] mantissa: i128,
+        #[case] precision: u8,
+    ) {
+        assert_eq!(parse_decimal_mantissa(input), Ok((mantissa, precision)));
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case(".")]
+    #[case("+")]
+    #[case("-")]
+    #[case("1.2.3")]
+    #[case(" 1")]
+    #[case("1 ")]
+    #[case("1 2")]
+    #[case("１")]
+    fn test_parse_decimal_mantissa_invalid_syntax(#[case] input: &str) {
+        assert_eq!(
+            parse_decimal_mantissa(input),
+            Err(format!("Invalid decimal value '{input}'")),
+        );
+    }
+
+    #[rstest]
+    fn test_parse_decimal_mantissa_fraction_length_limit() {
+        let accepted = format!("0.{}", "0".repeat(255));
+        let rejected = format!("{accepted}0");
+
+        assert_eq!(parse_decimal_mantissa(&accepted), Ok((0, 255)));
+        assert_eq!(
+            parse_decimal_mantissa(&rejected),
+            Err(format!(
+                "Decimal value '{rejected}' has too many fractional digits"
+            )),
+        );
+    }
+
+    #[rstest]
+    fn test_decimal_string_domain_precision_limit() {
+        use crate::types::{Price, Quantity};
+
+        #[cfg(feature = "defi")]
+        let precision = crate::defi::WEI_PRECISION;
+        #[cfg(not(feature = "defi"))]
+        let precision = FIXED_PRECISION;
+        let accepted = format!("0.{}1", "0".repeat(usize::from(precision - 1)));
+        let rejected = format!("{accepted}0");
+        let price = accepted.parse::<Price>().unwrap();
+        let quantity = accepted.parse::<Quantity>().unwrap();
+
+        assert_eq!(price.raw, 1);
+        assert_eq!(price.precision, precision);
+        assert_eq!(quantity.raw, 1);
+        assert_eq!(quantity.precision, precision);
+        assert!(rejected.parse::<Price>().is_err());
+        assert!(rejected.parse::<Quantity>().is_err());
+    }
+
+    #[rstest]
     #[case(0, 0, "0")]
     #[case(125, 2, "1.25")]
     #[case(-1234, 2, "-12.34")]

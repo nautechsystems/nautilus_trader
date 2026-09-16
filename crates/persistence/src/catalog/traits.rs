@@ -38,7 +38,7 @@ use crate::{
 };
 
 /// Boxed runtime catalog backend.
-pub type CatalogBackend = Box<dyn DataCatalog>;
+pub type DataCatalog = Box<dyn Catalog>;
 
 /// Builds the error a backend returns for a catalog capability it does not implement.
 ///
@@ -89,7 +89,7 @@ pub trait CatalogReader: Debug + Send {
     /// # Errors
     ///
     /// Returns an error if the backend cannot create the query catalog.
-    fn fork_query_catalog(&self) -> anyhow::Result<Option<CatalogBackend>> {
+    fn fork_query_catalog(&self) -> anyhow::Result<Option<DataCatalog>> {
         Ok(None)
     }
 
@@ -372,9 +372,9 @@ pub trait CatalogWriter: Debug + Send {
 }
 
 /// Full read-write catalog capability used by factories and catalog workers.
-pub trait DataCatalog: CatalogReader + CatalogWriter {}
+pub trait Catalog: CatalogReader + CatalogWriter {}
 
-impl<T> DataCatalog for T where T: CatalogReader + CatalogWriter + ?Sized {}
+impl<T> Catalog for T where T: CatalogReader + CatalogWriter + ?Sized {}
 
 #[cfg(test)]
 mod tests {

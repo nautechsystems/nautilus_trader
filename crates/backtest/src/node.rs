@@ -26,7 +26,7 @@ use nautilus_model::{
     types::Money,
 };
 use nautilus_persistence::{
-    catalog::traits::{CatalogBackend, CatalogInstrumentQuery, CatalogQuery},
+    catalog::traits::{CatalogInstrumentQuery, CatalogQuery, DataCatalog},
     config::DataCatalogConfig,
 };
 
@@ -187,7 +187,7 @@ impl BacktestNode {
     /// # Errors
     ///
     /// Returns an error if the catalog cannot be created from the URI.
-    pub fn load_catalog(config: &BacktestDataConfig) -> anyhow::Result<CatalogBackend> {
+    pub fn load_catalog(config: &BacktestDataConfig) -> anyhow::Result<DataCatalog> {
         create_catalog(config)
     }
 
@@ -537,7 +537,7 @@ fn take_aligned_chunk<I: Iterator<Item = anyhow::Result<Data>>>(
     Ok(chunk)
 }
 
-fn create_catalog(config: &BacktestDataConfig) -> anyhow::Result<CatalogBackend> {
+fn create_catalog(config: &BacktestDataConfig) -> anyhow::Result<DataCatalog> {
     DataCatalogConfig::new(
         config.catalog_path().to_string(),
         config.catalog_fs_protocol().map(str::to_string),
@@ -563,7 +563,7 @@ fn load_data(
 }
 
 fn dispatch_query(
-    catalog: &mut CatalogBackend,
+    catalog: &mut DataCatalog,
     config: &BacktestDataConfig,
     start: Option<UnixNanos>,
     end: Option<UnixNanos>,

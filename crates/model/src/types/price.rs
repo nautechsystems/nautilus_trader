@@ -1205,6 +1205,17 @@ mod tests {
     }
 
     #[rstest]
+    #[case(PRICE_RAW_MIN)]
+    #[case(PRICE_RAW_MAX)]
+    fn test_from_str_raw_limits(#[case] raw: PriceRaw) {
+        let original = Price::from_raw(raw, FIXED_PRECISION);
+        let decoded = original.to_string().parse::<Price>().unwrap();
+
+        assert_eq!(decoded.raw, raw);
+        assert_eq!(decoded.precision, FIXED_PRECISION);
+    }
+
+    #[rstest]
     fn test_negative_price_from_str() {
         let price: Price = "-123.45".parse().unwrap();
         assert_eq!(price.precision, 2);
@@ -1907,10 +1918,9 @@ mod property_tests {
         /// Property: Price string serialization round-trip should preserve value and precision
         #[rstest]
         fn prop_price_serde_round_trip(
-            value in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() < 1e6),
-            precision in precision_strategy()
+            (precision, raw) in valid_precision_raw_strategy()
         ) {
-            let original = Price::new(value, precision);
+            let original = Price::from_raw(raw, precision);
 
             // String round-trip (this should be exact and is the most important)
             let string_repr = original.to_string();

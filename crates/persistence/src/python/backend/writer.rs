@@ -34,7 +34,7 @@ use crate::{
     writer::{
         factory::{WriterBackendType, WriterConnectConfig, create_writer},
         feather::WriterClock,
-        traits::StreamingSink,
+        traits::StreamingDataSink,
     },
 };
 
@@ -52,7 +52,7 @@ type ClockBridge = (Rc<RefCell<dyn Clock>>, Arc<AtomicU64>);
 )]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.persistence")]
 pub struct PyStreamingWriter {
-    sink: Rc<RefCell<StreamingSink>>,
+    sink: Rc<RefCell<StreamingDataSink>>,
     backend: String,
     /// Present when constructed with a non-live clock: the source clock plus the
     /// shared atomic the core writer reads, refreshed before each forwarded call.

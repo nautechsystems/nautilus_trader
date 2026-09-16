@@ -33,6 +33,7 @@ from nautilus_trader.backtest import InterestRateRecord
 from nautilus_trader.common import CacheConfig
 from nautilus_trader.common import LoggerConfig
 from nautilus_trader.common import MessageBusConfig
+from nautilus_trader.config import LiveNodeConfig
 from nautilus_trader.core import UUID4
 from nautilus_trader.data import DataEngineConfig
 from nautilus_trader.execution import BestPriceFillModel
@@ -168,19 +169,28 @@ def test_engine_config_accepts_controller_config() -> None:
     assert config.controller.controller_path == "tests.unit.common.actor:StrategyCreatingController"
 
 
-def test_engine_config_accepts_streaming_and_catalog_configs() -> None:
+@pytest.mark.parametrize("config_type", [BacktestEngineConfig, LiveNodeConfig])
+def test_engine_config_accepts_streaming_and_catalog_configs(
+    config_type: type[BacktestEngineConfig | LiveNodeConfig],
+) -> None:
     """
     Test engine config retains streaming and catalog configs.
     """
-    streaming = StreamingConfig(catalog_path="/data/output")
+    streaming = StreamingConfig(
+        catalog_path="/data/output",
+        fs_protocol="s3",
+        flush_interval_ms=250,
+        replace_existing=True,
+    )
     catalog = DataCatalogConfig(path="/data/input", name="history")
 
-    config = BacktestEngineConfig(streaming=streaming, catalogs=[catalog])
+    config = config_type(streaming=streaming, catalogs=[catalog])
 
+    assert type(config.streaming) is StreamingConfig
     assert config.streaming.catalog_path == "/data/output"
-    assert config.streaming.fs_protocol == "file"
-    assert config.streaming.flush_interval_ms == 1_000
-    assert config.streaming.replace_existing is False
+    assert config.streaming.fs_protocol == "s3"
+    assert config.streaming.flush_interval_ms == 250
+    assert config.streaming.replace_existing is True
     assert config.catalogs == [catalog]
 
 

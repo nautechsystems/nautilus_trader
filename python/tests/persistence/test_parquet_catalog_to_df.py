@@ -671,7 +671,6 @@ def test_arrow_and_pandas_outputs_do_not_import_other_dataframe_engines(
     Verify arrow and pandas outputs do not import other dataframe engines.
     """
     monkeypatch.delitem(sys.modules, "polars", raising=False)
-    monkeypatch.delitem(sys.modules, "duckdb", raising=False)
 
     _write_and_query(
         tmp_path,
@@ -683,65 +682,6 @@ def test_arrow_and_pandas_outputs_do_not_import_other_dataframe_engines(
     )
 
     assert "polars" not in sys.modules
-    assert "duckdb" not in sys.modules
-
-
-def test_query_catalog_can_return_duckdb_relation(tmp_path: Path) -> None:
-    """
-    Verify query catalog can return duckdb relation.
-    """
-    duckdb = pytest.importorskip("duckdb")
-    quote = TestDataProviderPyo3.quote_tick(ts_event=10, ts_init=11)
-
-    relation = _write_and_query(
-        tmp_path,
-        "parquet",
-        NautilusDataType.QuoteTick,
-        "write_quote_ticks",
-        quote,
-        output=CatalogOutput.DUCKDB,
-    )
-
-    assert isinstance(relation, duckdb.DuckDBPyRelation)
-    assert relation.columns == [
-        "instrument_id",
-        "bid_price",
-        "ask_price",
-        "bid_size",
-        "ask_size",
-        "ts_event",
-        "ts_init",
-        "identifier",
-    ]
-    assert relation.filter("bid_price = 1987.0").project(
-        "instrument_id, bid_price",
-    ).fetchall() == [(str(quote.instrument_id), 1987.0)]
-
-
-def test_arrow_output_supports_caller_owned_duckdb_connection(tmp_path: Path) -> None:
-    """
-    Verify arrow output supports caller owned duckdb connection.
-    """
-    duckdb = pytest.importorskip("duckdb")
-    quote = TestDataProviderPyo3.quote_tick(ts_event=10, ts_init=11)
-    table = _write_and_query(
-        tmp_path,
-        "parquet",
-        NautilusDataType.QuoteTick,
-        "write_quote_ticks",
-        quote,
-        output=CatalogOutput.ARROW,
-    )
-    connection = duckdb.connect()
-
-    try:
-        relation = connection.from_arrow(table)
-
-        assert relation.project("instrument_id, ask_price").fetchall() == [
-            (str(quote.instrument_id), 1988.0),
-        ]
-    finally:
-        connection.close()
 
 
 def _write_custom_and_query(
