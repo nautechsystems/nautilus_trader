@@ -48,15 +48,15 @@ use crate::common::{
 pub struct HyperliquidDataClientConfig {
     /// Optional private key for authenticated endpoints.
     pub private_key: Option<SecretString>,
-    /// Override for the WebSocket URL.
-    pub base_url_ws: Option<String>,
-    /// Override for the HTTP info URL.
-    pub base_url_http: Option<String>,
-    /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<SecretString>,
     /// The target environment (mainnet or testnet).
     #[builder(default)]
     pub environment: HyperliquidEnvironment,
+    /// Override for the HTTP info URL.
+    pub base_url_http: Option<String>,
+    /// Override for the WebSocket URL.
+    pub base_url_ws: Option<String>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<SecretString>,
     /// HTTP timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
@@ -101,8 +101,8 @@ pub struct HyperliquidDataClientConfig {
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(HyperliquidDataClientConfig {
     environment: HyperliquidEnvironment,
-    base_url_ws: Option<String>,
     base_url_http: Option<String>,
+    base_url_ws: Option<String>,
     http_timeout_secs: u64,
     ws_timeout_secs: u64,
     update_instruments_interval_mins: u64,
@@ -188,17 +188,17 @@ pub struct HyperliquidExecutionClientConfig {
     /// If not provided and no explicit vault address is set, falls back to
     /// the `HYPERLIQUID_ACCOUNT_ADDRESS` environment variable.
     pub account_address: Option<String>,
-    /// Override for the WebSocket URL.
-    pub base_url_ws: Option<String>,
+    /// The target environment (mainnet or testnet).
+    #[builder(default)]
+    pub environment: HyperliquidEnvironment,
     /// Override for the HTTP info URL.
     pub base_url_http: Option<String>,
+    /// Override for the WebSocket URL.
+    pub base_url_ws: Option<String>,
     /// Override for the exchange API URL.
     pub base_url_exchange: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
     pub proxy_url: Option<SecretString>,
-    /// The target environment (mainnet or testnet).
-    #[builder(default)]
-    pub environment: HyperliquidEnvironment,
     /// HTTP timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
@@ -244,8 +244,8 @@ nautilus_core::impl_pyo3_config_getters!(HyperliquidExecutionClientConfig {
     vault_address: Option<String>,
     account_address: Option<String>,
     environment: HyperliquidEnvironment,
-    base_url_ws: Option<String>,
     base_url_http: Option<String>,
+    base_url_ws: Option<String>,
     base_url_exchange: Option<String>,
     http_timeout_secs: u64,
     max_retries: u32,

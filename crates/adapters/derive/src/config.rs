@@ -35,15 +35,15 @@ use crate::common::{enums::DeriveEnvironment, urls};
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.derive")
 )]
 pub struct DeriveDataClientConfig {
+    /// The Derive environment to connect to.
+    #[builder(default)]
+    pub environment: DeriveEnvironment,
     /// Override for the REST API base URL.
     pub base_url_rest: Option<String>,
     /// Override for the WebSocket URL.
     pub base_url_ws: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
     pub proxy_url: Option<SecretString>,
-    /// The Derive environment to connect to.
-    #[builder(default)]
-    pub environment: DeriveEnvironment,
     /// HTTP timeout in seconds.
     #[builder(default = 10)]
     pub http_timeout_secs: u64,
@@ -71,9 +71,9 @@ pub struct DeriveDataClientConfig {
 
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(DeriveDataClientConfig {
+    environment: DeriveEnvironment,
     base_url_rest: Option<String>,
     base_url_ws: Option<String>,
-    environment: DeriveEnvironment,
     http_timeout_secs: u64,
     ws_timeout_secs: Option<u64>,
     update_instruments_interval_mins: u64,
@@ -138,15 +138,15 @@ pub struct DeriveExecutionClientConfig {
     /// Subaccount identifier. Falls back to `DERIVE_SUBACCOUNT_ID` (or
     /// `DERIVE_TESTNET_SUBACCOUNT_ID` on testnet) when unset.
     pub subaccount_id: Option<u64>,
+    /// The Derive environment to connect to.
+    #[builder(default)]
+    pub environment: DeriveEnvironment,
     /// Override for the REST API base URL.
     pub base_url_rest: Option<String>,
     /// Override for the WebSocket URL.
     pub base_url_ws: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
     pub proxy_url: Option<SecretString>,
-    /// The Derive environment to connect to.
-    #[builder(default)]
-    pub environment: DeriveEnvironment,
     /// HTTP timeout in seconds.
     #[builder(default = 10)]
     pub http_timeout_secs: u64,
@@ -207,9 +207,9 @@ nautilus_core::impl_pyo3_config_getters!(DeriveExecutionClientConfig {
     account_id: AccountId,
     wallet_address: Option<String>,
     subaccount_id: Option<u64>,
+    environment: DeriveEnvironment,
     base_url_rest: Option<String>,
     base_url_ws: Option<String>,
-    environment: DeriveEnvironment,
     http_timeout_secs: u64,
     max_retries: u32,
     retry_delay_initial_ms: u64,

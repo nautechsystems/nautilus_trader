@@ -1928,6 +1928,7 @@ ADAPTER_CONFIG_SECRET_FIELDS = {
     "passphrase",
     "private_key",
     "session_key",
+    "tardis_http_url",
     "tardis_ws_url",
     "wss_rpc_url",
 }

@@ -823,6 +823,8 @@ and point `publishers_filepath` at the local copy.
 | `use_exchange_as_venue`   | `False`  | Use exchange MIC venues for GLBX instruments.           |
 | `bars_timestamp_on_close` | `True`   | Timestamp bars on close instead of the interval open.   |
 | `venue_dataset_map`       | `None`   | Override venue-to-dataset mappings from publisher data. |
+| `historical_base_url`     | `None`   | Override the Historical API base URL.                   |
+| `live_gateway_addr`       | `None`   | Override the live gateway socket address (`host:port`). |
 
 Use `DatabentoDataClientConfig` with `DatabentoDataClientFactory`. The current
 [Python example](https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/live/databento/data_tester.py)

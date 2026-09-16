@@ -4,9 +4,13 @@ Released on TBD (UTC).
 
 ### Enhancements
 
+- Added `historical_base_url` and `live_gateway_addr` overrides to `DatabentoDataClientConfig`
+- Added `tardis_http_url` override to `TardisDataClientConfig` and `TardisReplayConfig`
+
 ### Breaking Changes
 
 - Changed Rust `OrderCore.events` to read-only `events()`; construct cores with `OrderCore::new`
+- Changed Python Hyperliquid data and execution client config parameter order to `base_url_http` before `base_url_ws`
 
 ### Security
 
@@ -21,12 +25,16 @@ Released on TBD (UTC).
 - Optimized cache order queries and exchange-rate lookups from bars
 - Optimized average-price calculation for orders with many fills
 - Optimized allocation overhead in Rust cache `orders` and `orders_refs` queries
+- Standardized network config field layouts across adapters: URL override block, then `proxy_url`
 - Upgraded `datafusion` crate to v55.1.0
 - Upgraded `jiff` crate to v0.2.37
 - Upgraded `smallvec` crate to v1.16.1
 - Upgraded `ty` package (dev) to v0.0.79
 
 ### Documentation Updates
+
+- Documented the adapter config field layout convention in the developer guide
+- Updated Databento and Tardis integration guides with new URL overrides
 
 ### Deprecations
 

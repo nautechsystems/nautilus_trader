@@ -26,7 +26,7 @@ use std::{
 
 use nautilus_core::string::{secret::SecretString, urlencoding};
 use nautilus_network::{
-    http::{HttpClient, Method},
+    http::{HttpClient, Method, create_standard_nautilus_headers},
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
@@ -142,6 +142,7 @@ impl BetfairHttpClient {
 
         Ok(Self {
             client: HttpClient::builder()
+                .headers(create_standard_nautilus_headers().into_iter().collect())
                 .keyed_quotas(Self::rate_limiter_quotas(
                     request_rate_per_second.unwrap_or(5),
                     order_request_rate_per_second.unwrap_or(20),

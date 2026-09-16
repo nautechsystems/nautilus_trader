@@ -41,6 +41,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::{
+    http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     websocket::{
         AUTHENTICATION_TIMEOUT_SECS, AuthTracker, SubscriptionState, TransportBackend,
@@ -323,10 +324,11 @@ impl KrakenFuturesWebSocketClient {
         self.signal.store(false, Ordering::Relaxed);
 
         let (raw_handler, raw_rx) = channel_message_handler();
+        let headers = create_standard_nautilus_headers();
 
         let ws_config = WebSocketConfig {
             url: self.url.clone(),
-            headers: vec![],
+            headers,
             heartbeat_interval_secs: Some(self.heartbeat_secs),
             heartbeat_payload: None, // Use WebSocket ping frames, not text messages
             connect_timeout_ms: Some(5_000),

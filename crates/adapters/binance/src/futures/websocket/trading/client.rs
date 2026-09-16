@@ -37,6 +37,7 @@ use arc_swap::ArcSwap;
 use nautilus_core::string::secret::{REDACTED, SecretString};
 use nautilus_live::{SocketControl, task::TaskGroup};
 use nautilus_network::{
+    http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
     websocket::{
@@ -217,10 +218,11 @@ impl BinanceFuturesWsTradingClient {
         let (raw_handler, raw_rx) = channel_message_handler();
         let ping_handler: PingHandler = Arc::new(move |_| {});
 
-        let headers = vec![(
+        let mut headers = create_standard_nautilus_headers();
+        headers.push((
             BINANCE_API_KEY_HEADER.to_string(),
             self.credential.api_key().to_string(),
-        )];
+        ));
 
         let config = WebSocketConfig {
             url: self.url.clone(),

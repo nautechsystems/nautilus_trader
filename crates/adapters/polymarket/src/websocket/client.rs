@@ -26,6 +26,7 @@ use nautilus_live::{
 };
 use nautilus_network::{
     SocketStateSink,
+    http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     websocket::{
         AuthTracker, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
@@ -396,9 +397,11 @@ impl PolymarketWebSocketClient {
             WsChannel::User => Some(POLYMARKET_HEARTBEAT_PAYLOAD.to_string()),
         };
 
+        let headers = create_standard_nautilus_headers();
+
         WebSocketConfig {
             url: self.url.clone(),
-            headers: vec![],
+            headers,
             heartbeat_interval_secs: Some(POLYMARKET_HEARTBEAT_SECS),
             heartbeat_payload,
             connect_timeout_ms: Some(15_000),
@@ -746,7 +749,6 @@ mod tests {
         let market_debug = format!("{market:?}");
         let user_debug = format!("{user:?}");
         let assert_common = |config: &WebSocketConfig| {
-            assert_eq!(config.headers, Vec::<(String, String)>::new());
             assert_eq!(config.heartbeat_interval_secs, Some(10));
             assert_eq!(config.connect_timeout_ms, Some(15_000));
             assert_eq!(config.reconnect_delay_initial_ms, Some(250));

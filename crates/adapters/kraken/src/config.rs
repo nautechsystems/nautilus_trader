@@ -50,11 +50,11 @@ pub struct KrakenDataClientConfig {
     pub ws_private_url: Option<String>,
     /// Override for the L3 WebSocket URL. Defaults to `wss://ws-l3.kraken.com/v2`.
     pub ws_l3_url: Option<String>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<SecretString>,
     /// Validate Kraken's CRC32 checksum on each L3 update.
     #[builder(default = true)]
     pub validate_l3_checksum: bool,
-    /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<SecretString>,
     #[builder(default = 30)]
     pub timeout_secs: u64,
     #[builder(default = 30)]

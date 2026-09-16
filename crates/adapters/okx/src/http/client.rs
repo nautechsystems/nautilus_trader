@@ -50,9 +50,8 @@ use anyhow::Context;
 use jiff::{Timestamp, fmt::rfc2822::DateTimeParser};
 use nautilus_common::{cache::InstrumentLookupError, live::dst::time};
 use nautilus_core::{
-    AtomicMap, AtomicTime, UnixNanos, consts::NAUTILUS_USER_AGENT,
-    datetime::NANOSECONDS_IN_MILLISECOND, env::get_or_env_var, string::secret::REDACTED,
-    time::get_atomic_clock_realtime,
+    AtomicMap, AtomicTime, UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND, env::get_or_env_var,
+    string::secret::REDACTED, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{
@@ -71,7 +70,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, Method, StatusCode, USER_AGENT},
+    http::{HttpClient, Method, StatusCode, create_standard_nautilus_headers},
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
@@ -906,8 +905,8 @@ impl OKXRawHttpClient {
 
     /// Builds the default headers to include with each request (e.g., `User-Agent`).
     fn default_headers(environment: OKXEnvironment) -> HashMap<String, String> {
-        let mut headers =
-            HashMap::from([(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())]);
+        let mut headers: HashMap<String, String> =
+            create_standard_nautilus_headers().into_iter().collect();
 
         if environment == OKXEnvironment::Demo {
             headers.insert("x-simulated-trading".to_string(), "1".to_string());

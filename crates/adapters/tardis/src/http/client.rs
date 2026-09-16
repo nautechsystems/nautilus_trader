@@ -18,11 +18,10 @@ use std::{collections::HashMap, fmt::Debug, sync::Arc};
 use ahash::{AHashMap, AHashSet};
 use nautilus_core::{
     DurationNanos, UnixNanos,
-    consts::NAUTILUS_USER_AGENT,
     string::{parsing::precision_from_str, secret::REDACTED, urlencoding},
 };
 use nautilus_model::instruments::InstrumentAny;
-use nautilus_network::http::{HttpClient, USER_AGENT};
+use nautilus_network::http::{HttpClient, create_standard_nautilus_headers};
 
 use super::{
     error::{Error, TardisErrorResponse},
@@ -97,8 +96,8 @@ impl TardisHttpClient {
         let base_url =
             base_url.map_or_else(|| TARDIS_HTTP_BASE_URL.to_string(), ToString::to_string);
 
-        let mut headers = HashMap::new();
-        headers.insert(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string());
+        let mut headers: HashMap<String, String> =
+            create_standard_nautilus_headers().into_iter().collect();
 
         if let Some(ref cred) = credential {
             headers.insert(

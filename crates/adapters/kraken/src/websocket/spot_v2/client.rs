@@ -38,6 +38,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::{
+    http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     websocket::{
         AuthTracker, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
@@ -287,10 +288,11 @@ impl KrakenSpotWebSocketClient {
         self.signal.store(false, Ordering::Relaxed);
 
         let (raw_handler, raw_rx) = channel_message_handler();
+        let headers = create_standard_nautilus_headers();
 
         let ws_config = WebSocketConfig {
             url: self.url.clone(),
-            headers: vec![],
+            headers,
             heartbeat_interval_secs: Some(self.config.heartbeat_interval_secs),
             heartbeat_payload: Some(WS_PING_MSG.to_string()),
             connect_timeout_ms: Some(5_000),

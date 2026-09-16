@@ -19,6 +19,10 @@ use std::{
     any::Any,
     cell::{OnceCell, RefCell},
     rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::Duration,
 };
 
@@ -31,7 +35,10 @@ use nautilus_common::{
 };
 use nautilus_model::identifiers::ClientId;
 use nautilus_tardis::{
-    common::consts::TARDIS, config::TardisDataClientConfig, factories::TardisDataClientFactory,
+    common::{consts::TARDIS, enums::TardisExchange},
+    config::TardisDataClientConfig,
+    factories::TardisDataClientFactory,
+    machine::types::ReplayNormalizedRequestOptions,
 };
 use rstest::rstest;
 
@@ -156,4 +163,85 @@ async fn test_stop_then_disconnect_completes() {
     );
     assert!(result.unwrap().is_ok());
     assert!(client.is_disconnected());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_connect_uses_tardis_http_url_override() {
+    use axum::{
+        Router,
+        extract::{
+            State,
+            ws::{WebSocket, WebSocketUpgrade},
+        },
+        response::Response,
+        routing::get,
+    };
+
+    #[derive(Clone, Default)]
+    struct HttpState {
+        instrument_hits: Arc<AtomicUsize>,
+    }
+
+    async fn handle_instruments(State(state): State<HttpState>) -> String {
+        state.instrument_hits.fetch_add(1, Ordering::Relaxed);
+        "[]".to_string()
+    }
+
+    async fn handle_replay_ws(ws: WebSocketUpgrade) -> Response {
+        ws.on_upgrade(|socket: WebSocket| async move {
+            drop(socket);
+        })
+    }
+
+    let http_state = HttpState::default();
+    let http_app = Router::new()
+        .route("/instruments/{exchange}", get(handle_instruments))
+        .with_state(http_state.clone());
+    let http_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let http_addr = http_listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(http_listener, http_app).await.unwrap();
+    });
+
+    let ws_app = Router::new().route("/ws-replay-normalized", get(handle_replay_ws));
+    let ws_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let ws_addr = ws_listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(ws_listener, ws_app).await.unwrap();
+    });
+
+    setup_test_env();
+
+    let config = TardisDataClientConfig {
+        api_key: Some("test-key".into()),
+        tardis_ws_url: Some(format!("ws://{ws_addr}").into()),
+        tardis_http_url: Some(format!("http://{http_addr}").into()),
+        options: vec![ReplayNormalizedRequestOptions {
+            exchange: TardisExchange::Bitmex,
+            symbols: Some(vec!["XBTUSD".to_string()]),
+            from: jiff::civil::Date::new(2024, 1, 1).unwrap(),
+            to: jiff::civil::Date::new(2024, 1, 2).unwrap(),
+            data_types: vec!["trade".to_string()],
+            with_disconnect_messages: Some(false),
+        }],
+        ..Default::default()
+    };
+
+    let factory = TardisDataClientFactory::new();
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let mut client = factory
+        .create(TARDIS, &config, cache.into(), clock)
+        .unwrap();
+
+    client.connect().await.unwrap();
+
+    // The instrument bootstrap must hit the configured HTTP override: with the
+    // override unset, requests would go to `api.tardis.dev` instead.
+    assert!(http_state.instrument_hits.load(Ordering::Relaxed) > 0);
+
+    client.disconnect().await.unwrap();
 }

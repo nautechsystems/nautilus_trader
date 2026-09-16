@@ -103,7 +103,9 @@ impl TardisDataClientConfig {
         options = None,
         stream_options = None,
         extract_bbo_as_quotes = None,
+        tardis_http_url = None,
     ))]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         api_key: Option<String>,
         tardis_ws_url: Option<String>,
@@ -112,11 +114,13 @@ impl TardisDataClientConfig {
         options: Option<Vec<ReplayNormalizedRequestOptions>>,
         stream_options: Option<Vec<StreamNormalizedRequestOptions>>,
         extract_bbo_as_quotes: Option<bool>,
+        tardis_http_url: Option<String>,
     ) -> Self {
         let defaults = Self::default();
         Self {
             api_key: api_key.map(SecretString::from),
             tardis_ws_url: tardis_ws_url.map(SecretString::from),
+            tardis_http_url: tardis_http_url.map(SecretString::from),
             proxy_url: proxy_url.map(SecretString::from),
             normalize_symbols: normalize_symbols.unwrap_or(defaults.normalize_symbols),
             book_snapshot_output: defaults.book_snapshot_output,

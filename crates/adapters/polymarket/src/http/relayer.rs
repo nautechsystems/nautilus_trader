@@ -18,9 +18,11 @@
 use std::{collections::HashMap, result::Result as StdResult, str::from_utf8};
 
 use alloy_primitives::{Address, U256};
-use nautilus_core::consts::NAUTILUS_USER_AGENT;
 use nautilus_network::{
-    http::{HttpClient, HttpClientError, HttpRedirectPolicy, HttpResponse, Method, USER_AGENT},
+    http::{
+        HttpClient, HttpClientError, HttpRedirectPolicy, HttpResponse, Method,
+        create_standard_nautilus_headers,
+    },
     websocket::proxy::ProxyUrl,
 };
 use serde::{Deserialize, Serialize};
@@ -140,10 +142,10 @@ impl PolymarketRelayerHttpClient {
     }
 
     fn default_headers() -> HashMap<String, String> {
-        HashMap::from([
-            (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
-            ("Content-Type".to_string(), "application/json".to_string()),
-        ])
+        let mut headers: HashMap<String, String> =
+            create_standard_nautilus_headers().into_iter().collect();
+        headers.insert("Content-Type".to_string(), "application/json".to_string());
+        headers
     }
 
     fn url(&self, path: &str) -> String {

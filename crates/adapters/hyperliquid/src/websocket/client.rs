@@ -48,6 +48,7 @@ use nautilus_model::{
 };
 use nautilus_network::{
     SocketStateSink,
+    http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     websocket::{
         AuthTracker, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
@@ -294,9 +295,11 @@ impl HyperliquidWebSocketClient {
         self.book_streams.clear();
 
         let (message_handler, raw_rx) = channel_message_handler();
+        let headers = create_standard_nautilus_headers();
+
         let cfg = WebSocketConfig {
             url: self.url.clone(),
-            headers: vec![],
+            headers,
             heartbeat_interval_secs: None,
             heartbeat_payload: None,
             connect_timeout_ms: Some(15_000),

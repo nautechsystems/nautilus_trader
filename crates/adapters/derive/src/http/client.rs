@@ -33,7 +33,7 @@ use ahash::AHashMap;
 use alloy::signers::local::PrivateKeySigner;
 use nautilus_core::string::secret::REDACTED;
 use nautilus_network::{
-    http::{HttpClient, HttpClientError, HttpResponse},
+    http::{HttpClient, HttpClientError, HttpResponse, create_standard_nautilus_headers},
     ratelimiter::clock::MonotonicClock,
     retry::{RetryConfig, RetryManager},
 };
@@ -796,6 +796,7 @@ fn build_client(
     // so the network client carries no limiter of its own and never sleeps
     // inside its request path.
     let client = HttpClient::builder()
+        .headers(create_standard_nautilus_headers().into_iter().collect())
         .timeout_secs(timeout_secs)
         .maybe_proxy_url(proxy_url)
         .rate_limiters(Vec::new())

@@ -68,8 +68,13 @@ impl ParquetCompression {
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(deny_unknown_fields)]
 pub struct TardisReplayConfig {
+    /// The Tardis HTTP API base URL override.
+    pub tardis_http_url: Option<SecretString>,
     /// The Tardis Machine websocket url.
     pub tardis_ws_url: Option<SecretString>,
+    /// Optional proxy URL for the Tardis HTTP API client.
+    /// The Tardis Machine WebSocket transport does not yet support proxying.
+    pub proxy_url: Option<SecretString>,
     /// If symbols should be normalized with Nautilus conventions.
     pub normalize_symbols: Option<bool>,
     /// The output directory for writing Nautilus format Parquet files.
@@ -78,9 +83,6 @@ pub struct TardisReplayConfig {
     #[builder(default)]
     #[serde(default)]
     pub options: Vec<ReplayNormalizedRequestOptions>,
-    /// Optional proxy URL for the Tardis HTTP API client.
-    /// The Tardis Machine WebSocket transport does not yet support proxying.
-    pub proxy_url: Option<SecretString>,
     /// The output format for `book_snapshot_*` messages.
     ///
     /// - `deltas`: Convert to `OrderBookDeltas` and write to `order_book_deltas/` (default).
@@ -111,6 +113,8 @@ pub struct TardisDataClientConfig {
     /// Tardis API key for HTTP instrument fetching.
     /// Falls back to `TARDIS_API_KEY` env var if not set.
     pub api_key: Option<SecretString>,
+    /// The Tardis HTTP API base URL override.
+    pub tardis_http_url: Option<SecretString>,
     /// Tardis Machine Server WebSocket URL.
     /// Falls back to `TARDIS_MACHINE_WS_URL` env var if not set.
     pub tardis_ws_url: Option<SecretString>,
@@ -162,6 +166,7 @@ mod tests {
         let config = TardisDataClientConfig::default();
         assert!(config.api_key.is_none());
         assert!(config.tardis_ws_url.is_none());
+        assert!(config.tardis_http_url.is_none());
         assert!(config.proxy_url.is_none());
         assert!(config.normalize_symbols);
         assert!(matches!(
@@ -178,15 +183,17 @@ mod tests {
         let config = TardisDataClientConfig {
             api_key: Some("api-key-value".into()),
             tardis_ws_url: Some("wss://user:ws-secret@localhost".into()),
+            tardis_http_url: Some("https://user:http-secret@localhost".into()),
             proxy_url: Some("http://user:proxy-secret@localhost".into()),
             ..Default::default()
         };
 
         let formatted = format!("{config:?}");
 
-        assert_eq!(formatted.matches(REDACTED).count(), 3);
+        assert_eq!(formatted.matches(REDACTED).count(), 4);
         assert!(!formatted.contains("api-key-value"));
         assert!(!formatted.contains("ws-secret"));
+        assert!(!formatted.contains("http-secret"));
         assert!(!formatted.contains("proxy-secret"));
     }
 

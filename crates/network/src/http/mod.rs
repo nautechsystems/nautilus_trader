@@ -60,13 +60,22 @@ mod transport;
 
 mod stream;
 
+#[cfg(all(test, not(all(feature = "simulation", madsim))))]
+mod tests;
+
 // Re-exports
 pub use client::{HttpClient, HttpRedirectPolicy, InnerHttpClient};
 pub use error::HttpClientError;
 pub use http::{Method, StatusCode, header::USER_AGENT};
+use nautilus_core::consts::NAUTILUS_USER_AGENT;
 pub use stream::HttpResponseStream;
 pub use types::{HttpMethod, HttpResponse, HttpStatus};
 pub use url::Url;
 
-#[cfg(all(test, not(all(feature = "simulation", madsim))))]
-mod tests;
+/// Returns the standard headers every NautilusTrader HTTP and WebSocket client sends.
+///
+/// Carries the NautilusTrader [`USER_AGENT`] with the compile-time version.
+#[must_use]
+pub fn create_standard_nautilus_headers() -> Vec<(String, String)> {
+    vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())]
+}

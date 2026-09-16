@@ -39,6 +39,7 @@ use nautilus_model::{
 };
 use nautilus_network::{
     RECONNECTED, SocketStateSink,
+    http::create_standard_nautilus_headers,
     websocket::{
         TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler,
         proxy::ProxyUrl,
@@ -985,9 +986,11 @@ impl PolymarketRtdsFeed {
     }
 
     fn websocket_config(&self) -> WebSocketConfig {
+        let headers = create_standard_nautilus_headers();
+
         WebSocketConfig {
             url: self.inner.url.clone(),
-            headers: vec![],
+            headers,
             heartbeat_interval_secs: Some(POLYMARKET_RTDS_HEARTBEAT_SECS),
             heartbeat_payload: Some("PING".to_string()),
             connect_timeout_ms: Some(POLYMARKET_RTDS_RECONNECT_TIMEOUT_MS),
@@ -1907,7 +1910,6 @@ mod tests {
 
         assert_eq!(feed.proxy_url().unwrap().expose(), PROXY_URL);
         assert_eq!(config.url, "ws://rtds.example/ws");
-        assert_eq!(config.headers, Vec::<(String, String)>::new());
         assert_eq!(
             config.heartbeat_interval_secs,
             Some(POLYMARKET_RTDS_HEARTBEAT_SECS)

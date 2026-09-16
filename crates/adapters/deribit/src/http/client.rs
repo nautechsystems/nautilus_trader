@@ -41,7 +41,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
 use nautilus_network::{
-    http::{HttpClient, Method},
+    http::{HttpClient, Method, create_standard_nautilus_headers},
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
@@ -220,6 +220,7 @@ impl DeribitRawHttpClient {
         Ok(Self {
             base_url,
             client: HttpClient::builder()
+                .headers(create_standard_nautilus_headers().into_iter().collect())
                 .keyed_quotas(Self::rate_limiter_quotas())
                 .default_quota(*DERIBIT_HTTP_REST_QUOTA)
                 .timeout_secs(timeout_secs)
@@ -354,6 +355,7 @@ impl DeribitRawHttpClient {
         Ok(Self {
             base_url,
             client: HttpClient::builder()
+                .headers(create_standard_nautilus_headers().into_iter().collect())
                 .keyed_quotas(Self::rate_limiter_quotas())
                 .default_quota(*DERIBIT_HTTP_REST_QUOTA)
                 .timeout_secs(timeout_secs)

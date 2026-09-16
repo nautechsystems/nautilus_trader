@@ -30,7 +30,6 @@ use dashmap::{DashMap, mapref::entry::Entry};
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap,
-    consts::NAUTILUS_USER_AGENT,
     nanos::UnixNanos,
     string::secret::SecretString,
     time::{AtomicTime, get_atomic_clock_realtime},
@@ -46,7 +45,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::USER_AGENT,
+    http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     websocket::{
         AuthTracker, InitialConnectRetryPolicy, PingHandler, ReconnectHeaders, TransportBackend,
@@ -455,15 +454,15 @@ impl AxOrdersWebSocketClient {
             // Handler responds to pings internally via select! loop
         });
 
+        let mut headers = create_standard_nautilus_headers();
+        headers.push((
+            "Authorization".to_string(),
+            format!("Bearer {bearer_token}"),
+        ));
+
         let config = WebSocketConfig {
             url: self.url.clone(),
-            headers: vec![
-                (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
-                (
-                    "Authorization".to_string(),
-                    format!("Bearer {bearer_token}"),
-                ),
-            ],
+            headers,
             heartbeat_interval_secs: self.heartbeat,
             heartbeat_payload: None, // Ax server sends heartbeats
             connect_timeout_ms: Some(5_000),

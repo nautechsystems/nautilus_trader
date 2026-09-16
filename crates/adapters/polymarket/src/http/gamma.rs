@@ -29,12 +29,11 @@ use std::{collections::HashMap, result::Result as StdResult, sync::Arc};
 
 use nautilus_core::{
     UnixNanos,
-    consts::NAUTILUS_USER_AGENT,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::instruments::InstrumentAny;
 use nautilus_network::{
-    http::{HttpClient, HttpClientError, Method, USER_AGENT},
+    http::{HttpClient, HttpClientError, Method, create_standard_nautilus_headers},
     retry::{RetryConfig, RetryManager},
     websocket::proxy::ProxyUrl,
 };
@@ -108,10 +107,10 @@ impl PolymarketGammaRawHttpClient {
     }
 
     fn default_headers() -> HashMap<String, String> {
-        HashMap::from([
-            (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
-            ("Content-Type".to_string(), "application/json".to_string()),
-        ])
+        let mut headers: HashMap<String, String> =
+            create_standard_nautilus_headers().into_iter().collect();
+        headers.insert("Content-Type".to_string(), "application/json".to_string());
+        headers
     }
 
     fn url(&self, path: &str) -> String {

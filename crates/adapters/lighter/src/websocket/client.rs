@@ -40,6 +40,7 @@ use nautilus_model::{
 };
 use nautilus_network::{
     SocketStateSink,
+    http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     websocket::{
         InitialConnectRetryPolicy, SubscriptionState, TransportBackend, WebSocketClient,
@@ -449,9 +450,11 @@ impl LighterWebSocketClient {
             .store(Arc::new(cancellation_token.clone()));
 
         let (message_handler, raw_rx) = channel_epoch_message_handler();
+        let headers = create_standard_nautilus_headers();
+
         let cfg = WebSocketConfig {
             url: self.url.clone(),
-            headers: vec![],
+            headers,
             heartbeat_interval_secs: Some(HEARTBEAT_INTERVAL.as_secs()),
             heartbeat_payload: None,
             connect_timeout_ms: Some(self.ws_timeout_secs.saturating_mul(1_000).max(1)),

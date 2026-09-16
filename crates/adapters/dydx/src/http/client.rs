@@ -62,7 +62,6 @@ use jiff::{Timestamp, tz::Offset};
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     UnixNanos,
-    consts::NAUTILUS_USER_AGENT,
     string::urlencoding,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -81,7 +80,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, Method, USER_AGENT},
+    http::{HttpClient, Method, create_standard_nautilus_headers},
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
     retry::{RetryConfig, RetryError, RetryManager},
 };
@@ -238,8 +237,8 @@ impl DydxRawHttpClient {
 
         let retry_manager = RetryManager::new(retry_config.unwrap_or_default());
 
-        let mut headers = HashMap::new();
-        headers.insert(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string());
+        let headers: HashMap<String, String> =
+            create_standard_nautilus_headers().into_iter().collect();
 
         let client = HttpClient::builder()
             .headers(headers)

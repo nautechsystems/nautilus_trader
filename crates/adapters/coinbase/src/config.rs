@@ -43,15 +43,15 @@ pub struct CoinbaseDataClientConfig {
     pub api_key: Option<SecretString>,
     /// CDP API secret in PEM format (falls back to `COINBASE_API_SECRET` env var).
     pub api_secret: Option<SecretString>,
+    /// The Coinbase environment to connect to.
+    #[builder(default)]
+    pub environment: CoinbaseEnvironment,
     /// Override for the REST API base URL.
     pub base_url_rest: Option<String>,
     /// Override for the WebSocket market data URL.
     pub base_url_ws: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
     pub proxy_url: Option<SecretString>,
-    /// The Coinbase environment to connect to.
-    #[builder(default)]
-    pub environment: CoinbaseEnvironment,
     /// HTTP timeout in seconds.
     #[builder(default = 10)]
     pub http_timeout_secs: u64,
@@ -74,9 +74,9 @@ pub struct CoinbaseDataClientConfig {
 
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(CoinbaseDataClientConfig {
+    environment: CoinbaseEnvironment,
     base_url_rest: Option<String>,
     base_url_ws: Option<String>,
-    environment: CoinbaseEnvironment,
     http_timeout_secs: u64,
     ws_timeout_secs: u64,
     update_instruments_interval_mins: u64,
@@ -147,16 +147,16 @@ pub struct CoinbaseExecutionClientConfig {
     pub api_key: Option<SecretString>,
     /// CDP API secret in PEM format (falls back to `COINBASE_API_SECRET` env var).
     pub api_secret: Option<SecretString>,
-    /// Override for the REST API base URL.
+    /// Environment to connect to.
+    #[builder(default)]
+    pub environment: CoinbaseEnvironment,
+    /// Optional override for the REST API base URL.
     pub base_url_rest: Option<String>,
-    /// Override for the WebSocket user data URL.
+    /// Optional override for the WebSocket user data URL.
     pub base_url_ws: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
     pub proxy_url: Option<SecretString>,
-    /// The Coinbase environment to connect to.
-    #[builder(default)]
-    pub environment: CoinbaseEnvironment,
-    /// HTTP timeout in seconds.
+    /// Timeout in seconds for HTTP requests.
     #[builder(default = 10)]
     pub http_timeout_secs: u64,
     /// Maximum number of retry attempts for HTTP requests.
@@ -191,9 +191,9 @@ pub struct CoinbaseExecutionClientConfig {
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(CoinbaseExecutionClientConfig {
     account_id: AccountId,
+    environment: CoinbaseEnvironment,
     base_url_rest: Option<String>,
     base_url_ws: Option<String>,
-    environment: CoinbaseEnvironment,
     http_timeout_secs: u64,
     max_retries: u32,
     retry_delay_initial_ms: u64,

@@ -42,6 +42,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::{
+    http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
     websocket::{
@@ -247,9 +248,11 @@ impl CoinbaseWebSocketClient {
         self.signal.store(false, Ordering::Relaxed);
 
         let (message_handler, raw_rx) = channel_message_handler();
+        let headers = create_standard_nautilus_headers();
+
         let cfg = WebSocketConfig {
             url: self.url.clone(),
-            headers: vec![],
+            headers,
             // Coinbase uses TCP control-frame pings for transport keep-alive;
             // application-layer liveness comes from the heartbeats channel.
             heartbeat_interval_secs: Some(WS_HEARTBEAT_SECS),

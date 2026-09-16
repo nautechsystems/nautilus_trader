@@ -31,6 +31,7 @@ use nautilus_live::{
 };
 use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_network::{
+    http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     websocket::{
         PingHandler, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
@@ -501,10 +502,11 @@ impl BinanceSpotPublicJsonWebSocketClient {
 
         let (raw_handler, raw_rx) = channel_message_handler();
         let ping_handler: PingHandler = Arc::new(move |_| {});
+        let headers = create_standard_nautilus_headers();
 
         let config = WebSocketConfig {
             url: self.url.clone(),
-            headers: vec![],
+            headers,
             heartbeat_interval_secs: self.heartbeat,
             heartbeat_payload: None,
             connect_timeout_ms: Some(5_000),

@@ -29,7 +29,7 @@ use hypersync_client::{
     net_types::{BlockField, BlockSelection, FieldSelection, Query},
     simple_types::Log,
 };
-use nautilus_core::hex;
+use nautilus_core::{consts::NAUTILUS_USER_AGENT, hex};
 use nautilus_live::task::{TaskJoinOutcome, TaskSlot, finish_task};
 use nautilus_model::{
     defi::{Block, Blockchain, DexType, SharedChain},
@@ -111,7 +111,10 @@ impl HyperSyncClient {
         config.api_token = std::env::var("ENVIO_API_TOKEN")
             .expect("ENVIO_API_TOKEN environment variable must be set");
 
-        let client = hypersync_client::Client::new(config)
+        config
+            .validate()
+            .expect("Failed to create HyperSync client - check ENVIO_API_TOKEN is a valid UUID");
+        let client = hypersync_client::Client::new_with_agent(config, NAUTILUS_USER_AGENT)
             .expect("Failed to create HyperSync client - check ENVIO_API_TOKEN is a valid UUID");
 
         Self {

@@ -39,7 +39,6 @@ use futures_util::Stream;
 use nautilus_common::live::dst::time;
 use nautilus_core::{
     AtomicMap, AtomicTime, UnixNanos,
-    consts::NAUTILUS_USER_AGENT,
     env::{get_env_var, get_or_env_var},
     string::secret::{REDACTED, SecretString},
     time::get_atomic_clock_realtime,
@@ -56,7 +55,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::USER_AGENT,
+    http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
     websocket::{
@@ -686,7 +685,7 @@ impl OKXWebSocketClient {
         // Inbound Ping frames are answered by the transport, so no ping handler is needed;
         // the reader routes them away from the message channel and the handler never sees them.
 
-        let headers = vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())];
+        let headers = create_standard_nautilus_headers();
 
         let config = WebSocketConfig {
             url: self.url.clone(),

@@ -37,8 +37,7 @@ use ahash::AHashMap;
 use jiff::Timestamp;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
-    collections::AtomicMap, consts::NAUTILUS_USER_AGENT, datetime::SECONDS_IN_DAY, hex,
-    nanos::UnixNanos, time::AtomicTime,
+    collections::AtomicMap, datetime::SECONDS_IN_DAY, hex, nanos::UnixNanos, time::AtomicTime,
 };
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, TradeTick},
@@ -54,7 +53,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, HttpResponse, Method, USER_AGENT},
+    http::{HttpClient, HttpResponse, Method, create_standard_nautilus_headers},
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
@@ -842,8 +841,9 @@ impl BinanceRawSpotHttpClient {
         credential: &Option<SigningCredential>,
         json_responses: bool,
     ) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string());
+        let mut headers: HashMap<String, String> =
+            create_standard_nautilus_headers().into_iter().collect();
+
         if json_responses {
             headers.insert("Accept".to_string(), "application/json".to_string());
         } else {

@@ -126,7 +126,10 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
 
     let http_client = TardisHttpClient::new(
         None,
-        None,
+        config
+            .tardis_http_url
+            .as_ref()
+            .map(|value| value.expose_secret()),
         None,
         normalize_symbols,
         config

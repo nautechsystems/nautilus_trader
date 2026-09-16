@@ -33,7 +33,7 @@ use arc_swap::ArcSwap;
 use jiff::Timestamp;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
-    AtomicMap, AtomicTime, consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt, nanos::UnixNanos,
+    AtomicMap, AtomicTime, env::get_or_env_var_opt, nanos::UnixNanos,
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
@@ -46,7 +46,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, Method, USER_AGENT},
+    http::{HttpClient, Method, create_standard_nautilus_headers},
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
@@ -363,13 +363,13 @@ impl BybitRawHttpClient {
     }
 
     fn default_headers() -> HashMap<String, String> {
-        HashMap::from([
-            (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
-            (
-                "X-Referer".to_string(),
-                BYBIT_NAUTILUS_BROKER_ID.to_string(),
-            ),
-        ])
+        let mut headers: HashMap<String, String> =
+            create_standard_nautilus_headers().into_iter().collect();
+        headers.insert(
+            "X-Referer".to_string(),
+            BYBIT_NAUTILUS_BROKER_ID.to_string(),
+        );
+        headers
     }
 
     fn build_http_client(

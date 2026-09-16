@@ -30,10 +30,10 @@ use std::{
 use async_stream::stream;
 use futures_util::{Sink, SinkExt, Stream, StreamExt, pin_mut};
 use message::WsMessage;
-use nautilus_core::string::urlencoding;
+use nautilus_core::{consts::NAUTILUS_USER_AGENT, string::urlencoding};
 use tokio_tungstenite::{
     connect_async,
-    tungstenite::{self, protocol::frame::coding::CloseCode},
+    tungstenite::{self, client::IntoClientRequest, protocol::frame::coding::CloseCode},
 };
 use tokio_util::sync::CancellationToken;
 use types::{ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions};
@@ -125,7 +125,13 @@ async fn stream_from_websocket(
     url: String,
     signal: Arc<AtomicBool>,
 ) -> Result<impl Stream<Item = Result<WsMessage>>> {
-    let (ws_stream, ws_resp) = connect_async(url).await?;
+    let mut request = url.into_client_request()?;
+    request.headers_mut().insert(
+        tungstenite::http::header::USER_AGENT,
+        tungstenite::http::HeaderValue::from_static(NAUTILUS_USER_AGENT),
+    );
+
+    let (ws_stream, ws_resp) = connect_async(request).await?;
 
     handle_connection_response(&ws_resp)?;
     log::debug!("Connected to {base_url}");

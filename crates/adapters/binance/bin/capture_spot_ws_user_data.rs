@@ -60,8 +60,11 @@ use nautilus_binance::common::{
     credential::{SigningCredential, resolve_credentials},
     enums::{BinanceEnvironment, BinanceProductType},
 };
-use nautilus_network::websocket::{
-    PingHandler, TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler,
+use nautilus_network::{
+    http::create_standard_nautilus_headers,
+    websocket::{
+        PingHandler, TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler,
+    },
 };
 use serde::Serialize;
 use tokio_tungstenite::tungstenite::Message;
@@ -172,7 +175,8 @@ async fn main() -> anyhow::Result<()> {
     let (raw_handler, mut raw_rx) = channel_message_handler();
     let ping_handler: PingHandler = Arc::new(move |_| {});
 
-    let headers = vec![("X-MBX-APIKEY".to_string(), api_key)];
+    let mut headers = create_standard_nautilus_headers();
+    headers.push(("X-MBX-APIKEY".to_string(), api_key));
 
     let ws_config = WebSocketConfig {
         url,

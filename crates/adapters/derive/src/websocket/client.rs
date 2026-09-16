@@ -44,6 +44,7 @@ use nautilus_live::{
     task::{SharedTaskSlot, TaskJoinOutcome, TaskSlot, finish_task},
 };
 use nautilus_network::{
+    http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     ratelimiter::clock::MonotonicClock,
     websocket::{
@@ -401,9 +402,11 @@ impl DeriveWebSocketClient {
             .store(UNAUTHENTICATED_CONNECTION_EPOCH, Ordering::Release);
 
         let (message_handler, raw_rx) = channel_message_handler();
+        let headers = create_standard_nautilus_headers();
+
         let cfg = WebSocketConfig {
             url: self.url.clone(),
-            headers: vec![],
+            headers,
             heartbeat_interval_secs: Some(WS_HEARTBEAT_SECS),
             heartbeat_payload: None,
             connect_timeout_ms: Some(RECONNECT_TIMEOUT.as_millis() as u64),

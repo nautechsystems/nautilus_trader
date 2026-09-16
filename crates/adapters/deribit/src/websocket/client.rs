@@ -32,8 +32,8 @@ use arc_swap::ArcSwap;
 use futures_util::{FutureExt, Stream, StreamExt, stream::FuturesUnordered};
 use nautilus_common::{enums::LogColor, log_debug};
 use nautilus_core::{
-    AtomicMap, AtomicSet, consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt,
-    string::secret::SecretString, time::get_atomic_clock_realtime,
+    AtomicMap, AtomicSet, env::get_or_env_var_opt, string::secret::SecretString,
+    time::get_atomic_clock_realtime,
 };
 use nautilus_live::{SocketControl, task::TaskGroup};
 use nautilus_model::{
@@ -44,7 +44,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::USER_AGENT,
+    http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     websocket::{
         AuthTracker, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
@@ -554,9 +554,11 @@ impl DeribitWebSocketClient {
         // the reader routes them away from the message channel and the handler never sees them.
 
         // Configure WebSocket client
+        let headers = create_standard_nautilus_headers();
+
         let config = WebSocketConfig {
             url: self.url.clone(),
-            headers: vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())],
+            headers,
             heartbeat_interval_secs: self.heartbeat_interval,
             heartbeat_payload: None, // Deribit uses JSON-RPC heartbeat, not text ping
             connect_timeout_ms: Some(5_000),

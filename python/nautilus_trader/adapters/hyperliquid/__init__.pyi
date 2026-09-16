@@ -69,9 +69,9 @@ class HyperliquidDataClientConfig:
     @property
     def environment(self) -> HyperliquidEnvironment: ...
     @property
-    def base_url_ws(self) -> str | None: ...
-    @property
     def base_url_http(self) -> str | None: ...
+    @property
+    def base_url_ws(self) -> str | None: ...
     @property
     def http_timeout_secs(self) -> int: ...
     @property
@@ -96,8 +96,8 @@ class HyperliquidDataClientConfig:
         self,
         environment: HyperliquidEnvironment | None = None,
         private_key: str | None = None,
-        base_url_ws: str | None = None,
         base_url_http: str | None = None,
+        base_url_ws: str | None = None,
         proxy_url: str | None = None,
         http_timeout_secs: int | None = None,
         ws_timeout_secs: int | None = None,
@@ -129,9 +129,9 @@ class HyperliquidExecutionClientConfig:
     @property
     def environment(self) -> HyperliquidEnvironment: ...
     @property
-    def base_url_ws(self) -> str | None: ...
-    @property
     def base_url_http(self) -> str | None: ...
+    @property
+    def base_url_ws(self) -> str | None: ...
     @property
     def base_url_exchange(self) -> str | None: ...
     @property
@@ -159,8 +159,8 @@ class HyperliquidExecutionClientConfig:
         vault_address: str | None = None,
         account_address: str | None = None,
         environment: HyperliquidEnvironment | None = None,
-        base_url_ws: str | None = None,
         base_url_http: str | None = None,
+        base_url_ws: str | None = None,
         base_url_exchange: str | None = None,
         proxy_url: str | None = None,
         http_timeout_secs: int | None = None,

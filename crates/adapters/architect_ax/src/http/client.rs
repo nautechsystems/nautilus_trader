@@ -27,11 +27,11 @@ use std::{
 
 use anyhow::Context;
 use arc_swap::ArcSwapOption;
-use http::{Method, header::USER_AGENT};
+use http::Method;
 use jiff::{Timestamp, civil::Date};
 use nautilus_core::{
-    AtomicMap, AtomicTime, UUID4, consts::NAUTILUS_USER_AGENT, nanos::UnixNanos,
-    string::secret::SecretString, time::get_atomic_clock_realtime,
+    AtomicMap, AtomicTime, UUID4, nanos::UnixNanos, string::secret::SecretString,
+    time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{Bar, BookOrder, FundingRateUpdate, TradeTick},
@@ -44,7 +44,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::HttpClient,
+    http::{HttpClient, create_standard_nautilus_headers},
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
@@ -266,10 +266,10 @@ impl AxRawHttpClient {
     }
 
     fn default_headers() -> HashMap<String, String> {
-        HashMap::from([
-            (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
-            ("Accept".to_string(), "application/json".to_string()),
-        ])
+        let mut headers: HashMap<String, String> =
+            create_standard_nautilus_headers().into_iter().collect();
+        headers.insert("Accept".to_string(), "application/json".to_string());
+        headers
     }
 
     fn rate_limiter_quotas() -> Vec<(String, Quota)> {

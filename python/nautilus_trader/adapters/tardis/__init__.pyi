@@ -69,6 +69,7 @@ class TardisDataClientConfig:
         options: typing.Sequence[ReplayNormalizedRequestOptions] | None = None,
         stream_options: typing.Sequence[StreamNormalizedRequestOptions] | None = None,
         extract_bbo_as_quotes: bool | None = None,
+        tardis_http_url: str | None = None,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...

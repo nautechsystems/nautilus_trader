@@ -19,8 +19,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use jiff::Timestamp;
 use nautilus_core::{
-    AtomicTime, UnixNanos, consts::NAUTILUS_USER_AGENT, string::secret::SecretString,
-    time::get_atomic_clock_realtime,
+    AtomicTime, UnixNanos, string::secret::SecretString, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{Bar, BarType, FundingRateUpdate, OrderBookDeltas, TradeTick},
@@ -28,7 +27,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::{
-    http::{HttpClient, HttpResponse, Method, USER_AGENT},
+    http::{HttpClient, HttpResponse, Method, create_standard_nautilus_headers},
     ratelimiter::quota::Quota,
     retry::{RetryManager, create_http_retry_manager},
 };
@@ -678,7 +677,7 @@ impl LighterRawHttpClient {
     }
 
     fn default_headers() -> HashMap<String, String> {
-        HashMap::from([(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())])
+        create_standard_nautilus_headers().into_iter().collect()
     }
 }
 

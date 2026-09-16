@@ -36,13 +36,20 @@ use nautilus_common::{
         },
     },
 };
-use nautilus_core::string::urlencoding;
+use nautilus_core::{consts::NAUTILUS_USER_AGENT, string::urlencoding};
 use nautilus_live::task::TaskGroup;
 use nautilus_model::{
     data::Data,
     identifiers::{ClientId, Venue},
 };
-use tokio_tungstenite::{connect_async, tungstenite};
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::{
+        self,
+        client::IntoClientRequest,
+        http::{HeaderValue, header::USER_AGENT},
+    },
+};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -200,8 +207,16 @@ impl TardisDataClient {
                 );
 
                 // Reconnect WS first (critical path), then refresh instruments
+                let ws_request = match build_ws_request(&url) {
+                    Ok(request) => request,
+                    Err(e) => {
+                        log::error!("{e}");
+                        break;
+                    }
+                };
+
                 let ws_result = tokio::select! {
-                    result = connect_async(&url) => Some(result),
+                    result = connect_async(ws_request) => Some(result),
                     () = cancel.cancelled() => None,
                 };
 
@@ -531,7 +546,10 @@ impl DataClient for TardisDataClient {
                 .api_key
                 .as_ref()
                 .map(|value| value.expose_secret()),
-            None,
+            self.config
+                .tardis_http_url
+                .as_ref()
+                .map(|value| value.expose_secret()),
             None,
             self.config.normalize_symbols,
             self.config
@@ -573,7 +591,7 @@ impl DataClient for TardisDataClient {
         log::info!("Connecting to Tardis Machine {mode_label}");
         log::debug!("URL: {url}");
 
-        let (ws_stream, _) = connect_async(&url)
+        let (ws_stream, _) = connect_async(build_ws_request(&url)?)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to connect to Tardis Machine: {e}"))?;
 
@@ -622,6 +640,18 @@ impl DataClient for TardisDataClient {
     }
 }
 
+/// Builds a Tardis Machine WebSocket handshake request carrying the Nautilus
+/// user agent.
+fn build_ws_request(url: &str) -> anyhow::Result<tungstenite::http::Request<()>> {
+    let mut request = url
+        .into_client_request()
+        .map_err(|e| anyhow::anyhow!("Failed to build Tardis Machine WebSocket request: {e}"))?;
+    request
+        .headers_mut()
+        .insert(USER_AGENT, HeaderValue::from_static(NAUTILUS_USER_AGENT));
+    Ok(request)
+}
+
 #[cfg(test)]
 mod tests {
     use jiff::civil::Date;
@@ -634,6 +664,11 @@ mod tests {
         config::TardisDataClientConfig,
         machine::types::ReplayNormalizedRequestOptions,
     };
+
+    #[rstest]
+    fn test_build_ws_request_rejects_invalid_url() {
+        assert!(build_ws_request("not a url").is_err());
+    }
 
     fn setup_test_env() {
         use std::cell::OnceCell;

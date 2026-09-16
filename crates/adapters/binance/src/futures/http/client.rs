@@ -27,10 +27,7 @@ use aws_lc_rs::digest;
 use dashmap::DashMap;
 use jiff::Timestamp;
 use nautilus_common::cache::InstrumentLookupError;
-use nautilus_core::{
-    AtomicMap, consts::NAUTILUS_USER_AGENT, datetime::SECONDS_IN_DAY, nanos::UnixNanos,
-    time::AtomicTime,
-};
+use nautilus_core::{AtomicMap, datetime::SECONDS_IN_DAY, nanos::UnixNanos, time::AtomicTime};
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, FundingRateUpdate, TradeTick},
     enums::{
@@ -45,7 +42,7 @@ use nautilus_model::{
     types::{Currency, Price, Quantity, fixed::FIXED_PRECISION},
 };
 use nautilus_network::{
-    http::{HttpClient, HttpResponse, Method, USER_AGENT},
+    http::{HttpClient, HttpResponse, Method, create_standard_nautilus_headers},
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
     retry::{RetryConfig, RetryError, RetryManager},
 };
@@ -732,8 +729,8 @@ impl BinanceRawFuturesHttpClient {
     }
 
     fn default_headers(credential: &Option<SigningCredential>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string());
+        let mut headers: HashMap<String, String> =
+            create_standard_nautilus_headers().into_iter().collect();
 
         if let Some(cred) = credential {
             headers.insert(

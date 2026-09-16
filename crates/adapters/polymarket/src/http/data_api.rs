@@ -18,7 +18,7 @@
 use std::{collections::HashMap, convert::Infallible, result::Result as StdResult};
 
 use anyhow::Context;
-use nautilus_core::{UnixNanos, consts::NAUTILUS_USER_AGENT};
+use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::TradeTick,
     enums::AggressorSide,
@@ -26,7 +26,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, HttpClientError, Method, USER_AGENT},
+    http::{HttpClient, HttpClientError, Method, create_standard_nautilus_headers},
     websocket::proxy::ProxyUrl,
 };
 use rust_decimal::Decimal;
@@ -243,12 +243,13 @@ impl PolymarketDataApiHttpClient {
         timeout_secs: u64,
         proxy_url: Option<ProxyUrl>,
     ) -> StdResult<Self, HttpClientError> {
+        let mut headers: HashMap<String, String> =
+            create_standard_nautilus_headers().into_iter().collect();
+        headers.insert("Content-Type".to_string(), "application/json".to_string());
+
         Ok(Self {
             client: HttpClient::builder()
-                .headers(HashMap::from([
-                    (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
-                    ("Content-Type".to_string(), "application/json".to_string()),
-                ]))
+                .headers(headers)
                 .timeout_secs(timeout_secs)
                 .maybe_proxy_url(proxy_url.map(|url| url.expose().to_string()))
                 .build()?,

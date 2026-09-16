@@ -50,15 +50,15 @@ pub struct DeribitDataClientConfig {
     /// Product types to load (e.g., Future, Option, Spot).
     #[builder(default = vec![DeribitProductType::Future])]
     pub product_types: Vec<DeribitProductType>,
+    /// The Deribit environment (mainnet or testnet).
+    #[builder(default)]
+    pub environment: DeribitEnvironment,
     /// Optional override for the HTTP base URL.
     pub base_url_http: Option<String>,
     /// Optional override for the WebSocket URL.
     pub base_url_ws: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
     pub proxy_url: Option<SecretString>,
-    /// The Deribit environment (mainnet or testnet).
-    #[builder(default)]
-    pub environment: DeribitEnvironment,
     /// HTTP timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
@@ -166,15 +166,15 @@ pub struct DeribitExecutionClientConfig {
     /// Product types to load (e.g., Future, Option, Spot).
     #[builder(default = vec![DeribitProductType::Future])]
     pub product_types: Vec<DeribitProductType>,
+    /// The Deribit environment (mainnet or testnet).
+    #[builder(default)]
+    pub environment: DeribitEnvironment,
     /// Optional override for the HTTP base URL.
     pub base_url_http: Option<String>,
     /// Optional override for the WebSocket URL.
     pub base_url_ws: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
     pub proxy_url: Option<SecretString>,
-    /// The Deribit environment (mainnet or testnet).
-    #[builder(default)]
-    pub environment: DeribitEnvironment,
     /// HTTP timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,

@@ -21,7 +21,7 @@ use alloy::{sol, sol_types::SolCall};
 use alloy_primitives::{Address, Bytes, U256};
 use nautilus_core::string::secret::REDACTED;
 use nautilus_network::{
-    http::{HttpClient, HttpRedirectPolicy, Method},
+    http::{HttpClient, HttpRedirectPolicy, Method, create_standard_nautilus_headers},
     websocket::proxy::ProxyUrl,
 };
 use serde::Deserialize;
@@ -49,11 +49,12 @@ pub(super) struct WalletVerifier {
 
 impl WalletVerifier {
     pub(super) fn new(timeout_secs: u64, proxy_url: Option<ProxyUrl>) -> Result<Self> {
+        let mut headers: HashMap<String, String> =
+            create_standard_nautilus_headers().into_iter().collect();
+        headers.insert("Content-Type".into(), "application/json".into());
+
         let client = HttpClient::builder()
-            .headers(HashMap::from([(
-                "Content-Type".into(),
-                "application/json".into(),
-            )]))
+            .headers(headers)
             .redirect_policy(HttpRedirectPolicy::Reject)
             .timeout_secs(timeout_secs)
             .maybe_proxy_url(proxy_url.map(|url| url.expose().to_string()))

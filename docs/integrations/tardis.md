@@ -251,6 +251,8 @@ Next, ensure you have a configuration JSON file available.
 
 - `tardis_ws_url` (`str | null`): Tardis Machine WebSocket URL. Defaults to
   `TARDIS_MACHINE_WS_URL`.
+- `tardis_http_url` (`str | null`): Tardis HTTP API base URL. Defaults to
+  `https://api.tardis.dev/v1`.
 - `normalize_symbols` (`bool | null`): applies Nautilus symbol normalization. Defaults to `true`.
 - `output_path` (`str | null`): output directory for Parquet data. When unset, uses
   `<NAUTILUS_PATH>/catalog/data` if `NAUTILUS_PATH` is set, then the current working directory.

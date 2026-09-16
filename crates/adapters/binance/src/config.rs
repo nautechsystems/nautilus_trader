@@ -191,6 +191,10 @@ pub struct BinanceDataClientConfig {
     /// Environment (live, testnet, or demo).
     #[builder(default = BinanceEnvironment::Live)]
     pub environment: BinanceEnvironment,
+    /// API key (Ed25519).
+    pub api_key: Option<SecretString>,
+    /// API secret (Ed25519 base64-encoded or PEM).
+    pub api_secret: Option<SecretString>,
     /// Optional base URL override for HTTP API.
     pub base_url_http: Option<String>,
     /// Optional base URL override for WebSocket.
@@ -198,10 +202,8 @@ pub struct BinanceDataClientConfig {
     /// Live USD-M Futures data overrides are normalized onto the matching
     /// `/market/ws` and `/public/ws` routes.
     pub base_url_ws: Option<String>,
-    /// API key (Ed25519).
-    pub api_key: Option<SecretString>,
-    /// API secret (Ed25519 base64-encoded or PEM).
-    pub api_secret: Option<SecretString>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<SecretString>,
     /// Spot market-data transport mode.
     ///
     /// - `Sbe` uses SBE streams and requires Ed25519 credentials.
@@ -220,8 +222,6 @@ pub struct BinanceDataClientConfig {
     /// changes (e.g. Trading -> Halt). Set to 0 to disable. Defaults to 3600 (60 minutes).
     #[builder(default = 3600)]
     pub instrument_status_poll_secs: u64,
-    /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<SecretString>,
     /// Receive window in milliseconds for signed HTTP requests.
     #[builder(default = 5_000)]
     pub recv_window_ms: u64,
@@ -335,6 +335,10 @@ pub struct BinanceExecutionClientConfig {
     /// Environment (live, testnet, or demo).
     #[builder(default = BinanceEnvironment::Live)]
     pub environment: BinanceEnvironment,
+    /// API key (uses an environment variable if not provided).
+    pub api_key: Option<SecretString>,
+    /// API secret (Ed25519 for Global or HMAC for Binance US).
+    pub api_secret: Option<SecretString>,
     /// Optional base URL override for HTTP API.
     pub base_url_http: Option<String>,
     /// Optional base URL override for WebSocket user data stream.
@@ -343,6 +347,8 @@ pub struct BinanceExecutionClientConfig {
     pub base_url_ws: Option<String>,
     /// Optional base URL override for WebSocket trading API (Spot and USD-M Futures).
     pub base_url_ws_trading: Option<String>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<SecretString>,
     /// Whether to use the WebSocket trading API for order operations (Spot and USD-M Futures).
     #[builder(default = true)]
     pub use_ws_trading: bool,
@@ -383,8 +389,6 @@ pub struct BinanceExecutionClientConfig {
     /// Standard Binance Futures taker fee is 0.0004 (0.04%).
     #[builder(default = Decimal::new(4, 4))]
     pub default_taker_fee: Decimal,
-    /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<SecretString>,
     /// Receive window in milliseconds for signed HTTP requests.
     #[builder(default = 5_000)]
     pub recv_window_ms: u64,
@@ -400,10 +404,6 @@ pub struct BinanceExecutionClientConfig {
     /// Whether to route this Spot client to Binance US.
     #[builder(default)]
     pub us: bool,
-    /// API key (uses an environment variable if not provided).
-    pub api_key: Option<SecretString>,
-    /// API secret (Ed25519 for Global or HMAC for Binance US).
-    pub api_secret: Option<SecretString>,
     /// Initial leverage per Binance symbol (e.g. BTCUSDT -> 20), applied during connect.
     pub futures_leverages: Option<HashMap<String, u32>>,
     /// Margin type per Binance symbol (e.g. BTCUSDT -> Cross), applied during connect.

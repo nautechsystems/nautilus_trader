@@ -394,6 +394,23 @@ live and test endpoints. Keep explicit URL overrides only where custom gateways,
 venue deployments require them. Test every supported environment and any precedence between an
 environment choice and an explicit override.
 
+Lay out config fields in this order:
+
+| Order | Field group                                | Placement rule                                                         |
+| ----- | ------------------------------------------ | ---------------------------------------------------------------------- |
+| 1     | Account identity, credentials, environment | Venue equivalents count: `network`, `deployment`, `region`.            |
+| 2     | URL overrides                              | One contiguous block: `base_url_http` first, then each `base_url_ws*`. |
+| 3     | `proxy_url`                                | Immediately after the URL block.                                       |
+| 4     | Everything else                            | Timeouts, retries, venue-specific behavior.                            |
+
+Resolve each `None` override to the environment default in a config helper method, and pass the
+resolved URL to the client constructor; constructors never read the `Option` fields directly.
+Keep the same relative order across the struct fields, `bon::Builder` accessors, pyo3 getter lists,
+and Python `__init__` signatures. Published Python signatures keep their positional order: new
+parameters are appended, and existing ones are not reordered, so a signature may lag the struct
+order. An intentional reorder of a published signature is a breaking change; note it under
+Breaking Changes in `RELEASES.md`.
+
 ### Credentials and secret handling
 
 When HTTP and WebSocket clients use the same key material, centralize credential handling in a type,

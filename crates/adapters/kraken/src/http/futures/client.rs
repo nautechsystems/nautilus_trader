@@ -29,8 +29,7 @@ use ahash::AHashMap;
 use jiff::Timestamp;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
-    AtomicMap, AtomicTime, UUID4, consts::NAUTILUS_USER_AGENT, nanos::UnixNanos,
-    time::get_atomic_clock_realtime,
+    AtomicMap, AtomicTime, UUID4, nanos::UnixNanos, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, FundingRateUpdate, TradeTick},
@@ -46,7 +45,7 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, HttpResponse, Method, USER_AGENT},
+    http::{HttpClient, HttpResponse, Method, create_standard_nautilus_headers},
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
@@ -264,7 +263,7 @@ impl KrakenFuturesRawHttpClient {
     }
 
     fn default_headers() -> HashMap<String, String> {
-        HashMap::from([(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())])
+        create_standard_nautilus_headers().into_iter().collect()
     }
 
     fn default_quota(max_requests_per_second: u32) -> anyhow::Result<Quota> {

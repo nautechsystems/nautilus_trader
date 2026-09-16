@@ -60,6 +60,12 @@ pub struct OKXDataClientConfig {
     /// Instrument families to load (e.g., "BTC-USD", "ETH-USD").
     /// Required for OPTIONS. Optional for FUTURES/SWAP. Not applicable for SPOT/MARGIN.
     pub instrument_families: Option<Vec<String>>,
+    /// The API environment (live or demo).
+    #[builder(default)]
+    pub environment: OKXEnvironment,
+    /// The API region (global, EEA, or US).
+    #[builder(default)]
+    pub region: OKXRegion,
     /// Optional override for the HTTP base URL.
     pub base_url_http: Option<String>,
     /// Optional override for the public WebSocket URL.
@@ -68,12 +74,6 @@ pub struct OKXDataClientConfig {
     pub base_url_ws_business: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
     pub proxy_url: Option<SecretString>,
-    /// The API environment (live or demo).
-    #[builder(default)]
-    pub environment: OKXEnvironment,
-    /// The API region (global, EEA, or US).
-    #[builder(default)]
-    pub region: OKXRegion,
     /// HTTP timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
@@ -218,6 +218,12 @@ pub struct OKXExecutionClientConfig {
     /// Instrument families to load (e.g., "BTC-USD", "ETH-USD").
     /// Required for OPTIONS. Optional for FUTURES/SWAP. Not applicable for SPOT/MARGIN.
     pub instrument_families: Option<Vec<String>>,
+    /// The API environment (live or demo).
+    #[builder(default)]
+    pub environment: OKXEnvironment,
+    /// The API region (global, EEA, or US).
+    #[builder(default)]
+    pub region: OKXRegion,
     /// Optional override for the HTTP base URL.
     pub base_url_http: Option<String>,
     /// Optional override for the private WebSocket URL.
@@ -226,12 +232,6 @@ pub struct OKXExecutionClientConfig {
     pub base_url_ws_business: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
     pub proxy_url: Option<SecretString>,
-    /// The API environment (live or demo).
-    #[builder(default)]
-    pub environment: OKXEnvironment,
-    /// The API region (global, EEA, or US).
-    #[builder(default)]
-    pub region: OKXRegion,
     /// HTTP timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
