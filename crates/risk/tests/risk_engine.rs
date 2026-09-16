@@ -60,7 +60,7 @@ use nautilus_model::{
         AccountState, OrderAccepted, OrderDeniedReason, OrderEventAny, OrderEventType, OrderFilled,
         OrderPriceField, OrderSubmitted, PositionEvent, PositionOpened,
         account::stubs::cash_account_state_million_usd,
-        order::spec::{OrderAcceptedSpec, OrderFilledSpec, OrderSubmittedSpec},
+        order::spec::{OrderAcceptedSpec, OrderEmulatedSpec, OrderFilledSpec, OrderSubmittedSpec},
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
@@ -264,6 +264,18 @@ fn execute_order_event_handler() -> TypedIntoMessageSavingHandler<TradingCommand
     ));
     msgbus::register_trading_command_endpoint(
         MessagingSwitchboard::exec_engine_queue_execute(),
+        handler,
+    );
+    saving_handler
+}
+
+#[fixture]
+fn emulator_execute_handler() -> TypedIntoMessageSavingHandler<TradingCommand> {
+    let (handler, saving_handler) = get_typed_into_message_saving_handler::<TradingCommand>(Some(
+        Ustr::from("OrderEmulator.execute"),
+    ));
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::order_emulator_execute(),
         handler,
     );
     saving_handler
@@ -6236,17 +6248,99 @@ fn test_submit_order_list_sells_when_trading_reducing_then_denies_orders(
 
 // SUBMIT BRACKET ORDER TESTS
 
-// Verify bracket orders with emulated orders are sent to emulator.
-//
-// This test requires the order emulator component to be implemented. The emulator
-// handles client-side order management for conditional orders (stop-loss, take-profit, etc.)
-// that need to be triggered locally before being sent to the venue.
-//
-// TODO: Re-enable once the emulator component is integrated with the risk engine.
-// Dependencies: Order emulation infrastructure in execution engine
-#[ignore = "Waiting on emulator implementation"]
 #[rstest]
-fn test_submit_bracket_with_emulated_orders_sends_to_emulator() {}
+fn test_submit_bracket_with_emulated_orders_sends_to_emulator(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_audusd: InstrumentAny,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    emulator_execute_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    cash_account_state_million_usd: AccountState,
+    mut simple_cache: Cache,
+) {
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd,
+        )))
+        .unwrap();
+    simple_cache.add_quote(quote_audusd()).unwrap();
+
+    let entry = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_audusd.id())
+        .client_order_id(ClientOrderId::from("O-001"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from_str("100").unwrap())
+        .build();
+    let stop_loss = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_audusd.id())
+        .client_order_id(ClientOrderId::from("O-002"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from_str("100").unwrap())
+        .trigger_price(Price::from("1.00000"))
+        .emulation_trigger(TriggerType::BidAsk)
+        .build();
+    let take_profit = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_audusd.id())
+        .client_order_id(ClientOrderId::from("O-003"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from_str("100").unwrap())
+        .price(Price::from("1.00010"))
+        .emulation_trigger(TriggerType::BidAsk)
+        .build();
+    let orders = [entry, stop_loss, take_profit];
+
+    for order in &orders {
+        simple_cache
+            .add_order(order.clone(), None, Some(client_id_binance), true)
+            .unwrap();
+    }
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let bracket = OrderList::new(
+        OrderListId::new("1"),
+        instrument_audusd.id(),
+        StrategyId::new("S-001"),
+        vec![
+            orders[0].client_order_id(),
+            orders[1].client_order_id(),
+            orders[2].client_order_id(),
+        ],
+        risk_engine.clock().borrow().timestamp_ns(),
+    );
+    let submit_order_list = SubmitOrderList::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        bracket,
+        orders.iter().map(|o| o.init_event().clone()).collect(),
+        None,
+        None,
+        None, // params
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrderList(submit_order_list));
+
+    let emulator_messages = emulator_execute_handler.get_messages();
+    assert_eq!(emulator_messages.len(), 1);
+    assert!(matches!(
+        emulator_messages.first(),
+        Some(TradingCommand::SubmitOrderList(command))
+            if command.order_list.client_order_ids == [
+                ClientOrderId::from("O-001"),
+                ClientOrderId::from("O-002"),
+                ClientOrderId::from("O-003"),
+            ]
+    ));
+    assert!(get_execute_order_event_handler_messages(&execute_order_event_handler).is_empty());
+}
 
 #[rstest]
 fn test_submit_bracket_order_when_instrument_not_in_cache_then_denies(
@@ -6345,16 +6439,68 @@ fn test_submit_bracket_order_when_instrument_not_in_cache_then_denies(
     }
 }
 
-// Verify that orders marked for emulation are correctly routed to the emulator.
-//
-// This test should verify that when an order is submitted with emulation flags,
-// the risk engine routes it to the order emulator rather than directly to execution.
-//
-// TODO: Re-enable once the emulator component is integrated with the risk engine.
-// Dependencies: Order emulation infrastructure in execution engine
-#[ignore = "Waiting on emulator implementation"]
 #[rstest]
-fn test_submit_order_for_emulation_sends_command_to_emulator() {}
+fn test_submit_order_for_emulation_sends_command_to_emulator(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_audusd: InstrumentAny,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    emulator_execute_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    cash_account_state_million_usd: AccountState,
+    mut simple_cache: Cache,
+) {
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd,
+        )))
+        .unwrap();
+    simple_cache.add_quote(quote_audusd()).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from_str("1000").unwrap())
+        .price(Price::from("1.00000"))
+        .emulation_trigger(TriggerType::LastPrice)
+        .build();
+    let client_order_id = order.client_order_id();
+
+    simple_cache
+        .add_order(order.clone(), None, Some(client_id_binance), true)
+        .unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument_audusd.id(),
+        client_order_id,
+        order.init_event().clone(),
+        None,
+        None,
+        None, // params
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let emulator_messages = emulator_execute_handler.get_messages();
+    assert_eq!(emulator_messages.len(), 1);
+    assert!(matches!(
+        emulator_messages.first(),
+        Some(TradingCommand::SubmitOrder(command))
+            if command.client_order_id == client_order_id
+    ));
+    assert!(get_execute_order_event_handler_messages(&execute_order_event_handler).is_empty());
+}
 
 // MODIFY ORDER TESTS
 #[rstest]
@@ -6908,17 +7054,80 @@ fn test_modify_order_when_risk_bypassed_ignores_trading_state(
     );
 }
 
-// Verify that modifications to emulated orders are routed to the emulator.
-//
-// This test should verify that when modifying an order that's being managed by
-// the emulator, the modification command is sent to the emulator rather than
-// directly to the venue.
-//
-// TODO: Re-enable once the emulator component is integrated with the risk engine.
-// Dependencies: Order emulation infrastructure in execution engine
-#[ignore = "Waiting on emulator implementation"]
 #[rstest]
-fn test_modify_order_for_emulated_order_then_sends_to_emulator() {}
+fn test_modify_order_for_emulated_order_then_sends_to_emulator(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_audusd: InstrumentAny,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    emulator_execute_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    cash_account_state_million_usd: AccountState,
+    mut simple_cache: Cache,
+) {
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd,
+        )))
+        .unwrap();
+    simple_cache.add_quote(quote_audusd()).unwrap();
+
+    let mut order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from_str("100").unwrap())
+        .trigger_price(Price::from("1.00020"))
+        .emulation_trigger(TriggerType::BidAsk)
+        .build();
+    order
+        .apply(OrderEventAny::Emulated(
+            OrderEmulatedSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(order.client_order_id())
+                .build(),
+        ))
+        .unwrap();
+    let client_order_id = order.client_order_id();
+
+    simple_cache
+        .add_order(order.clone(), None, Some(client_id_binance), true)
+        .unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let modify_order = ModifyOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument_audusd.id(),
+        client_order_id,
+        None,
+        Some(order.quantity()),
+        None,
+        Some(Price::from("1.00010")),
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None,
+        None, // correlation_id
+    );
+
+    risk_engine.execute(TradingCommand::ModifyOrder(modify_order));
+
+    let emulator_messages = emulator_execute_handler.get_messages();
+    assert_eq!(emulator_messages.len(), 1);
+    assert!(matches!(
+        emulator_messages.first(),
+        Some(TradingCommand::ModifyOrder(command))
+            if command.client_order_id == client_order_id
+                && command.trigger_price == Some(Price::from("1.00010"))
+    ));
+    assert!(get_execute_order_event_handler_messages(&execute_order_event_handler).is_empty());
+}
 
 #[rstest]
 fn test_submit_order_when_betting_back_order_liability_within_free_balance_then_accepts(

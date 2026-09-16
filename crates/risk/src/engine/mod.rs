@@ -226,8 +226,7 @@ impl RiskEngine {
     ) -> Throttler<TradingCommand, SubmitCommandFn> {
         let success_handler = {
             Box::new(move |command: TradingCommand| {
-                let endpoint = MessagingSwitchboard::exec_engine_queue_execute();
-                msgbus::send_trading_command(endpoint, command);
+                Self::send_approved_command(command);
             }) as Box<dyn Fn(TradingCommand)>
         };
 
@@ -304,9 +303,9 @@ impl RiskEngine {
         cache: Rc<RefCell<Cache>>,
     ) -> Throttler<ModifyOrder, ModifyOrderFn> {
         let success_handler = {
+            let cache = cache.clone();
             Box::new(move |order: ModifyOrder| {
-                let endpoint = MessagingSwitchboard::exec_engine_queue_execute();
-                msgbus::send_trading_command(endpoint, TradingCommand::ModifyOrder(order));
+                Self::send_approved_modify(&cache, order);
             }) as Box<dyn Fn(ModifyOrder)>
         };
 
@@ -860,7 +859,7 @@ impl RiskEngine {
 
     fn handle_modify_order(&mut self, command: ModifyOrder) {
         if self.config.bypass {
-            Self::send_to_execution(TradingCommand::ModifyOrder(command));
+            Self::send_approved_modify(&self.cache, command);
             return;
         }
 
@@ -2357,8 +2356,43 @@ impl RiskEngine {
     }
 
     fn send_to_execution(command: TradingCommand) {
-        let endpoint = MessagingSwitchboard::exec_engine_queue_execute();
+        Self::send_approved_command(command);
+    }
+
+    fn command_is_emulated(command: &TradingCommand) -> bool {
+        match command {
+            TradingCommand::SubmitOrder(command) => command.order_init.emulation_trigger.is_some(),
+            TradingCommand::SubmitOrderList(command) => command
+                .order_inits
+                .iter()
+                .any(|init| init.emulation_trigger.is_some()),
+            _ => false,
+        }
+    }
+
+    // Routes emulated submits to the local emulator instead of the venue
+    fn send_approved_command(command: TradingCommand) {
+        let endpoint = if Self::command_is_emulated(&command) {
+            MessagingSwitchboard::order_emulator_execute()
+        } else {
+            MessagingSwitchboard::exec_engine_queue_execute()
+        };
         msgbus::send_trading_command(endpoint, command);
+    }
+
+    fn send_approved_modify(cache: &Rc<RefCell<Cache>>, command: ModifyOrder) {
+        let send_to_emulator = {
+            let cache = cache.borrow();
+            cache
+                .order(&command.client_order_id)
+                .is_some_and(|order| order.emulation_trigger().is_some() || order.is_emulated())
+        };
+        let endpoint = if send_to_emulator {
+            MessagingSwitchboard::order_emulator_execute()
+        } else {
+            MessagingSwitchboard::exec_engine_queue_execute()
+        };
+        msgbus::send_trading_command(endpoint, TradingCommand::ModifyOrder(command));
     }
 
     fn handle_event(&self, event: &OrderEventAny) {
