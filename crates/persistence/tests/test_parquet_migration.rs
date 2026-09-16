@@ -70,6 +70,7 @@ fn runtime_queries_reject_legacy_catalogs(
         fs::create_dir_all(target.parent().unwrap()).unwrap();
         fs::write(target, bytes).unwrap();
     }
+
     let mut catalog = ParquetDataCatalog::new(temporary.path(), None, None, None, None);
 
     let result = match query {

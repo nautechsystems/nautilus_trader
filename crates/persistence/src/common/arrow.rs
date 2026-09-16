@@ -178,8 +178,16 @@ impl_batch_identity!(
 impl_batch_identity!(
     OrderBookDepth,
     |value: &OrderBookDepth| value.instrument_id,
-    |value: &OrderBookDepth| Some(value.bids[0].price.precision),
-    |value: &OrderBookDepth| Some(value.bids[0].size.precision)
+    |value: &OrderBookDepth| value
+        .bids
+        .first()
+        .or_else(|| value.asks.first())
+        .map(|order| order.price.precision),
+    |value: &OrderBookDepth| value
+        .bids
+        .first()
+        .or_else(|| value.asks.first())
+        .map(|order| order.size.precision)
 );
 #[cfg(feature = "python")]
 impl_batch_identity!(

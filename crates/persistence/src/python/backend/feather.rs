@@ -33,7 +33,6 @@ use std::{
 use nautilus_common::{
     clock::Clock,
     live::{block_on_nautilus_with, get_runtime},
-    msgbus::typed_handler::ShareableMessageHandler,
     python::{cache::PyCache, clock::PyClock},
 };
 use nautilus_core::{UnixNanos, datetime::get_timezone, python::to_pyruntime_err};
@@ -58,7 +57,10 @@ use pyo3::{exceptions::PyIOError, prelude::*};
 use crate::{
     common::storage::{StorageBackend, create_storage_backend_from_path},
     python::backend::writer_record_filter_from_py,
-    writer::feather::{FeatherWriter, RotationConfig, WriterClock},
+    writer::{
+        feather::{FeatherWriter, RotationConfig, WriterClock},
+        subscription::StreamingSinkSubscription,
+    },
 };
 
 /// Source clock plus the shared atomic the writer reads time from.
@@ -76,7 +78,7 @@ type ClockBridge = (Rc<RefCell<dyn Clock>>, Arc<AtomicU64>);
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.persistence")]
 pub struct PyStreamingFeatherWriter {
     writer: Rc<RefCell<FeatherWriter>>,
-    handler: Option<ShareableMessageHandler>,
+    handler: Option<StreamingSinkSubscription>,
     run_manifest: Option<(StorageBackend, String, String)>,
     run_manifest_has_data: RefCell<bool>,
     /// Present when constructed with a non-live clock: the source clock plus the

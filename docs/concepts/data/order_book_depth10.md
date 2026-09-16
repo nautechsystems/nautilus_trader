@@ -24,8 +24,8 @@ Use it when a venue publishes a self-contained depth snapshot rather than increm
 - Empty sides use empty sequences. The inline capacity is ten; larger snapshots allocate as needed.
 - This type is not interchangeable with incremental `OrderBookDelta` streams.
 
-`OrderBookDepth10` remains a compatibility name. The legacy C FFI and fixed-depth SBE encoding require exactly ten
-levels per side.
+`OrderBookDepth10` remains a Rust compatibility name. Python exposes `OrderBookDepth` only.
+The legacy C FFI and fixed-depth SBE encoding require exactly ten levels per side.
 
 ## Example
 

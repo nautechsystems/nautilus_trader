@@ -557,7 +557,7 @@ mod tests {
     use nautilus_model::{
         data::{Data, DataBatch, NautilusDataType, QuoteTick},
         identifiers::InstrumentId,
-        types::{Price, Quantity},
+        types::{ERROR_PRICE, Price, Quantity},
     };
     use rstest::rstest;
     use serde_json::json;
@@ -580,6 +580,11 @@ mod tests {
             parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
                 .unwrap();
         let quote = sample_quote();
+        let mut second = quote;
+        second.instrument_id = InstrumentId::from("BTC/USD.SIM");
+        second.bid_price = Price::from("100.1234");
+        second.ask_price = Price::from("100.5678");
+        second.ts_init = UnixNanos::from(24);
         let mut catalog = ParquetDataCatalog::from_uri(
             directory.path().to_str().unwrap(),
             None,
@@ -589,6 +594,7 @@ mod tests {
         )
         .unwrap();
         sink.write_data(Data::Quote(quote)).unwrap();
+        sink.write_data(Data::Quote(second)).unwrap();
         sink.flush().unwrap();
         let before = catalog
             .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
@@ -607,7 +613,8 @@ mod tests {
         let DataBatch::Quote(rows) = after else {
             panic!("expected quotes")
         };
-        assert_eq!(rows.as_ref(), &[quote]);
+
+        assert_eq!(rows.as_ref(), &[quote, second]);
         assert_eq!(staged, usize::from(!delete_source));
     }
 
@@ -660,6 +667,222 @@ mod tests {
             panic!("expected quotes")
         };
         assert_eq!(rows.as_ref(), &[quote]);
+    }
+
+    #[rstest]
+    fn parquet_streaming_funding_round_trip() {
+        use nautilus_model::data::FundingRateUpdate;
+        let directory = TempDir::new().unwrap();
+
+        let config = WriterConnectConfig::new(
+            directory
+                .path()
+                .join("backtest/run-funding")
+                .to_string_lossy(),
+            None,
+        );
+        let mut sink =
+            parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
+                .unwrap();
+
+        let funding = FundingRateUpdate::new(
+            InstrumentId::from("AUD/USD.SIM"),
+            "0.0012".parse().unwrap(),
+            Some(480),
+            Some(789.into()),
+            123.into(),
+            456.into(),
+        );
+        assert!(sink.write_any(&funding).unwrap());
+        sink.close().unwrap();
+        let mut catalog = ParquetDataCatalog::from_uri(
+            directory.path().to_str().unwrap(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let rows = catalog
+            .query_batch(&CatalogQuery::new(NautilusDataType::FundingRateUpdate))
+            .unwrap();
+
+        let DataBatch::FundingRate(rows) = rows else {
+            panic!("expected funding rates")
+        };
+
+        assert_eq!(rows.as_ref(), &[funding]);
+    }
+
+    #[rstest]
+    fn parquet_streaming_write_error_reaches_flush() {
+        let directory = TempDir::new().unwrap();
+
+        let config = WriterConnectConfig::new(
+            directory
+                .path()
+                .join("backtest/run-error")
+                .to_string_lossy(),
+            None,
+        );
+        let mut sink =
+            parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
+                .unwrap();
+        let mut quote = sample_quote();
+        quote.bid_price = ERROR_PRICE;
+        let write_error = sink.write_any(&quote).unwrap_err().to_string();
+        let flush_error = sink.flush().unwrap_err().to_string();
+        assert_eq!(flush_error, write_error);
+    }
+
+    #[rstest]
+    fn parquet_streaming_instrument_promotes() {
+        use nautilus_model::instruments::{InstrumentAny, stubs::audusd_sim};
+        let directory = TempDir::new().unwrap();
+
+        let config = WriterConnectConfig::new(
+            directory
+                .path()
+                .join("backtest/run-instrument")
+                .to_string_lossy(),
+            None,
+        );
+        let mut sink =
+            parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
+                .unwrap();
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        assert!(sink.write_any(&instrument).unwrap());
+        sink.close().unwrap();
+        let mut catalog = ParquetDataCatalog::from_uri(
+            directory.path().to_str().unwrap(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let rows = catalog
+            .query_batch(&CatalogQuery::new(NautilusDataType::Instrument))
+            .unwrap();
+
+        let DataBatch::Instrument(rows) = rows else {
+            panic!("expected instruments")
+        };
+
+        assert_eq!(rows.as_ref(), &[instrument]);
+    }
+
+    #[rstest]
+    fn parquet_streaming_voided_fill_promotes() {
+        use nautilus_model::events::{OrderFillVoided, order::spec::OrderFillVoidedSpec};
+        use nautilus_serialization::arrow::DecodeTypedFromRecordBatch;
+        let directory = TempDir::new().unwrap();
+
+        let config = WriterConnectConfig::new(
+            directory.path().join("backtest/run-void").to_string_lossy(),
+            None,
+        );
+        let mut sink =
+            parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
+                .unwrap();
+        let event = OrderFillVoidedSpec::builder().is_reopened(true).build();
+        assert!(sink.write_any(&event).unwrap());
+        sink.close().unwrap();
+        let mut catalog = ParquetDataCatalog::from_uri(
+            directory.path().to_str().unwrap(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let batches = catalog
+            .query_record_batches("order_fill_voided", None, None, None, None, true)
+            .unwrap();
+        let mut rows = Vec::new();
+        for batch in batches {
+            rows.extend(
+                OrderFillVoided::decode_typed_batch(batch.schema().metadata(), batch.clone())
+                    .unwrap(),
+            );
+        }
+
+        assert_eq!(rows, vec![event]);
+    }
+
+    #[rstest]
+    #[case(true)]
+    #[case(false)]
+    fn parquet_promotion_retains_conflicting_schema_groups(#[case] automatic: bool) {
+        use nautilus_model::{
+            data::{BookOrder, OrderBookDepth},
+            enums::OrderSide,
+        };
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("backtest/run-depth-ties");
+        let mut config = WriterConnectConfig::new(staging.to_string_lossy(), None);
+        config.params = Some(
+            serde_json::from_value(
+                json!({"delete_feather_after_commit": true, "promote_on_close": automatic}),
+            )
+            .unwrap(),
+        );
+        let mut sink =
+            parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
+                .unwrap();
+        let id = InstrumentId::from("AUD/USD.SIM");
+        let empty =
+            OrderBookDepth::new(id, vec![], vec![], vec![], vec![], 1, 2, 3.into(), 4.into());
+
+        let order = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("1.23"),
+            Quantity::from("4.5"),
+            6,
+        );
+
+        let populated = OrderBookDepth::new(
+            id,
+            vec![order],
+            vec![],
+            vec![7],
+            vec![],
+            8,
+            9,
+            3.into(),
+            4.into(),
+        );
+        sink.write_any(&empty).unwrap();
+        sink.write_any(&populated).unwrap();
+
+        let error = if automatic {
+            sink.close().unwrap_err().to_string()
+        } else {
+            sink.close().unwrap();
+            let mut catalog = ParquetDataCatalog::from_uri(
+                directory.path().to_str().unwrap(),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            catalog
+                .convert_stream_to_data(
+                    "run-depth-ties",
+                    "order_book_depths",
+                    Some("backtest"),
+                    None,
+                    false,
+                )
+                .unwrap_err()
+                .to_string()
+        };
+
+        let storage = create_storage_backend_from_path(staging.to_str().unwrap(), None).unwrap();
+        let staged = block_on_nautilus_with(|| storage.list_files("", Some(".feather"))).unwrap();
+        assert!(error.contains("non-disjoint intervals"), "{error}");
+        assert_eq!(staged.len(), 1);
     }
 
     fn sample_quote() -> QuoteTick {

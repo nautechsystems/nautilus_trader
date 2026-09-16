@@ -482,6 +482,9 @@ fn transcode_instrument_close(
     file_path: &str,
     state: &mut LegacyTranscodeState,
 ) -> Result<Vec<RecordBatch>, LegacyArrowError> {
+    let normalized = super::record_batch_with_u64_timestamps(batch)
+        .map_err(|e| transcode_error("instrument_closes", file_path, e.to_string()))?;
+    let batch = &normalized;
     let instrument_ids = required_typed_column::<StringArray>(
         batch,
         "instrument_id",
@@ -1984,7 +1987,9 @@ mod tests {
     }
 
     #[rstest]
-    fn instrument_close_is_split_and_decoded() {
+    #[case(false)]
+    #[case(true)]
+    fn instrument_close_is_split_and_decoded(#[case] normalized: bool) {
         let schema = Arc::new(legacy_instrument_close_schema());
         let batch = RecordBatch::try_new(
             schema,
@@ -2006,6 +2011,12 @@ mod tests {
         )
         .unwrap();
 
+        let batch = if normalized {
+            normalize_legacy_fixed_columns(&batch).unwrap()
+        } else {
+            batch
+        };
+
         let result =
             transcode_legacy_record_batch("instrument_closes", "close.parquet", batch).unwrap();
         let decoded = result
@@ -2016,6 +2027,13 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
+        assert_eq!(
+            decoded
+                .iter()
+                .map(|close| (close.ts_event.as_u64(), close.ts_init.as_u64()))
+                .collect::<Vec<_>>(),
+            vec![(1, 4), (3, 6), (2, 5)]
+        );
         assert_eq!(result.kind, LegacyTranscodeKind::InstrumentCloseV1);
         assert_eq!(result.batches.len(), 2);
         assert_eq!(

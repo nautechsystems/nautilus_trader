@@ -146,7 +146,7 @@ pub(crate) trait PromotionSink: Send {
 
     fn stop_periodic_promotion(&mut self);
 
-    fn take_periodic_promotion_error(&mut self) -> anyhow::Result<()>;
+    fn take_pending_error(&mut self) -> anyhow::Result<()>;
 
     fn should_promote_on_flush(&self) -> bool;
 
@@ -195,22 +195,23 @@ where
         } else {
             Ok(())
         };
-        let timer_result = self.take_periodic_promotion_error();
+
+        let pending_result = self.take_pending_error();
 
         background_result?;
         promotion_result?;
-        timer_result
+        pending_result
     }
 
     fn close(&mut self) -> anyhow::Result<()> {
         self.stop_periodic_promotion();
         self.close_staging()?;
         let background_result = self.wait_for_background_promotions();
-        let timer_result = self.take_periodic_promotion_error();
+        let pending_result = self.take_pending_error();
 
         let promotion_result = if self.should_promote_on_close() {
             self.promote().map(|_| ())
-        } else if background_result.is_ok() && timer_result.is_ok() {
+        } else if background_result.is_ok() && pending_result.is_ok() {
             self.record_completed();
             Ok(())
         } else {
@@ -219,7 +220,7 @@ where
 
         background_result?;
         promotion_result?;
-        timer_result
+        pending_result
     }
 }
 
@@ -1112,8 +1113,8 @@ mod tests {
             self.calls.push("stop_periodic_promotion");
         }
 
-        fn take_periodic_promotion_error(&mut self) -> anyhow::Result<()> {
-            self.calls.push("take_periodic_promotion_error");
+        fn take_pending_error(&mut self) -> anyhow::Result<()> {
+            self.calls.push("take_pending_error");
             Ok(())
         }
 
@@ -1158,7 +1159,7 @@ mod tests {
                 "flush_staging",
                 "wait_for_background_promotions",
                 "promote",
-                "take_periodic_promotion_error",
+                "take_pending_error",
             ]
         );
     }
@@ -1176,7 +1177,7 @@ mod tests {
                 "stop_periodic_promotion",
                 "close_staging",
                 "wait_for_background_promotions",
-                "take_periodic_promotion_error",
+                "take_pending_error",
                 "promote",
             ]
         );

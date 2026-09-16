@@ -588,10 +588,8 @@ impl ParquetDataCatalog {
 
         if optimize_file_loading {
             // Deterministic registration order so equal-ts_init tie order is reproducible.
-            for directory in parent_directories(&files_list) {
-                let identifier = decode_object_store_segment(&dir_identifier(&directory));
-                let safe_sql_identifier = make_sql_safe_identifier(&identifier);
-                let table_name = format!("{table_prefix}_{safe_sql_identifier}");
+            for (index, directory) in parent_directories(&files_list).into_iter().enumerate() {
+                let table_name = format!("{table_prefix}_{index}");
                 let query = build_query(&table_name, start, end, where_clause);
                 let resolved_path = self.resolve_directory_for_datafusion(&directory);
                 record_batches.extend(self.session.collect_parquet_files_batches(
@@ -601,13 +599,8 @@ impl ParquetDataCatalog {
                 )?);
             }
         } else {
-            for file_uri in &files_list {
-                let identifier = extract_identifier_from_path(file_uri).ok_or_else(|| {
-                    anyhow::anyhow!("Cannot extract identifier from path '{file_uri}'")
-                })?;
-                let safe_sql_identifier = make_sql_safe_identifier(identifier);
-                let safe_filename = extract_sql_safe_filename(file_uri);
-                let table_name = format!("{table_prefix}_{safe_sql_identifier}_{safe_filename}");
+            for (index, file_uri) in files_list.iter().enumerate() {
+                let table_name = format!("{table_prefix}_{index}");
                 let query = build_query(&table_name, start, end, where_clause);
                 let resolved_path = self.resolve_path_for_datafusion(file_uri);
                 record_batches.extend(self.session.collect_parquet_files_batches(
@@ -646,14 +639,9 @@ impl ParquetDataCatalog {
 
         if optimize_file_loading {
             // Deterministic registration order so equal-ts_init tie order is reproducible.
-            for directory in parent_directories(&files_list) {
+            for (index, directory) in parent_directories(&files_list).into_iter().enumerate() {
                 let path_identifier = display_identifier(data_type, &directory);
-                let safe_sql_identifier = make_sql_safe_identifier(
-                    path_identifier
-                        .as_deref()
-                        .unwrap_or(data_path_prefix.as_ref()),
-                );
-                let table_name = format!("{table_prefix}_{safe_sql_identifier}");
+                let table_name = format!("{table_prefix}_{index}");
                 let query = build_query(&table_name, start, end, where_clause);
                 let resolved_path = self.resolve_directory_for_datafusion(&directory);
                 let batches = self.session.collect_parquet_files_batches(
@@ -673,19 +661,13 @@ impl ParquetDataCatalog {
                 }
             }
         } else {
-            for file_uri in &files_list {
+            for (index, file_uri) in files_list.iter().enumerate() {
                 let directory = Path::new(file_uri)
                     .parent()
                     .ok_or_else(|| anyhow::anyhow!("Cannot extract directory from '{file_uri}'"))?
                     .to_string_lossy();
                 let path_identifier = display_identifier(data_type, &directory);
-                let safe_sql_identifier = make_sql_safe_identifier(
-                    path_identifier
-                        .as_deref()
-                        .unwrap_or(data_path_prefix.as_ref()),
-                );
-                let safe_filename = extract_sql_safe_filename(file_uri);
-                let table_name = format!("{table_prefix}_{safe_sql_identifier}_{safe_filename}");
+                let table_name = format!("{table_prefix}_{index}");
                 let query = build_query(&table_name, start, end, where_clause);
                 let resolved_path = self.resolve_path_for_datafusion(file_uri);
                 let batches = self.session.collect_parquet_files_batches(
@@ -729,10 +711,9 @@ impl ParquetDataCatalog {
         let table_prefix = make_sql_safe_identifier(data_type);
         let mut identifiers = Vec::new();
 
-        for directory in parent_directories(&files_list) {
+        for (index, directory) in parent_directories(&files_list).into_iter().enumerate() {
             let identifier = dir_identifier(&directory);
-            let safe_identifier = make_sql_safe_identifier(&identifier);
-            let table_name = format!("{table_prefix}_{safe_identifier}_identifier_check");
+            let table_name = format!("{table_prefix}_{index}_identifier_check");
             let query = format!(
                 "{} LIMIT 1",
                 build_query(&table_name, start, end, where_clause)

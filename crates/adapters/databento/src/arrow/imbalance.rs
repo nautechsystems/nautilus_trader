@@ -38,9 +38,9 @@ use crate::types::DatabentoImbalance;
 impl ArrowSchemaProvider for DatabentoImbalance {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
         let fields = vec![
-            Field::new("ref_price", fixed_decimal_data_type(), false),
-            Field::new("cont_book_clr_price", fixed_decimal_data_type(), false),
-            Field::new("auct_interest_clr_price", fixed_decimal_data_type(), false),
+            Field::new("ref_price", fixed_decimal_data_type(), true),
+            Field::new("cont_book_clr_price", fixed_decimal_data_type(), true),
+            Field::new("auct_interest_clr_price", fixed_decimal_data_type(), true),
             Field::new("paired_qty", fixed_decimal_data_type(), false),
             Field::new("total_imbalance_qty", fixed_decimal_data_type(), false),
             Field::new("side", enum_dictionary_data_type(), false),
@@ -249,7 +249,7 @@ mod tests {
     use nautilus_model::{
         enums::OrderSide,
         identifiers::InstrumentId,
-        types::{Price, Quantity},
+        types::{PRICE_UNDEF, Price, Quantity},
     };
     use nautilus_serialization::arrow::{
         ArrowSchemaProvider, EncodeToRecordBatch, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
@@ -281,6 +281,20 @@ mod tests {
             2.into(),
             3.into(),
         )
+    }
+
+    #[rstest]
+    fn test_undefined_prices_round_trip() {
+        let mut value = test_imbalance(InstrumentId::from("AAPL.XNAS"));
+        value.ref_price = Price::from_raw(PRICE_UNDEF, 0);
+        value.cont_book_clr_price = value.ref_price;
+        value.auct_interest_clr_price = value.ref_price;
+        let metadata = test_metadata();
+        let batch =
+            DatabentoImbalance::encode_batch(&metadata, std::slice::from_ref(&value)).unwrap();
+        let decoded = decode_imbalance_batch(&metadata, &batch).unwrap();
+
+        assert_eq!(decoded, vec![value]);
     }
 
     #[rstest]

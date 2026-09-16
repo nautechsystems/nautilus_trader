@@ -23,11 +23,8 @@ use nautilus_serialization::arrow::U64ColumnRef;
 
 use crate::{
     backend::parquet::{
-        catalog::ParquetDataCatalog,
-        io::read_parquet_schema_from_object_store,
-        paths::{
-            extract_identifier_from_path, extract_sql_safe_filename, make_sql_safe_identifier,
-        },
+        catalog::ParquetDataCatalog, io::read_parquet_schema_from_object_store,
+        paths::make_sql_safe_identifier,
     },
     catalog::traits::CatalogMetadata,
     common::{datafusion::build_query, metadata::arrow_metadata_to_params},
@@ -54,7 +51,7 @@ impl ParquetDataCatalog {
         let table_prefix = make_sql_safe_identifier(data_type);
         let mut metadata_by_key: BTreeMap<String, CatalogMetadata> = BTreeMap::new();
 
-        for file_uri in &files_list {
+        for (index, file_uri) in files_list.iter().enumerate() {
             let object_path = self.to_object_path_parsed(file_uri)?;
             let metadata = self.execute_async(|| async {
                 let schema =
@@ -63,12 +60,7 @@ impl ParquetDataCatalog {
                 Ok::<HashMap<String, String>, anyhow::Error>(schema.metadata().clone())
             })?;
 
-            let identifier = extract_identifier_from_path(file_uri).ok_or_else(|| {
-                anyhow::anyhow!("Cannot extract identifier from path '{file_uri}'")
-            })?;
-            let safe_sql_identifier = make_sql_safe_identifier(identifier);
-            let safe_filename = extract_sql_safe_filename(file_uri);
-            let table_name = format!("{table_prefix}_{safe_sql_identifier}_{safe_filename}");
+            let table_name = format!("{table_prefix}_{index}");
             let query = build_query(&table_name, start, end, where_clause);
             let resolved_path = self.resolve_path_for_datafusion(file_uri);
             let batches = self.session.collect_parquet_files_batches(

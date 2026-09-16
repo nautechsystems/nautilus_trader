@@ -170,6 +170,13 @@ impl StreamingSinkSubscription {
     ///
     /// Returns an error if the underlying sink cannot be closed.
     pub fn close(&self) -> anyhow::Result<()> {
+        self.unsubscribe();
+        refresh_writer_clock(&self.clock_bridge);
+        self.sink.borrow_mut().close()
+    }
+
+    /// Removes all message-bus subscriptions without closing the sink.
+    pub fn unsubscribe(&self) {
         let pattern = MStr::pattern("*");
         let order_events_pattern = MStr::pattern("events.order.*");
 
@@ -187,9 +194,6 @@ impl StreamingSinkSubscription {
         unsubscribe_account_state(pattern, &self.account_state_handler);
         unsubscribe_order_events(order_events_pattern, &self.order_events_handler);
         unsubscribe_position_events(pattern, &self.position_events_handler);
-
-        refresh_writer_clock(&self.clock_bridge);
-        self.sink.borrow_mut().close()
     }
 }
 

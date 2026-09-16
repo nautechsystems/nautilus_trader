@@ -367,6 +367,13 @@ pub fn money_array(
 
     for value in values {
         if let Some(value) = value {
+            if value.currency.precision > FIXED_DECIMAL_SCALE as u8 {
+                return Err(ArrowError::InvalidArgumentError(format!(
+                    "Money currency precision {} exceeds catalog scale {FIXED_DECIMAL_SCALE}",
+                    value.currency.precision,
+                )));
+            }
+
             amounts.push(money_raw_to_decimal(value.raw()));
             currencies.append(value.currency.to_string())?;
             validity.push(true);
@@ -480,6 +487,17 @@ pub fn decode_money(
             ),
         )
     })?;
+
+    if currency.precision > FIXED_DECIMAL_SCALE as u8 {
+        return Err(EncodingError::ParseError(
+            field,
+            format!(
+                "row {row}: Money currency precision {} exceeds catalog scale {FIXED_DECIMAL_SCALE}",
+                currency.precision,
+            ),
+        ));
+    }
+
     Money::from_raw_checked(raw, currency)
         .map_err(|e| EncodingError::ParseError(field, format!("row {row}: {e}")))
 }
@@ -1958,13 +1976,32 @@ mod tests {
             Bar, BarSpecification, BarType, BookOrder, DEPTH10_LEN, OrderBookDelta, OrderBookDepth,
             QuoteTick, order::NULL_ORDER,
         },
-        enums::{AggregationSource, BarAggregation, BookAction, OrderSide, PriceType},
+        enums::{
+            AggregationSource, BarAggregation, BookAction, CurrencyType, OrderSide, PriceType,
+        },
         identifiers::InstrumentId,
         types::{Price, Quantity},
     };
     use rstest::rstest;
 
     use super::*;
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    fn test_money_rejects_currency_precision_above_catalog_scale() {
+        if nautilus_model::types::fixed::check_fixed_precision(18).is_err() {
+            return;
+        }
+
+        let currency = Currency::new("TST18", 18, 0, "Test token", CurrencyType::Crypto);
+        let value = Money::from_raw(1_000_000_000_000_000_000, currency);
+        let error = money_array([Some(value)]).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Invalid argument error: Money currency precision 18 exceeds catalog scale 16"
+        );
+    }
 
     #[rstest]
     fn test_encode_rejects_defi_precision_metadata() {

@@ -837,17 +837,16 @@ impl Div<f64> for Price {
 
 impl Debug for Price {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}({})",
-            stringify!(Price),
-            format_scaled_i128(self.raw_at_precision(), self.precision),
-        )
+        write!(f, "{}({self})", stringify!(Price))
     }
 }
 
 impl Display for Price {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.precision == ERROR_PRICE.precision {
+            return write!(f, "{}", self.raw);
+        }
+
         write!(
             f,
             "{}",
@@ -931,6 +930,13 @@ mod tests {
         let price = Price::from_raw(raw, 16);
 
         assert_eq!(price.as_decimal(), expected);
+    }
+
+    #[rstest]
+    fn test_error_sentinel_formatting() {
+        assert_eq!(ERROR_PRICE.to_string(), "0");
+        assert_eq!(format!("{ERROR_PRICE:?}"), "Price(0)");
+        assert_eq!(ERROR_PRICE.to_formatted_string(), "0");
     }
 
     #[rstest]

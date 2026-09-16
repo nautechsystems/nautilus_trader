@@ -5848,3 +5848,109 @@ fn test_filtered_remote_instrument_query_retains_object_store(#[case] prefix: &s
         );
     }
 }
+
+#[rstest]
+#[case::directories(true)]
+#[case::files(false)]
+fn test_display_queries_keep_colliding_sql_identifiers(#[case] optimize: bool) {
+    use arrow::array::{Float64Array, StringArray};
+
+    let (_temp, mut catalog) = create_temp_catalog();
+    let mut first = create_quote_ticks_for_instrument("FOO-BAR.SIM", 100, 1);
+    let mut second = create_quote_ticks_for_instrument("FOO_BAR.SIM", 100, 1);
+    first[0].bid_price = Price::from("1.0003");
+    second[0].bid_price = Price::from("1.0004");
+    catalog.write_to_parquet(&first, None, None, None).unwrap();
+    catalog.write_to_parquet(&second, None, None, None).unwrap();
+
+    let batches = catalog
+        .query_display_record_batches(
+            &NautilusDataType::QuoteTick,
+            None,
+            None,
+            None,
+            None,
+            optimize,
+        )
+        .unwrap();
+    let mut actual = Vec::new();
+
+    for batch in batches {
+        let ids = batch
+            .column_by_name("instrument_id")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        let prices = batch
+            .column_by_name("bid_price")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<Float64Array>()
+            .unwrap();
+
+        for row in 0..batch.num_rows() {
+            actual.push((ids.value(row).to_string(), prices.value(row)));
+        }
+    }
+
+    actual.sort_by(|a, b| a.0.cmp(&b.0));
+
+    assert_eq!(
+        actual,
+        vec![
+            ("FOO-BAR.SIM".to_string(), 1.0003),
+            ("FOO_BAR.SIM".to_string(), 1.0004)
+        ]
+    );
+}
+
+#[rstest]
+#[case(true)]
+#[case(false)]
+fn test_record_queries_keep_colliding_sql_identifiers(#[case] optimize: bool) {
+    use arrow::array::Decimal128Array;
+    let (_temp, mut catalog) = create_temp_catalog();
+    let mut first = create_quote_ticks_for_instrument("FOO-BAR.SIM", 100, 1);
+    let mut second = create_quote_ticks_for_instrument("FOO_BAR.SIM", 100, 1);
+    first[0].bid_price = Price::from("1.0003");
+    second[0].bid_price = Price::from("1.0004");
+    catalog.write_to_parquet(&first, None, None, None).unwrap();
+    catalog.write_to_parquet(&second, None, None, None).unwrap();
+    let batches = catalog
+        .query_record_batches("quotes", None, None, None, None, optimize)
+        .unwrap();
+    let mut prices = Vec::new();
+
+    for batch in batches {
+        let array = batch
+            .column_by_name("bid_price")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<Decimal128Array>()
+            .unwrap();
+        prices.extend(array.values().iter().copied());
+    }
+
+    prices.sort_unstable();
+    assert_eq!(prices, vec![10_003_000_000_000_000, 10_004_000_000_000_000]);
+    let identifiers = catalog
+        .query_identifiers(
+            "quotes",
+            None,
+            None,
+            None,
+            Some("bid_price > 1.00035"),
+            optimize,
+        )
+        .unwrap();
+    assert_eq!(identifiers, vec!["FOO_BAR.SIM"]);
+    let metadata = catalog
+        .query_metadata("quotes", None, None, None, Some("bid_price > 1.00035"))
+        .unwrap();
+    assert_eq!(metadata.len(), 1);
+    assert_eq!(
+        metadata[0].metadata["instrument_id"],
+        serde_json::json!("FOO_BAR.SIM")
+    );
+}

@@ -247,8 +247,8 @@ where
     pub(crate) clock: WriterClock,
     pub(crate) promotion_driver: PromotionDriver<B>,
     promotion_timer: Option<PromotionTimer>,
-    timer_errors: Receiver<String>,
-    timer_error_tx: Sender<String>,
+    pending_errors: Receiver<String>,
+    error_tx: Sender<String>,
 }
 
 pub(crate) trait StagedWriter: Send {
@@ -284,7 +284,12 @@ where
     }
 
     fn stage_any(&mut self, message: &dyn Any) -> anyhow::Result<bool> {
-        self.staged().write_any(message)
+        let result = self.staged().write_any(message);
+        if let Err(e) = &result {
+            let _ = self.staged().error_tx.send(e.to_string());
+        }
+
+        result
     }
 
     fn flush_staging(&mut self) -> anyhow::Result<()> {
@@ -311,8 +316,8 @@ where
         self.staged().stop_promotion_timer();
     }
 
-    fn take_periodic_promotion_error(&mut self) -> anyhow::Result<()> {
-        self.staged().timer_error()
+    fn take_pending_error(&mut self) -> anyhow::Result<()> {
+        self.staged().pending_error()
     }
 
     fn should_promote_on_flush(&self) -> bool {
@@ -358,7 +363,7 @@ where
         .with_record_filter(record_filter);
         let last_promotion_ns = clock.timestamp_ns();
 
-        let (timer_error_tx, timer_errors) = mpsc::channel();
+        let (error_tx, pending_errors) = mpsc::channel();
         Ok(Self {
             storage,
 
@@ -366,8 +371,8 @@ where
             clock,
             promotion_driver: PromotionDriver::new(last_promotion_ns),
             promotion_timer: None,
-            timer_errors,
-            timer_error_tx,
+            pending_errors,
+            error_tx,
         })
     }
 
@@ -391,7 +396,7 @@ where
         let staging = self.staging.client.clone();
         let submitter = self.promotion_driver.submitter(worker_name)?;
         let scheduled_paths = self.promotion_driver.scheduled_paths();
-        let timer_error_tx = self.timer_error_tx.clone();
+        let error_tx = self.error_tx.clone();
         let staging_uri = self.storage.original_uri.clone();
 
         self.promotion_timer = Some(PromotionTimer::spawn(
@@ -434,7 +439,7 @@ where
 
                 if let Err(e) = result {
                     log::warn!("{worker_name} timer failed: {e}");
-                    let _ = timer_error_tx.send(e.to_string());
+                    let _ = error_tx.send(e.to_string());
                 }
             },
         )?);
@@ -590,8 +595,8 @@ where
         self.promotion_timer = None;
     }
 
-    fn timer_error(&self) -> anyhow::Result<()> {
-        let errors = self.timer_errors.try_iter().collect::<Vec<_>>();
+    fn pending_error(&self) -> anyhow::Result<()> {
+        let errors = self.pending_errors.try_iter().collect::<Vec<_>>();
         if errors.is_empty() {
             Ok(())
         } else {

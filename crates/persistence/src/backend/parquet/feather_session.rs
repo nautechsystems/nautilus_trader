@@ -27,6 +27,7 @@ use std::sync::Arc;
 
 use datafusion::arrow::{datatypes::Schema, record_batch::RecordBatch};
 use futures::StreamExt;
+use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, string::conversions::to_snake_case};
 use nautilus_model::data::{
     Bar, Data, FundingRateUpdate, HasTsInit, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
@@ -84,7 +85,20 @@ impl ParquetDataCatalog {
             feather_path,
             &source.kind,
             &source.instance_id,
-        );
+        )
+        .filter(|identifier| {
+            batches.iter().all(|batch| {
+                Self::identifier_from_batch_or_path(
+                    batch,
+                    feather_path,
+                    &source.kind,
+                    &source.instance_id,
+                )
+                .as_ref()
+                    == Some(identifier)
+            })
+        });
+
         self.convert_feather_batches_to_parquet(
             &source.kind,
             &source.instance_id,
@@ -577,44 +591,77 @@ impl ParquetDataCatalog {
         use_ts_event_for_ts_init: bool,
         replay_identity: Option<&str>,
     ) -> anyhow::Result<()> {
-        let Some(batch) = Self::apply_stream_conversion_transforms(
-            batches,
-            use_ts_event_for_ts_init,
-        )
-        .map_err(|e| {
-            anyhow::anyhow!("Failed to apply stream conversion transforms for {feather_path}: {e}")
-        })?
-        else {
-            return Ok(());
-        };
+        let mut groups: IndexMap<Arc<Schema>, Vec<RecordBatch>> = IndexMap::new();
 
-        let (start_ts, end_ts) = Self::ts_init_range(&batch).map_err(|e| {
-            anyhow::anyhow!("Failed to determine ts_init range for {feather_path}: {e}")
-        })?;
-        let identifier =
-            Self::identifier_from_batch_or_path(&batch, feather_path, subdirectory, instance_id);
-        let directory = if let Some(type_name) = catalog_data_name.strip_prefix("custom/") {
-            self.make_path_custom_data(type_name, identifier.as_deref())?
-        } else {
-            self.make_path(catalog_data_name, identifier.as_deref())?
-        };
+        for batch in batches {
+            for restored in restore_staged_record_batches(batch.clone())? {
+                groups.entry(restored.schema()).or_default().push(restored);
+            }
+        }
 
-        let batch = Self::with_catalog_identifier_metadata(
-            batch,
-            catalog_data_name,
-            identifier.as_deref(),
-        )?;
-        let batches = vec![batch];
-        self.write_parquet_file_checked(
-            &directory,
-            UnixNanos::from(start_ts),
-            UnixNanos::from(end_ts),
-            &batches,
-            false,
-            "File",
-            None,
-            replay_identity,
-        )?;
+        for (index, group) in groups.into_values().enumerate() {
+            let Some(batch) =
+                Self::apply_stream_conversion_transforms(&group, use_ts_event_for_ts_init)
+                    .map_err(|e| {
+                        anyhow::anyhow!(
+                            "Failed to apply stream conversion transforms for {feather_path}: {e}"
+                        )
+                    })?
+            else {
+                continue;
+            };
+
+            let (start_ts, end_ts) = Self::ts_init_range(&batch).map_err(|e| {
+                anyhow::anyhow!("Failed to determine ts_init range for {feather_path}: {e}")
+            })?;
+
+            let identifier = Self::identifier_from_batch_or_path(
+                &batch,
+                feather_path,
+                subdirectory,
+                instance_id,
+            );
+
+            let instrument_prefix = if catalog_data_name == "instruments" {
+                let class = batch
+                    .schema()
+                    .metadata()
+                    .get("class")
+                    .cloned()
+                    .ok_or_else(|| anyhow::anyhow!("Staged instrument has no class metadata"))?;
+                Some(crate::catalog::types::instrument_path_prefix(
+                    &class.parse()?,
+                ))
+            } else {
+                None
+            };
+
+            let catalog_data_name = instrument_prefix.unwrap_or(catalog_data_name);
+
+            let directory = if let Some(type_name) = catalog_data_name.strip_prefix("custom/") {
+                self.make_path_custom_data(type_name, identifier.as_deref())?
+            } else {
+                self.make_path(catalog_data_name, identifier.as_deref())?
+            };
+
+            let batch = Self::with_catalog_identifier_metadata(
+                batch,
+                catalog_data_name,
+                identifier.as_deref(),
+            )?;
+            let batches = vec![batch];
+            let group_identity = format!("{}/{index}", replay_identity.unwrap_or(feather_path));
+            self.write_parquet_file_checked(
+                &directory,
+                UnixNanos::from(start_ts),
+                UnixNanos::from(end_ts),
+                &batches,
+                false,
+                "File",
+                None,
+                Some(&group_identity),
+            )?;
+        }
 
         Ok(())
     }
@@ -729,7 +776,8 @@ impl ParquetDataCatalog {
         data_name.starts_with("custom/")
             || matches!(
                 data_name,
-                "quotes"
+                "instruments"
+                    | "quotes"
                     | "trades"
                     | "order_book_deltas"
                     | "order_book_depths"
@@ -757,6 +805,7 @@ impl ParquetDataCatalog {
                     | "order_modify_rejected"
                     | "order_updated"
                     | "order_filled"
+                    | "order_fill_voided"
                     | "position_opened"
                     | "position_changed"
                     | "position_closed"

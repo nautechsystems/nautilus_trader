@@ -46,14 +46,14 @@ use jiff::{
 use nautilus_common::{
     clock::Clock,
     live::{LiveClock, block_on_nautilus_with},
-    msgbus::{mstr::MStr, subscribe_any, typed_handler::ShareableMessageHandler, unsubscribe_any},
 };
 use nautilus_core::{UnixNanos, time::nanos_since_unix_epoch};
 use nautilus_model::{
     data::{
-        Bar, CustomData, CustomDataTrait, Data, DataBatch, IndexPriceUpdate, InstrumentStatus,
-        MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick,
-        TradeTick, close::InstrumentClose, encode_custom_to_arrow, get_arrow_schema,
+        Bar, CustomData, CustomDataTrait, Data, DataBatch, FundingRateUpdate, IndexPriceUpdate,
+        InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDeltas,
+        OrderBookDepth, QuoteTick, TradeTick, close::InstrumentClose, encode_custom_to_arrow,
+        get_arrow_schema,
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
@@ -76,7 +76,11 @@ use crate::{
         custom::{augment_batch_with_data_type_column, schema_with_data_type_column},
         paths::{CatalogPathPrefix, urisafe_instrument_id},
     },
-    writer::{filter::WriterRecordFilter, traits::StreamingSink},
+    writer::{
+        filter::WriterRecordFilter,
+        subscription::StreamingSinkSubscription,
+        traits::{StreamingDataSink, StreamingSink},
+    },
 };
 
 pub(crate) type FeatherWriteCommand =
@@ -433,6 +437,7 @@ pub struct FeatherWriter {
     last_flush_ns: UnixNanos,
     /// Whether staged batches include the catalog row identifier column.
     catalog_identifier_column: bool,
+    pending_write_error: Option<String>,
 }
 
 impl FeatherWriter {
@@ -470,6 +475,7 @@ impl FeatherWriter {
             flush_interval_ms,
             last_flush_ns,
             catalog_identifier_column: false,
+            pending_write_error: None,
         }
     }
 
@@ -954,6 +960,11 @@ impl FeatherWriter {
         }
 
         self.last_flush_ns = self.clock.timestamp_ns();
+
+        if let Some(error) = self.pending_write_error.take() {
+            return Err(error.into());
+        }
+
         Ok(())
     }
 
@@ -1230,8 +1241,17 @@ impl FeatherWriter {
         let Some(command) = Self::write_command(message) else {
             return Ok(false);
         };
-        command(self)?;
+
+        if let Err(e) = command(self) {
+            self.record_write_error(e.to_string());
+            return Err(e);
+        }
+
         Ok(true)
+    }
+
+    pub(crate) fn record_write_error(&mut self, error: String) {
+        self.pending_write_error.get_or_insert(error);
     }
 
     pub(crate) fn write_command(message: &dyn Any) -> Option<FeatherWriteCommand> {
@@ -1251,6 +1271,7 @@ impl FeatherWriter {
         try_write!(message, OrderBookDepth);
         try_write!(message, IndexPriceUpdate);
         try_write!(message, MarkPriceUpdate);
+        try_write!(message, FundingRateUpdate);
         try_write!(message, InstrumentStatus);
         try_write!(message, OptionGreeks);
         try_write!(message, InstrumentClose);
@@ -1426,21 +1447,17 @@ impl FeatherWriter {
     /// rotation or auto-flush boundary is hit.
     pub fn subscribe_to_message_bus(
         writer: Rc<RefCell<Self>>,
-    ) -> Result<ShareableMessageHandler, Box<dyn std::error::Error>> {
-        let handler = ShareableMessageHandler::from_any(move |message: &dyn Any| {
-            if let Err(e) = writer.borrow_mut().write_any_message(message) {
-                log::warn!("Failed to write streaming message: {e}");
-            }
-        });
-
-        subscribe_any(MStr::pattern("*"), handler.clone(), None);
-
-        Ok(handler)
+    ) -> Result<StreamingSinkSubscription, Box<dyn std::error::Error>> {
+        let sink: StreamingDataSink = Box::new(writer);
+        Ok(StreamingSinkSubscription::subscribe(
+            Rc::new(RefCell::new(sink)),
+            None,
+        ))
     }
 
     /// Unsubscribes from message bus.
-    pub fn unsubscribe_from_message_bus(handler: &ShareableMessageHandler) {
-        unsubscribe_any(MStr::pattern("*"), handler);
+    pub fn unsubscribe_from_message_bus(handler: &StreamingSinkSubscription) {
+        handler.unsubscribe();
     }
 }
 
@@ -1473,6 +1490,28 @@ impl StreamingSink for FeatherWriter {
     }
 }
 
+impl StreamingSink for Rc<RefCell<FeatherWriter>> {
+    fn write_data(&mut self, data: Data) -> anyhow::Result<()> {
+        StreamingSink::write_data(&mut *self.borrow_mut(), data)
+    }
+
+    fn write_batch(&mut self, data: Vec<Data>) -> anyhow::Result<()> {
+        StreamingSink::write_batch(&mut *self.borrow_mut(), data)
+    }
+
+    fn write_any(&mut self, message: &dyn Any) -> anyhow::Result<bool> {
+        StreamingSink::write_any(&mut *self.borrow_mut(), message)
+    }
+
+    fn flush(&mut self) -> anyhow::Result<()> {
+        StreamingSink::flush(&mut *self.borrow_mut())
+    }
+
+    fn close(&mut self) -> anyhow::Result<()> {
+        StreamingSink::close(&mut *self.borrow_mut())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{io::Cursor, sync::Arc};
@@ -1486,7 +1525,7 @@ mod tests {
         data::{Data, QuoteTick, TradeTick},
         enums::AggressorSide,
         identifiers::{InstrumentId, TradeId},
-        types::{Price, Quantity},
+        types::{ERROR_PRICE, Price, Quantity},
     };
     use nautilus_serialization::arrow::{
         ArrowSchemaProvider, DecodeDataFromRecordBatch, EncodeToRecordBatch,
@@ -1496,6 +1535,79 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+
+    #[rstest]
+    fn test_subscription_receives_typed_quotes_and_unsubscribes() {
+        use nautilus_common::msgbus::{MStr, publish_quote};
+
+        let writer = Rc::new(RefCell::new(FeatherWriter::new(
+            "run".to_string(),
+            Arc::new(object_store::memory::InMemory::new()),
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
+            RotationConfig::NoRotation,
+            None,
+            None,
+            Some(0),
+        )));
+
+        let quote = QuoteTick::new(
+            InstrumentId::from("AUD/USD.SIM"),
+            Price::from("1.0"),
+            Price::from("1.1"),
+            Quantity::from("2"),
+            Quantity::from("3"),
+            4.into(),
+            5.into(),
+        );
+        let handler = FeatherWriter::subscribe_to_message_bus(writer.clone()).unwrap();
+        publish_quote(MStr::topic("data.quotes.AUD/USD.SIM").unwrap(), &quote);
+        FeatherWriter::unsubscribe_from_message_bus(&handler);
+        publish_quote(MStr::topic("data.quotes.AUD/USD.SIM").unwrap(), &quote);
+        assert_eq!(
+            writer
+                .borrow()
+                .writers
+                .values()
+                .map(|buffer| buffer.rows)
+                .sum::<u64>(),
+            1
+        );
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_message_write_error_reaches_flush_or_close(#[case] close: bool) {
+        let mut writer = FeatherWriter::new(
+            "run".to_string(),
+            Arc::new(object_store::memory::InMemory::new()),
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
+            RotationConfig::NoRotation,
+            None,
+            None,
+            Some(0),
+        );
+
+        let quote = QuoteTick::new(
+            InstrumentId::from("AUD/USD.SIM"),
+            ERROR_PRICE,
+            ERROR_PRICE,
+            Quantity::from("1"),
+            Quantity::from("2"),
+            3.into(),
+            4.into(),
+        );
+        let write_error = writer.write_any_message(&quote).unwrap_err().to_string();
+
+        let error = if close {
+            StreamingSink::close(&mut writer)
+        } else {
+            StreamingSink::flush(&mut writer)
+        }
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), write_error);
+    }
 
     #[rstest]
     fn test_writer_manager_keys() {

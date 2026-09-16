@@ -69,3 +69,35 @@ def test_postponed_custom_data_annotations_roundtrip(representation: str) -> Non
     assert restored.ts_init == 29
     assert type(restored.instrument_id) is InstrumentId
     assert type(restored.values) is dict
+
+
+@customdataclass
+class InheritedData:
+    """
+    Base fields included in a derived custom-data schema.
+    """
+
+    count: int = 7
+
+
+@customdataclass
+class DerivedData(InheritedData):
+    """
+    Custom data extending a base dataclass.
+    """
+
+    value: int = 11
+
+
+def test_inherited_custom_data_fields_roundtrip() -> None:
+    """
+    Preserve non-default inherited values through Arrow.
+    """
+    original = DerivedData(ts_event=17, ts_init=29, count=43, value=61)
+    batch = original.encode_record_batch_py([original])
+    [restored] = DerivedData.decode_record_batch_py({}, batch)
+
+    assert batch.schema.names == ["count", "value", "type", "ts_event", "ts_init"]
+    assert restored == original
+    assert restored.ts_event == 17
+    assert restored.ts_init == 29

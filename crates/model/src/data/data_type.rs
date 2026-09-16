@@ -88,7 +88,7 @@ fn value_to_topic_string(v: &JsonValue) -> String {
 fn topic_string_to_value(s: &str) -> anyhow::Result<JsonValue> {
     if let Some(value) = s.strip_prefix(ESCAPED_STRING_TOPIC_PREFIX) {
         anyhow::ensure!(
-            value.len().is_multiple_of(2),
+            value.len().is_multiple_of(2) && value.bytes().all(|byte| byte.is_ascii_hexdigit()),
             "Invalid escaped topic string"
         );
         let bytes = (0..value.len())
@@ -657,6 +657,18 @@ mod tests {
 
     fn params_from_json(value: serde_json::Value) -> Params {
         serde_json::from_value(value).expect("valid Params JSON")
+    }
+
+    #[rstest]
+    #[case("aéa")]
+    #[case("éaa")]
+    #[case("zz")]
+    #[case("0")]
+    fn test_from_str_rejects_invalid_escaped_metadata(#[case] value: &str) {
+        let topic = format!("Example.value=~x~{value}");
+        let error = DataType::from_str(&topic).unwrap_err();
+
+        assert_eq!(error.to_string(), "Invalid escaped topic string");
     }
 
     #[rstest]

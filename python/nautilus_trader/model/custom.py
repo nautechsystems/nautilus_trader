@@ -16,6 +16,7 @@
 import json
 from dataclasses import asdict
 from dataclasses import dataclass
+from dataclasses import fields
 from inspect import get_annotations
 from typing import Any
 from typing import dataclass_transform
@@ -164,7 +165,10 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
 
 
 def _get_annotations(cls) -> dict[str, Any]:
-    return get_annotations(cls, eval_str=True)
+    annotations = {}
+    for base in reversed(cls.__mro__):
+        annotations.update(get_annotations(base, eval_str=True))
+    return {field.name: annotations[field.name] for field in fields(cls)}
 
 
 def _serialize_field_value(annotation: Any, value: Any) -> Any:

@@ -16,6 +16,7 @@
 Nested depth display schema and output conversion regressions.
 """
 
+from decimal import Decimal
 from pathlib import Path
 
 import pyarrow as pa
@@ -29,6 +30,7 @@ from nautilus_trader.model import OrderSide
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.persistence import ParquetDataCatalog
+from nautilus_trader.persistence.catalog_to_df import ArrowCStream
 from nautilus_trader.persistence.catalog_to_df import CatalogOutput
 from nautilus_trader.persistence.catalog_to_df import query_catalog
 
@@ -146,3 +148,59 @@ def test_depth_display_empty_query_has_nested_schema(tmp_path: Path) -> None:
     assert table.num_rows == 0
     assert table.schema.field("bids") == pa.field("bids", side, nullable=False)
     assert table.schema.field("asks") == pa.field("asks", side, nullable=False)
+
+
+@pytest.mark.parametrize("side", [None, OrderSide.BUY, OrderSide.SELL])
+@pytest.mark.parametrize("transport", ["bytes", "stream"])
+def test_raw_depth_query_preserves_empty_sides(
+    tmp_path: Path,
+    side: OrderSide | None,
+    transport: str,
+) -> None:
+    """
+    Raw Arrow queries retain empty sides and the precision of populated sides.
+    """
+    catalog = ParquetDataCatalog(str(tmp_path))
+    order = BookOrder(
+        side or OrderSide.BUY,
+        Price.from_str("12.34"),
+        Quantity.from_str("5.678"),
+        987,
+    )
+    bids = [order] if side == OrderSide.BUY else []
+    asks = [order] if side == OrderSide.SELL else []
+    depth = OrderBookDepth(
+        InstrumentId.from_str("AAPL.XNAS"),
+        bids,
+        asks,
+        [7] if bids else [],
+        [9] if asks else [],
+        3,
+        123,
+        456,
+        789,
+    )
+    catalog.write_order_book_depths([depth])
+
+    if transport == "bytes":
+        payload = catalog.query_data_arrow_bytes(NautilusDataType.OrderBookDepth, display=False)
+        table = pa.ipc.open_stream(payload).read_all()
+    else:
+        capsule = catalog.query_data_arrow_stream(NautilusDataType.OrderBookDepth, display=False)
+        table = pa.RecordBatchReader.from_stream(ArrowCStream(capsule)).read_all()
+    for name in ("ts_event", "ts_init"):
+        index = table.schema.get_field_index(name)
+        table = table.set_column(index, name, table[name].cast(pa.int64()))
+    level = {"price": Decimal("12.34"), "size": Decimal("5.678"), "order_id": 987}
+
+    assert table.to_pylist() == [
+        {
+            "bids": [{**level, "count": 7}] if bids else [],
+            "asks": [{**level, "count": 9}] if asks else [],
+            "flags": 3,
+            "sequence": 123,
+            "ts_event": 456,
+            "ts_init": 789,
+            "identifier": "AAPL.XNAS",
+        },
+    ]
