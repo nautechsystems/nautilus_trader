@@ -109,6 +109,111 @@ caches do not hold. A material change is any serialized field other than `ts_eve
   still back open subscriptions. Suspension, expiry, and delisting arrive as
   `InstrumentStatus` events through the instruments channel.
 
+## Order book recovery
+
+The data client recovers each book independently. During recovery, it suppresses incremental
+updates and replaces the subscription to request a fresh snapshot. Output resumes only after the
+client accepts a snapshot, which requires the replacement unsubscribe and subscribe requests to
+have been sent. Accepted snapshots replace all existing price levels; an empty snapshot clears the book.
+
+### Recovery triggers
+
+Recovery starts when:
+
+- A sequence gap occurs.
+- An initial subscription send fails.
+- An initial or post-reconnect snapshot times out.
+- The venue rejects a subscription with a retryable error.
+
+On a sequence gap, the client drops the mismatched batch and suppresses further incremental updates.
+`book_snapshot_timeout_secs` sets the snapshot deadline. For initial subscriptions, the deadline
+starts after the subscription is sent, excluding time spent waiting to send.
+
+Reconnecting resets book synchronization on the affected socket. Spread books receive full snapshots
+on the business socket, so their recovery starts from an initial send failure, a missing initial
+or post-reconnect snapshot, or a subscription rejection.
+
+Stale-feed checks only log warnings. They do not start recovery because quiet markets can
+legitimately have no book changes.
+
+### Retry loop and limits
+
+Each instrument has one recovery loop. It retries transient transport failures, retryable venue
+rejections, and missing snapshots.
+
+```mermaid
+stateDiagram-v2
+    state "Recovering: replace subscription and await snapshot" as Recovering
+    state "Book output resumes" as Streaming
+    state "Failed: book output suppressed" as Failed
+
+    [*] --> Recovering: Recovery triggered
+    Recovering --> Recovering: Retryable failure or snapshot timeout
+    Recovering --> Streaming: Fresh snapshot accepted
+    Recovering --> Failed: Permanent rejection or recovery limit reached
+```
+
+Sending a subscription request keeps the book in recovery until a fresh snapshot is accepted.
+
+- **Attempts:** At most eight per recovery episode.
+- **Total budget:** 180 seconds, including sends, snapshot waits, and retry delays.
+- **Delay:** The first retry is immediate. Later retries use exponential backoff starting at one
+  second, with up to one second of jitter and a ten-second cap.
+
+An active recovery continues across reconnects with its existing retry budget. This prevents
+cancellation between the replacement unsubscribe and subscribe requests. Replacing a subscription
+preserves its reconnect intent. Unsubscribe and shutdown cancel recovery.
+
+### Failed recovery
+
+A permanent venue rejection, exhausted retries, or an exhausted time budget logs an error and stops
+book output for that subscription. Subscription intent remains registered for reconnect.
+
+**Late snapshots do not clear the failed state.** Reconnect, or unsubscribe and subscribe again,
+to restart synchronization.
+
+### Snapshot correlation limitation
+
+Book subscription sends wait for a completed transport write on the intended connection.
+Both sends in a replacement use the same connection; a connection change fails the attempt.
+
+Snapshot acceptance does not correlate subscription acknowledgements with recovery attempts.
+A delayed snapshot from an earlier subscription can remain queued while a replacement is sent
+and complete the current recovery when the gate opens. Write confirmation does not eliminate this
+ambiguity. Recovery also cannot reliably distinguish an unsubscribe error from a subscribe error
+when the venue response identifies only the book channel and instrument.
+
+### Disabling snapshot deadlines
+
+Setting `book_snapshot_timeout_secs` to `0` disables snapshot deadlines, including initial and
+post-reconnect checks. Sequence gaps and retryable subscription rejections still start recovery.
+
+During recovery, a missing snapshot then leaves the current attempt waiting until a snapshot is
+accepted, a rejection arrives, recovery is cancelled, or the 180-second total budget ends.
+A missing snapshot alone does not trigger another attempt.
+
+### Mainnet recovery validation
+
+The `okx-book-sync-stress` example connects to OKX mainnet public market data and submits no orders.
+It checks emitted spot, RPI swap, and spread books against an independent reconstruction of the
+venue feed's best 20 levels.
+
+The example first checks recovery without reconnects, including a dropped replacement snapshot
+when deadlines are enabled. It then injects sequence gaps, drops and delays snapshots, forces
+reconnects, and exercises unsubscribe and shutdown during recovery.
+
+From the repository root, run:
+
+```bash
+CARGO_BUILD_JOBS=16 bash scripts/strip-adapter-env.bash \
+  cargo run -p nautilus-okx --features examples --example okx-book-sync-stress -- 3 18
+```
+
+The arguments set the snapshot timeout in seconds and the number of stress rounds. Use `0 18` to
+exercise disabled snapshot deadlines. The example requires access to the public and business
+WebSocket endpoints and the public instrument and spread APIs. Automated book lifecycle tests use
+local mock servers.
+
 ## Symbology
 
 OKX uses specific symbol conventions for different instrument types. Add the `.OKX`
@@ -251,16 +356,10 @@ liquidity.
 
 WebSocket snapshots and updates retain `seqId` and `prevSeqId`. Emitted deltas carry `seqId` as
 their sequence. The data client checks each update's `prevSeqId` against the last accepted `seqId`;
-the values do not need to increase by one. On a mismatch, the client:
-
-- Drops the mismatched frame.
-- Suppresses later updates for that instrument.
-- Replaces the subscription once to request a fresh snapshot.
-- Resumes emission after a snapshot with `prevSeqId: -1`.
-
-If the snapshot does not arrive before the configured snapshot timeout, the book monitor logs a
-warning and the client remains fail-closed. The adapter applies the same linkage rule to standard
-incremental OKX book channels when `prevSeqId` is present. `books-rpi` has no checksum.
+the values do not need to increase by one. A mismatch starts
+[order book recovery](#order-book-recovery). Emission resumes after an accepted snapshot with
+`prevSeqId: -1`. The adapter applies the same linkage rule to standard incremental OKX book channels when `prevSeqId`
+is present. `books-rpi` has no checksum.
 
 For WebSocket subscriptions, `rpi=True` selects `books-rpi` instead of depth or VIP channel
 selection. For REST snapshots, the requested depth becomes `sz`; OKX defaults to one level per side
@@ -1215,14 +1314,15 @@ The OKX data client provides the following Python configuration options.
 | `update_instruments_interval_mins` | `60`                       | REST instrument cache reconciliation interval in minutes; `0` disables.        |
 | `book_stale_check_interval_secs`   | `5`                        | Stale book check interval.                                                     |
 | `book_stale_threshold_secs`        | `30`                       | Idle time before a stale book warning.                                         |
-| `book_snapshot_timeout_secs`       | `3`                        | Post-reconnect snapshot wait.                                                  |
+| `book_snapshot_timeout_secs`       | `3`                        | Initial, reconnect, and recovery snapshot wait.                                |
 | `vip_level`                        | `None`                     | Enables higher-depth books by VIP tier.                                        |
 | `proxy_url`                        | `None`                     | Optional HTTP and WebSocket proxy URL.                                         |
 | `transport_backend`                | `Sockudo`                  | WebSocket transport backend.                                                   |
 
-Set `book_stale_check_interval_secs`, `book_stale_threshold_secs`, or
-`book_snapshot_timeout_secs` to `0` to disable that health monitor. Quiet markets can idle
-without book updates; increase `book_stale_threshold_secs` for sparse instruments.
+Set `book_stale_check_interval_secs` or `book_stale_threshold_secs` to `0` to disable stale-feed
+warnings. Set `book_snapshot_timeout_secs` to `0` to disable snapshot deadlines, as described in
+[Order book recovery](#order-book-recovery). Quiet markets can idle without book updates; increase
+`book_stale_threshold_secs` for sparse instruments.
 
 Supported data client `instrument_types` values are `SPOT`, `MARGIN`, `SWAP`,
 `FUTURES`, `OPTION`, and `EVENTS`. See [Options trading](#options-trading) before selecting

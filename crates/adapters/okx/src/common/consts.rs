@@ -407,6 +407,8 @@ mod tests {
     #[case("50001", true)]
     #[case("50011", true)]
     #[case("60005", true)]
+    #[case("60014", false)]
+    #[case("64007", false)]
     #[case(OKX_SERVICE_UPGRADE_RECONNECT_CODE, true)]
     #[case("50113", false)]
     #[case("60012", false)]

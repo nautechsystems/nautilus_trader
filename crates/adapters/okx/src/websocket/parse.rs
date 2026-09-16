@@ -867,7 +867,17 @@ pub fn parse_book_msg(
     };
     let ts_event = parse_millisecond_timestamp(msg.ts);
 
-    let mut deltas = Vec::with_capacity(msg.asks.len() + msg.bids.len());
+    let is_snapshot = action == &OKXBookAction::Snapshot;
+    let mut deltas = Vec::with_capacity(msg.asks.len() + msg.bids.len() + usize::from(is_snapshot));
+
+    if is_snapshot {
+        deltas.push(OrderBookDelta::clear(
+            instrument_id,
+            msg.seq_id,
+            ts_event,
+            ts_init,
+        ));
+    }
 
     for bid in &msg.bids {
         let book_action = match action {
@@ -939,7 +949,17 @@ pub fn parse_rpi_book_msg(
         0
     };
     let ts_event = parse_millisecond_timestamp(msg.ts);
-    let mut deltas = Vec::with_capacity(msg.asks.len() + msg.bids.len());
+    let is_snapshot = action == &OKXBookAction::Snapshot;
+    let mut deltas = Vec::with_capacity(msg.asks.len() + msg.bids.len() + usize::from(is_snapshot));
+
+    if is_snapshot {
+        deltas.push(OrderBookDelta::clear(
+            instrument_id,
+            msg.seq_id,
+            ts_event,
+            ts_init,
+        ));
+    }
 
     for bid in &msg.bids {
         let book_action = if action == &OKXBookAction::Snapshot {
@@ -2457,14 +2477,16 @@ mod tests {
     use nautilus_core::nanos::UnixNanos;
     use nautilus_model::{
         data::bar::BAR_SPEC_1_DAY_LAST,
-        enums::GreeksConvention,
+        enums::{BookType, GreeksConvention},
         identifiers::{ClientOrderId, Symbol, VenueOrderId},
         instruments::CryptoPerpetual,
+        orderbook::OrderBook,
         types::Currency,
     };
     use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
+    use serde_json::Value;
     use ustr::Ustr;
 
     use super::*;
@@ -2612,6 +2634,68 @@ mod tests {
     }
 
     #[rstest]
+    #[case::standard(false)]
+    #[case::rpi(true)]
+    fn snapshot_replaces_existing_book(#[case] rpi: bool, #[values(false, true)] empty: bool) {
+        let fixture = if rpi {
+            "ws_books_rpi_snapshot.json"
+        } else {
+            "ws_books_snapshot.json"
+        };
+
+        let mut frame: Value = serde_json::from_str(&load_test_json(fixture)).unwrap();
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+
+        let parse = |frame: &Value| {
+            if rpi {
+                parse_rpi_book_msg(
+                    &serde_json::from_value(frame["data"][0].clone()).unwrap(),
+                    instrument_id,
+                    7,
+                    3,
+                    &OKXBookAction::Snapshot,
+                    UnixNanos::from(123),
+                )
+                .unwrap()
+            } else {
+                parse_book_msg(
+                    &serde_json::from_value(frame["data"][0].clone()).unwrap(),
+                    instrument_id,
+                    2,
+                    1,
+                    &OKXBookAction::Snapshot,
+                    UnixNanos::from(123),
+                )
+                .unwrap()
+            }
+        };
+
+        let mut actual = OrderBook::new(instrument_id, BookType::L2_MBP);
+        actual.apply_deltas(&parse(&frame)).unwrap();
+        for side in ["bids", "asks"] {
+            let levels = frame["data"][0][side].as_array_mut().unwrap();
+            if empty {
+                levels.clear();
+            } else {
+                levels.remove(0);
+            }
+        }
+
+        let snapshot = parse(&frame);
+        let mut expected = OrderBook::new(instrument_id, BookType::L2_MBP);
+        expected.apply_deltas(&snapshot).unwrap();
+        actual.apply_deltas(&snapshot).unwrap();
+
+        assert_eq!(actual.bids_as_map(None), expected.bids_as_map(None));
+        assert_eq!(actual.asks_as_map(None), expected.asks_as_map(None));
+        assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
+        assert_eq!(snapshot.deltas[0].flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(snapshot.deltas[0].sequence, snapshot.sequence);
+        assert_eq!(snapshot.deltas[0].ts_event, snapshot.ts_event);
+        assert_eq!(snapshot.deltas[0].ts_init, UnixNanos::from(123));
+    }
+
+    #[rstest]
     fn test_parse_books_snapshot() {
         let json_data = load_test_json("ws_books_snapshot.json");
         let msg: OKXWsFrame = serde_json::from_str(&json_data).unwrap();
@@ -2632,7 +2716,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(deltas.instrument_id, instrument_id);
-        assert_eq!(deltas.deltas.len(), 16);
+        assert_eq!(deltas.deltas.len(), 17);
         assert_eq!(deltas.flags, 32);
         assert_eq!(deltas.sequence, 123_456);
         assert_eq!(deltas.ts_event, UnixNanos::from(1_597_026_383_085_000_000));

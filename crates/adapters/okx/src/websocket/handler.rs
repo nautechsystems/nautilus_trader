@@ -44,8 +44,10 @@ use nautilus_network::{
     retry::{RetryError, RetryManager, create_websocket_retry_manager},
     websocket::{AuthTracker, SubscriptionState, TEXT_PING, TEXT_PONG, WebSocketClient},
 };
+use parking_lot::{Mutex, MutexGuard};
 use serde_json::{Map, Value};
 use tokio_tungstenite::tungstenite::Message;
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
@@ -55,7 +57,7 @@ use super::{
         OKXOrderMsg, OKXSubscription, OKXSubscriptionArg, OKXWebSocketArg, OKXWebSocketError,
         OKXWsFrame, OKXWsMessage,
     },
-    subscription::topic_from_websocket_arg,
+    subscription::{topic_from_subscription_arg, topic_from_websocket_arg},
 };
 use crate::{
     common::{
@@ -76,8 +78,22 @@ pub enum HandlerCommand {
     Authenticate { payload: SecretString },
     /// Subscribe to the given channels.
     Subscribe { args: Vec<OKXSubscriptionArg> },
+    /// Subscribes to a book and reports completion of the transport send.
+    SubscribeBook {
+        subscription: OKXSubscriptionArg,
+        cancel: CancellationToken,
+        gate: SnapshotGate,
+        completion: tokio::sync::oneshot::Sender<Result<(), OKXWsError>>,
+    },
     /// Unsubscribe from the given channels.
     Unsubscribe { args: Vec<OKXSubscriptionArg> },
+    /// Replaces a subscription without removing reconnect intent, unless canceled.
+    Resubscribe {
+        subscription: OKXSubscriptionArg,
+        cancel: CancellationToken,
+        gate: SnapshotGate,
+        completion: tokio::sync::oneshot::Sender<Result<(), OKXWsError>>,
+    },
     /// Send a pre-serialized payload (used for order operations).
     Send {
         payload: String,
@@ -101,10 +117,16 @@ impl Debug for HandlerCommand {
                 .debug_struct(stringify!(Subscribe))
                 .field("args", args)
                 .finish(),
+            Self::SubscribeBook { subscription, .. } => {
+                f.debug_tuple("SubscribeBook").field(subscription).finish()
+            }
             Self::Unsubscribe { args } => f
                 .debug_struct(stringify!(Unsubscribe))
                 .field("args", args)
                 .finish(),
+            Self::Resubscribe { subscription, .. } => {
+                f.debug_tuple("Resubscribe").field(subscription).finish()
+            }
             Self::Send {
                 rate_limit_keys,
                 request_id,
@@ -120,6 +142,36 @@ impl Debug for HandlerCommand {
                 .field("op", op)
                 .finish(),
         }
+    }
+}
+
+/// Coordinates subscription sends with snapshot acceptance.
+///
+/// Clones share one gate, which is initially open.
+#[derive(Debug, Clone, Default)]
+pub struct SnapshotGate {
+    closed: Arc<Mutex<bool>>,
+}
+
+impl SnapshotGate {
+    pub(crate) fn open(&self) {
+        *self.closed.lock() = false;
+    }
+
+    pub(crate) fn lock(&self) -> SnapshotGateGuard<'_> {
+        SnapshotGateGuard(self.closed.lock())
+    }
+}
+
+pub(crate) struct SnapshotGateGuard<'a>(MutexGuard<'a, bool>);
+
+impl SnapshotGateGuard<'_> {
+    pub(crate) fn close(&mut self) {
+        *self.0 = true;
+    }
+
+    pub(crate) fn is_closed(&self) -> bool {
+        *self.0
     }
 }
 
@@ -275,10 +327,55 @@ impl OKXWsFeedHandler {
                                 log::error!("Failed to handle subscribe command: error={e}");
                             }
                         }
+                        HandlerCommand::SubscribeBook { subscription, cancel, gate, completion } => {
+                            let result = tokio::select! {
+                                biased;
+                                () = cancel.cancelled() => continue,
+                                result = async {
+                                    let client = self.inner.as_ref().ok_or(OKXWsError::NoActiveClient)?;
+                                    self.send_book_subscription(
+                                        OKXWsOperation::Subscribe,
+                                        subscription,
+                                        client.connection_epoch(),
+                                    ).await
+                                } => result,
+                            };
+
+                            if result.is_ok() {
+                                gate.open();
+                            }
+                            let _ = completion.send(result);
+                        }
                         HandlerCommand::Unsubscribe { args } => {
                             if let Err(e) = self.handle_unsubscribe(args).await {
                                 log::error!("Failed to handle unsubscribe command: error={e}");
                             }
+                        }
+                        HandlerCommand::Resubscribe { subscription, cancel, gate, completion } => {
+                            let result = tokio::select! {
+                                biased;
+                                () = cancel.cancelled() => continue,
+                                result = async {
+                                    self.subscriptions_state.mark_failure(&topic_from_subscription_arg(&subscription));
+                                    let client = self.inner.as_ref().ok_or(OKXWsError::NoActiveClient)?;
+                                    let epoch = client.connection_epoch();
+                                    self.send_book_subscription(
+                                        OKXWsOperation::Unsubscribe,
+                                        subscription.clone(),
+                                        epoch,
+                                    ).await?;
+                                    self.send_book_subscription(
+                                        OKXWsOperation::Subscribe,
+                                        subscription,
+                                        epoch,
+                                    ).await
+                                } => result,
+                            };
+
+                            if result.is_ok() {
+                                gate.open();
+                            }
+                            let _ = completion.send(result);
                         }
                         HandlerCommand::Send {
                             payload,
@@ -511,6 +608,12 @@ impl OKXWsFeedHandler {
             .pending_subscribe_topics()
             .iter()
             .any(|pending| pending == &topic)
+            || (arg.channel.is_book()
+                && self
+                    .subscriptions_state
+                    .all_topics()
+                    .iter()
+                    .any(|tracked| tracked == &topic))
         {
             OKXSubscriptionEvent::Subscribe
         } else {
@@ -518,6 +621,30 @@ impl OKXWsFeedHandler {
         };
 
         self.handle_subscription_ack(&event, arg, Some(code), Some(msg))
+    }
+
+    async fn send_book_subscription(
+        &self,
+        op: OKXWsOperation,
+        subscription: OKXSubscriptionArg,
+        connection_epoch: u64,
+    ) -> Result<(), OKXWsError> {
+        let client = self.inner.as_ref().ok_or(OKXWsError::NoActiveClient)?;
+        let message = OKXSubscription {
+            op,
+            args: vec![subscription],
+        };
+        let payload =
+            serde_json::to_string(&message).map_err(|e| OKXWsError::ClientError(e.to_string()))?;
+
+        client
+            .send_text_on_connection(
+                payload,
+                Some(OKX_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice()),
+                connection_epoch,
+            )
+            .await
+            .map_err(OKXWsError::TransportSend)
     }
 
     async fn handle_subscribe(&self, args: Vec<OKXSubscriptionArg>) -> anyhow::Result<()> {
@@ -834,16 +961,30 @@ fn create_okx_retry_error(error: RetryError) -> OKXWsError {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, atomic::AtomicBool};
+    use std::{
+        num::NonZeroU32,
+        sync::{Arc, atomic::AtomicBool},
+        time::Duration,
+    };
 
-    use nautilus_core::time::get_atomic_clock_realtime;
-    use nautilus_network::websocket::{AuthTracker, SubscriptionState};
+    use futures_util::{SinkExt, StreamExt};
+    use nautilus_core::{collections::AtomicMap, time::get_atomic_clock_realtime};
+    use nautilus_model::identifiers::InstrumentId;
+    use nautilus_network::{
+        ratelimiter::{RateLimiter, quota::Quota},
+        websocket::{AuthTracker, SubscriptionState, WebSocketConfig, channel_message_handler},
+    };
     use rstest::rstest;
     use serde_json::json;
 
     use super::*;
-    use crate::common::{
-        consts::OKX_WS_TOPIC_DELIMITER, enums::OKXRpiPermission, testing::load_test_json,
+    use crate::{
+        book::{BookChannelScope, BookSequenceOutcome, sync::BookSyncTracker},
+        common::{
+            consts::OKX_WS_TOPIC_DELIMITER,
+            enums::{OKXBookAction, OKXBookChannel, OKXRpiPermission},
+            testing::load_test_json,
+        },
     };
 
     fn create_handler() -> OKXWsFeedHandler {
@@ -912,6 +1053,482 @@ mod tests {
 
         assert!(matches!(message, Some(OKXWsMessage::Reconnected)));
         assert_eq!(handler.cmd_rx.len(), 2);
+    }
+
+    #[rstest]
+    #[case::sent(false)]
+    #[case::canceled(true)]
+    #[tokio::test]
+    async fn initial_book_completion_waits_for_send(#[case] canceled: bool) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}/", listener.local_addr().unwrap());
+        let (wire_tx, mut wire_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            while let Some(Ok(frame)) = socket.next().await {
+                wire_tx.send(frame).unwrap();
+            }
+        });
+
+        let (message_handler, raw_rx) = channel_message_handler();
+        let client = WebSocketClient::builder()
+            .config(WebSocketConfig::builder().url(url).build().unwrap())
+            .message_handler(message_handler)
+            .default_quota(Quota::with_period(Duration::from_secs(10)).unwrap())
+            .connect()
+            .await
+            .unwrap();
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut handler = OKXWsFeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            AuthTracker::new(),
+            SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
+            get_atomic_clock_realtime(),
+        );
+        handler.inner = Some(client);
+        cmd_tx
+            .send(HandlerCommand::Subscribe { args: Vec::new() })
+            .unwrap();
+        let cancel = CancellationToken::new();
+        let gate = SnapshotGate::default();
+        gate.lock().close();
+        let (completion, mut result) = tokio::sync::oneshot::channel();
+        cmd_tx
+            .send(HandlerCommand::SubscribeBook {
+                subscription: OKXSubscriptionArg {
+                    channel: OKXWsChannel::Books,
+                    inst_id: Some(Ustr::from("BTC-USDT")),
+                    inst_type: None,
+                    inst_family: None,
+                },
+                cancel: cancel.clone(),
+                gate: gate.clone(),
+                completion,
+            })
+            .unwrap();
+
+        let running = tokio::spawn(async move { handler.next().await });
+        let first = tokio::time::timeout(Duration::from_secs(3), wire_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let first: Value = serde_json::from_str(first.to_text().unwrap()).unwrap();
+        assert_eq!(first, serde_json::json!({"op": "subscribe", "args": []}));
+        assert!(matches!(
+            result.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        ));
+
+        if canceled {
+            cancel.cancel();
+        }
+
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(10)).await;
+        tokio::time::resume();
+        let result = tokio::time::timeout(Duration::from_secs(3), result)
+            .await
+            .unwrap();
+
+        if canceled {
+            assert!(gate.lock().is_closed());
+            assert!(result.is_err());
+            assert!(
+                tokio::time::timeout(Duration::from_millis(100), wire_rx.recv())
+                    .await
+                    .is_err()
+            );
+        } else {
+            result.unwrap().unwrap();
+            assert!(!gate.lock().is_closed());
+            let frame = tokio::time::timeout(Duration::from_secs(3), wire_rx.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            let frame: Value = serde_json::from_str(frame.to_text().unwrap()).unwrap();
+            assert_eq!(
+                frame,
+                serde_json::json!({"op": "subscribe", "args": [{"channel": "books", "instId": "BTC-USDT"}]})
+            );
+        }
+
+        running.abort();
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn book_subscription_rejects_changed_connection() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}/", listener.local_addr().unwrap());
+        let (wire_tx, mut wire_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            while let Some(Ok(frame)) = socket.next().await {
+                wire_tx.send(frame).unwrap();
+            }
+        });
+        let (message_handler, raw_rx) = channel_message_handler();
+        let client = WebSocketClient::builder()
+            .config(WebSocketConfig::builder().url(url).build().unwrap())
+            .message_handler(message_handler)
+            .connect()
+            .await
+            .unwrap();
+        let wrong_epoch = client.connection_epoch() + 1;
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut handler = OKXWsFeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            AuthTracker::new(),
+            SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
+            get_atomic_clock_realtime(),
+        );
+        handler.inner = Some(client);
+        let result = handler
+            .send_book_subscription(
+                OKXWsOperation::Subscribe,
+                OKXSubscriptionArg {
+                    channel: OKXWsChannel::Books,
+                    inst_id: Some(Ustr::from("BTC-USDT")),
+                    inst_type: None,
+                    inst_family: None,
+                },
+                wrong_epoch,
+            )
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(OKXWsError::TransportSend(SendError::ConnectionChanged))
+        ));
+        assert!(matches!(
+            wire_rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+        handler.inner.as_ref().unwrap().disconnect().await;
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn recovery_cancel_between_sends_keeps_snapshot_gate_closed() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}/", listener.local_addr().unwrap());
+        let (received, first_frame) = tokio::sync::oneshot::channel();
+
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            let frame = socket.next().await.unwrap().unwrap();
+            received.send(frame).unwrap();
+
+            while socket.next().await.is_some() {}
+        });
+
+        let (message_handler, raw_rx) = channel_message_handler();
+        let client = WebSocketClient::builder()
+            .config(WebSocketConfig::builder().url(url).build().unwrap())
+            .message_handler(message_handler)
+            .default_quota(Quota::per_hour(NonZeroU32::new(1).unwrap()))
+            .connect()
+            .await
+            .unwrap();
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut handler = OKXWsFeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            AuthTracker::new(),
+            SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
+            get_atomic_clock_realtime(),
+        );
+        handler.inner = Some(client);
+        let tracker = BookSyncTracker::default();
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        tracker.record_subscription(instrument_id, time::Instant::now(), SnapshotGate::default());
+        let recovery = tracker.claim_recovery(instrument_id).unwrap();
+        assert!(recovery.begin_replacement());
+        let cancel = recovery.cancellation.child_token();
+        let (completion, result) = tokio::sync::oneshot::channel();
+        cmd_tx
+            .send(HandlerCommand::Resubscribe {
+                subscription: OKXSubscriptionArg {
+                    channel: OKXWsChannel::Books,
+                    inst_id: Some(Ustr::from("BTC-USDT")),
+                    inst_type: None,
+                    inst_family: None,
+                },
+                cancel: cancel.clone(),
+                gate: recovery.gate.clone(),
+                completion,
+            })
+            .unwrap();
+
+        let running = tokio::spawn(async move { handler.next().await });
+        let frame = tokio::time::timeout(Duration::from_secs(3), first_frame)
+            .await
+            .unwrap()
+            .unwrap();
+        let request: Value = serde_json::from_str(frame.to_text().unwrap()).unwrap();
+        assert_eq!(request["op"], "unsubscribe");
+        assert_eq!(
+            tracker.validate_sequence(
+                instrument_id,
+                true,
+                &[(Some(-1), 42)],
+                Duration::ZERO,
+                time::Instant::now()
+            ),
+            BookSequenceOutcome::Suppress
+        );
+        cancel.cancel();
+        assert!(
+            tokio::time::timeout(Duration::from_secs(1), result)
+                .await
+                .unwrap()
+                .is_err()
+        );
+
+        assert!(recovery.gate.lock().is_closed());
+        assert_eq!(
+            tracker.validate_sequence(
+                instrument_id,
+                true,
+                &[(Some(-1), 43)],
+                Duration::ZERO,
+                time::Instant::now()
+            ),
+            BookSequenceOutcome::Suppress
+        );
+        cmd_tx.send(HandlerCommand::Disconnect).unwrap();
+        tokio::time::timeout(Duration::from_secs(3), running)
+            .await
+            .unwrap()
+            .unwrap();
+        server.abort();
+    }
+
+    #[rstest]
+    #[case::disabled_deadline(Duration::ZERO)]
+    #[case::snapshot_deadline(Duration::from_secs(3))]
+    #[tokio::test]
+    async fn reconnect_replay_survives_inflight_recovery(#[case] snapshot_timeout: Duration) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}/", listener.local_addr().unwrap());
+        let (wire_tx, mut wire_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+
+            while let Some(Ok(Message::Text(text))) = socket.next().await {
+                let request: Value = serde_json::from_str(&text).unwrap();
+                wire_tx
+                    .send(request["op"].as_str().unwrap().to_owned())
+                    .unwrap();
+
+                if request["op"] == "subscribe" {
+                    for (fixture, sequence, previous) in [
+                        ("ws_books_snapshot.json", 100, -1),
+                        ("ws_books_update.json", 101, 100),
+                    ] {
+                        let mut frame: Value =
+                            serde_json::from_str(&load_test_json(fixture)).unwrap();
+                        frame["data"][0]["seqId"] = json!(sequence);
+                        frame["data"][0]["prevSeqId"] = json!(previous);
+                        socket
+                            .send(Message::Text(frame.to_string().into()))
+                            .await
+                            .unwrap();
+                    }
+                }
+            }
+        });
+
+        // Replay and unsubscribe consume the burst; the replacement subscribe cannot send
+        let limiter = Arc::new(RateLimiter::new_with_quota(
+            Some(
+                Quota::with_period(Duration::from_secs(10))
+                    .unwrap()
+                    .allow_burst(NonZeroU32::new(2).unwrap()),
+            ),
+            Vec::new(),
+        ));
+        let (message_handler, raw_rx) = channel_message_handler();
+        let client = WebSocketClient::builder()
+            .config(WebSocketConfig::builder().url(url).build().unwrap())
+            .message_handler(message_handler)
+            .rate_limiter(Arc::clone(&limiter))
+            .connect()
+            .await
+            .unwrap();
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut handler = OKXWsFeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            AuthTracker::new(),
+            SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
+            get_atomic_clock_realtime(),
+        );
+        handler.inner = Some(client);
+        let (messages_tx, mut messages_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let running = tokio::spawn(async move {
+            while let Some(message) = handler.next().await {
+                messages_tx.send(message).unwrap();
+            }
+        });
+
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        let channels = AtomicMap::new();
+        channels.insert(instrument_id, OKXBookChannel::Book);
+        let tracker = BookSyncTracker::default();
+        tracker.record_subscription(instrument_id, time::Instant::now(), SnapshotGate::default());
+        let recovery = tracker.claim_recovery(instrument_id).unwrap();
+        assert!(recovery.begin_replacement());
+
+        let arg = OKXSubscriptionArg {
+            channel: OKXWsChannel::Books,
+            inst_id: Some(Ustr::from("BTC-USDT")),
+            inst_type: None,
+            inst_family: None,
+        };
+
+        cmd_tx
+            .send(HandlerCommand::Subscribe {
+                args: vec![arg.clone()],
+            })
+            .unwrap();
+
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(3), wire_rx.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+            "subscribe"
+        );
+
+        for action in [OKXBookAction::Snapshot, OKXBookAction::Update] {
+            let message = tokio::time::timeout(Duration::from_secs(3), messages_rx.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(
+                matches!(message, OKXWsMessage::BookData { action: received, .. } if received == action)
+            );
+        }
+
+        let (completion, result) = tokio::sync::oneshot::channel();
+        cmd_tx
+            .send(HandlerCommand::Resubscribe {
+                subscription: arg.clone(),
+                cancel: recovery.cancellation.child_token(),
+                gate: recovery.gate.clone(),
+                completion,
+            })
+            .unwrap();
+
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(3), wire_rx.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+            "unsubscribe"
+        );
+
+        // Paused time keeps the subscribe blocked until the reset completes
+        tokio::time::pause();
+        tracker.reset_sequences(&channels, BookChannelScope::Public);
+
+        if !snapshot_timeout.is_zero() {
+            tracker.seed_pending_snapshots(
+                &channels,
+                BookChannelScope::Public,
+                snapshot_timeout,
+                time::Instant::now(),
+            );
+        }
+
+        tokio::time::advance(Duration::from_secs(10)).await;
+        tokio::time::resume();
+        let _ = tokio::time::timeout(Duration::from_secs(3), result)
+            .await
+            .expect("recovery command completes after reconnect");
+
+        let resumed = tokio::time::timeout(Duration::from_secs(3), async {
+            for (action, sequence) in [(OKXBookAction::Snapshot, 100), (OKXBookAction::Update, 101)]
+            {
+                let Some(OKXWsMessage::BookData {
+                    action: received,
+                    data,
+                    ..
+                }) = messages_rx.recv().await
+                else {
+                    panic!("expected book data after reconnect");
+                };
+
+                assert_eq!(received, action);
+                assert_eq!(data[0].seq_id, sequence);
+                assert_eq!(
+                    tracker.validate_sequence(
+                        instrument_id,
+                        received == OKXBookAction::Snapshot,
+                        &[(data[0].prev_seq_id, data[0].seq_id)],
+                        snapshot_timeout,
+                        time::Instant::now(),
+                    ),
+                    BookSequenceOutcome::Accept,
+                );
+            }
+        })
+        .await;
+
+        // A successful manual subscribe isolates a failure to automatic replay
+        if resumed.is_err() {
+            cmd_tx
+                .send(HandlerCommand::Subscribe { args: vec![arg] })
+                .unwrap();
+
+            for action in [OKXBookAction::Snapshot, OKXBookAction::Update] {
+                let message = tokio::time::timeout(Duration::from_secs(3), messages_rx.recv())
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert!(
+                    matches!(message, OKXWsMessage::BookData { action: received, .. } if received == action)
+                );
+            }
+        }
+
+        cmd_tx.send(HandlerCommand::Disconnect).unwrap();
+        tokio::time::timeout(Duration::from_secs(3), running)
+            .await
+            .unwrap()
+            .unwrap();
+        server.abort();
+
+        assert!(
+            resumed.is_ok(),
+            "reconnect must preserve an in-flight recovery and resume book output"
+        );
     }
 
     #[rstest]

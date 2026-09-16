@@ -111,6 +111,7 @@ axum = { workspace = true }
 criterion = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 toml = { workspace = true }
 
 # Canonical benches; see crates/adapters/okx/benches/BENCHMARKS.md for context
@@ -186,5 +187,12 @@ doc = false
 [[example]]
 name = "okx-delta-neutral"
 path = "examples/node_delta_neutral.rs"
+required-features = ["examples"]
+doc = false
+
+# Public market-data validation; explicitly connects to OKX mainnet.
+[[example]]
+name = "okx-book-sync-stress"
+path = "examples/book_sync_stress.rs"
 required-features = ["examples"]
 doc = false

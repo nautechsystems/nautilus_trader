@@ -22,6 +22,7 @@ Released on TBD (UTC).
 - Fixed trailing-stop orders already in the market being accepted despite `reject_stop_orders`
 - Fixed Betfair false fill voids and missing fills during reconciliation after price replacements
 - Fixed Betfair order quantities in replacement queries and quantity reduction recovery
+- Fixed OKX order book snapshots retaining stale price levels after resubscription
 
 ### Internal Improvements
 
@@ -31,6 +32,7 @@ Released on TBD (UTC).
 - Optimized average-price calculation for orders with many fills
 - Optimized allocation overhead in Rust cache `orders` and `orders_refs` queries
 - Optimized allocation overhead in Rust exchange rate calculations
+- Improved OKX public and spread book recovery with bounded retries and cancellation-safe resubscription
 - Upgraded `datafusion` crate to v55.1.0
 - Upgraded `jiff` crate to v0.2.37
 - Upgraded `smallvec` crate to v1.16.1
@@ -39,6 +41,7 @@ Released on TBD (UTC).
 ### Documentation Updates
 
 - Documented the adapter config field layout convention in the developer guide
+- Documented OKX order book recovery and retry limits
 - Updated Databento and Tardis integration guides with new URL overrides
 
 ### Deprecations

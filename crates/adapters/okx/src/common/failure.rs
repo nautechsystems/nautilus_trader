@@ -107,6 +107,8 @@ mod tests {
     #[case::request_timeout("50004", "API endpoint request timeout", false)]
     #[case::order_timeout("51149", "Order timed out. Please try again.", false)]
     #[case::rate_limit("50011", "Request too frequent", false)]
+    #[case::ws_rate_limit("60014", "WebSocket requests too frequent", true)]
+    #[case::ws_internal_error("64007", "WebSocket internal error", true)]
     #[case::invalid_signature("50113", "Invalid signature", true)]
     #[case::missing_code("", "All operations failed", false)]
     fn test_classify_okx_venue_code(
