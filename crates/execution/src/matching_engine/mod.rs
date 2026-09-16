@@ -2659,6 +2659,7 @@ impl OrderMatchingEngine {
 
         let ts_now = self.clock.borrow().timestamp_ns();
         let close_price = close.as_ref().map(|close| close.close_price);
+        let settlement_commission = Money::zero(self.instrument.quote_currency());
 
         for (trader_id, strategy_id, account_id, position_id, closing_side, quantity) in positions {
             let client_order_id =
@@ -2714,6 +2715,7 @@ impl OrderMatchingEngine {
                     Some(position_id),
                     None,
                     None,
+                    Some(settlement_commission),
                 ) {
                     log::error!("Cannot fill expiration order {client_order_id}: {e}");
                 }
@@ -2908,31 +2910,34 @@ impl OrderMatchingEngine {
                 );
             }
 
-            // Check for instrument expiration or activation
-            if self.instrument.has_expiration() {
-                if let Some(activation_ns) = self.instrument.activation_ns()
-                    && self.clock.borrow().timestamp_ns() < activation_ns
-                {
-                    break 'validate Some(
-                        format!(
-                            "Contract {} is not yet active, activation {activation_ns}",
-                            self.instrument.id(),
-                        )
-                        .into(),
-                    );
-                }
+            // Activation applies wherever the instrument exposes a timestamp. Gating on the
+            // class flag skipped binary options and betting markets, which carry real
+            // activation times but no class-level expiration.
+            if let Some(activation_ns) = self.instrument.activation_ns()
+                && self.clock.borrow().timestamp_ns() < activation_ns
+            {
+                break 'validate Some(
+                    format!(
+                        "Contract {} is not yet active, activation {activation_ns}",
+                        self.instrument.id(),
+                    )
+                    .into(),
+                );
+            }
 
-                if let Some(expiration_ns) = self.instrument.expiration_ns()
-                    && self.clock.borrow().timestamp_ns() >= expiration_ns
-                {
-                    break 'validate Some(
-                        format!(
-                            "Contract {} has expired, expiration {expiration_ns}",
-                            self.instrument.id(),
-                        )
-                        .into(),
-                    );
-                }
+            // Expiration stays gated on the class flag: binary options and betting markets
+            // reach terminal state through pending resolution and market closure instead.
+            if self.instrument.has_expiration()
+                && let Some(expiration_ns) = self.instrument.expiration_ns()
+                && self.clock.borrow().timestamp_ns() >= expiration_ns
+            {
+                break 'validate Some(
+                    format!(
+                        "Contract {} has expired, expiration {expiration_ns}",
+                        self.instrument.id(),
+                    )
+                    .into(),
+                );
             }
 
             // Contingent orders checks
@@ -4618,6 +4623,7 @@ impl OrderMatchingEngine {
             },
             position.as_ref(),
             protection_price,
+            None,
         ) {
             log::error!("Cannot fill market order {}: {e}", order.client_order_id());
         }
@@ -4811,6 +4817,7 @@ impl OrderMatchingEngine {
                     venue_position_id,
                     position.as_ref(),
                     None,
+                    None,
                 ) {
                     log::error!("Cannot fill limit order {}: {e}", order.client_order_id());
                 }
@@ -4891,6 +4898,7 @@ impl OrderMatchingEngine {
             .map(|position| position.clone_without_events())
     }
 
+    #[expect(clippy::too_many_arguments)]
     fn apply_fills(
         &mut self,
         order: &OrderAny,
@@ -4899,6 +4907,7 @@ impl OrderMatchingEngine {
         venue_position_id: Option<PositionId>,
         position: Option<&Position>,
         protection_price: Option<Price>,
+        commission_override: Option<Money>,
     ) -> anyhow::Result<()> {
         if order.time_in_force() == TimeInForce::Fok {
             let mut total_size = Quantity::zero(order.quantity().precision);
@@ -5053,6 +5062,7 @@ impl OrderMatchingEngine {
                 liquidity_side,
                 venue_position_id,
                 position,
+                commission_override,
             )?;
             last_fill_px = Some(fill_px);
 
@@ -5147,6 +5157,7 @@ impl OrderMatchingEngine {
                 liquidity_side,
                 venue_position_id,
                 position,
+                commission_override,
             )?;
             self.purge_cached_filled_qty_if_closed(order.client_order_id());
         }
@@ -5252,6 +5263,7 @@ impl OrderMatchingEngine {
         });
     }
 
+    #[expect(clippy::too_many_arguments)]
     fn fill_order(
         &mut self,
         order: &OrderAny,
@@ -5260,6 +5272,7 @@ impl OrderMatchingEngine {
         liquidity_side: LiquiditySide,
         venue_position_id: Option<PositionId>,
         position: Option<&Position>,
+        commission_override: Option<Money>,
     ) -> anyhow::Result<()> {
         self.check_size_precision(last_qty.precision, "fill quantity")?;
 
@@ -5290,14 +5303,20 @@ impl OrderMatchingEngine {
             &fee_order
         };
 
-        let underlying_px = self.fee_underlying_price()?;
-        let commission = self.fee_model.get_commission_with_context(
-            commission_order,
-            last_qty,
-            last_px,
-            &self.instrument,
-            underlying_px,
-        )?;
+        // A settlement fill carries an explicit commission instead of the configured fee
+        // model's rate, because settling a resolved market is not a trade.
+        let commission = if let Some(commission) = commission_override {
+            commission
+        } else {
+            let underlying_px = self.fee_underlying_price()?;
+            self.fee_model.get_commission_with_context(
+                commission_order,
+                last_qty,
+                last_px,
+                &self.instrument,
+                underlying_px,
+            )?
+        };
 
         // Resolve implicit membership before dispatch can close the cached position
         let reduce_only_order_ids = position
@@ -7673,6 +7692,7 @@ mod tests {
                     Some(position_id),
                     Some(&position),
                     None,
+                    None,
                 )
                 .unwrap();
             let events = events.borrow();
@@ -7916,6 +7936,7 @@ mod tests {
                 LiquiditySide::Taker,
                 Some(position_id),
                 Some(&position),
+                None,
                 None,
             )
             .unwrap();
@@ -8170,6 +8191,7 @@ mod tests {
                     LiquiditySide::Taker,
                     Some(position_id),
                     Some(&position),
+                    None,
                     None,
                 )
                 .unwrap();
@@ -8584,6 +8606,7 @@ mod tests {
                 LiquiditySide::Taker,
                 Some(position_id),
                 Some(&position),
+                None,
                 None,
             )
             .unwrap();
@@ -9229,6 +9252,7 @@ mod tests {
                 Some(position_id),
                 Some(&position),
                 None,
+                None,
             )
             .unwrap();
 
@@ -9600,6 +9624,7 @@ mod tests {
                 LiquiditySide::Taker,
                 None,
                 None,
+                None,
             )
             .unwrap();
 
@@ -9667,6 +9692,7 @@ mod tests {
                 LiquiditySide::Taker,
                 None,
                 None,
+                None,
             )
             .unwrap();
 
@@ -9719,6 +9745,7 @@ mod tests {
             Price::from("1500.00"),
             Quantity::from("1.000"),
             LiquiditySide::Taker,
+            None,
             None,
             None,
         );

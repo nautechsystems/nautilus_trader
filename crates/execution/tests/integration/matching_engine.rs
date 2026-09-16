@@ -414,6 +414,59 @@ fn test_process_order_when_instrument_not_active(
 }
 
 #[rstest]
+fn test_process_order_when_binary_option_not_active(
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let instrument = InstrumentAny::BinaryOption(binary_option());
+    let activation_ns = instrument.activation_ns().unwrap();
+
+    let test_clock = Rc::new(RefCell::new(TestClock::new()));
+    test_clock
+        .borrow_mut()
+        .set_time(UnixNanos::from(activation_ns.as_u64() - 1));
+
+    let mut engine =
+        get_order_matching_engine_l2(instrument.clone(), Some(test_clock), None, None, None);
+
+    // A resting ask makes the order marketable, so an accepted order trades.
+    let ask = OrderBookDeltaTestBuilder::new(instrument.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("0.400"),
+            Quantity::from("10.00"),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&ask).unwrap();
+
+    let mut order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.00"))
+        .submit(true)
+        .build();
+
+    engine.process_order(&mut order, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    assert_eq!(saved_messages.len(), 1);
+    let first_message = saved_messages.first().unwrap();
+    assert_eq!(first_message.event_type(), OrderEventType::Rejected);
+    assert_eq!(
+        first_message.message().unwrap(),
+        Ustr::from(
+            format!(
+                "Contract {} is not yet active, activation {activation_ns}",
+                instrument.id()
+            )
+            .as_str()
+        )
+    );
+}
+
+#[rstest]
 fn test_process_order_when_invalid_quantity_precision(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
@@ -15292,6 +15345,167 @@ fn test_binary_option_pending_resolution_then_instrument_close_settles_position(
         .expect("expected settlement fill from instrument close");
     assert_eq!(settlement_fill.last_px, Price::from("1.000"));
     let _ = position;
+}
+
+/// The observable result of opening a position and settling it through the expiration path.
+struct SettlementOutcome {
+    opening_commission: rust_decimal::Decimal,
+    settlement_commission: rust_decimal::Decimal,
+    realized_pnl: Money,
+}
+
+/// Opens `quantity` outcome shares of a binary option at the resting ask, then settles the
+/// position at `close_price` through the instrument close path.
+fn settle_binary_option_at_close(
+    account_id: AccountId,
+    quantity: &str,
+    entry_price: &str,
+    close_price: &str,
+) -> SettlementOutcome {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+
+    let mut binary = binary_option();
+    binary.taker_fee = dec!(0.02);
+    binary.activation_ns = UnixNanos::default();
+    binary.expiration_ns = UnixNanos::from(100);
+    let instrument = InstrumentAny::BinaryOption(binary);
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    clock.borrow_mut().set_time(UnixNanos::from(1));
+
+    let mut engine = OrderMatchingEngine::new(
+        instrument.clone(),
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::default().into(),
+        BookType::L2_MBP,
+        OmsType::Netting,
+        AccountType::Margin,
+        clock.clone(),
+        cache.clone(),
+        OrderMatchingEngineConfig {
+            use_position_ids: true,
+            ..Default::default()
+        },
+    );
+
+    let opening_ask = OrderBookDeltaTestBuilder::new(instrument.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from(entry_price),
+            Quantity::from("1000.00"),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&opening_ask).unwrap();
+
+    let opening_order_id = ClientOrderId::from("OPEN-SETTLE");
+    let mut opening_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(quantity))
+        .client_order_id(opening_order_id)
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(opening_order.clone(), None, None, false)
+        .unwrap();
+    engine.process_order(&mut opening_order, account_id);
+
+    let mut opening_fill = get_order_event_handler_messages(&order_event_handler)
+        .into_iter()
+        .find_map(|event| match event {
+            OrderEventAny::Filled(fill) if fill.client_order_id == opening_order_id => Some(fill),
+            _ => None,
+        })
+        .expect("expected opening fill");
+    let opening_commission = opening_fill
+        .commission
+        .expect("expected commission on the opening fill")
+        .as_decimal();
+    opening_fill.position_id = Some(PositionId::from("P-SETTLE"));
+    let position = Position::new(&instrument, opening_fill);
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    clear_order_event_handler_messages(&order_event_handler);
+    clock.borrow_mut().set_time(UnixNanos::from(101));
+
+    let close = InstrumentClose::new(
+        instrument.id(),
+        Price::from(close_price),
+        InstrumentCloseType::ContractExpired,
+        UnixNanos::from(101),
+        UnixNanos::from(101),
+    );
+    engine.process_instrument_close(close);
+
+    let settlement_fill = get_order_event_handler_messages(&order_event_handler)
+        .into_iter()
+        .find_map(|event| match event {
+            OrderEventAny::Filled(fill)
+                if fill.client_order_id.as_str().starts_with("EXPIRATION-") =>
+            {
+                Some(fill)
+            }
+            _ => None,
+        })
+        .expect("expected settlement fill from instrument close");
+    assert_eq!(settlement_fill.last_px, Price::from(close_price));
+
+    let mut closed = position;
+    closed.apply(&settlement_fill);
+
+    SettlementOutcome {
+        opening_commission,
+        settlement_commission: settlement_fill
+            .commission
+            .expect("expected commission on the settlement fill")
+            .as_decimal(),
+        realized_pnl: closed
+            .realized_pnl
+            .expect("expected realized pnl after settlement"),
+    }
+}
+
+#[rstest]
+fn test_binary_option_settlement_charges_no_commission_and_pays_winner_exactly(
+    account_id: AccountId,
+) {
+    let outcome = settle_binary_option_at_close(account_id, "100.00", "0.350", "1.000");
+
+    // Gross of 100 shares bought at 0.350, a unit payout returns 100.00 for a gain of 65.00.
+    assert_eq!(
+        outcome.realized_pnl + Money::from("0.70 USDC"),
+        Money::from("65.00 USDC")
+    );
+    // Net of the 0.70 entry fee, and nothing charged on settlement.
+    assert_eq!(outcome.realized_pnl, Money::from("64.30 USDC"));
+    assert_eq!(outcome.opening_commission, dec!(0.70));
+    assert_eq!(outcome.settlement_commission, dec!(0));
+}
+
+#[rstest]
+fn test_binary_option_settlement_pays_loser_exactly(account_id: AccountId) {
+    let outcome = settle_binary_option_at_close(account_id, "100.00", "0.350", "0.000");
+
+    // A zero payout loses the 35.00 stake.
+    assert_eq!(
+        outcome.realized_pnl + Money::from("0.70 USDC"),
+        Money::from("-35.00 USDC")
+    );
+    assert_eq!(outcome.realized_pnl, Money::from("-35.70 USDC"));
+    assert_eq!(outcome.opening_commission, dec!(0.70));
+    assert_eq!(outcome.settlement_commission, dec!(0));
 }
 
 #[rstest]
