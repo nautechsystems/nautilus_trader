@@ -31,12 +31,13 @@ use nautilus_backtest::{
 };
 use nautilus_common::{
     actor::{
-        DataActor, DataActorCore, data_actor::DataActorConfig, registry::try_get_actor_unchecked,
+        CallbackDispatchError, DataActor, DataActorCore, callback_failure,
+        data_actor::DataActorConfig, drain_callbacks, registry::try_get_actor_unchecked,
     },
     component::Component,
     enums::ComponentState,
     msgbus, nautilus_actor,
-    timer::TimeEvent,
+    timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{DurationNanos, UUID4, UnixNanos};
 use nautilus_execution::models::latency::{LatencyModelHandle, StaticLatencyModel};
@@ -109,10 +110,11 @@ impl DataActor for EmptyStrategy {}
 
 struct FailingStartStrategy {
     core: StrategyCore,
+    fail_dispatch: bool,
 }
 
 impl FailingStartStrategy {
-    fn new() -> Self {
+    fn new(fail_dispatch: bool) -> Self {
         let config = StrategyConfig {
             strategy_id: Some(StrategyId::from("FAILING-START-001")),
             order_id_tag: Some("001".to_string()),
@@ -120,6 +122,7 @@ impl FailingStartStrategy {
         };
         Self {
             core: StrategyCore::new(config),
+            fail_dispatch,
         }
     }
 }
@@ -134,6 +137,16 @@ impl Debug for FailingStartStrategy {
 
 impl DataActor for FailingStartStrategy {
     fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes("ETHUSDT-PERP.BINANCE".into(), None, None);
+        anyhow::ensure!(
+            !nautilus_common::runner::data_cmd_queue_is_empty(),
+            "Expected startup subscription to remain queued",
+        );
+
+        if self.fail_dispatch {
+            latch_callback_failure();
+        }
+
         anyhow::bail!("simulated backtest strategy start failure")
     }
 }
@@ -2727,12 +2740,19 @@ fn test_run_with_strategy(crypto_perpetual_ethusdt: CryptoPerpetual) {
 }
 
 #[rstest]
-fn test_run_propagates_strategy_start_failure(crypto_perpetual_ethusdt: CryptoPerpetual) {
+#[case(false)]
+#[case(true)]
+fn test_run_propagates_strategy_start_failure(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] fail_dispatch: bool,
+) {
     let mut engine = create_engine();
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     let instrument_id = instrument.id();
     engine.add_instrument(&instrument).unwrap();
-    engine.add_strategy(FailingStartStrategy::new()).unwrap();
+    engine
+        .add_strategy(FailingStartStrategy::new(fail_dispatch))
+        .unwrap();
     engine
         .add_data(
             vec![quote(instrument_id, "1000.00", "1000.10", 1_000_000_000)],
@@ -2746,6 +2766,9 @@ fn test_run_propagates_strategy_start_failure(crypto_perpetual_ethusdt: CryptoPe
         .run(None, None, None, false)
         .expect_err("strategy start should fail");
     let trader_stopped = engine.kernel().trader.borrow().is_stopped();
+    let data_queue_empty = nautilus_common::runner::data_cmd_queue_is_empty();
+    let data_command_count = engine.kernel().data_engine.borrow().command_count();
+    let dispatch_error = callback_failure();
     engine.dispose();
 
     assert!(
@@ -2754,8 +2777,153 @@ fn test_run_propagates_strategy_start_failure(crypto_perpetual_ethusdt: CryptoPe
         "unexpected error: {err:#}"
     );
     assert!(trader_stopped);
+    assert_eq!(
+        err.to_string().matches("Callback dispatch failed:").count(),
+        usize::from(fail_dispatch)
+    );
+    assert_eq!(
+        err.to_string().contains("Callback delivery unwound"),
+        fail_dispatch
+    );
+    assert_eq!(dispatch_error, None);
+    assert!(data_queue_empty);
+    assert_eq!(data_command_count, 0);
     assert!(engine.kernel().trader.borrow().is_disposed());
     assert_eq!(engine.kernel().trader.borrow().component_count(), 0);
+}
+
+#[rstest]
+#[case("run")]
+#[case("end")]
+#[case("reset")]
+fn test_latched_callback_failure_stops_backtest(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] operation: &str,
+) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    engine.add_instrument(&instrument).unwrap();
+    engine.add_strategy(EmptyStrategy::new()).unwrap();
+    engine
+        .add_data(
+            vec![quote(instrument.id(), "1000.00", "1000.10", 1_000_000_000)],
+            None,
+            true,
+            true,
+        )
+        .unwrap();
+    engine.run(None, None, None, true).unwrap();
+    assert!(engine.kernel().trader.borrow().is_running());
+    latch_callback_failure();
+
+    let error = match operation {
+        "run" => engine.run(None, None, None, true),
+        "end" => engine.end(),
+        "reset" => engine.reset(),
+        _ => unreachable!(),
+    }
+    .unwrap_err();
+    let trader_running = engine.kernel().trader.borrow().is_running();
+    let dispatch_error = callback_failure();
+    let data_queue_empty = nautilus_common::runner::data_cmd_queue_is_empty();
+    let trading_queue_empty = nautilus_common::runner::trading_cmd_queue_is_empty();
+    engine.dispose();
+
+    assert_eq!(
+        error.downcast_ref::<CallbackDispatchError>(),
+        Some(&CallbackDispatchError::DeliveryUnwound)
+    );
+    assert!(!trader_running);
+    assert_eq!(dispatch_error, None);
+    assert!(data_queue_empty);
+    assert!(trading_queue_empty);
+}
+
+#[rstest]
+fn test_timer_callback_failure_prevents_later_work(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    engine.add_instrument(&instrument).unwrap();
+    engine.add_strategy(EmptyStrategy::new()).unwrap();
+    engine
+        .add_data(
+            vec![quote(instrument.id(), "1000.00", "1000.10", 1_000_000_000)],
+            None,
+            true,
+            true,
+        )
+        .unwrap();
+    engine.run(None, None, None, true).unwrap();
+    engine.clear_data();
+    engine
+        .add_data(
+            vec![quote(instrument.id(), "1001.00", "1001.10", 2_000_000_000)],
+            None,
+            true,
+            true,
+        )
+        .unwrap();
+    let fired = Rc::new(RefCell::new(Vec::new()));
+
+    for (name, timestamp, fail) in [
+        ("failure", 1_500_000_000, true),
+        ("later", 1_500_000_000, false),
+    ] {
+        let fired = fired.clone();
+        let callback = TimeEventCallback::RustLocal(Rc::new(move |_| {
+            fired.borrow_mut().push(name);
+
+            if fail {
+                latch_callback_failure();
+            }
+        }));
+        engine
+            .kernel()
+            .clock
+            .borrow_mut()
+            .set_time_alert_ns(name, timestamp.into(), Some(callback), None)
+            .unwrap();
+    }
+
+    let error = engine
+        .run(Some(UnixNanos::from(1_000_000_000)), None, None, true)
+        .unwrap_err();
+    let timestamp = engine.kernel().clock.borrow().timestamp_ns();
+    let data_count = engine.kernel().data_engine.borrow().data_count();
+    let trader_stopped = engine.kernel().trader.borrow().is_stopped();
+    let dispatch_error = callback_failure();
+    engine.dispose();
+
+    assert_eq!(
+        error.downcast_ref::<CallbackDispatchError>(),
+        Some(&CallbackDispatchError::DeliveryUnwound)
+    );
+    assert_eq!(*fired.borrow(), ["failure"]);
+    assert_eq!(timestamp, UnixNanos::from(1_500_000_000));
+    assert_eq!(data_count, 2);
+    assert!(trader_stopped);
+    assert_eq!(dispatch_error, None);
+}
+
+fn latch_callback_failure() {
+    struct DrainOnDrop;
+
+    impl Drop for DrainOnDrop {
+        fn drop(&mut self) {
+            assert_eq!(drain_callbacks(1), Ok(false));
+        }
+    }
+
+    let result = std::panic::catch_unwind(|| {
+        let _drain = DrainOnDrop;
+        panic!("simulated callback unwind");
+    });
+
+    assert!(result.is_err());
+    assert_eq!(
+        callback_failure(),
+        Some(CallbackDispatchError::DeliveryUnwound)
+    );
 }
 
 #[rstest]

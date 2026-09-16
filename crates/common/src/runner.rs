@@ -455,6 +455,17 @@ pub fn data_cmd_queue_is_empty() -> bool {
     DATA_CMD_QUEUE.with(|q| q.borrow().is_empty())
 }
 
+/// Discards the current synchronous data and trading command batches without executing them.
+///
+/// Queue borrows end before captures are destroyed. Commands emitted by capture destruction remain
+/// queued; callers must establish a safe teardown boundary before discarding work.
+pub fn clear_command_queues() {
+    let data = DATA_CMD_QUEUE.with(|queue| std::mem::take(&mut *queue.borrow_mut()));
+    let trading = TRADING_CMD_QUEUE.with(|queue| std::mem::take(&mut *queue.borrow_mut()));
+    drop(data);
+    drop(trading);
+}
+
 /// Gets the global data command sender.
 ///
 /// # Panics

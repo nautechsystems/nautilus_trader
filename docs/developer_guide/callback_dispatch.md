@@ -16,7 +16,7 @@ Support for synchronous message-bus reentry does not activate queued actor or st
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Actor delivery                                        | Private primitives support ordered, owned callback delivery.                                                         | **Queued actor and strategy delivery is inactive.** Existing synchronous paths do not gain these guarantees.                                                                                      |
 | [Root propagation](#callback-roots-and-budgets)       | Retained work, data and trading commands, and live data, execution, system, and time channels preserve causal roots. | Live roots remain on their owner thread and do not follow arbitrary tasks or await points. Scheduled timer firings enter independently.                                                           |
-| [Drain safety](#draining-and-progress)                | Explicit drains report why they stop; boundary drains latch a fatal error for a busy head.                           | Callers must end enclosing mutable borrows. Automatic safe drains and use of the boundary drain require runtime integration.                                                                      |
+| [Drain safety](#draining-and-progress)                | Explicit drains report why they stop; boundary drains latch a fatal error for a busy head.                           | Only backtests call the boundary drain; callers must end enclosing mutable borrows. Live drains and canonical callback activation remain unimplemented.                                           |
 | [Progress budgets](#callback-roots-and-budgets)       | Completed callbacks consume a per-root delivery budget.                                                              | Command and event transport do not consume that budget. Loops without callback delivery and individual callback duration are not bounded.                                                         |
 | [Memory accounting](#storage-limits)                  | Private limits cover retained units and known callback storage.                                                      | Command and event payloads, channel and command-queue capacity, and the listed opaque storage are excluded. This is not a total-process memory cap; limits have no user configuration.            |
 | [Failure handling](#failure-cleanup)                  | Contexts restore on unwind; retained roots block premature teardown.                                                 | Fatal callback errors halt the dispatcher across roots. Command-handler panics propagate and discard pending children and the unprocessed collected batch; completed effects are not rolled back. |
@@ -78,8 +78,8 @@ The actor module contains private access, admission, publication, invocation, an
 Data and trading commands preserve [callback roots](#callback-roots-and-budgets) in synchronous and live runtimes.
 Locally emitted live data, execution, and system messages and time events preserve roots through their channels.
 Production actor lookups, component access, and message-bus routes do not use queued callback delivery. Activating that
-delivery requires explicit native and Python runtime boundaries; the primitives alone do not establish
-runtime ownership safety or native, direct, and dynamic callback parity.
+delivery requires native and Python ownership support at runtime boundaries; the primitives and backtest
+drains alone do not establish runtime ownership safety or native, direct, and dynamic callback parity.
 
 ### Publication and admission
 
@@ -103,6 +103,10 @@ Drains do no work during publication, recursive draining, teardown, or checked a
 Their result distinguishes an empty queue, an exhausted slot budget, deferred entry, an unfinished
 head reservation, and a busy head. An empty queue does not imply all retained roots have released;
 ownership accounting alone is not a reason to keep draining.
+
+An otherwise successful drain entered during panic unwinding latches a fatal delivery failure on
+exit, even when its queue is empty. Its returned result remains successful; the failure is available
+through the callback failure check and stops the next boundary drain.
 
 The private boundary drain requires the caller to establish a safe delivery point. It reports active
 work without latching a failure when entry is deferred or the head reservation is unfinished. A busy
@@ -192,16 +196,28 @@ The [root propagation tests](../../crates/common/src/actor/dispatch.rs) cover re
 and data and trading commands in synchronous and live runtimes, including deferred trading children.
 Live data and execution event channels also preserve roots through mixed channel hops and
 [startup buffering](../../crates/live/src/node/mod.rs).
-Before queued callback activation, runtime integration must:
+Backtests call the boundary drain after startup data-command batches, command and execution-event
+settlement, and timer handlers. Each callback pass processes a bounded number of slots; settlement
+continues while callbacks or synchronous commands remain before simulated time advances. Retained
+roots alone do not keep settlement running. Startup continues to leave trading commands queued until
+normal settlement.
+
+Dispatch errors propagate out of backtest execution and trigger abort cleanup. Failed trader startup
+also stops the engines and discards pending synchronous commands. Abort, reset, and disposal release
+synchronous command batches before clearing callback captures; externally retained work can still
+prevent callback cleanup. A normal end drains residual work before clearing the dispatcher.
+
+These boundaries do not activate queued actor delivery. Before activation, runtime integration must:
 
 - Preserve the independent ingress boundaries above when activating additional callback routes or
   introducing reusable invocation storage.
-- Provide safe drain boundaries.
-- Use the boundary drain to report a busy head that cannot make progress.
+- Provide bounded live drain boundaries and yielding.
+- Establish native and Python ownership safety for every activated callback route.
+- Validate queued callbacks through complete backtest and live runtime lifecycles.
 
 Public trading messages and their direct `dispatch()` path carry no callback context across threads.
 The synchronous queue owns its contexts privately; live command channels use the envelopes described below.
-These primitives do not establish runtime integration or backend parity.
+Backtest drain integration does not establish live integration or backend parity.
 
 ### Live command and event channels
 

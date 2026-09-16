@@ -40,15 +40,24 @@ thread_local! {
     static DISPATCH: RefCell<Dispatcher> = RefCell::new(Dispatcher::default());
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum DispatchError {
+/// A callback admission, delivery, or boundary failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum DispatchError {
+    #[error("Callback storage limit exceeded")]
     Overflow,
+    #[error("Invalid callback destination")]
     InvalidDestination,
+    #[error("Callback publication sequence exhausted")]
     SequenceExhausted,
+    #[error("Callback publication unwound")]
     PublicationUnwound,
+    #[error("Callback delivery unwound")]
     DeliveryUnwound,
+    #[error("Callback chain delivery limit exceeded")]
     Runaway,
+    #[error("Callback delivery stalled at a safe boundary")]
     Stalled,
+    #[error("Callback work or access is still active")]
     Active,
 }
 
@@ -217,7 +226,7 @@ pub(super) fn drain_at_boundary(budget: usize) -> Result<DrainResult, DispatchEr
 }
 
 pub(super) fn drain(budget: usize) -> Result<DrainResult, DispatchError> {
-    let entered = DISPATCH
+    let status = DISPATCH
         .try_with(|state| {
             let mut state = state.borrow_mut();
             if let Some(e) = state.error {
@@ -225,17 +234,22 @@ pub(super) fn drain(budget: usize) -> Result<DrainResult, DispatchError> {
             }
 
             if state.draining || state.clearing || state.depth != 0 || super::access::is_active() {
-                return Ok(false);
+                return Ok(Some(DrainStatus::Deferred));
+            }
+
+            // Keep the guard's failure tracking when called during unwinding
+            if state.pending.is_empty() && !std::thread::panicking() {
+                return Ok(Some(DrainStatus::Empty));
             }
 
             state.draining = true;
-            Ok(true)
+            Ok(None)
         })
-        .unwrap_or(Ok(false))?;
+        .unwrap_or(Ok(Some(DrainStatus::Deferred)))?;
 
-    if !entered {
+    if let Some(status) = status {
         return Ok(DrainResult {
-            status: DrainStatus::Deferred,
+            status,
             delivered: 0,
         });
     }
@@ -776,6 +790,7 @@ mod tests {
 
     use super::*;
     use crate::{
+        actor::{callback_failure, clear_callbacks, drain_callbacks},
         messages::{
             data::{DataCommand, SubscribeCommand, SubscribeQuotes},
             execution::{QueryAccount, TradingCommand},
@@ -783,7 +798,7 @@ mod tests {
         msgbus::{self, MessagingSwitchboard, TypedIntoHandler},
         runner::{
             DataCommandSender, SyncDataCommandSender, SyncTradingCommandSender,
-            TradingCommandMessage, TradingCommandSender, capture_trading_cmd,
+            TradingCommandMessage, TradingCommandSender, capture_trading_cmd, clear_command_queues,
             data_cmd_queue_is_empty, drain_data_cmd_queue, drain_trading_cmd_queue,
             trading_cmd_is_dispatching, trading_cmd_queue_is_empty,
         },
@@ -792,6 +807,54 @@ mod tests {
     fn record(value: &mut (Rc<RefCell<Vec<u32>>>, u32)) -> bool {
         value.0.borrow_mut().push(value.1);
         true
+    }
+
+    #[rstest]
+    fn runtime_drain_reports_queued_slots_without_counting_retained_roots() {
+        clear_callbacks().unwrap();
+        let retained = retain(17).unwrap();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        drop(reserve::<()>(0).unwrap());
+        reserve(0).unwrap().commit((received.clone(), 23), record);
+
+        assert_eq!(drain_callbacks(0), Ok(true));
+        assert_eq!(drain_callbacks(1), Ok(true));
+        assert!(received.borrow().is_empty());
+        assert_eq!(drain_callbacks(1), Ok(false));
+        assert_eq!(*received.borrow(), [23]);
+        assert!(has_pending());
+        assert_eq!(drain_callbacks(1), Ok(false));
+        assert_eq!(clear_callbacks(), Err(DispatchError::Active));
+        drop(retained);
+        assert_eq!(clear_callbacks(), Ok(()));
+    }
+
+    #[rstest]
+    fn runtime_cleanup_releases_command_roots_before_clearing_failure() {
+        clear_callbacks().unwrap();
+        let storage = retain(17).unwrap();
+        let chain = Rc::downgrade(&storage.chain);
+        storage.with_chain(|| {
+            SyncDataCommandSender.execute(data_command(1));
+            SyncTradingCommandSender.execute(trading_message(2));
+        });
+        drop(storage);
+        reserve(0).unwrap().commit((), |()| false);
+
+        assert_eq!(drain_callbacks(1), Err(DispatchError::Stalled));
+        assert_eq!(callback_failure(), Some(DispatchError::Stalled));
+        assert_eq!(clear_callbacks(), Err(DispatchError::Active));
+        assert!(!data_cmd_queue_is_empty());
+        assert!(!trading_cmd_queue_is_empty());
+        assert_eq!(chain.strong_count(), 2);
+        clear_command_queues();
+        assert!(data_cmd_queue_is_empty());
+        assert!(trading_cmd_queue_is_empty());
+        assert_eq!(chain.strong_count(), 0);
+        assert_eq!(callback_failure(), Some(DispatchError::Stalled));
+        assert_eq!(clear_callbacks(), Ok(()));
+        assert_eq!(callback_failure(), None);
+        assert_eq!(drain_callbacks(1), Ok(false));
     }
 
     #[rstest]
@@ -1045,6 +1108,94 @@ mod tests {
     }
 
     #[rstest]
+    fn empty_drain_preserves_unwind_failure() {
+        struct DrainOnDrop(Rc<Cell<bool>>);
+
+        impl Drop for DrainOnDrop {
+            fn drop(&mut self) {
+                assert_eq!(
+                    drain_at_boundary(1),
+                    Ok(DrainResult {
+                        status: DrainStatus::Empty,
+                        delivered: 0,
+                    })
+                );
+                assert_eq!(failure(), Some(DispatchError::DeliveryUnwound));
+                self.0.set(true);
+            }
+        }
+
+        clear().unwrap();
+        let dropped = Rc::new(Cell::new(false));
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _probe = DrainOnDrop(dropped.clone());
+            panic!("outer callback failed");
+        }));
+
+        assert!(result.is_err());
+        assert!(dropped.get());
+        assert_eq!(failure(), Some(DispatchError::DeliveryUnwound));
+        clear().unwrap();
+    }
+
+    #[rstest]
+    #[case(false, false, 0)]
+    #[case(true, false, 0)]
+    #[case(false, true, 0)]
+    #[case(false, false, 1)]
+    fn empty_drain_preserves_failure_and_boundary_checks(
+        #[case] draining: bool,
+        #[case] clearing: bool,
+        #[case] depth: usize,
+        #[values(None, Some(DispatchError::InvalidDestination))] error: Option<DispatchError>,
+        #[values(0, 1)] budget: usize,
+    ) {
+        clear().unwrap();
+        DISPATCH.with_borrow_mut(|state| {
+            state.draining = draining;
+            state.clearing = clearing;
+            state.depth = depth;
+            state.error = error;
+        });
+
+        let result = drain(budget);
+        let boundary = drain_at_boundary(budget);
+        let observed_error = failure();
+        let observed_state =
+            DISPATCH.with_borrow(|state| (state.draining, state.clearing, state.depth));
+        DISPATCH.with_borrow_mut(|state| {
+            state.draining = false;
+            state.clearing = false;
+            state.depth = 0;
+        });
+        clear().unwrap();
+
+        let expected_status = if draining || clearing || depth != 0 {
+            DrainStatus::Deferred
+        } else {
+            DrainStatus::Empty
+        };
+        let expected = error.map_or(
+            Ok(DrainResult {
+                status: expected_status,
+                delivered: 0,
+            }),
+            Err,
+        );
+        assert_eq!(result, expected);
+        assert_eq!(
+            boundary,
+            if expected_status == DrainStatus::Deferred {
+                Err(error.unwrap_or(DispatchError::Active))
+            } else {
+                expected
+            }
+        );
+        assert_eq!(observed_error, error);
+        assert_eq!(observed_state, (draining, clearing, depth));
+    }
+
+    #[rstest]
     #[case(0)]
     #[case(1)]
     fn boundary_drain_ignores_retained_ownership_without_slots(#[case] budget: usize) {
@@ -1125,12 +1276,17 @@ mod tests {
     }
 
     #[rstest]
-    fn boundary_drain_rejects_active_access_without_latching_failure() {
+    #[case(false)]
+    #[case(true)]
+    fn boundary_drain_rejects_active_access_without_latching_failure(#[case] queued: bool) {
         clear().unwrap();
         let allocation = Rc::new(std::cell::UnsafeCell::new(()));
         let guard = super::super::access::AllocationGuard::acquire(allocation).unwrap();
         let received = Rc::new(RefCell::new(Vec::new()));
-        reserve(0).unwrap().commit((received.clone(), 23), record);
+        if queued {
+            reserve(0).unwrap().commit((received.clone(), 23), record);
+        }
+
         assert_eq!(
             drain(1),
             Ok(DrainResult {
@@ -1146,10 +1302,10 @@ mod tests {
             drain_at_boundary(1),
             Ok(DrainResult {
                 status: DrainStatus::Empty,
-                delivered: 1
+                delivered: usize::from(queued)
             })
         );
-        assert_eq!(*received.borrow(), [23]);
+        assert_eq!(*received.borrow(), if queued { vec![23] } else { vec![] });
         clear().unwrap();
     }
 

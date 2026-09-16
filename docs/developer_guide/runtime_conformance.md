@@ -31,7 +31,8 @@ when the configured retry limit expires. Pending updates and cancellations inste
 
 The [callback dispatch contract](callback_dispatch.md) requires publication order across recipients
 and exclusive component access. Private Rust primitives reserve publication order and reject
-overlapping checked access to an allocation. Production dispatch does not use these primitives.
+overlapping checked access to an allocation. Production callback delivery does not use these
+primitives; backtests use the boundary drain and callback teardown.
 
 - **Implementation**: [Dispatch](../../crates/common/src/actor/dispatch.rs), `PublicationScope` and
   `drain`; [allocation access](../../crates/common/src/actor/access.rs), `AllocationGuard`.
@@ -72,5 +73,5 @@ callback dispatcher separately enforces retained-count, known-storage, and callb
   and `progress_limit_persists_between_bounded_drains` in the dispatch module check private limits.
 - **Limit**: A polling-order test does not prove bounded latency or progress under sustained load.
   Private callback limits do not bound live runner queues or total process memory. Production
-  overflow handling and safe drain boundaries remain integration requirements; queue monitoring
+  callback activation and live safe drain boundaries remain integration requirements; queue monitoring
   supplies operational signals without automatically throttling feeds or stopping trading.
