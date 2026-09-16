@@ -48,13 +48,23 @@ pub(super) enum DispatchError {
     PublicationUnwound,
     DeliveryUnwound,
     Runaway,
+    Stalled,
     Active,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct DrainResult {
+    pub(super) status: DrainStatus,
     pub(super) delivered: usize,
-    pub(super) pending: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum DrainStatus {
+    Empty,
+    BudgetExhausted,
+    Deferred,
+    Reserved,
+    Busy,
 }
 
 pub(super) struct PublicationScope {
@@ -193,6 +203,19 @@ impl<T> Drop for Admission<T> {
     }
 }
 
+// Callers must release enclosing component, engine, and cache borrows before entering
+pub(super) fn drain_at_boundary(budget: usize) -> Result<DrainResult, DispatchError> {
+    let result = drain(budget)?;
+    match result.status {
+        DrainStatus::Deferred | DrainStatus::Reserved => Err(DispatchError::Active),
+        DrainStatus::Busy => {
+            record_failure(DispatchError::Stalled);
+            Err(DispatchError::Stalled)
+        }
+        DrainStatus::Empty | DrainStatus::BudgetExhausted => Ok(result),
+    }
+}
+
 pub(super) fn drain(budget: usize) -> Result<DrainResult, DispatchError> {
     let entered = DISPATCH
         .try_with(|state| {
@@ -212,14 +235,16 @@ pub(super) fn drain(budget: usize) -> Result<DrainResult, DispatchError> {
 
     if !entered {
         return Ok(DrainResult {
+            status: DrainStatus::Deferred,
             delivered: 0,
-            pending: has_pending(),
         });
     }
 
     let _scope = DrainScope;
     let mut delivered = 0;
     let mut processed = 0;
+    let mut status = DrainStatus::BudgetExhausted;
+
     while processed < budget {
         let slot = DISPATCH.with_borrow_mut(|state| {
             if let Some(e) = state.error {
@@ -236,7 +261,10 @@ pub(super) fn drain(budget: usize) -> Result<DrainResult, DispatchError> {
         let _chain = ChainScope::enter(Some(slot.chain.clone()));
         let pending = std::mem::replace(&mut *slot.state.borrow_mut(), SlotState::Reserved);
         match pending {
-            SlotState::Reserved => break,
+            SlotState::Reserved => {
+                status = DrainStatus::Reserved;
+                break;
+            }
             SlotState::Cancelled => {}
             SlotState::Ready(mut delivery) => {
                 if slot.chain.delivered.get() >= MAX_CHAIN {
@@ -247,6 +275,7 @@ pub(super) fn drain(budget: usize) -> Result<DrainResult, DispatchError> {
 
                 if !delivery.run() {
                     *slot.state.borrow_mut() = SlotState::Ready(delivery);
+                    status = DrainStatus::Busy;
                     break;
                 }
 
@@ -269,8 +298,12 @@ pub(super) fn drain(budget: usize) -> Result<DrainResult, DispatchError> {
         }
 
         Ok(DrainResult {
+            status: if state.pending.is_empty() {
+                DrainStatus::Empty
+            } else {
+                status
+            },
             delivered,
-            pending: !state.pending.is_empty(),
         })
     })
 }
@@ -790,11 +823,13 @@ mod tests {
             }
 
             reserve(0).unwrap().commit((received.clone(), 12), record);
+            assert_eq!(drain_at_boundary(10), Err(DispatchError::Active));
+            assert_eq!(failure(), None);
             assert_eq!(
                 drain(10),
                 Ok(DrainResult {
-                    delivered: 0,
-                    pending: true
+                    status: DrainStatus::Deferred,
+                    delivered: 0
                 })
             );
         }
@@ -802,36 +837,71 @@ mod tests {
         assert_eq!(
             drain(10),
             Ok(DrainResult {
-                delivered: 3,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 3
             })
         );
         assert_eq!(*received.borrow(), [11, 12, 21]);
     }
 
     #[rstest]
-    fn reserved_head_blocks_delivery_and_teardown() {
+    #[case(false, false)]
+    #[case(false, true)]
+    #[case(true, false)]
+    #[case(true, true)]
+    fn reserved_head_blocks_delivery_and_teardown(
+        #[case] preceding_delivery: bool,
+        #[case] at_boundary: bool,
+    ) {
         clear().unwrap();
         let received = Rc::new(RefCell::new(Vec::new()));
+
+        if preceding_delivery {
+            reserve(0).unwrap().commit((received.clone(), 7), record);
+        }
+
         let head = reserve(0).unwrap();
         reserve(0).unwrap().commit((received.clone(), 22), record);
-        assert_eq!(
-            drain(2),
+
+        let result = if at_boundary {
+            drain_at_boundary(3)
+        } else {
+            drain(3)
+        };
+
+        let expected = if at_boundary {
+            Err(DispatchError::Active)
+        } else {
             Ok(DrainResult {
-                delivered: 0,
-                pending: true
+                status: DrainStatus::Reserved,
+                delivered: usize::from(preceding_delivery),
             })
+        };
+
+        assert_eq!(result, expected);
+        assert_eq!(
+            *received.borrow(),
+            if preceding_delivery { vec![7] } else { vec![] }
         );
+        assert_eq!(drain_at_boundary(2), Err(DispatchError::Active));
+        assert_eq!(failure(), None);
         assert_eq!(clear(), Err(DispatchError::Active));
         head.commit((received.clone(), 11), record);
         assert_eq!(
             drain(2),
             Ok(DrainResult {
-                delivered: 2,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 2
             })
         );
-        assert_eq!(*received.borrow(), [11, 22]);
+        assert_eq!(
+            *received.borrow(),
+            if preceding_delivery {
+                vec![7, 11, 22]
+            } else {
+                vec![11, 22]
+            }
+        );
     }
 
     #[rstest]
@@ -884,8 +954,8 @@ mod tests {
         assert_eq!(
             drain(10),
             Ok(DrainResult {
-                delivered: 4,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 4
             })
         );
         assert_eq!(*received.borrow(), [11, 12, 21, 22]);
@@ -900,8 +970,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 0,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 0
             })
         );
         assert_eq!(
@@ -934,11 +1004,13 @@ mod tests {
         clear().unwrap();
         let busy = Rc::new(Cell::new(true));
         reserve(0).unwrap().commit(busy.clone(), |busy| {
+            assert_eq!(drain_at_boundary(1), Err(DispatchError::Active));
+            assert_eq!(failure(), None);
             assert_eq!(
                 drain(1),
                 Ok(DrainResult {
-                    delivered: 0,
-                    pending: true
+                    status: DrainStatus::Deferred,
+                    delivered: 0
                 })
             );
             !busy.get()
@@ -949,8 +1021,8 @@ mod tests {
         assert_eq!(
             drain(2),
             Ok(DrainResult {
-                delivered: 0,
-                pending: true
+                status: DrainStatus::Busy,
+                delivered: 0
             })
         );
         assert!(received.borrow().is_empty());
@@ -958,18 +1030,173 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: true
+                status: DrainStatus::BudgetExhausted,
+                delivered: 1
             })
         );
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 1
             })
         );
         assert_eq!(*received.borrow(), [22]);
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(1)]
+    fn boundary_drain_ignores_retained_ownership_without_slots(#[case] budget: usize) {
+        clear().unwrap();
+        let storage = retain(17).unwrap();
+        let context = storage.with_chain(ChainContext::capture);
+
+        let expected = Ok(DrainResult {
+            status: DrainStatus::Empty,
+            delivered: 0,
+        });
+
+        assert!(has_pending());
+        assert_eq!(drain_at_boundary(budget), expected);
+        drop(storage);
+        assert!(has_pending());
+        assert_eq!(drain_at_boundary(budget), expected);
+        drop(context);
+        assert!(!has_pending());
+        assert_eq!(failure(), None);
+        clear().unwrap();
+    }
+
+    #[rstest]
+    #[case(0, 0, DrainStatus::BudgetExhausted)]
+    #[case(1, 0, DrainStatus::BudgetExhausted)]
+    #[case(2, 1, DrainStatus::Empty)]
+    fn boundary_drain_counts_cancelled_slots_toward_budget(
+        #[case] budget: usize,
+        #[case] delivered: usize,
+        #[case] status: DrainStatus,
+    ) {
+        clear().unwrap();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        drop(reserve::<()>(0).unwrap());
+        reserve(0).unwrap().commit((received.clone(), 17), record);
+        assert_eq!(
+            drain_at_boundary(budget),
+            Ok(DrainResult { status, delivered })
+        );
+        assert_eq!(
+            drain_at_boundary(2),
+            Ok(DrainResult {
+                status: DrainStatus::Empty,
+                delivered: 1 - delivered,
+            })
+        );
+        assert_eq!(*received.borrow(), [17]);
+        assert_eq!(failure(), None);
+        clear().unwrap();
+    }
+
+    #[rstest]
+    fn boundary_drain_leaves_busy_head_beyond_budget_unattempted() {
+        clear().unwrap();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let attempts = Rc::new(Cell::new(0));
+        reserve(0).unwrap().commit((received.clone(), 11), record);
+        reserve(0).unwrap().commit(attempts.clone(), |attempts| {
+            attempts.set(attempts.get() + 1);
+            false
+        });
+
+        assert_eq!(
+            drain_at_boundary(1),
+            Ok(DrainResult {
+                status: DrainStatus::BudgetExhausted,
+                delivered: 1,
+            })
+        );
+        assert_eq!(*received.borrow(), [11]);
+        assert_eq!(attempts.get(), 0);
+        assert_eq!(failure(), None);
+        assert_eq!(drain_at_boundary(1), Err(DispatchError::Stalled));
+        assert_eq!(attempts.get(), 1);
+        assert_eq!(failure(), Some(DispatchError::Stalled));
+        clear().unwrap();
+    }
+
+    #[rstest]
+    fn boundary_drain_rejects_active_access_without_latching_failure() {
+        clear().unwrap();
+        let allocation = Rc::new(std::cell::UnsafeCell::new(()));
+        let guard = super::super::access::AllocationGuard::acquire(allocation).unwrap();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        reserve(0).unwrap().commit((received.clone(), 23), record);
+        assert_eq!(
+            drain(1),
+            Ok(DrainResult {
+                status: DrainStatus::Deferred,
+                delivered: 0
+            })
+        );
+        assert_eq!(drain_at_boundary(1), Err(DispatchError::Active));
+        assert_eq!(failure(), None);
+        assert!(received.borrow().is_empty());
+        drop(guard);
+        assert_eq!(
+            drain_at_boundary(1),
+            Ok(DrainResult {
+                status: DrainStatus::Empty,
+                delivered: 1
+            })
+        );
+        assert_eq!(*received.borrow(), [23]);
+        clear().unwrap();
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn boundary_drain_latches_busy_head_after_progress(#[case] preceding_delivery: bool) {
+        clear().unwrap();
+        let received = Rc::new(RefCell::new(Vec::new()));
+
+        if preceding_delivery {
+            reserve(0).unwrap().commit((received.clone(), 11), record);
+        }
+
+        let busy = reserve(0).unwrap();
+        let chain = Rc::downgrade(&busy.slot.chain);
+        busy.commit((), |()| false);
+        reserve(0).unwrap().commit((received.clone(), 23), record);
+
+        assert_eq!(drain_at_boundary(3), Err(DispatchError::Stalled));
+        assert_eq!(failure(), Some(DispatchError::Stalled));
+        assert_eq!(drain_at_boundary(3), Err(DispatchError::Stalled));
+        assert_eq!(drain(3), Err(DispatchError::Stalled));
+        assert!(reserve::<()>(0).is_none());
+        assert_eq!(chain.upgrade().unwrap().delivered.get(), 0);
+        assert_eq!(
+            *received.borrow(),
+            if preceding_delivery { vec![11] } else { vec![] }
+        );
+        assert_eq!(DISPATCH.with_borrow(|state| state.pending.len()), 2);
+        clear().unwrap();
+        assert_eq!(chain.strong_count(), 0);
+        assert!(!has_pending());
+        assert_eq!(failure(), None);
+    }
+
+    #[rstest]
+    fn boundary_drain_preserves_first_delivery_failure() {
+        clear().unwrap();
+        reserve(0).unwrap().commit((), |()| {
+            record_failure(DispatchError::InvalidDestination);
+            false
+        });
+
+        assert_eq!(drain_at_boundary(1), Err(DispatchError::InvalidDestination));
+        assert_eq!(failure(), Some(DispatchError::InvalidDestination));
+        clear().unwrap();
     }
 
     struct DropProbe {
@@ -982,7 +1209,13 @@ mod tests {
             let _guard =
                 super::super::access::AllocationGuard::acquire(self.allocation.clone()).unwrap();
             self.dropped.set(self.dropped.get() + 1);
-            assert_eq!(drain(1).unwrap().delivered, 0);
+            assert_eq!(
+                drain(1),
+                Ok(DrainResult {
+                    status: DrainStatus::Deferred,
+                    delivered: 0,
+                })
+            );
         }
     }
 
@@ -1082,8 +1315,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: true
+                status: DrainStatus::BudgetExhausted,
+                delivered: 1
             })
         );
         assert_eq!(drain(1), Err(DispatchError::Runaway));
@@ -1109,8 +1342,8 @@ mod tests {
         assert_eq!(
             drain(2),
             Ok(DrainResult {
-                delivered: 2,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 2
             })
         );
         assert_eq!(second_chain.delivered.get(), 1);
@@ -1141,8 +1374,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: true
+                status: DrainStatus::BudgetExhausted,
+                delivered: 1
             })
         );
         assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(&state.pending[0].1.chain, &chain)));
@@ -1172,8 +1405,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 1
             })
         );
         assert!(has_pending());
@@ -1182,8 +1415,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 1
             })
         );
         let mut continuation = continuation.borrow_mut().take().unwrap();
@@ -1207,8 +1440,8 @@ mod tests {
             Err(DispatchError::Runaway)
         } else {
             Ok(DrainResult {
+                status: DrainStatus::Empty,
                 delivered: 1,
-                pending: false,
             })
         };
 
@@ -1236,8 +1469,8 @@ mod tests {
         assert_eq!(
             drain(2),
             Ok(DrainResult {
-                delivered: 0,
-                pending: true
+                status: DrainStatus::Busy,
+                delivered: 0
             })
         );
         assert_eq!(cancelled_chain.strong_count(), 0);
@@ -1246,8 +1479,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 1
             })
         );
         assert_eq!(chain.delivered.get(), 1);
@@ -1324,8 +1557,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: true
+                status: DrainStatus::BudgetExhausted,
+                delivered: 1
             })
         );
         assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(&state.pending[0].1.chain, &chain)));
@@ -1413,8 +1646,8 @@ mod tests {
         assert_eq!(
             drain(4),
             Ok(DrainResult {
-                delivered: 4,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 4
             })
         );
         assert_eq!(*received.borrow(), [11, 23, 31, 47]);
@@ -1513,15 +1746,15 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 0,
-                pending: true
+                status: DrainStatus::BudgetExhausted,
+                delivered: 0
             })
         );
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 1
             })
         );
     }
@@ -1549,8 +1782,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 1
             })
         );
         assert_eq!(
@@ -1602,8 +1835,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 1
             })
         );
         assert_eq!(accounting.contexts.get(), 1);
@@ -1614,8 +1847,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 1
             })
         );
         drain_data_cmd_queue();
@@ -1628,8 +1861,8 @@ mod tests {
                 Err(DispatchError::Runaway)
             } else {
                 Ok(DrainResult {
+                    status: DrainStatus::Empty,
                     delivered: 1,
-                    pending: false,
                 })
             },
         );
@@ -1707,8 +1940,8 @@ mod tests {
         assert_eq!(
             drain(2),
             Ok(DrainResult {
-                delivered: 2,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 2
             })
         );
         let roots = roots.borrow();
@@ -1763,8 +1996,8 @@ mod tests {
         assert_eq!(
             drain(3),
             Ok(DrainResult {
-                delivered: 3,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 3
             })
         );
         let roots = roots.borrow();
@@ -2234,8 +2467,8 @@ mod tests {
                 assert_eq!(
                     drain(1),
                     Ok(DrainResult {
-                        delivered: 0,
-                        pending: false
+                        status: DrainStatus::Deferred,
+                        delivered: 0
                     })
                 );
                 self.0.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -2290,8 +2523,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 1
             })
         );
         assert_eq!(accounting.contexts.get(), 1);
@@ -2301,8 +2534,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 1
             })
         );
 
@@ -2319,8 +2552,8 @@ mod tests {
                 Err(DispatchError::Runaway)
             } else {
                 Ok(DrainResult {
+                    status: DrainStatus::Empty,
                     delivered: 1,
-                    pending: false,
                 })
             }
         );
@@ -2391,8 +2624,8 @@ mod tests {
         assert_eq!(
             drain(7),
             Ok(DrainResult {
-                delivered: 7,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 7
             })
         );
         let roots = roots.borrow();
@@ -2750,8 +2983,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 1
             })
         );
         assert_eq!(root.delivered.get(), 1);
@@ -2890,11 +3123,11 @@ mod tests {
                     assert_eq!(accounting.contexts.get(), *queued);
                     let remaining = visited.len() - delivered;
                     let count = remaining.min(budgets[i % budgets.len()]);
-                    assert_eq!(drain(budgets[i % budgets.len()]), Ok(DrainResult { delivered: count, pending: remaining > count }));
+                    assert_eq!(drain(budgets[i % budgets.len()]), Ok(DrainResult { status: if remaining > count { DrainStatus::BudgetExhausted } else { DrainStatus::Empty }, delivered: count }));
                     delivered += count;
                     assert_eq!(accounting.count.get(), 1 + visited.len() - delivered);
                 }
-                assert_eq!(drain(usize::MAX), Ok(DrainResult { delivered: expected.len() - delivered, pending: false }));
+                assert_eq!(drain(usize::MAX), Ok(DrainResult { status: DrainStatus::Empty, delivered: expected.len() - delivered }));
                 let chains = roots.borrow();
                 for (i, root) in chains.iter().enumerate() {
                     assert_eq!(root.is_some(), expected.contains(&i));
@@ -3184,8 +3417,8 @@ mod tests {
                     Err(DispatchError::Runaway)
                 } else {
                     Ok(DrainResult {
+                        status: DrainStatus::Empty,
                         delivered: 1,
-                        pending: false,
                     })
                 }
             );
@@ -3517,8 +3750,8 @@ mod tests {
                 assert_eq!(
                     drain(1),
                     Ok(DrainResult {
-                        delivered: 1,
-                        pending: false
+                        status: DrainStatus::Empty,
+                        delivered: 1
                     })
                 );
             }
@@ -3595,8 +3828,8 @@ mod tests {
                     Err(DispatchError::Runaway)
                 } else {
                     Ok(DrainResult {
+                        status: DrainStatus::Empty,
                         delivered: 1,
-                        pending: false,
                     })
                 }
             );

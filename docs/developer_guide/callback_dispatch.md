@@ -16,7 +16,7 @@ Support for synchronous message-bus reentry does not activate queued actor or st
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Actor delivery                                        | Private primitives support ordered, owned callback delivery.                                                         | **Queued actor and strategy delivery is inactive.** Existing synchronous paths do not gain these guarantees.                                                                                      |
 | [Root propagation](#callback-roots-and-budgets)       | Retained work, data and trading commands, and live data, execution, system, and time channels preserve causal roots. | Live roots remain on their owner thread and do not follow arbitrary tasks or await points. Scheduled timer firings enter independently.                                                           |
-| [Drain safety](#draining-and-progress)                | Explicit drains respect slot budgets and checked access; a busy head blocks later delivery.                          | Callers must end enclosing mutable borrows. Automatic safe drains and detection of a head that cannot progress require runtime integration.                                                       |
+| [Drain safety](#draining-and-progress)                | Explicit drains report why they stop; boundary drains latch a fatal error for a busy head.                           | Callers must end enclosing mutable borrows. Automatic safe drains and use of the boundary drain require runtime integration.                                                                      |
 | [Progress budgets](#callback-roots-and-budgets)       | Completed callbacks consume a per-root delivery budget.                                                              | Command and event transport do not consume that budget. Loops without callback delivery and individual callback duration are not bounded.                                                         |
 | [Memory accounting](#storage-limits)                  | Private limits cover retained units and known callback storage.                                                      | Command and event payloads, channel and command-queue capacity, and the listed opaque storage are excluded. This is not a total-process memory cap; limits have no user configuration.            |
 | [Failure handling](#failure-cleanup)                  | Contexts restore on unwind; retained roots block premature teardown.                                                 | Fatal callback errors halt the dispatcher across roots. Command-handler panics propagate and discard pending children and the unprocessed collected batch; completed effects are not rolled back. |
@@ -100,6 +100,16 @@ identity, so replacement or re-registration of the same allocation cancels stale
 A drain processes at most its supplied slot budget, including cancelled slots. The queue has a
 **busy head** when its first callback cannot acquire exclusive access to its component. This blocks later delivery.
 Drains do no work during publication, recursive draining, teardown, or checked allocation access.
+Their result distinguishes an empty queue, an exhausted slot budget, deferred entry, an unfinished
+head reservation, and a busy head. An empty queue does not imply all retained roots have released;
+ownership accounting alone is not a reason to keep draining.
+
+The private boundary drain requires the caller to establish a safe delivery point. It reports active
+work without latching a failure when entry is deferred or the head reservation is unfinished. A busy
+head at that boundary latches a fatal stalled-delivery error, even if earlier callbacks made progress.
+Error results do not return a delivery count; an unfinished head reservation can also follow successful
+deliveries. The boundary drain preserves the first fatal error and leaves queued captures owned until
+explicit teardown. Exhausting a slot budget, including on cancelled slots, is not a stalled delivery.
 
 :::warning
 Guard destruction only releases access; it does not drain callbacks. The caller must also end enclosing
@@ -187,7 +197,7 @@ Before queued callback activation, runtime integration must:
 - Preserve the independent ingress boundaries above when activating additional callback routes or
   introducing reusable invocation storage.
 - Provide safe drain boundaries.
-- Detect a busy head that cannot make progress.
+- Use the boundary drain to report a busy head that cannot make progress.
 
 Public trading messages and their direct `dispatch()` path carry no callback context across threads.
 The synchronous queue owns its contexts privately; live command channels use the envelopes described below.
