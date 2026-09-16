@@ -478,6 +478,18 @@ impl OcmState {
             .any(|(candidate, _)| candidate == client_order_id)
     }
 
+    /// Returns `true` when `bet_id` is the order's most recently placed Bet.
+    pub(crate) fn is_current_venue_order_id(
+        &self,
+        client_order_id: &ClientOrderId,
+        bet_id: &str,
+    ) -> bool {
+        self.order_correlations
+            .get(client_order_id)
+            .and_then(|correlation| correlation.venue_order_id.as_ref())
+            .is_some_and(|venue_order_id| venue_order_id.as_str() == bet_id)
+    }
+
     pub(crate) fn mark_canceled_replace(&mut self, client_order_id: ClientOrderId, bet_id: &str) {
         self.canceled_replace_bet_ids.insert(bet_id.to_string());
         self.retain_terminal_order(client_order_id, bet_id);
@@ -573,6 +585,16 @@ impl OcmState {
                 confirmed_quantity: None,
             },
         );
+    }
+
+    pub(crate) fn replaced_matched_quantity(&self, client_order_id: &ClientOrderId) -> Decimal {
+        self.order_correlations
+            .get(client_order_id)
+            .into_iter()
+            .flat_map(|correlation| &correlation.venue_order_ids)
+            .filter(|bet_id| self.replaced_venue_order_ids.contains(*bet_id))
+            .map(|bet_id| self.fill_tracker.matched_quantity(bet_id))
+            .sum()
     }
 
     pub(crate) fn confirm_pending_reduction(

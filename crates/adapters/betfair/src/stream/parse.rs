@@ -586,6 +586,12 @@ impl FillTracker {
         }
     }
 
+    pub(crate) fn matched_quantity(&self, bet_id: &str) -> Decimal {
+        let filled = self.filled_qty.get(bet_id).copied().unwrap_or_default();
+        let voided = self.voided_qty.get(bet_id).copied().unwrap_or_default();
+        (filled - voided).max(Decimal::ZERO)
+    }
+
     pub(crate) fn sync_voided_qty(&mut self, bet_id: &str, voided_qty: Decimal) {
         self.voided_qty
             .insert(bet_id.to_string(), normalize_betfair_quantity(voided_qty));

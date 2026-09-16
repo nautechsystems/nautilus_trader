@@ -20,6 +20,8 @@ Released on TBD (UTC).
 
 - Fixed backtest rejection of lower-precision order fields within the same fixed-point scale
 - Fixed trailing-stop orders already in the market being accepted despite `reject_stop_orders`
+- Fixed Betfair false fill voids and missing fills during reconciliation after price replacements
+- Fixed Betfair order quantities in replacement queries and quantity reduction recovery
 
 ### Internal Improvements
 

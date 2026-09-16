@@ -3582,7 +3582,8 @@ async fn test_generate_reports_batches_market_ids_and_resets_pagination() {
             None => assert!(params.get("fromRecord").is_none()),
         }
     }
-    assert_eq!(params[0]["orderProjection"], "EXECUTABLE");
+
+    assert_eq!(params[0]["orderProjection"], "ALL");
     assert_eq!(params[3]["orderProjection"], "ALL");
     assert_eq!(params[3]["orderBy"], "BY_MATCH_TIME");
     assert_eq!(params[3]["sortDir"], "EARLIEST_TO_LATEST");

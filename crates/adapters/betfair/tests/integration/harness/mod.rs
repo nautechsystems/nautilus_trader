@@ -20,6 +20,7 @@
 //! stream feeder.
 
 use std::{
+    cell::RefCell,
     ops::{Deref, DerefMut},
     time::Duration,
 };
@@ -29,16 +30,21 @@ use nautilus_betfair::{
     config::BetfairExecutionClientConfig,
     execution::BetfairExecutionClient,
 };
-use nautilus_common::clients::ExecutionClient;
+use nautilus_common::{clients::ExecutionClient, messages::execution::GenerateOrderStatusReports};
 use nautilus_core::UnixNanos;
 pub(crate) use nautilus_live::testing::{RoutedKind, invariants};
-use nautilus_live::{ExecutionClientCore, testing::ExecutionHarness};
+use nautilus_live::{
+    ExecutionClientCore,
+    execution::{config::ExecutionManagerConfig, manager::ExecutionManager},
+    testing::ExecutionHarness,
+};
 use nautilus_model::{
     data::QuoteTick,
     enums::{AccountType, OmsType, OrderSide, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     instruments::{InstrumentAny, stubs::betting},
     orders::{OrderAny, builder::OrderTestBuilder},
+    reports::{ExecutionMassStatus, OrderStatusReport},
     types::{Currency, Price, Quantity},
 };
 use tokio::{io::AsyncWriteExt, net::TcpListener, sync::mpsc::UnboundedSender};
@@ -53,6 +59,7 @@ const TRADER_ID: &str = "TESTER-001";
 
 pub(crate) struct Harness {
     execution: ExecutionHarness,
+    manager: RefCell<ExecutionManager>,
     pub(crate) mock_state: MockState,
     pub(crate) feeder: StreamFeeder,
 }
@@ -96,11 +103,56 @@ impl Harness {
         .await;
         execution.register_client(Box::new(client)).unwrap();
 
+        let manager = RefCell::new(
+            ExecutionManager::new(
+                execution.clock().clone(),
+                execution.cache().clone(),
+                ExecutionManagerConfig::default(),
+            )
+            .unwrap(),
+        );
+
         Self {
             execution,
+            manager,
             mock_state,
             feeder,
         }
+    }
+
+    #[allow(
+        clippy::await_holding_refcell_ref,
+        reason = "only mock venue tasks run while the test borrows the registered client"
+    )]
+    pub(crate) async fn reconcile_snapshot_from_venue(&self) -> ExecutionMassStatus {
+        let mass_status = self
+            .exec_engine()
+            .borrow_mut()
+            .generate_mass_status(&self.client_id(), None)
+            .await
+            .unwrap()
+            .unwrap();
+        self.manager
+            .borrow_mut()
+            .reconcile_execution_mass_status(&mass_status, self.exec_engine());
+        mass_status
+    }
+
+    #[allow(
+        clippy::await_holding_refcell_ref,
+        reason = "only mock venue tasks run while the test borrows the registered client"
+    )]
+    pub(crate) async fn generate_order_status_reports(
+        &self,
+        command: &GenerateOrderStatusReports,
+    ) -> Vec<OrderStatusReport> {
+        self.exec_engine()
+            .borrow()
+            .get_client(&self.client_id())
+            .unwrap()
+            .generate_order_status_reports(command)
+            .await
+            .unwrap()
     }
 
     pub(crate) fn override_betting_result(&self, method: &str, fixture_rel_path: &str) {
@@ -134,6 +186,19 @@ pub(crate) fn limit_order(instrument_id: &InstrumentId, client_order_id: &str) -
         .instrument_id(*instrument_id)
         .client_order_id(ClientOrderId::from(client_order_id))
         .side(OrderSide::Buy)
+        .price(Price::from("3.0"))
+        .quantity(Quantity::from("10.0"))
+        .time_in_force(TimeInForce::Gtc)
+        .build()
+}
+
+pub(crate) fn sell_limit_order(instrument_id: &InstrumentId, client_order_id: &str) -> OrderAny {
+    OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from(TRADER_ID))
+        .strategy_id(StrategyId::from(STRATEGY_ID))
+        .instrument_id(*instrument_id)
+        .client_order_id(ClientOrderId::from(client_order_id))
+        .side(OrderSide::Sell)
         .price(Price::from("3.0"))
         .quantity(Quantity::from("10.0"))
         .time_in_force(TimeInForce::Gtc)
