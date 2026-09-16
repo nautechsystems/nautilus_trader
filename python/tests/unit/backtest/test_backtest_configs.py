@@ -562,15 +562,22 @@ def test_data_config_accepts_compatible_timestamp_inputs(value: object) -> None:
     assert config.end_time == 1_700_000_000_000_000_000
 
 
-def test_data_config_invalid_data_type() -> None:
+@pytest.mark.parametrize("data_type", ["InvalidType", "nautilus_trader.model:TradeTick", "trades"])
+def test_data_config_invalid_data_type(data_type: str) -> None:
     """
     Test data config invalid data type.
     """
-    with pytest.raises(ValueError, match="Invalid `NautilusDataType`"):
+    with pytest.raises(ValueError, match="Invalid `NautilusDataType`") as exc_info:
         BacktestDataConfig(
-            data_type="InvalidType",
+            data_type=data_type,
             catalog_path="/data/catalog",
         )
+
+    assert str(exc_info.value) == (
+        f"Invalid `NautilusDataType`: '{data_type}' (expected one of: QuoteTick, TradeTick, Bar, "
+        "OrderBookDelta, OrderBookDepth10, MarkPriceUpdate, IndexPriceUpdate, "
+        "FundingRateUpdate, InstrumentStatus, OptionGreeks, InstrumentClose)"
+    )
 
 
 def test_data_config_repr() -> None:

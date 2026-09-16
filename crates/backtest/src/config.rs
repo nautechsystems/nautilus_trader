@@ -49,6 +49,7 @@ use nautilus_risk::engine::config::RiskEngineConfig;
 use nautilus_system::config::{NautilusKernelConfig, StreamingConfig};
 use nautilus_trading::ImportableControllerConfig;
 use rust_decimal::Decimal;
+use strum::{AsRefStr, EnumIter, IntoEnumIterator};
 use ustr::Ustr;
 
 use crate::modules::{SimulationModuleAny, SimulationModuleHandle};
@@ -56,7 +57,7 @@ use crate::modules::{SimulationModuleAny, SimulationModuleHandle};
 pub(crate) const MAX_BACKTEST_CHUNK_SIZE: usize = 1_000_000;
 
 /// Represents a type of market data for catalog queries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, AsRefStr, EnumIter)]
 pub enum NautilusDataType {
     QuoteTick,
     TradeTick,
@@ -81,20 +82,15 @@ impl FromStr for NautilusDataType {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> anyhow::Result<Self> {
-        match s {
-            stringify!(QuoteTick) => Ok(Self::QuoteTick),
-            stringify!(TradeTick) => Ok(Self::TradeTick),
-            stringify!(Bar) => Ok(Self::Bar),
-            stringify!(OrderBookDelta) => Ok(Self::OrderBookDelta),
-            stringify!(OrderBookDepth10) => Ok(Self::OrderBookDepth10),
-            stringify!(MarkPriceUpdate) => Ok(Self::MarkPriceUpdate),
-            stringify!(IndexPriceUpdate) => Ok(Self::IndexPriceUpdate),
-            stringify!(FundingRateUpdate) => Ok(Self::FundingRateUpdate),
-            stringify!(InstrumentStatus) => Ok(Self::InstrumentStatus),
-            stringify!(OptionGreeks) => Ok(Self::OptionGreeks),
-            stringify!(InstrumentClose) => Ok(Self::InstrumentClose),
-            _ => anyhow::bail!("Invalid `NautilusDataType`: '{s}'"),
-        }
+        Self::iter()
+            .find(|data_type| data_type.as_ref() == s)
+            .ok_or_else(|| {
+                let expected = Self::iter()
+                    .map(|data_type| data_type.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                anyhow::anyhow!("Invalid `NautilusDataType`: '{s}' (expected one of: {expected})")
+            })
     }
 }
 
@@ -1226,6 +1222,33 @@ mod tests {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
         };
+    }
+
+    #[rstest]
+    fn test_nautilus_data_type_from_str_round_trips_every_variant() {
+        for data_type in NautilusDataType::iter() {
+            assert_eq!(
+                data_type.to_string().parse::<NautilusDataType>().unwrap(),
+                data_type
+            );
+        }
+    }
+
+    #[rstest]
+    #[case::fully_qualified_name("nautilus_trader.model:TradeTick")]
+    #[case::catalog_directory("trades")]
+    fn test_nautilus_data_type_from_str_error_lists_expected_values(#[case] input: &str) {
+        let error = input.parse::<NautilusDataType>().unwrap_err().to_string();
+
+        assert_eq!(
+            error,
+            concat!(
+                "Invalid `NautilusDataType`: '{input}' (expected one of: QuoteTick, TradeTick, Bar, ",
+                "OrderBookDelta, OrderBookDepth10, MarkPriceUpdate, IndexPriceUpdate, ",
+                "FundingRateUpdate, InstrumentStatus, OptionGreeks, InstrumentClose)"
+            )
+            .replace("{input}", input)
+        );
     }
 
     macro_rules! minimal_simulated_builder {
