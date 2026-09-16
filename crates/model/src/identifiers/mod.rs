@@ -39,6 +39,7 @@ pub mod exec_algorithm_id;
 pub mod instrument_id;
 pub mod option_series_id;
 pub mod order_list_id;
+pub mod outcome_group_id;
 pub mod position_id;
 pub mod strategy_id;
 pub mod symbol;
@@ -61,6 +62,7 @@ pub use crate::identifiers::{
     instrument_id::{GENERIC_SPREAD_ID_SEPARATOR, InstrumentId, InstrumentIdError},
     option_series_id::{OptionSeriesId, OptionSeriesIdError},
     order_list_id::OrderListId,
+    outcome_group_id::{OutcomeGroupId, OutcomeGroupIdError},
     position_id::PositionId,
     strategy_id::{
         StrategyId, UNASSIGNED_ORDER_ID_TAG, check_order_id_tag, normalize_order_id_tag,

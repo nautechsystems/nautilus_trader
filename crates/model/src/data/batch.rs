@@ -34,6 +34,7 @@ use super::{
 };
 #[cfg(feature = "defi")]
 use crate::defi::DefiData;
+use crate::prediction::MarketResolution;
 
 /// Range view over a shared, immutable [`Vec<T>`].
 ///
@@ -172,6 +173,7 @@ pub enum DataBatch {
     OptionGreeks(BatchView<OptionGreeks>),
     InstrumentStatus(BatchView<InstrumentStatus>),
     InstrumentClose(BatchView<InstrumentClose>),
+    MarketResolution(BatchView<MarketResolution>),
     #[cfg(feature = "defi")]
     Defi(BatchView<DefiData>),
 }
@@ -193,6 +195,7 @@ impl DataBatch {
             Self::OptionGreeks(data) => data.len(),
             Self::InstrumentStatus(data) => data.len(),
             Self::InstrumentClose(data) => data.len(),
+            Self::MarketResolution(data) => data.len(),
             #[cfg(feature = "defi")]
             Self::Defi(data) => data.len(),
         }
@@ -220,6 +223,7 @@ impl DataBatch {
             Self::OptionGreeks(data) => data.get(index).map(DataRef::OptionGreeks),
             Self::InstrumentStatus(data) => data.get(index).map(DataRef::InstrumentStatus),
             Self::InstrumentClose(data) => data.get(index).map(DataRef::InstrumentClose),
+            Self::MarketResolution(data) => data.get(index).map(DataRef::MarketResolution),
             #[cfg(feature = "defi")]
             Self::Defi(data) => data.get(index).map(DataRef::Defi),
         }
@@ -245,6 +249,7 @@ impl DataBatch {
             Self::OptionGreeks(data) => Self::OptionGreeks(data.slice(start, end)),
             Self::InstrumentStatus(data) => Self::InstrumentStatus(data.slice(start, end)),
             Self::InstrumentClose(data) => Self::InstrumentClose(data.slice(start, end)),
+            Self::MarketResolution(data) => Self::MarketResolution(data.slice(start, end)),
             #[cfg(feature = "defi")]
             Self::Defi(data) => Self::Defi(data.slice(start, end)),
         }
@@ -273,6 +278,7 @@ impl_data_batch_from_vec!(FundingRate, FundingRateUpdate);
 impl_data_batch_from_vec!(OptionGreeks, OptionGreeks);
 impl_data_batch_from_vec!(InstrumentStatus, InstrumentStatus);
 impl_data_batch_from_vec!(InstrumentClose, InstrumentClose);
+impl_data_batch_from_vec!(MarketResolution, MarketResolution);
 #[cfg(feature = "defi")]
 impl_data_batch_from_vec!(Defi, DefiData);
 
@@ -285,7 +291,7 @@ mod tests {
     use crate::{
         data::stubs::{
             stub_bar, stub_delta, stub_deltas, stub_depth10, stub_instrument_close,
-            stub_instrument_status, stub_trade_ethusdt_buy,
+            stub_instrument_status, stub_market_resolution, stub_trade_ethusdt_buy,
         },
         identifiers::InstrumentId,
         types::Price,
@@ -445,6 +451,7 @@ mod tests {
             DataBatch::from(vec![greeks]),
             DataBatch::from(vec![stub_instrument_status()]),
             DataBatch::from(vec![stub_instrument_close()]),
+            DataBatch::from(vec![stub_market_resolution()]),
         ];
 
         assert!(matches!(batches[0], DataBatch::BookDelta(ref data) if data.len() == 1));
@@ -459,6 +466,7 @@ mod tests {
         assert!(matches!(batches[9], DataBatch::OptionGreeks(ref data) if data.len() == 1));
         assert!(matches!(batches[10], DataBatch::InstrumentStatus(ref data) if data.len() == 1));
         assert!(matches!(batches[11], DataBatch::InstrumentClose(ref data) if data.len() == 1));
+        assert!(matches!(&batches[12], DataBatch::MarketResolution(data) if data.len() == 1));
     }
 
     #[cfg(feature = "defi")]

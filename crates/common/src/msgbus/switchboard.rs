@@ -33,7 +33,8 @@ use ahash::AHashMap;
 use nautilus_model::{
     data::{BarType, DataType},
     identifiers::{
-        ClientId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId, StrategyId, Venue,
+        ClientId, ClientOrderId, InstrumentId, OptionSeriesId, OutcomeGroupId, PositionId,
+        StrategyId, Venue,
     },
 };
 
@@ -451,6 +452,10 @@ define_switchboard! {
     get_instrument_close_topic(instrument_id: InstrumentId) -> instrument_id,
     "data.close.{}.{}", instrument_id.venue, instrument_id.symbol;
 
+    market_resolution_topics: OutcomeGroupId,
+    get_market_resolution_topic(group_id: OutcomeGroupId) -> group_id.clone(),
+    "data.resolution.{}.{}", group_id.venue, group_id.group;
+
     option_greeks_topics: InstrumentId,
     get_option_greeks_topic(instrument_id: InstrumentId) -> instrument_id,
     "data.option_greeks.{}.{}", instrument_id.venue, instrument_id.symbol;
@@ -603,6 +608,16 @@ impl MessagingSwitchboard {
         self.pipeline_topic(live)
     }
 
+    /// Returns the pipeline topic for a market resolution.
+    #[must_use]
+    pub fn get_pipeline_market_resolution_topic(
+        &mut self,
+        group_id: OutcomeGroupId,
+    ) -> MStr<Topic> {
+        let live = self.get_market_resolution_topic(group_id);
+        self.pipeline_topic(live)
+    }
+
     /// Returns the subscription pattern for order book deltas on `instrument_id`.
     #[must_use]
     pub fn get_book_deltas_pattern(&mut self, instrument_id: InstrumentId) -> MStr<Pattern> {
@@ -687,8 +702,10 @@ define_wrappers! {
     get_funding_settlement_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_instrument_status_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_instrument_close_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_market_resolution_topic(group_id: OutcomeGroupId) -> MStr<Topic>,
     get_option_greeks_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_option_chain_topic(series_id: OptionSeriesId) -> MStr<Topic>,
+    get_pipeline_market_resolution_topic(group_id: OutcomeGroupId) -> MStr<Topic>,
     get_pipeline_custom_topic(data_type: &DataType) -> MStr<Topic>,
     get_pipeline_book_deltas_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_pipeline_book_depth10_topic(instrument_id: InstrumentId) -> MStr<Topic>,

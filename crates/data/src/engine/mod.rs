@@ -114,6 +114,7 @@ use nautilus_model::{
     },
     instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
+    prediction::MarketResolution,
     types::{Price, Quantity},
 };
 use requests::{
@@ -1873,6 +1874,9 @@ impl DataEngine {
                 self.drain_deferred_commands();
             }
             DataRef::InstrumentClose(close) => self.handle_instrument_close(*close),
+            DataRef::MarketResolution(resolution) => {
+                self.handle_market_resolution(resolution);
+            }
             DataRef::Custom(custom) => self.handle_custom_data(custom),
             #[cfg(feature = "defi")]
             DataRef::Defi(_) => unreachable!("handled before market data dispatch"),
@@ -1936,6 +1940,9 @@ impl DataEngine {
             Data::OptionGreeks(greeks) => self.handle_option_greeks_pipeline(greeks),
             Data::InstrumentStatus(status) => self.handle_instrument_status_pipeline(status),
             Data::InstrumentClose(close) => self.handle_instrument_close_pipeline(close),
+            Data::MarketResolution(resolution) => {
+                self.handle_market_resolution_pipeline(&resolution);
+            }
             Data::Custom(custom) => self.handle_custom_data_pipeline(&custom),
             #[cfg(feature = "defi")]
             Data::Defi(_) => unreachable!("handled before market data dispatch"),
@@ -2874,6 +2881,11 @@ impl DataEngine {
         msgbus::publish_any(topic, &close);
     }
 
+    fn handle_market_resolution(&self, resolution: &MarketResolution) {
+        let topic = switchboard::get_market_resolution_topic(resolution.group_id.clone());
+        msgbus::publish_any(topic, resolution);
+    }
+
     fn handle_custom_data(&self, custom: &CustomData) {
         log::debug!("Processing custom data: {}", custom.data.type_name());
         let topic = switchboard::get_custom_topic(&custom.data_type);
@@ -3032,6 +3044,11 @@ impl DataEngine {
     fn handle_instrument_close_pipeline(&self, close: InstrumentClose) {
         let topic = switchboard::get_pipeline_instrument_close_topic(close.instrument_id);
         msgbus::publish_any(topic, &close);
+    }
+
+    fn handle_market_resolution_pipeline(&self, resolution: &MarketResolution) {
+        let topic = switchboard::get_pipeline_market_resolution_topic(resolution.group_id.clone());
+        msgbus::publish_any(topic, resolution);
     }
 
     fn handle_custom_data_pipeline(&self, custom: &CustomData) {

@@ -20,6 +20,7 @@ use std::sync::Arc;
 use nautilus_core::{Params, UnixNanos};
 use rstest::fixture;
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
 use super::{
     Bar, BarSpecification, BarType, CustomData, CustomDataTrait, DEPTH10_LEN, DataType, HasTsInit,
@@ -32,8 +33,9 @@ use crate::{
         AggregationSource, AggressorSide, BarAggregation, BookAction, InstrumentCloseType,
         MarketStatusAction, OrderSide, PriceType,
     },
-    identifiers::{InstrumentId, Symbol, TradeId, Venue},
-    types::{Price, Quantity},
+    identifiers::{InstrumentId, OutcomeGroupId, Symbol, TradeId, Venue},
+    prediction::{MarketResolution, OutcomePayout, ResolutionOutcome, ResolutionSource},
+    types::{Money, Price, Quantity},
 };
 
 impl Default for QuoteTick {
@@ -364,6 +366,23 @@ pub fn stub_instrument_close() -> InstrumentClose {
         UnixNanos::from(1),
         UnixNanos::from(2),
     )
+}
+
+#[fixture]
+pub fn stub_market_resolution() -> MarketResolution {
+    MarketResolution {
+        group_id: OutcomeGroupId::new_checked("POLYMARKET", "0xCONDITION").unwrap(),
+        version: 1,
+        source: ResolutionSource::new(Venue::from("POLYMARKET"), "uma-request-1", None),
+        outcome: ResolutionOutcome::Payouts(vec![OutcomePayout::new(
+            Ustr::from("Yes"),
+            Money::from("1.00 USDC"),
+        )]),
+        effective_ns: UnixNanos::from(1),
+        observed_ns: UnixNanos::from(2),
+        ts_event: UnixNanos::from(1),
+        ts_init: UnixNanos::from(2),
+    }
 }
 
 #[derive(Debug)]
