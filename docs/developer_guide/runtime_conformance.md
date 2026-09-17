@@ -1,9 +1,10 @@
 # Runtime Conformance Contract
 
 Use this reference to locate implementation boundaries and representative checks for selected
-[design principles](design_principles.md). The source baseline is commit
-`46f87cd1b7af576495418761bbf11db23e89124c`. Source links are relative to this document's revision;
-use that baseline when reproducing this snapshot.
+[design principles](design_principles.md). The original source baseline is commit
+`46f87cd1b7af576495418761bbf11db23e89124c`. The callback and overload sections include subsequent
+runtime integration; use this document's revision for those sections and the original baseline for
+the other entries. Source links are relative to this document's revision.
 
 The entries describe Rust source and test coverage. They do not certify every adapter, Python
 entry point, configuration, or failure mode. The named tests are source references, not a record
@@ -33,17 +34,36 @@ The [callback dispatch contract](callback_dispatch.md) requires publication orde
 and exclusive component access. Private Rust primitives reserve publication order and reject
 overlapping checked access to an allocation. Production callback delivery does not use these
 primitives; backtests use the boundary drain and callback teardown. Live running loops use bounded
-drains; startup, shutdown flushes, and callback teardown remain outstanding.
+drains before selecting another event, with yielding and stop checks between pending batches.
+
+The runtime owns scheduling at a small set of explicit ownership boundaries. Startup and shutdown
+paths still need ownership and scheduling coverage before activation; this does not require a drain
+in each lifecycle or flush method. After successful live startup, the first running-loop drain is
+the existing delivery boundary. Live disposal callback cleanup remains outstanding, and the manual
+`start`/`stop` path has no continuous queued callback delivery schedule.
 
 - **Implementation**: [Dispatch](../../crates/common/src/actor/dispatch.rs), `PublicationScope` and
-  `drain`; [allocation access](../../crates/common/src/actor/access.rs), `AllocationGuard`.
+  `drain`; [allocation access](../../crates/common/src/actor/access.rs), `AllocationGuard`;
+  [live bounded drain](../../crates/live/src/dispatch.rs), `drain_callbacks` wrapping `actor::drain_callbacks`;
+  [runner](../../crates/live/src/runner.rs), `AsyncRunner::run`; and
+  [live node](../../crates/live/src/node/mod.rs), `run_with_mode`.
 - **Representative checks**: `nested_publication_reserves_all_outer_recipients` in the dispatch
   module checks outer-recipient ordering across a nested publication.
   `test_actor_and_component_views_share_access` in the access module checks exclusion across views.
+  In the runner module, `test_runner_callback_failure_stops_before_next_command` checks failure
+  propagation and retention of pending messages and the fatal latch;
+  `test_runner_stop_preserves_messages_and_channel_only_scheduling` checks ordered reuse after stop
+  without an added yield for channel-only work. In the live node module,
+  `test_callback_failure_stops_later_live_events` checks that failure stops later event dispatch,
+  stops the trader, and preserves the latch.
 - **Limit**: These checks do not establish production callback ordering or ownership safety.
   Runtime integration must end enclosing mutable borrows before draining and preserve native,
   Python, and dynamic-backend lifecycle eligibility. Unchecked access remains outside the private
-  allocation guards.
+  allocation guards. Before activation, exact callback sequence tests through real native and Python
+  components must establish deterministic order in the synchronous core and backtesting, including
+  nested publication, fan-out, callback-generated commands, same-timestamp work, and continuation
+  across bounded passes. Final counts and balances alone do not prove ordering. See the
+  [activation requirements](callback_dispatch.md#activation-requirements).
 
 ## Recovery
 
@@ -74,5 +94,6 @@ callback dispatcher separately enforces retained-count, known-storage, and callb
   and `progress_limit_persists_between_bounded_drains` in the dispatch module check private limits.
 - **Limit**: A polling-order test does not prove bounded latency or progress under sustained load.
   Private callback limits do not bound live runner queues or total process memory. Production
-  callback activation and live safe drain boundaries remain integration requirements; queue monitoring
-  supplies operational signals without automatically throttling feeds or stopping trading.
+  callback activation and live lifecycle ownership coverage remain integration requirements despite
+  the implemented running-loop drains. Queue monitoring supplies operational signals without
+  automatically throttling feeds or stopping trading.
