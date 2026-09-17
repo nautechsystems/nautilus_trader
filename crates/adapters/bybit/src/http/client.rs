@@ -128,8 +128,60 @@ impl<T, E: Display> BuilderResultExt<T> for Result<T, E> {
     }
 }
 
+const BYBIT_INSTRUMENTS_INFO: &str = "/v5/market/instruments-info";
 const BYBIT_ORDER_REALTIME: &str = "/v5/order/realtime";
 const BYBIT_ORDER_HISTORY: &str = "/v5/order/history";
+const BYBIT_EXECUTION_LIST: &str = "/v5/execution/list";
+const BYBIT_POSITION_LIST: &str = "/v5/position/list";
+
+/// Tracks the cursors one paginated walk has already followed.
+///
+/// A venue can serve a page whose `nextPageCursor` addresses that same page. Requesting it
+/// returns the same rows and the same cursor, so an empty cursor never arrives and the walk does
+/// not terminate. A cursor that does not advance, or that the walk has already followed, has no
+/// further page to offer.
+///
+/// The two cases are separated because they describe different venue behavior: a cursor that
+/// repeats the one just used has stopped advancing, while a cursor seen earlier in the walk means
+/// the pages have cycled. `nautilus-polymarket` draws the same distinction in
+/// `http::pagination::PaginationError`.
+#[derive(Debug, Default)]
+struct CursorWalk {
+    followed: AHashSet<String>,
+    last: Option<String>,
+}
+
+impl CursorWalk {
+    /// Returns the cursor to follow next, or `None` when the walk is complete.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the cursor stops advancing or repeats one already followed. Stopping
+    /// with the rows gathered so far would hand the caller a truncated result it cannot
+    /// distinguish from a complete one.
+    fn advance(
+        &mut self,
+        endpoint: &str,
+        cursor: Option<String>,
+    ) -> anyhow::Result<Option<String>> {
+        let Some(cursor) = cursor.filter(|cursor| !cursor.is_empty()) else {
+            return Ok(None);
+        };
+
+        anyhow::ensure!(
+            self.last.as_deref() != Some(cursor.as_str()),
+            "{endpoint} pagination cursor did not advance from {cursor:?}",
+        );
+        anyhow::ensure!(
+            self.followed.insert(cursor.clone()),
+            "{endpoint} pagination repeated cursor {cursor:?}",
+        );
+
+        self.last = Some(cursor.clone());
+
+        Ok(Some(cursor))
+    }
+}
 
 /// Legacy conservative Bybit REST quota retained for source compatibility.
 pub static BYBIT_REST_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
@@ -662,7 +714,7 @@ impl BybitRawHttpClient {
     ) -> Result<T, BybitHttpError> {
         self.send_request(
             Method::GET,
-            "/v5/market/instruments-info",
+            BYBIT_INSTRUMENTS_INFO,
             Some(params),
             None,
             false,
@@ -1529,7 +1581,7 @@ impl BybitRawHttpClient {
         &self,
         params: &BybitTradeHistoryParams,
     ) -> Result<BybitTradeHistoryResponse, BybitHttpError> {
-        self.send_request(Method::GET, "/v5/execution/list", Some(params), None, true)
+        self.send_request(Method::GET, BYBIT_EXECUTION_LIST, Some(params), None, true)
             .await
     }
 
@@ -1549,7 +1601,7 @@ impl BybitRawHttpClient {
         &self,
         params: &BybitPositionListParams,
     ) -> Result<BybitPositionListResponse, BybitHttpError> {
-        self.send_request(Method::GET, "/v5/position/list", Some(params), None, true)
+        self.send_request(Method::GET, BYBIT_POSITION_LIST, Some(params), None, true)
             .await
     }
 
@@ -3328,7 +3380,7 @@ impl BybitHttpClient {
     {
         let mut instruments = Vec::new();
         let mut cursor: Option<String> = None;
-        let mut prev_cursor: Option<String> = None;
+        let mut cursor_walk = CursorWalk::default();
 
         loop {
             let params = BybitInstrumentsInfoParams {
@@ -3348,11 +3400,25 @@ impl BybitHttpClient {
                 }
             }
 
-            cursor = response.result.next_page_cursor;
-            if cursor.as_ref().is_none_or(|c| c.is_empty()) || cursor == prev_cursor {
+            // A short instrument list is a visible gap, since the risk engine denies the next
+            // order on a missing instrument by name, while a short reconciliation history is
+            // silent, so the other walks return this error and this one keeps what it has.
+            cursor = match cursor_walk
+                .advance(BYBIT_INSTRUMENTS_INFO, response.result.next_page_cursor)
+            {
+                Ok(cursor) => cursor,
+                Err(e) => {
+                    log::warn!(
+                        "{e}, keeping the {} instrument(s) already read",
+                        instruments.len()
+                    );
+                    break;
+                }
+            };
+
+            if cursor.is_none() {
                 break;
             }
-            prev_cursor = cursor.clone();
         }
 
         Ok(instruments)
@@ -3373,6 +3439,7 @@ impl BybitHttpClient {
     ) -> anyhow::Result<AHashMap<InstrumentId, MarketStatusAction>> {
         let mut statuses = AHashMap::new();
         let mut cursor: Option<String> = None;
+        let mut cursor_walk = CursorWalk::default();
 
         loop {
             let params = BybitInstrumentsInfoParams {
@@ -3447,7 +3514,8 @@ impl BybitHttpClient {
                 }
             }
 
-            if cursor.as_ref().is_none_or(|c| c.is_empty()) {
+            cursor = cursor_walk.advance(BYBIT_INSTRUMENTS_INFO, cursor)?;
+            if cursor.is_none() {
                 break;
             }
         }
@@ -4291,6 +4359,7 @@ impl BybitHttpClient {
                 for oo in open_only_modes {
                     for order_filter in &order_filters {
                         let mut cursor: Option<String> = None;
+                        let mut cursor_walk = CursorWalk::default();
 
                         loop {
                             let remaining = if let Some(limit) = remaining_limit {
@@ -4352,8 +4421,9 @@ impl BybitHttpClient {
                                 break;
                             }
 
-                            cursor = response.result.next_page_cursor;
-                            if cursor.as_ref().is_none_or(|c| c.is_empty()) {
+                            cursor = cursor_walk
+                                .advance(BYBIT_ORDER_REALTIME, response.result.next_page_cursor)?;
+                            if cursor.is_none() {
                                 break;
                             }
                         }
@@ -4379,6 +4449,7 @@ impl BybitHttpClient {
 
                 for order_filter in &order_filters {
                     let mut cursor: Option<String> = None;
+                    let mut cursor_walk = CursorWalk::default();
 
                     loop {
                         let remaining = if let Some(limit) = remaining_limit {
@@ -4432,8 +4503,9 @@ impl BybitHttpClient {
                             }
                         }
 
-                        cursor = open_response.result.next_page_cursor;
-                        if cursor.as_ref().is_none_or(|c| c.is_empty()) {
+                        cursor = cursor_walk
+                            .advance(BYBIT_ORDER_REALTIME, open_response.result.next_page_cursor)?;
+                        if cursor.is_none() {
                             break;
                         }
                     }
@@ -4448,6 +4520,7 @@ impl BybitHttpClient {
 
                 for order_filter in &order_filters {
                     let mut cursor: Option<String> = None;
+                    let mut cursor_walk = CursorWalk::default();
 
                     loop {
                         let total_orders = total_open_orders + total_history_orders;
@@ -4511,8 +4584,11 @@ impl BybitHttpClient {
                             }
                         }
 
-                        cursor = history_response.result.next_page_cursor;
-                        if cursor.as_ref().is_none_or(|c| c.is_empty()) {
+                        cursor = cursor_walk.advance(
+                            BYBIT_ORDER_HISTORY,
+                            history_response.result.next_page_cursor,
+                        )?;
+                        if cursor.is_none() {
                             break;
                         }
                     }
@@ -4598,6 +4674,7 @@ impl BybitHttpClient {
         // Fetch all executions with pagination
         let mut all_executions = Vec::new();
         let mut cursor: Option<String> = None;
+        let mut cursor_walk = CursorWalk::default();
         let mut total_executions = 0;
 
         loop {
@@ -4645,8 +4722,8 @@ impl BybitHttpClient {
                 total_executions += 1;
             }
 
-            cursor = response.result.next_page_cursor;
-            if cursor.is_none() || cursor.as_ref().is_none_or(|c| c.is_empty()) {
+            cursor = cursor_walk.advance(BYBIT_EXECUTION_LIST, response.result.next_page_cursor)?;
+            if cursor.is_none() {
                 break;
             }
         }
@@ -4736,6 +4813,7 @@ impl BybitHttpClient {
             // Query positions for each known settle coin with pagination
             for settle_coin in ["USDT", "USDC"] {
                 let mut cursor: Option<String> = None;
+                let mut cursor_walk = CursorWalk::default();
 
                 loop {
                     let params = BybitPositionListParams {
@@ -4783,8 +4861,9 @@ impl BybitHttpClient {
                         }
                     }
 
-                    cursor = response.result.next_page_cursor;
-                    if cursor.as_ref().is_none_or(|c| c.is_empty()) {
+                    cursor = cursor_walk
+                        .advance(BYBIT_POSITION_LIST, response.result.next_page_cursor)?;
+                    if cursor.is_none() {
                         break;
                     }
                 }
@@ -4792,6 +4871,7 @@ impl BybitHttpClient {
         } else {
             // For other product types or when a specific symbol is requested with pagination
             let mut cursor: Option<String> = None;
+            let mut cursor_walk = CursorWalk::default();
 
             loop {
                 let params = BybitPositionListParams {
@@ -4834,8 +4914,9 @@ impl BybitHttpClient {
                     }
                 }
 
-                cursor = response.result.next_page_cursor;
-                if cursor.is_none() || cursor.as_ref().is_none_or(|c| c.is_empty()) {
+                cursor =
+                    cursor_walk.advance(BYBIT_POSITION_LIST, response.result.next_page_cursor)?;
+                if cursor.is_none() {
                     break;
                 }
             }
@@ -5095,5 +5176,67 @@ mod tests {
         );
 
         assert_eq!(warning, expected);
+    }
+
+    #[rstest]
+    fn test_cursor_walk_stops_on_absent_or_empty_cursor() {
+        let mut walk = CursorWalk::default();
+
+        assert_eq!(walk.advance("/endpoint", None).unwrap(), None);
+        assert_eq!(
+            walk.advance("/endpoint", Some(String::new())).unwrap(),
+            None
+        );
+        assert!(walk.followed.is_empty());
+    }
+
+    #[rstest]
+    fn test_cursor_walk_follows_advancing_cursors() {
+        let mut walk = CursorWalk::default();
+
+        for page in ["page-2", "page-3", "page-4"] {
+            assert_eq!(
+                walk.advance("/endpoint", Some(page.to_string())).unwrap(),
+                Some(page.to_string())
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_cursor_walk_rejects_a_cursor_that_does_not_advance() {
+        let mut walk = CursorWalk::default();
+        walk.advance("/endpoint", Some("page-2".to_string()))
+            .unwrap();
+
+        let error = walk
+            .advance("/endpoint", Some("page-2".to_string()))
+            .expect_err("a cursor that addresses the page it came with has no next page");
+
+        assert_eq!(
+            error.to_string(),
+            r#"/endpoint pagination cursor did not advance from "page-2""#
+        );
+    }
+
+    #[rstest]
+    #[case::two_cycle(vec!["page-2", "page-3"], "page-2")]
+    #[case::long_cycle(vec!["page-2", "page-3", "page-4", "page-5"], "page-3")]
+    fn test_cursor_walk_rejects_a_cursor_already_followed(
+        #[case] followed: Vec<&str>,
+        #[case] repeated: &str,
+    ) {
+        let mut walk = CursorWalk::default();
+        for cursor in followed {
+            walk.advance("/endpoint", Some(cursor.to_string())).unwrap();
+        }
+
+        let error = walk
+            .advance("/endpoint", Some(repeated.to_string()))
+            .expect_err("a cursor already followed has no further page to offer");
+
+        assert_eq!(
+            error.to_string(),
+            format!(r#"/endpoint pagination repeated cursor "{repeated}""#)
+        );
     }
 }
