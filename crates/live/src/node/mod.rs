@@ -126,7 +126,9 @@ use crate::{
     dispatch::drain_callbacks,
     execution::{
         client::LiveExecutionClient,
-        manager::{ExecutionManager, ExecutionManagerConfig, TargetedOrderReportResult},
+        manager::{
+            ExecutionManager, ExecutionManagerConfig, TargetedOrderQuery, TargetedOrderReportResult,
+        },
     },
     runner::{AsyncRunner, AsyncRunnerChannels, PendingRunnerEvent},
     socket::{SocketReconnectLookup, SocketReconnectRegistry},
@@ -1596,11 +1598,22 @@ impl LiveNode {
                             );
                             self.process_reconciliation_events(&reconciliation.events);
                             if !reconciliation.targeted_queries.is_empty() {
-                                targeted_order_report_task = Some(
-                                    self.start_targeted_order_report_check(
-                                        reconciliation.targeted_queries,
-                                    ),
-                                );
+                                if is_shutting_down {
+                                    let planned_client_order_ids = reconciliation
+                                        .targeted_queries
+                                        .iter()
+                                        .map(TargetedOrderQuery::client_order_id)
+                                        .collect::<Vec<_>>();
+                                    self.cleanup_cancelled_report_tasks(
+                                        &planned_client_order_ids,
+                                    );
+                                } else {
+                                    targeted_order_report_task = Some(
+                                        self.start_targeted_order_report_check(
+                                            reconciliation.targeted_queries,
+                                        ),
+                                    );
+                                }
                             }
                         }
                         ReportTaskOutcome::TimedOut => {
@@ -1661,7 +1674,11 @@ impl LiveNode {
 
                     match result {
                         ReportTaskOutcome::Completed(PositionReportTaskResult::Positions(result)) => {
-                            position_report_task = self.handle_position_report_result(result);
+                            if is_shutting_down {
+                                self.cleanup_cancelled_report_tasks(&[]);
+                            } else {
+                                position_report_task = self.handle_position_report_result(result);
+                            }
                         }
                         ReportTaskOutcome::Completed(PositionReportTaskResult::Fills(result)) => {
                             self.handle_position_fill_report_result(result);

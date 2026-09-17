@@ -841,7 +841,7 @@ pub fn parse_book10_msg_vec(
             size_precision,
             ts_init,
         )?;
-        depth10_updates.push(Data::BookDepth10(Box::new(depth10)));
+        depth10_updates.push(Data::BookDepth(Box::new(depth10)));
     }
 
     Ok(depth10_updates)
@@ -867,7 +867,17 @@ pub fn parse_book_msg(
     };
     let ts_event = parse_millisecond_timestamp(msg.ts);
 
-    let mut deltas = Vec::with_capacity(msg.asks.len() + msg.bids.len());
+    let is_snapshot = action == &OKXBookAction::Snapshot;
+    let mut deltas = Vec::with_capacity(msg.asks.len() + msg.bids.len() + usize::from(is_snapshot));
+
+    if is_snapshot {
+        deltas.push(OrderBookDelta::clear(
+            instrument_id,
+            msg.seq_id,
+            ts_event,
+            ts_init,
+        ));
+    }
 
     for bid in &msg.bids {
         let book_action = match action {
@@ -939,7 +949,17 @@ pub fn parse_rpi_book_msg(
         0
     };
     let ts_event = parse_millisecond_timestamp(msg.ts);
-    let mut deltas = Vec::with_capacity(msg.asks.len() + msg.bids.len());
+    let is_snapshot = action == &OKXBookAction::Snapshot;
+    let mut deltas = Vec::with_capacity(msg.asks.len() + msg.bids.len() + usize::from(is_snapshot));
+
+    if is_snapshot {
+        deltas.push(OrderBookDelta::clear(
+            instrument_id,
+            msg.seq_id,
+            ts_event,
+            ts_init,
+        ));
+    }
 
     for bid in &msg.bids {
         let book_action = if action == &OKXBookAction::Snapshot {
@@ -2457,14 +2477,16 @@ mod tests {
     use nautilus_core::nanos::UnixNanos;
     use nautilus_model::{
         data::bar::BAR_SPEC_1_DAY_LAST,
-        enums::GreeksConvention,
+        enums::{BookType, GreeksConvention},
         identifiers::{ClientOrderId, Symbol, VenueOrderId},
         instruments::CryptoPerpetual,
+        orderbook::OrderBook,
         types::Currency,
     };
     use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
+    use serde_json::Value;
     use ustr::Ustr;
 
     use super::*;
@@ -2612,6 +2634,68 @@ mod tests {
     }
 
     #[rstest]
+    #[case::standard(false)]
+    #[case::rpi(true)]
+    fn snapshot_replaces_existing_book(#[case] rpi: bool, #[values(false, true)] empty: bool) {
+        let fixture = if rpi {
+            "ws_books_rpi_snapshot.json"
+        } else {
+            "ws_books_snapshot.json"
+        };
+
+        let mut frame: Value = serde_json::from_str(&load_test_json(fixture)).unwrap();
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+
+        let parse = |frame: &Value| {
+            if rpi {
+                parse_rpi_book_msg(
+                    &serde_json::from_value(frame["data"][0].clone()).unwrap(),
+                    instrument_id,
+                    7,
+                    3,
+                    &OKXBookAction::Snapshot,
+                    UnixNanos::from(123),
+                )
+                .unwrap()
+            } else {
+                parse_book_msg(
+                    &serde_json::from_value(frame["data"][0].clone()).unwrap(),
+                    instrument_id,
+                    2,
+                    1,
+                    &OKXBookAction::Snapshot,
+                    UnixNanos::from(123),
+                )
+                .unwrap()
+            }
+        };
+
+        let mut actual = OrderBook::new(instrument_id, BookType::L2_MBP);
+        actual.apply_deltas(&parse(&frame)).unwrap();
+        for side in ["bids", "asks"] {
+            let levels = frame["data"][0][side].as_array_mut().unwrap();
+            if empty {
+                levels.clear();
+            } else {
+                levels.remove(0);
+            }
+        }
+
+        let snapshot = parse(&frame);
+        let mut expected = OrderBook::new(instrument_id, BookType::L2_MBP);
+        expected.apply_deltas(&snapshot).unwrap();
+        actual.apply_deltas(&snapshot).unwrap();
+
+        assert_eq!(actual.bids_as_map(None), expected.bids_as_map(None));
+        assert_eq!(actual.asks_as_map(None), expected.asks_as_map(None));
+        assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
+        assert_eq!(snapshot.deltas[0].flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(snapshot.deltas[0].sequence, snapshot.sequence);
+        assert_eq!(snapshot.deltas[0].ts_event, snapshot.ts_event);
+        assert_eq!(snapshot.deltas[0].ts_init, UnixNanos::from(123));
+    }
+
+    #[rstest]
     fn test_parse_books_snapshot() {
         let json_data = load_test_json("ws_books_snapshot.json");
         let msg: OKXWsFrame = serde_json::from_str(&json_data).unwrap();
@@ -2632,7 +2716,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(deltas.instrument_id, instrument_id);
-        assert_eq!(deltas.deltas.len(), 16);
+        assert_eq!(deltas.deltas.len(), 17);
         assert_eq!(deltas.flags, 32);
         assert_eq!(deltas.sequence, 123_456);
         assert_eq!(deltas.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
@@ -3273,40 +3357,49 @@ mod tests {
         let depth10 =
             parse_book10_msg(&msgs[0], instrument_id, 2, 0, UnixNanos::default()).unwrap();
 
+        let expected_bids = [
+            ("8476.97", "256"),
+            ("8475.55", "101"),
+            ("8475.54", "100"),
+            ("8475.30", "1"),
+            ("8447.32", "6"),
+            ("8447.02", "246"),
+            ("8446.83", "24"),
+            ("8446.00", "95"),
+        ];
+        let expected_asks = [
+            ("8476.98", "415"),
+            ("8477.00", "7"),
+            ("8477.34", "85"),
+            ("8477.56", "1"),
+            ("8505.84", "8"),
+            ("8506.37", "85"),
+            ("8506.49", "2"),
+            ("8506.96", "100"),
+        ];
+
         assert_eq!(depth10.instrument_id, instrument_id);
         assert_eq!(depth10.sequence, 123_456);
         assert_eq!(depth10.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
+        assert_eq!(depth10.ts_init, UnixNanos::default());
         assert_eq!(depth10.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(depth10.bids.len(), expected_bids.len());
+        assert_eq!(depth10.asks.len(), expected_asks.len());
+        assert_eq!(depth10.bid_counts.as_slice(), &[12, 1, 1, 1, 1, 1, 1, 3]);
+        assert_eq!(depth10.ask_counts.as_slice(), &[13, 2, 1, 1, 1, 1, 1, 2]);
+        for (order, (price, size)) in depth10.bids.iter().zip(expected_bids) {
+            assert_eq!(order.side, Some(OrderSide::Buy));
+            assert_eq!(order.price, Price::from(price));
+            assert_eq!(order.size, Quantity::from(size));
+            assert_eq!(order.order_id, 0);
+        }
 
-        // Check bid levels (available in test data: 8 levels)
-        assert_eq!(depth10.bids[0].price, Price::from("8476.97"));
-        assert_eq!(depth10.bids[0].size, Quantity::from("256"));
-        assert_eq!(depth10.bids[0].side, OrderSide::Buy.into());
-        assert_eq!(depth10.bid_counts[0], 12);
-
-        assert_eq!(depth10.bids[1].price, Price::from("8475.55"));
-        assert_eq!(depth10.bids[1].size, Quantity::from("101"));
-        assert_eq!(depth10.bid_counts[1], 1);
-
-        // Check that levels beyond available data are padded with empty orders
-        assert_eq!(depth10.bids[8].price, Price::from("0"));
-        assert_eq!(depth10.bids[8].size, Quantity::from("0"));
-        assert_eq!(depth10.bid_counts[8], 0);
-
-        // Check ask levels (available in test data: 8 levels)
-        assert_eq!(depth10.asks[0].price, Price::from("8476.98"));
-        assert_eq!(depth10.asks[0].size, Quantity::from("415"));
-        assert_eq!(depth10.asks[0].side, OrderSide::Sell.into());
-        assert_eq!(depth10.ask_counts[0], 13);
-
-        assert_eq!(depth10.asks[1].price, Price::from("8477.00"));
-        assert_eq!(depth10.asks[1].size, Quantity::from("7"));
-        assert_eq!(depth10.ask_counts[1], 2);
-
-        // Check that levels beyond available data are padded with empty orders
-        assert_eq!(depth10.asks[8].price, Price::from("0"));
-        assert_eq!(depth10.asks[8].size, Quantity::from("0"));
-        assert_eq!(depth10.ask_counts[8], 0);
+        for (order, (price, size)) in depth10.asks.iter().zip(expected_asks) {
+            assert_eq!(order.side, Some(OrderSide::Sell));
+            assert_eq!(order.price, Price::from(price));
+            assert_eq!(order.size, Quantity::from(size));
+            assert_eq!(order.order_id, 0);
+        }
     }
 
     #[rstest]
@@ -3324,7 +3417,7 @@ mod tests {
 
         assert_eq!(depth10_vec.len(), 1);
 
-        if let Data::BookDepth10(d) = &depth10_vec[0] {
+        if let Data::BookDepth(d) = &depth10_vec[0] {
             assert_eq!(d.instrument_id, instrument_id);
             assert_eq!(d.sequence, 123_456);
             assert_eq!(d.bids[0].price, Price::from("8476.97"));
@@ -4331,7 +4424,6 @@ mod tests {
 
     #[rstest]
     fn test_parse_book10_msg_partial_levels() {
-        // Test with fewer than 10 levels - should pad with empty orders
         let book_msg = OKXBookMsg {
             asks: vec![
                 OrderBookEntry {
@@ -4363,20 +4455,29 @@ mod tests {
         let depth10 =
             parse_book10_msg(&book_msg, instrument_id, 2, 0, UnixNanos::default()).unwrap();
 
-        // Check that first levels have data
+        assert_eq!(depth10.instrument_id, instrument_id);
+        assert_eq!(depth10.bids.len(), 1);
+        assert_eq!(depth10.asks.len(), 2);
         assert_eq!(depth10.bids[0].price, Price::from("8476.97"));
         assert_eq!(depth10.bids[0].size, Quantity::from("256"));
-        assert_eq!(depth10.bid_counts[0], 12);
-
-        // Check that remaining levels are padded with default (empty) orders
-        assert_eq!(depth10.bids[1].price, Price::from("0"));
-        assert_eq!(depth10.bids[1].size, Quantity::from("0"));
-        assert_eq!(depth10.bid_counts[1], 0);
-
-        // Check asks
-        assert_eq!(depth10.asks[0].price, Price::from("8476.98"));
-        assert_eq!(depth10.asks[1].price, Price::from("8477.00"));
-        assert_eq!(depth10.asks[2].price, Price::from("0")); // padded with empty
+        assert_eq!(depth10.bids[0].side, Some(OrderSide::Buy));
+        assert_eq!(depth10.bids[0].order_id, 0);
+        assert_eq!(depth10.bid_counts.as_slice(), &[12]);
+        assert_eq!(depth10.ask_counts.as_slice(), &[13, 2]);
+        for (order, (price, size)) in depth10
+            .asks
+            .iter()
+            .zip([("8476.98", "415"), ("8477.00", "7")])
+        {
+            assert_eq!(order.price, Price::from(price));
+            assert_eq!(order.size, Quantity::from(size));
+            assert_eq!(order.side, Some(OrderSide::Sell));
+            assert_eq!(order.order_id, 0);
+        }
+        assert_eq!(depth10.sequence, 123_456);
+        assert_eq!(depth10.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(depth10.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
+        assert_eq!(depth10.ts_init, UnixNanos::default());
     }
 
     #[rstest]

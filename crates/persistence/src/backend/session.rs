@@ -44,6 +44,7 @@ use super::{
     compare::Compare,
     kmerge_batch::{EagerStream, ElementBatchIter, KMerge},
 };
+use crate::common::arrow::validate_catalog_schema;
 
 #[derive(Debug, Default)]
 pub struct TsInitComparator;
@@ -108,6 +109,39 @@ pub struct QueryResult {
 }
 
 impl QueryResult {
+    /// Adapts typed catalog pages for callers of the existing row iterator API.
+    #[must_use]
+    pub fn from_typed_pages<T>(
+        pages: Box<dyn Iterator<Item = anyhow::Result<Vec<T>>> + Send>,
+    ) -> Self
+    where
+        T: Into<Data> + Send + 'static,
+    {
+        let error = Arc::new(ErrorSlot::default());
+        let pages = pages.map(|page| {
+            page.map(|rows| {
+                rows.into_iter()
+                    .map(Into::into)
+                    .collect::<Vec<Data>>()
+                    .into_iter()
+            })
+            .map_err(|e| match e.downcast::<EncodingError>() {
+                Ok(e) => QueryError::Decode(e),
+                Err(e) => QueryError::Stream(DataFusionError::External(e.into())),
+            })
+        });
+        let stream = BatchStream {
+            inner: EagerStream::from_stream_with_runtime(
+                futures::stream::iter(pages),
+                get_runtime().handle().clone(),
+            ),
+            error: Arc::clone(&error),
+        };
+        let mut merge = KMerge::new(TsInitComparator);
+        merge.push_iter(stream);
+        Self { merge, error }
+    }
+
     /// Discards the remaining data streams without draining them.
     pub fn clear(&mut self) {
         self.merge.clear();
@@ -269,6 +303,11 @@ impl DataBackendSession {
                     .register_parquet(table_name, file_path, parquet_options),
             )?;
 
+            let table = super::block_on(&self.runtime, self.session_ctx.table(table_name))?;
+            if let Err(e) = validate_catalog_schema(table.schema().as_arrow()) {
+                self.session_ctx.deregister_table(table_name)?;
+                return Err(DataFusionError::External(e.into()));
+            }
             self.registered_tables.insert(table_name.to_string());
 
             // Only add batch stream for newly registered tables to avoid duplicates
@@ -310,6 +349,11 @@ impl DataBackendSession {
                     .register_parquet(table_name, file_path, parquet_options),
             )?;
 
+            let table = super::block_on(&self.runtime, self.session_ctx.table(table_name))?;
+            if let Err(e) = validate_catalog_schema(table.schema().as_arrow()) {
+                self.session_ctx.deregister_table(table_name)?;
+                return Err(DataFusionError::External(e.into()));
+            }
             self.registered_tables.insert(table_name.to_string());
         }
 
@@ -413,6 +457,7 @@ where
     T: DecodeDataFromRecordBatch,
 {
     let batch = result?;
+    validate_catalog_schema(batch.schema_ref()).map_err(|e| DataFusionError::External(e.into()))?;
     let mut metadata: std::collections::HashMap<String, String> = batch.schema().metadata().clone();
 
     if let Some(type_name) = custom_type_name {

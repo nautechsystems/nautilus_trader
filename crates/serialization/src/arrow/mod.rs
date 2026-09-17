@@ -17,6 +17,7 @@
 
 pub mod account_state;
 pub mod bar;
+pub mod catalog_display;
 pub mod close;
 pub mod custom;
 pub mod delta;
@@ -26,6 +27,7 @@ pub mod index_price;
 pub mod instrument;
 pub mod instrument_status;
 pub mod json;
+pub mod legacy;
 pub mod mark_price;
 pub mod option_greeks;
 pub mod order_event;
@@ -38,46 +40,490 @@ pub mod trade;
 #[cfg(feature = "arrow-display")]
 pub mod display;
 
+mod depth_display;
+mod display_conversion;
+
+#[cfg(test)]
+pub(crate) mod test_support;
+
 use std::{
+    borrow::Borrow,
     collections::HashMap,
+    fmt::{Display, Write as FmtWrite},
     io::{self, Write},
     str::FromStr,
+    sync::Arc,
 };
 
 use arrow::{
     array::{
-        Array, ArrayRef, BinaryArray, BinaryViewArray, FixedSizeBinaryArray, StringArray,
-        StringViewArray,
+        Array, ArrayRef, BinaryArray, BinaryViewArray, Decimal128Array, DictionaryArray,
+        FixedSizeBinaryArray, Int32Array, Int64Array, StringArray, StringBuilder,
+        StringDictionaryBuilder, StringViewArray, StructArray, TimestampNanosecondArray,
+        UInt8Array, UInt32Array, UInt64Array,
     },
-    datatypes::{DataType, Schema},
+    buffer::NullBuffer,
+    datatypes::{DataType, Field, Int8Type, Int32Type, Schema, TimeUnit},
     error::ArrowError,
     ipc::writer::StreamWriter,
     record_batch::RecordBatch,
 };
+use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
         Data, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, bar::Bar,
-        close::InstrumentClose, delta::OrderBookDelta, depth::OrderBookDepth10,
+        close::InstrumentClose, delta::OrderBookDelta, depth::OrderBookDepth,
         option_chain::OptionGreeks, quote::QuoteTick, trade::TradeTick,
     },
     enums::BookAction,
     identifiers::InstrumentId,
     types::{
-        PRICE_ERROR, PRICE_UNDEF, Price, QUANTITY_UNDEF, Quantity,
-        fixed::{PRECISION_BYTES, correct_price_raw, correct_quantity_raw},
+        Currency, Money, PRICE_ERROR, PRICE_UNDEF, Price, QUANTITY_UNDEF, Quantity,
+        fixed::{
+            FIXED_PRECISION, FIXED_PRECISION_STANDARD, PRECISION_BYTES, correct_price_raw,
+            correct_quantity_raw,
+        },
+        money::MoneyRaw,
         price::PriceRaw,
-        quantity::QuantityRaw,
+        quantity::{QUANTITY_RAW_MAX, QuantityRaw},
     },
 };
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
+use self::legacy::legacy_enum_dictionary_column;
+pub use self::legacy::{
+    is_legacy_enum_field, is_nautilus_legacy_schema, is_nautilus_timestamp_schema,
+    is_timestamp_field, normalize_legacy_fixed_columns, normalized_legacy_data_type,
+    normalized_timestamp_type,
+};
+
 // Define metadata key constants constants
-const KEY_BAR_TYPE: &str = "bar_type";
+pub const KEY_BAR_TYPE: &str = "bar_type";
+pub const KEY_IDENTIFIER: &str = "identifier";
 pub const KEY_INSTRUMENT_ID: &str = "instrument_id";
 pub const KEY_PRICE_PRECISION: &str = "price_precision";
 pub const KEY_SIZE_PRECISION: &str = "size_precision";
+
+pub(crate) fn parse_metadata(
+    metadata: &HashMap<String, String>,
+) -> Result<(InstrumentId, u8, u8), EncodingError> {
+    let instrument_id = metadata
+        .get(KEY_INSTRUMENT_ID)
+        .ok_or(EncodingError::MissingMetadata(KEY_INSTRUMENT_ID))?
+        .parse::<InstrumentId>()
+        .map_err(|e| EncodingError::ParseError(KEY_INSTRUMENT_ID, e.to_string()))?;
+    let price_precision = metadata
+        .get(KEY_PRICE_PRECISION)
+        .ok_or(EncodingError::MissingMetadata(KEY_PRICE_PRECISION))?
+        .parse::<u8>()
+        .map_err(|e| EncodingError::ParseError(KEY_PRICE_PRECISION, e.to_string()))?;
+    let size_precision = metadata
+        .get(KEY_SIZE_PRECISION)
+        .ok_or(EncodingError::MissingMetadata(KEY_SIZE_PRECISION))?
+        .parse::<u8>()
+        .map_err(|e| EncodingError::ParseError(KEY_SIZE_PRECISION, e.to_string()))?;
+    Ok((instrument_id, price_precision, size_precision))
+}
+pub const KEY_TYPE_NAME: &str = "type_name";
+pub const FIXED_DECIMAL_PRECISION: u8 = 38;
+pub const FIXED_DECIMAL_SCALE: i8 = 16;
+pub(crate) const EMPTY_DEPTH_PRECISION: (u8, u8) = (0, 0);
+
+/// Returns the open Arrow data type used for nanosecond instants.
+#[must_use]
+pub fn timestamp_data_type() -> DataType {
+    DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into()))
+}
+
+/// Builds a UTC nanosecond timestamp array from model timestamp values.
+///
+/// # Errors
+///
+/// Returns an [`ArrowError`] when a value exceeds Arrow's signed timestamp range.
+pub fn timestamp_array(
+    values: impl IntoIterator<Item = u64>,
+) -> Result<TimestampNanosecondArray, ArrowError> {
+    optional_timestamp_array(values.into_iter().map(Some))
+}
+
+/// Builds a nullable UTC nanosecond timestamp array from model timestamp values.
+///
+/// # Errors
+///
+/// Returns an [`ArrowError`] when a value exceeds Arrow's signed timestamp range.
+pub fn optional_timestamp_array(
+    values: impl IntoIterator<Item = Option<u64>>,
+) -> Result<TimestampNanosecondArray, ArrowError> {
+    let values = values
+        .into_iter()
+        .map(|value| {
+            value
+                .map(|value| {
+                    i64::try_from(value).map_err(|_| {
+                        ArrowError::InvalidArgumentError(format!(
+                            "Nanosecond timestamp {value} exceeds Arrow's signed timestamp range"
+                        ))
+                    })
+                })
+                .transpose()
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(TimestampNanosecondArray::from(values).with_data_type(timestamp_data_type()))
+}
+
+/// Reads a non-negative Arrow nanosecond timestamp as the model's unsigned representation.
+///
+/// # Errors
+///
+/// Returns an [`EncodingError`] when the value is negative.
+pub fn decode_timestamp(
+    values: &TimestampNanosecondArray,
+    name: &'static str,
+    row: usize,
+) -> Result<u64, EncodingError> {
+    u64::try_from(values.value(row)).map_err(|_| {
+        EncodingError::ParseError(
+            name,
+            format!(
+                "row {row}: negative nanosecond timestamp {}",
+                values.value(row)
+            ),
+        )
+    })
+}
+
+/// Builds a record batch, converting unsigned nanosecond inputs for timestamp schema fields.
+///
+/// This keeps model encoders simple while ensuring their public Arrow batches use logical
+/// timestamp columns.
+///
+/// # Errors
+///
+/// Returns an [`ArrowError`] when a timestamp exceeds the signed Arrow range or the batch is
+/// otherwise invalid.
+pub fn record_batch_with_timestamps(
+    schema: Arc<Schema>,
+    columns: Vec<ArrayRef>,
+) -> Result<RecordBatch, ArrowError> {
+    validate_encode_precisions(schema.metadata())?;
+
+    let columns = schema
+        .fields()
+        .iter()
+        .zip(columns)
+        .map(|(field, column)| {
+            if field.data_type() == &enum_dictionary_data_type()
+                && column.data_type() == &DataType::UInt8
+                && is_legacy_enum_field(field.name())
+            {
+                return legacy_enum_dictionary_column(field, column.as_ref());
+            }
+
+            if field.data_type() != &timestamp_data_type()
+                || column.data_type() != &DataType::UInt64
+            {
+                return Ok(column);
+            }
+            timestamp_column(field, column.as_ref())
+        })
+        .collect::<Result<Vec<_>, ArrowError>>()?;
+    RecordBatch::try_new(schema, columns)
+}
+
+// Rejects batch metadata whose precisions exceed the catalog's uniform decimal scale. Defi
+// precisions (for example wei at 17 or 18) store raws at their own native scale, so encoding
+// them bit-for-bit into `Decimal128(38, 16)` columns would inflate the externally visible
+// values; mirror the SBE and custom-data macro encode guards and fail the write instead.
+fn validate_encode_precisions(metadata: &HashMap<String, String>) -> Result<(), ArrowError> {
+    for key in [KEY_PRICE_PRECISION, KEY_SIZE_PRECISION] {
+        if let Some(value) = metadata.get(key)
+            && let Ok(precision) = value.parse::<u8>()
+            && precision > FIXED_DECIMAL_SCALE as u8
+        {
+            return Err(ArrowError::InvalidArgumentError(format!(
+                "Metadata '{key}' is {precision}, maximum supported catalog scale is {FIXED_DECIMAL_SCALE}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn timestamp_column(field: &Field, column: &dyn Array) -> Result<ArrayRef, ArrowError> {
+    let values = column
+        .as_any()
+        .downcast_ref::<UInt64Array>()
+        .ok_or_else(|| ArrowError::CastError(format!("Column '{}' is not UInt64", field.name())))?;
+    let timestamps = optional_timestamp_array(
+        (0..values.len()).map(|row| (!values.is_null(row)).then(|| values.value(row))),
+    )?;
+    Ok(Arc::new(timestamps) as ArrayRef)
+}
+
+/// Converts logical timestamp columns to unsigned nanoseconds for existing model decoders.
+///
+/// # Errors
+///
+/// Returns an [`EncodingError`] for negative timestamps or invalid arrays.
+pub fn record_batch_with_u64_timestamps(batch: &RecordBatch) -> Result<RecordBatch, EncodingError> {
+    let mut changed = false;
+    let mut fields = Vec::with_capacity(batch.num_columns());
+    let mut columns = Vec::with_capacity(batch.num_columns());
+
+    for (field, column) in batch.schema().fields().iter().zip(batch.columns()) {
+        if field.data_type() != &timestamp_data_type() {
+            fields.push(field.clone());
+            columns.push(column.clone());
+            continue;
+        }
+        let values = column
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .ok_or_else(|| {
+                EncodingError::ParseError(
+                    "timestamp",
+                    format!("Column '{}' is not TimestampNanosecond", field.name()),
+                )
+            })?;
+        let values = (0..values.len())
+            .map(|row| {
+                if values.is_null(row) {
+                    Ok(None)
+                } else {
+                    decode_timestamp(values, "timestamp", row).map(Some)
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        fields.push(Arc::new(
+            field.as_ref().clone().with_data_type(DataType::UInt64),
+        ));
+        columns.push(Arc::new(UInt64Array::from(values)) as ArrayRef);
+        changed = true;
+    }
+
+    if !changed {
+        return Ok(batch.clone());
+    }
+    RecordBatch::try_new(
+        Arc::new(Schema::new_with_metadata(
+            fields,
+            batch.schema().metadata().clone(),
+        )),
+        columns,
+    )
+    .map_err(EncodingError::from)
+}
+
+/// Returns the open Arrow data type used for enum-valued catalog columns.
+#[must_use]
+pub fn enum_dictionary_data_type() -> DataType {
+    DataType::Dictionary(Box::new(DataType::Int8), Box::new(DataType::Utf8))
+}
+
+/// Builds a compact dictionary array containing enum display names.
+///
+/// # Errors
+///
+/// Returns an [`ArrowError`] if the number of distinct values exceeds the `Int8` key range.
+pub fn enum_dictionary_array(
+    values: impl IntoIterator<Item = impl Display>,
+) -> Result<DictionaryArray<Int8Type>, ArrowError> {
+    let mut builder = StringDictionaryBuilder::<Int8Type>::new();
+    for value in values {
+        builder.append(value.to_string())?;
+    }
+    Ok(builder.finish())
+}
+
+/// Returns the open Arrow data type used for monetary values.
+#[must_use]
+pub fn money_data_type() -> DataType {
+    DataType::Struct(
+        vec![
+            Field::new("amount", fixed_decimal_data_type(), false),
+            Field::new(
+                "currency",
+                DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+                false,
+            ),
+        ]
+        .into(),
+    )
+}
+
+/// Builds a nullable struct array containing monetary amounts and currencies.
+///
+/// # Errors
+///
+/// Returns an [`ArrowError`] if an amount or dictionary value cannot be represented.
+pub fn money_array(
+    values: impl IntoIterator<Item = Option<Money>>,
+) -> Result<StructArray, ArrowError> {
+    let mut amounts = Vec::new();
+    let mut currencies = StringDictionaryBuilder::<Int32Type>::new();
+    let mut validity = Vec::new();
+
+    for value in values {
+        if let Some(value) = value {
+            if value.currency.precision > FIXED_DECIMAL_SCALE as u8 {
+                return Err(ArrowError::InvalidArgumentError(format!(
+                    "Money currency precision {} exceeds catalog scale {FIXED_DECIMAL_SCALE}",
+                    value.currency.precision,
+                )));
+            }
+
+            amounts.push(money_raw_to_decimal(value.raw()));
+            currencies.append(value.currency.to_string())?;
+            validity.push(true);
+        } else {
+            amounts.push(0);
+            currencies.append_null();
+            validity.push(false);
+        }
+    }
+    let amounts = Decimal128Array::from(amounts)
+        .with_precision_and_scale(FIXED_DECIMAL_PRECISION, FIXED_DECIMAL_SCALE)?;
+    StructArray::try_new(
+        match money_data_type() {
+            DataType::Struct(fields) => fields,
+            _ => unreachable!("money data type is a struct"),
+        },
+        vec![Arc::new(amounts), Arc::new(currencies.finish())],
+        Some(NullBuffer::from(validity)),
+    )
+}
+
+/// Encodes a Rust decimal at the catalog's scale.
+///
+/// # Errors
+///
+/// Returns an [`ArrowError`] naming `field` when the value has more than 16 decimal places or
+/// cannot be rescaled exactly.
+pub fn decimal_to_arrow(value: &Decimal, field: &'static str) -> Result<i128, ArrowError> {
+    let value = value.normalize();
+    let scale = value.scale();
+    if scale > FIXED_DECIMAL_SCALE as u32 {
+        return Err(ArrowError::InvalidArgumentError(format!(
+            "Decimal field '{field}' has scale {scale}, maximum supported scale is {FIXED_DECIMAL_SCALE}"
+        )));
+    }
+    let rescaled = value
+        .mantissa()
+        .checked_mul(10_i128.pow(FIXED_DECIMAL_SCALE as u32 - scale))
+        .ok_or_else(|| {
+            ArrowError::InvalidArgumentError(format!(
+                "Decimal field '{field}' cannot be represented as Decimal128(38, 16)"
+            ))
+        })?;
+    let max = Decimal::MAX.mantissa();
+    if rescaled < -max || rescaled > max {
+        return Err(ArrowError::InvalidArgumentError(format!(
+            "Decimal field '{field}' exceeds the rust_decimal 96-bit range after rescaling"
+        )));
+    }
+    Ok(rescaled)
+}
+
+/// Decodes a Rust decimal from the catalog's scale.
+///
+/// # Errors
+///
+/// Returns an [`EncodingError`] if the value is NULL or outside `rust_decimal`'s range.
+pub fn decode_decimal(
+    values: &Decimal128Array,
+    field: &'static str,
+    row: usize,
+) -> Result<Decimal, EncodingError> {
+    if values.is_null(row) {
+        return Err(EncodingError::ParseError(
+            field,
+            format!("row {row}: required decimal is null"),
+        ));
+    }
+    Decimal::try_from_i128_with_scale(values.value(row), FIXED_DECIMAL_SCALE as u32)
+        .map_err(|e| EncodingError::ParseError(field, format!("row {row}: {e}")))
+}
+
+/// Decodes a monetary value from its Arrow struct representation.
+///
+/// # Errors
+///
+/// Returns an [`EncodingError`] if the struct is NULL, malformed, or outside the model range.
+pub fn decode_money(
+    values: &StructArray,
+    field: &'static str,
+    row: usize,
+) -> Result<Money, EncodingError> {
+    if values.is_null(row) {
+        return Err(EncodingError::ParseError(
+            field,
+            format!("row {row}: required money is null"),
+        ));
+    }
+    let amounts = values
+        .column_by_name("amount")
+        .and_then(|array| array.as_any().downcast_ref::<Decimal128Array>())
+        .ok_or_else(|| {
+            EncodingError::ParseError(field, "money amount must be Decimal128(38, 16)".to_string())
+        })?;
+    let currencies = values
+        .column_by_name("currency")
+        .and_then(|array| StringColumnRef::try_from_array(array.as_ref()))
+        .ok_or_else(|| {
+            EncodingError::ParseError(
+                field,
+                "money currency must be Dictionary<Int32, Utf8>".to_string(),
+            )
+        })?;
+    let raw = decimal_to_money_raw(amounts.value(row), field, row)?;
+    let currency_code = currencies.value(row);
+    let currency = Currency::from_str(currency_code).map_err(|e| {
+        EncodingError::ParseError(
+            field,
+            format!(
+                "row {row}: currency '{currency_code}' must be registered before decoding Money: {e}"
+            ),
+        )
+    })?;
+
+    if currency.precision > FIXED_DECIMAL_SCALE as u8 {
+        return Err(EncodingError::ParseError(
+            field,
+            format!(
+                "row {row}: Money currency precision {} exceeds catalog scale {FIXED_DECIMAL_SCALE}",
+                currency.precision,
+            ),
+        ));
+    }
+
+    Money::from_raw_checked(raw, currency)
+        .map_err(|e| EncodingError::ParseError(field, format!("row {row}: {e}")))
+}
+
+#[allow(
+    clippy::useless_conversion,
+    reason = "MoneyRaw is i64 or i128 depending on model feature unification"
+)]
+fn money_raw_to_decimal(raw: MoneyRaw) -> i128 {
+    let mut decimal = i128::from(raw);
+    if FIXED_PRECISION == FIXED_PRECISION_STANDARD {
+        decimal *= STANDARD_TO_DECIMAL_SCALE;
+    }
+    decimal
+}
+
+fn decimal_to_money_raw(
+    value: i128,
+    field: &'static str,
+    row: usize,
+) -> Result<MoneyRaw, EncodingError> {
+    decimal_to_raw(value, field, row, "MoneyRaw")
+}
+
+const STANDARD_TO_DECIMAL_SCALE: i128 =
+    10_i128.pow((FIXED_DECIMAL_SCALE as u8 - FIXED_PRECISION_STANDARD) as u32);
 
 #[derive(thiserror::Error, Debug)]
 pub enum DataStreamingError {
@@ -110,7 +556,7 @@ pub enum EncodingError {
         "Precision mode mismatch for `{field}`: catalog data has {actual_bytes} byte values, \
          but this build expects {expected_bytes} bytes. The catalog was created with a different \
          precision mode (standard=8 bytes, high=16 bytes). Rebuild the catalog or change your \
-         build's precision mode. See: https://nautilustrader.io/docs/latest/getting_started/installation/#precision-mode"
+         build's precision mode. See: https://nautilustrader.io/docs/latest/getting_started/installation#precision-mode"
     )]
     PrecisionMismatch {
         field: &'static str,
@@ -121,19 +567,422 @@ pub enum EncodingError {
     ArrowError(#[from] arrow::error::ArrowError),
 }
 
+/// Returns the open fixed-point Arrow data type used by catalog write schemas.
+#[must_use]
+pub const fn fixed_decimal_data_type() -> DataType {
+    DataType::Decimal128(FIXED_DECIMAL_PRECISION, FIXED_DECIMAL_SCALE)
+}
+
+/// Returns a UTF-8 field annotated with the canonical Arrow JSON extension.
+#[must_use]
+pub fn json_string_field(name: impl Into<String>, nullable: bool) -> Field {
+    Field::new(name, DataType::Utf8, nullable).with_metadata(HashMap::from([
+        ("ARROW:extension:name".to_string(), "arrow.json".to_string()),
+        ("ARROW:extension:metadata".to_string(), String::new()),
+    ]))
+}
+
+/// Returns whether a field carries the canonical Arrow JSON extension.
+#[must_use]
+pub fn is_json_string_field(field: &Field) -> bool {
+    field.extension_type_name() == Some("arrow.json")
+}
+
+/// Encodes a model price raw value at the catalog's uniform decimal scale.
+///
+/// # Errors
+///
+/// Returns an [`ArrowError::InvalidArgumentError`] if `raw` is [`PRICE_ERROR`].
+pub fn price_raw_to_decimal(
+    raw: PriceRaw,
+    field: &'static str,
+) -> Result<Option<i128>, ArrowError> {
+    if raw == PRICE_UNDEF {
+        return Ok(None);
+    }
+
+    if raw == PRICE_ERROR {
+        return Err(ArrowError::InvalidArgumentError(format!(
+            "Price field '{field}' contains PRICE_ERROR raw value {raw}"
+        )));
+    }
+
+    #[allow(
+        clippy::useless_conversion,
+        reason = "PriceRaw is i64 or i128 depending on model feature unification"
+    )]
+    let mut decimal = i128::from(raw);
+    if FIXED_PRECISION == FIXED_PRECISION_STANDARD {
+        decimal *= STANDARD_TO_DECIMAL_SCALE;
+    }
+
+    Ok(Some(decimal))
+}
+
+/// Encodes a model quantity raw value at the catalog's uniform decimal scale.
+///
+/// # Errors
+///
+/// Returns an [`ArrowError::InvalidArgumentError`] if a non-sentinel quantity does not fit in
+/// Arrow's signed decimal representation.
+pub fn quantity_raw_to_decimal(
+    raw: QuantityRaw,
+    field: &'static str,
+) -> Result<Option<i128>, ArrowError> {
+    if raw == QUANTITY_UNDEF {
+        return Ok(None);
+    }
+
+    if raw > QUANTITY_RAW_MAX {
+        return Err(ArrowError::InvalidArgumentError(format!(
+            "Quantity field '{field}' raw value {raw} exceeds QUANTITY_RAW_MAX={QUANTITY_RAW_MAX}"
+        )));
+    }
+
+    #[allow(
+        clippy::unnecessary_fallible_conversions,
+        reason = "QuantityRaw is u64 or u128 depending on model feature unification"
+    )]
+    let mut decimal = i128::try_from(raw).map_err(|_| {
+        ArrowError::InvalidArgumentError(format!(
+            "Quantity field '{field}' raw value {raw} exceeds Decimal128 range"
+        ))
+    })?;
+
+    if FIXED_PRECISION == FIXED_PRECISION_STANDARD {
+        decimal *= STANDARD_TO_DECIMAL_SCALE;
+    }
+
+    Ok(Some(decimal))
+}
+
+/// Builds a scale-16 decimal array from model price raw values.
+///
+/// # Errors
+///
+/// Returns an [`ArrowError`] if the values do not fit the declared decimal type.
+pub fn price_decimal_array(
+    values: impl IntoIterator<Item = PriceRaw>,
+    field: &'static str,
+) -> Result<Decimal128Array, ArrowError> {
+    let values = values
+        .into_iter()
+        .map(|raw| price_raw_to_decimal(raw, field))
+        .collect::<Result<Vec<_>, _>>()?;
+    Decimal128Array::from(values)
+        .with_precision_and_scale(FIXED_DECIMAL_PRECISION, FIXED_DECIMAL_SCALE)
+}
+
+/// Builds a scale-16 decimal array from model quantity raw values.
+///
+/// # Errors
+///
+/// Returns an [`ArrowError`] if a value does not fit or the declared decimal type is invalid.
+pub fn quantity_decimal_array(
+    values: impl IntoIterator<Item = QuantityRaw>,
+    field: &'static str,
+) -> Result<Decimal128Array, ArrowError> {
+    let values = values
+        .into_iter()
+        .map(|raw| quantity_raw_to_decimal(raw, field))
+        .collect::<Result<Vec<_>, _>>()?;
+    Decimal128Array::from(values)
+        .with_precision_and_scale(FIXED_DECIMAL_PRECISION, FIXED_DECIMAL_SCALE)
+}
+
+/// Builds a scale-16 decimal array from price raw values of a type with no NULL sentinel.
+///
+/// # Errors
+///
+/// Returns an [`ArrowError`] if a value is `PRICE_UNDEF` or does not fit the declared decimal
+/// type, so the required decoders can read back every written value.
+pub fn required_price_decimal_array(
+    values: impl IntoIterator<Item = PriceRaw>,
+    field: &'static str,
+) -> Result<Decimal128Array, ArrowError> {
+    let values = values
+        .into_iter()
+        .map(|raw| {
+            price_raw_to_decimal(raw, field)?.ok_or_else(|| {
+                ArrowError::InvalidArgumentError(format!(
+                    "Price field '{field}' contains PRICE_UNDEF, which has no sentinel encoding for this type"
+                ))
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Decimal128Array::from(values)
+        .with_precision_and_scale(FIXED_DECIMAL_PRECISION, FIXED_DECIMAL_SCALE)
+}
+
+/// Builds a scale-16 decimal array from quantity raw values of a type with no NULL sentinel.
+///
+/// # Errors
+///
+/// Returns an [`ArrowError`] if a value is `QUANTITY_UNDEF` or does not fit the declared decimal
+/// type, so the required decoders can read back every written value.
+pub fn required_quantity_decimal_array(
+    values: impl IntoIterator<Item = QuantityRaw>,
+    field: &'static str,
+) -> Result<Decimal128Array, ArrowError> {
+    let values = values
+        .into_iter()
+        .map(|raw| {
+            quantity_raw_to_decimal(raw, field)?.ok_or_else(|| {
+                ArrowError::InvalidArgumentError(format!(
+                    "Quantity field '{field}' contains QUANTITY_UNDEF, which has no sentinel encoding for this type"
+                ))
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Decimal128Array::from(values)
+        .with_precision_and_scale(FIXED_DECIMAL_PRECISION, FIXED_DECIMAL_SCALE)
+}
+
+fn decimal_to_price_raw(
+    value: i128,
+    field: &'static str,
+    row: usize,
+) -> Result<PriceRaw, EncodingError> {
+    decimal_to_raw(value, field, row, "PriceRaw")
+}
+
+fn decimal_to_quantity_raw(
+    value: i128,
+    field: &'static str,
+    row: usize,
+) -> Result<QuantityRaw, EncodingError> {
+    decimal_to_raw(value, field, row, "QuantityRaw")
+}
+
+fn decimal_to_raw<T: TryFrom<i128>>(
+    value: i128,
+    field: &'static str,
+    row: usize,
+    raw_type: &'static str,
+) -> Result<T, EncodingError> {
+    let raw_value = if FIXED_PRECISION == FIXED_PRECISION_STANDARD {
+        if value % STANDARD_TO_DECIMAL_SCALE != 0 {
+            return Err(EncodingError::ParseError(
+                field,
+                format!(
+                    "row {row}: decimal value {value} has nonzero digits beyond build precision 9"
+                ),
+            ));
+        }
+        value / STANDARD_TO_DECIMAL_SCALE
+    } else {
+        value
+    };
+
+    T::try_from(raw_value).map_err(|_| {
+        EncodingError::ParseError(
+            field,
+            format!("row {row}: decimal value {value} exceeds {raw_type} range"),
+        )
+    })
+}
+
+/// Decodes a price from a nullable scale-16 decimal column.
+///
+/// # Errors
+///
+/// Returns an [`EncodingError`] if the value cannot be represented by this build.
+pub fn decode_decimal_price(
+    values: &Decimal128Array,
+    precision: u8,
+    field: &'static str,
+    row: usize,
+) -> Result<Price, EncodingError> {
+    if values.is_null(row) {
+        return Price::from_raw_checked(PRICE_UNDEF, 0)
+            .map_err(|e| EncodingError::ParseError(field, format!("row {row}: {e}")));
+    }
+
+    let raw = decimal_to_price_raw(values.value(row), field, row)?;
+    Price::from_raw_checked(raw, precision)
+        .map_err(|e| EncodingError::ParseError(field, format!("row {row}: {e}")))
+}
+
+/// Decodes a required price from a scale-16 decimal column.
+///
+/// # Errors
+///
+/// Returns an [`EncodingError`] if the value is null or cannot be represented by this build.
+pub fn decode_required_decimal_price(
+    values: &Decimal128Array,
+    precision: u8,
+    field: &'static str,
+    row: usize,
+) -> Result<Price, EncodingError> {
+    if values.is_null(row) {
+        return Err(EncodingError::ParseError(
+            field,
+            format!("row {row}: required price is null"),
+        ));
+    }
+    decode_decimal_price(values, precision, field, row)
+}
+
+/// Decodes a quantity from a nullable scale-16 decimal column.
+///
+/// # Errors
+///
+/// Returns an [`EncodingError`] if the value cannot be represented by this build.
+pub fn decode_decimal_quantity(
+    values: &Decimal128Array,
+    precision: u8,
+    field: &'static str,
+    row: usize,
+) -> Result<Quantity, EncodingError> {
+    if values.is_null(row) {
+        return Quantity::from_raw_checked(QUANTITY_UNDEF, 0)
+            .map_err(|e| EncodingError::ParseError(field, format!("row {row}: {e}")));
+    }
+
+    let raw = decimal_to_quantity_raw(values.value(row), field, row)?;
+    Quantity::from_raw_checked(raw, precision)
+        .map_err(|e| EncodingError::ParseError(field, format!("row {row}: {e}")))
+}
+
+/// Decodes a required quantity from a scale-16 decimal column.
+///
+/// # Errors
+///
+/// Returns an [`EncodingError`] if the value is null or cannot be represented by this build.
+pub fn decode_required_decimal_quantity(
+    values: &Decimal128Array,
+    precision: u8,
+    field: &'static str,
+    row: usize,
+) -> Result<Quantity, EncodingError> {
+    if values.is_null(row) {
+        return Err(EncodingError::ParseError(
+            field,
+            format!("row {row}: required quantity is null"),
+        ));
+    }
+    decode_decimal_quantity(values, precision, field, row)
+}
+
+/// Returns a required timestamp value, naming the field and row on NULL.
+///
+/// # Errors
+///
+/// Returns an [`EncodingError`] if the value is null.
+pub fn decode_required_timestamp(
+    values: &UInt64Array,
+    field: &'static str,
+    row: usize,
+) -> Result<UnixNanos, EncodingError> {
+    if values.is_null(row) {
+        return Err(EncodingError::ParseError(
+            field,
+            format!("row {row}: required timestamp is null"),
+        ));
+    }
+    Ok(values.value(row).into())
+}
+
+pub(crate) fn decode_required_u64(
+    values: &UInt64Array,
+    field: &'static str,
+    row: usize,
+) -> Result<u64, EncodingError> {
+    if values.is_null(row) {
+        return Err(EncodingError::ParseError(
+            field,
+            format!("row {row}: required integer is null"),
+        ));
+    }
+    Ok(values.value(row))
+}
+
+pub(crate) fn decode_required_u8(
+    values: &UInt8Array,
+    field: &'static str,
+    row: usize,
+) -> Result<u8, EncodingError> {
+    if values.is_null(row) {
+        return Err(EncodingError::ParseError(
+            field,
+            format!("row {row}: required integer is null"),
+        ));
+    }
+    Ok(values.value(row))
+}
+
+#[cfg(test)]
+trait PriceRawSource {
+    fn raw_price(self) -> PriceRaw;
+}
+
+#[cfg(test)]
+impl PriceRawSource for &[u8] {
+    fn raw_price(self) -> PriceRaw {
+        PriceRaw::from_le_bytes(
+            self.try_into()
+                .expect("Price raw bytes must be exactly the size of PriceRaw"),
+        )
+    }
+}
+
+#[cfg(test)]
+impl PriceRawSource for i128 {
+    fn raw_price(self) -> PriceRaw {
+        decimal_to_price_raw(self, "test", 0).expect("Decimal price must fit the current build")
+    }
+}
+
 #[inline]
-fn get_raw_price(bytes: &[u8]) -> PriceRaw {
+#[cfg(test)]
+fn get_raw_price(value: impl PriceRawSource) -> PriceRaw {
+    value.raw_price()
+}
+
+#[inline]
+#[cfg(not(test))]
+fn get_raw_price(value: &[u8]) -> PriceRaw {
     PriceRaw::from_le_bytes(
-        bytes
+        value
             .try_into()
             .expect("Price raw bytes must be exactly the size of PriceRaw"),
     )
 }
 
+#[cfg(test)]
+trait QuantityRawSource {
+    fn raw_quantity(self) -> QuantityRaw;
+}
+
+#[cfg(test)]
+impl QuantityRawSource for &[u8] {
+    fn raw_quantity(self) -> QuantityRaw {
+        QuantityRaw::from_le_bytes(
+            self.try_into()
+                .expect("Quantity raw bytes must be exactly the size of QuantityRaw"),
+        )
+    }
+}
+
+#[cfg(test)]
+impl QuantityRawSource for i128 {
+    fn raw_quantity(self) -> QuantityRaw {
+        decimal_to_quantity_raw(self, "test", 0)
+            .expect("Decimal quantity must fit the current build")
+    }
+}
+
 #[inline]
-fn get_raw_quantity(bytes: &[u8]) -> QuantityRaw {
+#[cfg(test)]
+fn get_raw_quantity(value: impl QuantityRawSource) -> QuantityRaw {
+    value.raw_quantity()
+}
+
+#[inline]
+#[cfg(not(test))]
+fn get_raw_quantity(value: &[u8]) -> QuantityRaw {
     QuantityRaw::from_le_bytes(
-        bytes
+        value
             .try_into()
             .expect("Quantity raw bytes must be exactly the size of QuantityRaw"),
     )
@@ -291,10 +1140,12 @@ where
     /// # Errors
     ///
     /// Returns an `ArrowError` if the encoding fails.
-    fn encode_batch(
+    fn encode_batch<T>(
         metadata: &HashMap<String, String>,
-        data: &[Self],
-    ) -> Result<RecordBatch, ArrowError>;
+        data: &[T],
+    ) -> Result<RecordBatch, ArrowError>
+    where
+        T: Borrow<Self>;
 
     /// Returns the metadata for this data element.
     fn metadata(&self) -> HashMap<String, String>;
@@ -307,12 +1158,140 @@ where
     /// # Panics
     ///
     /// Panics if `chunk` is empty.
-    fn chunk_metadata(chunk: &[Self]) -> HashMap<String, String> {
+    fn chunk_metadata<T>(chunk: &[T]) -> HashMap<String, String>
+    where
+        T: Borrow<Self>,
+    {
         chunk
             .first()
-            .map(Self::metadata)
-            .expect("Chunk must have at least one element to encode")
+            .map(|item| item.borrow().metadata())
+            .expect("Chunk must contain at least one element to encode")
     }
+
+    /// Returns whether this element is compatible with metadata selected for its chunk.
+    fn matches_chunk_metadata(&self, metadata: &HashMap<String, String>) -> bool {
+        self.metadata() == *metadata
+    }
+}
+
+/// Returns the catalog row identifier from Arrow schema metadata.
+///
+/// Bars use `bar_type`; all other built-in catalog types use `instrument_id`.
+/// Custom data can pass an explicit identifier to [`record_batch_with_identifier_column`].
+#[must_use]
+pub fn catalog_identifier_from_metadata(metadata: &HashMap<String, String>) -> Option<String> {
+    metadata
+        .get(KEY_BAR_TYPE)
+        .cloned()
+        .or_else(|| metadata.get(KEY_INSTRUMENT_ID).cloned())
+}
+
+/// Builds a schema with the catalog `identifier` column appended if absent.
+#[must_use]
+pub fn schema_with_identifier_column(schema: &Schema) -> Schema {
+    if schema.index_of(KEY_IDENTIFIER).is_ok() {
+        return schema.clone();
+    }
+
+    let mut fields = schema.fields().iter().cloned().collect::<Vec<_>>();
+    fields.push(Arc::new(Field::new(KEY_IDENTIFIER, DataType::Utf8, true)));
+
+    Schema::new_with_metadata(fields, schema.metadata().clone())
+}
+
+/// Builds a schema without the catalog `identifier` column.
+#[must_use]
+pub fn schema_without_identifier_column(schema: &Schema) -> Schema {
+    let Ok(identifier_index) = schema.index_of(KEY_IDENTIFIER) else {
+        return schema.clone();
+    };
+
+    let fields = schema
+        .fields()
+        .iter()
+        .enumerate()
+        .filter_map(|(index, field)| (index != identifier_index).then_some(field.clone()))
+        .collect::<Vec<_>>();
+
+    Schema::new_with_metadata(fields, schema.metadata().clone())
+}
+
+/// Adds the catalog `identifier` column used by table-oriented catalog storage.
+///
+/// The column is nullable so custom data without a `DataType.identifier()` can
+/// still be stored in the same type table.
+///
+/// # Errors
+///
+/// Returns an [`ArrowError`] if the record batch cannot be rebuilt.
+pub fn record_batch_with_identifier_column(
+    batch: RecordBatch,
+    identifier: Option<&str>,
+) -> Result<RecordBatch, ArrowError> {
+    let identifier_values = vec![identifier.map(ToString::to_string); batch.num_rows()];
+    record_batch_with_identifier_values(batch, identifier_values)
+}
+
+/// Adds the catalog `identifier` column with one identifier value per row.
+///
+/// # Errors
+///
+/// Returns an [`ArrowError`] if the number of identifier values differs from
+/// the record batch row count or the record batch cannot be rebuilt.
+pub fn record_batch_with_identifier_values(
+    batch: RecordBatch,
+    identifier_values: Vec<Option<String>>,
+) -> Result<RecordBatch, ArrowError> {
+    if batch.schema().index_of(KEY_IDENTIFIER).is_ok() {
+        return Ok(batch);
+    }
+
+    if identifier_values.len() != batch.num_rows() {
+        return Err(ArrowError::InvalidArgumentError(format!(
+            "identifier values length {} does not match record batch row count {}",
+            identifier_values.len(),
+            batch.num_rows()
+        )));
+    }
+
+    let schema = schema_with_identifier_column(batch.schema().as_ref());
+    let mut columns = batch.columns().to_vec();
+    columns.push(Arc::new(StringArray::from(identifier_values)));
+
+    RecordBatch::try_new(Arc::new(schema), columns)
+}
+
+/// Builds a string array for catalog identifiers without collecting intermediate strings.
+#[must_use]
+pub fn identifier_array_from_display<T: Display>(
+    identifiers: impl IntoIterator<Item = T>,
+) -> StringArray {
+    let mut builder = StringBuilder::new();
+    let mut scratch = String::new();
+
+    for identifier in identifiers {
+        scratch.clear();
+        write!(&mut scratch, "{identifier}").expect("writing to String should not fail");
+        builder.append_value(scratch.as_str());
+    }
+
+    builder.finish()
+}
+
+/// Drops the catalog `identifier` column when writing legacy per-identifier formats.
+///
+/// # Errors
+///
+/// Returns an [`ArrowError`] if the record batch cannot be rebuilt.
+pub fn record_batch_without_identifier_column(
+    mut batch: RecordBatch,
+) -> Result<RecordBatch, ArrowError> {
+    let Ok(identifier_index) = batch.schema().index_of(KEY_IDENTIFIER) else {
+        return Ok(batch);
+    };
+
+    batch.remove_column(identifier_index);
+    Ok(batch)
 }
 
 /// Decodes data types from Apache Arrow RecordBatch format.
@@ -410,37 +1389,197 @@ pub fn extract_column_string<'a>(
     let column_values = cols
         .get(column_index)
         .ok_or(EncodingError::MissingColumn(column_key, column_index))?;
-    let dt = column_values.data_type();
-    if let Some(arr) = column_values.as_any().downcast_ref::<StringArray>() {
-        Ok(StringColumnRef::Utf8(arr))
-    } else if let Some(arr) = column_values.as_any().downcast_ref::<StringViewArray>() {
-        Ok(StringColumnRef::Utf8View(arr))
-    } else {
-        Err(EncodingError::InvalidColumnType(
+    StringColumnRef::try_from_array(column_values.as_ref()).ok_or_else(|| {
+        EncodingError::InvalidColumnType(
             column_key,
             column_index,
             DataType::Utf8,
-            dt.clone(),
-        ))
-    }
+            column_values.data_type().clone(),
+        )
+    })
 }
 
-/// Reference to a string column, either Utf8 or Utf8View.
+/// Reference to a string column in a supported Arrow string representation.
 #[derive(Debug)]
 pub enum StringColumnRef<'a> {
+    DictionaryInt8(&'a DictionaryArray<Int8Type>, &'a StringArray),
+    DictionaryInt32(&'a DictionaryArray<Int32Type>, &'a StringArray),
     Utf8(&'a StringArray),
     Utf8View(&'a StringViewArray),
 }
 
 impl StringColumnRef<'_> {
+    /// Returns the number of rows.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        match self {
+            Self::DictionaryInt8(array, _) => array.len(),
+            Self::DictionaryInt32(array, _) => array.len(),
+            Self::Utf8(array) => array.len(),
+            Self::Utf8View(array) => array.len(),
+        }
+    }
+
+    /// Returns whether the column contains no rows.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Returns a string view when `array` uses `Utf8` or `Utf8View` encoding.
+    #[must_use]
+    pub fn try_from_array(array: &dyn Array) -> Option<StringColumnRef<'_>> {
+        if let Some(array) = array.as_any().downcast_ref::<DictionaryArray<Int8Type>>()
+            && let Some(values) = array.values().as_any().downcast_ref::<StringArray>()
+        {
+            return Some(StringColumnRef::DictionaryInt8(array, values));
+        }
+
+        if let Some(array) = array.as_any().downcast_ref::<DictionaryArray<Int32Type>>()
+            && let Some(values) = array.values().as_any().downcast_ref::<StringArray>()
+        {
+            return Some(StringColumnRef::DictionaryInt32(array, values));
+        }
+
+        if let Some(array) = array.as_any().downcast_ref::<StringArray>() {
+            return Some(StringColumnRef::Utf8(array));
+        }
+
+        array
+            .as_any()
+            .downcast_ref::<StringViewArray>()
+            .map(StringColumnRef::Utf8View)
+    }
+
     /// Returns the string value at row `i`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `i` is out of bounds or a dictionary column contains an invalid key.
     #[inline]
     #[must_use]
     pub fn value(&self, i: usize) -> &str {
         match self {
+            Self::DictionaryInt8(array, values) => {
+                let key = usize::try_from(array.keys().value(i)).expect("Int8 key is non-negative");
+                values.value(key)
+            }
+            Self::DictionaryInt32(array, values) => {
+                let key =
+                    usize::try_from(array.keys().value(i)).expect("Int32 key is non-negative");
+                values.value(key)
+            }
             Self::Utf8(arr) => arr.value(i),
             Self::Utf8View(arr) => arr.value(i),
         }
+    }
+
+    /// Returns whether the value at row `i` is null.
+    #[inline]
+    #[must_use]
+    pub fn is_null(&self, i: usize) -> bool {
+        match self {
+            Self::DictionaryInt8(array, _) => array.is_null(i),
+            Self::DictionaryInt32(array, _) => array.is_null(i),
+            Self::Utf8(arr) => arr.is_null(i),
+            Self::Utf8View(arr) => arr.is_null(i),
+        }
+    }
+
+    /// Returns the string value at row `i`, or `None` when it is null.
+    #[must_use]
+    pub fn value_opt(&self, i: usize) -> Option<&str> {
+        (!self.is_null(i)).then(|| self.value(i))
+    }
+}
+
+/// Reference to an unsigned 64-bit value stored as an integer or UTC nanosecond timestamp.
+#[derive(Debug)]
+pub enum U64ColumnRef<'a> {
+    UInt64(&'a UInt64Array),
+    Int64(&'a Int64Array),
+    TimestampNanosecond(&'a TimestampNanosecondArray),
+}
+
+impl U64ColumnRef<'_> {
+    /// Returns a compatible unsigned 64-bit view for `array`.
+    #[must_use]
+    pub fn try_from_array(array: &dyn Array) -> Option<U64ColumnRef<'_>> {
+        if let Some(array) = array.as_any().downcast_ref::<UInt64Array>() {
+            return Some(U64ColumnRef::UInt64(array));
+        }
+
+        if let Some(array) = array.as_any().downcast_ref::<Int64Array>() {
+            return Some(U64ColumnRef::Int64(array));
+        }
+
+        array
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .map(U64ColumnRef::TimestampNanosecond)
+    }
+
+    /// Returns the number of values in the column.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        match self {
+            Self::UInt64(array) => array.len(),
+            Self::Int64(array) => array.len(),
+            Self::TimestampNanosecond(array) => array.len(),
+        }
+    }
+
+    /// Returns whether the column has no values.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Returns whether the value at row `i` is null.
+    #[must_use]
+    pub fn is_null(&self, i: usize) -> bool {
+        match self {
+            Self::UInt64(array) => array.is_null(i),
+            Self::Int64(array) => array.is_null(i),
+            Self::TimestampNanosecond(array) => array.is_null(i),
+        }
+    }
+
+    /// Returns the value at row `i`, or `None` when a signed representation is negative.
+    #[must_use]
+    pub fn value(&self, i: usize) -> Option<u64> {
+        match self {
+            Self::UInt64(array) => Some(array.value(i)),
+            Self::Int64(array) => u64::try_from(array.value(i)).ok(),
+            Self::TimestampNanosecond(array) => u64::try_from(array.value(i)).ok(),
+        }
+    }
+}
+
+/// Reference to an unsigned 32-bit column stored as `UInt32`, `Int32`, or `Int64`.
+#[derive(Debug)]
+pub enum U32ColumnRef<'a> {
+    UInt32(&'a UInt32Array),
+    Int32(&'a Int32Array),
+    Int64(&'a Int64Array),
+}
+
+impl U32ColumnRef<'_> {
+    /// Returns a compatible unsigned 32-bit view for `array`.
+    #[must_use]
+    pub fn try_from_array(array: &dyn Array) -> Option<U32ColumnRef<'_>> {
+        if let Some(array) = array.as_any().downcast_ref::<UInt32Array>() {
+            return Some(U32ColumnRef::UInt32(array));
+        }
+
+        if let Some(array) = array.as_any().downcast_ref::<Int32Array>() {
+            return Some(U32ColumnRef::Int32(array));
+        }
+
+        array
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .map(U32ColumnRef::Int64)
     }
 }
 
@@ -484,6 +1623,16 @@ pub enum BinaryColumnRef<'a> {
 }
 
 impl BinaryColumnRef<'_> {
+    /// Returns whether the row contains a null value.
+    #[inline]
+    #[must_use]
+    pub fn is_null(&self, i: usize) -> bool {
+        match self {
+            Self::Binary(arr) => arr.is_null(i),
+            Self::BinaryView(arr) => arr.is_null(i),
+        }
+    }
+
     /// Returns the bytes at row `i`.
     #[inline]
     #[must_use]
@@ -511,16 +1660,17 @@ pub fn extract_column<'a, T: Array + 'static>(
     let column_values = cols
         .get(column_index)
         .ok_or(EncodingError::MissingColumn(column_key, column_index))?;
-    let downcasted_values =
-        column_values
-            .as_any()
-            .downcast_ref::<T>()
-            .ok_or(EncodingError::InvalidColumnType(
-                column_key,
-                column_index,
-                expected_type,
-                column_values.data_type().clone(),
-            ))?;
+
+    let downcasted_values = column_values
+        .as_any()
+        .downcast_ref::<T>()
+        .filter(|_| column_values.data_type() == &expected_type)
+        .ok_or(EncodingError::InvalidColumnType(
+            column_key,
+            column_index,
+            expected_type,
+            column_values.data_type().clone(),
+        ))?;
     Ok(downcasted_values)
 }
 
@@ -544,6 +1694,24 @@ pub fn extract_column_by_name_or_index<'a, T: Array + 'static>(
         column_key,
         column_index,
         expected_type,
+    )
+}
+
+/// Extracts a decimal column by its schema name.
+///
+/// # Errors
+///
+/// Returns an error if the named column is missing or is not `Decimal128(38, 16)`.
+pub fn extract_decimal_column<'a>(
+    record_batch: &'a RecordBatch,
+    column_key: &'static str,
+) -> Result<&'a Decimal128Array, EncodingError> {
+    let column_index = record_batch.schema().index_of(column_key)?;
+    extract_column(
+        record_batch.columns(),
+        column_key,
+        column_index,
+        fixed_decimal_data_type(),
     )
 }
 
@@ -578,60 +1746,6 @@ pub fn extract_optional_string_column_by_name<'a>(
 #[must_use]
 pub fn optional_ustr_value(values: Option<&StringArray>, row: usize) -> Option<Ustr> {
     values.and_then(|column| (!column.is_null(row)).then(|| Ustr::from(column.value(row))))
-}
-
-/// Parses the instrument ID and price precision from batch metadata.
-///
-/// # Errors
-///
-/// Returns an error if either key is missing or cannot be parsed.
-pub(crate) fn parse_price_metadata(
-    metadata: &HashMap<String, String>,
-) -> Result<(InstrumentId, u8), EncodingError> {
-    Ok((
-        parse_instrument_id(metadata)?,
-        parse_precision(metadata, KEY_PRICE_PRECISION)?,
-    ))
-}
-
-/// Parses the instrument ID, price precision, and size precision from batch metadata.
-///
-/// # Errors
-///
-/// Returns an error if any key is missing or cannot be parsed.
-pub(crate) fn parse_price_size_metadata(
-    metadata: &HashMap<String, String>,
-) -> Result<(InstrumentId, u8, u8), EncodingError> {
-    Ok((
-        parse_instrument_id(metadata)?,
-        parse_precision(metadata, KEY_PRICE_PRECISION)?,
-        parse_precision(metadata, KEY_SIZE_PRECISION)?,
-    ))
-}
-
-fn parse_instrument_id(metadata: &HashMap<String, String>) -> Result<InstrumentId, EncodingError> {
-    let value = metadata
-        .get(KEY_INSTRUMENT_ID)
-        .ok_or_else(|| EncodingError::MissingMetadata(KEY_INSTRUMENT_ID))?;
-
-    InstrumentId::from_str(value)
-        .map_err(|e| EncodingError::ParseError(KEY_INSTRUMENT_ID, e.to_string()))
-}
-
-/// Parses a precision value stored under `key` in batch metadata.
-///
-/// # Errors
-///
-/// Returns an error if the key is missing or the value is not a `u8`.
-pub(crate) fn parse_precision(
-    metadata: &HashMap<String, String>,
-    key: &'static str,
-) -> Result<u8, EncodingError> {
-    metadata
-        .get(key)
-        .ok_or_else(|| EncodingError::MissingMetadata(key))?
-        .parse::<u8>()
-        .map_err(|e| EncodingError::ParseError(key, e.to_string()))
 }
 
 /// Validates that a [`FixedSizeBinaryArray`] has the expected precision byte width.
@@ -691,7 +1805,7 @@ pub fn book_deltas_to_arrow_record_batch_bytes(
     OrderBookDelta::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
 }
 
-/// Converts a vector of `OrderBookDepth10` into an Arrow `RecordBatch`.
+/// Converts a vector of `OrderBookDepth` into an Arrow `RecordBatch`.
 ///
 /// # Errors
 ///
@@ -699,41 +1813,22 @@ pub fn book_deltas_to_arrow_record_batch_bytes(
 /// - `data` is empty: `EncodingError::EmptyData`.
 /// - Metadata differs between rows: `EncodingError::MixedMetadata`.
 /// - Encoding fails: `EncodingError::ArrowError`.
-pub fn book_depth10_to_arrow_record_batch_bytes(
-    data: &[OrderBookDepth10],
+pub fn book_depths_to_arrow_record_batch_bytes(
+    data: &[OrderBookDepth],
 ) -> Result<RecordBatch, EncodingError> {
-    let Some(first) = data.first() else {
+    if data.is_empty() {
         return Err(EncodingError::EmptyData);
-    };
-    let precision = data
-        .iter()
-        .flat_map(|depth| depth.bids.iter().chain(&depth.asks))
-        .find(|order| !order.price.is_undefined() && !order.size.is_undefined())
-        .map_or(
-            (first.bids[0].price.precision, first.bids[0].size.precision),
-            |order| (order.price.precision, order.size.precision),
-        );
+    }
+    let metadata = OrderBookDepth::chunk_metadata(data);
 
-    if let Some(index) = data.iter().position(|depth| {
-        depth.instrument_id != first.instrument_id || !depth_precision_is_uniform(depth, precision)
-    }) {
+    if let Some(index) = data
+        .iter()
+        .position(|depth| !depth.matches_chunk_metadata(&metadata))
+    {
         return Err(EncodingError::MixedMetadata { index });
     }
 
-    let metadata = OrderBookDepth10::get_metadata(&first.instrument_id, precision.0, precision.1);
-    OrderBookDepth10::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
-}
-
-fn depth_precision_is_uniform(depth: &OrderBookDepth10, precision: (u8, u8)) -> bool {
-    depth.bids.iter().chain(&depth.asks).all(|order| {
-        match (order.price.is_undefined(), order.size.is_undefined()) {
-            (true, true) => true,
-            (false, false) => {
-                order.price.precision == precision.0 && order.size.precision == precision.1
-            }
-            _ => false,
-        }
-    })
+    OrderBookDepth::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
 }
 
 /// Converts a vector of `QuoteTick` into an Arrow `RecordBatch`.
@@ -811,13 +1906,15 @@ pub fn index_prices_to_arrow_record_batch_bytes(
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
 /// - Encoding fails: `EncodingError::ArrowError`.
+#[expect(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn instrument_status_to_arrow_record_batch_bytes(
     data: &[InstrumentStatus],
 ) -> Result<RecordBatch, EncodingError> {
-    let Some(first) = data.first() else {
+    if data.is_empty() {
         return Err(EncodingError::EmptyData);
-    };
+    }
 
+    let first = data.first().unwrap();
     let metadata = first.metadata();
     InstrumentStatus::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
 }
@@ -829,13 +1926,15 @@ pub fn instrument_status_to_arrow_record_batch_bytes(
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
 /// - Encoding fails: `EncodingError::ArrowError`.
+#[expect(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn option_greeks_to_arrow_record_batch_bytes(
     data: &[OptionGreeks],
 ) -> Result<RecordBatch, EncodingError> {
-    let Some(first) = data.first() else {
+    if data.is_empty() {
         return Err(EncodingError::EmptyData);
-    };
+    }
 
+    let first = data.first().unwrap();
     let metadata = first.metadata();
     OptionGreeks::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
 }
@@ -871,62 +1970,92 @@ where
 }
 
 #[cfg(test)]
-fn fixed_size_binary<const N: usize>(values: Vec<&[u8; N]>) -> FixedSizeBinaryArray {
-    FixedSizeBinaryArray::try_from_iter(values.into_iter()).unwrap()
-}
-
-#[cfg(test)]
 mod tests {
     use nautilus_model::{
         data::{
-            Bar, BarSpecification, BarType, BookOrder, OrderBookDelta, OrderBookDepth10, QuoteTick,
-            depth::DEPTH10_LEN,
+            Bar, BarSpecification, BarType, BookOrder, DEPTH10_LEN, OrderBookDelta, OrderBookDepth,
+            QuoteTick, order::NULL_ORDER,
         },
-        enums::{AggregationSource, BarAggregation, BookAction, OrderSide, PriceType},
+        enums::{
+            AggregationSource, BarAggregation, BookAction, CurrencyType, OrderSide, PriceType,
+        },
         identifiers::InstrumentId,
-        types::{PRICE_UNDEF, Price, QUANTITY_UNDEF, Quantity},
+        types::{Price, Quantity},
     };
     use rstest::rstest;
 
     use super::*;
 
+    #[cfg(feature = "high-precision")]
     #[rstest]
-    fn test_record_batch_byte_encoders_reject_empty_data() {
-        let results = [
-            book_deltas_to_arrow_record_batch_bytes(&[]),
-            book_depth10_to_arrow_record_batch_bytes(&[]),
-            quotes_to_arrow_record_batch_bytes(&[]),
-            trades_to_arrow_record_batch_bytes(&[]),
-            bars_to_arrow_record_batch_bytes(&[]),
-            mark_prices_to_arrow_record_batch_bytes(&[]),
-            index_prices_to_arrow_record_batch_bytes(&[]),
-            instrument_status_to_arrow_record_batch_bytes(&[]),
-            option_greeks_to_arrow_record_batch_bytes(&[]),
-            instrument_closes_to_arrow_record_batch_bytes(&[]),
-        ];
-
-        for result in results {
-            assert!(matches!(result, Err(EncodingError::EmptyData)));
+    fn test_money_rejects_currency_precision_above_catalog_scale() {
+        if nautilus_model::types::fixed::check_fixed_precision(18).is_err() {
+            return;
         }
+
+        let currency = Currency::new("TST18", 18, 0, "Test token", CurrencyType::Crypto);
+        let value = Money::from_raw(1_000_000_000_000_000_000, currency);
+        let error = money_array([Some(value)]).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Invalid argument error: Money currency precision 18 exceeds catalog scale 16"
+        );
     }
 
     #[rstest]
-    fn test_validate_precision_bytes_rejects_wrong_width() {
-        let array = fixed_size_binary::<1>(vec![&[0]]);
+    fn test_encode_rejects_defi_precision_metadata() {
+        let mut metadata = QuoteTick::get_metadata(
+            &InstrumentId::from("WETH-USDC.UNISWAP"),
+            FIXED_DECIMAL_SCALE as u8,
+            0,
+        );
+        metadata.insert(KEY_PRICE_PRECISION.to_string(), "17".to_string());
+        let schema = Arc::new(QuoteTick::get_schema(Some(metadata)));
 
-        let error = validate_precision_bytes(&array, "price").unwrap_err();
+        let err = record_batch_with_timestamps(schema, vec![]).unwrap_err();
 
-        let EncodingError::PrecisionMismatch {
-            field,
-            expected_bytes,
-            actual_bytes,
-        } = error
-        else {
-            panic!("unexpected error variant: {error:?}");
-        };
-        assert_eq!(field, "price");
-        assert_eq!(expected_bytes, PRECISION_BYTES);
-        assert_eq!(actual_bytes, 1);
+        assert_eq!(
+            err.to_string(),
+            "Invalid argument error: Metadata 'price_precision' is 17, maximum supported catalog scale is 16"
+        );
+    }
+
+    #[rstest]
+    fn test_timestamp_arrays_preserve_utc_nanoseconds_and_nulls() {
+        let values = [Some(1_788_652_800_123_456_789), None, Some(i64::MAX as u64)];
+        let array = optional_timestamp_array(values).unwrap();
+
+        assert_eq!(
+            timestamp_data_type(),
+            DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into()))
+        );
+        assert_eq!(array.data_type(), &timestamp_data_type());
+        assert_eq!(
+            array.iter().collect::<Vec<_>>(),
+            vec![Some(1_788_652_800_123_456_789), None, Some(i64::MAX)]
+        );
+        assert_eq!(
+            decode_timestamp(&array, "ts_event", 0).unwrap(),
+            1_788_652_800_123_456_789
+        );
+        assert_eq!(
+            decode_timestamp(&array, "ts_event", 2).unwrap(),
+            i64::MAX as u64
+        );
+        assert!(
+            decode_timestamp(&TimestampNanosecondArray::from(vec![-1]), "ts_event", 0).is_err()
+        );
+    }
+
+    #[rstest]
+    fn test_timestamp_array_rejects_unsigned_overflow() {
+        let error = timestamp_array([u64::MAX]).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Invalid argument error: Nanosecond timestamp 18446744073709551615 exceeds Arrow's signed timestamp range",
+        );
     }
 
     #[rstest]
@@ -1031,7 +2160,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_depth10_to_arrow_record_batch_rejects_mixed_level_price_precision() {
+    fn test_depths_to_arrow_record_batch_rejects_mixed_level_price_precision() {
         let instrument_id = InstrumentId::from("AUD/USD.SIM");
         let bid = BookOrder::new(
             OrderSide::Buy,
@@ -1047,7 +2176,7 @@ mod tests {
         );
         let mut asks = [ask; DEPTH10_LEN];
         asks[1].price = Price::from("1.241");
-        let depth = OrderBookDepth10::new(
+        let depth = OrderBookDepth::new(
             instrument_id,
             [bid; DEPTH10_LEN],
             asks,
@@ -1059,7 +2188,7 @@ mod tests {
             1.into(),
         );
 
-        let result = book_depth10_to_arrow_record_batch_bytes(&[depth]);
+        let result = book_depths_to_arrow_record_batch_bytes(&[depth]);
 
         assert!(matches!(
             result,
@@ -1068,7 +2197,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_depth10_to_arrow_record_batch_rejects_mixed_level_size_precision() {
+    fn test_depths_to_arrow_record_batch_rejects_mixed_level_size_precision() {
         let instrument_id = InstrumentId::from("AUD/USD.SIM");
         let bid = BookOrder::new(
             OrderSide::Buy,
@@ -1084,7 +2213,7 @@ mod tests {
         );
         let mut bids = [bid; DEPTH10_LEN];
         bids[1].size = Quantity::from("100.000");
-        let depth = OrderBookDepth10::new(
+        let depth = OrderBookDepth::new(
             instrument_id,
             bids,
             [ask; DEPTH10_LEN],
@@ -1096,7 +2225,7 @@ mod tests {
             1.into(),
         );
 
-        let result = book_depth10_to_arrow_record_batch_bytes(&[depth]);
+        let result = book_depths_to_arrow_record_batch_bytes(&[depth]);
 
         assert!(matches!(
             result,
@@ -1105,7 +2234,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_depth10_to_arrow_record_batch_uses_first_defined_level_precision() {
+    fn test_depths_to_arrow_record_batch_uses_first_defined_level_precision() {
         let instrument_id = InstrumentId::from("AUD/USD.SIM");
         let bid = BookOrder::new(
             OrderSide::Buy,
@@ -1120,9 +2249,8 @@ mod tests {
             2,
         );
         let mut bids = [bid; DEPTH10_LEN];
-        bids[0].price = Price::from_raw(PRICE_UNDEF, 0);
-        bids[0].size = Quantity::from_raw(QUANTITY_UNDEF, 0);
-        let depth = OrderBookDepth10::new(
+        bids[0] = NULL_ORDER;
+        let depth = OrderBookDepth::new(
             instrument_id,
             bids,
             [ask; DEPTH10_LEN],
@@ -1134,7 +2262,7 @@ mod tests {
             1.into(),
         );
 
-        let result = book_depth10_to_arrow_record_batch_bytes(&[depth]).unwrap();
+        let result = book_depths_to_arrow_record_batch_bytes(&[depth]).unwrap();
 
         assert_eq!(
             result.schema().metadata().get(KEY_PRICE_PRECISION).unwrap(),
@@ -1144,51 +2272,6 @@ mod tests {
             result.schema().metadata().get(KEY_SIZE_PRECISION).unwrap(),
             "2"
         );
-    }
-
-    #[rstest]
-    #[case::price(true)]
-    #[case::size(false)]
-    fn test_depth10_to_arrow_record_batch_rejects_partial_undefined_level(
-        #[case] price_undefined: bool,
-    ) {
-        let instrument_id = InstrumentId::from("AUD/USD.SIM");
-        let bid = BookOrder::new(
-            OrderSide::Buy,
-            Price::from("1.23"),
-            Quantity::from("100.00"),
-            1,
-        );
-        let ask = BookOrder::new(
-            OrderSide::Sell,
-            Price::from("1.24"),
-            Quantity::from("100.00"),
-            2,
-        );
-        let mut asks = [ask; DEPTH10_LEN];
-        if price_undefined {
-            asks[1].price = Price::from_raw(PRICE_UNDEF, 0);
-        } else {
-            asks[1].size = Quantity::from_raw(QUANTITY_UNDEF, 0);
-        }
-        let depth = OrderBookDepth10::new(
-            instrument_id,
-            [bid; DEPTH10_LEN],
-            asks,
-            [1; DEPTH10_LEN],
-            [1; DEPTH10_LEN],
-            0,
-            1,
-            1.into(),
-            1.into(),
-        );
-
-        let result = book_depth10_to_arrow_record_batch_bytes(&[depth]);
-
-        assert!(matches!(
-            result,
-            Err(EncodingError::MixedMetadata { index: 0 })
-        ));
     }
 
     #[rstest]
@@ -1310,5 +2393,700 @@ mod tests {
             result,
             Err(EncodingError::MixedMetadata { index: 0 })
         ));
+    }
+}
+
+#[cfg(test)]
+mod schema_invariant_tests {
+    use arrow::{
+        array::{Array, Decimal128Array},
+        datatypes::{DataType, Field, Schema},
+    };
+    use nautilus_model::{
+        data::{
+            BookOrder, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
+            OptionGreeks,
+            bar::Bar,
+            close::InstrumentClose,
+            delta::OrderBookDelta,
+            depth::OrderBookDepth,
+            quote::QuoteTick,
+            stubs::{stub_bar, stub_depth10},
+            trade::TradeTick,
+        },
+        enums::{AggressorSide, BookAction, InstrumentCloseType, OrderSide},
+        events::{
+            AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
+            OrderEmulated, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
+            OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected,
+            OrderReleased, OrderSnapshot, OrderSubmitted, OrderTriggered, OrderUpdated,
+            PositionAdjusted, PositionChanged, PositionClosed, PositionOpened, PositionSnapshot,
+        },
+        identifiers::{InstrumentId, TradeId},
+        instruments::{
+            InstrumentAny, betting::BettingInstrument, binary_option::BinaryOption, cfd::Cfd,
+            commodity::Commodity, crypto_future::CryptoFuture,
+            crypto_futures_spread::CryptoFuturesSpread, crypto_option::CryptoOption,
+            crypto_option_spread::CryptoOptionSpread, crypto_perpetual::CryptoPerpetual,
+            currency_pair::CurrencyPair, equity::Equity, futures_contract::FuturesContract,
+            futures_spread::FuturesSpread, index_instrument::IndexInstrument,
+            option_contract::OptionContract, option_spread::OptionSpread,
+            perpetual_contract::PerpetualContract, tokenized_asset::TokenizedAsset,
+        },
+        reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
+        types::{PRICE_ERROR, PRICE_UNDEF, Price, QUANTITY_UNDEF, Quantity},
+    };
+    use rstest::rstest;
+    use rust_decimal::Decimal;
+
+    use super::{
+        ArrowSchemaProvider, DecodeFromRecordBatch, EncodeToRecordBatch, FIXED_DECIMAL_PRECISION,
+        FIXED_DECIMAL_SCALE, KEY_IDENTIFIER, QUANTITY_RAW_MAX, decimal_to_arrow, decode_decimal,
+        decode_decimal_price, fixed_decimal_data_type, is_timestamp_field, price_decimal_array,
+        quantity_decimal_array, timestamp_data_type,
+    };
+
+    #[derive(Clone, Copy, Debug)]
+    enum FixedFamily {
+        Quote,
+        Trade,
+        Bar,
+        Delta,
+        Depth,
+        MarkPrice,
+        IndexPrice,
+        Close,
+    }
+
+    #[rstest]
+    fn decimal_to_arrow_rejects_values_outside_decode_range() {
+        let value = Decimal::from_i128_with_scale(8_000_000_000_000, 0);
+
+        let error = decimal_to_arrow(&value, "amount").unwrap_err();
+
+        assert!(error.to_string().contains("96-bit range"));
+    }
+
+    #[rstest]
+    fn decimal_to_arrow_normalizes_trailing_zero_scale() {
+        let value = Decimal::from_i128_with_scale(10_000_000_000_000_000, 18);
+        let encoded = decimal_to_arrow(&value, "amount").unwrap();
+        let array = Decimal128Array::from(vec![encoded])
+            .with_precision_and_scale(FIXED_DECIMAL_PRECISION, FIXED_DECIMAL_SCALE)
+            .unwrap();
+
+        assert_eq!(
+            decode_decimal(&array, "amount", 0).unwrap(),
+            value.normalize()
+        );
+    }
+
+    macro_rules! collect_data_schemas {
+        ($(($variant:ident, $type:ident, $data:ident, $batch:ident, $prefix:literal)),+ $(,)?) => {
+            vec![
+                $(
+                    (stringify!($type), <$type as ArrowSchemaProvider>::get_schema(None)),
+                )+
+            ]
+        };
+    }
+
+    macro_rules! assert_model_field_map {
+        // InstrumentAny is an enum over concrete instrument types and has no field map.
+        (InstrumentAny) => {};
+        // InstrumentStatus has no model get_fields implementation.
+        (InstrumentStatus) => {};
+        // OptionGreeks has no model get_fields implementation.
+        (OptionGreeks) => {};
+        (OrderBookDelta) => {
+            assert_fields_match_schema(
+                catalog_field_map(OrderBookDelta::get_fields()),
+                &OrderBookDelta::get_schema(None),
+                &["price", "size", KEY_IDENTIFIER],
+            );
+        };
+        (OrderBookDepth) => {
+            assert_fields_match_schema(
+                catalog_field_map(OrderBookDepth::get_fields()),
+                &OrderBookDepth::get_schema(None),
+                &[KEY_IDENTIFIER],
+            );
+        };
+        (QuoteTick) => {
+            assert_fields_match_schema(
+                catalog_field_map(QuoteTick::get_fields()),
+                &QuoteTick::get_schema(None),
+                &[
+                    "bid_price",
+                    "ask_price",
+                    "bid_size",
+                    "ask_size",
+                    KEY_IDENTIFIER,
+                ],
+            );
+        };
+        (TradeTick) => {
+            assert_fields_match_schema(
+                catalog_field_map(TradeTick::get_fields()),
+                &TradeTick::get_schema(None),
+                &["price", "size", KEY_IDENTIFIER],
+            );
+        };
+        (Bar) => {
+            assert_fields_match_schema(
+                catalog_field_map(Bar::get_fields()),
+                &Bar::get_schema(None),
+                &["open", "high", "low", "close", "volume", KEY_IDENTIFIER],
+            );
+        };
+        (MarkPriceUpdate) => {
+            assert_fields_match_schema(
+                catalog_field_map(MarkPriceUpdate::get_fields()),
+                &MarkPriceUpdate::get_schema(None),
+                &["value", KEY_IDENTIFIER],
+            );
+        };
+        (IndexPriceUpdate) => {
+            assert_fields_match_schema(
+                catalog_field_map(IndexPriceUpdate::get_fields()),
+                &IndexPriceUpdate::get_schema(None),
+                &["value", KEY_IDENTIFIER],
+            );
+        };
+        (FundingRateUpdate) => {
+            assert_fields_match_schema(
+                catalog_field_map(FundingRateUpdate::get_fields()),
+                &FundingRateUpdate::get_schema(None),
+                &["interval", "next_funding_ns", KEY_IDENTIFIER],
+            );
+        };
+        (InstrumentClose) => {
+            assert_fields_match_schema(
+                catalog_field_map(InstrumentClose::get_fields()),
+                &InstrumentClose::get_schema(None),
+                &["close_price", KEY_IDENTIFIER],
+            );
+        };
+    }
+
+    macro_rules! assert_registered_model_field_maps {
+        ($(($variant:ident, $type:ident, $data:ident, $batch:ident, $prefix:literal)),+ $(,)?) => {
+            $(assert_model_field_map!($type);)+
+        };
+    }
+
+    #[rstest]
+    fn registered_write_schemas_have_no_opaque_byte_fields() {
+        let mut schemas = nautilus_model::for_each_data_type!(collect_data_schemas);
+        schemas.extend(instrument_schemas());
+        schemas.extend(record_schemas());
+
+        for (name, schema) in schemas {
+            assert_open_schema(name, &schema);
+        }
+    }
+
+    #[rstest]
+    fn model_field_maps_match_encoder_schemas() {
+        nautilus_model::for_each_data_type!(assert_registered_model_field_maps);
+    }
+
+    #[rstest]
+    fn fixed_point_storage_uses_uniform_scale() {
+        let price = Price::from("1.23456789");
+        let array = price_decimal_array([price.raw()], "price").unwrap();
+
+        assert_eq!(array.data_type(), &fixed_decimal_data_type());
+        assert_eq!(
+            decode_decimal_price(&array, price.precision, "price", 0).unwrap(),
+            price,
+        );
+    }
+
+    #[rstest]
+    fn undefined_fixed_point_values_encode_as_null() {
+        let prices = price_decimal_array([PRICE_UNDEF], "price").unwrap();
+        let quantities = quantity_decimal_array([QUANTITY_UNDEF], "quantity").unwrap();
+
+        assert!(prices.is_null(0));
+        assert!(quantities.is_null(0));
+    }
+
+    #[rstest]
+    fn price_error_fails_with_field_and_value() {
+        let error = price_decimal_array([PRICE_ERROR], "bid_price").unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Invalid argument error: Price field 'bid_price' contains PRICE_ERROR raw value {PRICE_ERROR}"
+            ),
+        );
+    }
+
+    #[rstest]
+    fn quantity_overflow_fails_with_field_and_value() {
+        let raw = QUANTITY_RAW_MAX + 1;
+        let error = quantity_decimal_array([raw], "bid_size").unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Invalid argument error: Quantity field 'bid_size' raw value {raw} exceeds QUANTITY_RAW_MAX={QUANTITY_RAW_MAX}"
+            ),
+        );
+    }
+
+    #[cfg(not(feature = "high-precision"))]
+    #[rstest]
+    fn standard_precision_decode_rejects_nonzero_scale_remainder() {
+        let array = Decimal128Array::from(vec![1_i128])
+            .with_precision_and_scale(38, 16)
+            .unwrap();
+
+        let error = decode_decimal_price(&array, 9, "bid_price", 0).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Error parsing `bid_price`: row 0: decimal value 1 has nonzero digits beyond build \
+             precision 9",
+        );
+    }
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    fn high_precision_decimal_payload_is_bit_exact() {
+        let raw = 1_234_567_890_123_456_i128;
+        let array = price_decimal_array([raw], "price").unwrap();
+
+        assert_eq!(array.value(0), raw);
+        assert_eq!(
+            decode_decimal_price(&array, 16, "price", 0).unwrap().raw(),
+            raw
+        );
+    }
+
+    #[rstest]
+    #[case::quote(FixedFamily::Quote)]
+    #[case::trade(FixedFamily::Trade)]
+    #[case::bar(FixedFamily::Bar)]
+    #[case::delta(FixedFamily::Delta)]
+    #[case::depth(FixedFamily::Depth)]
+    #[case::mark_price(FixedFamily::MarkPrice)]
+    #[case::index_price(FixedFamily::IndexPrice)]
+    #[case::close(FixedFamily::Close)]
+    fn fixed_family_round_trips_multiple_precisions(#[case] family: FixedFamily) {
+        round_trip_fixed_family(family, Price::from("1"), Quantity::from("2"));
+        round_trip_fixed_family(family, Price::from("1.23456"), Quantity::from("2.34567"));
+        #[cfg(feature = "high-precision")]
+        round_trip_fixed_family(
+            family,
+            Price::from("1.2345678901234567"),
+            Quantity::from("2.3456789012345678"),
+        );
+    }
+
+    #[rstest]
+    #[case::quote(FixedFamily::Quote)]
+    #[case::trade(FixedFamily::Trade)]
+    #[case::bar(FixedFamily::Bar)]
+    #[case::delta(FixedFamily::Delta)]
+    #[case::mark_price(FixedFamily::MarkPrice)]
+    #[case::index_price(FixedFamily::IndexPrice)]
+    #[case::close(FixedFamily::Close)]
+    fn fixed_family_sentinel_encoding(#[case] family: FixedFamily) {
+        let instrument_id = InstrumentId::from("SENTINEL.TEST");
+        let price = Price::from_raw(PRICE_UNDEF, 0);
+        let quantity = Quantity::from_raw(QUANTITY_UNDEF, 0);
+
+        match family {
+            FixedFamily::Quote => {
+                let value = QuoteTick::new(
+                    instrument_id,
+                    price,
+                    Price::from("1"),
+                    quantity,
+                    Quantity::from("1"),
+                    1.into(),
+                    2.into(),
+                );
+                let metadata = QuoteTick::get_metadata(&instrument_id, 0, 0);
+                let error = QuoteTick::encode_batch(&metadata, &[value]).unwrap_err();
+                assert!(error.to_string().contains("bid_price"));
+                assert!(error.to_string().contains("PRICE_UNDEF"));
+            }
+            FixedFamily::Trade => {
+                let value = TradeTick {
+                    instrument_id,
+                    price,
+                    size: quantity,
+                    aggressor_side: AggressorSide::Buy,
+                    trade_id: TradeId::from("sentinel"),
+                    ts_event: 1.into(),
+                    ts_init: 2.into(),
+                };
+                let metadata = TradeTick::get_metadata(&instrument_id, 0, 0);
+                let error = TradeTick::encode_batch(&metadata, &[value]).unwrap_err();
+                assert!(error.to_string().contains("price"));
+                assert!(error.to_string().contains("PRICE_UNDEF"));
+            }
+            FixedFamily::Bar => {
+                let mut value = stub_bar();
+                value.open = price;
+                value.volume = quantity;
+                let metadata = Bar::get_metadata(&value.bar_type, 0, 0);
+                let error = Bar::encode_batch(&metadata, &[value]).unwrap_err();
+                assert!(error.to_string().contains("open"));
+                assert!(error.to_string().contains("PRICE_UNDEF"));
+            }
+            FixedFamily::Delta => {
+                let value = OrderBookDelta {
+                    instrument_id,
+                    action: BookAction::Update,
+                    order: BookOrder {
+                        side: OrderSide::Buy.into(),
+                        price,
+                        size: quantity,
+                        order_id: 1,
+                    },
+                    flags: 0,
+                    sequence: 1,
+                    ts_event: 1.into(),
+                    ts_init: 2.into(),
+                };
+                let metadata = OrderBookDelta::get_metadata(&instrument_id, 0, 0);
+                let batch = OrderBookDelta::encode_batch(&metadata, &[value]).unwrap();
+                assert!(batch.column_by_name("price").unwrap().is_null(0));
+                assert!(batch.column_by_name("size").unwrap().is_null(0));
+                assert_eq!(
+                    OrderBookDelta::decode_batch(&metadata, batch).unwrap(),
+                    vec![value],
+                );
+            }
+            FixedFamily::Depth => unreachable!("depth sides omit absent levels"),
+            FixedFamily::MarkPrice => {
+                let value = MarkPriceUpdate::new(instrument_id, price, 1.into(), 2.into());
+                let metadata = MarkPriceUpdate::get_metadata(&instrument_id, 0);
+                let batch = MarkPriceUpdate::encode_batch(&metadata, &[value]).unwrap();
+                assert!(batch.column_by_name("value").unwrap().is_null(0));
+                assert_eq!(
+                    MarkPriceUpdate::decode_batch(&metadata, batch).unwrap(),
+                    vec![value],
+                );
+            }
+            FixedFamily::IndexPrice => {
+                let value = IndexPriceUpdate::new(instrument_id, price, 1.into(), 2.into());
+                let metadata = IndexPriceUpdate::get_metadata(&instrument_id, 0);
+                let batch = IndexPriceUpdate::encode_batch(&metadata, &[value]).unwrap();
+                assert!(batch.column_by_name("value").unwrap().is_null(0));
+                assert_eq!(
+                    IndexPriceUpdate::decode_batch(&metadata, batch).unwrap(),
+                    vec![value],
+                );
+            }
+            FixedFamily::Close => {
+                let value = InstrumentClose::new(
+                    instrument_id,
+                    price,
+                    InstrumentCloseType::EndOfSession,
+                    1.into(),
+                    2.into(),
+                );
+                let metadata = InstrumentClose::get_metadata(&instrument_id, 0);
+                let batch = InstrumentClose::encode_batch(&metadata, &[value]).unwrap();
+                assert!(batch.column_by_name("close_price").unwrap().is_null(0));
+                assert_eq!(
+                    InstrumentClose::decode_batch(&metadata, batch).unwrap(),
+                    vec![value],
+                );
+            }
+        }
+    }
+
+    fn round_trip_fixed_family(family: FixedFamily, price: Price, quantity: Quantity) {
+        let instrument_id = InstrumentId::from("PRECISION.TEST");
+
+        match family {
+            FixedFamily::Quote => {
+                let value = QuoteTick::new(
+                    instrument_id,
+                    price,
+                    price,
+                    quantity,
+                    quantity,
+                    1.into(),
+                    2.into(),
+                );
+                let metadata =
+                    QuoteTick::get_metadata(&instrument_id, price.precision, quantity.precision);
+                let batch = QuoteTick::encode_batch(&metadata, &[value]).unwrap();
+                assert_eq!(
+                    QuoteTick::decode_batch(&metadata, batch).unwrap(),
+                    vec![value],
+                );
+            }
+            FixedFamily::Trade => {
+                let value = TradeTick::new(
+                    instrument_id,
+                    price,
+                    quantity,
+                    AggressorSide::Buy,
+                    TradeId::from("precision"),
+                    1.into(),
+                    2.into(),
+                );
+                let metadata =
+                    TradeTick::get_metadata(&instrument_id, price.precision, quantity.precision);
+                let batch = TradeTick::encode_batch(&metadata, &[value]).unwrap();
+                assert_eq!(
+                    TradeTick::decode_batch(&metadata, batch).unwrap(),
+                    vec![value],
+                );
+            }
+            FixedFamily::Bar => {
+                let mut value = stub_bar();
+                value.open = price;
+                value.high = price;
+                value.low = price;
+                value.close = price;
+                value.volume = quantity;
+                let metadata =
+                    Bar::get_metadata(&value.bar_type, price.precision, quantity.precision);
+                let batch = Bar::encode_batch(&metadata, &[value]).unwrap();
+                assert_eq!(Bar::decode_batch(&metadata, batch).unwrap(), vec![value]);
+            }
+            FixedFamily::Delta => {
+                let value = OrderBookDelta::new(
+                    instrument_id,
+                    BookAction::Add,
+                    BookOrder {
+                        side: OrderSide::Buy.into(),
+                        price,
+                        size: quantity,
+                        order_id: 1,
+                    },
+                    0,
+                    1,
+                    1.into(),
+                    2.into(),
+                );
+                let metadata = OrderBookDelta::get_metadata(
+                    &instrument_id,
+                    price.precision,
+                    quantity.precision,
+                );
+                let batch = OrderBookDelta::encode_batch(&metadata, &[value]).unwrap();
+                assert_eq!(
+                    OrderBookDelta::decode_batch(&metadata, batch).unwrap(),
+                    vec![value],
+                );
+            }
+            FixedFamily::Depth => {
+                let mut value = stub_depth10();
+                for order in value.bids.iter_mut().chain(value.asks.iter_mut()) {
+                    order.price = price;
+                    order.size = quantity;
+                }
+                let metadata = OrderBookDepth::get_metadata(
+                    &value.instrument_id,
+                    price.precision,
+                    quantity.precision,
+                );
+                let batch = OrderBookDepth::encode_batch(&metadata, &[value.clone()]).unwrap();
+                assert_eq!(
+                    OrderBookDepth::decode_batch(&metadata, batch).unwrap(),
+                    vec![value],
+                );
+            }
+            FixedFamily::MarkPrice => {
+                let value = MarkPriceUpdate::new(instrument_id, price, 1.into(), 2.into());
+                let metadata = MarkPriceUpdate::get_metadata(&instrument_id, price.precision);
+                let batch = MarkPriceUpdate::encode_batch(&metadata, &[value]).unwrap();
+                assert_eq!(
+                    MarkPriceUpdate::decode_batch(&metadata, batch).unwrap(),
+                    vec![value],
+                );
+            }
+            FixedFamily::IndexPrice => {
+                let value = IndexPriceUpdate::new(instrument_id, price, 1.into(), 2.into());
+                let metadata = IndexPriceUpdate::get_metadata(&instrument_id, price.precision);
+                let batch = IndexPriceUpdate::encode_batch(&metadata, &[value]).unwrap();
+                assert_eq!(
+                    IndexPriceUpdate::decode_batch(&metadata, batch).unwrap(),
+                    vec![value],
+                );
+            }
+            FixedFamily::Close => {
+                let value = InstrumentClose::new(
+                    instrument_id,
+                    price,
+                    InstrumentCloseType::EndOfSession,
+                    1.into(),
+                    2.into(),
+                );
+                let metadata = InstrumentClose::get_metadata(&instrument_id, price.precision);
+                let batch = InstrumentClose::encode_batch(&metadata, &[value]).unwrap();
+                assert_eq!(
+                    InstrumentClose::decode_batch(&metadata, batch).unwrap(),
+                    vec![value],
+                );
+            }
+        }
+    }
+
+    fn instrument_schemas() -> Vec<(&'static str, Schema)> {
+        // Keep this list explicit until instrument types have a registry equivalent to data types.
+        vec![
+            schema::<BettingInstrument>(),
+            schema::<BinaryOption>(),
+            schema::<Cfd>(),
+            schema::<Commodity>(),
+            schema::<CryptoFuture>(),
+            schema::<CryptoFuturesSpread>(),
+            schema::<CryptoOption>(),
+            schema::<CryptoOptionSpread>(),
+            schema::<CryptoPerpetual>(),
+            schema::<CurrencyPair>(),
+            schema::<Equity>(),
+            schema::<FuturesContract>(),
+            schema::<FuturesSpread>(),
+            schema::<IndexInstrument>(),
+            schema::<OptionContract>(),
+            schema::<OptionSpread>(),
+            schema::<PerpetualContract>(),
+            schema::<TokenizedAsset>(),
+        ]
+    }
+
+    fn record_schemas() -> Vec<(&'static str, Schema)> {
+        // Keep this list explicit until record types have a registry equivalent to data types.
+        vec![
+            schema::<AccountState>(),
+            schema::<OrderInitialized>(),
+            schema::<OrderDenied>(),
+            schema::<OrderEmulated>(),
+            schema::<OrderSubmitted>(),
+            schema::<OrderAccepted>(),
+            schema::<OrderRejected>(),
+            schema::<OrderPendingCancel>(),
+            schema::<OrderCanceled>(),
+            schema::<OrderCancelRejected>(),
+            schema::<OrderExpired>(),
+            schema::<OrderTriggered>(),
+            schema::<OrderPendingUpdate>(),
+            schema::<OrderReleased>(),
+            schema::<OrderModifyRejected>(),
+            schema::<OrderUpdated>(),
+            schema::<OrderFilled>(),
+            schema::<OrderFillVoided>(),
+            schema::<PositionOpened>(),
+            schema::<PositionChanged>(),
+            schema::<PositionClosed>(),
+            schema::<PositionAdjusted>(),
+            schema::<OrderStatusReport>(),
+            schema::<FillReport>(),
+            schema::<PositionStatusReport>(),
+            schema::<ExecutionMassStatus>(),
+            schema::<OrderSnapshot>(),
+            schema::<PositionSnapshot>(),
+        ]
+    }
+
+    fn schema<T: ArrowSchemaProvider>() -> (&'static str, Schema) {
+        (std::any::type_name::<T>(), T::get_schema(None))
+    }
+
+    fn catalog_field_map(
+        fields: impl IntoIterator<Item = (String, String)>,
+    ) -> Vec<(String, String)> {
+        let mut fields = fields.into_iter().collect::<Vec<_>>();
+        fields.push((KEY_IDENTIFIER.to_string(), "Utf8".to_string()));
+        fields
+    }
+
+    fn assert_fields_match_schema(
+        expected: Vec<(String, String)>,
+        schema: &Schema,
+        nullable: &[&str],
+    ) {
+        let expected = expected
+            .into_iter()
+            .map(|(name, data_type)| {
+                let is_nullable = nullable.contains(&name.as_str());
+                (name, data_type, is_nullable)
+            })
+            .collect::<Vec<_>>();
+        let actual: Vec<_> = schema
+            .fields()
+            .iter()
+            .map(|field| {
+                (
+                    field.name().clone(),
+                    arrow_type_name(field.data_type()),
+                    field.is_nullable(),
+                )
+            })
+            .collect();
+
+        assert_eq!(actual, expected);
+    }
+
+    fn arrow_type_name(data_type: &DataType) -> String {
+        match data_type {
+            DataType::List(field) => format!("List({})", arrow_type_name(field.data_type())),
+            DataType::Struct(fields) => {
+                let fields = fields
+                    .iter()
+                    .map(|field| {
+                        format!("{}: {}", field.name(), arrow_type_name(field.data_type()))
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("Struct({fields})")
+            }
+            _ => format!("{data_type:?}"),
+        }
+    }
+
+    fn assert_open_schema(name: &str, schema: &Schema) {
+        for field in schema.fields() {
+            assert_open_field(name, field);
+        }
+    }
+
+    fn assert_open_field(schema_name: &str, field: &Field) {
+        if is_timestamp_field(field.name()) {
+            assert_eq!(
+                field.data_type(),
+                &timestamp_data_type(),
+                "write schema `{schema_name}` timestamp field `{}` is not a UTC nanosecond timestamp",
+                field.name(),
+            );
+        }
+
+        match field.data_type() {
+            DataType::Binary
+            | DataType::LargeBinary
+            | DataType::BinaryView
+            | DataType::FixedSizeBinary(_) => {
+                panic!(
+                    "write schema `{schema_name}` contains opaque byte field `{}`: {}",
+                    field.name(),
+                    field.data_type(),
+                );
+            }
+            DataType::List(child)
+            | DataType::LargeList(child)
+            | DataType::ListView(child)
+            | DataType::LargeListView(child)
+            | DataType::FixedSizeList(child, _)
+            | DataType::Map(child, _) => assert_open_field(schema_name, child),
+            DataType::Struct(children) => {
+                for child in children {
+                    assert_open_field(schema_name, child);
+                }
+            }
+            _ => {}
+        }
     }
 }

@@ -100,7 +100,8 @@ pub struct OKXDataClientConfig {
     /// Set to 0 to disable. Quiet markets can idle without book changes.
     #[builder(default = 30)]
     pub book_stale_threshold_secs: u64,
-    /// Maximum time to wait for a post-reconnect order book snapshot in seconds.
+    /// Maximum time to wait for an initial, post-reconnect, or recovery order book
+    /// snapshot in seconds.
     #[builder(default = 3)]
     pub book_snapshot_timeout_secs: u64,
     /// Optional VIP level that unlocks additional subscriptions.

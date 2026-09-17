@@ -965,7 +965,7 @@ impl BacktestEngine {
         match data {
             DataRef::BookDelta(_)
             | DataRef::BookDeltas(_)
-            | DataRef::BookDepth10(_)
+            | DataRef::BookDepth(_)
             | DataRef::Quote(_)
             | DataRef::Trade(_)
             | DataRef::Bar(_) => SettlementScope::Data(Some(data.instrument_id())),
@@ -975,7 +975,7 @@ impl BacktestEngine {
             DataRef::InstrumentStatus(_) | DataRef::InstrumentClose(_) => {
                 SettlementScope::Data(Some(data.instrument_id()))
             }
-            DataRef::Custom(_) => SettlementScope::Data(None),
+            DataRef::Instrument(_) | DataRef::Custom(_) => SettlementScope::Data(None),
             #[cfg(feature = "defi")]
             DataRef::Defi(_) => SettlementScope::Data(None),
         }
@@ -1554,7 +1554,8 @@ impl BacktestEngine {
     ) -> anyhow::Result<()> {
         if matches!(
             data,
-            DataRef::MarkPrice(_)
+            DataRef::Instrument(_)
+                | DataRef::MarkPrice(_)
                 | DataRef::IndexPrice(_)
                 | DataRef::OptionGreeks(_)
                 | DataRef::Custom(_)
@@ -1580,7 +1581,7 @@ impl BacktestEngine {
                     exchange_ref.process_order_book_deltas(deltas)?;
                     processed_book_data = true;
                 }
-                DataRef::BookDepth10(depth) => {
+                DataRef::BookDepth(depth) => {
                     exchange_ref.process_order_book_depth10(depth)?;
                     processed_book_data = true;
                 }
@@ -1602,7 +1603,9 @@ impl BacktestEngine {
                 DataRef::InstrumentClose(close) => {
                     exchange_ref.process_instrument_close(*close)?;
                 }
-                DataRef::Custom(_) => unreachable!("filtered before exchange routing"),
+                DataRef::Instrument(_) | DataRef::Custom(_) => {
+                    unreachable!("filtered before exchange routing")
+                }
                 #[cfg(feature = "defi")]
                 DataRef::Defi(_) => unreachable!("filtered before exchange routing"),
             }

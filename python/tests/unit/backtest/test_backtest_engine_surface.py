@@ -66,7 +66,7 @@ from nautilus_trader.model import Money
 from nautilus_trader.model import OmsType
 from nautilus_trader.model import OrderBookDelta
 from nautilus_trader.model import OrderBookDeltas
-from nautilus_trader.model import OrderBookDepth10
+from nautilus_trader.model import OrderBookDepth
 from nautilus_trader.model import OrderSide
 from nautilus_trader.model import OrderStatus
 from nautilus_trader.model import Price
@@ -1628,7 +1628,7 @@ def _book_deltas(instrument: object) -> list[OrderBookDeltas]:
     return batches
 
 
-def _book_depths(instrument: object, count: int) -> list[OrderBookDepth10]:
+def _book_depths(instrument: object, count: int) -> list[OrderBookDepth]:
     base_ns = 1_600_000_150_000_000_000
     depths = []
 
@@ -1660,7 +1660,7 @@ def _book_depths(instrument: object, count: int) -> list[OrderBookDepth10]:
 
         ts = base_ns + (i * 1_000_000_000)
         depths.append(
-            OrderBookDepth10(
+            OrderBookDepth(
                 instrument_id=instrument.id,
                 bids=bids,
                 asks=asks,

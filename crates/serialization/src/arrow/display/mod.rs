@@ -15,15 +15,14 @@
 
 //! Display-mode Arrow encoders for Nautilus types.
 //!
-//! These encoders emit schemas compatible with display pipelines that cannot
-//! consume `FixedSizeBinary` columns.
+//! These encoders emit schemas suited to display pipelines rather than exact decimal analysis.
 //! Prices and quantities render as `Float64` via `.as_f64()`, `instrument_id` becomes a
 //! `Utf8` column rather than batch metadata (so mixed-instrument batches work), and
-//! timestamps render as `Timestamp(Nanosecond, None)` rather than `UInt64`.
+//! timestamps render as `Timestamp(Nanosecond, Some("UTC"))` rather than `UInt64`.
 //!
 //! The conversion is lossy: precision metadata is discarded when values cast to `f64`.
-//! For catalog storage that must round-trip, use the `FixedSizeBinary` encoders in
-//! the parent [`crate::arrow`] module instead.
+//! For catalog storage that must round-trip, use the `Decimal128` encoders in the parent
+//! [`crate::arrow`] module instead.
 
 pub mod account_state;
 pub mod bar;
@@ -39,29 +38,18 @@ pub mod quote;
 pub mod report;
 pub mod trade;
 
-use arrow::datatypes::{DataType, Field, TimeUnit};
-use nautilus_model::types::{Money, Price, Quantity, fixed::MAX_FLOAT_PRECISION};
+use arrow::datatypes::{DataType, Field};
+use nautilus_model::types::{Money, fixed::MAX_FLOAT_PRECISION};
 use rust_decimal::prelude::ToPrimitive;
 
-/// Upper bound on precision the display encoders accept. Values above this are
-/// treated as pathological sentinels (most notably `ERROR_PRICE`, which carries
-/// `precision: 255`) and emit `NaN`. Legitimate high-precision inputs top out at
-/// `nautilus_model::defi::WEI_PRECISION` (18).
-const DISPLAY_MAX_PRECISION: u8 = 18;
-
-/// Builds a `Utf8` field with the given name and nullability.
-pub(super) fn utf8_field(name: &str, nullable: bool) -> Field {
-    Field::new(name, DataType::Utf8, nullable)
-}
+use super::display_conversion::DISPLAY_MAX_PRECISION;
+pub(super) use super::display_conversion::{
+    float64_field, price_to_f64, quantity_to_f64, timestamp_field, utf8_field,
+};
 
 /// Builds a `Boolean` field with the given name and nullability.
 pub(super) fn bool_field(name: &str, nullable: bool) -> Field {
     Field::new(name, DataType::Boolean, nullable)
-}
-
-/// Builds a `Float64` field with the given name and nullability.
-pub(super) fn float64_field(name: &str, nullable: bool) -> Field {
-    Field::new(name, DataType::Float64, nullable)
 }
 
 /// Builds a `UInt8` field with the given name and nullability.
@@ -79,58 +67,12 @@ pub(super) fn uint64_field(name: &str, nullable: bool) -> Field {
     Field::new(name, DataType::UInt64, nullable)
 }
 
-/// Builds a `Timestamp(Nanosecond, None)` field with the given name and nullability.
-pub(super) fn timestamp_field(name: &str, nullable: bool) -> Field {
-    Field::new(
-        name,
-        DataType::Timestamp(TimeUnit::Nanosecond, None),
-        nullable,
-    )
-}
-
 /// Converts a `u64` nanosecond timestamp to the `i64` expected by Arrow.
 ///
 /// Nautilus timestamps fit comfortably in `i64`, but this clamps defensively
 /// to avoid an overflow panic on the cast.
 pub(super) fn unix_nanos_to_i64(value: u64) -> i64 {
     i64::try_from(value).unwrap_or(i64::MAX)
-}
-
-/// Converts a [`Price`] to `f64` for display without panicking.
-///
-/// Returns [`f64::NAN`] for sentinel values (`PRICE_UNDEF`, `PRICE_ERROR`,
-/// and the `ERROR_PRICE` synthetic with `precision: 255`), so clear-style
-/// order book deltas and error sentinels render as missing cells instead of
-/// bogus numeric values. [`Price::as_f64`] panics when the `defi` feature is
-/// enabled and precision exceeds [`MAX_FLOAT_PRECISION`] (16), so the conversion
-/// falls back to [`rust_decimal::Decimal`] in that range. The
-/// decimal path returns [`f64::NAN`] if the value is outside `f64` range.
-pub(super) fn price_to_f64(price: &Price) -> f64 {
-    if price.is_undefined() || price.is_error() || price.precision > DISPLAY_MAX_PRECISION {
-        return f64::NAN;
-    }
-
-    if price.precision <= MAX_FLOAT_PRECISION {
-        price.as_f64()
-    } else {
-        price.as_decimal().to_f64().unwrap_or(f64::NAN)
-    }
-}
-
-/// Converts a [`Quantity`] to `f64` for display without panicking.
-///
-/// See [`price_to_f64`] for the rationale. Returns [`f64::NAN`] for the
-/// `QUANTITY_UNDEF` sentinel and for pathological precisions.
-pub(super) fn quantity_to_f64(quantity: &Quantity) -> f64 {
-    if quantity.is_undefined() || quantity.precision > DISPLAY_MAX_PRECISION {
-        return f64::NAN;
-    }
-
-    if quantity.precision <= MAX_FLOAT_PRECISION {
-        quantity.as_f64()
-    } else {
-        quantity.as_decimal().to_f64().unwrap_or(f64::NAN)
-    }
 }
 
 /// Converts a [`Money`] amount to `f64` for display without panicking.

@@ -72,7 +72,7 @@ use ustr::Ustr;
 use super::{
     enums::OKXWsChannel,
     error::OKXWsError,
-    handler::{HandlerCommand, OKXWsFeedHandler},
+    handler::{HandlerCommand, OKXWsFeedHandler, SnapshotGate},
     messages::{
         OKXAuthentication, OKXAuthenticationArg, OKXSubscriptionArg, OKXWsMessage, OKXWsRequest,
         WsAmendOrderParamsBuilder, WsAttachAlgoOrdParams, WsCancelOrderParamsBuilder,
@@ -1136,7 +1136,12 @@ impl OKXWebSocketClient {
                 OKXWsError::ClientError(format!("Failed to send subscribe command: {e}"))
             })?;
 
-        for arg in &args {
+        self.record_subscriptions(&args);
+        Ok(())
+    }
+
+    fn record_subscriptions(&self, args: &[OKXSubscriptionArg]) {
+        for arg in args {
             let topic = topic_from_subscription_arg(arg);
             self.subscriptions_state.mark_subscribe(&topic);
 
@@ -1166,8 +1171,6 @@ impl OKXWebSocketClient {
                 }
             }
         }
-
-        Ok(())
     }
 
     #[expect(clippy::collapsible_if)]
@@ -1344,15 +1347,6 @@ impl OKXWebSocketClient {
         self.subscribe_book_with_depth(instrument_id, 0).await
     }
 
-    /// Subscribes to the standard books channel (internal method).
-    pub(crate) async fn subscribe_books_channel(
-        &self,
-        instrument_id: InstrumentId,
-    ) -> Result<(), OKXWsError> {
-        self.subscribe_inst_id(OKXWsChannel::Books, instrument_id.symbol.inner())
-            .await
-    }
-
     /// Subscribes to the Retail Price Improvement order book channel.
     ///
     /// # Errors
@@ -1363,26 +1357,78 @@ impl OKXWebSocketClient {
             .await
     }
 
+    pub(crate) async fn subscribe_book_channel(
+        &self,
+        instrument_id: InstrumentId,
+        channel: OKXBookChannel,
+        cancel: CancellationToken,
+        gate: SnapshotGate,
+    ) -> Result<(), OKXWsError> {
+        let (completion, receiver) = tokio::sync::oneshot::channel();
+        let sender = self.cmd_tx.read().await;
+
+        if cancel.is_cancelled() {
+            return Ok(());
+        }
+
+        let subscription = OKXSubscriptionArg {
+            channel: ws_channel_for_book(channel),
+            inst_type: None,
+            inst_family: None,
+            inst_id: Some(instrument_id.symbol.inner()),
+        };
+
+        self.record_subscriptions(std::slice::from_ref(&subscription));
+        sender
+            .send(HandlerCommand::SubscribeBook {
+                subscription,
+                cancel: cancel.clone(),
+                gate,
+                completion,
+            })
+            .map_err(|e| OKXWsError::HandlerUnavailable(e.to_string()))?;
+
+        drop(sender);
+        tokio::select! {
+            biased;
+            () = cancel.cancelled() => Ok(()),
+            result = receiver => result.map_err(|e| OKXWsError::HandlerUnavailable(e.to_string()))?,
+        }
+    }
+
     /// Requests a fresh snapshot by replacing the current incremental book subscription.
     pub(crate) async fn resubscribe_book_channel(
         &self,
         instrument_id: InstrumentId,
         channel: OKXBookChannel,
+        cancel: CancellationToken,
+        gate: SnapshotGate,
     ) -> Result<(), OKXWsError> {
-        let channel = ws_channel_for_book(channel);
-        self.resubscribe_ws_channel(instrument_id, channel).await
-    }
+        let (completion, receiver) = tokio::sync::oneshot::channel();
+        let sender = self.cmd_tx.read().await;
 
-    /// Replaces an instrument subscription on the specified WebSocket channel.
-    pub(crate) async fn resubscribe_ws_channel(
-        &self,
-        instrument_id: InstrumentId,
-        channel: OKXWsChannel,
-    ) -> Result<(), OKXWsError> {
-        self.unsubscribe_inst_id(channel.clone(), instrument_id.symbol.inner())
-            .await?;
-        self.subscribe_inst_id(channel, instrument_id.symbol.inner())
+        if cancel.is_cancelled() {
+            return Err(OKXWsError::ClientError("Book recovery canceled".into()));
+        }
+
+        sender
+            .send(HandlerCommand::Resubscribe {
+                subscription: OKXSubscriptionArg {
+                    channel: ws_channel_for_book(channel),
+                    inst_type: None,
+                    inst_family: None,
+                    inst_id: Some(instrument_id.symbol.inner()),
+                },
+                cancel,
+                gate,
+                completion,
+            })
+            .map_err(|e| OKXWsError::HandlerUnavailable(e.to_string()))?;
+
+        drop(sender);
+        receiver
             .await
+            .map_err(|e| OKXWsError::HandlerUnavailable(e.to_string()))?
     }
 
     /// Subscribes to 5-level order book snapshot data for an instrument.
@@ -3684,7 +3730,7 @@ async fn retry_reconnect_authentication(
     }
 }
 
-fn ws_channel_for_book(channel: OKXBookChannel) -> OKXWsChannel {
+pub(crate) fn ws_channel_for_book(channel: OKXBookChannel) -> OKXWsChannel {
     match channel {
         OKXBookChannel::Book => OKXWsChannel::Books,
         OKXBookChannel::BookL2Tbt => OKXWsChannel::BooksTbt,

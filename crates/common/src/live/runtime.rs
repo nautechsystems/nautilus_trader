@@ -45,11 +45,20 @@
 //! - Unit tests can use `#[tokio::test]` which creates its own runtime.
 //! - Integration tests should be aware they share the global runtime state.
 
-use std::{sync::OnceLock, time::Duration};
+use std::{cell::Cell, future::Future, sync::OnceLock, time::Duration};
 
 use tokio::{runtime::Builder, task, time::timeout};
 
-static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+struct NautilusRuntime {
+    runtime: tokio::runtime::Runtime,
+    injected: bool,
+}
+
+static RUNTIME: OnceLock<NautilusRuntime> = OnceLock::new();
+
+thread_local! {
+    static NAUTILUS_RUNTIME_THREAD: Cell<bool> = const { Cell::new(false) };
+}
 
 /// Environment variable name to configure the number of OS threads for the common runtime.
 /// If not set or if the value cannot be parsed as a positive integer, Tokio's default is used.
@@ -64,7 +73,7 @@ const NAUTILUS_WORKER_THREADS: &str = "NAUTILUS_WORKER_THREADS";
 ///
 /// Panics if the runtime could not be created, which typically indicates
 /// an inability to spawn threads or allocate necessary resources.
-fn initialize_runtime() -> tokio::runtime::Runtime {
+fn initialize_runtime() -> NautilusRuntime {
     // Initialize Python if running as a Python extension module
     #[cfg(feature = "python")]
     {
@@ -82,10 +91,16 @@ fn initialize_runtime() -> tokio::runtime::Runtime {
         builder.worker_threads(worker_threads);
     }
 
-    builder
+    let runtime = builder
+        .on_thread_start(|| NAUTILUS_RUNTIME_THREAD.set(true))
+        .on_thread_stop(|| NAUTILUS_RUNTIME_THREAD.set(false))
         .enable_all()
         .build()
-        .expect("Failed to create tokio runtime")
+        .expect("Failed to create tokio runtime");
+    NautilusRuntime {
+        runtime,
+        injected: false,
+    }
 }
 
 /// Sets a custom pre-built Tokio runtime as the global Nautilus runtime.
@@ -102,9 +117,23 @@ fn initialize_runtime() -> tokio::runtime::Runtime {
 ///
 /// # Errors
 ///
-/// Returns `Err(runtime)` if a runtime was already initialized.
+/// Returns `Err(runtime)` if the runtime is not multi-threaded or a runtime was already initialized.
 pub fn set_runtime(runtime: tokio::runtime::Runtime) -> Result<(), tokio::runtime::Runtime> {
-    RUNTIME.set(runtime)
+    if RUNTIME.get().is_some()
+        || !matches!(
+            runtime.handle().runtime_flavor(),
+            tokio::runtime::RuntimeFlavor::MultiThread
+        )
+    {
+        return Err(runtime);
+    }
+
+    RUNTIME
+        .set(NautilusRuntime {
+            runtime,
+            injected: true,
+        })
+        .map_err(|runtime| runtime.runtime)
 }
 
 /// Returns a reference to the global Nautilus Tokio runtime.
@@ -113,7 +142,107 @@ pub fn set_runtime(runtime: tokio::runtime::Runtime) -> Result<(), tokio::runtim
 /// If a custom runtime was previously installed via [`set_runtime`], that
 /// runtime is returned instead.
 pub fn get_runtime() -> &'static tokio::runtime::Runtime {
-    RUNTIME.get_or_init(initialize_runtime)
+    &RUNTIME.get_or_init(initialize_runtime).runtime
+}
+
+/// Runs `f` with `block_in_place` on a thread owned by the Nautilus runtime.
+///
+/// # Panics
+///
+/// Panics from a `LocalSet` driven on a Nautilus-owned thread, including any `LocalSet` driven
+/// against an injected Nautilus runtime, because Tokio does not permit `block_in_place` while
+/// polling local tasks.
+pub fn block_in_place_on_nautilus<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    let Ok(handle) = tokio::runtime::Handle::try_current() else {
+        return f();
+    };
+
+    if is_on_nautilus_runtime(&handle) {
+        tokio::task::block_in_place(f)
+    } else {
+        f()
+    }
+}
+
+/// Blocks on `future` using the global Nautilus runtime.
+///
+/// The future must not contain tasks, timers, or I/O resources already bound to an ambient
+/// runtime. Use [`block_on_nautilus_with`] when the operation can be constructed lazily.
+///
+/// # Panics
+///
+/// Panics when called from a current-thread runtime or a `LocalSet`. Moving a potentially
+/// non-`Send` future out of those contexts is not possible; use [`block_on_nautilus_with`] for
+/// operations whose future and output can cross a scoped thread boundary.
+pub fn block_on_nautilus<F>(future: F) -> F::Output
+where
+    F: Future,
+{
+    let Ok(handle) = tokio::runtime::Handle::try_current() else {
+        return get_runtime().block_on(future);
+    };
+
+    assert!(
+        matches!(
+            handle.runtime_flavor(),
+            tokio::runtime::RuntimeFlavor::MultiThread
+        ),
+        "block_on_nautilus cannot run inside a current-thread Tokio runtime; use block_on_nautilus_with"
+    );
+
+    tokio::task::block_in_place(|| get_runtime().block_on(future))
+}
+
+/// Constructs and blocks on a future using the global Nautilus runtime.
+///
+/// The factory runs after entering the Nautilus runtime so Tokio resources created by the
+/// operation bind to that runtime rather than an ambient caller runtime. Resources captured by
+/// the factory must not depend on the ambient runtime making progress.
+///
+/// Calls from a foreign Tokio runtime synchronously park the calling thread while the operation
+/// runs. Tokio does not expose whether a foreign runtime is polling a `LocalSet`, so this bridge
+/// cannot use `block_in_place` there without breaking supported `LocalSet` callers.
+///
+/// # Panics
+///
+/// Panics from a `LocalSet` driven on a Nautilus-owned thread. Tokio does not expose whether the
+/// current multi-thread runtime context is polling local tasks, so the bridge cannot both preserve
+/// scheduler progress with `block_in_place` and support that context. A `LocalSet` hosted by a
+/// foreign runtime, or driven from an external thread against the default Nautilus runtime, is
+/// supported. Same-runtime `LocalSet` calls are not supported with an injected runtime because its
+/// already-built runtime has no thread-ownership callbacks.
+pub fn block_on_nautilus_with<C, F>(create_future: C) -> F::Output
+where
+    C: FnOnce() -> F + Send,
+    F: Future,
+    F::Output: Send,
+{
+    let run = move || get_runtime().block_on(async move { create_future().await });
+    let Ok(handle) = tokio::runtime::Handle::try_current() else {
+        return run();
+    };
+
+    if is_on_nautilus_runtime(&handle) {
+        return tokio::task::block_in_place(run);
+    }
+
+    std::thread::scope(|scope| {
+        let task = scope.spawn(run);
+        match task.join() {
+            Ok(output) => output,
+            Err(payload) => std::panic::resume_unwind(payload),
+        }
+    })
+}
+
+fn is_on_nautilus_runtime(handle: &tokio::runtime::Handle) -> bool {
+    RUNTIME.get().is_some_and(|runtime| {
+        handle.id() == runtime.runtime.handle().id()
+            && (runtime.injected || NAUTILUS_RUNTIME_THREAD.get())
+    })
 }
 
 /// Provides a best-effort flush for runtime tasks during shutdown.
@@ -123,7 +252,7 @@ pub fn get_runtime() -> &'static tokio::runtime::Runtime {
 /// an `atexit` hook.
 pub fn shutdown_runtime(wait: Duration) {
     if let Some(runtime) = RUNTIME.get() {
-        runtime.block_on(async {
+        runtime.runtime.block_on(async {
             let _ = timeout(wait, async {
                 task::yield_now().await;
             })
@@ -133,6 +262,10 @@ pub fn shutdown_runtime(wait: Duration) {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::disallowed_types,
+    reason = "tests exercise direct Tokio LocalSet interoperability"
+)]
 mod tests {
     use std::process::Command;
 
@@ -193,5 +326,173 @@ mod tests {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr),
         );
+    }
+
+    #[rstest]
+    fn set_runtime_rejects_current_thread_runtime() {
+        const MARKER: &str = "reject-current-thread";
+        if std::env::var(RUNTIME_CHILD_ENV).as_deref() != Ok(MARKER) {
+            run_runtime_child("set_runtime_rejects_current_thread_runtime", MARKER);
+            return;
+        }
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let rejected = set_runtime(runtime).unwrap_err();
+
+        assert_eq!(
+            rejected.handle().runtime_flavor(),
+            tokio::runtime::RuntimeFlavor::CurrentThread
+        );
+    }
+
+    #[rstest]
+    fn injected_runtime_drives_bridge_future() {
+        const MARKER: &str = "injected-bridge";
+        if std::env::var(RUNTIME_CHILD_ENV).as_deref() != Ok(MARKER) {
+            run_runtime_child("injected_runtime_drives_bridge_future", MARKER);
+            return;
+        }
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        let expected_id = runtime.handle().id();
+        set_runtime(runtime).unwrap();
+
+        let actual_id = block_on_nautilus_with(|| async { tokio::runtime::Handle::current().id() });
+
+        assert_eq!(actual_id, expected_id);
+    }
+
+    #[rstest]
+    fn block_on_nautilus_with_works_without_current_runtime() {
+        let value = block_on_nautilus_with(|| async { 42 });
+
+        assert_eq!(value, 42);
+    }
+
+    #[rstest]
+    fn block_on_nautilus_with_works_inside_multi_thread_runtime() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        let value = runtime.block_on(async {
+            block_on_nautilus_with(|| async {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+                42
+            })
+        });
+
+        assert_eq!(value, 42);
+    }
+
+    #[rstest]
+    fn block_on_nautilus_with_works_inside_current_thread_runtime() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let value = runtime.block_on(async {
+            block_on_nautilus_with(|| async {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+                42
+            })
+        });
+
+        assert_eq!(value, 42);
+    }
+
+    #[rstest]
+    fn block_on_nautilus_with_works_inside_multi_thread_local_set() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        let local_set = tokio::task::LocalSet::new();
+        let value = runtime.block_on(local_set.run_until(async {
+            block_on_nautilus_with(|| async {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+                42
+            })
+        }));
+
+        assert_eq!(value, 42);
+    }
+
+    #[rstest]
+    fn block_on_nautilus_works_inside_foreign_multi_thread_runtime() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        let value = runtime.block_on(async { block_on_nautilus(async { 42 }) });
+
+        assert_eq!(value, 42);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "block_on_nautilus cannot run inside a current-thread Tokio runtime")]
+    fn block_on_nautilus_rejects_current_thread_runtime() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        runtime.block_on(async { block_on_nautilus(async { 42 }) });
+    }
+
+    #[rstest]
+    fn block_on_nautilus_with_works_inside_nautilus_worker() {
+        let (caller_thread, factory_thread, value) = get_runtime().block_on(async {
+            get_runtime()
+                .spawn(async {
+                    let caller_thread = std::thread::current().id();
+                    let (factory_thread, value) = block_on_nautilus_with(|| async {
+                        let factory_thread = std::thread::current().id();
+                        tokio::time::sleep(Duration::from_millis(1)).await;
+                        (factory_thread, 42)
+                    });
+                    (caller_thread, factory_thread, value)
+                })
+                .await
+                .unwrap()
+        });
+
+        assert_eq!(factory_thread, caller_thread);
+        assert_eq!(value, 42);
+    }
+
+    #[rstest]
+    fn block_on_nautilus_with_works_inside_nautilus_blocking_thread() {
+        let value = get_runtime().block_on(async {
+            get_runtime()
+                .spawn_blocking(|| {
+                    block_on_nautilus_with(|| async {
+                        tokio::time::sleep(Duration::from_millis(1)).await;
+                        42
+                    })
+                })
+                .await
+                .unwrap()
+        });
+
+        assert_eq!(value, 42);
+    }
+
+    #[rstest]
+    fn block_in_place_on_nautilus_works_inside_nautilus_local_set() {
+        let local_set = tokio::task::LocalSet::new();
+        let value = get_runtime()
+            .block_on(local_set.run_until(async { block_in_place_on_nautilus(|| 42) }));
+
+        assert_eq!(value, 42);
     }
 }

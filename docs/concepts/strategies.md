@@ -125,12 +125,12 @@ from nautilus_trader.model import OptionGreeks
 from nautilus_trader.model import OrderBook
 from nautilus_trader.model import OrderBookDelta
 from nautilus_trader.model import OrderBookDeltas
-from nautilus_trader.model import OrderBookDepth10
+from nautilus_trader.model import OrderBookDepth
 from nautilus_trader.model import QuoteTick
 from nautilus_trader.model import TradeTick
 
 def on_book_deltas(self, deltas: OrderBookDeltas) -> None:
-def on_book_depth(self, depth: OrderBookDepth10) -> None:
+def on_book_depth(self, depth: OrderBookDepth) -> None:
 def on_book(self, order_book: OrderBook) -> None:
 def on_quote(self, tick: QuoteTick) -> None:
 def on_trade(self, tick: TradeTick) -> None:
@@ -145,7 +145,7 @@ def on_option_greeks(self, greeks: OptionGreeks) -> None:
 def on_option_chain(self, chain: OptionChainSlice) -> None:
 def on_historical_data(self, data: CustomData | Sequence[CustomData]) -> None:
 def on_historical_book_deltas(self, deltas: Sequence[OrderBookDelta]) -> None:
-def on_historical_book_depth(self, depths: Sequence[OrderBookDepth10]) -> None:
+def on_historical_book_depth(self, depths: Sequence[OrderBookDepth]) -> None:
 def on_historical_quotes(self, quotes: Sequence[QuoteTick]) -> None:
 def on_historical_trades(self, trades: Sequence[TradeTick]) -> None:
 def on_historical_bars(self, bars: Sequence[Bar]) -> None:
