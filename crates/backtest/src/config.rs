@@ -69,6 +69,7 @@ pub enum NautilusDataType {
     InstrumentStatus,
     OptionGreeks,
     InstrumentClose,
+    MarketResolution,
 }
 
 impl Display for NautilusDataType {
@@ -93,6 +94,7 @@ impl FromStr for NautilusDataType {
             stringify!(InstrumentStatus) => Ok(Self::InstrumentStatus),
             stringify!(OptionGreeks) => Ok(Self::OptionGreeks),
             stringify!(InstrumentClose) => Ok(Self::InstrumentClose),
+            stringify!(MarketResolution) => Ok(Self::MarketResolution),
             _ => anyhow::bail!("Invalid `NautilusDataType`: '{s}'"),
         }
     }
@@ -913,8 +915,10 @@ impl BacktestDataConfig {
                 .as_ref()
                 .is_some_and(|ids| !ids.is_empty())
             || self.bar_types.as_ref().is_some_and(|bars| !bars.is_empty());
+        // A resolution is addressed by outcome group rather than by instrument, so a resolution
+        // query is defined by its catalog path and time window alone.
         errors.check(
-            has_identifier,
+            has_identifier || self.data_type == NautilusDataType::MarketResolution,
             ConfigError::required_one_of(["instrument_id", "instrument_ids", "bar_types"]),
         );
 
@@ -1003,6 +1007,12 @@ impl BacktestDataConfig {
     /// - For other types: use `instrument_id` or `instrument_ids`
     #[must_use]
     pub fn query_identifiers(&self) -> Option<Vec<String>> {
+        // Resolutions carry outcome group identity rather than instrument identity, so a
+        // resolution query spans every group stored under the catalog path.
+        if self.data_type == NautilusDataType::MarketResolution {
+            return None;
+        }
+
         if self.data_type == NautilusDataType::Bar {
             if let Some(bar_types) = &self.bar_types
                 && !bar_types.is_empty()

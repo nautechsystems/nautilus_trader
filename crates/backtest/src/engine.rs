@@ -57,6 +57,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId, Venue},
     instruments::{Instrument, InstrumentAny},
     position::Position,
+    prediction::OutcomeGroup,
 };
 #[cfg(feature = "python")]
 use nautilus_system::trader::Trader;
@@ -393,6 +394,23 @@ impl BacktestEngine {
             instrument_id,
             instrument_id.venue
         );
+        Ok(())
+    }
+
+    /// Adds a venue-declared outcome group to the engine cache.
+    ///
+    /// A replayed `Data::MarketResolution` settles only a group the
+    /// cache already holds, so the group a venue declared must be registered before its resolution
+    /// data replays.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the group violates its declared payout terms.
+    pub fn add_outcome_group(&mut self, group: OutcomeGroup) -> anyhow::Result<()> {
+        let group_id = group.group_id.clone();
+        self.kernel.cache.borrow_mut().add_outcome_group(group)?;
+        log::info!("Added outcome group {group_id} to the backtest engine");
+
         Ok(())
     }
 
@@ -946,6 +964,7 @@ impl BacktestEngine {
             DataRef::InstrumentStatus(_) | DataRef::InstrumentClose(_) => {
                 SettlementScope::Data(Some(data.instrument_id()))
             }
+            DataRef::MarketResolution(_) => SettlementScope::Data(None),
             DataRef::Custom(_) => SettlementScope::Data(None),
             #[cfg(feature = "defi")]
             DataRef::Defi(_) => SettlementScope::Data(None),
@@ -1497,7 +1516,13 @@ impl BacktestEngine {
             return Ok(());
         }
 
-        let venue = data.instrument_id().venue;
+        // A resolution carries outcome group identity rather than instrument identity, so it is
+        // routed by the venue its group names.
+        let venue = match data {
+            DataRef::MarketResolution(resolution) => resolution.group_id.venue,
+            _ => data.instrument_id().venue,
+        };
+
         if let Some(exchange) = venues.get(&venue) {
             let mut exchange_ref = exchange.borrow_mut();
             let mut processed_book_data = false;
@@ -1529,6 +1554,9 @@ impl BacktestEngine {
                 DataRef::OptionGreeks(_) => unreachable!("filtered before exchange routing"),
                 DataRef::InstrumentStatus(status) => {
                     exchange_ref.process_instrument_status(*status)?;
+                }
+                DataRef::MarketResolution(resolution) => {
+                    exchange_ref.process_market_resolution_data(resolution)?;
                 }
                 DataRef::InstrumentClose(close) => {
                     exchange_ref.process_instrument_close(*close)?;

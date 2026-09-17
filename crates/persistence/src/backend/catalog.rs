@@ -103,11 +103,12 @@ use nautilus_model::{
         PositionChanged, PositionClosed, PositionOpened, PositionSnapshot,
     },
     instruments::InstrumentAny,
+    prediction::MarketResolution,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
 };
 use nautilus_serialization::arrow::{
     ArrowSchemaProvider, DecodeDataFromRecordBatch, DecodeTypedFromRecordBatch,
-    EncodeToRecordBatch, custom::CustomDataDecoder,
+    EncodeToRecordBatch, custom::CustomDataDecoder, resolution::KEY_GROUP_ID,
 };
 use object_store::{ObjectStore, ObjectStoreExt, path::Path as ObjectPath};
 use serde::Serialize;
@@ -381,6 +382,10 @@ impl ParquetDataCatalog {
         clippy::match_wildcard_for_single_variants,
         reason = "Data::Defi appears through nautilus-model feature unification"
     )]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one collector and write per data variant keeps the dispatch in one place"
+    )]
     pub fn write_data_enum(
         &self,
         data: &[Data],
@@ -399,6 +404,7 @@ impl ParquetDataCatalog {
         let mut option_greeks: Vec<OptionGreeks> = Vec::new();
         let mut statuses: Vec<InstrumentStatus> = Vec::new();
         let mut closes: Vec<InstrumentClose> = Vec::new();
+        let mut resolutions: Vec<MarketResolution> = Vec::new();
         // Group custom data by full DataType identity (type_name + identifier + metadata)
         // so each batch is written to the correct path with consistent schema/metadata.
         let custom_data_key = |c: &CustomData| {
@@ -447,6 +453,9 @@ impl ParquetDataCatalog {
                 Data::InstrumentClose(c) => {
                     closes.push(c);
                 }
+                Data::MarketResolution(r) => {
+                    resolutions.push(r);
+                }
                 Data::Custom(c) => {
                     custom_data.entry(custom_data_key(&c)).or_default().push(c);
                 }
@@ -492,6 +501,9 @@ impl ParquetDataCatalog {
         })?;
         self.write_grouped_to_parquet(closes, start, end, skip_disjoint_check, |c| {
             c.instrument_id
+        })?;
+        self.write_grouped_to_parquet(resolutions, start, end, skip_disjoint_check, |r| {
+            r.group_id.to_string()
         })?;
 
         for (_, items) in custom_data {
@@ -615,10 +627,16 @@ impl ParquetDataCatalog {
         let batches = self.data_to_record_batches(data)?;
         let schema = batches.first().expect("Batches are empty.").schema();
 
+        // Resolutions are stored per outcome group rather than per instrument, and carry their
+        // group identity under its own metadata key.
         let identifier = if T::path_prefix() == "bars" {
             schema.metadata.get("bar_type").cloned()
         } else {
-            schema.metadata.get("instrument_id").cloned()
+            schema
+                .metadata
+                .get("instrument_id")
+                .or_else(|| schema.metadata.get(KEY_GROUP_ID))
+                .cloned()
         };
 
         let directory = self.make_path(T::path_prefix(), identifier.as_deref())?;
@@ -3600,6 +3618,11 @@ impl ParquetDataCatalog {
                             Self::convert_record_batches_to_data(batches, false)?;
                         closes.into_iter().map(Data::from).collect()
                     }
+                    "market_resolutions" => {
+                        let resolutions: Vec<MarketResolution> =
+                            Self::convert_record_batches_to_data(batches, false)?;
+                        resolutions.into_iter().map(Data::from).collect()
+                    }
                     _ => {
                         if data_cls.starts_with("custom/") {
                             Self::decode_custom_batches_to_data(batches, false)?
@@ -4300,6 +4323,7 @@ impl_catalog_path_prefix!(FundingRateUpdate, "funding_rate_update");
 impl_catalog_path_prefix!(OptionGreeks, "option_greeks");
 impl_catalog_path_prefix!(InstrumentStatus, "instrument_status");
 impl_catalog_path_prefix!(InstrumentClose, "instrument_closes");
+impl_catalog_path_prefix!(MarketResolution, "market_resolutions");
 impl_catalog_path_prefix!(InstrumentAny, "instruments");
 impl_catalog_path_prefix!(AccountState, "account_state");
 impl_catalog_path_prefix!(OrderInitialized, "order_initialized");

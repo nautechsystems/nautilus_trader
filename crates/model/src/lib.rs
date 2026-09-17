@@ -130,6 +130,7 @@ pub mod macros;
 pub mod orderbook;
 pub mod orders;
 pub mod position;
+pub mod prediction;
 pub mod reports;
 pub mod types;
 pub mod venues;

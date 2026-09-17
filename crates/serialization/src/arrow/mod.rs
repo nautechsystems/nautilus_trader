@@ -32,6 +32,7 @@ pub mod order_event;
 pub mod position_event;
 pub mod quote;
 pub mod report;
+pub mod resolution;
 pub mod snapshot;
 pub mod trade;
 
@@ -62,6 +63,7 @@ use nautilus_model::{
     },
     enums::BookAction,
     identifiers::InstrumentId,
+    prediction::MarketResolution,
     types::{
         PRICE_ERROR, PRICE_UNDEF, Price, QUANTITY_UNDEF, Quantity,
         fixed::{PRECISION_BYTES, correct_price_raw, correct_quantity_raw},
@@ -850,6 +852,20 @@ pub fn option_greeks_to_arrow_record_batch_bytes(
 /// - Encoding fails: `EncodingError::ArrowError`.
 pub fn instrument_closes_to_arrow_record_batch_bytes(
     data: &[InstrumentClose],
+) -> Result<RecordBatch, EncodingError> {
+    encode_batch_with_metadata(data)
+}
+
+/// Converts a vector of `MarketResolution` into an Arrow `RecordBatch`.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - `data` is empty: `EncodingError::EmptyData`.
+/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
+/// - Encoding fails: `EncodingError::ArrowError`.
+pub fn market_resolutions_to_arrow_record_batch_bytes(
+    data: &[MarketResolution],
 ) -> Result<RecordBatch, EncodingError> {
     encode_batch_with_metadata(data)
 }

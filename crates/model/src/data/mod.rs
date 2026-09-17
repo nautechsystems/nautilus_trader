@@ -100,7 +100,10 @@ pub use registry::{
 pub use status::InstrumentStatus;
 pub use trade::TradeTick;
 
-use crate::identifiers::{InstrumentId, Venue};
+use crate::{
+    identifiers::{InstrumentId, Venue},
+    prediction::MarketResolution,
+};
 /// A built-in Nautilus data type.
 ///
 /// Not recommended for storing large amounts of data, as the largest variant is significantly
@@ -119,6 +122,7 @@ pub enum Data {
     OptionGreeks(OptionGreeks),
     InstrumentStatus(InstrumentStatus),
     InstrumentClose(InstrumentClose),
+    MarketResolution(MarketResolution),
     Custom(CustomData),
     #[cfg(feature = "defi")]
     Defi(Box<DefiData>), // This variant is significantly larger
@@ -139,6 +143,7 @@ pub enum DataRef<'a> {
     OptionGreeks(&'a OptionGreeks),
     InstrumentStatus(&'a InstrumentStatus),
     InstrumentClose(&'a InstrumentClose),
+    MarketResolution(&'a MarketResolution),
     Custom(&'a CustomData),
     #[cfg(feature = "defi")]
     Defi(&'a DefiData),
@@ -159,6 +164,7 @@ impl<'a> From<&'a Data> for DataRef<'a> {
             Data::OptionGreeks(greeks) => Self::OptionGreeks(greeks),
             Data::InstrumentStatus(status) => Self::InstrumentStatus(status),
             Data::InstrumentClose(close) => Self::InstrumentClose(close),
+            Data::MarketResolution(resolution) => Self::MarketResolution(resolution),
             Data::Custom(custom) => Self::Custom(custom),
             #[cfg(feature = "defi")]
             Data::Defi(defi) => Self::Defi(defi),
@@ -215,6 +221,9 @@ impl<'de> Deserialize<'de> for Data {
             "InstrumentClose" => Ok(Self::InstrumentClose(
                 serde_json::from_value(value).map_err(D::Error::custom)?,
             )),
+            "MarketResolution" => Ok(Self::MarketResolution(
+                serde_json::from_value(value).map_err(D::Error::custom)?,
+            )),
             _ => {
                 if let Some(data) =
                     deserialize_custom_from_json(type_name, &value).map_err(D::Error::custom)?
@@ -243,6 +252,7 @@ impl Clone for Data {
             Self::OptionGreeks(x) => Self::OptionGreeks(*x),
             Self::InstrumentStatus(x) => Self::InstrumentStatus(*x),
             Self::InstrumentClose(x) => Self::InstrumentClose(*x),
+            Self::MarketResolution(x) => Self::MarketResolution(x.clone()),
             Self::Custom(x) => Self::Custom(x.clone()),
             #[cfg(feature = "defi")]
             Self::Defi(x) => Self::Defi(x.clone()),
@@ -265,6 +275,7 @@ impl PartialEq for Data {
             (Self::OptionGreeks(a), Self::OptionGreeks(b)) => a == b,
             (Self::InstrumentStatus(a), Self::InstrumentStatus(b)) => a == b,
             (Self::InstrumentClose(a), Self::InstrumentClose(b)) => a == b,
+            (Self::MarketResolution(a), Self::MarketResolution(b)) => a == b,
             (Self::Custom(a), Self::Custom(b)) => a == b,
             #[cfg(feature = "defi")]
             (Self::Defi(a), Self::Defi(b)) => a == b,
@@ -291,6 +302,7 @@ impl Serialize for Data {
             Self::OptionGreeks(x) => x.serialize(serializer),
             Self::InstrumentStatus(x) => x.serialize(serializer),
             Self::InstrumentClose(x) => x.serialize(serializer),
+            Self::MarketResolution(x) => x.serialize(serializer),
             Self::Custom(x) => x.serialize(serializer),
             #[cfg(feature = "defi")]
             Self::Defi(_) => Err(serde::ser::Error::custom(
@@ -353,6 +365,7 @@ impl_data_conversions!(FundingRate, FundingRateUpdate);
 impl_data_conversions!(OptionGreeks, OptionGreeks);
 impl_data_conversions!(InstrumentStatus, InstrumentStatus);
 impl_data_conversions!(InstrumentClose, InstrumentClose);
+impl_data_conversions!(MarketResolution, MarketResolution);
 
 /// Converts a vector of `Data` items to a specific variant type.
 ///
@@ -396,6 +409,9 @@ impl DataRef<'_> {
             Self::OptionGreeks(greeks) => greeks.instrument_id,
             Self::InstrumentStatus(status) => status.instrument_id,
             Self::InstrumentClose(close) => close.instrument_id,
+            // A resolution is group-scoped rather than instrument-scoped, so it has no single
+            // instrument to route by.
+            Self::MarketResolution(_) => InstrumentId::from("NULL.NULL"),
             Self::Custom(custom) => custom
                 .data_type
                 .identifier()
@@ -471,6 +487,7 @@ impl_catalog_path_prefix!(FundingRateUpdate, "funding_rate_update");
 impl_catalog_path_prefix!(OptionGreeks, "option_greeks");
 impl_catalog_path_prefix!(InstrumentStatus, "instrument_status");
 impl_catalog_path_prefix!(InstrumentClose, "instrument_closes");
+impl_catalog_path_prefix!(MarketResolution, "market_resolutions");
 
 use crate::instruments::InstrumentAny;
 impl_catalog_path_prefix!(InstrumentAny, "instruments");
@@ -496,6 +513,7 @@ impl HasTsInit for DataRef<'_> {
             Self::OptionGreeks(g) => g.ts_init,
             Self::InstrumentStatus(s) => s.ts_init,
             Self::InstrumentClose(c) => c.ts_init,
+            Self::MarketResolution(r) => r.ts_init,
             Self::Custom(c) => c.data.ts_init(),
             #[cfg(feature = "defi")]
             Self::Defi(d) => d.ts_init(),
@@ -1014,7 +1032,8 @@ mod tests {
     use crate::{
         data::stubs::{
             stub_bar, stub_custom_data, stub_delta, stub_deltas, stub_depth10,
-            stub_instrument_close, stub_instrument_status, stub_trade_ethusdt_buy,
+            stub_instrument_close, stub_instrument_status, stub_market_resolution,
+            stub_trade_ethusdt_buy,
         },
         types::Price,
     };
@@ -1067,6 +1086,7 @@ mod tests {
             }),
             Data::InstrumentStatus(stub_instrument_status()),
             Data::InstrumentClose(stub_instrument_close()),
+            Data::MarketResolution(stub_market_resolution()),
             Data::Custom(stub_custom_data(
                 15,
                 42,
@@ -1074,7 +1094,7 @@ mod tests {
                 Some("CUSTOM.SIM".to_string()),
             )),
         ];
-        assert_eq!(data.len(), 13, "every non-DeFi Data variant needs a case");
+        assert_eq!(data.len(), 14, "every non-DeFi Data variant needs a case");
 
         for data in &data {
             let data_ref = DataRef::from(data);
@@ -1117,6 +1137,9 @@ mod tests {
                     assert!(std::ptr::eq(expected, actual));
                 }
                 (Data::InstrumentClose(expected), DataRef::InstrumentClose(actual)) => {
+                    assert!(std::ptr::eq(expected, actual));
+                }
+                (Data::MarketResolution(expected), DataRef::MarketResolution(actual)) => {
                     assert!(std::ptr::eq(expected, actual));
                 }
                 (Data::Custom(expected), DataRef::Custom(actual)) => {

@@ -27,3 +27,5 @@ mod grid_mm_itch;
 mod netting_fill_void;
 mod option_chain_backtest;
 mod option_chain_data_client;
+#[cfg(feature = "streaming")]
+mod replay;

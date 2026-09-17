@@ -51,7 +51,8 @@
 //!   bundled Rust examples.
 //! - `plugin`: Provides a compatibility flag without enabling additional code.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-//! - `streaming`: Enables the `nautilus-persistence` dependency for streaming configuration.
+//! - `streaming`: Enables the `nautilus-persistence` dependency for streaming configuration and
+//!   reproducible replay manifests.
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]
@@ -88,6 +89,9 @@ pub mod result;
 
 #[cfg(feature = "streaming")]
 pub mod node;
+
+#[cfg(feature = "streaming")]
+pub mod replay;
 
 #[cfg(feature = "python")]
 pub mod python;

@@ -52,13 +52,17 @@ use nautilus_model::{
         Bar, Data, FundingRateUpdate, InstrumentClose, InstrumentStatus, OrderBookDelta,
         OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
     },
-    enums::{AccountType, AggressorSide, BookType, OmsType, OrderStatus, PositionAdjustmentType},
+    enums::{
+        AccountType, AggressorSide, BookType, InstrumentCloseType, OmsType, OrderStatus,
+        PositionAdjustmentType,
+    },
     events::{FundingSettlement, OrderEventAny, OrderUpdated, PositionAdjusted, PositionEvent},
     identifiers::{AccountId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
     orders::{Order, OrderAny},
     position::Position,
+    prediction::{MarketResolution, OutcomeGroup},
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
@@ -1136,6 +1140,90 @@ impl SimulatedExchange {
             anyhow::bail!("Matching engine should be initialized");
         }
         Ok(())
+    }
+
+    /// Settles the legs of a resolution that arrived as market data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the group is not in the cache, or if settlement fails.
+    pub fn process_market_resolution_data(
+        &mut self,
+        resolution: &MarketResolution,
+    ) -> anyhow::Result<Vec<InstrumentClose>> {
+        let group = {
+            let cache = self.cache.as_ref().borrow();
+            cache.outcome_group(&resolution.group_id).cloned()
+        };
+        let Some(group) = group else {
+            anyhow::bail!(
+                "Cannot settle {}: the outcome group is not in the cache",
+                resolution.group_id,
+            );
+        };
+
+        self.process_market_resolution(resolution, &group)
+    }
+
+    /// Settles every leg of a resolved prediction market outcome group.
+    ///
+    /// The resolution is the authoritative input. Each leg's terminal close price is derived
+    /// from its declared payout, so a caller never injects per-instrument close events. A
+    /// pending or disputed resolution settles nothing. Re-applying the same resolution settles
+    /// nothing further because each leg's expiry latch accepts a single terminal close.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the resolution does not apply to the group, a leg pays in another
+    /// currency, the group is not fully paid out, or a leg instrument is absent from the cache.
+    pub fn process_market_resolution(
+        &mut self,
+        resolution: &MarketResolution,
+        group: &OutcomeGroup,
+    ) -> anyhow::Result<Vec<InstrumentClose>> {
+        // An applicable resolution with no historical timestamp cannot be placed in replay. The
+        // engine replays it at its record time, so a record with no effective or observation time
+        // could settle before the outcome was known, and fails instead.
+        anyhow::ensure!(
+            !resolution.is_applicable() || resolution.effective_ns.as_u64() > 0,
+            "Cannot settle {}: the resolution has no effective timestamp",
+            resolution.group_id,
+        );
+        anyhow::ensure!(
+            !resolution.is_applicable() || resolution.observed_ns.as_u64() > 0,
+            "Cannot settle {}: the resolution has no observation timestamp",
+            resolution.group_id,
+        );
+
+        let leg_payouts = resolution.instrument_payouts_for(group)?;
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let mut closes = Vec::with_capacity(leg_payouts.len());
+
+        for (instrument_id, payout) in leg_payouts {
+            let price_precision = {
+                let cache = self.cache.as_ref().borrow();
+                cache
+                    .instrument(&instrument_id)
+                    .map(Instrument::price_precision)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Cannot settle {instrument_id}: not found in the instrument cache"
+                        )
+                    })?
+            };
+            let close = InstrumentClose::new(
+                instrument_id,
+                Price::from_decimal_dp(payout.as_decimal(), price_precision)?,
+                InstrumentCloseType::ContractExpired,
+                ts_now,
+                ts_now,
+            );
+
+            self.process_instrument_close(close)?;
+            closes.push(close);
+        }
+
+        Ok(closes)
     }
 
     /// Processes a funding rate update.

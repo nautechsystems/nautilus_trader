@@ -28,13 +28,14 @@ use nautilus_model::{
     },
     events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
     identifiers::{
-        AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId,
-        TraderId, VenueOrderId,
+        AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, OutcomeGroupId, PositionId,
+        StrategyId, TraderId, VenueOrderId,
     },
     instruments::{InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
     orders::OrderAny,
     position::Position,
+    prediction::OutcomeGroup,
     types::{Currency, Money},
 };
 use ustr::Ustr;
@@ -47,6 +48,7 @@ pub struct CacheMap {
     pub currencies: AHashMap<Ustr, Currency>,
     pub instruments: AHashMap<InstrumentId, InstrumentAny>,
     pub instrument_closes: AHashMap<InstrumentId, InstrumentClose>,
+    pub outcome_groups: AHashMap<OutcomeGroupId, OutcomeGroup>,
     pub synthetics: AHashMap<InstrumentId, SyntheticInstrument>,
     pub accounts: AHashMap<AccountId, AccountAny>,
     pub orders: AHashMap<ClientOrderId, OrderAny>,
@@ -126,6 +128,17 @@ pub trait CacheDatabaseAdapter {
     async fn load_instrument_closes(
         &self,
     ) -> anyhow::Result<AHashMap<InstrumentId, InstrumentClose>>;
+
+    /// Loads all outcome groups from the cache.
+    ///
+    /// Adapters that do not persist groups return an empty map.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading outcome groups fails.
+    async fn load_outcome_groups(&self) -> anyhow::Result<AHashMap<OutcomeGroupId, OutcomeGroup>> {
+        Ok(AHashMap::new())
+    }
 
     /// Loads all synthetic instruments from the cache.
     ///

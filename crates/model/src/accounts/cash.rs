@@ -278,8 +278,8 @@ mod tests {
         events::{AccountState, account::stubs::*},
         identifiers::{AccountId, InstrumentId, position_id::PositionId, stubs::uuid4},
         instruments::{
-            Commodity, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity, Instrument,
-            InstrumentAny, stubs::*,
+            BinaryOption, Commodity, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity,
+            Instrument, InstrumentAny, stubs::*,
         },
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
@@ -523,6 +523,44 @@ mod tests {
             )
             .unwrap();
         assert_eq!(balance_locked, Money::from("800000 USD"));
+    }
+
+    #[rstest]
+    fn test_calculate_balance_locked_binary_option_buy_reserves_notional(
+        cash_account: CashAccount,
+        binary_option: BinaryOption,
+    ) {
+        let locked = cash_account
+            .calculate_balance_locked(
+                &binary_option.into_any(),
+                OrderSide::Buy,
+                Quantity::from("100.00"),
+                Price::from("0.350"),
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(locked, Money::from("35.00 USDC"));
+    }
+
+    #[rstest]
+    fn test_calculate_balance_locked_binary_option_sell_reserves_unit_payout(
+        cash_account: CashAccount,
+        binary_option: BinaryOption,
+    ) {
+        // The instrument has no base currency, so selling outcome shares reserves the
+        // full unit payout per share rather than the traded price.
+        let locked = cash_account
+            .calculate_balance_locked(
+                &binary_option.into_any(),
+                OrderSide::Sell,
+                Quantity::from("100.00"),
+                Price::from("0.350"),
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(locked, Money::from("100.00 USDC"));
     }
 
     #[rstest]

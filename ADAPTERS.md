@@ -92,6 +92,7 @@ The following adapters are maintained in the core repository:
 | dYdX                | Data/Execution |
 | Hyperliquid         | Data/Execution |
 | Interactive Brokers | Data/Execution |
+| Kalshi              | Data/Execution |
 | Kraken              | Data/Execution |
 | Lighter             | Data/Execution |
 | OKX                 | Data/Execution |

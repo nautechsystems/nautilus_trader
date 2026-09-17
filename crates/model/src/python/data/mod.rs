@@ -44,10 +44,13 @@ use pyo3::prelude::*;
 #[cfg(feature = "python")]
 use pyo3::types::PyDict;
 
-use crate::data::{
-    Bar, CustomData, Data, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
-    MarkPriceUpdate, OptionGreeks, OrderBookDelta, QuoteTick, TradeTick, close::InstrumentClose,
-    is_monotonically_increasing_by_init, register_python_data_class,
+use crate::{
+    data::{
+        Bar, CustomData, Data, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
+        MarkPriceUpdate, OptionGreeks, OrderBookDelta, QuoteTick, TradeTick,
+        close::InstrumentClose, is_monotonically_increasing_by_init, register_python_data_class,
+    },
+    prediction::ResolutionOutcome,
 };
 
 const ERROR_MONOTONICITY: &str = "`data` was not monotonically increasing by the `ts_init` field";
@@ -140,6 +143,36 @@ pub fn data_to_pyobject(py: Python<'_>, data: Data) -> PyResult<Py<PyAny>> {
         Data::OptionGreeks(greeks) => Py::new(py, greeks).map(Py::into_any),
         Data::InstrumentStatus(status) => Py::new(py, status).map(Py::into_any),
         Data::InstrumentClose(close) => Py::new(py, close).map(Py::into_any),
+        // A resolution is not bound as a Python class yet, so it crosses into Python as a
+        // read-only mapping. Binding it as typed classes needs regenerated stubs alongside.
+        Data::MarketResolution(resolution) => {
+            let payload = PyDict::new(py);
+            payload.set_item("type", "MarketResolution")?;
+            payload.set_item("group_id", resolution.group_id.to_string())?;
+            payload.set_item("venue", resolution.source.venue.to_string())?;
+            payload.set_item("state", resolution.outcome.state())?;
+            payload.set_item("version", resolution.version)?;
+            payload.set_item("effective_ns", resolution.effective_ns.as_u64())?;
+            payload.set_item("observed_ns", resolution.observed_ns.as_u64())?;
+            payload.set_item("ts_event", resolution.ts_event.as_u64())?;
+            payload.set_item("ts_init", resolution.ts_init.as_u64())?;
+
+            match &resolution.outcome {
+                ResolutionOutcome::Payouts(payouts) => {
+                    let items = payouts
+                        .iter()
+                        .map(|payout| (payout.outcome_id.to_string(), payout.payout_per_unit))
+                        .collect::<Vec<_>>();
+                    payload.set_item("payouts", items)?;
+                }
+                ResolutionOutcome::Void { payout_per_unit } => {
+                    payload.set_item("void_payout_per_unit", payout_per_unit.clone())?;
+                }
+                ResolutionOutcome::Pending | ResolutionOutcome::Disputed => {}
+            }
+
+            Ok(payload.into_any().unbind())
+        }
         Data::Custom(custom) => Py::new(py, custom).map(Py::into_any),
         #[cfg(feature = "defi")]
         Data::Defi(defi) => (*defi).into_py_any(py),

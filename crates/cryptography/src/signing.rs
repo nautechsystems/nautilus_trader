@@ -75,6 +75,46 @@ pub fn rsa_signature(private_key_pem: &str, data: &str) -> anyhow::Result<String
     Ok(BASE64_STANDARD.encode(signature))
 }
 
+/// Signs `data` using RSA-PSS SHA-256 with the provided private key in PEM format.
+///
+/// Uses a salt the length of the digest, which is the scheme venues such as Kalshi require.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - `data` is empty.
+/// - `private_key_pem` is not a valid PEM-encoded PKCS#8 RSA private key or cannot be parsed.
+/// - Signature generation fails due to key or cryptographic errors.
+pub fn rsa_pss_signature(private_key_pem: &str, data: &str) -> anyhow::Result<String> {
+    if data.is_empty() {
+        anyhow::bail!("Data to sign cannot be empty");
+    }
+
+    let pem = pem::parse(private_key_pem.trim())
+        .map_err(|e| anyhow::anyhow!("Failed to parse PEM: {e}"))?;
+
+    if !pem.tag().ends_with("PRIVATE KEY") {
+        anyhow::bail!("PEM does not contain a private key");
+    }
+
+    let key_pair = KeyPair::from_pkcs8(pem.contents())
+        .map_err(|_| anyhow::anyhow!("Failed to decode RSA private key"))?;
+
+    let rng = lc_rand::SystemRandom::new();
+    let mut signature = vec![0u8; key_pair.public_modulus_len()];
+
+    key_pair
+        .sign(
+            &lc_signature::RSA_PSS_SHA256,
+            &rng,
+            data.as_bytes(),
+            &mut signature,
+        )
+        .map_err(|_| anyhow::anyhow!("Failed to generate RSA-PSS signature"))?;
+
+    Ok(BASE64_STANDARD.encode(signature))
+}
+
 /// Signs `data` using Ed25519 with the provided private key seed.
 ///
 /// # Errors

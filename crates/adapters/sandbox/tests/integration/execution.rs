@@ -363,7 +363,7 @@ fn make_binary_option_instrument(
     let raw_symbol = format!("{condition_id}-{token_id}");
     binary.raw_symbol = raw_symbol.as_str().into();
     binary.id = InstrumentId::from(format!("{raw_symbol}.POLYMARKET").as_str());
-    binary.activation_ns = UnixNanos::from(1);
+    binary.activation_ns = UnixNanos::default();
     binary.expiration_ns = UnixNanos::from(expiration_ns);
     binary.outcome = Some(Ustr::from(outcome));
     InstrumentAny::BinaryOption(binary)
@@ -666,7 +666,7 @@ fn setup_pending_resolution_harness(
     client_order_suffix: &str,
 ) -> PendingResolutionHarness {
     let mut binary = binary_option();
-    binary.activation_ns = UnixNanos::from(1);
+    binary.activation_ns = UnixNanos::default();
     binary.expiration_ns = UnixNanos::from(100);
     let instrument = InstrumentAny::BinaryOption(binary);
     let venue = instrument.id().venue;
@@ -1503,6 +1503,7 @@ fn assert_fee_model_config_drives_sandbox_commission(
     setup_order_event_handler();
 
     let mut binary = binary_option();
+    binary.activation_ns = UnixNanos::default();
     binary.taker_fee = Decimal::from_str_exact(taker_fee).unwrap();
     let instrument = InstrumentAny::BinaryOption(binary);
     let venue = instrument.id().venue;
@@ -3012,7 +3013,7 @@ fn test_instrument_close_sync_cleanup_handles_synchronous_position_closed_reentr
         let mut binary = binary_option();
         binary.id = InstrumentId::from("YES.BINANCE");
         binary.raw_symbol = "YES".into();
-        binary.activation_ns = UnixNanos::from(1);
+        binary.activation_ns = UnixNanos::default();
         binary.expiration_ns = UnixNanos::from(100);
         let instrument = InstrumentAny::BinaryOption(binary);
 

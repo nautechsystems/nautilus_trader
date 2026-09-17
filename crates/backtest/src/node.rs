@@ -27,6 +27,7 @@ use nautilus_model::{
     },
     enums::{BookType, OtoTriggerMode},
     identifiers::{InstrumentId, Venue},
+    prediction::MarketResolution,
     types::Money,
 };
 use nautilus_persistence::backend::{catalog::ParquetDataCatalog, session::QueryResult};
@@ -588,6 +589,7 @@ fn dispatch_query(
         NautilusDataType::InstrumentStatus => catalog.query::<InstrumentStatus>(identifiers, start, end, filter, None, optimize),
         NautilusDataType::OptionGreeks => catalog.query::<OptionGreeks>(identifiers, start, end, filter, None, optimize),
         NautilusDataType::InstrumentClose => catalog.query::<InstrumentClose>(identifiers, start, end, filter, None, optimize),
+        NautilusDataType::MarketResolution => catalog.query::<MarketResolution>(identifiers, start, end, filter, None, optimize),
     };
     result
 }

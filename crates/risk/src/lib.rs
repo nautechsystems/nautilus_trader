@@ -58,6 +58,7 @@
 )]
 
 pub mod engine;
+pub mod exposure;
 pub mod sizing;
 
 #[cfg(feature = "python")]

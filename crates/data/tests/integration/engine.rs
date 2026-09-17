@@ -92,6 +92,7 @@ use nautilus_model::{
         option_chain::{OptionChainSlice, OptionGreeks, StrikeRange},
         stubs::{
             OrderBookDeltaTestBuilder, stub_custom_data, stub_delta, stub_deltas, stub_depth10,
+            stub_market_resolution,
         },
     },
     enums::{
@@ -105,6 +106,7 @@ use nautilus_model::{
         stubs::{audusd_sim, futures_spread_es, gbpusd_sim},
     },
     orderbook::OrderBook,
+    prediction::MarketResolution,
     stubs::TestDefault,
     types::{Currency, Price, Quantity},
 };
@@ -11465,6 +11467,24 @@ fn test_process_instrument_status(
         cache.instrument_statuses(&audusd_sim.id),
         Some(vec![status]),
     );
+}
+
+#[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
+fn test_process_market_resolution(#[case] borrowed: bool, data_engine: Rc<RefCell<DataEngine>>) {
+    let resolution = stub_market_resolution();
+    let (handler, saver) = get_any_saving_handler::<MarketResolution>(None);
+    let topic = switchboard::get_market_resolution_topic(resolution.group_id.clone());
+    msgbus::subscribe_any(topic.into(), handler, None);
+
+    dispatch_data(
+        &mut data_engine.borrow_mut(),
+        Data::MarketResolution(resolution.clone()),
+        borrowed,
+    );
+
+    assert_eq!(saver.get_messages(), vec![resolution]);
 }
 
 #[rstest]

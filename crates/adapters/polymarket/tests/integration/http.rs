@@ -53,7 +53,7 @@ use nautilus_polymarket::{
     },
     http::{
         clob::{HeartbeatResponse, PolymarketClobHttpClient},
-        data_api::PolymarketDataApiHttpClient,
+        data_api::{PolymarketDataApiHttpClient, TradeFetchCompleteness},
         error::Error,
         gamma::{PolymarketGammaHttpClient, PolymarketGammaRawHttpClient},
         models::PolymarketOrder,
@@ -4882,8 +4882,8 @@ async fn test_request_trade_ticks_paginates_multiple_pages() {
     let addr = start_mock_server(state.clone()).await;
     let client = create_data_api_client(&addr);
 
-    let ticks = client
-        .request_trade_ticks(
+    let fetch = client
+        .request_trade_ticks_with_completeness(
             InstrumentId::from("0xcondition_test-token_aaa.POLYMARKET"),
             condition_id,
             token,
@@ -4895,6 +4895,11 @@ async fn test_request_trade_ticks_paginates_multiple_pages() {
         )
         .await
         .unwrap();
+
+    assert_eq!(fetch.completeness, TradeFetchCompleteness::CallerCapped);
+    assert!(!fetch.is_complete());
+
+    let ticks = fetch.ticks;
 
     assert_eq!(ticks.len(), 5);
     for i in 1..ticks.len() {
@@ -5421,8 +5426,8 @@ async fn test_request_trade_ticks_stops_at_data_api_offset_ceiling() {
     let addr = start_mock_server(state.clone()).await;
     let client = create_data_api_client(&addr);
 
-    let ticks = client
-        .request_trade_ticks(
+    let fetch = client
+        .request_trade_ticks_with_completeness(
             InstrumentId::from("0xcondition_test-token_ceiling.POLYMARKET"),
             "0xcondition_test",
             token,
@@ -5436,7 +5441,13 @@ async fn test_request_trade_ticks_stops_at_data_api_offset_ceiling() {
         .unwrap();
     let queries = state.data_api_trade_query_log.lock().await;
 
-    assert_eq!(ticks.len(), 10_000);
+    assert_eq!(fetch.ticks.len(), 10_000);
+    // The ceiling truncates the history, so the fetch must not report itself complete.
+    assert_eq!(
+        fetch.completeness,
+        TradeFetchCompleteness::VenueOffsetCeiling { reason: None }
+    );
+    assert!(!fetch.is_complete());
     assert_eq!(queries.len(), 20);
     assert_eq!(queries[0].get("offset").map(String::as_str), Some("0"));
     assert_eq!(queries[19].get("offset").map(String::as_str), Some("9500"));
@@ -5453,8 +5464,8 @@ async fn test_request_trade_ticks_preserves_remote_offset_ceiling_partial_result
     let addr = start_mock_server(state).await;
     let client = create_data_api_client(&addr);
 
-    let ticks = client
-        .request_trade_ticks(
+    let fetch = client
+        .request_trade_ticks_with_completeness(
             InstrumentId::from("0xcondition_test-token_remote_ceiling.POLYMARKET"),
             "0xcondition_test",
             "token_remote_ceiling",
@@ -5467,7 +5478,21 @@ async fn test_request_trade_ticks_preserves_remote_offset_ceiling_partial_result
         .await
         .unwrap();
 
-    assert!(ticks.is_empty());
+    assert!(fetch.ticks.is_empty());
+    let TradeFetchCompleteness::VenueOffsetCeiling { reason } = &fetch.completeness else {
+        panic!(
+            "expected the venue's offset ceiling, was {:?}",
+            fetch.completeness
+        );
+    };
+
+    assert!(
+        reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("max historical activity offset")),
+        "the venue's own reason must be preserved, was {reason:?}"
+    );
+    assert!(!fetch.is_complete());
 }
 
 #[rstest]
