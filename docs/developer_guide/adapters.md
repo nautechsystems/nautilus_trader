@@ -925,6 +925,33 @@ client declares a history bound, as described in
 clock. Returning `Ok(None)` logs a warning and leaves that client unreconciled, while an error
 fails startup.
 
+##### Mass-status timestamp contract
+
+`ExecutionMassStatus.ts_init` marks the start of snapshot collection. For every producer,
+including reconnect snapshots and custom `generate_mass_status` implementations:
+
+- **Capture before collection:** Read the adapter's local clock before the first request,
+  cache read, or concurrent collection task.
+- **Use a consistent clock:** Use the same local clock as execution fill and fill-void
+  initialization timestamps. Never substitute a venue timestamp or zero.
+- **Preserve the boundary:** Keep that value through snapshot construction and publication.
+  Neither completion time nor individual report timestamps replace it.
+
+Runtime reconciliation skips an order snapshot when a cached fill or fill void has `ts_init`
+at or after this boundary. Companion trades still process normally.
+
+Incorrect timestamps change reconciliation behavior:
+
+- A **completion timestamp** can make an older snapshot appear newer than an overlapping fill,
+  causing the engine to void that fill incorrectly.
+- A **zero timestamp** can suppress legitimate snapshot corrections indefinitely.
+
+**Test custom producers:** Delay a report response and assert that the mass-status timestamp
+is captured before collection starts and remains unchanged when collection finishes.
+
+See [Snapshot freshness and fill corrections](../concepts/execution/reconciliation.md#snapshot-freshness-and-fill-corrections)
+for the startup distinction and limits when venue state is already stale.
+
 ##### Bulk report filters
 
 The bulk methods take a filter command carrying `instrument_id`, `start`, and `end`, plus

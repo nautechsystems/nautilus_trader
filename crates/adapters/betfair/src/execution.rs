@@ -1998,45 +1998,23 @@ impl ExecutionClient for BetfairExecutionClient {
             .transpose()?
             .map(|lookback| ts_now.saturating_sub(lookback));
 
-        let date_range = start.map(|start| TimeRange {
-            from: Some(start.to_rfc3339()),
-            to: None,
-        });
-        let market_ids = self.reconcile_market_ids();
-        let mut order_refresh = SessionRefresh::default();
-        let mut fill_refresh = SessionRefresh::default();
-        let stream_session = StreamSession {
-            client: self.stream_client.as_ref(),
-            app_key: self.credential.app_key(),
-        };
-        let (order_reports, fill_reports) = tokio::join!(
-            fetch_order_status_reports_http(
-                &self.http_client,
-                self.core.account_id,
-                self.clock.get_time_ns(),
-                market_ids.clone(),
-                None,
-                &self.ocm_state,
-                Some(&self.emitter),
-                stream_session,
-                &mut order_refresh,
-            ),
-            fetch_fill_reports_http(
-                &self.http_client,
-                self.core.account_id,
-                self.currency,
-                self.clock.get_time_ns(),
-                market_ids,
-                date_range,
-                None,
-                &self.ocm_state,
-                stream_session,
-                &mut fill_refresh,
-            ),
-        );
+        let mut session_refresh = SessionRefresh::default();
 
-        let mut session_refresh = order_refresh;
-        session_refresh.merge(&fill_refresh);
+        let fetched = fetch_order_status_reports_snapshot_http(
+            &self.http_client,
+            self.core.account_id,
+            ts_now,
+            self.reconcile_market_ids(),
+            false,
+            &self.ocm_state,
+            StreamSession {
+                client: self.stream_client.as_ref(),
+                app_key: self.credential.app_key(),
+            },
+            &mut session_refresh,
+        )
+        .await;
+
         apply_stream_session_refresh(
             self.http_client.as_ref(),
             self.stream_client.as_ref(),
@@ -2045,23 +2023,43 @@ impl ExecutionClient for BetfairExecutionClient {
         )
         .await;
 
-        let order_reports = order_reports?;
-        let fill_reports = fill_reports?;
+        let mut fetched = fetched?;
+        retain_snapshot_fill_orders(&mut fetched.orders, start, None)?;
 
-        log::info!("Received {} OrderStatusReports", order_reports.len());
-        log::info!("Received {} FillReports", fill_reports.len());
+        let snapshot = MassStatusSnapshot {
+            client_id: self.core.client_id,
+            account_id: self.core.account_id,
+            currency: self.currency,
+            ts_init: ts_now,
+            order_reports: fetched.reports,
+            active_quantities: fetched.active_quantities,
+            fill_orders: fetched.orders,
+            account_state: None,
+        };
 
-        let mut mass_status = ExecutionMassStatus::new(
-            self.core.client_id,
-            self.core.account_id,
-            *BETFAIR_VENUE,
-            ts_now,
-            None,
+        let mut state = self.ocm_state.lock();
+        let mut staged_state = state.clone();
+        let (mass_status, updates) = snapshot.build(&mut staged_state, &self.emitter)?;
+
+        log::info!(
+            "Received {} OrderStatusReports",
+            mass_status.order_reports().len()
+        );
+        log::info!(
+            "Received {} FillReports",
+            mass_status
+                .fill_reports()
+                .values()
+                .map(Vec::len)
+                .sum::<usize>(),
         );
 
-        mass_status.add_order_reports(order_reports);
-        mass_status.add_fill_reports(fill_reports);
+        for update in updates {
+            self.emitter.try_send_order_event(update)?;
+        }
 
+        // No await after commit: cancellation must not consume undelivered fills
+        *state = staged_state;
         Ok(Some(mass_status))
     }
 
@@ -3630,43 +3628,20 @@ fn commit_post_reconnect_mass_status(
     generation: u64,
     ocm_state: &Arc<Mutex<OcmState>>,
     emitter: &ExecutionEventEmitter,
-    recovery: PostReconnectRecovery,
+    mut recovery: MassStatusSnapshot,
 ) -> anyhow::Result<Option<(usize, usize, Option<AccountState>)>> {
-    let PostReconnectRecovery {
-        client_id,
-        account_id,
-        currency,
-        ts_init,
-        mut order_reports,
-        active_quantities,
-        fill_orders,
-        account_state,
-    } = recovery;
+    let account_state = recovery.account_state.take();
     let mut committed = None;
     let published = gate.commit(generation, || {
         let mut state = ocm_state.lock();
         let mut staged_state = state.clone();
-        let updates = resolve_pending_modifies_in_state(
-            &mut order_reports,
-            &active_quantities,
-            &mut staged_state,
-            emitter,
-        );
-        let customer_order_refs = staged_state.customer_order_refs.clone();
-        let fill_reports = build_incremental_fill_reports(
-            &fill_orders,
-            &mut staged_state.fill_tracker,
-            &customer_order_refs,
-            account_id,
-            currency,
-            ts_init,
-        )?;
-        let order_count = order_reports.len();
-        let fill_count = fill_reports.len();
-        let mut mass_status =
-            ExecutionMassStatus::new(client_id, account_id, *BETFAIR_VENUE, ts_init, None);
-        mass_status.add_order_reports(order_reports);
-        mass_status.add_fill_reports(fill_reports);
+        let (mass_status, updates) = recovery.build(&mut staged_state, emitter)?;
+        let order_count = mass_status.order_reports().len();
+        let fill_count = mass_status
+            .fill_reports()
+            .values()
+            .map(Vec::len)
+            .sum::<usize>();
 
         for update in updates {
             emitter.try_send_order_event(update)?;
@@ -3764,6 +3739,7 @@ struct UnmatchedOrderContext<'a> {
 }
 
 struct FetchedOrderStatusReports {
+    orders: Vec<CurrentOrderSummary>,
     reports: Vec<OrderStatusReport>,
     active_quantities: AHashMap<String, Quantity>,
 }
@@ -3842,8 +3818,8 @@ async fn fetch_order_status_reports_snapshot_http(
         Some(OrderProjection::All)
     };
 
-    let mut reports = Vec::new();
-    let mut active_quantities = AHashMap::new();
+    let mut orders = Vec::new();
+    let mut indexes = AHashMap::new();
     let market_id_batches = list_current_orders_market_id_batches(market_ids);
     let merge_batches = market_id_batches.len() > 1;
 
@@ -3877,24 +3853,14 @@ async fn fetch_order_status_reports_snapshot_http(
                 anyhow::bail!("listCurrentOrders returned an empty page with moreAvailable=true");
             }
 
-            for order in &response.current_orders {
-                let mut report =
-                    parse_current_order_report(order, account_id, ts_init).map_err(|e| {
-                        anyhow::anyhow!("Failed to parse order report for {}: {e}", order.bet_id)
-                    })?;
-
-                if let Some(resolution) = ocm_state.lock().resolve_order_owner(
-                    order.customer_order_ref.as_deref(),
-                    report.venue_order_id.as_str(),
-                ) {
-                    report.client_order_id = resolution.client_order_id();
+            for order in response.current_orders {
+                if let Some(&index) = indexes.get(&order.bet_id) {
+                    // Offset pages can repeat a bet; retain its last complete observation
+                    orders[index] = order;
+                } else {
+                    indexes.insert(order.bet_id.clone(), orders.len());
+                    orders.push(order);
                 }
-
-                let active_quantity = current_order_active_quantity(order).map_err(|e| {
-                    anyhow::anyhow!("Failed to parse active quantity for {}: {e}", order.bet_id)
-                })?;
-                active_quantities.insert(order.bet_id.clone(), active_quantity);
-                reports.push(report);
             }
 
             if !response.more_available {
@@ -3905,11 +3871,35 @@ async fn fetch_order_status_reports_snapshot_http(
         }
     }
 
+    let mut reports = Vec::with_capacity(orders.len());
+    let mut active_quantities = AHashMap::new();
+
+    for order in &orders {
+        let mut report = parse_current_order_report(order, account_id, ts_init).map_err(|e| {
+            anyhow::anyhow!("Failed to parse order report for {}: {e}", order.bet_id)
+        })?;
+
+        if let Some(resolution) = ocm_state.lock().resolve_order_owner(
+            order.customer_order_ref.as_deref(),
+            report.venue_order_id.as_str(),
+        ) {
+            report.client_order_id = resolution.client_order_id();
+        }
+
+        let active_quantity = current_order_active_quantity(order).map_err(|e| {
+            anyhow::anyhow!("Failed to parse active quantity for {}: {e}", order.bet_id)
+        })?;
+
+        active_quantities.insert(order.bet_id.clone(), active_quantity);
+        reports.push(report);
+    }
+
     if merge_batches {
         reports.sort_by_key(|report| (report.ts_accepted, report.venue_order_id));
     }
 
     Ok(FetchedOrderStatusReports {
+        orders,
         reports,
         active_quantities,
     })
@@ -4517,7 +4507,7 @@ fn build_incremental_fill_reports(
     Ok(reports)
 }
 
-struct PostReconnectRecovery {
+struct MassStatusSnapshot {
     client_id: ClientId,
     account_id: AccountId,
     currency: Currency,
@@ -4526,6 +4516,65 @@ struct PostReconnectRecovery {
     active_quantities: AHashMap<String, Quantity>,
     fill_orders: Vec<CurrentOrderSummary>,
     account_state: Option<AccountState>,
+}
+
+impl MassStatusSnapshot {
+    fn build(
+        self,
+        state: &mut OcmState,
+        emitter: &ExecutionEventEmitter,
+    ) -> anyhow::Result<(ExecutionMassStatus, Vec<OrderEventAny>)> {
+        let mut order_reports = self.order_reports;
+
+        let updates = resolve_pending_modifies_in_state(
+            &mut order_reports,
+            &self.active_quantities,
+            state,
+            emitter,
+        );
+        let fill_reports = build_incremental_fill_reports(
+            &self.fill_orders,
+            &mut state.fill_tracker,
+            &state.customer_order_refs,
+            self.account_id,
+            self.currency,
+            self.ts_init,
+        )?;
+
+        let mut mass_status = ExecutionMassStatus::new(
+            self.client_id,
+            self.account_id,
+            *BETFAIR_VENUE,
+            self.ts_init,
+            None,
+        );
+        mass_status.add_order_reports(order_reports);
+        mass_status.add_fill_reports(fill_reports);
+        Ok((mass_status, updates))
+    }
+}
+
+fn retain_snapshot_fill_orders(
+    orders: &mut Vec<CurrentOrderSummary>,
+    start: Option<UnixNanos>,
+    end: Option<UnixNanos>,
+) -> anyhow::Result<()> {
+    let mut eligible = Vec::with_capacity(orders.len());
+    for order in orders.drain(..) {
+        let Some(date) = &order.matched_date else {
+            continue;
+        };
+
+        let matched = parse_betfair_timestamp(date)
+            .map_err(|e| anyhow::anyhow!("Failed to parse match time for {}: {e}", order.bet_id))?;
+        if start.is_none_or(|start| matched >= start) && end.is_none_or(|end| matched <= end) {
+            eligible.push(order);
+        }
+    }
+
+    eligible.sort_by_cached_key(current_order_match_sort_key);
+    *orders = eligible;
+    Ok(())
 }
 
 async fn wait_for_generation_change(
@@ -4569,7 +4618,7 @@ async fn attempt_post_reconnect_recovery(
     market_ids: Option<Vec<String>>,
     lookback_mins: u64,
     ocm_state: &Arc<Mutex<OcmState>>,
-) -> anyhow::Result<PostReconnectRecovery> {
+) -> anyhow::Result<MassStatusSnapshot> {
     let mut session_refresh = SessionRefresh::default();
     match http_client.keep_alive_with_token().await {
         Ok(_) => session_refresh.refreshed = true,
@@ -4652,43 +4701,30 @@ async fn fetch_post_reconnect_mass_status(
     ocm_state: &Arc<Mutex<OcmState>>,
     stream_session: StreamSession<'_>,
     session_refresh: &mut SessionRefresh,
-) -> anyhow::Result<PostReconnectRecovery> {
+) -> anyhow::Result<MassStatusSnapshot> {
     let ts_now = clock.get_time_ns();
     let start = ts_now.saturating_sub(DurationNanos::try_from_mins(lookback_mins)?);
 
-    let date_range = TimeRange {
-        from: Some(start.to_rfc3339()),
-        to: Some(ts_now.to_rfc3339()),
-    };
-
-    let fetched_orders = fetch_order_status_reports_snapshot_http(
+    let mut fetched_orders = fetch_order_status_reports_snapshot_http(
         http_client,
         account_id,
         ts_now,
-        market_ids.clone(),
+        market_ids,
         false,
         ocm_state,
         stream_session,
         session_refresh,
     )
     .await?;
-
-    let fill_orders = fetch_fill_orders_http(
-        http_client,
-        market_ids,
-        Some(date_range),
-        stream_session,
-        session_refresh,
-    )
-    .await?;
-    Ok(PostReconnectRecovery {
+    retain_snapshot_fill_orders(&mut fetched_orders.orders, Some(start), Some(ts_now))?;
+    Ok(MassStatusSnapshot {
         client_id,
         account_id,
         currency,
         ts_init: ts_now,
         order_reports: fetched_orders.reports,
         active_quantities: fetched_orders.active_quantities,
-        fill_orders,
+        fill_orders: fetched_orders.orders,
         account_state: None,
     })
 }
@@ -4834,13 +4870,6 @@ async fn list_current_orders_with_retry(
 struct SessionRefresh {
     refreshed: bool,
     replaced: bool,
-}
-
-impl SessionRefresh {
-    fn merge(&mut self, other: &Self) {
-        self.refreshed |= other.refreshed;
-        self.replaced |= other.replaced;
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -7608,6 +7637,139 @@ mod tests {
     }
 
     #[rstest]
+    #[case::unbounded(None, None, vec![0, 1, 2, 3, 4])]
+    #[case::lower_bound(Some(1), None, vec![1, 2, 3, 4])]
+    #[case::bounded(Some(1), Some(3), vec![1, 2, 3])]
+    fn test_snapshot_fill_lookback_preserves_order_coverage(
+        #[case] start: Option<usize>,
+        #[case] end: Option<usize>,
+        #[case] expected: Vec<usize>,
+    ) {
+        let dates = [
+            "2026-09-17T10:00:00.000Z",
+            "2026-09-17T10:00:00.001Z",
+            "2026-09-17T10:00:00.002Z",
+            "2026-09-17T10:00:00.003Z",
+            "2026-09-17T10:00:00.004Z",
+        ];
+        let data = load_test_json("rest/list_current_orders_execution_complete.json");
+        let response: CurrentOrderSummaryReport = parse_jsonrpc(&data);
+        let account_id = AccountId::from("BETFAIR-001");
+        let (emitter, _receiver) = emitter_with_receiver(account_id);
+        let mut orders = Vec::new();
+
+        for (index, date) in dates.iter().enumerate() {
+            let mut order = response.current_orders[1].clone();
+            order.bet_id = format!("bet-{index}");
+            order.matched_date = Some((*date).to_string());
+            orders.push(order);
+        }
+
+        let mut unmatched = response.current_orders[0].clone();
+        unmatched.bet_id = "unmatched".to_string();
+        orders.push(unmatched);
+
+        let reports = orders
+            .iter()
+            .map(|order| {
+                parse_current_order_report(order, account_id, UnixNanos::default()).unwrap()
+            })
+            .collect();
+
+        let mut eligible = orders.clone();
+        retain_snapshot_fill_orders(
+            &mut eligible,
+            start.map(|index| parse_betfair_timestamp(dates[index]).unwrap()),
+            end.map(|index| parse_betfair_timestamp(dates[index]).unwrap()),
+        )
+        .unwrap();
+        let mut state = OcmState::default();
+
+        let (snapshot, updates) = MassStatusSnapshot {
+            client_id: ClientId::from("BETFAIR"),
+            account_id,
+            currency: Currency::GBP(),
+            ts_init: UnixNanos::default(),
+            order_reports: reports,
+            active_quantities: AHashMap::new(),
+            fill_orders: eligible,
+            account_state: None,
+        }
+        .build(&mut state, &emitter)
+        .unwrap();
+
+        assert_eq!(snapshot.order_reports().len(), orders.len());
+        assert_eq!(snapshot.fill_reports().len(), expected.len());
+        assert!(updates.is_empty());
+
+        for (index, order) in orders.iter().enumerate() {
+            assert_eq!(
+                state.fill_tracker.has_fill_lots(&order.bet_id),
+                expected.contains(&index)
+            );
+        }
+
+        // A later unbounded request must still deliver every excluded increment
+        retain_snapshot_fill_orders(&mut orders, None, None).unwrap();
+        let fills = build_incremental_fill_reports(
+            &orders,
+            &mut state.fill_tracker,
+            &state.customer_order_refs,
+            account_id,
+            Currency::GBP(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        let actual = fills
+            .iter()
+            .map(|fill| fill.venue_order_id.to_string())
+            .collect::<Vec<_>>();
+        let remaining = (0..dates.len())
+            .filter(|index| !expected.contains(index))
+            .map(|index| format!("bet-{index}"))
+            .collect::<Vec<_>>();
+        assert_eq!(actual, remaining);
+    }
+
+    #[rstest]
+    fn test_snapshot_voided_only_order_does_not_create_fill() {
+        let data = load_test_json("rest/list_current_orders_execution_complete.json");
+        let response: CurrentOrderSummaryReport = parse_jsonrpc(&data);
+        let mut order = response.current_orders[1].clone();
+        order.size_matched = Some(Decimal::ZERO);
+        order.size_voided = Some(Decimal::from(10));
+        let account_id = AccountId::from("BETFAIR-001");
+        let (emitter, _receiver) = emitter_with_receiver(account_id);
+        let report = parse_current_order_report(&order, account_id, UnixNanos::default()).unwrap();
+        let mut orders = vec![order.clone()];
+        retain_snapshot_fill_orders(&mut orders, None, None).unwrap();
+        let mut state = OcmState::default();
+
+        let (snapshot, updates) = MassStatusSnapshot {
+            client_id: ClientId::from("BETFAIR"),
+            account_id,
+            currency: Currency::GBP(),
+            ts_init: UnixNanos::default(),
+            order_reports: vec![report],
+            active_quantities: AHashMap::new(),
+            fill_orders: orders,
+            account_state: None,
+        }
+        .build(&mut state, &emitter)
+        .unwrap();
+
+        let actual = &snapshot.order_reports()[&VenueOrderId::from(order.bet_id.as_str())];
+        assert_eq!(actual.order_status, OrderStatus::Voided);
+        assert_eq!(actual.filled_qty, Quantity::from(0));
+        assert!(snapshot.fill_reports().is_empty());
+        assert!(updates.is_empty());
+        assert!(!state.fill_tracker.has_fill_lots(&order.bet_id));
+        let mut replay = fill_unmatched_order(&order.bet_id, None, Decimal::ZERO);
+        replay.sv = Some(Decimal::from(10));
+        assert!(!state.fill_tracker.has_unseen_fill_void(&replay));
+    }
+
+    #[rstest]
     fn test_unpublished_recovery_does_not_advance_fill_tracker() {
         let gate = ReconciliationGate::default();
         let generation = gate.halt();
@@ -7619,19 +7781,20 @@ mod tests {
         let response: CurrentOrderSummaryReport = parse_jsonrpc(&data);
         let mut fill_order = response.current_orders[1].clone();
         fill_order.bet_id = "bet-unpublished".to_string();
-        let recovery = PostReconnectRecovery {
+
+        let recovery = || MassStatusSnapshot {
             client_id: ClientId::from("BETFAIR"),
             account_id,
             currency: Currency::GBP(),
             ts_init: UnixNanos::default(),
             order_reports: Vec::new(),
             active_quantities: AHashMap::new(),
-            fill_orders: vec![fill_order],
+            fill_orders: vec![fill_order.clone()],
             account_state: None,
         };
 
         let result =
-            commit_post_reconnect_mass_status(&gate, generation, &ocm_state, &emitter, recovery);
+            commit_post_reconnect_mass_status(&gate, generation, &ocm_state, &emitter, recovery());
 
         assert!(result.is_err());
         assert!(gate.is_halted());
@@ -7640,6 +7803,34 @@ mod tests {
                 .lock()
                 .fill_tracker
                 .has_fill_lots("bet-unpublished")
+        );
+        let (emitter, mut receiver) = emitter_with_receiver(account_id);
+        let committed =
+            commit_post_reconnect_mass_status(&gate, generation, &ocm_state, &emitter, recovery())
+                .unwrap();
+
+        let published = match receiver.try_recv().unwrap() {
+            ExecutionEvent::Report(ExecutionReport::MassStatus(status)) => status,
+            other => panic!("expected retried mass status, was {other:?}"),
+        };
+
+        let fills = published.fill_reports();
+        let fill = &fills[&VenueOrderId::from("bet-unpublished")][0];
+        assert_eq!(
+            committed.map(|(orders, fills, _)| (orders, fills)),
+            Some((0, 1))
+        );
+        assert_eq!(fill.last_qty, Quantity::from(10));
+        assert_eq!(fill.trade_id, TradeId::from("bet-unpublished-10.00"));
+        assert!(!gate.is_halted());
+
+        let generation = gate.halt();
+        let repeated =
+            commit_post_reconnect_mass_status(&gate, generation, &ocm_state, &emitter, recovery())
+                .unwrap();
+        assert_eq!(
+            repeated.map(|(orders, fills, _)| (orders, fills)),
+            Some((0, 0))
         );
     }
 
@@ -7655,7 +7846,8 @@ mod tests {
         let mut fill_order = response.current_orders[1].clone();
         fill_order.bet_id = "bet-invalid".to_string();
         fill_order.placed_date = "not-a-timestamp".to_string();
-        let recovery = PostReconnectRecovery {
+
+        let recovery = MassStatusSnapshot {
             client_id: ClientId::from("BETFAIR"),
             account_id,
             currency: Currency::GBP(),
@@ -7697,7 +7889,8 @@ mod tests {
                 )
                 .is_some()
         );
-        let recovery = PostReconnectRecovery {
+
+        let recovery = MassStatusSnapshot {
             client_id: ClientId::from("BETFAIR"),
             account_id,
             currency: Currency::GBP(),
@@ -7764,7 +7957,8 @@ mod tests {
         );
         let ocm_state = Arc::new(Mutex::new(state));
         let (emitter, mut receiver) = emitter_with_receiver(account_id);
-        let recovery = PostReconnectRecovery {
+
+        let recovery = MassStatusSnapshot {
             client_id: ClientId::from("BETFAIR"),
             account_id,
             currency: Currency::GBP(),
@@ -7856,7 +8050,7 @@ mod tests {
             generation,
             &ocm_state,
             &emitter,
-            PostReconnectRecovery {
+            MassStatusSnapshot {
                 client_id: ClientId::from("BETFAIR"),
                 account_id,
                 currency: Currency::GBP(),
@@ -7885,7 +8079,7 @@ mod tests {
             generation,
             &ocm_state,
             &emitter,
-            PostReconnectRecovery {
+            MassStatusSnapshot {
                 client_id: ClientId::from("BETFAIR"),
                 account_id,
                 currency: Currency::GBP(),

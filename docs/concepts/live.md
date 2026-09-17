@@ -181,6 +181,8 @@ portfolio economics.
 
 See [Execution reconciliation](execution/reconciliation.md) for configuration, recovery procedures,
 runtime checks, scenarios, and invariants.
+For runtime protection against stale snapshots and the distinction from genuine corrections and explicit fill-void events,
+see [Snapshot freshness and fill corrections](execution/reconciliation.md#snapshot-freshness-and-fill-corrections).
 
 ## Rust live runner metrics
 

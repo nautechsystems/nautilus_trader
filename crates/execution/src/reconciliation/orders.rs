@@ -70,9 +70,9 @@ pub fn generate_reconciliation_order_events(
 /// Generates reconciliation events for an authoritative venue snapshot.
 ///
 /// Unlike [`generate_reconciliation_order_events`], a material decrease in cumulative filled
-/// quantity is treated as evidence that previously applied fills were voided. This is intended for
-/// status reports paired with the snapshot's fill reports, where the caller can project the full
-/// venue state before applying corrections.
+/// quantity is treated as evidence that previously applied fills were voided. The caller establishes
+/// snapshot freshness and applies any companion fills before generating corrections. A snapshot can
+/// correct retained fills even when it contains no new trades.
 #[must_use]
 pub fn generate_reconciliation_order_snapshot_events(
     order: &OrderAny,

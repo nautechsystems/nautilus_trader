@@ -1347,6 +1347,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         log::debug!("Generating mass status: lookback_mins={lookback_mins:?}");
 
+        let ts_init = self.clock.get_time_ns();
         let start = lookback_mins.map(|mins| Timestamp::now() - Duration::from_secs(mins * 60));
 
         let account_id = self.core.account_id;
@@ -1377,7 +1378,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
             self.core.client_id,
             self.core.account_id,
             *KRAKEN_VENUE,
-            self.clock.get_time_ns(),
+            ts_init,
             None,
         );
         mass_status.add_order_reports(order_reports);
