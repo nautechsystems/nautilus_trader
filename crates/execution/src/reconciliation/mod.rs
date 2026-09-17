@@ -54,14 +54,21 @@ pub use ids::{
     create_inferred_reconciliation_trade_id, create_position_reconciliation_venue_order_id,
 };
 pub use orders::{
-    create_incremental_inferred_fill, create_inferred_fill_for_qty, create_reconciliation_rejected,
-    create_reconciliation_triggered, generate_external_order_status_events,
-    generate_external_order_status_events_with_commission, generate_reconciliation_order_events,
-    generate_reconciliation_order_pre_fill_events, generate_reconciliation_order_snapshot_events,
+    OrderReconciliationOptions, create_incremental_inferred_fill, create_inferred_fill_for_qty,
+    create_reconciliation_rejected, create_reconciliation_triggered,
+    create_released_submission_recovery, create_submission_command_recovery,
+    generate_external_order_status_events, generate_external_order_status_events_with_commission,
+    generate_reconciliation_order_events, generate_reconciliation_order_events_with_options,
+    generate_reconciliation_order_pre_fill_events,
+    generate_reconciliation_order_pre_fill_events_with_options,
+    generate_reconciliation_order_snapshot_events,
     generate_reconciliation_order_snapshot_events_with_commission,
+    has_recovered_submission_command, has_recovered_submission_command_history,
+    has_recovered_submission_fill_history, has_unresolved_submission,
     incremental_inferred_fill_price_and_liquidity, inferred_fill_price_and_liquidity,
-    reconcile_fill_report, reconcile_order_report, reconcile_order_report_with_commission,
-    should_reconciliation_update,
+    is_historical_submission_recovery_report, is_valid_submission_recovery_fill,
+    is_valid_submission_recovery_report, reconcile_fill_report, reconcile_order_report,
+    reconcile_order_report_with_commission, should_reconciliation_update,
 };
 pub use positions::{
     calculate_reconciliation_price, check_position_reconciliation,

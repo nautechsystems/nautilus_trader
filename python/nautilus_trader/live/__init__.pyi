@@ -65,6 +65,7 @@ __all__ = [
     "RoutingConfig",
     "SubmitOrder",
     "SubmitOrderList",
+    "SubmittedOrderExhaustionPolicy",
     "SubscribeBars",
     "SubscribeBookDeltas",
     "SubscribeBookDepth10",
@@ -673,6 +674,8 @@ class LiveExecutionEngineConfig:
     @property
     def inflight_check_threshold_ms(self) -> int: ...
     @property
+    def submitted_order_exhaustion_policy(self) -> SubmittedOrderExhaustionPolicy: ...
+    @property
     def inflight_check_retries(self) -> int: ...
     @property
     def open_check_interval_secs(self) -> float | None: ...
@@ -751,6 +754,7 @@ class LiveExecutionEngineConfig:
         debug: bool | None = None,
         snapshot_orders: bool | None = None,
         snapshot_positions: bool | None = None,
+        submitted_order_exhaustion_policy: SubmittedOrderExhaustionPolicy | None = None,
     ) -> LiveExecutionEngineConfig: ...
 
 @typing.final
@@ -2123,3 +2127,8 @@ class NodeState(enum.Enum):
     RUNNING = ...
     SHUTTING_DOWN = ...
     STOPPED = ...
+
+@typing.final
+class SubmittedOrderExhaustionPolicy(enum.Enum):
+    RESOLVE_LOCALLY = ...
+    RETAIN_UNRESOLVED = ...

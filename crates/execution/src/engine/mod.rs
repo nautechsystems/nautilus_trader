@@ -72,8 +72,8 @@ use nautilus_model::{
     },
     events::{
         OrderAccepted, OrderDenied, OrderDeniedReason, OrderEvent, OrderEventAny, OrderFillVoided,
-        OrderFilled, OrderInitialized, PositionChanged, PositionClosed, PositionEvent,
-        PositionOpened,
+        OrderFilled, OrderInitialized, OrderUpdated, PositionChanged, PositionClosed,
+        PositionEvent, PositionOpened,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId,
@@ -93,9 +93,14 @@ use rust_decimal::Decimal;
 use crate::{
     client::ExecutionClientAdapter,
     reconciliation::{
-        check_position_reconciliation, generate_external_order_status_events,
-        generate_reconciliation_order_events, generate_reconciliation_order_pre_fill_events,
-        generate_reconciliation_order_snapshot_events, reconcile_fill_report as reconcile_fill,
+        OrderReconciliationOptions, check_position_reconciliation,
+        create_released_submission_recovery, create_submission_command_recovery,
+        generate_external_order_status_events, generate_reconciliation_order_events_with_options,
+        generate_reconciliation_order_pre_fill_events_with_options,
+        has_recovered_submission_command, has_recovered_submission_command_history,
+        has_recovered_submission_fill_history, has_unresolved_submission,
+        is_historical_submission_recovery_report, is_valid_submission_recovery_fill,
+        is_valid_submission_recovery_report, reconcile_fill_report as reconcile_fill,
     },
 };
 
@@ -953,13 +958,23 @@ impl ExecutionEngine {
     pub async fn load_cache(&mut self) -> anyhow::Result<()> {
         let ts = SystemTime::now(); // dst-ok: init-time log timing, not on DST state path
 
-        {
-            let mut cache = self.cache.borrow_mut();
-            cache.clear_index();
-            cache.cache_general()?;
+        let load_result = async {
+            {
+                let mut cache = self.cache.borrow_mut();
+                cache.clear_index();
+                cache.cache_general()?;
+            }
+            self.cache.borrow_mut().cache_all().await
         }
+        .await;
 
-        self.cache.borrow_mut().cache_all().await?;
+        if let Err(e) = load_result {
+            if self.config.preserve_unresolved_submissions {
+                // Keep already-loaded orders visible to recovery diagnostics on partial failure.
+                self.cache.borrow_mut().build_index();
+            }
+            return Err(e);
+        }
 
         // Snapshot before iterating: `get_or_init_own_order_book` re-enters `self.cache.borrow_mut()`.
         let own_book_entries: Vec<(InstrumentId, OwnBookOrder)> = {
@@ -1055,12 +1070,28 @@ impl ExecutionEngine {
 
         let instrument = cache.instrument(&report.instrument_id).cloned();
 
+        if self.config.preserve_unresolved_submissions
+            && order
+                .as_ref()
+                .is_some_and(|order| !is_valid_submission_recovery_report(&cache, order, report))
+        {
+            return;
+        }
         drop(cache);
 
         if let Some(order) = order {
             let ts_now = self.clock.borrow().timestamp_ns();
-            let events =
-                generate_reconciliation_order_events(&order, report, instrument.as_ref(), ts_now);
+            let events = generate_reconciliation_order_events_with_options(
+                &order,
+                report,
+                instrument.as_ref(),
+                ts_now,
+                OrderReconciliationOptions {
+                    allow_fill_decrease: report.order_status == OrderStatus::Voided,
+                    preserve_unresolved_submissions: self.config.preserve_unresolved_submissions,
+                    ..Default::default()
+                },
+            );
 
             for event in &events {
                 self.handle_event(event);
@@ -1432,6 +1463,11 @@ impl ExecutionEngine {
 
         let instrument = cache.instrument(&report.instrument_id).cloned();
 
+        let preserve_fill_identity = self.config.preserve_unresolved_submissions
+            && order.as_ref().is_some_and(|order| {
+                has_unresolved_submission(order) || has_recovered_submission_command_history(order)
+            });
+
         drop(cache);
 
         let Some(instrument) = instrument else {
@@ -1471,17 +1507,45 @@ impl ExecutionEngine {
             }
         };
 
-        let ts_now = self.clock.borrow().timestamp_ns();
-
-        if let Some(event) = reconcile_fill(
-            &order,
-            report,
-            &instrument,
-            ts_now,
-            self.config.allow_overfills,
-        ) {
+        if let Some(event) =
+            self.reconcile_runtime_fill(&order, report, &instrument, preserve_fill_identity)
+        {
             self.handle_event(&event);
         }
+    }
+
+    /// Validates recovery identity before normalizing a runtime fill report.
+    fn reconcile_runtime_fill(
+        &self,
+        order: &OrderAny,
+        report: &FillReport,
+        instrument: &InstrumentAny,
+        preserve_identity: bool,
+    ) -> Option<OrderEventAny> {
+        if preserve_identity
+            && !is_valid_submission_recovery_fill(&self.cache.borrow(), order, report)
+        {
+            log::warn!(
+                "Ignoring mismatched fill report for recovered submission {}",
+                order.client_order_id()
+            );
+            return None;
+        }
+
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let mut event = reconcile_fill(
+            order,
+            report,
+            instrument,
+            ts_now,
+            self.config.allow_overfills,
+        )?;
+
+        if preserve_identity && let OrderEventAny::Filled(fill) = &mut event {
+            // Fill corrections must match the original venue identity, including native aliases
+            fill.venue_order_id = report.venue_order_id;
+        }
+        Some(event)
     }
 
     /// Reconciles an [`OrderStatusReport`] paired with companion [`FillReport`]s
@@ -1513,6 +1577,47 @@ impl ExecutionEngine {
                     .and_then(|cid| cache.order(cid).map(|o| o.clone()))
             });
         let instrument = cache.instrument(&report.instrument_id).cloned();
+
+        if self.config.preserve_unresolved_submissions
+            && let Some(order) = order.as_ref()
+            && is_historical_submission_recovery_report(&cache, order, report)
+        {
+            let mut order = order.clone();
+            drop(cache);
+
+            // The old venue leg cannot change current status, but its fills remain authoritative
+            if let Some(instrument) = instrument {
+                for fill in fills {
+                    if let Some(event) =
+                        self.reconcile_runtime_fill(&order, fill, &instrument, true)
+                    {
+                        self.handle_event(&event);
+                        order = self
+                            .cache
+                            .borrow()
+                            .order(&order.client_order_id())
+                            .map(|order| order.clone())
+                            .unwrap_or(order);
+                    }
+                }
+            }
+            return;
+        }
+
+        let unresolved_submission = self.config.preserve_unresolved_submissions
+            && order.as_ref().is_some_and(has_unresolved_submission);
+        let preserve_fill_identity = self.config.preserve_unresolved_submissions
+            && order.as_ref().is_some_and(|order| {
+                has_unresolved_submission(order) || has_recovered_submission_command_history(order)
+            });
+
+        if self.config.preserve_unresolved_submissions
+            && order
+                .as_ref()
+                .is_some_and(|order| !is_valid_submission_recovery_report(&cache, order, report))
+        {
+            return;
+        }
         drop(cache);
 
         let Some(instrument) = instrument else {
@@ -1526,8 +1631,19 @@ impl ExecutionEngine {
                 && let Some(order) = order
             {
                 let ts_now = self.clock.borrow().timestamp_ns();
-                let events =
-                    generate_reconciliation_order_snapshot_events(&order, report, None, ts_now);
+                let events = generate_reconciliation_order_events_with_options(
+                    &order,
+                    report,
+                    None,
+                    ts_now,
+                    OrderReconciliationOptions {
+                        allow_fill_decrease: true,
+                        preserve_unresolved_submissions: self
+                            .config
+                            .preserve_unresolved_submissions,
+                        ..Default::default()
+                    },
+                );
 
                 for event in &events {
                     self.handle_event(event);
@@ -1541,7 +1657,18 @@ impl ExecutionEngine {
         let mut order = match order {
             Some(order) => {
                 let ts_now = self.clock.borrow().timestamp_ns();
-                let events = generate_reconciliation_order_pre_fill_events(&order, report, ts_now);
+                let events = generate_reconciliation_order_pre_fill_events_with_options(
+                    &order,
+                    report,
+                    ts_now,
+                    OrderReconciliationOptions {
+                        preserve_unresolved_submissions: self
+                            .config
+                            .preserve_unresolved_submissions,
+                        ..Default::default()
+                    },
+                );
+
                 for event in &events {
                     self.handle_event(event);
                 }
@@ -1580,15 +1707,18 @@ impl ExecutionEngine {
         let client_order_id = order.client_order_id();
 
         for fill in fills {
-            let ts_now = self.clock.borrow().timestamp_ns();
+            if unresolved_submission
+                && (fill.account_id != report.account_id
+                    || fill.venue_order_id != report.venue_order_id
+                        && !order.venue_order_ids().contains(&&fill.venue_order_id))
+            {
+                log::warn!("Ignoring companion fill outside its unresolved submission report");
+                continue;
+            }
 
-            if let Some(event) = reconcile_fill(
-                &order,
-                fill,
-                &instrument,
-                ts_now,
-                self.config.allow_overfills,
-            ) {
+            if let Some(event) =
+                self.reconcile_runtime_fill(&order, fill, &instrument, preserve_fill_identity)
+            {
                 self.handle_event(&event);
             }
 
@@ -1604,11 +1734,16 @@ impl ExecutionEngine {
         }
 
         let ts_now = self.clock.borrow().timestamp_ns();
-        let events = generate_reconciliation_order_snapshot_events(
+        let events = generate_reconciliation_order_events_with_options(
             &order,
             report,
             Some(&instrument),
             ts_now,
+            OrderReconciliationOptions {
+                allow_fill_decrease: true,
+                preserve_unresolved_submissions: self.config.preserve_unresolved_submissions,
+                ..Default::default()
+            },
         );
 
         for event in &events {
@@ -1959,32 +2094,33 @@ impl ExecutionEngine {
             let reason = OrderDeniedReason::NoExecutionClient {
                 client_id: command.client_id(),
                 routing_context,
-            }
-            .to_string();
+            };
 
-            match command {
-                TradingCommand::SubmitOrder(cmd) => {
-                    let order = self
-                        .cache
-                        .borrow()
-                        .order(&cmd.client_order_id)
-                        .map(|o| o.clone());
+            if self.config.preserve_unresolved_submissions {
+                // Account for an observed submit intent which never reached transport.
+                self.deny_submission(&command, &reason);
+            } else {
+                let reason = reason.to_string();
 
-                    if let Some(order) = order {
-                        self.deny_order(&order, &reason);
+                match command {
+                    TradingCommand::SubmitOrder(cmd) => {
+                        let order = self.cache.borrow().order_owned(&cmd.client_order_id);
+                        if let Some(order) = order {
+                            self.deny_order(&order, &reason);
+                        }
                     }
-                }
-                TradingCommand::SubmitOrderList(cmd) => {
-                    let orders: Vec<OrderAny> = self
-                        .cache
-                        .borrow()
-                        .orders_for_ids(&cmd.order_list.client_order_ids, &cmd);
+                    TradingCommand::SubmitOrderList(cmd) => {
+                        let orders: Vec<OrderAny> = self
+                            .cache
+                            .borrow()
+                            .orders_for_ids(&cmd.order_list.client_order_ids, &cmd);
 
-                    for order in &orders {
-                        self.deny_order(order, &reason);
+                        for order in &orders {
+                            self.deny_order(order, &reason);
+                        }
                     }
+                    _ => {}
                 }
-                _ => {}
             }
 
             return;
@@ -2050,6 +2186,16 @@ impl ExecutionEngine {
     }
 
     fn deny_submission(&self, command: &TradingCommand, reason: &OrderDeniedReason) {
+        if let TradingCommand::SubmitOrder(cmd) = command {
+            let order = self.cache.borrow().order_owned(&cmd.client_order_id);
+            let order =
+                order.or_else(|| self.add_order_from_init(&cmd.order_init, cmd.position_id, cmd));
+            if let Some(order) = order {
+                self.deny_order(&order, &reason.to_string());
+            }
+            return;
+        }
+
         let TradingCommand::SubmitOrderList(cmd) = command else {
             return;
         };
@@ -2247,14 +2393,19 @@ impl ExecutionEngine {
             self.create_order_state_snapshot(&order);
         }
 
-        {
-            let cache = self.cache.borrow();
-            if cache.instrument(&instrument_id).is_none() {
+        let has_instrument = self.cache.borrow().instrument(&instrument_id).is_some();
+        if !has_instrument {
+            if self.config.preserve_unresolved_submissions {
+                self.deny_order(
+                    &order,
+                    &OrderDeniedReason::InstrumentNotFound { instrument_id }.to_string(),
+                );
+            } else {
                 log::error!(
                     "Cannot handle submit order: no instrument found for {instrument_id}, {cmd}",
                 );
-                return;
             }
+            return;
         }
 
         let client_id = client.client_id();
@@ -2403,15 +2554,24 @@ impl ExecutionEngine {
             }
         }
 
-        {
-            let cache = self.cache.borrow();
-            if cache.instrument(&cmd.instrument_id).is_none() {
+        let has_instrument = self.cache.borrow().instrument(&cmd.instrument_id).is_some();
+        if !has_instrument {
+            if self.config.preserve_unresolved_submissions {
+                let reason = OrderDeniedReason::InstrumentNotFound {
+                    instrument_id: cmd.instrument_id,
+                }
+                .to_string();
+
+                for order in &orders {
+                    self.deny_order(order, &reason);
+                }
+            } else {
                 log::error!(
                     "Cannot handle submit order list: no instrument found for {}, {cmd}",
                     cmd.instrument_id,
                 );
-                return;
             }
+            return;
         }
 
         let client_id = client.client_id();
@@ -2864,12 +3024,367 @@ impl ExecutionEngine {
                 return;
             }
         };
-        let order_before_fill = if matches!(event, OrderEventAny::Filled(_)) {
-            cache.order(&client_order_id).map(|o| o.clone())
+        let replacement_update = if self.config.preserve_unresolved_submissions {
+            cache.order(&client_order_id).and_then(|order| {
+                let OrderEventAny::Accepted(accepted) = event else {
+                    return None;
+                };
+
+                if order.status() != OrderStatus::PendingUpdate
+                    || !has_recovered_submission_command(&order)
+                    || order
+                        .venue_order_id()
+                        .is_none_or(|known| known == accepted.venue_order_id)
+                    || order.venue_order_ids().contains(&&accepted.venue_order_id)
+                    || accepted.client_order_id != client_order_id
+                    || accepted.trader_id != order.trader_id()
+                    || accepted.strategy_id != order.strategy_id()
+                    || accepted.instrument_id != order.instrument_id()
+                    || order.account_id() != Some(accepted.account_id)
+                    || cache
+                        .client_order_id(&accepted.venue_order_id)
+                        .is_some_and(|owner| *owner != client_order_id)
+                {
+                    return None;
+                }
+
+                // A replacement acknowledgement confirms the pending modification. Native
+                // Updated application moves its venue mapping and retains historical aliases.
+                let mut updated = OrderUpdated::new(
+                    order.trader_id(),
+                    order.strategy_id(),
+                    order.instrument_id(),
+                    client_order_id,
+                    order.quantity(),
+                    UUID4::new(),
+                    accepted.ts_event,
+                    self.clock.borrow().timestamp_ns(),
+                    true,
+                    Some(accepted.venue_order_id),
+                    order.account_id(),
+                    if matches!(
+                        order.order_type(),
+                        OrderType::Market
+                            | OrderType::StopMarket
+                            | OrderType::MarketIfTouched
+                            | OrderType::TrailingStopMarket
+                    ) {
+                        None
+                    } else {
+                        order.price()
+                    },
+                    order.trigger_price(),
+                    None, // No new protection price was reported
+                    order.is_quote_quantity(),
+                );
+                updated.causation_id = Some(accepted.event_id);
+                Some(OrderEventAny::Updated(updated))
+            })
         } else {
             None
         };
 
+        if let Some(updated) = replacement_update {
+            drop(cache);
+            self.handle_event(&updated);
+            return;
+        }
+
+        if self.config.preserve_unresolved_submissions
+            && matches!(
+                event,
+                OrderEventAny::Accepted(_) | OrderEventAny::Triggered(_)
+            )
+            && cache.order(&client_order_id).is_some_and(|order| {
+                let effective_status = match order.status() {
+                    OrderStatus::PendingCancel | OrderStatus::PendingUpdate => {
+                        order.previous_status()
+                    }
+                    status => Some(status),
+                };
+                (has_recovered_submission_command_history(&order)
+                    || has_recovered_submission_fill_history(&order))
+                    && (effective_status == Some(OrderStatus::PartiallyFilled)
+                        || matches!(event, OrderEventAny::Accepted(_))
+                            && effective_status == Some(OrderStatus::Triggered))
+                    && event
+                        .venue_order_id()
+                        .is_none_or(|id| Some(id) == order.venue_order_id())
+                    && event.instrument_id() == order.instrument_id()
+                    && event.trader_id() == order.trader_id()
+                    && event.strategy_id() == order.strategy_id()
+                    && event
+                        .account_id()
+                        .is_none_or(|id| Some(id) == order.account_id())
+                    && event
+                        .venue_order_id()
+                        .or(order.venue_order_id())
+                        .is_some_and(|venue_order_id| {
+                            cache
+                                .client_order_id(&venue_order_id)
+                                .is_none_or(|owner| *owner == client_order_id)
+                        })
+            })
+        {
+            // A delayed acknowledgement cannot regress an applied trigger or partial fill.
+            return;
+        }
+        let repeated_submission_evidence = match event {
+            OrderEventAny::Accepted(_) => Some(OrderStatus::Accepted),
+            OrderEventAny::Triggered(_) => Some(OrderStatus::Triggered),
+            _ => None,
+        };
+
+        if self.config.preserve_unresolved_submissions
+            && cache.order(&client_order_id).is_some_and(|order| {
+                repeated_submission_evidence.is_some()
+                    && (order.previous_status() == repeated_submission_evidence
+                        || order.previous_status() == Some(OrderStatus::PartiallyFilled)
+                            && event.venue_order_id() == order.venue_order_id())
+                    && has_recovered_submission_command(&order)
+                    && !matches!(event, OrderEventAny::Accepted(accepted)
+                        if order.status() == OrderStatus::PendingCancel
+                            && accepted.reconciliation && accepted.causation_id.is_some())
+            })
+        {
+            // Replayed submission evidence cannot resolve the restored outstanding command.
+            return;
+        }
+        let recovered_submission = if self.config.preserve_unresolved_submissions {
+            let outcome: Option<&dyn OrderEvent> = match event {
+                OrderEventAny::Accepted(event) => Some(event),
+                OrderEventAny::Rejected(event) => Some(event),
+                OrderEventAny::Triggered(event) => Some(event),
+                OrderEventAny::Expired(event) => Some(event),
+                OrderEventAny::Filled(event) => Some(event),
+                OrderEventAny::FillVoided(event) if !event.is_reopened => Some(event),
+                _ => None,
+            };
+            cache.order(&client_order_id).and_then(|order| {
+                outcome.and_then(|proof| {
+                    proof.account_id().and_then(|account_id| {
+                        create_released_submission_recovery(
+                            &order,
+                            account_id,
+                            proof.ts_event(),
+                            proof.ts_init(),
+                            proof.id(),
+                        )
+                    })
+                })
+            })
+        } else {
+            None
+        };
+        let mut recovery_events = Vec::new();
+        let mut recovered_order = None;
+        let recovered_trigger = self.config.preserve_unresolved_submissions
+            && matches!(event, OrderEventAny::Triggered(_))
+            && cache.order(&client_order_id).is_some_and(|order| {
+                !has_unresolved_submission(&order) && has_recovered_submission_command(&order)
+            });
+        let preserve_cancel_after_update = self.config.preserve_unresolved_submissions
+            && matches!(event, OrderEventAny::Updated(updated) if !updated.reconciliation)
+            && cache.order(&client_order_id).is_some_and(|order| {
+                order.status() == OrderStatus::PendingCancel
+                    && (has_unresolved_submission(&order)
+                        || has_recovered_submission_command(&order))
+            });
+        let pending_command = if self.config.preserve_unresolved_submissions {
+            let evidence = match event {
+                OrderEventAny::Accepted(event) if !event.reconciliation => {
+                    Some((Some(event.venue_order_id), event.ts_event))
+                }
+                OrderEventAny::Triggered(event) if !event.reconciliation => event
+                    .venue_order_id
+                    .or_else(|| {
+                        recovered_trigger
+                            .then(|| {
+                                cache
+                                    .order(&client_order_id)
+                                    .and_then(|order| order.venue_order_id())
+                            })
+                            .flatten()
+                    })
+                    .map(|id| (Some(id), event.ts_event)),
+                OrderEventAny::Updated(event) if preserve_cancel_after_update => Some((
+                    event.venue_order_id.or_else(|| {
+                        cache
+                            .order(&client_order_id)
+                            .and_then(|order| order.venue_order_id())
+                    }),
+                    event.ts_event,
+                )),
+                _ => None,
+            };
+            evidence.and_then(|(venue_order_id, ts_event)| {
+                cache.order(&client_order_id).and_then(|order| {
+                    create_submission_command_recovery(
+                        &order,
+                        venue_order_id,
+                        ts_event,
+                        self.clock.borrow().timestamp_ns(),
+                    )
+                })
+            })
+        } else {
+            None
+        };
+        let validate_submission_outcome = self.config.preserve_unresolved_submissions
+            && matches!(
+                event,
+                OrderEventAny::Accepted(_)
+                    | OrderEventAny::Rejected(_)
+                    | OrderEventAny::Denied(_)
+                    | OrderEventAny::Canceled(_)
+                    | OrderEventAny::Expired(_)
+                    | OrderEventAny::Triggered(_)
+                    | OrderEventAny::Filled(_)
+                    | OrderEventAny::FillVoided(_)
+            )
+            && cache.order(&client_order_id).is_some_and(|order| {
+                has_unresolved_submission(&order)
+                    || has_recovered_submission_command_history(&order)
+            });
+
+        let needs_acceptance = self.config.preserve_unresolved_submissions
+            && cache.order(&client_order_id).is_some_and(|order| {
+                order.status() == OrderStatus::Submitted
+                    && (matches!(
+                        event,
+                        OrderEventAny::Triggered(_) | OrderEventAny::Expired(_)
+                    ) || matches!(event, OrderEventAny::FillVoided(voided) if !voided.is_reopened))
+                    || matches!(
+                        order.status(),
+                        OrderStatus::PendingCancel | OrderStatus::PendingUpdate
+                    ) && order.previous_status() == Some(OrderStatus::Submitted)
+                        && matches!(event, OrderEventAny::Triggered(_))
+            });
+
+        if recovered_submission.is_some()
+            || needs_acceptance
+            || pending_command.is_some()
+            || validate_submission_outcome
+        {
+            let mut projected = cache.order(&client_order_id).unwrap().clone();
+            if event.instrument_id() != projected.instrument_id()
+                || event.trader_id() != projected.trader_id()
+                || event.venue_order_id().is_some_and(|venue_order_id| {
+                    projected
+                        .venue_order_id()
+                        .or_else(|| cache.venue_order_id(&client_order_id).copied())
+                        .is_some_and(|known| known != venue_order_id)
+                        && !preserve_cancel_after_update
+                        && !(matches!(
+                            event,
+                            OrderEventAny::Filled(_) | OrderEventAny::FillVoided(_)
+                        ) && (has_unresolved_submission(&projected)
+                            || has_recovered_submission_command_history(&projected))
+                            && projected.venue_order_ids().contains(&&venue_order_id))
+                        || cache
+                            .client_order_id(&venue_order_id)
+                            .is_some_and(|owner| *owner != client_order_id)
+                })
+                || projected.account_id().is_some_and(|account_id| {
+                    !matches!(event, OrderEventAny::Denied(_))
+                        && if preserve_cancel_after_update || recovered_trigger {
+                            event
+                                .account_id()
+                                .is_some_and(|received| received != account_id)
+                        } else {
+                            event.account_id() != Some(account_id)
+                        }
+                })
+                || matches!(event, OrderEventAny::Filled(fill)
+                    if fill.order_side != projected.order_side() || fill.order_type != projected.order_type())
+            {
+                log::warn!(
+                    "Cannot recover {client_order_id}: outcome identity does not match the order"
+                );
+                return;
+            }
+
+            if let Some(submitted) = recovered_submission {
+                if let Err(e) = projected.apply(submitted.clone()) {
+                    log::warn!("Cannot project recovered submission {client_order_id}: {e}");
+                    return;
+                }
+                recovery_events.push(submitted);
+            }
+
+            if matches!(
+                event,
+                OrderEventAny::Triggered(_)
+                    | OrderEventAny::Expired(_)
+                    | OrderEventAny::FillVoided(_)
+            ) && (projected.status() == OrderStatus::Submitted
+                || matches!(
+                    projected.status(),
+                    OrderStatus::PendingCancel | OrderStatus::PendingUpdate
+                ) && has_unresolved_submission(&projected)
+                || recovered_trigger && projected.status() == OrderStatus::PendingCancel)
+            {
+                let Some(venue_order_id) = event.venue_order_id().or_else(|| {
+                    recovered_trigger
+                        .then(|| projected.venue_order_id())
+                        .flatten()
+                }) else {
+                    return;
+                };
+                let mut accepted = OrderAccepted::new(
+                    projected.trader_id(),
+                    projected.strategy_id(),
+                    projected.instrument_id(),
+                    client_order_id,
+                    venue_order_id,
+                    projected.account_id().unwrap(),
+                    UUID4::new(),
+                    event.ts_event(),
+                    self.clock.borrow().timestamp_ns(),
+                    true,
+                );
+
+                if recovered_trigger
+                    && projected.status() == OrderStatus::PendingCancel
+                    && let OrderEventAny::Triggered(triggered) = event
+                {
+                    accepted.causation_id = Some(triggered.event_id);
+                }
+                let accepted = OrderEventAny::Accepted(accepted);
+
+                if let Err(e) = projected.apply(accepted.clone()) {
+                    log::warn!("Cannot project recovered acceptance {client_order_id}: {e}");
+                    return;
+                }
+                recovery_events.push(accepted);
+            }
+            // Validate identity and the complete transition before committing reconstruction.
+            let mut validated = projected.clone();
+            if let Err(e) = validated.apply(event.clone().with_client_order_id(client_order_id)) {
+                log::warn!("Cannot apply recovered outcome {client_order_id}: {e}");
+                return;
+            }
+
+            if validated.venue_order_id().is_some_and(|venue_order_id| {
+                cache
+                    .client_order_id(&venue_order_id)
+                    .is_some_and(|owner| *owner != client_order_id)
+            }) {
+                log::warn!(
+                    "Cannot recover {client_order_id}: venue order ID belongs to another order"
+                );
+                return;
+            }
+            recovered_order = Some(projected);
+        }
+        let order_before_outcome = if matches!(
+            event,
+            OrderEventAny::Filled(_) | OrderEventAny::FillVoided(_)
+        ) {
+            recovered_order.or_else(|| cache.order(&client_order_id).map(|order| order.clone()))
+        } else {
+            None
+        };
         drop(cache);
 
         let event = if event_client_order_id == client_order_id {
@@ -2880,7 +3395,7 @@ impl ExecutionEngine {
 
         match &event {
             OrderEventAny::Filled(fill) => {
-                let Some(order_before_fill) = order_before_fill else {
+                let Some(order_before_fill) = order_before_outcome else {
                     log::error!(
                         "Cannot apply fill: order {} not found in the cache",
                         fill.client_order_id()
@@ -2920,6 +3435,9 @@ impl ExecutionEngine {
                         return;
                     }
 
+                    for recovery in recovery_events {
+                        self.handle_event(&recovery);
+                    }
                     let event = OrderEventAny::Filled(fill.clone());
                     let Some(order) =
                         self.update_cached_order(client_order_id, &event, apply_position)
@@ -2938,12 +3456,7 @@ impl ExecutionEngine {
             }
             OrderEventAny::FillVoided(voided) => {
                 let mut voided = voided.clone();
-                let Some(order_before_void) = self
-                    .cache
-                    .borrow()
-                    .order(&client_order_id)
-                    .map(|order| order.clone())
-                else {
+                let Some(order_before_void) = order_before_outcome else {
                     log::error!("Cannot apply fill void: order {client_order_id} not found");
                     return;
                 };
@@ -3030,6 +3543,10 @@ impl ExecutionEngine {
                     ));
                 }
 
+                for recovery in recovery_events {
+                    self.handle_event(&recovery);
+                }
+
                 if self
                     .update_cached_order(client_order_id, &event, true)
                     .is_none()
@@ -3045,11 +3562,19 @@ impl ExecutionEngine {
                 self.publish_position_events(position_events);
             }
             _ => {
-                if self
-                    .update_cached_order(client_order_id, &event, true)
-                    .is_some()
-                {
+                for recovery in recovery_events {
+                    self.handle_event(&recovery);
+                }
+
+                if let Some(order) = self.update_cached_order(client_order_id, &event, true) {
                     self.publish_order_event(&event);
+
+                    if (order.is_open()
+                        || preserve_cancel_after_update && order.status() == OrderStatus::Submitted)
+                        && let Some(pending) = pending_command
+                    {
+                        self.handle_event(&pending);
+                    }
                 }
             }
         }

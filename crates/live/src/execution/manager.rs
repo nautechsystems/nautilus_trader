@@ -59,13 +59,17 @@ use nautilus_core::{DurationNanos, UUID4, UnixNanos, datetime::mins_to_secs};
 use nautilus_execution::{
     engine::ExecutionEngine,
     reconciliation::{
-        calculate_reconciliation_price, create_inferred_fill_for_qty,
+        OrderReconciliationOptions, calculate_reconciliation_price, create_inferred_fill_for_qty,
         create_position_reconciliation_venue_order_id, create_reconciliation_rejected,
-        create_reconciliation_triggered, generate_external_order_status_events_with_commission,
-        generate_reconciliation_order_pre_fill_events,
-        generate_reconciliation_order_snapshot_events_with_commission,
+        create_reconciliation_triggered, create_released_submission_recovery,
+        generate_external_order_status_events_with_commission,
+        generate_reconciliation_order_events_with_options,
+        generate_reconciliation_order_pre_fill_events_with_options,
+        has_recovered_submission_command, has_recovered_submission_command_history,
+        has_recovered_submission_fill_history, has_unresolved_submission,
         incremental_inferred_fill_price_and_liquidity, inferred_fill_price_and_liquidity,
-        process_mass_status_for_reconciliation,
+        is_historical_submission_recovery_report, is_valid_submission_recovery_fill,
+        is_valid_submission_recovery_report, process_mass_status_for_reconciliation,
         process_mass_status_for_reconciliation_without_synthetic_reports,
         reconcile_order_report_with_commission,
     },
@@ -108,6 +112,9 @@ use super::{
         create_cross_zero_leg_report, create_orphan_fill_order_report, has_active_inferred_fill,
         is_exact_order_match, position_avg_px, position_qty_aggregates,
         resolve_inferred_fill_commission, should_project_fill, terminal_report_has_missing_fills,
+    },
+    submission::{
+        SubmissionRecoveryExhausted, SubmissionRecoverySource, SubmittedOrderExhaustionPolicy,
     },
 };
 
@@ -238,18 +245,264 @@ impl ExecutionManager {
             return;
         }
 
+        if self.submission_is_unresolved(client_order_id) {
+            return;
+        }
+        let unresolved_submission = self.config.submitted_order_exhaustion_policy
+            == SubmittedOrderExhaustionPolicy::RetainUnresolved
+            && self.get_order(client_order_id).is_some_and(|order| {
+                matches!(
+                    order.status(),
+                    OrderStatus::Initialized | OrderStatus::Released | OrderStatus::Submitted
+                )
+            });
+
         self.order_inflight_checks.insert(
             client_order_id,
             InflightCheck {
                 submitted_at: dst::time::Instant::now(),
                 retry_count: 0,
                 last_query_at: None,
+                unresolved_submission,
+                recovered_submission_command: false,
+                exhaustion: None,
+                completed_submission_query_retries: None,
             },
         );
-
         self.order_recon_retries.insert(client_order_id, 0);
         self.order_query_recency.remove(&client_order_id);
         self.order_activity.remove(&client_order_id);
+    }
+
+    /// Registers a submission before dispatch, even if its order is not yet cached.
+    pub fn register_submission(&mut self, client_order_id: ClientOrderId) {
+        self.register_inflight(client_order_id);
+
+        if self.config.submitted_order_exhaustion_policy
+            == SubmittedOrderExhaustionPolicy::RetainUnresolved
+            && !self.submission_outcome_applied(client_order_id)
+            && let Some(check) = self.order_inflight_checks.get_mut(&client_order_id)
+        {
+            check.unresolved_submission = true;
+        }
+    }
+
+    /// Restores recovery tracking from the native cache's applied submission history.
+    #[cfg(feature = "node")]
+    pub(crate) fn register_cached_submissions(&mut self) {
+        if self.config.submitted_order_exhaustion_policy
+            != SubmittedOrderExhaustionPolicy::RetainUnresolved
+        {
+            return;
+        }
+        let ids = self
+            .cache
+            .borrow()
+            .orders_refs(None, None, None, None, None)
+            .iter()
+            .map(|order| order.client_order_id())
+            .collect::<Vec<_>>();
+
+        for id in ids {
+            self.register_applied_submission(id);
+            self.confirm_submission_outcome(&id);
+        }
+    }
+
+    /// Registers submission history applied through native ingress or restored cache state.
+    pub(crate) fn register_applied_submission(&mut self, client_order_id: ClientOrderId) {
+        if self.config.submitted_order_exhaustion_policy
+            == SubmittedOrderExhaustionPolicy::RetainUnresolved
+            && !self.submission_outcome_applied(client_order_id)
+            && self.get_order(client_order_id).is_some_and(|order| {
+                order.events().iter().any(|event| {
+                    matches!(
+                        event,
+                        OrderEventAny::Submitted(_) | OrderEventAny::Released(_)
+                    )
+                })
+            })
+        {
+            self.register_submission(client_order_id);
+        }
+    }
+
+    /// Returns the retained exhaustion diagnostic for an unresolved submission.
+    #[must_use]
+    pub fn submission_recovery_exhaustion(
+        &self,
+        client_order_id: &ClientOrderId,
+    ) -> Option<&SubmissionRecoveryExhausted> {
+        self.order_inflight_checks
+            .get(client_order_id)?
+            .exhaustion
+            .as_ref()
+    }
+
+    /// Returns submission identities whose outcomes remain unresolved in native state.
+    #[must_use]
+    pub fn unresolved_submission_ids(&self) -> Vec<ClientOrderId> {
+        self.order_inflight_checks
+            .keys()
+            .copied()
+            .filter(|id| self.submission_is_unresolved(*id))
+            .collect()
+    }
+
+    fn submission_is_unresolved(&self, client_order_id: ClientOrderId) -> bool {
+        self.order_inflight_checks
+            .get(&client_order_id)
+            .is_some_and(|check| check.unresolved_submission)
+            && !self.submission_outcome_applied(client_order_id)
+    }
+
+    fn submission_outcome_applied(&self, client_order_id: ClientOrderId) -> bool {
+        self.cache
+            .borrow()
+            .order(&client_order_id)
+            .is_some_and(|order| {
+                order.events().iter().any(|event| {
+                    matches!(
+                        event,
+                        OrderEventAny::Accepted(_)
+                            | OrderEventAny::FillVoided(_)
+                            | OrderEventAny::Triggered(_)
+                            | OrderEventAny::Filled(_)
+                            | OrderEventAny::Rejected(_)
+                            | OrderEventAny::Denied(_)
+                            | OrderEventAny::Canceled(_)
+                            | OrderEventAny::Expired(_)
+                    )
+                })
+            })
+    }
+
+    /// Retires submission or recovered-command tracking only after native state applied evidence.
+    pub fn confirm_submission_outcome(&mut self, client_order_id: &ClientOrderId) {
+        let Some(check) = self.order_inflight_checks.get(client_order_id) else {
+            return;
+        };
+
+        if !self.submission_outcome_applied(*client_order_id) {
+            return;
+        }
+
+        if !check.unresolved_submission
+            && (!check.recovered_submission_command
+                || self.config.submitted_order_exhaustion_policy
+                    != SubmittedOrderExhaustionPolicy::RetainUnresolved
+                || self.get_order(*client_order_id).is_none_or(|order| {
+                    matches!(
+                        order.status(),
+                        OrderStatus::Submitted
+                            | OrderStatus::PendingCancel
+                            | OrderStatus::PendingUpdate
+                    )
+                }))
+        {
+            return;
+        }
+
+        if self.get_order(*client_order_id).is_some_and(|order| {
+            matches!(
+                order.status(),
+                OrderStatus::PendingCancel | OrderStatus::PendingUpdate
+            )
+        }) {
+            // The submit is known, but a later cancel or modify still needs its own recovery
+            if let Some(check) = self.order_inflight_checks.get_mut(client_order_id) {
+                check.unresolved_submission = false;
+                check.recovered_submission_command = true;
+                check.exhaustion = None;
+                check.completed_submission_query_retries = None;
+                check.retry_count = 0;
+                check.submitted_at = dst::time::Instant::now();
+                check.last_query_at = None;
+            }
+            self.order_recon_retries.insert(*client_order_id, 0);
+        } else {
+            self.clear_recon_tracking(client_order_id, true);
+            if self
+                .get_order(*client_order_id)
+                .is_some_and(|order| !order.is_closed())
+            {
+                // Applied acknowledgement starts the normal settling window for venue history
+                self.record_local_activity(*client_order_id);
+            }
+        }
+    }
+
+    /// Checks completed targeted queries after their events have been dispatched.
+    pub(crate) fn check_completed_submission_queries(&mut self) {
+        if self.config.submitted_order_exhaustion_policy
+            != SubmittedOrderExhaustionPolicy::RetainUnresolved
+        {
+            return;
+        }
+        let completed = self
+            .order_inflight_checks
+            .iter_mut()
+            .filter_map(|(id, check)| {
+                check
+                    .completed_submission_query_retries
+                    .take()
+                    .map(|retries| (*id, retries))
+            })
+            .collect::<Vec<_>>();
+
+        for (id, retries) in completed {
+            self.confirm_submission_outcome(&id);
+            self.exhaust_submission(id, SubmissionRecoverySource::MissingOrder, retries);
+        }
+    }
+
+    fn exhaust_submission(
+        &mut self,
+        client_order_id: ClientOrderId,
+        source: SubmissionRecoverySource,
+        retry_count: u32,
+    ) {
+        let budget = match source {
+            SubmissionRecoverySource::Inflight => self.config.inflight_max_retries,
+            SubmissionRecoverySource::MissingOrder => self.config.open_check_missing_retries,
+        };
+
+        if retry_count < budget {
+            return;
+        }
+
+        if !self.submission_is_unresolved(client_order_id)
+            || self
+                .submission_recovery_exhaustion(&client_order_id)
+                .is_some()
+        {
+            return;
+        }
+        let Some(order) = self.get_order(client_order_id) else {
+            return;
+        };
+        let client_id = self.cache.borrow().client_id(&client_order_id).copied();
+        let event = SubmissionRecoveryExhausted {
+            trader_id: order.trader_id(),
+            client_id,
+            strategy_id: order.strategy_id(),
+            instrument_id: order.instrument_id(),
+            client_order_id,
+            source,
+            retry_count,
+            ts_event: self.clock.borrow().timestamp_ns(),
+        };
+
+        if let Some(check) = self.order_inflight_checks.get_mut(&client_order_id) {
+            check.exhaustion = Some(event.clone());
+        }
+        log::warn!(
+            "Submission recovery exhausted for {client_order_id}: {source:?} after {retry_count} checks; venue outcome remains unresolved"
+        );
+        msgbus::publish_any(
+            MessagingSwitchboard::submission_recovery_exhausted_topic(),
+            &event,
+        );
     }
 
     /// Records local activity for the specified order.
@@ -276,11 +529,30 @@ impl ExecutionManager {
     pub(crate) fn remove_targeted_order_queries(&mut self, client_order_ids: &[ClientOrderId]) {
         for client_order_id in client_order_ids {
             self.order_query_pending.shift_remove(client_order_id);
+            self.exhaust_submission(
+                *client_order_id,
+                SubmissionRecoverySource::MissingOrder,
+                self.recon_check_retry_count(client_order_id),
+            );
         }
     }
 
     /// Clears reconciliation tracking state for an order.
     pub fn clear_recon_tracking(&mut self, client_order_id: &ClientOrderId, drop_last_query: bool) {
+        // Observers run before dispatch; native state must resolve submission or recovered commands
+        if (self.submission_is_unresolved(*client_order_id)
+            || self.config.submitted_order_exhaustion_policy
+                == SubmittedOrderExhaustionPolicy::RetainUnresolved
+                && self
+                    .get_order(*client_order_id)
+                    .is_some_and(|order| has_recovered_submission_command(&order)))
+            && !self
+                .config
+                .filtered_client_order_ids
+                .contains(client_order_id)
+        {
+            return;
+        }
         self.order_inflight_checks.shift_remove(client_order_id);
         self.order_recon_retries.shift_remove(client_order_id);
         self.order_coverage_warnings.shift_remove(client_order_id);
@@ -594,9 +866,39 @@ impl ExecutionManager {
                 continue;
             }
 
+            if self.config.submitted_order_exhaustion_policy
+                == SubmittedOrderExhaustionPolicy::RetainUnresolved
+                && {
+                    let cache = self.cache.borrow();
+                    let order = report
+                        .client_order_id
+                        .and_then(|id| cache.order(&id))
+                        .or_else(|| {
+                            cache
+                                .client_order_id(&report.venue_order_id)
+                                .and_then(|id| cache.order(id))
+                        });
+                    order.as_ref().is_some_and(|order| {
+                        !is_valid_submission_recovery_report(&cache, order, report)
+                            && !is_historical_submission_recovery_report(&cache, order, report)
+                    })
+                }
+            {
+                // Reject before any venue-ID alias can be indexed from this report.
+                orders_skipped_filtered += 1;
+                continue;
+            }
+
             if let Some(client_order_id) = &report.client_order_id {
                 if let Some(cached_order) = self.get_order(*client_order_id)
                     && is_exact_order_match(&cached_order, report)
+                    && !(self.config.submitted_order_exhaustion_policy
+                        == SubmittedOrderExhaustionPolicy::RetainUnresolved
+                        && (has_unresolved_submission(&cached_order)
+                            || has_recovered_submission_command_history(&cached_order))
+                        && fill_reports
+                            .get(&report.venue_order_id)
+                            .is_some_and(|fills| !fills.is_empty()))
                 {
                     log::debug!("Skipping order {client_order_id}: already in sync with venue");
                     orders_skipped_duplicate += 1;
@@ -920,6 +1222,19 @@ impl ExecutionManager {
                     sorted_fills.sort_by_key(|f| f.ts_event);
 
                     for fill in sorted_fills {
+                        if self.config.submitted_order_exhaustion_policy
+                            == SubmittedOrderExhaustionPolicy::RetainUnresolved
+                            && (has_unresolved_submission(&order)
+                                || has_recovered_submission_command_history(&order))
+                            && fill.account_id != mass_status.account_id
+                        {
+                            log::warn!(
+                                "Ignoring orphan fill outside its mass-status account for {}",
+                                order.client_order_id()
+                            );
+                            continue;
+                        }
+
                         if let Some((event, fill_key)) = self.create_order_fill(
                             &order,
                             fill,
@@ -1600,6 +1915,7 @@ impl ExecutionManager {
     /// the venue for the order's current status. At max retries, generates terminal events
     /// (rejection or cancellation) based on the order's status.
     pub fn check_inflight_orders(&mut self) -> InflightCheckResult {
+        self.check_completed_submission_queries();
         let mut result = InflightCheckResult::default();
         let now = dst::time::Instant::now();
         let threshold = Duration::from_millis(self.config().inflight_threshold_ms);
@@ -1607,6 +1923,10 @@ impl ExecutionManager {
         let mut to_check = Vec::new();
 
         for (client_order_id, check) in &self.order_inflight_checks {
+            if check.exhaustion.is_some() {
+                continue;
+            }
+
             if now
                 .checked_duration_since(check.submitted_at)
                 .is_some_and(|elapsed| elapsed > threshold)
@@ -1616,6 +1936,8 @@ impl ExecutionManager {
         }
 
         for client_order_id in to_check {
+            self.confirm_submission_outcome(&client_order_id);
+
             if self
                 .config
                 .filtered_client_order_ids
@@ -1645,6 +1967,15 @@ impl ExecutionManager {
                     .insert(client_order_id, check.retry_count);
 
                 if check.retry_count >= self.config.inflight_max_retries {
+                    if check.unresolved_submission {
+                        let retries = check.retry_count;
+                        self.exhaust_submission(
+                            client_order_id,
+                            SubmissionRecoverySource::Inflight,
+                            retries,
+                        );
+                        continue;
+                    }
                     let ts_now = self.clock.borrow().timestamp_ns();
 
                     if let Some(order) = self.get_order(client_order_id) {
@@ -1712,6 +2043,16 @@ impl ExecutionManager {
         let cache = self.cache.borrow();
         let mut orders = cache.orders_open(None, None, None, None, None);
         orders.extend(cache.orders_inflight(None, None, None, None, None));
+        // Released and initialized submissions may be absent from the ordinary order indexes
+        if self.config.submitted_order_exhaustion_policy
+            == SubmittedOrderExhaustionPolicy::RetainUnresolved
+        {
+            for id in self.unresolved_submission_ids() {
+                if let Some(order) = cache.order(&id) {
+                    orders.push(order);
+                }
+            }
+        }
         let mut seen_client_order_ids = IndexSet::new();
 
         orders
@@ -1915,6 +2256,7 @@ impl ExecutionManager {
         &mut self,
         client_ids: Option<&IndexSet<ClientId>>,
     ) -> Vec<TradingCommand> {
+        self.check_completed_submission_queries();
         let now = dst::time::Instant::now();
         let query_delay = Duration::from_millis(u64::from(self.config.single_order_query_delay_ms));
         let query_limit = self.config.max_single_order_queries_per_cycle as usize;
@@ -1940,6 +2282,12 @@ impl ExecutionManager {
             }
 
             let client_order_id = order.client_order_id();
+            if self
+                .submission_recovery_exhaustion(&client_order_id)
+                .is_some()
+            {
+                continue;
+            }
             let client_id = self.cache.borrow().client_id(&client_order_id).copied();
 
             if let Some(client_ids) = client_ids
@@ -1998,6 +2346,7 @@ impl ExecutionManager {
         failed_clients: &IndexSet<ClientId>,
         clients: &[&dyn ExecutionClient],
     ) -> OpenOrderReconciliationResult {
+        self.check_completed_submission_queries();
         all_reports.retain(|sourced| !self.should_skip_order_report(&sourced.report));
         let mut venue_reported_ids = IndexSet::new();
 
@@ -2010,7 +2359,9 @@ impl ExecutionManager {
                 // A positive report is proof the venue still knows the order:
                 // reset the missing-order ladder so only consecutive misses
                 // accumulate (mirrors the Python engine's per-report clear).
-                self.order_recon_retries.shift_remove(client_order_id);
+                if !self.submission_is_unresolved(*client_order_id) {
+                    self.order_recon_retries.shift_remove(client_order_id);
+                }
             } else {
                 let mapped_client_order_id = self
                     .cache
@@ -2025,7 +2376,9 @@ impl ExecutionManager {
                     venue_reported_ids.insert(client_order_id);
                     self.order_coverage_warnings.shift_remove(&client_order_id);
                     self.order_lookback_warnings.shift_remove(&client_order_id);
-                    self.order_recon_retries.shift_remove(&client_order_id);
+                    if !self.submission_is_unresolved(client_order_id) {
+                        self.order_recon_retries.shift_remove(&client_order_id);
+                    }
                 }
             }
         }
@@ -2063,6 +2416,12 @@ impl ExecutionManager {
             let instrument = self.get_instrument(&report.instrument_id);
 
             if terminal_report_has_missing_fills(&report, order.filled_qty()) {
+                if self
+                    .submission_recovery_exhaustion(&client_order_id)
+                    .is_some()
+                {
+                    continue;
+                }
                 targeted_candidates.push((
                     order,
                     IndexSet::from([sourced.client_id]),
@@ -2252,6 +2611,12 @@ impl ExecutionManager {
                 None,
                 None,
             );
+
+            if report.is_some() && self.submission_is_unresolved(client_order_id) {
+                // A bulk terminal snapshot can require fill recovery before the missing-order ladder.
+                let retries = self.order_recon_retries.entry(client_order_id).or_insert(0);
+                *retries = retries.saturating_add(1);
+            }
             targeted_queries.push(TargetedOrderQuery {
                 client_order_id,
                 responsible_clients,
@@ -2284,10 +2649,22 @@ impl ExecutionManager {
 
         for result in results {
             let client_order_id = result.client_order_id;
-            self.remove_targeted_order_queries(&[client_order_id]);
+            // Completed evidence is applied before judging exhaustion of the final query.
+            self.order_query_pending.shift_remove(&client_order_id);
 
             if let Some(report) = result.report {
-                self.order_recon_retries.shift_remove(&client_order_id);
+                let retries = self.recon_check_retry_count(&client_order_id);
+                if let Some(check) = self.order_inflight_checks.get_mut(&client_order_id)
+                    && check.unresolved_submission
+                    && retries >= self.config.open_check_missing_retries
+                {
+                    // Judge the final query only after its events have reached native state
+                    check.completed_submission_query_retries = Some(retries);
+                }
+
+                if !self.submission_is_unresolved(client_order_id) {
+                    self.order_recon_retries.shift_remove(&client_order_id);
+                }
                 self.order_coverage_warnings.shift_remove(&client_order_id);
 
                 let Some(order) = self.get_order(client_order_id) else {
@@ -2325,6 +2702,11 @@ impl ExecutionManager {
             if result.coverage_complete {
                 events.extend(self.resolve_missing_order(client_order_id));
             } else {
+                self.exhaust_submission(
+                    client_order_id,
+                    SubmissionRecoverySource::MissingOrder,
+                    self.recon_check_retry_count(&client_order_id),
+                );
                 log::warn!(
                     "Deferring missing-order resolution for {client_order_id}: targeted order status coverage was incomplete"
                 );
@@ -2926,6 +3308,23 @@ impl ExecutionManager {
     /// just-acknowledged order from missing-order reconciliation while the
     /// venue report lags.
     pub fn observe_order_event(&mut self, event: &OrderEventAny) {
+        if self.config.submitted_order_exhaustion_policy
+            == SubmittedOrderExhaustionPolicy::RetainUnresolved
+            && matches!(event, OrderEventAny::Accepted(_))
+            && self
+                .get_order(event.client_order_id())
+                .is_some_and(|order| {
+                    (has_unresolved_submission(&order) || has_recovered_submission_command(&order))
+                        && matches!(
+                            order.status(),
+                            OrderStatus::PendingCancel | OrderStatus::PendingUpdate
+                        )
+                })
+        {
+            self.record_local_activity(event.client_order_id());
+            return;
+        }
+
         match event {
             OrderEventAny::Filled(fill) => {
                 self.record_position_activity(fill.instrument_id, fill.account_id);
@@ -3004,12 +3403,18 @@ impl ExecutionManager {
             return;
         };
 
-        let accepted_during_pending_command = report.order_status == OrderStatus::Accepted
+        let accepted_during_pending_command = (report.order_status == OrderStatus::Accepted
+            || self.config.submitted_order_exhaustion_policy
+                == SubmittedOrderExhaustionPolicy::RetainUnresolved
+                && report.order_status == OrderStatus::Triggered)
             && self.get_order(client_order_id).is_some_and(|order| {
-                matches!(
-                    order.status(),
-                    OrderStatus::PendingUpdate | OrderStatus::PendingCancel
-                )
+                (report.order_status == OrderStatus::Accepted
+                    || has_unresolved_submission(&order)
+                    || has_recovered_submission_command(&order))
+                    && matches!(
+                        order.status(),
+                        OrderStatus::PendingUpdate | OrderStatus::PendingCancel
+                    )
             });
 
         if !matches!(
@@ -3124,7 +3529,18 @@ impl ExecutionManager {
     }
 
     fn prepare_missing_order_query(&mut self, client_order_id: ClientOrderId) -> Option<OrderAny> {
+        self.confirm_submission_outcome(&client_order_id);
+        if self
+            .submission_recovery_exhaustion(&client_order_id)
+            .is_some()
+        {
+            return None;
+        }
         let order = self.get_order(client_order_id)?;
+
+        if !self.order_inflight_checks.contains_key(&client_order_id) {
+            self.register_applied_submission(client_order_id);
+        }
 
         // The order may have closed while the report request was in flight;
         // the check must come before the retry increment or the stale empty
@@ -3177,6 +3593,15 @@ impl ExecutionManager {
                 order.status()
             );
             self.clear_recon_tracking(&client_order_id, true);
+            return events;
+        }
+
+        if self.submission_is_unresolved(client_order_id) {
+            self.exhaust_submission(
+                client_order_id,
+                SubmissionRecoverySource::MissingOrder,
+                self.recon_check_retry_count(&client_order_id),
+            );
             return events;
         }
 
@@ -4111,6 +4536,12 @@ impl ExecutionManager {
         instrument: Option<&InstrumentAny>,
         commission_client: Option<&dyn ExecutionClient>,
     ) -> anyhow::Result<Vec<OrderEventAny>> {
+        if self.config.submitted_order_exhaustion_policy
+            == SubmittedOrderExhaustionPolicy::RetainUnresolved
+            && !is_valid_submission_recovery_report(&self.cache.borrow(), order, report)
+        {
+            return Ok(Vec::new());
+        }
         let has_missing_fills = terminal_report_has_missing_fills(report, order.filled_qty());
         anyhow::ensure!(
             !has_missing_fills,
@@ -4148,6 +4579,32 @@ impl ExecutionManager {
             return Ok(Vec::new());
         }
 
+        if self.config.submitted_order_exhaustion_policy
+            == SubmittedOrderExhaustionPolicy::RetainUnresolved
+            && (has_unresolved_submission(order)
+                || has_recovered_submission_command(order)
+                || matches!(
+                    (report.order_status, order.status()),
+                    (
+                        OrderStatus::Accepted,
+                        OrderStatus::Triggered | OrderStatus::PartiallyFilled
+                    ) | (OrderStatus::Triggered, OrderStatus::PartiallyFilled)
+                ) && (has_recovered_submission_command_history(order)
+                    || has_recovered_submission_fill_history(order)))
+        {
+            return Ok(generate_reconciliation_order_events_with_options(
+                order,
+                report,
+                instrument,
+                ts_now,
+                OrderReconciliationOptions {
+                    allow_fill_decrease: report.order_status == OrderStatus::Voided,
+                    commission,
+                    preserve_unresolved_submissions: true,
+                },
+            ));
+        }
+
         Ok(
             reconcile_order_report_with_commission(order, report, instrument, ts_now, commission)
                 .into_iter()
@@ -4170,6 +4627,51 @@ impl ExecutionManager {
         fill_queue: &mut ReconciliationFillQueue,
         commission_client: Option<&dyn ExecutionClient>,
     ) -> Vec<OrderEventAny> {
+        if self.config.submitted_order_exhaustion_policy
+            == SubmittedOrderExhaustionPolicy::RetainUnresolved
+            && is_historical_submission_recovery_report(&self.cache.borrow(), order, report)
+        {
+            let mut events = Vec::new();
+            let Some(instrument) = instrument else {
+                return events;
+            };
+            let mut working = order.clone();
+            let mut sorted_fills = fills.to_vec();
+            sorted_fills.sort_by_key(|fill| fill.ts_event);
+
+            // Retain historical fills without applying the superseded leg's status or quantities
+            for fill in sorted_fills {
+                let Some((event, key)) = self.create_order_fill(
+                    &working,
+                    fill,
+                    instrument,
+                    &fill_queue.pending_fill_keys,
+                ) else {
+                    continue;
+                };
+
+                if let Err(e) = working.apply(OrderEventAny::Filled(event.clone())) {
+                    log::warn!(
+                        "Cannot project historical fill for {}: {e}",
+                        order.client_order_id()
+                    );
+                    continue;
+                }
+                fill_queue.push(&mut events, event, key);
+            }
+            return events;
+        }
+
+        if self.config.submitted_order_exhaustion_policy
+            == SubmittedOrderExhaustionPolicy::RetainUnresolved
+            && !is_valid_submission_recovery_report(&self.cache.borrow(), order, report)
+        {
+            return Vec::new();
+        }
+        let recovering_submission = self.config.submitted_order_exhaustion_policy
+            == SubmittedOrderExhaustionPolicy::RetainUnresolved
+            && (has_unresolved_submission(order)
+                || has_recovered_submission_command_history(order));
         let mut events = Vec::new();
         let mut working = order.clone();
         let mut sorted_fills: Vec<&FillReport> = fills.to_vec();
@@ -4206,7 +4708,29 @@ impl ExecutionManager {
             return events;
         }
 
-        for event in generate_reconciliation_order_pre_fill_events(&working, report, ts_now) {
+        for mut event in generate_reconciliation_order_pre_fill_events_with_options(
+            &working,
+            report,
+            ts_now,
+            OrderReconciliationOptions {
+                preserve_unresolved_submissions: self.config.submitted_order_exhaustion_policy
+                    == SubmittedOrderExhaustionPolicy::RetainUnresolved,
+                ..Default::default()
+            },
+        ) {
+            if is_snapshot
+                && self.config.submitted_order_exhaustion_policy
+                    == SubmittedOrderExhaustionPolicy::RetainUnresolved
+                && let OrderEventAny::Updated(updated) = &mut event
+                && updated.reconciliation
+                && updated.causation_id == Some(report.report_id)
+                && updated.venue_order_id == Some(report.venue_order_id)
+                && let Some(fill) = sorted_fills.first()
+            {
+                // Global snapshot sorting must promote the replacement ID before its fills.
+                updated.ts_event = updated.ts_event.min(fill.ts_event);
+            }
+
             if let Err(e) = working.apply(event.clone()) {
                 log::warn!(
                     "Cannot project reconciliation event for {}: {e}",
@@ -4220,11 +4744,54 @@ impl ExecutionManager {
 
         if let Some(inst) = instrument {
             for fill in sorted_fills {
+                let recover_submission = self.config.submitted_order_exhaustion_policy
+                    == SubmittedOrderExhaustionPolicy::RetainUnresolved
+                    && working.status() == OrderStatus::Released;
+                if recovering_submission
+                    && (!is_valid_submission_recovery_fill(&self.cache.borrow(), &working, fill)
+                        || has_unresolved_submission(order)
+                            && (fill.account_id != report.account_id
+                                || fill.venue_order_id != report.venue_order_id
+                                    && !order.venue_order_ids().contains(&&fill.venue_order_id)))
+                {
+                    log::warn!(
+                        "Ignoring mismatched companion fill for recovered submission {}",
+                        working.client_order_id()
+                    );
+                    continue;
+                }
                 let Some((event, fill_key)) =
                     self.create_order_fill(&working, fill, inst, &fill_queue.pending_fill_keys)
                 else {
                     continue;
                 };
+
+                if recover_submission {
+                    let submitted = create_released_submission_recovery(
+                        &working,
+                        fill.account_id,
+                        fill.ts_event,
+                        ts_now,
+                        fill.report_id,
+                    )
+                    .unwrap();
+                    let mut projected = working.clone();
+                    if let Err(e) = projected
+                        .apply(submitted.clone())
+                        .and_then(|()| projected.apply(OrderEventAny::Filled(event.clone())))
+                    {
+                        log::warn!(
+                            "Cannot recover released submission {} from companion fill: {e}",
+                            working.client_order_id()
+                        );
+                        continue;
+                    }
+                    // Project the submission locally; the engine reconstructs it atomically
+                    // with the fill after its native ownership, duplicate and overfill checks.
+                    working = projected;
+                    fill_queue.push(&mut events, event, fill_key);
+                    continue;
+                }
 
                 if let Err(e) = working.apply(OrderEventAny::Filled(event.clone())) {
                     if self.is_fill_applied(&event, fill_key) {
@@ -4288,8 +4855,17 @@ impl ExecutionManager {
             None
         };
 
-        for event in generate_reconciliation_order_snapshot_events_with_commission(
-            &working, report, instrument, ts_now, commission,
+        for event in generate_reconciliation_order_events_with_options(
+            &working,
+            report,
+            instrument,
+            ts_now,
+            OrderReconciliationOptions {
+                allow_fill_decrease: true,
+                commission,
+                preserve_unresolved_submissions: self.config.submitted_order_exhaustion_policy
+                    == SubmittedOrderExhaustionPolicy::RetainUnresolved,
+            },
         ) {
             if let Err(e) = working.apply(event.clone()) {
                 log::warn!(
@@ -4827,6 +5403,18 @@ impl ExecutionManager {
         instrument: &InstrumentAny,
         pending_fill_keys: &IndexSet<FillKey>,
     ) -> Option<(OrderFilled, FillKey)> {
+        if self.config.submitted_order_exhaustion_policy
+            == SubmittedOrderExhaustionPolicy::RetainUnresolved
+            && (has_unresolved_submission(order) || has_recovered_submission_command_history(order))
+            && !is_valid_submission_recovery_fill(&self.cache.borrow(), order, fill)
+        {
+            log::warn!(
+                "Ignoring mismatched fill report for recovered submission {}",
+                order.client_order_id()
+            );
+            return None;
+        }
+
         if fill.last_qty.is_zero() {
             log::warn!("Skipping zero-quantity fill report: {fill}");
             return None;
@@ -6076,6 +6664,212 @@ mod tests {
 
         assert_eq!(fill.last_qty, Quantity::from("10.0"));
         assert_eq!(fill.commission, Some(expected));
+    }
+
+    #[rstest]
+    #[case::targeted_real_fill(false, true)]
+    #[case::targeted_duplicate_fill(false, false)]
+    #[case::snapshot_real_fill(true, true)]
+    #[case::snapshot_duplicate_fill(true, false)]
+    fn test_recovered_replacement_companion_preserves_partial_fill_and_causality(
+        #[case] is_snapshot: bool,
+        #[case] additional_fill: bool,
+        #[values(false, true)] fresh_report_id: bool,
+    ) {
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut manager = ExecutionManager::new(
+            clock,
+            cache.clone(),
+            ExecutionManagerConfig {
+                submitted_order_exhaustion_policy: SubmittedOrderExhaustionPolicy::RetainUnresolved,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let client_order_id = ClientOrderId::from("O-RECOVERED-REPLACEMENT-COMPANION");
+        let old_venue_id = VenueOrderId::from("V-RECOVERED-REPLACEMENT-OLD");
+        let new_venue_id = VenueOrderId::from("V-RECOVERED-REPLACEMENT-NEW");
+        let account_id = AccountId::from("TEST-001");
+        let client_id = ClientId::from("TEST");
+        let initial_trade_id = TradeId::from("T-RECOVERED-REPLACEMENT-INITIAL");
+        let order = OrderTestBuilder::new(OrderType::StopLimit)
+            .client_order_id(client_order_id)
+            .instrument_id(instrument.id())
+            .quantity(Quantity::from("10.0"))
+            .price(Price::from("100.0"))
+            .trigger_price(Price::from("101.0"))
+            .build();
+        let submitted = TestOrderEventStubs::submitted(&order, account_id);
+        let pending = OrderEventAny::PendingUpdate(
+            OrderPendingUpdateSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(instrument.id())
+                .client_order_id(client_order_id)
+                .account_id(account_id)
+                .build(),
+        );
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_order(order, None, Some(client_id), false)
+            .unwrap();
+        cache.borrow_mut().update_order(&submitted).unwrap();
+        manager.register_submission(client_order_id);
+        let order = cache.borrow_mut().update_order(&pending).unwrap();
+        let mut initial_fill = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            Some(initial_trade_id),
+            None,
+            Some(Price::from("100.0")),
+            Some(Quantity::from("4.0")),
+            Some(LiquiditySide::Taker),
+            Some(Money::zero(instrument.quote_currency())),
+            Some(UnixNanos::from(1_000)),
+            Some(account_id),
+        );
+        let OrderEventAny::Filled(fill) = &mut initial_fill else {
+            unreachable!();
+        };
+        fill.venue_order_id = old_venue_id;
+        let order = cache.borrow_mut().update_order(&initial_fill).unwrap();
+        manager.confirm_submission_outcome(&client_order_id);
+        assert_eq!(order.status(), OrderStatus::PendingUpdate);
+        assert_eq!(order.previous_status(), Some(OrderStatus::PartiallyFilled));
+        assert!(has_recovered_submission_command(&order));
+        assert!(manager.order_inflight_checks[&client_order_id].recovered_submission_command);
+
+        let expected_filled = Quantity::from(if additional_fill { "6.0" } else { "4.0" });
+        let report = OrderStatusReport::new(
+            account_id,
+            instrument.id(),
+            Some(client_order_id),
+            new_venue_id,
+            OrderSide::Buy.into(),
+            OrderType::StopLimit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            order.quantity(),
+            expected_filled,
+            UnixNanos::from(2_000),
+            UnixNanos::from(3_000),
+            UnixNanos::from(3_000),
+            None,
+        )
+        .with_price(Price::from("100.0"));
+        let companion = FillReport::new(
+            account_id,
+            instrument.id(),
+            new_venue_id,
+            if additional_fill {
+                TradeId::from("T-RECOVERED-REPLACEMENT-COMPANION")
+            } else {
+                initial_trade_id
+            },
+            OrderSide::Buy,
+            Quantity::from(if additional_fill { "2.0" } else { "4.0" }),
+            Price::from("100.0"),
+            Money::zero(instrument.quote_currency()),
+            LiquiditySide::Taker,
+            Some(client_order_id),
+            None,
+            UnixNanos::from(2_000),
+            UnixNanos::from(3_000),
+            None,
+        );
+
+        for replay in [false, true] {
+            let mut dispatch_report = report.clone();
+            if replay && fresh_report_id {
+                dispatch_report.report_id = UUID4::new();
+            }
+            let mut events = if is_snapshot {
+                let order = cache.borrow().order_owned(&client_order_id).unwrap();
+                let mut fill_queue = ReconciliationFillQueue::default();
+                let mut events = manager.reconcile_order_with_fills(
+                    true,
+                    &order,
+                    &dispatch_report,
+                    &[&companion],
+                    Some(&instrument),
+                    &mut fill_queue,
+                    None,
+                );
+                // This is the same final chronology used by mass-status dispatch.
+                events.sort_by_key(OrderEventAny::ts_event);
+                events
+            } else {
+                manager.order_query_pending.insert(client_order_id);
+                manager.reconcile_targeted_order_reports(
+                    vec![TargetedOrderReportResult {
+                        client_order_id,
+                        client_id: Some(client_id),
+                        report: Some(dispatch_report),
+                        fills: vec![companion.clone()],
+                        coverage_complete: true,
+                    }],
+                    &[],
+                )
+            };
+            assert_eq!(
+                events.len(),
+                if replay {
+                    0
+                } else {
+                    1 + usize::from(additional_fill)
+                }
+            );
+
+            if !replay {
+                assert!(matches!(&events[0], OrderEventAny::Updated(updated)
+                    if updated.venue_order_id == Some(new_venue_id)
+                        && updated.causation_id == Some(report.report_id)));
+            }
+
+            for event in events.drain(..) {
+                if matches!(event, OrderEventAny::Filled(_)) {
+                    assert_eq!(
+                        cache.borrow().venue_order_id(&client_order_id),
+                        Some(&new_venue_id)
+                    );
+                }
+                manager.observe_order_event(&event);
+                cache.borrow_mut().update_order(&event).unwrap();
+                manager.confirm_submission_outcome(&client_order_id);
+            }
+            let order = cache.borrow().order_owned(&client_order_id).unwrap();
+            assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+            assert_eq!(order.filled_qty(), expected_filled);
+            assert_eq!(order.venue_order_id(), Some(new_venue_id));
+            assert!(order.events().iter().any(|event| matches!(event,
+                OrderEventAny::Filled(fill) if fill.venue_order_id == old_venue_id
+                    && fill.trade_id == initial_trade_id)));
+
+            assert_eq!(
+                cache.borrow().venue_order_id(&client_order_id),
+                Some(&new_venue_id)
+            );
+            assert_eq!(
+                cache.borrow().client_order_id(&old_venue_id),
+                Some(&client_order_id)
+            );
+            assert_eq!(
+                cache.borrow().client_order_id(&new_venue_id),
+                Some(&client_order_id)
+            );
+            assert!(!manager.order_inflight_checks.contains_key(&client_order_id));
+            assert!(!manager.order_query_pending.contains(&client_order_id));
+            assert!(!manager.order_recon_retries.contains_key(&client_order_id));
+            let follow_up = manager.check_inflight_orders();
+            assert!(follow_up.queries.is_empty());
+            assert!(follow_up.events.is_empty());
+        }
     }
 
     #[rstest]

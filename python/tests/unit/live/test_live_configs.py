@@ -35,6 +35,7 @@ from nautilus_trader.live import PluginConfig
 from nautilus_trader.live import PortfolioConfig
 from nautilus_trader.live import QueueMonitorConfig
 from nautilus_trader.live import RoutingConfig
+from nautilus_trader.live import SubmittedOrderExhaustionPolicy
 from nautilus_trader.model import BarIntervalType
 from nautilus_trader.model import ClientId
 from nautilus_trader.model import Venue
@@ -612,3 +613,26 @@ def test_portfolio_config_properties() -> None:
     assert config.use_mark_xrates is False
     assert config.debug is False
     assert config.min_account_state_logging_interval_ms is None
+
+
+def test_submission_exhaustion_policy_defaults_and_opt_in() -> None:
+    """
+    Preserve default timeout resolution and expose the typed native opt-in.
+    """
+    assert (
+        LiveExecutionEngineConfig().submitted_order_exhaustion_policy
+        == SubmittedOrderExhaustionPolicy.RESOLVE_LOCALLY
+    )
+    config = LiveExecutionEngineConfig(
+        submitted_order_exhaustion_policy=SubmittedOrderExhaustionPolicy.RETAIN_UNRESOLVED,
+    )
+    assert (
+        config.submitted_order_exhaustion_policy == SubmittedOrderExhaustionPolicy.RETAIN_UNRESOLVED
+    )
+    node_config = LiveNodeConfig(exec_engine=config)
+    assert (
+        node_config.exec_engine.submitted_order_exhaustion_policy
+        == config.submitted_order_exhaustion_policy
+    )
+    with pytest.raises(TypeError):
+        LiveExecutionEngineConfig(submitted_order_exhaustion_policy="retry_forever")

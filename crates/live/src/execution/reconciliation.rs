@@ -55,6 +55,8 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 
+use super::submission::SubmissionRecoveryExhausted;
+
 /// Composite key identifying a position context by instrument and account.
 ///
 /// Used to scope per-position reconciliation state (retry counters, activity
@@ -279,6 +281,10 @@ pub(super) struct InflightCheck {
     // `Instant` debug output is runtime-specific and intentionally only useful
     // as an opaque monotonic offset.
     pub last_query_at: Option<dst::time::Instant>,
+    pub unresolved_submission: bool,
+    pub recovered_submission_command: bool,
+    pub exhaustion: Option<SubmissionRecoveryExhausted>,
+    pub completed_submission_query_retries: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
