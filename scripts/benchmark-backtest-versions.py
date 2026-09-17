@@ -251,7 +251,7 @@ def load_bindings() -> Bindings:  # noqa: PLR0915
         from nautilus_trader.model.data import BookOrder
         from nautilus_trader.model.data import OrderBookDelta
         from nautilus_trader.model.data import OrderBookDeltas
-        from nautilus_trader.model.data import OrderBookDepth10
+        from nautilus_trader.model.data import OrderBookDepth10 as OrderBookDepth
         from nautilus_trader.model.data import QuoteTick
         from nautilus_trader.model.data import TradeTick
         from nautilus_trader.model.enums import AccountType
@@ -301,7 +301,11 @@ def load_bindings() -> Bindings:  # noqa: PLR0915
         from nautilus_trader.model import OmsType
         from nautilus_trader.model import OrderBookDelta
         from nautilus_trader.model import OrderBookDeltas
-        from nautilus_trader.model import OrderBookDepth10
+
+        try:
+            from nautilus_trader.model import OrderBookDepth
+        except ImportError:
+            from nautilus_trader.model import OrderBookDepth10 as OrderBookDepth
         from nautilus_trader.model import OrderSide
         from nautilus_trader.model import Price
         from nautilus_trader.model import PriceType
@@ -341,7 +345,7 @@ def load_bindings() -> Bindings:  # noqa: PLR0915
             "OmsType": OmsType,
             "OrderBookDelta": OrderBookDelta,
             "OrderBookDeltas": OrderBookDeltas,
-            "OrderBookDepth10": OrderBookDepth10,
+            "OrderBookDepth": OrderBookDepth,
             "OrderSide": OrderSide,
             "Price": Price,
             "PriceType": PriceType,
@@ -571,7 +575,7 @@ def make_depth10(bindings: Bindings, instrument: Any, count: int) -> list[list[A
             )
         ts = BASE_TS_NS + index * EVENT_INTERVAL_NS
         depths.append(
-            model.OrderBookDepth10(
+            model.OrderBookDepth(
                 instrument_id=instrument.id,
                 bids=bids,
                 asks=asks,

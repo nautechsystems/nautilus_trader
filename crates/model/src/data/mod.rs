@@ -76,7 +76,7 @@ pub use custom::{
 pub use data_type::DataType;
 pub use delta::OrderBookDelta;
 pub use deltas::OrderBookDeltas;
-pub use depth::{DEPTH_INLINE_LEN, DEPTH10_LEN, OrderBookDepth, OrderBookDepth10};
+pub use depth::{DEPTH_INLINE_LEN, DEPTH10_LEN, OrderBookDepth};
 pub use funding::FundingRateUpdate;
 pub use greeks::{
     BlackScholesGreeksResult, GreeksData, HasGreeks, OptionGreekValues, PortfolioGreeks,
@@ -836,10 +836,7 @@ impl FromStr for NautilusDataType {
             "OrderBookDelta" | "OrderBookDeltas" | "order_book_deltas" | "order_book_delta" => {
                 Ok(Self::OrderBookDelta)
             }
-            // One-release compatibility spellings for the former fixed-depth type
-            "OrderBookDepth10" | "OrderBookDepth" | "order_book_depths" | "order_book_depth10" => {
-                Ok(Self::OrderBookDepth)
-            }
+            "OrderBookDepth" | "order_book_depths" => Ok(Self::OrderBookDepth),
             "MarkPriceUpdate" | "mark_price_updates" | "mark_prices" | "mark_price_update" => {
                 Ok(Self::MarkPriceUpdate)
             }
@@ -998,8 +995,7 @@ impl<'de> Deserialize<'de> for Data {
             "OrderBookDeltas" => Ok(Self::BookDeltas(
                 serde_json::from_value(value).map_err(D::Error::custom)?,
             )),
-            // One-release compatibility spelling for serialized v1 payloads
-            "OrderBookDepth10" | "OrderBookDepth" => Ok(Self::BookDepth(
+            "OrderBookDepth" => Ok(Self::BookDepth(
                 serde_json::from_value(value).map_err(D::Error::custom)?,
             )),
             "QuoteTick" => Ok(Self::Quote(
@@ -1356,6 +1352,13 @@ mod tests {
         #[case] expected: NautilusDataType,
     ) {
         assert_eq!(value.parse::<NautilusDataType>().unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case("OrderBookDepth10")]
+    #[case("order_book_depth10")]
+    fn nautilus_data_type_rejects_former_depth10_spellings(#[case] value: &str) {
+        assert!(value.parse::<NautilusDataType>().is_err());
     }
 
     #[rstest]

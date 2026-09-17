@@ -28,10 +28,10 @@ use nautilus_common::{
     cache::Cache,
     clients::DataClient,
     messages::data::{
-        RequestOptionChainReferencePrice, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
+        RequestOptionChainReferencePrice, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth,
         SubscribeCustomData, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
         SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
-        SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
+        SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth,
         UnsubscribeCustomData, UnsubscribeIndexPrices, UnsubscribeInstrument,
         UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
         UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
@@ -114,7 +114,7 @@ impl DataClient for BacktestDataClient {
         Ok(())
     }
 
-    fn subscribe_book_depth10(&mut self, _cmd: SubscribeBookDepth10) -> anyhow::Result<()> {
+    fn subscribe_book_depth(&mut self, _cmd: SubscribeBookDepth) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -206,7 +206,7 @@ impl DataClient for BacktestDataClient {
         Ok(())
     }
 
-    fn unsubscribe_book_depth10(&mut self, _cmd: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
+    fn unsubscribe_book_depth(&mut self, _cmd: &UnsubscribeBookDepth) -> anyhow::Result<()> {
         Ok(())
     }
 

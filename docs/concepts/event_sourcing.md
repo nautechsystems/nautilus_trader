@@ -408,7 +408,7 @@ The sidecar has two marker kinds:
   `marker_seq`, `event_seq_before`, `ts_init`, and the `StreamCursor` entries that advanced since
   the previous snapshot. A `StreamCursor` carries the stream `slot`, the highest `ts_init` seen
   in that slot (`ts_init_hi`), and the record `count`. A `StreamDictEntry` maps each `slot` to its
-  `data_cls` (`BookDeltas`, `BookDepth10`, `Quote`, `Trade`, `Bar`) and instrument `identifier`.
+  `data_cls` (`BookDeltas`, `BookDepth`, `Quote`, `Trade`, `Bar`) and instrument `identifier`.
 - **High-fidelity markers** (`HiFiMarker`): opt-in per instrument via
   `DataMarkerConfig.high_fidelity`. Each records `marker_seq`, `event_seq_before`, `slot`,
   `ts_event`, `ts_init`, `same_ts_ordinal`, and a 32-byte `record_fingerprint` over the canonical

@@ -53,7 +53,7 @@ from nautilus_trader.persistence import BarDataWrangler
 from nautilus_trader.persistence import DataBackendSession
 from nautilus_trader.persistence import NautilusDataType
 from nautilus_trader.persistence import OrderBookDeltaDataWrangler
-from nautilus_trader.persistence import OrderBookDepth10DataWrangler
+from nautilus_trader.persistence import OrderBookDepthDataWrangler
 from nautilus_trader.persistence import ParquetDataCatalog
 from nautilus_trader.persistence import QuoteTickDataWrangler
 from nautilus_trader.persistence import StreamingFeatherWriter
@@ -272,7 +272,7 @@ def test_backend_session_nautilus_data_type_variants() -> None:
     Test backend session nautilus data type variants.
     """
     assert NautilusDataType.OrderBookDelta is not None
-    assert NautilusDataType.OrderBookDepth10 is not None
+    assert NautilusDataType.OrderBookDepth is not None
     assert NautilusDataType.QuoteTick is not None
     assert NautilusDataType.TradeTick is not None
     assert NautilusDataType.Bar is not None
@@ -675,11 +675,11 @@ def test_order_book_delta_wrangler_construction() -> None:
     assert wrangler.size_precision == 5
 
 
-def test_order_book_depth10_wrangler_construction() -> None:
+def test_order_book_depth_wrangler_construction() -> None:
     """
-    Test order book depth10 wrangler construction.
+    Test order book depth wrangler construction.
     """
-    wrangler = OrderBookDepth10DataWrangler(
+    wrangler = OrderBookDepthDataWrangler(
         instrument_id="ETHUSDT.BINANCE",
         price_precision=2,
         size_precision=5,

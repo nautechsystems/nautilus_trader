@@ -769,12 +769,12 @@ impl LighterWebSocketClient {
     ///
     /// Returns an error if the instrument is not registered, the command
     /// cannot be queued, or the venue rejects the subscription.
-    pub async fn subscribe_book_depth10(
+    pub async fn subscribe_book_depth(
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), LighterWsError> {
         let market_index = self.market_index_for(&instrument_id)?;
-        self.send_cmd(HandlerCommand::SetDepth10Sub {
+        self.send_cmd(HandlerCommand::SetDepthSub {
             market_index,
             subscribed: true,
         })
@@ -782,7 +782,7 @@ impl LighterWebSocketClient {
 
         if let Err(e) = self.subscribe_order_book_stream(market_index).await {
             let _ = self
-                .send_cmd(HandlerCommand::SetDepth10Sub {
+                .send_cmd(HandlerCommand::SetDepthSub {
                     market_index,
                     subscribed: false,
                 })
@@ -803,12 +803,12 @@ impl LighterWebSocketClient {
     ///
     /// Returns an error if the instrument is not registered or the command
     /// cannot be queued.
-    pub async fn unsubscribe_book_depth10(
+    pub async fn unsubscribe_book_depth(
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), LighterWsError> {
         let market_index = self.market_index_for(&instrument_id)?;
-        self.send_cmd(HandlerCommand::SetDepth10Sub {
+        self.send_cmd(HandlerCommand::SetDepthSub {
             market_index,
             subscribed: false,
         })

@@ -77,10 +77,10 @@ use nautilus_common::{
         BarsResponse, BookDeltasResponse, BookDepthResponse, CustomDataResponse, DataCommand,
         DataResponse, FundingRatesResponse, OptionChainReferencePriceResponse, QuotesResponse,
         RequestBars, RequestCommand, RequestJoin, RequestOptionChainReferencePrice, RequestQuotes,
-        RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
+        RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth,
         SubscribeBookSnapshots, SubscribeCommand, SubscribeOptionChain, SubscribeOptionGreeks,
         SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
-        UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand,
+        UnsubscribeBookDepth, UnsubscribeBookSnapshots, UnsubscribeCommand,
         UnsubscribeInstrumentStatus, UnsubscribeOptionChain, UnsubscribeOptionGreeks,
         UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
     },
@@ -102,7 +102,7 @@ use nautilus_model::{
     data::{
         Bar, BarType, CustomData, Data, DataRef, DataType, FundingRateUpdate, HasTsInit,
         IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDelta,
-        OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
         option_chain::{OptionGreeks, StrikeRange},
     },
     enums::{
@@ -164,10 +164,10 @@ pub struct DataEngine {
     book_snapshot_counts: IndexMap<BookSnapshotKey, usize>,
     book_snapshot_sources: AHashMap<InstrumentId, BookSnapshotSource>,
     book_deltas_counts: IndexMap<BookDeltasKey, usize>,
-    book_depth10_counts: IndexMap<BookDeltasKey, usize>,
+    book_depth_counts: IndexMap<BookDeltasKey, usize>,
     book_updaters: AHashMap<InstrumentId, Rc<BookUpdater>>,
     book_deltas_parent_expansions: AHashMap<InstrumentId, Vec<InstrumentId>>,
-    book_depth10_parent_expansions: AHashMap<InstrumentId, Vec<InstrumentId>>,
+    book_depth_parent_expansions: AHashMap<InstrumentId, Vec<InstrumentId>>,
     book_snapshotters: AHashMap<NonZeroUsize, Rc<BookSnapshotter>>,
     bar_aggregators: IndexMap<BarAggregatorKey, Rc<RefCell<Box<dyn BarAggregator>>>>,
     bar_aggregator_handlers: AHashMap<BarAggregatorKey, Vec<BarAggregatorSubscription>>,
@@ -244,10 +244,10 @@ impl DataEngine {
             book_snapshot_counts: IndexMap::new(),
             book_snapshot_sources: AHashMap::new(),
             book_deltas_counts: IndexMap::new(),
-            book_depth10_counts: IndexMap::new(),
+            book_depth_counts: IndexMap::new(),
             book_updaters: AHashMap::new(),
             book_deltas_parent_expansions: AHashMap::new(),
-            book_depth10_parent_expansions: AHashMap::new(),
+            book_depth_parent_expansions: AHashMap::new(),
             book_snapshotters: AHashMap::new(),
             bar_aggregators: IndexMap::new(),
             bar_aggregator_handlers: AHashMap::new(),
@@ -659,18 +659,18 @@ impl DataEngine {
             self.book_updaters.drain().collect();
         for (instrument_id, updater) in book_updaters {
             let deltas_topic = switchboard::get_book_deltas_topic(instrument_id);
-            let depth_topic = switchboard::get_book_depth10_topic(instrument_id);
+            let depth_topic = switchboard::get_book_depth_topic(instrument_id);
             let deltas_handler: TypedHandler<OrderBookDeltas> = TypedHandler::new(updater.clone());
-            let depth_handler: TypedHandler<OrderBookDepth10> = TypedHandler::new(updater);
+            let depth_handler: TypedHandler<OrderBookDepth> = TypedHandler::new(updater);
             msgbus::unsubscribe_book_deltas(deltas_topic.into(), &deltas_handler);
-            msgbus::unsubscribe_book_depth10(depth_topic.into(), &depth_handler);
+            msgbus::unsubscribe_book_depth(depth_topic.into(), &depth_handler);
         }
 
         self.book_deltas_parent_expansions.clear();
-        self.book_depth10_parent_expansions.clear();
+        self.book_depth_parent_expansions.clear();
 
         self.book_deltas_counts.clear();
-        self.book_depth10_counts.clear();
+        self.book_depth_counts.clear();
         self.book_intervals.clear();
         self.book_snapshot_counts.clear();
         self.book_snapshot_sources.clear();
@@ -895,10 +895,10 @@ impl DataEngine {
         self.collect_subscriptions(|client| &client.subscriptions_book_deltas)
     }
 
-    /// Returns all instrument IDs for which book depth10 subscriptions exist.
+    /// Returns all instrument IDs for which book depth subscriptions exist.
     #[must_use]
-    pub fn subscribed_book_depth10(&self) -> Vec<InstrumentId> {
-        self.collect_subscriptions(|client| &client.subscriptions_book_depth10)
+    pub fn subscribed_book_depth(&self) -> Vec<InstrumentId> {
+        self.collect_subscriptions(|client| &client.subscriptions_book_depth)
     }
 
     /// Returns all instrument IDs for which book snapshot subscriptions exist.
@@ -1055,9 +1055,8 @@ impl DataEngine {
                     return Ok(());
                 }
             }
-            SubscribeCommand::BookDepth10(book_cmd) => {
-                if !self.subscribe_book_depth10(book_cmd)? && self.client_subscription_active(&cmd)
-                {
+            SubscribeCommand::BookDepth(book_cmd) => {
+                if !self.subscribe_book_depth(book_cmd)? && self.client_subscription_active(&cmd) {
                     return Ok(());
                 }
             }
@@ -1112,7 +1111,7 @@ impl DataEngine {
         // Book ownership, including failed acquisitions, is already counted by the engine
         let retain_on_failure = !matches!(
             &cmd,
-            SubscribeCommand::BookDeltas(_) | SubscribeCommand::BookDepth10(_)
+            SubscribeCommand::BookDeltas(_) | SubscribeCommand::BookDepth(_)
         );
 
         #[cfg(feature = "streaming")]
@@ -1223,7 +1222,7 @@ impl DataEngine {
             UnsubscribeCommand::BookDeltas(cmd) if !self.unsubscribe_book_deltas(cmd) => {
                 return Ok(());
             }
-            UnsubscribeCommand::BookDepth10(cmd) if !self.unsubscribe_book_depth10(cmd) => {
+            UnsubscribeCommand::BookDepth(cmd) if !self.unsubscribe_book_depth(cmd) => {
                 return Ok(());
             }
             UnsubscribeCommand::BookSnapshots(cmd) => {
@@ -1843,7 +1842,7 @@ impl DataEngine {
             DataRef::Instrument(instrument) => self.handle_instrument(instrument),
             DataRef::BookDelta(delta) => self.handle_delta(*delta),
             DataRef::BookDeltas(deltas) => self.handle_deltas(deltas),
-            DataRef::BookDepth(depth) => self.handle_depth10(depth),
+            DataRef::BookDepth(depth) => self.handle_depth(depth),
             DataRef::Quote(quote) => {
                 self.handle_quote(*quote);
                 self.drain_deferred_commands();
@@ -1926,7 +1925,7 @@ impl DataEngine {
             Data::Instrument(instrument) => self.handle_instrument(&instrument),
             Data::BookDelta(delta) => self.handle_delta_pipeline(delta),
             Data::BookDeltas(deltas) => self.handle_deltas_pipeline(&deltas),
-            Data::BookDepth(depth) => self.handle_depth10_pipeline(&depth),
+            Data::BookDepth(depth) => self.handle_depth_pipeline(&depth),
             Data::Quote(quote) => self.handle_quote_pipeline(quote),
             Data::Trade(trade) => self.handle_trade_pipeline(trade),
             Data::Bar(bar) => self.handle_bar_pipeline(bar),
@@ -2590,9 +2589,9 @@ impl DataEngine {
         }
     }
 
-    fn handle_depth10(&self, depth: &OrderBookDepth10) {
-        let topic = switchboard::get_book_depth10_topic(depth.instrument_id);
-        msgbus::publish_depth10(topic, depth);
+    fn handle_depth(&self, depth: &OrderBookDepth) {
+        let topic = switchboard::get_book_depth_topic(depth.instrument_id);
+        msgbus::publish_depth(topic, depth);
 
         if self.config.emit_quotes_from_book_depths
             && let Some(quote) = derive_quote_from_depth(depth)
@@ -2924,9 +2923,9 @@ impl DataEngine {
         msgbus::publish_deltas(topic, deltas);
     }
 
-    fn handle_depth10_pipeline(&self, depth: &OrderBookDepth10) {
-        let topic = switchboard::get_pipeline_book_depth10_topic(depth.instrument_id);
-        msgbus::publish_depth10(topic, depth);
+    fn handle_depth_pipeline(&self, depth: &OrderBookDepth) {
+        let topic = switchboard::get_pipeline_book_depth_topic(depth.instrument_id);
+        msgbus::publish_depth(topic, depth);
     }
 
     fn handle_quote_pipeline(&self, quote: QuoteTick) {
@@ -3130,22 +3129,22 @@ impl DataEngine {
         Ok(!had_deltas)
     }
 
-    fn subscribe_book_depth10(&mut self, cmd: &SubscribeBookDepth10) -> anyhow::Result<bool> {
+    fn subscribe_book_depth(&mut self, cmd: &SubscribeBookDepth) -> anyhow::Result<bool> {
         if cmd.instrument_id.is_synthetic() {
-            anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDepth10` data");
+            anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDepth` data");
         }
 
         let parent = resolve_parent_components(&cmd.instrument_id, cmd.params.as_ref())?;
-        let had_depth10 =
-            self.has_book_depth10_subscription_key(cmd.instrument_id, cmd.client_id, cmd.venue);
+        let had_depth =
+            self.has_book_depth_subscription_key(cmd.instrument_id, cmd.client_id, cmd.venue);
 
         if cmd.managed {
             self.setup_book_updater(&cmd.instrument_id, cmd.book_type, false, parent)?;
         }
 
-        self.increment_book_depth10_subscription(cmd.instrument_id, cmd.client_id, cmd.venue);
+        self.increment_book_depth_subscription(cmd.instrument_id, cmd.client_id, cmd.venue);
 
-        Ok(!had_depth10)
+        Ok(!had_depth)
     }
 
     fn subscribe_book_snapshots(&mut self, cmd: &SubscribeBookSnapshots) -> anyhow::Result<()> {
@@ -3158,7 +3157,7 @@ impl DataEngine {
         let had_snapshots = self.has_book_snapshot_subscriptions(&cmd.instrument_id);
 
         if !had_snapshots {
-            // Always run setup so the depth10 handler is registered alongside
+            // Always run setup so the depth handler is registered alongside
             // the deltas handler when this is the first snapshot for the id;
             // setup_book_updater is idempotent and the typed router dedups
             // overlapping subscribes.
@@ -3515,11 +3514,10 @@ impl DataEngine {
         true
     }
 
-    fn unsubscribe_book_depth10(&mut self, cmd: &UnsubscribeBookDepth10) -> bool {
-        match self.decrement_book_depth10_subscription(cmd.instrument_id, cmd.client_id, cmd.venue)
-        {
+    fn unsubscribe_book_depth(&mut self, cmd: &UnsubscribeBookDepth) -> bool {
+        match self.decrement_book_depth_subscription(cmd.instrument_id, cmd.client_id, cmd.venue) {
             BookDeltasUnsubscribeResult::NotSubscribed => {
-                log::warn!("Cannot unsubscribe from `OrderBookDepth10` data: not subscribed");
+                log::warn!("Cannot unsubscribe from `OrderBookDepth` data: not subscribed");
                 return false;
             }
             BookDeltasUnsubscribeResult::Decremented => return false,
@@ -4143,7 +4141,7 @@ impl DataEngine {
             .book_deltas_parent_expansions
             .contains_key(instrument_id)
             || self
-                .book_depth10_parent_expansions
+                .book_depth_parent_expansions
                 .contains_key(instrument_id);
         let target_ids: Vec<InstrumentId> = if is_parent {
             let mut set: AHashSet<InstrumentId> = AHashSet::new();
@@ -4152,7 +4150,7 @@ impl DataEngine {
                 set.extend(expansion.iter().copied());
             }
 
-            if let Some(expansion) = self.book_depth10_parent_expansions.get(instrument_id) {
+            if let Some(expansion) = self.book_depth_parent_expansions.get(instrument_id) {
                 set.extend(expansion.iter().copied());
             }
 
@@ -4166,47 +4164,47 @@ impl DataEngine {
         };
 
         if is_parent {
-            // Each parent kind (deltas / depth10 / snapshots) writes its own
+            // Each parent kind (deltas / depth / snapshots) writes its own
             // memo via setup_book_updater. Keep each memo alive while any
             // sibling subscription that drives the same handler kind remains
             // active for this parent id.
             let parent_still_needs_deltas = self.has_book_delta_subscriptions(instrument_id)
-                || self.has_book_depth10_subscriptions(instrument_id)
+                || self.has_book_depth_subscriptions(instrument_id)
                 || self.has_book_snapshot_subscriptions(instrument_id);
-            let parent_still_needs_depth10 = self.has_book_depth10_subscriptions(instrument_id)
+            let parent_still_needs_depth = self.has_book_depth_subscriptions(instrument_id)
                 || self.has_book_snapshot_subscriptions(instrument_id);
 
             if !parent_still_needs_deltas {
                 self.book_deltas_parent_expansions.remove(instrument_id);
             }
 
-            if !parent_still_needs_depth10 {
-                self.book_depth10_parent_expansions.remove(instrument_id);
+            if !parent_still_needs_depth {
+                self.book_depth_parent_expansions.remove(instrument_id);
             }
         }
 
         for target_id in &target_ids {
             let wants_deltas = self.is_underlying_wanted_for_deltas(target_id);
-            let wants_depth10 = self.is_underlying_wanted_for_depth10(target_id);
+            let wants_depth = self.is_underlying_wanted_for_depth(target_id);
 
             let Some(updater) = self.book_updaters.get(target_id).cloned() else {
                 continue;
             };
 
             let deltas_handler: TypedHandler<OrderBookDeltas> = TypedHandler::new(updater.clone());
-            let depth_handler: TypedHandler<OrderBookDepth10> = TypedHandler::new(updater);
+            let depth_handler: TypedHandler<OrderBookDepth> = TypedHandler::new(updater);
 
             if !wants_deltas {
                 let topic = switchboard::get_book_deltas_topic(*target_id);
                 msgbus::unsubscribe_book_deltas(topic.into(), &deltas_handler);
             }
 
-            if !wants_depth10 {
-                let topic = switchboard::get_book_depth10_topic(*target_id);
-                msgbus::unsubscribe_book_depth10(topic.into(), &depth_handler);
+            if !wants_depth {
+                let topic = switchboard::get_book_depth_topic(*target_id);
+                msgbus::unsubscribe_book_depth(topic.into(), &depth_handler);
             }
 
-            if !wants_deltas && !wants_depth10 {
+            if !wants_deltas && !wants_depth {
                 self.book_updaters.remove(target_id);
                 log::debug!("Removed BookUpdater for instrument ID {target_id}");
             }
@@ -4235,19 +4233,19 @@ impl DataEngine {
             .contains_key(&(instrument_id, client_id, venue))
     }
 
-    fn has_book_depth10_subscriptions(&self, instrument_id: &InstrumentId) -> bool {
-        self.book_depth10_counts
+    fn has_book_depth_subscriptions(&self, instrument_id: &InstrumentId) -> bool {
+        self.book_depth_counts
             .keys()
             .any(|(id, _, _)| id == instrument_id)
     }
 
-    fn has_book_depth10_subscription_key(
+    fn has_book_depth_subscription_key(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         venue: Option<Venue>,
     ) -> bool {
-        self.book_depth10_counts
+        self.book_depth_counts
             .contains_key(&(instrument_id, client_id, venue))
     }
 
@@ -4287,24 +4285,24 @@ impl DataEngine {
         BookDeltasUnsubscribeResult::Removed
     }
 
-    fn increment_book_depth10_subscription(
+    fn increment_book_depth_subscription(
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         venue: Option<Venue>,
     ) {
         let key = (instrument_id, client_id, venue);
-        *self.book_depth10_counts.entry(key).or_insert(0) += 1;
+        *self.book_depth_counts.entry(key).or_insert(0) += 1;
     }
 
-    fn decrement_book_depth10_subscription(
+    fn decrement_book_depth_subscription(
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         venue: Option<Venue>,
     ) -> BookDeltasUnsubscribeResult {
         let key = (instrument_id, client_id, venue);
-        let Some(count) = self.book_depth10_counts.get_mut(&key) else {
+        let Some(count) = self.book_depth_counts.get_mut(&key) else {
             return BookDeltasUnsubscribeResult::NotSubscribed;
         };
 
@@ -4313,7 +4311,7 @@ impl DataEngine {
             return BookDeltasUnsubscribeResult::Decremented;
         }
 
-        self.book_depth10_counts.shift_remove(&key);
+        self.book_depth_counts.shift_remove(&key);
         BookDeltasUnsubscribeResult::Removed
     }
 
@@ -4557,10 +4555,10 @@ impl DataEngine {
     }
 
     fn handle_book_depth_response(&self, resp: &BookDepthResponse) {
-        let topic = switchboard::get_pipeline_book_depth10_topic(resp.instrument_id);
+        let topic = switchboard::get_pipeline_book_depth_topic(resp.instrument_id);
 
         for depth in &resp.data {
-            msgbus::publish_depth10(topic, depth);
+            msgbus::publish_depth(topic, depth);
         }
     }
 
@@ -4645,7 +4643,7 @@ impl DataEngine {
                 .insert(*instrument_id, target_ids.clone());
 
             if !only_deltas {
-                self.book_depth10_parent_expansions
+                self.book_depth_parent_expansions
                     .insert(*instrument_id, target_ids.clone());
             }
         }
@@ -4676,9 +4674,9 @@ impl DataEngine {
             );
 
             if !only_deltas {
-                let depth_topic = switchboard::get_book_depth10_topic(*target_id);
+                let depth_topic = switchboard::get_book_depth_topic(*target_id);
                 let depth_handler = TypedHandler::new(updater);
-                msgbus::subscribe_book_depth10(
+                msgbus::subscribe_book_depth(
                     depth_topic.into(),
                     depth_handler,
                     Some(self.msgbus_priority),
@@ -4690,11 +4688,11 @@ impl DataEngine {
     }
 
     fn is_underlying_wanted_for_deltas(&self, target_id: &InstrumentId) -> bool {
-        // Any of {deltas, depth10, snapshots} subs causes setup_book_updater to
-        // subscribe the deltas handler (depth10/snapshots use only_deltas=false),
+        // Any of {deltas, depth, snapshots} subs causes setup_book_updater to
+        // subscribe the deltas handler (depth/snapshots use only_deltas=false),
         // so all three keep the per-underlying deltas handler alive.
         if self.has_book_delta_subscriptions(target_id)
-            || self.has_book_depth10_subscriptions(target_id)
+            || self.has_book_depth_subscriptions(target_id)
             || self.has_book_snapshot_subscriptions(target_id)
         {
             return true;
@@ -4704,15 +4702,15 @@ impl DataEngine {
             .any(|expansion| expansion.contains(target_id))
     }
 
-    fn is_underlying_wanted_for_depth10(&self, target_id: &InstrumentId) -> bool {
-        // Snapshots use only_deltas=false, so they drive the depth10 handler
+    fn is_underlying_wanted_for_depth(&self, target_id: &InstrumentId) -> bool {
+        // Snapshots use only_deltas=false, so they drive the depth handler
         // as well as the deltas handler.
-        if self.has_book_depth10_subscriptions(target_id)
+        if self.has_book_depth_subscriptions(target_id)
             || self.has_book_snapshot_subscriptions(target_id)
         {
             return true;
         }
-        self.book_depth10_parent_expansions
+        self.book_depth_parent_expansions
             .values()
             .any(|expansion| expansion.contains(target_id))
     }
@@ -5653,7 +5651,7 @@ fn streaming_payload_type(cmd: &SubscribeCommand) -> Option<BusPayloadType> {
         ))),
         SubscribeCommand::Instrument(_) | SubscribeCommand::Instruments(_) => Some(BusPayloadType::Instrument),
         SubscribeCommand::BookDeltas(_) | SubscribeCommand::BookSnapshots(_) => Some(BusPayloadType::OrderBookDeltas),
-        SubscribeCommand::BookDepth10(_) => Some(BusPayloadType::OrderBookDepth10),
+        SubscribeCommand::BookDepth(_) => Some(BusPayloadType::OrderBookDepth),
         SubscribeCommand::Quotes(_) => Some(BusPayloadType::QuoteTick),
         SubscribeCommand::Trades(_) => Some(BusPayloadType::TradeTick),
         SubscribeCommand::Bars(_) => Some(BusPayloadType::Bar),
@@ -5961,9 +5959,9 @@ fn datetime_to_unix_nanos(datetime: jiff::Timestamp) -> anyhow::Result<UnixNanos
     Ok(UnixNanos::from(timestamp))
 }
 
-// Top-of-book `QuoteTick` from an `OrderBookDepth10`. Returns `None` for
+// Top-of-book `QuoteTick` from an `OrderBookDepth`. Returns `None` for
 // missing-side padding or zero size.
-fn derive_quote_from_depth(depth: &OrderBookDepth10) -> Option<QuoteTick> {
+fn derive_quote_from_depth(depth: &OrderBookDepth) -> Option<QuoteTick> {
     let bid = depth.bids.first()?;
     let ask = depth.asks.first()?;
 

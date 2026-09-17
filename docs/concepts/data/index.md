@@ -12,7 +12,7 @@ Each main built-in market data type has a dedicated guide to its fields, behavio
 | --------------------------------------------- | -------------------- | ---------------------------------------------------- |
 | [`OrderBookDelta`](order_book_delta.md)       | Order book           | Single incremental order book change.                |
 | [`OrderBookDeltas`](order_book_deltas.md)     | Order book           | Batch of related order book deltas.                  |
-| [`OrderBookDepth`](order_book_depth10.md)     | Order book           | Variable-depth bid and ask snapshots.                |
+| [`OrderBookDepth`](order_book_depth.md)       | Order book           | Variable-depth bid and ask snapshots.                |
 | [`QuoteTick`](quote_tick.md)                  | Top-of-book          | Best bid and ask prices and sizes.                   |
 | [`TradeTick`](trade_tick.md)                  | Trades               | Single venue trade or match event.                   |
 | [`Bar`](bar.md)                               | Aggregation          | OHLCV bar for a specific `BarType`.                  |
@@ -503,13 +503,13 @@ precision. See the [tutorials](../../tutorials/) for complete catalog and backte
 
 The PyO3 persistence module provides these wranglers for schema-compatible Arrow IPC streams:
 
-| Wrangler                       | Constructor identity               | Return type            |
-| ------------------------------ | ---------------------------------- | ---------------------- |
-| `OrderBookDeltaDataWrangler`   | Instrument ID and both precisions. | `list[OrderBookDelta]` |
-| `OrderBookDepth10DataWrangler` | Instrument ID and both precisions. | `list[OrderBookDepth]` |
-| `QuoteTickDataWrangler`        | Instrument ID and both precisions. | `list[QuoteTick]`      |
-| `TradeTickDataWrangler`        | Instrument ID and both precisions. | `list[TradeTick]`      |
-| `BarDataWrangler`              | Bar type and both precisions.      | `list[Bar]`            |
+| Wrangler                     | Constructor identity               | Return type            |
+| ---------------------------- | ---------------------------------- | ---------------------- |
+| `OrderBookDeltaDataWrangler` | Instrument ID and both precisions. | `list[OrderBookDelta]` |
+| `OrderBookDepthDataWrangler` | Instrument ID and both precisions. | `list[OrderBookDepth]` |
+| `QuoteTickDataWrangler`      | Instrument ID and both precisions. | `list[QuoteTick]`      |
+| `TradeTickDataWrangler`      | Instrument ID and both precisions. | `list[TradeTick]`      |
+| `BarDataWrangler`            | Bar type and both precisions.      | `list[Bar]`            |
 
 Each constructor takes the identity as a string, followed by `price_precision` and
 `size_precision`. Pass the complete Arrow IPC stream as `bytes` to
@@ -954,8 +954,8 @@ Delete data within a time range, optionally limited to one data type and instrum
 `delete_data_range(...)`, omitting both bounds removes all matching data. Supply an instrument ID
 for data partitioned by instrument.
 
-`delete_data_range(...)` supports quotes, trades, bars, order book deltas, order book depth 10, and
-registered custom types. Pass `order_book_depth10` for order book depth 10 and `custom/<TypeName>`
+`delete_data_range(...)` supports quotes, trades, bars, order book deltas, order book depth, and
+registered custom types. Pass `order_book_depths` for order book depth and `custom/<TypeName>`
 for custom data, such as `custom/MarketTickPython`.
 
 `delete_catalog_range(...)` continues after unsupported directories, logs a warning, and leaves

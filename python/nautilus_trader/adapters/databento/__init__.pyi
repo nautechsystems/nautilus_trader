@@ -105,7 +105,7 @@ class DatabentoDataLoader:
         instrument_id: model.InstrumentId | None = None,
         price_precision: int | None = None,
     ) -> list[model.OrderBookDelta]: ...
-    def load_order_book_depth10(
+    def load_order_book_depth(
         self,
         filepath: str | os.PathLike | pathlib.Path,
         instrument_id: model.InstrumentId | None = None,
@@ -229,7 +229,7 @@ class DatabentoHistoricalClient:
         price_precision: int | None = None,
         timestamp_on_close: bool = True,
     ) -> typing.Any: ...
-    def get_order_book_depth10(
+    def get_order_book_depth(
         self,
         dataset: str,
         instrument_ids: typing.Sequence[model.InstrumentId],

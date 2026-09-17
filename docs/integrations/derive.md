@@ -212,7 +212,7 @@ and prioritize ongoing maintenance.
 | Request all instruments (REST) | ✓         | `public/get_instruments`; salvages valid rows for each currency.        |
 | Instrument subscription        | -         | *Not supported.* Use the configured REST refresh interval.              |
 | Order book deltas (L2_MBP)     | ✓         | Channel: `orderbook.{instrument}.{group}.{depth}`.                      |
-| Order book depth10 (L2_MBP)    | ✓         | Same order book channel with `depth=10`.                                |
+| Order book depth (L2_MBP)      | ✓         | Same order book channel with `depth=10`.                                |
 | Order book at interval         | -         | *Not supported.* Maintain interval books from deltas locally.           |
 | Order book snapshot (REST)     | -         | *Not supported.* The venue has no book snapshot endpoint.               |
 | Historical book deltas (REST)  | -         | *Not supported.* The venue has no historical book endpoint.             |
@@ -260,10 +260,10 @@ steps; any other bar specification is rejected before the request goes out.
 
 #### Order book feeds
 
-Derive exposes book deltas and depth10 snapshots through the same
+Derive exposes book deltas and depth snapshots through the same
 `orderbook.{instrument}.{group}.{depth}` channel family. `subscribe_book_deltas` publishes
-snapshot deltas as `OrderBookDeltas`, while `subscribe_book_depth10` fixes `depth=10` and
-publishes `OrderBookDepth10` snapshots.
+snapshot deltas as `OrderBookDeltas`, while `subscribe_book_depth` fixes `depth=10` and
+publishes `OrderBookDepth` snapshots.
 
 ### Execution
 
@@ -549,7 +549,7 @@ backoff.
 
 ## Subscription parameters
 
-`subscribe_book_deltas` and `subscribe_book_depth10` accept these `subscribe_params` keys:
+`subscribe_book_deltas` and `subscribe_book_depth` accept these `subscribe_params` keys:
 
 | Key     | Type   | Default | Allowed                        |
 | ------- | ------ | ------- | ------------------------------ |

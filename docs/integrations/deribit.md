@@ -314,7 +314,7 @@ the default selection rules described under
 | Instruments           | `instrument.state.{kind}.{currency}`                                      | `kind` and `currency` params both default to `any`.                        |
 | Instrument status     | `instrument.state.{kind}.{currency}`                                      | Channel derived from the instrument ID; every instrument on it is emitted. |
 | Book deltas           | `book.{instrument}.raw` or `book.{instrument}.{group}.{depth}.{interval}` | `L2_MBP` only; see [Order book subscriptions](#order-book-subscriptions).  |
-| Book depth10          | `book.{instrument}.{group}.10.{interval}`                                 | Always the grouped channel, fixed at depth 10.                             |
+| Book depth            | `book.{instrument}.{group}.10.{interval}`                                 | Always the grouped channel, fixed at depth 10.                             |
 | Quotes                | `quote.{instrument}`                                                      | Top of book; this channel takes no interval.                               |
 | Trades                | `trades.{instrument}.{interval}`                                          | See [Trade publishing](#trade-publishing) for combo behavior.              |
 | Bars                  | `chart.trades.{instrument}.{resolution}`                                  | See [Bars](#bars).                                                         |
@@ -356,7 +356,7 @@ spreads flagged inverse. This keeps `Bar.volume` and `TradeTick.size` on one uni
 ## Order book subscriptions
 
 Deribit publishes L2 (market-by-price) book data only, so `subscribe_book_deltas` and
-`subscribe_book_depth10` reject any book type other than `BookType.L2_MBP`. Two feed families
+`subscribe_book_depth` reject any book type other than `BookType.L2_MBP`. Two feed families
 are available, each suited to different use cases.
 
 ### Raw feeds (tick-by-tick)

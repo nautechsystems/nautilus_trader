@@ -27,7 +27,7 @@ pub(crate) struct WsMessageContext {
     pub(crate) data_sender: EventSender<DataEvent>,
     pub(crate) instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     pub(crate) active_book_delta_channels: Arc<AtomicMap<InstrumentId, String>>,
-    pub(crate) active_book_depth10_channels: Arc<AtomicMap<InstrumentId, String>>,
+    pub(crate) active_book_depth_channels: Arc<AtomicMap<InstrumentId, String>>,
     pub(crate) active_ticker_channels: Arc<AtomicMap<InstrumentId, String>>,
     pub(crate) active_quote_subs: Arc<AtomicSet<InstrumentId>>,
     pub(crate) active_trade_subs: Arc<AtomicSet<InstrumentId>>,

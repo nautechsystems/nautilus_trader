@@ -18,7 +18,7 @@ use std::any::Any;
 use bytes::Bytes;
 use nautilus_model::data::{
     Bar, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OptionGreeks, OrderBookDeltas,
-    OrderBookDepth10, QuoteTick, TradeTick,
+    OrderBookDepth, QuoteTick, TradeTick,
 };
 use nautilus_serialization::sbe::{FromSbe, ToSbe};
 
@@ -46,9 +46,9 @@ define_deserializer!(
     "OrderBookDeltas"
 );
 define_deserializer!(
-    deserialize_order_book_depth10,
-    OrderBookDepth10,
-    "OrderBookDepth10"
+    deserialize_order_book_depth,
+    OrderBookDepth,
+    "OrderBookDepth"
 );
 define_deserializer!(deserialize_quote, QuoteTick, "QuoteTick");
 define_deserializer!(deserialize_trade, TradeTick, "TradeTick");
@@ -74,7 +74,7 @@ pub(super) fn serialize_payload(
     #[rustfmt::skip]
     let result = match payload_type {
         BusPayloadType::OrderBookDeltas => serialize_payload_as::<OrderBookDeltas>(type_name, message),
-        BusPayloadType::OrderBookDepth10 => serialize_payload_as::<OrderBookDepth10>(type_name, message),
+        BusPayloadType::OrderBookDepth => serialize_payload_as::<OrderBookDepth>(type_name, message),
         BusPayloadType::QuoteTick => serialize_payload_as::<QuoteTick>(type_name, message),
         BusPayloadType::TradeTick => serialize_payload_as::<TradeTick>(type_name, message),
         BusPayloadType::Bar => serialize_payload_as::<Bar>(type_name, message),

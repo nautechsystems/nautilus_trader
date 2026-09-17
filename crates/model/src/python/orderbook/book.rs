@@ -22,7 +22,7 @@ use pyo3::{IntoPyObjectExt, prelude::*};
 use rust_decimal::Decimal;
 
 use crate::{
-    data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick},
+    data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick},
     enums::{BookType, OrderSide, OrderStatus},
     identifiers::InstrumentId,
     orderbook::{
@@ -284,7 +284,7 @@ impl OrderBook {
     ///
     /// Returns an error if the depth's instrument ID does not match this book's instrument ID.
     #[pyo3(name = "apply_depth")]
-    fn py_apply_depth(&mut self, depth: &OrderBookDepth10) -> PyResult<()> {
+    fn py_apply_depth(&mut self, depth: &OrderBookDepth) -> PyResult<()> {
         self.apply_depth_unchecked(depth).map_err(to_pyruntime_err)
     }
 

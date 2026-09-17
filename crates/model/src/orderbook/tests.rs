@@ -29,7 +29,7 @@ use rust_decimal_macros::dec;
 
 use crate::{
     data::{
-        OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, depth::OrderBookDepth10,
+        OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, depth::OrderBookDepth,
         order::BookOrder, stubs::*,
     },
     enums::{
@@ -815,7 +815,7 @@ fn test_book_exposure_accepts_native_scale_quantities() {
 }
 
 #[rstest]
-fn test_book_get_price_for_exposure(stub_depth10: OrderBookDepth10) {
+fn test_book_get_price_for_exposure(stub_depth10: OrderBookDepth) {
     let depth = stub_depth10;
     let instrument_id = InstrumentId::from("AAPL.XNAS"); // Must match stub_depth10's instrument_id
     let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
@@ -887,7 +887,7 @@ fn test_book_simulate_fills_routes_to_opposite_ladder(
 }
 
 #[rstest]
-fn test_book_apply_depth(stub_depth10: OrderBookDepth10) {
+fn test_book_apply_depth(stub_depth10: OrderBookDepth) {
     let depth = stub_depth10;
     let instrument_id = InstrumentId::from("AAPL.XNAS");
     let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
@@ -924,7 +924,7 @@ fn test_l1_book_apply_depth_keeps_best_of_descending_levels() {
         0,
     );
 
-    let depth = OrderBookDepth10::new(
+    let depth = OrderBookDepth::new(
         instrument_id,
         bids,
         asks,
@@ -1024,7 +1024,7 @@ fn test_l3_book_apply_depth_keeps_all_levels() {
         );
     }
 
-    let depth = OrderBookDepth10::new(
+    let depth = OrderBookDepth::new(
         instrument_id,
         bids,
         asks,
@@ -1052,7 +1052,7 @@ fn test_l3_book_apply_depth_keeps_all_levels() {
 }
 
 #[rstest]
-fn test_book_apply_depth_all_levels(stub_depth10: OrderBookDepth10) {
+fn test_book_apply_depth_all_levels(stub_depth10: OrderBookDepth) {
     let depth = stub_depth10;
     let instrument_id = InstrumentId::from("AAPL.XNAS");
     let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
@@ -1140,7 +1140,7 @@ fn test_book_apply_depth_empty_snapshot() {
 
     // Create empty depth with all padding entries (no side, zero size)
     let empty_order = BookOrder::new(None, Price::from("0.0"), Quantity::from("0"), 0);
-    let depth = OrderBookDepth10::new(
+    let depth = OrderBookDepth::new(
         instrument_id,
         [empty_order; DEPTH10_LEN],
         [empty_order; DEPTH10_LEN],
@@ -1228,7 +1228,7 @@ fn test_book_apply_depth_partial_snapshot() {
         13,
     );
 
-    let depth = OrderBookDepth10::new(
+    let depth = OrderBookDepth::new(
         instrument_id,
         bids,
         asks,
@@ -1272,7 +1272,7 @@ fn test_book_apply_depth_partial_snapshot() {
 }
 
 #[rstest]
-fn test_book_apply_depth_updates_metadata_once(stub_depth10: OrderBookDepth10) {
+fn test_book_apply_depth_updates_metadata_once(stub_depth10: OrderBookDepth) {
     let depth = stub_depth10;
     let instrument_id = InstrumentId::from("AAPL.XNAS");
     let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
@@ -1289,7 +1289,7 @@ fn test_book_apply_depth_updates_metadata_once(stub_depth10: OrderBookDepth10) {
 }
 
 #[rstest]
-fn test_book_apply_depth_instrument_mismatch(stub_depth10: OrderBookDepth10) {
+fn test_book_apply_depth_instrument_mismatch(stub_depth10: OrderBookDepth) {
     let depth = stub_depth10; // Uses AAPL.XNAS
     let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE"); // Different instrument
     let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
@@ -2102,14 +2102,14 @@ fn test_apply_delta_skipped_snapshot_delta_still_reports() {
 }
 
 #[rstest]
-fn test_apply_depth_with_earlier_ts_event_warns_once(stub_depth10: OrderBookDepth10) {
+fn test_apply_depth_with_earlier_ts_event_warns_once(stub_depth10: OrderBookDepth) {
     let _guard = start_book_warn_capture();
 
     let instrument_id = InstrumentId::from("SNAPDEPTH.TEST");
     let mut book = seed_book_with_bid(instrument_id);
     BOOK_WARN_CAPTURE.take_for(instrument_id);
 
-    // Adapters such as Hyperliquid stamp depth10 with F_SNAPSHOT. Depth increments once per
+    // Adapters such as Hyperliquid stamp depth snapshots with F_SNAPSHOT. Depth increments once per
     // snapshot, so it must keep its single warning rather than fall under batch suppression.
     let mut depth = stub_depth10;
     depth.instrument_id = instrument_id;

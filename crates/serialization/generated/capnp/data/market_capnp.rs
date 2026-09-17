@@ -4748,7 +4748,7 @@ pub mod option_greeks {
 }
 
 pub mod data_any {
-    pub use self::Which::{Quote,Trade,Bar,MarkPrice,IndexPrice,FundingRate,OptionGreeks,InstrumentStatus,InstrumentClose,OrderBookDelta,OrderBookDeltas,OrderBookDepth10};
+    pub use self::Which::{Quote,Trade,Bar,MarkPrice,IndexPrice,FundingRate,OptionGreeks,InstrumentStatus,InstrumentClose,OrderBookDelta,OrderBookDeltas,OrderBookDepth};
 
     #[derive(Copy, Clone)]
     pub struct Owned(());
@@ -4866,7 +4866,7 @@ pub mod data_any {
             !self.reader.get_pointer_field(0).is_null()
         }
         #[inline]
-        pub fn has_order_book_depth10(&self) -> bool {
+        pub fn has_order_book_depth(&self) -> bool {
             if self.reader.get_data_field::<u16>(0) != 11 { return false; }
             !self.reader.get_pointer_field(0).is_null()
         }
@@ -4929,7 +4929,7 @@ pub mod data_any {
                     ))
                 }
                 11 => {
-                    ::core::result::Result::Ok(OrderBookDepth10(
+                    ::core::result::Result::Ok(OrderBookDepth(
                         ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(0), ::core::option::Option::None)
                     ))
                 }
@@ -5156,17 +5156,17 @@ pub mod data_any {
             !self.builder.is_pointer_field_null(0)
         }
         #[inline]
-        pub fn set_order_book_depth10(&mut self, value: crate::market_capnp::order_book_depth10::Reader<'_>) -> ::capnp::Result<()> {
+        pub fn set_order_book_depth(&mut self, value: crate::market_capnp::order_book_depth::Reader<'_>) -> ::capnp::Result<()> {
             self.builder.set_data_field::<u16>(0, 11);
             ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(0), value, false)
         }
         #[inline]
-        pub fn init_order_book_depth10(self, ) -> crate::market_capnp::order_book_depth10::Builder<'a> {
+        pub fn init_order_book_depth(self, ) -> crate::market_capnp::order_book_depth::Builder<'a> {
             self.builder.set_data_field::<u16>(0, 11);
             ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(0), 0)
         }
         #[inline]
-        pub fn has_order_book_depth10(&self) -> bool {
+        pub fn has_order_book_depth(&self) -> bool {
             if self.builder.get_data_field::<u16>(0) != 11 { return false; }
             !self.builder.is_pointer_field_null(0)
         }
@@ -5229,7 +5229,7 @@ pub mod data_any {
                     ))
                 }
                 11 => {
-                    ::core::result::Result::Ok(OrderBookDepth10(
+                    ::core::result::Result::Ok(OrderBookDepth(
                         ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(0), ::core::option::Option::None)
                     ))
                 }
@@ -5247,14 +5247,14 @@ pub mod data_any {
     impl Pipeline  {
     }
     mod _private {
-        pub(crate) static ENCODED_NODE: [::capnp::Word; 210] = [
+        pub(crate) static ENCODED_NODE: [::capnp::Word; 209] = [
             ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
             ::capnp::word(11, 230, 84, 220, 144, 203, 79, 243),
             ::capnp::word(18, 0, 0, 0, 1, 0, 1, 0),
             ::capnp::word(220, 37, 1, 186, 126, 85, 173, 233),
             ::capnp::word(1, 0, 7, 0, 0, 0, 12, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(240, 14, 0, 0, 234, 16, 0, 0),
+            ::capnp::word(240, 14, 0, 0, 230, 16, 0, 0),
             ::capnp::word(21, 0, 0, 0, 210, 0, 0, 0),
             ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -5347,10 +5347,10 @@ pub mod data_any {
             ::capnp::word(11, 0, 244, 255, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 11, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(145, 1, 0, 0, 138, 0, 0, 0),
+            ::capnp::word(145, 1, 0, 0, 122, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(148, 1, 0, 0, 3, 0, 1, 0),
-            ::capnp::word(160, 1, 0, 0, 2, 0, 1, 0),
+            ::capnp::word(144, 1, 0, 0, 3, 0, 1, 0),
+            ::capnp::word(156, 1, 0, 0, 2, 0, 1, 0),
             ::capnp::word(113, 117, 111, 116, 101, 0, 0, 0),
             ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(253, 120, 48, 72, 11, 28, 1, 175),
@@ -5449,8 +5449,7 @@ pub mod data_any {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(111, 114, 100, 101, 114, 66, 111, 111),
-            ::capnp::word(107, 68, 101, 112, 116, 104, 49, 48),
-            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(107, 68, 101, 112, 116, 104, 0, 0),
             ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(221, 11, 99, 228, 43, 103, 20, 163),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -5472,7 +5471,7 @@ pub mod data_any {
                 8 => <crate::market_capnp::instrument_close::Owned as ::capnp::introspect::Introspect>::introspect(),
                 9 => <crate::market_capnp::order_book_delta::Owned as ::capnp::introspect::Introspect>::introspect(),
                 10 => <crate::market_capnp::order_book_deltas::Owned as ::capnp::introspect::Introspect>::introspect(),
-                11 => <crate::market_capnp::order_book_depth10::Owned as ::capnp::introspect::Introspect>::introspect(),
+                11 => <crate::market_capnp::order_book_depth::Owned as ::capnp::introspect::Introspect>::introspect(),
                 _ => ::capnp::introspect::panic_invalid_field_index(index),
             }
         }
@@ -5503,10 +5502,10 @@ pub mod data_any {
         InstrumentClose(A8),
         OrderBookDelta(A9),
         OrderBookDeltas(A10),
-        OrderBookDepth10(A11),
+        OrderBookDepth(A11),
     }
-    pub type WhichReader<'a,> = Which<::capnp::Result<crate::market_capnp::quote_tick::Reader<'a>>,::capnp::Result<crate::market_capnp::trade_tick::Reader<'a>>,::capnp::Result<crate::market_capnp::bar::Reader<'a>>,::capnp::Result<crate::market_capnp::mark_price_update::Reader<'a>>,::capnp::Result<crate::market_capnp::index_price_update::Reader<'a>>,::capnp::Result<crate::market_capnp::funding_rate_update::Reader<'a>>,::capnp::Result<crate::market_capnp::option_greeks::Reader<'a>>,::capnp::Result<crate::market_capnp::instrument_status::Reader<'a>>,::capnp::Result<crate::market_capnp::instrument_close::Reader<'a>>,::capnp::Result<crate::market_capnp::order_book_delta::Reader<'a>>,::capnp::Result<crate::market_capnp::order_book_deltas::Reader<'a>>,::capnp::Result<crate::market_capnp::order_book_depth10::Reader<'a>>>;
-    pub type WhichBuilder<'a,> = Which<::capnp::Result<crate::market_capnp::quote_tick::Builder<'a>>,::capnp::Result<crate::market_capnp::trade_tick::Builder<'a>>,::capnp::Result<crate::market_capnp::bar::Builder<'a>>,::capnp::Result<crate::market_capnp::mark_price_update::Builder<'a>>,::capnp::Result<crate::market_capnp::index_price_update::Builder<'a>>,::capnp::Result<crate::market_capnp::funding_rate_update::Builder<'a>>,::capnp::Result<crate::market_capnp::option_greeks::Builder<'a>>,::capnp::Result<crate::market_capnp::instrument_status::Builder<'a>>,::capnp::Result<crate::market_capnp::instrument_close::Builder<'a>>,::capnp::Result<crate::market_capnp::order_book_delta::Builder<'a>>,::capnp::Result<crate::market_capnp::order_book_deltas::Builder<'a>>,::capnp::Result<crate::market_capnp::order_book_depth10::Builder<'a>>>;
+    pub type WhichReader<'a,> = Which<::capnp::Result<crate::market_capnp::quote_tick::Reader<'a>>,::capnp::Result<crate::market_capnp::trade_tick::Reader<'a>>,::capnp::Result<crate::market_capnp::bar::Reader<'a>>,::capnp::Result<crate::market_capnp::mark_price_update::Reader<'a>>,::capnp::Result<crate::market_capnp::index_price_update::Reader<'a>>,::capnp::Result<crate::market_capnp::funding_rate_update::Reader<'a>>,::capnp::Result<crate::market_capnp::option_greeks::Reader<'a>>,::capnp::Result<crate::market_capnp::instrument_status::Reader<'a>>,::capnp::Result<crate::market_capnp::instrument_close::Reader<'a>>,::capnp::Result<crate::market_capnp::order_book_delta::Reader<'a>>,::capnp::Result<crate::market_capnp::order_book_deltas::Reader<'a>>,::capnp::Result<crate::market_capnp::order_book_depth::Reader<'a>>>;
+    pub type WhichBuilder<'a,> = Which<::capnp::Result<crate::market_capnp::quote_tick::Builder<'a>>,::capnp::Result<crate::market_capnp::trade_tick::Builder<'a>>,::capnp::Result<crate::market_capnp::bar::Builder<'a>>,::capnp::Result<crate::market_capnp::mark_price_update::Builder<'a>>,::capnp::Result<crate::market_capnp::index_price_update::Builder<'a>>,::capnp::Result<crate::market_capnp::funding_rate_update::Builder<'a>>,::capnp::Result<crate::market_capnp::option_greeks::Builder<'a>>,::capnp::Result<crate::market_capnp::instrument_status::Builder<'a>>,::capnp::Result<crate::market_capnp::instrument_close::Builder<'a>>,::capnp::Result<crate::market_capnp::order_book_delta::Builder<'a>>,::capnp::Result<crate::market_capnp::order_book_deltas::Builder<'a>>,::capnp::Result<crate::market_capnp::order_book_depth::Builder<'a>>>;
 }
 
 pub mod book_order {
@@ -5720,7 +5719,7 @@ pub mod book_order {
             ::capnp::word(220, 37, 1, 186, 126, 85, 173, 233),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(249, 16, 0, 0, 123, 17, 0, 0),
+            ::capnp::word(245, 16, 0, 0, 119, 17, 0, 0),
             ::capnp::word(21, 0, 0, 0, 226, 0, 0, 0),
             ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -6097,7 +6096,7 @@ pub mod order_book_delta {
             ::capnp::word(220, 37, 1, 186, 126, 85, 173, 233),
             ::capnp::word(4, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(153, 17, 0, 0, 136, 18, 0, 0),
+            ::capnp::word(149, 17, 0, 0, 132, 18, 0, 0),
             ::capnp::word(21, 0, 0, 0, 10, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -6510,7 +6509,7 @@ pub mod order_book_deltas {
             ::capnp::word(220, 37, 1, 186, 126, 85, 173, 233),
             ::capnp::word(4, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(166, 18, 0, 0, 129, 19, 0, 0),
+            ::capnp::word(162, 18, 0, 0, 125, 19, 0, 0),
             ::capnp::word(21, 0, 0, 0, 18, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -6836,7 +6835,7 @@ pub mod book_level {
             ::capnp::word(220, 37, 1, 186, 126, 85, 173, 233),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(144, 19, 0, 0, 220, 19, 0, 0),
+            ::capnp::word(140, 19, 0, 0, 216, 19, 0, 0),
             ::capnp::word(21, 0, 0, 0, 226, 0, 0, 0),
             ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -6904,7 +6903,7 @@ pub mod book_level {
     }
 }
 
-pub mod order_book_depth10 {
+pub mod order_book_depth {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl ::capnp::introspect::Introspect for Owned { fn introspect() -> ::capnp::introspect::Type { ::capnp::introspect::TypeVariant::Struct(::capnp::introspect::RawBrandedStructSchema { generic: &_private::RAW_SCHEMA, field_types: _private::get_field_types, annotation_types: _private::get_annotation_types, type_id: ::core::any::TypeId::of::<Owned>() }).into() } }
@@ -7238,8 +7237,8 @@ pub mod order_book_depth10 {
             ::capnp::word(220, 37, 1, 186, 126, 85, 173, 233),
             ::capnp::word(7, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(1, 20, 0, 0, 90, 21, 0, 0),
-            ::capnp::word(21, 0, 0, 0, 26, 1, 0, 0),
+            ::capnp::word(124, 20, 0, 0, 193, 21, 0, 0),
+            ::capnp::word(21, 0, 0, 0, 10, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(33, 0, 0, 0, 255, 1, 0, 0),
@@ -7249,7 +7248,7 @@ pub mod order_book_depth10 {
             ::capnp::word(107, 101, 116, 46, 99, 97, 112, 110),
             ::capnp::word(112, 58, 79, 114, 100, 101, 114, 66),
             ::capnp::word(111, 111, 107, 68, 101, 112, 116, 104),
-            ::capnp::word(49, 48, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 1, 0, 1, 0),
             ::capnp::word(36, 0, 0, 0, 3, 0, 4, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),

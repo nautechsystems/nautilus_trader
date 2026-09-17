@@ -56,7 +56,7 @@ use super::{
     },
     parse::{
         parse_ws_bar, parse_ws_funding_rate_update, parse_ws_index_price_update,
-        parse_ws_mark_price_update, parse_ws_order_book_deltas, parse_ws_order_book_depth10,
+        parse_ws_mark_price_update, parse_ws_order_book_deltas, parse_ws_order_book_depth,
         parse_ws_position_status_report, parse_ws_quote_tick, parse_ws_spot_index_price_update,
         parse_ws_trade_tick,
     },
@@ -127,8 +127,8 @@ pub enum HandlerCommand {
     /// be emitted as [`NautilusWsMessage::Deltas`].
     SetBookDeltasSub { market_index: i16, subscribed: bool },
     /// Toggle whether `update/order_book` frames for `market_index` should
-    /// also be emitted as a [`NautilusWsMessage::Depth10`] snapshot.
-    SetDepth10Sub { market_index: i16, subscribed: bool },
+    /// also be emitted as a [`NautilusWsMessage::Depth`] snapshot.
+    SetDepthSub { market_index: i16, subscribed: bool },
     /// Provide the execution context (`AccountId` and venue `account_index`)
     /// the handler stamps onto reports parsed from `account_*` frames.
     /// Without this context the handler cannot construct typed reports and
@@ -188,11 +188,11 @@ impl Debug for HandlerCommand {
                 .field("market_index", market_index)
                 .field("subscribed", subscribed)
                 .finish(),
-            Self::SetDepth10Sub {
+            Self::SetDepthSub {
                 market_index,
                 subscribed,
             } => f
-                .debug_struct(stringify!(SetDepth10Sub))
+                .debug_struct(stringify!(SetDepthSub))
                 .field("market_index", market_index)
                 .field("subscribed", subscribed)
                 .finish(),
@@ -238,7 +238,7 @@ pub(super) struct FeedHandler {
     next_subscription_generation: u64,
     instruments: AHashMap<i16, InstrumentAny>,
     book_delta_subs: AHashSet<i16>,
-    book_depth_10_subs: AHashSet<i16>,
+    book_depth_subs: AHashSet<i16>,
     book_snapshots_seen: AHashSet<i16>,
     book_states: AHashMap<i16, CachedOrderBook>,
     last_candles: AHashMap<(i16, LighterCandleResolution), LighterWsCandle>,
@@ -335,7 +335,7 @@ impl FeedHandler {
             next_subscription_generation: 1,
             instruments: AHashMap::new(),
             book_delta_subs: AHashSet::new(),
-            book_depth_10_subs: AHashSet::new(),
+            book_depth_subs: AHashSet::new(),
             book_snapshots_seen: AHashSet::new(),
             book_states: AHashMap::new(),
             last_candles: AHashMap::new(),
@@ -589,17 +589,17 @@ impl FeedHandler {
                                 self.book_delta_subs.remove(&market_index);
                             }
                         }
-                        HandlerCommand::SetDepth10Sub { market_index, subscribed } => {
+                        HandlerCommand::SetDepthSub { market_index, subscribed } => {
                             if subscribed {
-                                let inserted = self.book_depth_10_subs.insert(market_index);
+                                let inserted = self.book_depth_subs.insert(market_index);
                                 if inserted
                                     && let Some(first) =
-                                        self.emit_cached_order_book_depth10_snapshot(market_index)
+                                        self.emit_cached_order_book_depth_snapshot(market_index)
                                 {
                                     return Some(first);
                                 }
                             } else {
-                                self.book_depth_10_subs.remove(&market_index);
+                                self.book_depth_subs.remove(&market_index);
                             }
                         }
                         HandlerCommand::SetExecutionContext { account_id, account_index } => {
@@ -1355,7 +1355,7 @@ impl FeedHandler {
         }
 
         if !self.book_delta_subs.contains(&market_index)
-            && !self.book_depth_10_subs.contains(&market_index)
+            && !self.book_depth_subs.contains(&market_index)
         {
             return Vec::new();
         }
@@ -1481,7 +1481,7 @@ impl FeedHandler {
         let channel = LighterWsChannel::OrderBook(market_index);
         self.subscriptions.get_reference_count(&channel.topic_key()) > 0
             && (self.book_delta_subs.contains(&market_index)
-                || self.book_depth_10_subs.contains(&market_index))
+                || self.book_depth_subs.contains(&market_index))
     }
 
     fn emit_cached_order_book_deltas_snapshot(
@@ -1501,17 +1501,17 @@ impl FeedHandler {
         }
     }
 
-    fn emit_cached_order_book_depth10_snapshot(
+    fn emit_cached_order_book_depth_snapshot(
         &self,
         market_index: i16,
     ) -> Option<NautilusWsMessage> {
         let cached = self.book_states.get(&market_index)?.clone();
         let instrument = self.instruments.get(&market_index)?;
         let ts_init = self.clock.get_time_ns();
-        match parse_ws_order_book_depth10(&cached.book, instrument, cached.timestamp, ts_init) {
-            Ok(depth) => Some(NautilusWsMessage::Depth10(Box::new(depth))),
+        match parse_ws_order_book_depth(&cached.book, instrument, cached.timestamp, ts_init) {
+            Ok(depth) => Some(NautilusWsMessage::Depth(Box::new(depth))),
             Err(e) => {
-                log::error!("Error parsing cached Lighter order_book depth10: {e}");
+                log::error!("Error parsing cached Lighter order_book depth: {e}");
                 None
             }
         }
@@ -1539,12 +1539,12 @@ impl FeedHandler {
             }
         }
 
-        if self.book_depth_10_subs.contains(&market_index)
+        if self.book_depth_subs.contains(&market_index)
             && let Some(cached) = self.book_states.get(&market_index)
         {
-            match parse_ws_order_book_depth10(&cached.book, instrument, cached.timestamp, ts_init) {
-                Ok(depth) => messages.push(NautilusWsMessage::Depth10(Box::new(depth))),
-                Err(e) => log::error!("Error parsing Lighter order_book depth10: {e}"),
+            match parse_ws_order_book_depth(&cached.book, instrument, cached.timestamp, ts_init) {
+                Ok(depth) => messages.push(NautilusWsMessage::Depth(Box::new(depth))),
+                Err(e) => log::error!("Error parsing Lighter order_book depth: {e}"),
             }
         }
 

@@ -3,14 +3,11 @@
 
 import typing
 
-import typing_extensions
-
 from nautilus_trader import model
 
 __all__ = [
     "bars_to_arrow_record_batch_bytes",
     "book_deltas_to_arrow_record_batch_bytes",
-    "book_depth10_to_arrow_record_batch_bytes",
     "book_depths_to_arrow_record_batch_bytes",
     "get_arrow_schema_bytes",
     "get_arrow_schema_map",
@@ -31,10 +28,6 @@ def get_arrow_schema_map(cls: type) -> typing.Any: ...
 def bars_to_arrow_record_batch_bytes(data: typing.Sequence[model.Bar]) -> bytes: ...
 def book_deltas_to_arrow_record_batch_bytes(
     data: typing.Sequence[model.OrderBookDelta],
-) -> bytes: ...
-@typing_extensions.deprecated("use book_depths_to_arrow_record_batch_bytes")
-def book_depth10_to_arrow_record_batch_bytes(
-    data: typing.Sequence[model.OrderBookDepth],
 ) -> bytes: ...
 def book_depths_to_arrow_record_batch_bytes(
     data: typing.Sequence[model.OrderBookDepth],

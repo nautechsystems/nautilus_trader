@@ -67,10 +67,10 @@ V2 shortens common strategy and cache names. The `QuoteTick`, `TradeTick`, and
 | `request_quote_ticks`                | `request_quotes`               |
 | `request_trade_ticks`                | `request_trades`               |
 | `subscribe_order_book_deltas`        | `subscribe_book_deltas`        |
-| `subscribe_order_book_depth`         | `subscribe_book_depth10`       |
+| `subscribe_order_book_depth`         | `subscribe_book_depth`         |
 | `subscribe_order_book_at_interval`   | `subscribe_book_at_interval`   |
 | `unsubscribe_order_book_deltas`      | `unsubscribe_book_deltas`      |
-| `unsubscribe_order_book_depth`       | `unsubscribe_book_depth10`     |
+| `unsubscribe_order_book_depth`       | `unsubscribe_book_depth`       |
 | `unsubscribe_order_book_at_interval` | `unsubscribe_book_at_interval` |
 | `request_order_book_snapshot`        | `request_book_snapshot`        |
 | `request_order_book_deltas`          | `request_book_deltas`          |
@@ -158,7 +158,7 @@ Historical requests use type-specific batch callbacks in v2:
 | Custom data                          | `on_historical_data`          | One `CustomData` or `Sequence[CustomData]` |
 | Book snapshot                        | `on_book`                     | One `OrderBook`                            |
 | Book deltas                          | `on_historical_book_deltas`   | `Sequence[OrderBookDelta]`                 |
-| Book depth                           | `on_historical_book_depth`    | `Sequence[OrderBookDepth10]`               |
+| Book depth                           | `on_historical_book_depth`    | `Sequence[OrderBookDepth]`                 |
 | Quote ticks                          | `on_historical_quotes`        | `Sequence[QuoteTick]`                      |
 | Trade ticks                          | `on_historical_trades`        | `Sequence[TradeTick]`                      |
 | Funding rates                        | `on_historical_funding_rates` | `Sequence[FundingRateUpdate]`              |

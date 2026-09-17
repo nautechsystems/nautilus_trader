@@ -85,7 +85,7 @@ macro_rules! define_switchboard {
             pipeline_topics: AHashMap<MStr<Topic>, MStr<Topic>>,
             instruments_patterns: AHashMap<Venue, MStr<Pattern>>,
             book_deltas_patterns: AHashMap<InstrumentId, MStr<Pattern>>,
-            book_depth10_patterns: AHashMap<InstrumentId, MStr<Pattern>>,
+            book_depth_patterns: AHashMap<InstrumentId, MStr<Pattern>>,
             book_snapshots_patterns: AHashMap<(InstrumentId, NonZeroUsize), MStr<Pattern>>,
             signal_topics: AHashMap<String, MStr<Topic>>,
             signal_patterns: AHashMap<String, MStr<Pattern>>,
@@ -103,7 +103,7 @@ macro_rules! define_switchboard {
                     pipeline_topics: AHashMap::new(),
                     instruments_patterns: AHashMap::new(),
                     book_deltas_patterns: AHashMap::new(),
-                    book_depth10_patterns: AHashMap::new(),
+                    book_depth_patterns: AHashMap::new(),
                     book_snapshots_patterns: AHashMap::new(),
                     signal_topics: AHashMap::new(),
                     signal_patterns: AHashMap::new(),
@@ -407,9 +407,9 @@ define_switchboard! {
     get_book_deltas_topic(instrument_id: InstrumentId) -> instrument_id,
     "data.book.deltas.{}.{}", instrument_id.venue, instrument_id.symbol;
 
-    book_depth10_topics: InstrumentId,
-    get_book_depth10_topic(instrument_id: InstrumentId) -> instrument_id,
-    "data.book.depth10.{}.{}", instrument_id.venue, instrument_id.symbol;
+    book_depth_topics: InstrumentId,
+    get_book_depth_topic(instrument_id: InstrumentId) -> instrument_id,
+    "data.book.depth.{}.{}", instrument_id.venue, instrument_id.symbol;
 
     book_snapshots_topics: (InstrumentId, NonZeroUsize),
     get_book_snapshots_topic(instrument_id: InstrumentId, interval_ms: NonZeroUsize) -> (instrument_id, interval_ms),
@@ -538,8 +538,8 @@ impl MessagingSwitchboard {
     }
 
     #[must_use]
-    pub fn get_pipeline_book_depth10_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
-        let live = self.get_book_depth10_topic(instrument_id);
+    pub fn get_pipeline_book_depth_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
+        let live = self.get_book_depth_topic(instrument_id);
         self.pipeline_topic(live)
     }
 
@@ -619,15 +619,15 @@ impl MessagingSwitchboard {
             })
     }
 
-    /// Returns the subscription pattern for order book depth10 snapshots on `instrument_id`.
+    /// Returns the subscription pattern for order book depth snapshots on `instrument_id`.
     #[must_use]
-    pub fn get_book_depth10_pattern(&mut self, instrument_id: InstrumentId) -> MStr<Pattern> {
+    pub fn get_book_depth_pattern(&mut self, instrument_id: InstrumentId) -> MStr<Pattern> {
         *self
-            .book_depth10_patterns
+            .book_depth_patterns
             .entry(instrument_id)
             .or_insert_with(|| {
                 format!(
-                    "data.book.depth10.{}.{}",
+                    "data.book.depth.{}.{}",
                     instrument_id.venue,
                     instrument_id.symbol.topic(),
                 )
@@ -676,7 +676,7 @@ define_wrappers! {
     get_instruments_topic(venue: Venue) -> MStr<Topic>,
     get_instrument_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_book_deltas_topic(instrument_id: InstrumentId) -> MStr<Topic>,
-    get_book_depth10_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_book_depth_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_book_snapshots_topic(instrument_id: InstrumentId, interval_ms: NonZeroUsize) -> MStr<Topic>,
     get_quotes_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_trades_topic(instrument_id: InstrumentId) -> MStr<Topic>,
@@ -691,7 +691,7 @@ define_wrappers! {
     get_option_chain_topic(series_id: OptionSeriesId) -> MStr<Topic>,
     get_pipeline_custom_topic(data_type: &DataType) -> MStr<Topic>,
     get_pipeline_book_deltas_topic(instrument_id: InstrumentId) -> MStr<Topic>,
-    get_pipeline_book_depth10_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_pipeline_book_depth_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_pipeline_quotes_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_pipeline_trades_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_pipeline_bars_topic(bar_type: BarType) -> MStr<Topic>,
@@ -738,13 +738,13 @@ pub fn get_book_deltas_pattern(instrument_id: InstrumentId) -> MStr<Pattern> {
         .get_book_deltas_pattern(instrument_id)
 }
 
-/// Returns the subscription pattern for order book depth10 snapshots on `instrument_id`.
+/// Returns the subscription pattern for order book depth snapshots on `instrument_id`.
 #[must_use]
-pub fn get_book_depth10_pattern(instrument_id: InstrumentId) -> MStr<Pattern> {
+pub fn get_book_depth_pattern(instrument_id: InstrumentId) -> MStr<Pattern> {
     get_message_bus()
         .borrow_mut()
         .switchboard
-        .get_book_depth10_pattern(instrument_id)
+        .get_book_depth_pattern(instrument_id)
 }
 
 /// Returns the subscription pattern for periodic order book snapshots on `instrument_id`.
@@ -891,14 +891,14 @@ mod tests {
     }
 
     #[rstest]
-    fn test_get_book_depth10_topic(
+    fn test_get_book_depth_topic(
         mut switchboard: MessagingSwitchboard,
         instrument_id: InstrumentId,
     ) {
-        let expected_topic = "data.book.depth10.XCME.ESZ24".into();
-        let result = switchboard.get_book_depth10_topic(instrument_id);
+        let expected_topic = "data.book.depth.XCME.ESZ24".into();
+        let result = switchboard.get_book_depth_topic(instrument_id);
         assert_eq!(result, expected_topic);
-        assert!(switchboard.book_depth10_topics.contains_key(&instrument_id));
+        assert!(switchboard.book_depth_topics.contains_key(&instrument_id));
     }
 
     #[rstest]
@@ -960,9 +960,9 @@ mod tests {
         MessagingSwitchboard::get_pipeline_book_deltas_topic as PipelineInstrumentIdTopicFn,
         "data.pipeline.book.deltas.XCME.ESZ24",
     )]
-    #[case::book_depth10(
-        MessagingSwitchboard::get_pipeline_book_depth10_topic as PipelineInstrumentIdTopicFn,
-        "data.pipeline.book.depth10.XCME.ESZ24",
+    #[case::book_depth(
+        MessagingSwitchboard::get_pipeline_book_depth_topic as PipelineInstrumentIdTopicFn,
+        "data.pipeline.book.depth.XCME.ESZ24",
     )]
     #[case::quotes(
         MessagingSwitchboard::get_pipeline_quotes_topic as PipelineInstrumentIdTopicFn,
@@ -1228,9 +1228,9 @@ mod tests {
     type PatternFn = fn(&mut MessagingSwitchboard, InstrumentId) -> MStr<Pattern>;
 
     #[rstest]
-    #[case::book_depth10(
-        MessagingSwitchboard::get_book_depth10_pattern as PatternFn,
-        "data.book.depth10.XCME.ESZ24",
+    #[case::book_depth(
+        MessagingSwitchboard::get_book_depth_pattern as PatternFn,
+        "data.book.depth.XCME.ESZ24",
     )]
     fn test_pattern_for_non_composite_is_literal(
         mut switchboard: MessagingSwitchboard,
@@ -1254,7 +1254,7 @@ mod tests {
 
     #[rstest]
     #[case::book_deltas(MessagingSwitchboard::get_book_deltas_pattern as PatternFn)]
-    #[case::book_depth10(MessagingSwitchboard::get_book_depth10_pattern as PatternFn)]
+    #[case::book_depth(MessagingSwitchboard::get_book_depth_pattern as PatternFn)]
     fn test_pattern_function_is_idempotent(
         mut switchboard: MessagingSwitchboard,
         instrument_id: InstrumentId,
@@ -1277,14 +1277,14 @@ mod tests {
     }
 
     #[rstest]
-    fn test_composite_book_depth10_pattern_uses_wildcard(mut switchboard: MessagingSwitchboard) {
+    fn test_composite_book_depth_pattern_uses_wildcard(mut switchboard: MessagingSwitchboard) {
         let composite_id = InstrumentId::from("ES.FUT.XCME");
         let underlying_id = InstrumentId::from("ESZ24.XCME");
 
-        let composite_pattern = switchboard.get_book_depth10_pattern(composite_id);
-        let underlying_topic = switchboard.get_book_depth10_topic(underlying_id);
+        let composite_pattern = switchboard.get_book_depth_pattern(composite_id);
+        let underlying_topic = switchboard.get_book_depth_topic(underlying_id);
 
-        assert_eq!(composite_pattern.as_ref(), "data.book.depth10.XCME.ES*");
+        assert_eq!(composite_pattern.as_ref(), "data.book.depth.XCME.ES*");
         assert!(is_matching_backtracking(
             underlying_topic,
             composite_pattern

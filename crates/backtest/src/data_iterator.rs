@@ -386,7 +386,7 @@ mod tests {
     use nautilus_model::{
         data::{
             Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-            MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth10,
+            MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth,
             QuoteTick, TradeTick,
             stubs::{
                 stub_bar, stub_delta, stub_deltas, stub_depth10, stub_instrument_close,
@@ -925,11 +925,11 @@ mod tests {
                 },
             ]),
             DataBatch::from(vec![
-                OrderBookDepth10 {
+                OrderBookDepth {
                     ts_init: late,
                     ..stub_depth10()
                 },
-                OrderBookDepth10 {
+                OrderBookDepth {
                     ts_init: early,
                     ..stub_depth10()
                 },

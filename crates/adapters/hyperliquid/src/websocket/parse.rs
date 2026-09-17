@@ -20,8 +20,7 @@ use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
-        OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
-        depth::DEPTH10_LEN,
+        OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick, depth::DEPTH10_LEN,
     },
     enums::{
         AggressorSide, BookAction, LiquiditySide, OrderSide, OrderStatus, OrderType, RecordFlag,
@@ -183,17 +182,17 @@ pub fn parse_ws_order_book_deltas(
     Ok(OrderBookDeltas::new(instrument.id(), deltas))
 }
 
-/// Parses a WebSocket L2 order book snapshot into [`OrderBookDepth10`].
+/// Parses a WebSocket L2 order book snapshot into [`OrderBookDepth`].
 ///
 /// Hyperliquid's `l2Book` subscription emits snapshots of bid/ask levels.
 /// Fills any missing levels past the venue-provided depth with zero-size
 /// placeholder orders so the fixed-size `[BookOrder; 10]` arrays are
 /// always fully populated.
-pub fn parse_ws_order_book_depth10(
+pub fn parse_ws_order_book_depth(
     book: &WsBookData,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> anyhow::Result<OrderBookDepth10> {
+) -> anyhow::Result<OrderBookDepth> {
     let ts_event = millis_to_nanos(book.time)?;
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
@@ -238,7 +237,7 @@ pub fn parse_ws_order_book_depth10(
         );
     }
 
-    Ok(OrderBookDepth10::new(
+    Ok(OrderBookDepth::new(
         instrument.id(),
         bids,
         asks,
@@ -968,7 +967,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_ws_order_book_depth10_preserves_sparse_book() {
+    fn test_parse_ws_order_book_depth_preserves_sparse_book() {
         let instrument = create_test_instrument();
         let ts_init = UnixNanos::from(123);
 
@@ -1008,7 +1007,7 @@ mod tests {
             time: 1_704_470_400_000,
         };
 
-        let depth = parse_ws_order_book_depth10(&book, &instrument, ts_init).unwrap();
+        let depth = parse_ws_order_book_depth(&book, &instrument, ts_init).unwrap();
 
         let expected_bids = [("100.00", "1.000"), ("99.99", "2.000"), ("99.98", "3.000")];
         let expected_asks = [("100.01", "1.500"), ("100.02", "2.500")];
@@ -1043,7 +1042,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_ws_order_book_depth10_truncates_beyond_10() {
+    fn test_parse_ws_order_book_depth_truncates_beyond_10() {
         let instrument = create_test_instrument();
         let ts_init = UnixNanos::default();
 
@@ -1063,7 +1062,7 @@ mod tests {
             time: 1_704_470_400_000,
         };
 
-        let depth = parse_ws_order_book_depth10(&book, &instrument, ts_init).unwrap();
+        let depth = parse_ws_order_book_depth(&book, &instrument, ts_init).unwrap();
 
         // Only first 10 on each side retained
         for i in 0..10 {

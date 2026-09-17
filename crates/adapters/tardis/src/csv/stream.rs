@@ -21,7 +21,7 @@ use nautilus_core::{UnixNanos, correctness::check_in_range_inclusive_usize};
 #[cfg(feature = "python")]
 use nautilus_model::{data::OrderBookDeltas, python::data::data_to_pyobject};
 use nautilus_model::{
-    data::{DEPTH10_LEN, Data, NULL_ORDER, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
+    data::{DEPTH10_LEN, Data, NULL_ORDER, OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick},
     enums::{OrderSide, RecordFlag},
     identifiers::InstrumentId,
     types::Quantity,
@@ -1210,14 +1210,14 @@ pub fn stream_trades<P: AsRef<Path>>(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Depth10 Streaming
+// Depth Streaming
 ////////////////////////////////////////////////////////////////////////////////
 
-/// An iterator for streaming [`OrderBookDepth10`]s from a Tardis CSV file in chunks.
-struct Depth10StreamIterator {
+/// An iterator for streaming [`OrderBookDepth`]s from a Tardis CSV file in chunks.
+struct DepthStreamIterator {
     reader: Reader<Box<dyn Read>>,
     record: StringRecord,
-    buffer: Vec<OrderBookDepth10>,
+    buffer: Vec<OrderBookDepth>,
     chunk_size: usize,
     levels: u8,
     instrument_id: Option<InstrumentId>,
@@ -1227,8 +1227,8 @@ struct Depth10StreamIterator {
     records_processed: usize,
 }
 
-impl Depth10StreamIterator {
-    /// Creates a new [`Depth10StreamIterator`].
+impl DepthStreamIterator {
+    /// Creates a new [`DepthStreamIterator`].
     ///
     /// # Errors
     ///
@@ -1279,7 +1279,7 @@ impl Depth10StreamIterator {
         })
     }
 
-    fn process_snapshot5(&self, data: &TardisOrderBookSnapshot5Record) -> OrderBookDepth10 {
+    fn process_snapshot5(&self, data: &TardisOrderBookSnapshot5Record) -> OrderBookDepth {
         let instrument_id = self
             .instrument_id
             .unwrap_or_else(|| parse_instrument_id(&data.exchange, data.symbol));
@@ -1335,7 +1335,7 @@ impl Depth10StreamIterator {
         let ts_event = parse_timestamp(data.timestamp);
         let ts_init = parse_timestamp(data.local_timestamp);
 
-        OrderBookDepth10::new(
+        OrderBookDepth::new(
             instrument_id,
             bids,
             asks,
@@ -1348,7 +1348,7 @@ impl Depth10StreamIterator {
         )
     }
 
-    fn process_snapshot25(&self, data: &TardisOrderBookSnapshot25Record) -> OrderBookDepth10 {
+    fn process_snapshot25(&self, data: &TardisOrderBookSnapshot25Record) -> OrderBookDepth {
         let instrument_id = self
             .instrument_id
             .unwrap_or_else(|| parse_instrument_id(&data.exchange, data.symbol));
@@ -1414,7 +1414,7 @@ impl Depth10StreamIterator {
         let ts_event = parse_timestamp(data.timestamp);
         let ts_init = parse_timestamp(data.local_timestamp);
 
-        OrderBookDepth10::new(
+        OrderBookDepth::new(
             instrument_id,
             bids,
             asks,
@@ -1495,8 +1495,8 @@ impl Depth10StreamIterator {
     }
 }
 
-impl Iterator for Depth10StreamIterator {
-    type Item = anyhow::Result<Vec<OrderBookDepth10>>;
+impl Iterator for DepthStreamIterator {
+    type Item = anyhow::Result<Vec<OrderBookDepth>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(limit) = self.limit
@@ -1565,7 +1565,7 @@ impl Iterator for Depth10StreamIterator {
     }
 }
 
-/// Streams [`OrderBookDepth10`]s from a Tardis format CSV at the given `filepath`,
+/// Streams [`OrderBookDepth`]s from a Tardis format CSV at the given `filepath`,
 /// yielding chunks of the specified size.
 ///
 /// # Precision Inference Warning
@@ -1580,16 +1580,16 @@ impl Iterator for Depth10StreamIterator {
 ///
 /// Returns an error if `chunk_size` is outside `[1, 1_000_000]`, or if the file cannot be opened,
 /// read, or parsed as CSV.
-pub fn stream_depth10_from_snapshot5<P: AsRef<Path>>(
+pub fn stream_depth_from_snapshot5<P: AsRef<Path>>(
     filepath: P,
     chunk_size: usize,
     price_precision: Option<u8>,
     size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
-) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Vec<OrderBookDepth10>>>> {
+) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Vec<OrderBookDepth>>>> {
     validate_stream_chunk_size(chunk_size)?;
-    Depth10StreamIterator::new(
+    DepthStreamIterator::new(
         filepath,
         chunk_size,
         5,
@@ -1600,7 +1600,7 @@ pub fn stream_depth10_from_snapshot5<P: AsRef<Path>>(
     )
 }
 
-/// Streams [`OrderBookDepth10`]s from a Tardis format CSV at the given `filepath`,
+/// Streams [`OrderBookDepth`]s from a Tardis format CSV at the given `filepath`,
 /// yielding chunks of the specified size.
 ///
 /// # Precision Inference Warning
@@ -1615,16 +1615,16 @@ pub fn stream_depth10_from_snapshot5<P: AsRef<Path>>(
 ///
 /// Returns an error if `chunk_size` is outside `[1, 1_000_000]`, or if the file cannot be opened,
 /// read, or parsed as CSV.
-pub fn stream_depth10_from_snapshot25<P: AsRef<Path>>(
+pub fn stream_depth_from_snapshot25<P: AsRef<Path>>(
     filepath: P,
     chunk_size: usize,
     price_precision: Option<u8>,
     size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
-) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Vec<OrderBookDepth10>>>> {
+) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Vec<OrderBookDepth>>>> {
     validate_stream_chunk_size(chunk_size)?;
-    Depth10StreamIterator::new(
+    DepthStreamIterator::new(
         filepath,
         chunk_size,
         25,
@@ -2417,18 +2417,18 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
     }
 
     #[rstest]
-    pub fn test_stream_depth10_from_snapshot5_chunked() {
+    pub fn test_stream_depth_from_snapshot5_chunked() {
         let csv_data = "exchange,symbol,timestamp,local_timestamp,asks[0].price,asks[0].amount,bids[0].price,bids[0].amount,asks[1].price,asks[1].amount,bids[1].price,bids[1].amount,asks[2].price,asks[2].amount,bids[2].price,bids[2].amount,asks[3].price,asks[3].amount,bids[3].price,bids[3].amount,asks[4].price,asks[4].amount,bids[4].price,bids[4].amount
 binance,BTCUSDT,1640995200000000,1640995200100000,50001.0,1.0,49999.0,1.5,50002.0,2.0,49998.0,2.5,50003.0,3.0,49997.0,3.5,50004.0,4.0,49996.0,4.5,50005.0,5.0,49995.0,5.5
 binance,BTCUSDT,1640995201000000,1640995201100000,50001.5,1.1,49999.5,1.6,50002.5,2.1,49998.5,2.6,50003.5,3.1,49997.5,3.6,50004.5,4.1,49996.5,4.6,50005.5,5.1,49995.5,5.6
 binance,BTCUSDT,1640995202000000,1640995202100000,50001.12,1.12,49999.12,1.62,50002.12,2.12,49998.12,2.62,50003.12,3.12,49997.12,3.62,50004.12,4.12,49996.12,4.62,50005.12,5.12,49995.12,5.62";
 
         // Write to temporary file
-        let temp_file = std::env::temp_dir().join("test_stream_depth10_snapshot5.csv");
+        let temp_file = std::env::temp_dir().join("test_stream_depth_snapshot5.csv");
         std::fs::write(&temp_file, csv_data).unwrap();
 
         // Stream with chunk size of 2
-        let stream = stream_depth10_from_snapshot5(&temp_file, 2, None, None, None, None).unwrap();
+        let stream = stream_depth_from_snapshot5(&temp_file, 2, None, None, None, None).unwrap();
         let chunks: Vec<_> = stream.collect();
 
         // Should have 2 chunks: [2 items, 1 item]
@@ -2499,7 +2499,7 @@ binance,BTCUSDT,1640995202000000,1640995202100000,50001.12,1.12,49999.12,1.62,50
     }
 
     #[rstest]
-    pub fn test_stream_depth10_from_snapshot25_chunked() {
+    pub fn test_stream_depth_from_snapshot25_chunked() {
         let expected_bids = [
             ("49999.00", "1.5"),
             ("49998.99", "2.5"),
@@ -2535,10 +2535,10 @@ binance,BTCUSDT,1640995202000000,1640995202100000,50001.12,1.12,49999.12,1.62,50
             row.extend([ask_price, ask_size, bid_price, bid_size]);
         }
         let csv_data = format!("{}\n{}", headers.join(","), row.join(","));
-        let temp_file = std::env::temp_dir().join("test_stream_depth10_snapshot25.csv");
+        let temp_file = std::env::temp_dir().join("test_stream_depth_snapshot25.csv");
         std::fs::write(&temp_file, csv_data).unwrap();
 
-        let stream = stream_depth10_from_snapshot25(&temp_file, 1, None, None, None, None).unwrap();
+        let stream = stream_depth_from_snapshot25(&temp_file, 1, None, None, None, None).unwrap();
         let chunks: Vec<_> = stream.collect();
 
         assert_eq!(chunks.len(), 1);
@@ -2585,10 +2585,10 @@ binance,BTCUSDT,1640995202000000,1640995202100000,50001.12,1.12,49999.12,1.62,50
         let result = stream_trades(non_existent, 10, None, None, None, None);
         assert!(result.is_err());
 
-        let result = stream_depth10_from_snapshot5(non_existent, 10, None, None, None, None);
+        let result = stream_depth_from_snapshot5(non_existent, 10, None, None, None, None);
         assert!(result.is_err());
 
-        let result = stream_depth10_from_snapshot25(non_existent, 10, None, None, None, None);
+        let result = stream_depth_from_snapshot25(non_existent, 10, None, None, None, None);
         assert!(result.is_err());
     }
 
@@ -2770,11 +2770,11 @@ binance,BTCUSDT,1640995204000000,1640995204100000,trade5,buy,50000.1234,0.5";
     }
 
     #[rstest]
-    pub fn test_depth10_invalid_levels_error_at_construction() {
-        let temp_file = std::env::temp_dir().join("test_depth10_invalid_levels.csv");
+    pub fn test_depth_invalid_levels_error_at_construction() {
+        let temp_file = std::env::temp_dir().join("test_depth_invalid_levels.csv");
         std::fs::write(&temp_file, "exchange,symbol,timestamp,local_timestamp\n").unwrap();
 
-        let result = Depth10StreamIterator::new(&temp_file, 10, 10, None, None, None, None);
+        let result = DepthStreamIterator::new(&temp_file, 10, 10, None, None, None, None);
         assert!(result.is_err());
         let err_msg = result.err().unwrap().to_string();
         assert!(
@@ -2782,13 +2782,13 @@ binance,BTCUSDT,1640995204000000,1640995204100000,trade5,buy,50000.1234,0.5";
             "Error should mention 'Invalid levels': {err_msg}"
         );
 
-        let result = Depth10StreamIterator::new(&temp_file, 10, 3, None, None, None, None);
+        let result = DepthStreamIterator::new(&temp_file, 10, 3, None, None, None, None);
         assert!(result.is_err());
 
-        let result = Depth10StreamIterator::new(&temp_file, 10, 5, None, None, None, None);
+        let result = DepthStreamIterator::new(&temp_file, 10, 5, None, None, None, None);
         assert!(result.is_ok());
 
-        let result = Depth10StreamIterator::new(&temp_file, 10, 25, None, None, None, None);
+        let result = DepthStreamIterator::new(&temp_file, 10, 25, None, None, None, None);
         assert!(result.is_ok());
 
         std::fs::remove_file(&temp_file).ok();

@@ -1582,7 +1582,7 @@ impl BacktestEngine {
                     processed_book_data = true;
                 }
                 DataRef::BookDepth(depth) => {
-                    exchange_ref.process_order_book_depth10(depth)?;
+                    exchange_ref.process_order_book_depth(depth)?;
                     processed_book_data = true;
                 }
                 DataRef::Quote(quote) => exchange_ref.process_quote_tick(quote)?,

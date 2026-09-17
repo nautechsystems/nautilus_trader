@@ -56,7 +56,7 @@ use nautilus_lighter::{
     },
 };
 use nautilus_model::{
-    data::OrderBookDepth10,
+    data::OrderBookDepth,
     enums::{BookAction, RecordFlag},
     identifiers::{InstrumentId, Symbol},
     instruments::{CryptoPerpetual, CurrencyPair, InstrumentAny},
@@ -467,7 +467,7 @@ fn book_update_frame_with_cached_changes() -> Value {
     book_update_frame_for_market(PERP_MARKET_INDEX)
 }
 
-fn assert_depth10_matches_cached_changes(depth: &OrderBookDepth10) {
+fn assert_depth_matches_cached_changes(depth: &OrderBookDepth) {
     assert_eq!(depth.sequence, 904846);
     assert_eq!(depth.bids[0].price, Price::from("2000.00"));
     assert_eq!(depth.bids[0].size, Quantity::from("0.0500"));
@@ -978,7 +978,7 @@ async fn test_order_book_nonce_gap_drops_update_and_resubscribes() {
 }
 
 #[tokio::test]
-async fn test_order_book_depth10_nonce_gap_drops_update_and_resubscribes() {
+async fn test_order_book_depth_nonce_gap_drops_update_and_resubscribes() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let mut harness = ClientHarness::build(addr).await;
@@ -990,15 +990,15 @@ async fn test_order_book_depth10_nonce_gap_drops_update_and_resubscribes() {
     let id = harness.instrument(PERP_MARKET_INDEX);
     harness
         .client
-        .subscribe_book_depth10(id)
+        .subscribe_book_depth(id)
         .await
-        .expect("subscribe_book_depth10");
+        .expect("subscribe_book_depth");
 
     let snapshot_event = next_event_within(&mut harness.client, Duration::from_secs(2))
         .await
-        .expect("snapshot depth10");
-    let NautilusWsMessage::Depth10(depth) = snapshot_event else {
-        panic!("expected snapshot Depth10, was {snapshot_event:?}");
+        .expect("snapshot depth");
+    let NautilusWsMessage::Depth(depth) = snapshot_event else {
+        panic!("expected snapshot Depth, was {snapshot_event:?}");
     };
     assert_eq!(depth.instrument_id, id);
     assert_eq!(depth.sequence, 904845);
@@ -1020,9 +1020,9 @@ async fn test_order_book_depth10_nonce_gap_drops_update_and_resubscribes() {
 
     let event = next_event_within(&mut harness.client, Duration::from_secs(2))
         .await
-        .expect("resync depth10");
-    let NautilusWsMessage::Depth10(depth) = event else {
-        panic!("expected resync Depth10, was {event:?}");
+        .expect("resync depth");
+    let NautilusWsMessage::Depth(depth) = event else {
+        panic!("expected resync Depth, was {event:?}");
     };
 
     assert_eq!(depth.instrument_id, id);
@@ -1051,7 +1051,7 @@ async fn test_order_book_depth10_nonce_gap_drops_update_and_resubscribes() {
 }
 
 #[tokio::test]
-async fn test_order_book_second_frame_is_incremental_no_depth10() {
+async fn test_order_book_second_frame_is_incremental_no_depth() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let mut harness = ClientHarness::build(addr).await;
@@ -1105,18 +1105,18 @@ async fn test_order_book_second_frame_is_incremental_no_depth10() {
         "second frame must not carry F_SNAPSHOT",
     );
 
-    // Depth10 is not subscribed, so no Depth10 message should follow.
+    // Depth is not subscribed, so no Depth message should follow.
     let next = next_event_within(&mut harness.client, Duration::from_millis(200)).await;
     assert!(
-        !matches!(next, Some(NautilusWsMessage::Depth10(_))),
-        "no Depth10 expected without subscribe_book_depth10",
+        !matches!(next, Some(NautilusWsMessage::Depth(_))),
+        "no Depth expected without subscribe_book_depth",
     );
 
     harness.client.disconnect().await.expect("disconnect");
 }
 
 #[tokio::test]
-async fn test_order_book_depth10_emits_on_snapshot() {
+async fn test_order_book_depth_emits_on_snapshot() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let mut harness = ClientHarness::build(addr).await;
@@ -1128,29 +1128,29 @@ async fn test_order_book_depth10_emits_on_snapshot() {
     let id = harness.instrument(PERP_MARKET_INDEX);
     harness
         .client
-        .subscribe_book_depth10(id)
+        .subscribe_book_depth(id)
         .await
-        .expect("subscribe_book_depth10");
+        .expect("subscribe_book_depth");
 
     let event = next_event_within(&mut harness.client, Duration::from_secs(2))
         .await
-        .expect("depth10 event");
+        .expect("depth event");
     assert!(
-        matches!(event, NautilusWsMessage::Depth10(_)),
-        "expected Depth10 on snapshot, was {event:?}",
+        matches!(event, NautilusWsMessage::Depth(_)),
+        "expected Depth on snapshot, was {event:?}",
     );
 
     let next = next_event_within(&mut harness.client, Duration::from_millis(200)).await;
     assert!(
         !matches!(next, Some(NautilusWsMessage::Deltas(_))),
-        "depth10-only subscription must not emit Deltas",
+        "depth-only subscription must not emit Deltas",
     );
 
     harness.client.disconnect().await.expect("disconnect");
 }
 
 #[tokio::test]
-async fn test_order_book_depth10_emits_on_incremental_update() {
+async fn test_order_book_depth_emits_on_incremental_update() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let mut harness = ClientHarness::build(addr).await;
@@ -1162,14 +1162,14 @@ async fn test_order_book_depth10_emits_on_incremental_update() {
     let id = harness.instrument(PERP_MARKET_INDEX);
     harness
         .client
-        .subscribe_book_depth10(id)
+        .subscribe_book_depth(id)
         .await
-        .expect("subscribe_book_depth10");
+        .expect("subscribe_book_depth");
 
     let event = next_event_within(&mut harness.client, Duration::from_secs(2))
         .await
-        .expect("initial depth10");
-    assert!(matches!(event, NautilusWsMessage::Depth10(_)));
+        .expect("initial depth");
+    assert!(matches!(event, NautilusWsMessage::Depth(_)));
 
     state
         .enqueue_push(book_update_frame_with_cached_changes())
@@ -1182,18 +1182,18 @@ async fn test_order_book_depth10_emits_on_incremental_update() {
 
     let event = next_event_within(&mut harness.client, Duration::from_secs(2))
         .await
-        .expect("updated depth10");
-    let NautilusWsMessage::Depth10(depth) = event else {
-        panic!("expected updated Depth10, was {event:?}");
+        .expect("updated depth");
+    let NautilusWsMessage::Depth(depth) = event else {
+        panic!("expected updated Depth, was {event:?}");
     };
 
-    assert_depth10_matches_cached_changes(&depth);
+    assert_depth_matches_cached_changes(&depth);
 
     harness.client.disconnect().await.expect("disconnect");
 }
 
 #[tokio::test]
-async fn test_order_book_incremental_emits_deltas_and_depth10_when_both_subscribed() {
+async fn test_order_book_incremental_emits_deltas_and_depth_when_both_subscribed() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let mut harness = ClientHarness::build(addr).await;
@@ -1205,14 +1205,14 @@ async fn test_order_book_incremental_emits_deltas_and_depth10_when_both_subscrib
     let id = harness.instrument(PERP_MARKET_INDEX);
     harness
         .client
-        .subscribe_book_depth10(id)
+        .subscribe_book_depth(id)
         .await
-        .expect("subscribe_book_depth10");
+        .expect("subscribe_book_depth");
 
     let event = next_event_within(&mut harness.client, Duration::from_secs(2))
         .await
-        .expect("initial depth10");
-    assert!(matches!(event, NautilusWsMessage::Depth10(_)));
+        .expect("initial depth");
+    assert!(matches!(event, NautilusWsMessage::Depth(_)));
 
     harness
         .client
@@ -1249,18 +1249,18 @@ async fn test_order_book_incremental_emits_deltas_and_depth10_when_both_subscrib
 
     let event = next_event_within(&mut harness.client, Duration::from_secs(2))
         .await
-        .expect("updated depth10");
-    let NautilusWsMessage::Depth10(depth) = event else {
-        panic!("expected updated Depth10, was {event:?}");
+        .expect("updated depth");
+    let NautilusWsMessage::Depth(depth) = event else {
+        panic!("expected updated Depth, was {event:?}");
     };
 
-    assert_depth10_matches_cached_changes(&depth);
+    assert_depth_matches_cached_changes(&depth);
 
     harness.client.disconnect().await.expect("disconnect");
 }
 
 #[tokio::test]
-async fn test_late_depth10_uses_cached_book_after_incremental_updates() {
+async fn test_late_depth_uses_cached_book_after_incremental_updates() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let mut harness = ClientHarness::build(addr).await;
@@ -1297,9 +1297,9 @@ async fn test_late_depth10_uses_cached_book_after_incremental_updates() {
 
     harness
         .client
-        .subscribe_book_depth10(id)
+        .subscribe_book_depth(id)
         .await
-        .expect("subscribe_book_depth10");
+        .expect("subscribe_book_depth");
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     let order_book_subs = state
@@ -1310,17 +1310,17 @@ async fn test_late_depth10_uses_cached_book_after_incremental_updates() {
         .count();
     assert_eq!(
         order_book_subs, 1,
-        "late depth10 must reuse the active order_book stream",
+        "late depth must reuse the active order_book stream",
     );
 
     let event = next_event_within(&mut harness.client, Duration::from_secs(2))
         .await
-        .expect("cached depth10");
-    let NautilusWsMessage::Depth10(depth) = event else {
-        panic!("expected cached Depth10, was {event:?}");
+        .expect("cached depth");
+    let NautilusWsMessage::Depth(depth) = event else {
+        panic!("expected cached Depth, was {event:?}");
     };
 
-    assert_depth10_matches_cached_changes(&depth);
+    assert_depth_matches_cached_changes(&depth);
 
     harness.client.disconnect().await.expect("disconnect");
 }

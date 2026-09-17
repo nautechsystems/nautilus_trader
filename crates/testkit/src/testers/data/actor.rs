@@ -27,7 +27,7 @@ use nautilus_common::{
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        MarkPriceUpdate, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
         option_chain::OptionGreeks,
     },
     identifiers::InstrumentId,
@@ -128,7 +128,7 @@ impl DataActor for DataTester {
             }
 
             if self.config.subscribe_book_depth {
-                self.subscribe_book_depth10(
+                self.subscribe_book_depth(
                     instrument_id,
                     self.config.book_type,
                     client_id,
@@ -312,7 +312,7 @@ impl DataActor for DataTester {
             }
 
             if self.config.subscribe_book_depth {
-                self.unsubscribe_book_depth10(instrument_id, client_id, subscribe_params.clone());
+                self.unsubscribe_book_depth(instrument_id, client_id, subscribe_params.clone());
             }
 
             if self.config.subscribe_quotes {
@@ -412,7 +412,7 @@ impl DataActor for DataTester {
         Ok(())
     }
 
-    fn on_book_depth(&mut self, depth: &OrderBookDepth10) -> anyhow::Result<()> {
+    fn on_book_depth(&mut self, depth: &OrderBookDepth) -> anyhow::Result<()> {
         warn_if_implausible_unix_nanos("book depth", depth.ts_event, depth.ts_init);
 
         if self.config.log_data {

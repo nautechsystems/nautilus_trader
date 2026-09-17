@@ -21,7 +21,7 @@ use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, CustomData, Data, DataType, FundingRateUpdate,
         HasTsInit, IndexPriceUpdate, MarkPriceUpdate, NautilusRecordType, OptionGreekValues,
-        OptionGreeks, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick, depth::DEPTH10_LEN,
+        OptionGreeks, OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick, depth::DEPTH10_LEN,
         is_monotonically_increasing_by_init, to_variant,
     },
     enums::{
@@ -108,7 +108,7 @@ fn create_order_book_delta(ts_init: u64) -> OrderBookDelta {
     )
 }
 
-fn create_order_book_depth10(ts_init: u64) -> OrderBookDepth10 {
+fn create_order_book_depth(ts_init: u64) -> OrderBookDepth {
     let mut bids: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
     let mut asks: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
 
@@ -157,7 +157,7 @@ fn create_order_book_depth10(ts_init: u64) -> OrderBookDepth10 {
     let bid_counts = [1_u32; DEPTH10_LEN];
     let ask_counts = [1_u32; DEPTH10_LEN];
 
-    OrderBookDepth10::new(
+    OrderBookDepth::new(
         ethusdt_binance_id(),
         bids,
         asks,
@@ -1077,11 +1077,11 @@ fn test_rust_write_order_book_deltas() {
 fn test_rust_write_order_book_depths() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
 
-    let depths = vec![create_order_book_depth10(1), create_order_book_depth10(2)];
+    let depths = vec![create_order_book_depth(1), create_order_book_depth(2)];
     catalog.write_to_parquet(&depths, None, None, None).unwrap();
 
     let loaded = catalog
-        .query_typed_data::<OrderBookDepth10>(
+        .query_typed_data::<OrderBookDepth>(
             Some(vec!["ETH/USDT.BINANCE".to_string()]),
             None,
             None,

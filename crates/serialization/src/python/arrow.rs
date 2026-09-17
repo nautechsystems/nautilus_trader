@@ -113,7 +113,7 @@ pub fn get_arrow_schema_map(py: Python<'_>, cls: &Bound<'_, PyType>) -> PyResult
     let cls_str: String = cls.getattr("__name__")?.extract()?;
     let result_map = match cls_str.as_str() {
         stringify!(OrderBookDelta) => OrderBookDelta::get_schema_map(),
-        stringify!(OrderBookDepth) | "OrderBookDepth10" => OrderBookDepth::get_schema_map(),
+        stringify!(OrderBookDepth) => OrderBookDepth::get_schema_map(),
         stringify!(QuoteTick) => QuoteTick::get_schema_map(),
         stringify!(TradeTick) => TradeTick::get_schema_map(),
         stringify!(Bar) => Bar::get_schema_map(),
@@ -144,7 +144,7 @@ pub fn get_arrow_schema_bytes(py: Python<'_>, cls: &Bound<'_, PyType>) -> PyResu
     let cls_str: String = cls.getattr("__name__")?.extract()?;
     let schema = match cls_str.as_str() {
         stringify!(OrderBookDelta) => OrderBookDelta::get_schema(None),
-        stringify!(OrderBookDepth) | "OrderBookDepth10" => OrderBookDepth::get_schema(None),
+        stringify!(OrderBookDepth) => OrderBookDepth::get_schema(None),
         stringify!(QuoteTick) => QuoteTick::get_schema(None),
         stringify!(TradeTick) => TradeTick::get_schema(None),
         stringify!(Bar) => Bar::get_schema(None),
@@ -275,33 +275,6 @@ pub fn py_book_depths_to_arrow_record_batch_bytes(
         Err(e) => Err(to_pyvalue_err(e)),
     }
 }
-
-#[allow(
-    deprecated,
-    reason = "generated code references the one-release Python compatibility alias"
-)]
-mod depth10_compat {
-    use super::{
-        OrderBookDepth, Py, PyBytes, PyResult, Python, py_book_depths_to_arrow_record_batch_bytes,
-        pyfunction,
-    };
-
-    #[pyfunction(name = "book_depth10_to_arrow_record_batch_bytes")]
-    #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
-    #[deprecated(note = "use book_depths_to_arrow_record_batch_bytes")]
-    pub fn py_book_depth10_to_arrow_record_batch_bytes(
-        py: Python,
-        data: Vec<OrderBookDepth>,
-    ) -> PyResult<Py<PyBytes>> {
-        py_book_depths_to_arrow_record_batch_bytes(py, data)
-    }
-}
-
-#[allow(
-    deprecated,
-    reason = "re-exports the one-release Python compatibility alias"
-)]
-pub use depth10_compat::py_book_depth10_to_arrow_record_batch_bytes;
 
 /// Converts a vector of `QuoteTick` into an Arrow `RecordBatch`.
 ///

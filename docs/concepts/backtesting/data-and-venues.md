@@ -65,14 +65,14 @@ advances. Strategies continue to receive subscribed data through the data engine
 validation depends on the matching path; for example, a bar ignored by an L2 or L3 venue returns
 before executable-bar precision checks.
 
-| Data type          | L1_MBP            | L2_MBP            | L3_MBO            |
-| ------------------ | ----------------- | ----------------- | ----------------- |
-| `QuoteTick`        | Updates book      | *Ignored*         | *Ignored*         |
-| `TradeTick`        | Triggers matching | Triggers matching | Triggers matching |
-| `Bar`              | Updates book      | *Ignored*         | *Ignored*         |
-| `OrderBookDelta`   | *Ignored*         | Updates book      | Updates book      |
-| `OrderBookDeltas`  | *Ignored*         | Updates book      | Updates book      |
-| `OrderBookDepth10` | Updates book      | Updates book      | Updates book      |
+| Data type         | L1_MBP            | L2_MBP            | L3_MBO            |
+| ----------------- | ----------------- | ----------------- | ----------------- |
+| `QuoteTick`       | Updates book      | *Ignored*         | *Ignored*         |
+| `TradeTick`       | Triggers matching | Triggers matching | Triggers matching |
+| `Bar`             | Updates book      | *Ignored*         | *Ignored*         |
+| `OrderBookDelta`  | *Ignored*         | Updates book      | Updates book      |
+| `OrderBookDeltas` | *Ignored*         | Updates book      | Updates book      |
+| `OrderBookDepth`  | Updates book      | Updates book      | Updates book      |
 
 The granularity of the data must match the specified order `book_type`. Nautilus cannot generate
 higher granularity data (L2 or L3) from lower-level data such as quotes, trades, or bars.

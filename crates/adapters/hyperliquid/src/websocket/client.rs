@@ -1410,7 +1410,7 @@ impl HyperliquidWebSocketClient {
     /// Subscribe to L2 order book with optional `nSigFigs` / `mantissa`
     /// precision controls passed through to the venue's `l2Book` stream.
     ///
-    /// One venue `l2Book` stream per coin is shared with depth10 snapshots;
+    /// One venue `l2Book` stream per coin is shared with depth snapshots;
     /// the first logical use opens the stream and its options win. Requesting
     /// different options while the stream is active logs a warning.
     pub async fn subscribe_book_with_options(
@@ -1438,9 +1438,9 @@ impl HyperliquidWebSocketClient {
     ///
     /// Reuses the same `l2Book` WebSocket subscription as
     /// [`Self::subscribe_book`] and flags the handler to additionally emit
-    /// `NautilusWsMessage::Depth10` for this coin.
-    pub async fn subscribe_book_depth10(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
-        self.subscribe_book_depth10_with_options(instrument_id, None, None)
+    /// `NautilusWsMessage::Depth` for this coin.
+    pub async fn subscribe_book_depth(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+        self.subscribe_book_depth_with_options(instrument_id, None, None)
             .await
     }
 
@@ -1450,7 +1450,7 @@ impl HyperliquidWebSocketClient {
     /// Shares the coin's `l2Book` stream with deltas subscribers; the first
     /// logical use opens the stream and its options win. Requesting different
     /// options while the stream is active logs a warning.
-    pub async fn subscribe_book_depth10_with_options(
+    pub async fn subscribe_book_depth_with_options(
         &self,
         instrument_id: InstrumentId,
         n_sig_figs: Option<u32>,
@@ -1468,23 +1468,20 @@ impl HyperliquidWebSocketClient {
             .map_err(|e| anyhow::anyhow!("Failed to send UpdateInstrument command: {e}"))?;
 
         cmd_tx
-            .send(HandlerCommand::SetDepth10Sub {
+            .send(HandlerCommand::SetDepthSub {
                 coin,
                 subscribed: true,
             })
-            .map_err(|e| anyhow::anyhow!("Failed to send SetDepth10Sub command: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("Failed to send SetDepthSub command: {e}"))?;
 
-        self.send_book_stream_subscribe(&cmd_tx, coin, BookStreamUse::Depth10, n_sig_figs, mantissa)
+        self.send_book_stream_subscribe(&cmd_tx, coin, BookStreamUse::Depth, n_sig_figs, mantissa)
     }
 
     /// Unsubscribe from order book depth-10 snapshots.
     ///
-    /// Clears the depth10 emission flag and tears down the underlying
+    /// Clears the depth emission flag and tears down the underlying
     /// `l2Book` stream unless active deltas subscribers still need it.
-    pub async fn unsubscribe_book_depth10(
-        &self,
-        instrument_id: InstrumentId,
-    ) -> anyhow::Result<()> {
+    pub async fn unsubscribe_book_depth(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
         let instrument = self
             .get_instrument(&instrument_id)
             .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
@@ -1493,13 +1490,13 @@ impl HyperliquidWebSocketClient {
         let cmd_tx = self.cmd_tx.read().await;
 
         cmd_tx
-            .send(HandlerCommand::SetDepth10Sub {
+            .send(HandlerCommand::SetDepthSub {
                 coin,
                 subscribed: false,
             })
-            .map_err(|e| anyhow::anyhow!("Failed to send SetDepth10Sub command: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("Failed to send SetDepthSub command: {e}"))?;
 
-        self.send_book_stream_unsubscribe(&cmd_tx, coin, BookStreamUse::Depth10)
+        self.send_book_stream_unsubscribe(&cmd_tx, coin, BookStreamUse::Depth)
     }
 
     /// Subscribe to best bid/offer (BBO) quotes for an instrument.
@@ -1777,7 +1774,7 @@ impl HyperliquidWebSocketClient {
 
     /// Unsubscribe from L2 order book for an instrument.
     ///
-    /// Tears down the venue `l2Book` stream unless active depth10 subscribers
+    /// Tears down the venue `l2Book` stream unless active depth subscribers
     /// still need it.
     pub async fn unsubscribe_book(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
         let instrument = self
@@ -1795,7 +1792,7 @@ impl HyperliquidWebSocketClient {
     /// Sends an unsubscribe immediately followed by a subscribe, both echoing
     /// the stream's original precision options (the venue matches unsubscribes
     /// by full payload). Registry state is left untouched so the logical
-    /// deltas/depth10 uses and first-wins options survive the cycle. Used by
+    /// deltas/depth uses and first-wins options survive the cycle. Used by
     /// stale-stream recovery, where a plain subscribe would be gated off by
     /// the existing registry entry.
     pub async fn resubscribe_book(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
@@ -1879,8 +1876,8 @@ impl HyperliquidWebSocketClient {
             }
             BookStreamRelease::Retained => {
                 let remaining_use = match stream_use {
-                    BookStreamUse::Deltas => "depth10",
-                    BookStreamUse::Depth10 => "deltas",
+                    BookStreamUse::Deltas => "depth",
+                    BookStreamUse::Depth => "deltas",
                 };
                 log::debug!("Keeping shared l2Book stream for {coin}: {remaining_use} use remains");
             }

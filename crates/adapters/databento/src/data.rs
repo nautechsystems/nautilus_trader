@@ -1166,7 +1166,7 @@ impl DataClient for DatabentoDataClient {
             };
 
             match historical_client
-                .get_range_order_book_depth10(params, depth)
+                .get_range_order_book_depth(params, depth)
                 .await
             {
                 Ok(depths) => {

@@ -43,11 +43,11 @@ use crate::{
     enums::LogLevel,
     messages::{
         data::{
-            SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCustomData,
+            SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth, SubscribeCustomData,
             SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
             SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
             SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
-            UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCustomData,
+            UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeCustomData,
             UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
             UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
             UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
@@ -271,7 +271,7 @@ impl SubscribeBookDeltas {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl SubscribeBookDepth10 {
+impl SubscribeBookDepth {
     #[getter]
     #[pyo3(name = "client_id")]
     fn py_client_id(&self) -> Option<ClientId> {
@@ -969,7 +969,7 @@ impl UnsubscribeBookDeltas {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl UnsubscribeBookDepth10 {
+impl UnsubscribeBookDepth {
     #[getter]
     #[pyo3(name = "client_id")]
     fn py_client_id(&self) -> Option<ClientId> {
@@ -2400,7 +2400,7 @@ mod tests {
             params
         });
 
-        let command = SubscribeBookDepth10::new(
+        let command = SubscribeBookDepth::new(
             InstrumentId::from("AUD/USD.SIM"),
             BookType::L2_MBP,
             Some(ClientId::from("CLIENT")),
@@ -2436,7 +2436,7 @@ mod tests {
                 assert!(values.is_none());
             }
 
-            assert_eq!(bound.get_type().name().unwrap(), "SubscribeBookDepth10");
+            assert_eq!(bound.get_type().name().unwrap(), "SubscribeBookDepth");
             assert_eq!(
                 bound
                     .get_type()

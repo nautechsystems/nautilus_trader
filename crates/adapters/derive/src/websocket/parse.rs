@@ -23,8 +23,8 @@ use nautilus_core::{
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
-        OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
-        depth::DEPTH10_LEN, greeks::OptionGreekValues, option_chain::OptionGreeks,
+        OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick, depth::DEPTH10_LEN,
+        greeks::OptionGreekValues, option_chain::OptionGreeks,
     },
     enums::{AggressorSide, BarAggregation, BookAction, GreeksConvention, OrderSide, RecordFlag},
     identifiers::{InstrumentId, TradeId},
@@ -193,12 +193,12 @@ pub fn parse_orderbook_deltas(
 /// # Errors
 ///
 /// Returns an error when a price, size, or timestamp cannot be converted.
-pub fn parse_orderbook_depth10(
+pub fn parse_orderbook_depth(
     msg: &DeriveOrderbookMsg,
     price_precision: u8,
     size_precision: u8,
     ts_init: UnixNanos,
-) -> anyhow::Result<OrderBookDepth10> {
+) -> anyhow::Result<OrderBookDepth> {
     let instrument_id = msg.data.instrument_id();
     let timestamp =
         u64::try_from(msg.data.timestamp).context("negative Derive orderbook timestamp")?;
@@ -226,7 +226,7 @@ pub fn parse_orderbook_depth10(
         size_precision,
     )?;
 
-    Ok(OrderBookDepth10::new(
+    Ok(OrderBookDepth::new(
         instrument_id,
         bids,
         asks,
@@ -1166,7 +1166,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_orderbook_depth10_skips_zero_sizes_and_caps_levels() {
+    fn test_parse_orderbook_depth_skips_zero_sizes_and_caps_levels() {
         let bids = Value::Array(
             (0..12)
                 .map(|i| {
@@ -1183,7 +1183,7 @@ mod tests {
 
         let msg = parse_orderbook_msg(&payload).unwrap();
         let depth =
-            parse_orderbook_depth10(&msg, PRICE_PRECISION, SIZE_PRECISION, UnixNanos::from(123))
+            parse_orderbook_depth(&msg, PRICE_PRECISION, SIZE_PRECISION, UnixNanos::from(123))
                 .unwrap();
 
         let expected_bids = [

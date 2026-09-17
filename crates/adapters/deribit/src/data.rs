@@ -38,10 +38,10 @@ use nautilus_common::{
             InstrumentsResponse, OptionChainReferencePriceResponse, RequestBars,
             RequestBookSnapshot, RequestCustomData, RequestInstrument, RequestInstruments,
             RequestOptionChainReferencePrice, RequestTrades, SubscribeBars, SubscribeBookDeltas,
-            SubscribeBookDepth10, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
+            SubscribeBookDepth, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
             SubscribeInstrument, SubscribeInstrumentStatus, SubscribeInstruments,
             SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
-            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
+            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth,
             UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
             UnsubscribeInstrument, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
             UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
@@ -958,7 +958,7 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
-    fn subscribe_book_depth10(&mut self, cmd: SubscribeBookDepth10) -> anyhow::Result<()> {
+    fn subscribe_book_depth(&mut self, cmd: SubscribeBookDepth) -> anyhow::Result<()> {
         if cmd.book_type != BookType::L2_MBP {
             anyhow::bail!("Deribit only supports L2_MBP order book depth");
         }
@@ -982,7 +982,7 @@ impl DataClient for DeribitDataClient {
             .to_string();
 
         log::debug!(
-            "Subscribing to book depth10 for {} (group: {}, interval: {}, book_type: {:?})",
+            "Subscribing to book depth for {} (group: {}, interval: {}, book_type: {:?})",
             instrument_id,
             group,
             interval.map_or("100ms (default)".to_string(), |i| i.to_string()),
@@ -994,7 +994,7 @@ impl DataClient for DeribitDataClient {
                 && let Err(e) =
                     Self::lazy_load_instrument(&http_client, &ws, &instruments, instrument_id).await
             {
-                log::error!("Lazy-load failed for {instrument_id} (book depth10): {e}");
+                log::error!("Lazy-load failed for {instrument_id} (book depth): {e}");
                 return;
             }
 
@@ -1002,7 +1002,7 @@ impl DataClient for DeribitDataClient {
                 .subscribe_book_grouped(instrument_id, &group, 10, interval)
                 .await
             {
-                log::error!("Failed to subscribe to book depth10 for {instrument_id}: {e}");
+                log::error!("Failed to subscribe to book depth for {instrument_id}: {e}");
             }
         });
 
@@ -1533,7 +1533,7 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
-    fn unsubscribe_book_depth10(&mut self, cmd: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
+    fn unsubscribe_book_depth(&mut self, cmd: &UnsubscribeBookDepth) -> anyhow::Result<()> {
         let ws = self
             .ws_client
             .as_ref()
@@ -1549,7 +1549,7 @@ impl DataClient for DeribitDataClient {
             .to_string();
 
         log::debug!(
-            "Unsubscribing from book depth10 for {} (group: {}, interval: {})",
+            "Unsubscribing from book depth for {} (group: {}, interval: {})",
             instrument_id,
             group,
             interval.map_or("100ms (default)".to_string(), |i| i.to_string())
@@ -1560,7 +1560,7 @@ impl DataClient for DeribitDataClient {
                 .unsubscribe_book_grouped(instrument_id, &group, 10, interval)
                 .await
             {
-                log::error!("Failed to unsubscribe from book depth10 for {instrument_id}: {e}");
+                log::error!("Failed to unsubscribe from book depth for {instrument_id}: {e}");
             }
         });
 

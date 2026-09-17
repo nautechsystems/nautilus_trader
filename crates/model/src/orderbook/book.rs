@@ -30,7 +30,7 @@ use super::{
     level::BookLevel, own::OwnOrderBook,
 };
 use crate::{
-    data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick},
+    data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick},
     enums::{BookAction, BookType, OrderSide, OrderStatus, RecordFlag},
     identifiers::InstrumentId,
     orderbook::{
@@ -529,7 +529,7 @@ impl OrderBook {
     /// # Errors
     ///
     /// Returns an error if the depth's instrument ID does not match this book's instrument ID.
-    pub fn apply_depth(&mut self, depth: &OrderBookDepth10) -> Result<(), BookIntegrityError> {
+    pub fn apply_depth(&mut self, depth: &OrderBookDepth) -> Result<(), BookIntegrityError> {
         if depth.instrument_id != self.instrument_id {
             return Err(BookIntegrityError::InstrumentMismatch(
                 self.instrument_id,
@@ -548,7 +548,7 @@ impl OrderBook {
     /// This function currently does not return errors, but returns `Result` for API consistency.
     pub fn apply_depth_unchecked(
         &mut self,
-        depth: &OrderBookDepth10,
+        depth: &OrderBookDepth,
     ) -> Result<(), BookIntegrityError> {
         self.bids.clear();
         self.asks.clear();

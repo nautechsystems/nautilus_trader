@@ -309,6 +309,10 @@ pub fn data_type_from_data_path_prefix(type_name: &str) -> anyhow::Result<Nautil
         anyhow::bail!("custom data queries require custom/<type_name> or Custom:<type_name>");
     }
 
+    if type_name == "order_book_depth10" {
+        return Ok(NautilusDataType::OrderBookDepth);
+    }
+
     type_name.parse()
 }
 
@@ -585,6 +589,18 @@ mod tests {
     #[rstest]
     fn built_in_data_type_prefixes_and_display_round_trip() {
         nautilus_model::for_each_data_type!(assert_data_type_prefixes);
+    }
+
+    #[rstest]
+    fn catalog_path_prefix_maps_legacy_depth_directory() {
+        assert_eq!(
+            data_type_from_data_path_prefix("order_book_depth10").unwrap(),
+            NautilusDataType::OrderBookDepth
+        );
+        assert_eq!(
+            data_path_prefix(&NautilusDataType::OrderBookDepth).as_ref(),
+            "order_book_depths"
+        );
     }
 
     #[rstest]

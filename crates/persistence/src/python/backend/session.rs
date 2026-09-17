@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::{
-        Bar, InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDepth10,
+        Bar, InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDepth,
         QuoteTick, TradeTick,
     },
     python::data::data_to_pyobject,
@@ -41,7 +41,7 @@ unsafe impl<T> Send for SendPtr<T> {}
 pub enum NautilusDataType {
     // Custom = 0,  # First slot reserved for custom data
     OrderBookDelta = 1,
-    OrderBookDepth10 = 2,
+    OrderBookDepth = 2,
     QuoteTick = 3,
     TradeTick = 4,
     Bar = 5,
@@ -108,8 +108,8 @@ impl DataBackendSession {
             NautilusDataType::OrderBookDelta => slf
                 .add_file::<OrderBookDelta>(table_name, file_path, sql_query, None)
                 .map_err(to_pyruntime_err),
-            NautilusDataType::OrderBookDepth10 => slf
-                .add_file::<OrderBookDepth10>(table_name, file_path, sql_query, None)
+            NautilusDataType::OrderBookDepth => slf
+                .add_file::<OrderBookDepth>(table_name, file_path, sql_query, None)
                 .map_err(to_pyruntime_err),
             NautilusDataType::QuoteTick => slf
                 .add_file::<QuoteTick>(table_name, file_path, sql_query, None)

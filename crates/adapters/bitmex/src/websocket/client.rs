@@ -864,7 +864,7 @@ impl BitmexWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the WebSocket is not connected or if the subscription fails.
-    pub async fn subscribe_book_depth10(
+    pub async fn subscribe_book_depth(
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), BitmexWsError> {
@@ -1021,7 +1021,7 @@ impl BitmexWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the WebSocket is not connected or if the unsubscription fails.
-    pub async fn unsubscribe_book_depth10(
+    pub async fn unsubscribe_book_depth(
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), BitmexWsError> {

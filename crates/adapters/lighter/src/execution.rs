@@ -1358,7 +1358,7 @@ impl LighterExecutionClient {
                                 NautilusWsMessage::Trades(_)
                                 | NautilusWsMessage::Quote(_)
                                 | NautilusWsMessage::Deltas(_)
-                                | NautilusWsMessage::Depth10(_)
+                                | NautilusWsMessage::Depth(_)
                                 | NautilusWsMessage::Bar(_)
                                 | NautilusWsMessage::MarkPrice(_)
                                 | NautilusWsMessage::IndexPrice(_)

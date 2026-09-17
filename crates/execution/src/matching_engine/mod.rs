@@ -43,8 +43,8 @@ use nautilus_common::{
 use nautilus_core::{UUID4, UnixNanos, correctness::CorrectnessResult};
 use nautilus_model::{
     data::{
-        Bar, BarType, InstrumentClose, OrderBookDelta, OrderBookDeltas, OrderBookDepth10,
-        QuoteTick, TradeTick,
+        Bar, BarType, InstrumentClose, OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick,
+        TradeTick,
         order::{BookOrder, OrderId},
     },
     enums::{
@@ -1619,7 +1619,7 @@ impl OrderMatchingEngine {
         Ok(())
     }
 
-    /// Process the venues market for the given order book depth10.
+    /// Process the venues market for the given order book depth.
     ///
     /// # Errors
     ///
@@ -1627,8 +1627,8 @@ impl OrderMatchingEngine {
     /// - If any bid/ask size precision does not match the instrument.
     /// - If applying the depth to the book fails.
     /// - If updating the L1 order book with the top-of-book quote fails.
-    pub fn process_order_book_depth10(&mut self, depth: &OrderBookDepth10) -> anyhow::Result<()> {
-        log::debug!("Processing OrderBookDepth10 for {}", depth.instrument_id);
+    pub fn process_order_book_depth(&mut self, depth: &OrderBookDepth) -> anyhow::Result<()> {
+        log::debug!("Processing OrderBookDepth for {}", depth.instrument_id);
 
         // Validate precision for non-padding entries
         for order in &depth.bids {
@@ -1669,7 +1669,7 @@ impl OrderMatchingEngine {
             self.book.apply_depth(depth)?;
         }
 
-        // Depth10 always replaces the full book via apply_depth regardless of flags
+        // Depth always replaces the full book via apply_depth regardless of flags
         if self.config.queue_position {
             self.rebase_queue_positions();
             let bid_price_raw = top_bid.map_or(0, |order| order.price.raw());
@@ -7047,8 +7047,8 @@ mod tests {
     use nautilus_model::orderbook::BookLevel;
     use nautilus_model::{
         data::{
-            Bar, BarType, DEPTH10_LEN, OrderBookDelta, OrderBookDeltas, OrderBookDepth10,
-            QuoteTick, TradeTick,
+            Bar, BarType, DEPTH10_LEN, OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick,
+            TradeTick,
             option_chain::OptionGreeks,
             order::{BookOrder, OrderId},
         },
@@ -10242,7 +10242,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_l1_depth10_skips_padding_for_last_quote_tracking() {
+    fn test_l1_depth_skips_padding_for_last_quote_tracking() {
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let cache = Rc::new(RefCell::new(Cache::default()));
         let clock = Rc::new(RefCell::new(VirtualClock::new()));
@@ -10273,7 +10273,7 @@ mod tests {
             2,
         );
 
-        let depth = OrderBookDepth10::new(
+        let depth = OrderBookDepth::new(
             instrument.id(),
             bids,
             asks,
@@ -10284,12 +10284,12 @@ mod tests {
             UnixNanos::from(1_u64),
             UnixNanos::from(1_u64),
         );
-        engine.process_order_book_depth10(&depth).unwrap();
+        engine.process_order_book_depth(&depth).unwrap();
 
         assert_eq!(engine.last_quote_bid, Some(Price::from("1499.00")));
         assert_eq!(engine.last_quote_ask, Some(Price::from("1500.00")));
 
-        let depth_without_bid = OrderBookDepth10::new(
+        let depth_without_bid = OrderBookDepth::new(
             instrument.id(),
             [BookOrder::default(); DEPTH10_LEN],
             asks,
@@ -10300,9 +10300,7 @@ mod tests {
             UnixNanos::from(2_u64),
             UnixNanos::from(2_u64),
         );
-        engine
-            .process_order_book_depth10(&depth_without_bid)
-            .unwrap();
+        engine.process_order_book_depth(&depth_without_bid).unwrap();
 
         assert_eq!(engine.last_quote_bid, None);
         assert_eq!(engine.last_quote_ask, Some(Price::from("1500.00")));
@@ -10832,7 +10830,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_depth10_rebases_l2_queue_position() {
+    fn test_depth_rebases_l2_queue_position() {
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let instrument_id = instrument.id();
         let (mut engine, _cache) = get_queue_engine(instrument, BookType::L2_MBP);
@@ -10844,7 +10842,7 @@ mod tests {
             Quantity::from("10.000"),
             0,
         );
-        let initial = OrderBookDepth10::new(
+        let initial = OrderBookDepth::new(
             instrument_id,
             [BookOrder::default(); DEPTH10_LEN],
             asks,
@@ -10855,9 +10853,9 @@ mod tests {
             UnixNanos::from(1_u64),
             UnixNanos::from(1_u64),
         );
-        engine.process_order_book_depth10(&initial).unwrap();
+        engine.process_order_book_depth(&initial).unwrap();
 
-        let client_order_id = ClientOrderId::from("O-DEPTH10-REBASE");
+        let client_order_id = ClientOrderId::from("O-DEPTH-REBASE");
         let mut order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_id)
             .side(OrderSide::Sell)
@@ -10874,7 +10872,7 @@ mod tests {
             Quantity::from("8.000"),
             0,
         );
-        let replacement = OrderBookDepth10::new(
+        let replacement = OrderBookDepth::new(
             instrument_id,
             [BookOrder::default(); DEPTH10_LEN],
             asks,
@@ -10885,7 +10883,7 @@ mod tests {
             UnixNanos::from(2_u64),
             UnixNanos::from(2_u64),
         );
-        engine.process_order_book_depth10(&replacement).unwrap();
+        engine.process_order_book_depth(&replacement).unwrap();
 
         assert_eq!(
             engine.queue_ahead_total.get(&client_order_id),

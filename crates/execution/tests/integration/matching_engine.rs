@@ -36,7 +36,7 @@ use nautilus_execution::{
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, DEPTH10_LEN, IndexPriceUpdate, InstrumentClose, OptionGreeks,
-        OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
         stubs::OrderBookDeltaTestBuilder,
     },
     enums::{
@@ -17862,7 +17862,7 @@ fn test_l1_depth_snapshot_resolves_pending_queue(
         2,
     );
     engine
-        .process_order_book_depth10(&OrderBookDepth10::new(
+        .process_order_book_depth(&OrderBookDepth::new(
             instrument_id,
             bids,
             asks,

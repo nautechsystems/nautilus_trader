@@ -1018,18 +1018,18 @@ fn test_decode_mbp10_msg() {
     let msg = dbn_stream.next().unwrap().unwrap();
 
     let instrument_id = InstrumentId::from("ESM4.GLBX");
-    let depth10 = decode_mbp10_msg(msg, instrument_id, 2, Some(0.into())).unwrap();
+    let depth = decode_mbp10_msg(msg, instrument_id, 2, Some(0.into())).unwrap();
 
-    assert_eq!(depth10.instrument_id, instrument_id);
-    assert_eq!(depth10.bids.len(), 10);
-    assert_eq!(depth10.asks.len(), 10);
-    assert_eq!(depth10.bid_counts.len(), 10);
-    assert_eq!(depth10.ask_counts.len(), 10);
-    assert_eq!(depth10.flags, 128);
-    assert_eq!(depth10.sequence, 1_170_352);
-    assert_eq!(depth10.ts_event, msg.ts_recv);
-    assert_eq!(depth10.ts_event, 1_609_160_400_000_704_060);
-    assert_eq!(depth10.ts_init, 0);
+    assert_eq!(depth.instrument_id, instrument_id);
+    assert_eq!(depth.bids.len(), 10);
+    assert_eq!(depth.asks.len(), 10);
+    assert_eq!(depth.bid_counts.len(), 10);
+    assert_eq!(depth.ask_counts.len(), 10);
+    assert_eq!(depth.flags, 128);
+    assert_eq!(depth.sequence, 1_170_352);
+    assert_eq!(depth.ts_event, msg.ts_recv);
+    assert_eq!(depth.ts_event, 1_609_160_400_000_704_060);
+    assert_eq!(depth.ts_init, 0);
 }
 
 #[rstest]

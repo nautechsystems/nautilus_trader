@@ -782,7 +782,7 @@ class DataActor:
         managed: bool = False,
         params: dict | None = None,
     ) -> None: ...
-    def subscribe_book_depth10(
+    def subscribe_book_depth(
         self,
         instrument_id: model.InstrumentId,
         book_type: model.BookType,
@@ -890,7 +890,7 @@ class DataActor:
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
-    def unsubscribe_book_depth10(
+    def unsubscribe_book_depth(
         self,
         instrument_id: model.InstrumentId,
         client_id: model.ClientId | None = None,

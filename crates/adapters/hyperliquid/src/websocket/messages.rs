@@ -27,7 +27,7 @@ use nautilus_core::{
 use nautilus_model::{
     data::{
         Bar, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDepth, QuoteTick, TradeTick,
     },
     reports::{FillReport, OrderStatusReport},
 };
@@ -1230,7 +1230,7 @@ pub enum NautilusWsMessage {
     /// Parsed order book deltas.
     Deltas(OrderBookDeltas),
     /// Parsed order book depth-10 snapshot.
-    Depth10(Box<OrderBookDepth10>),
+    Depth(Box<OrderBookDepth>),
     /// Parsed candle/bar.
     Candle(Bar),
     /// Mark price update.
