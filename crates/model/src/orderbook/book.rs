@@ -162,6 +162,9 @@ impl OrderBook {
     }
 
     /// Clears all orders from both sides of the book.
+    ///
+    /// A full clear uses its `sequence` as the new sequence high-water.
+    /// `clear_bids` and `clear_asks` preserve the current high-water.
     pub fn clear(&mut self, sequence: u64, ts_event: UnixNanos) {
         self.clear_with_flags(sequence, ts_event, 0);
     }
@@ -182,6 +185,11 @@ impl OrderBook {
         self.bids.clear();
         self.asks.clear();
         self.increment(sequence, ts_event, flags);
+
+        // Check the clear against the old high-water before using its sequence as the new one
+        if !RecordFlag::F_SNAPSHOT.matches(flags) {
+            self.sequence = sequence;
+        }
     }
 
     /// Removes overlapped bid/ask levels when the book is strictly crossed (best bid > best ask)
