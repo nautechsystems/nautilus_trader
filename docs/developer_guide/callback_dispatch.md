@@ -147,10 +147,25 @@ Connection futures hold mutable engine borrows across their awaits, as does the
 mass-status request during startup reconciliation. Their completion alone does not justify another
 drain site. Replay and startup failures take separate exits and require their own ownership proof.
 
-The manual `start`/`stop` path does not run a continuous event loop: `start` returns with the runner
-retained, and stop or abort processes its pending messages. It has no queued callback delivery
-schedule. A lone drain in `finish_startup_trader` cannot provide continuation; activation must either
-supply that schedule or explicitly keep queued delivery unsupported on this path.
+Standalone calls to `LiveNode::start` and `stop` do not run a continuous event loop: `start` returns
+with the runner retained, and stop or abort processes its pending messages. This path remains
+supported as a building block for tests and embedding, with its existing synchronous callbacks.
+A lone drain in `finish_startup_trader` cannot provide queued callback continuation.
+
+Initial queued callback activation for `LiveNode` is restricted to Rust `run`/`run_with_mode` and
+Python `run`/`run_async`, which own the node's event loop. Queued delivery through standalone
+`start`/`stop` is deferred. Activation must reject the combination of queued delivery and standalone
+startup with a clear error before queued callbacks can be admitted; it must not silently fall back
+to synchronous delivery or leave callbacks undelivered. This restriction concerns standalone startup,
+not a stop request through the handle of a node running its event loop.
+
+Awaited cancellation of a hosted run drives graceful shutdown. Discarding that run while the host
+loop is running can instead drop its future before shutdown completes; callback delivery is not
+guaranteed on that path. Activation coverage must verify ownership release and guarded disposal
+cleanup after abandonment separately from graceful shutdown.
+
+Queued actor delivery and this rejection are not implemented. Enforcing the lifecycle restriction
+is an activation requirement; it does not change the existing standalone APIs.
 
 ### Live stop and terminal cleanup
 
@@ -192,6 +207,8 @@ Boundary changes require exact sequence assertions for:
 - Same-timestamp timers and callback-generated commands before the next timer or time advance.
 - Continuation across bounded passes, live stop eligibility, and unchanged channel-only scheduling.
 - Normal stop-generated work versus fatal-abort discard, plus cleanup rejection while roots remain.
+- Rejection of queued delivery with standalone live startup before callback admission, while
+  preserving synchronous standalone behavior and handle-driven shutdown of a running node.
 
 These sequence checks are activation requirements, not evidence of implemented live queued delivery.
 Exercise activated routes through real native and Python components. Private dispatcher tests alone
@@ -236,8 +253,9 @@ Startup and residual flushes do not integrate callback drains. Disposal releases
 attempting callback cleanup, without delivering callbacks. Activation still requires explicit
 scheduling and ownership coverage for live lifecycle paths, without assuming that each lifecycle
 method needs a drain.
-Live report futures can retain client borrows across loop iterations. A loop-top drain alone does
-not establish client access safety; queued callback activation must account for those retained borrows.
+Live report futures can retain shared client borrows across loop iterations. A loop-top drain alone
+does not establish safety for callbacks that require mutable client access; queued callback
+activation must account for those retained borrows.
 
 ### Activation requirements
 
@@ -246,6 +264,7 @@ These boundaries do not activate queued actor delivery. Before activation, runti
 - Preserve the [independent ingress boundaries](#sender-types-and-ingress) when activating additional callback routes or
   introducing reusable invocation storage.
 - Complete live lifecycle drain boundaries and ownership coverage outside terminal disposal.
+- Enforce the [live lifecycle restriction](#live-startup-and-manual-lifecycle) before admitting queued callbacks.
 - Establish native and Python ownership safety for every activated callback route.
 - Validate queued callbacks through complete backtest and live runtime lifecycles.
 - Prove deterministic callback sequences through native and Python components in the synchronous core

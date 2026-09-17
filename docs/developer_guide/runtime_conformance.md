@@ -40,8 +40,11 @@ The runtime owns scheduling at a small set of explicit ownership boundaries. Sta
 paths still need ownership and scheduling coverage before activation; this does not require a drain
 in each lifecycle or flush method. After successful live startup, the first running-loop drain is
 the existing delivery boundary. Live disposal releases the retained runner after kernel disposal,
-then attempts callback cleanup; external roots can still block clearing. The manual `start`/`stop`
-path has no continuous queued callback delivery schedule.
+then attempts callback cleanup; external roots can still block clearing. Standalone `start`/`stop`
+has no continuous queued callback delivery schedule and retains its existing synchronous behavior.
+The [live lifecycle contract](callback_dispatch.md#live-startup-and-manual-lifecycle) restricts initial
+queued activation to Rust `run`/`run_with_mode` and Python `run`/`run_async`. Activation must reject
+queued delivery with standalone startup before admitting callbacks. That rejection is not implemented.
 
 - **Implementation**: [Dispatch](../../crates/common/src/actor/dispatch.rs), `PublicationScope` and
   `drain`; [allocation access](../../crates/common/src/actor/access.rs), `AllocationGuard`;
