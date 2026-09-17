@@ -142,7 +142,7 @@ def _test_workflows() -> None:
             if diagnostic:
                 _assert_equal(diagnostic in output, expected=True, context=output)
                 _assert_equal(
-                    ".github/workflows/caller.yml:" in output,
+                    f"{caller.relative_to(root)}:" in output,
                     expected=True,
                     context=output,
                 )
