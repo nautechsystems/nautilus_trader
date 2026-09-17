@@ -42,7 +42,9 @@ pub fn get_test_data_file_path(path: &str) -> String {
         .to_string()
 }
 
-/// Returns the full path to the Nautilus-specific test data file given by `filename`, within the configured precision directory ("64-bit" or "128-bit").
+/// Returns the full path to the Nautilus-specific legacy test data file given by `filename`.
+///
+/// Files are resolved under `legacy/64-bit` or `legacy/128-bit` for the active model build.
 ///
 /// # Panics
 ///
@@ -52,6 +54,7 @@ pub fn get_nautilus_test_data_file_path(filename: &str) -> String {
     let precision_directory = format!("{}-bit", PRECISION_BYTES * 8);
     let path = get_test_data_path()
         .join("nautilus")
+        .join("legacy")
         .join(precision_directory);
 
     path.join(filename).to_str().unwrap().to_string()

@@ -120,3 +120,8 @@ path = "bin/to_parquet.rs"
 required-features = ["python"]
 doc = false
 test = false
+
+[[example]]
+name = "generate-arrow-fixtures"
+path = "examples/generate_arrow_fixtures.rs"
+doc = false

@@ -1078,7 +1078,7 @@ mod tests {
             "64-bit"
         };
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../test_data/nautilus")
+            .join("../../test_data/nautilus/legacy")
             .join(precision_dir)
             .join(file_name);
         let file = std::fs::File::open(path).unwrap();
@@ -1102,7 +1102,7 @@ mod tests {
             "64-bit"
         };
         let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../test_data/nautilus")
+            .join("../../test_data/nautilus/legacy")
             .join(precision_dir)
             .join("bars.parquet");
         fs::copy(fixture, bar_dir.join("bars.parquet")).unwrap();

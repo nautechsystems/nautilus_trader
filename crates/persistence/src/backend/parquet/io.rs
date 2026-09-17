@@ -2644,7 +2644,7 @@ mod tests {
             "64-bit"
         };
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../test_data/nautilus")
+            .join("../../test_data/nautilus/legacy")
             .join(precision_dir)
             .join("depths.parquet");
         let file = std::fs::File::open(path).unwrap();
@@ -2730,7 +2730,7 @@ mod tests {
             "64-bit"
         };
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../test_data/nautilus")
+            .join("../../test_data/nautilus/legacy")
             .join(precision_dir)
             .join(file_name);
         let file = std::fs::File::open(path).unwrap();
@@ -2836,7 +2836,7 @@ mod tests {
                 "64-bit"
             };
             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../test_data/nautilus")
+                .join("../../test_data/nautilus/legacy")
                 .join(precision_dir)
                 .join(file_name);
             let file = std::fs::File::open(path).unwrap();
@@ -4147,7 +4147,7 @@ mod migration_tests {
             "64-bit"
         };
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../test_data/nautilus")
+            .join("../../test_data/nautilus/legacy")
             .join(precision_dir)
             .join("depths.parquet");
         let file = std::fs::File::open(path).unwrap();
@@ -4233,7 +4233,7 @@ mod migration_tests {
             "64-bit"
         };
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../test_data/nautilus")
+            .join("../../test_data/nautilus/legacy")
             .join(precision_dir)
             .join(file_name);
         let file = std::fs::File::open(path).unwrap();
@@ -4339,7 +4339,7 @@ mod migration_tests {
                 "64-bit"
             };
             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../test_data/nautilus")
+                .join("../../test_data/nautilus/legacy")
                 .join(precision_dir)
                 .join(file_name);
             let file = std::fs::File::open(path).unwrap();

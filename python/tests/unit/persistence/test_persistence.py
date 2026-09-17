@@ -18,7 +18,6 @@ Test persistence behavior.
 
 import datetime as dt
 import os
-import shutil
 from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -28,7 +27,6 @@ import pytest
 
 from nautilus_trader.common import Cache
 from nautilus_trader.common import Clock
-from nautilus_trader.model import HIGH_PRECISION
 from nautilus_trader.model import Bar
 from nautilus_trader.model import BarAggregation
 from nautilus_trader.model import BarSpecification
@@ -66,41 +64,7 @@ from tests.stubs import TestDataProviderPyo3
 AUDUSD_SIM = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
 ONE_MIN_BID = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
 AUDUSD_1_MIN_BID = BarType(AUDUSD_SIM, ONE_MIN_BID)
-
-
-@pytest.fixture(scope="module")
-def migrated_data_paths(tmp_path_factory: pytest.TempPathFactory) -> dict[str, str]:
-    """
-    Migrate legacy fixtures into a temporary catalog for session tests.
-    """
-    root = tmp_path_factory.mktemp("migrated_market_data")
-    source = root / "source"
-    target = root / "target"
-    target.mkdir()
-    subdir = "128-bit" if HIGH_PRECISION else "64-bit"
-    families = {
-        "quotes": "quotes",
-        "trades": "trades",
-        "bars": "bars",
-        "deltas": "order_book_deltas",
-    }
-
-    for family, prefix in families.items():
-        directory = source / "data" / prefix
-        directory.mkdir(parents=True)
-        shutil.copyfile(
-            TEST_DATA_DIR / "nautilus" / subdir / f"{family}.parquet",
-            directory / "fixture.parquet",
-        )
-
-    catalog = ParquetDataCatalog(str(target))
-    catalog.migrate_from_legacy_parquet_path(str(source))
-    paths = {}
-
-    for family, prefix in families.items():
-        [path] = (target / "data" / prefix).rglob("*.parquet")
-        paths[f"{family}.parquet"] = str(path)
-    return paths
+ARROW_FIXTURES = TEST_DATA_DIR / "nautilus" / "arrow"
 
 
 def _make_bar(ts: int) -> Bar:
@@ -142,12 +106,12 @@ def test_backend_session_rejects_zero_chunk_size() -> None:
         DataBackendSession(chunk_size=0)
 
 
-def test_backend_session_add_file_and_query_quotes(migrated_data_paths: dict[str, str]) -> None:
+def test_backend_session_add_file_and_query_quotes() -> None:
     """
     Test backend session add file and query quotes.
     """
     session = DataBackendSession()
-    session.add_file(NautilusDataType.QuoteTick, "quotes", migrated_data_paths["quotes.parquet"])
+    session.add_file(NautilusDataType.QuoteTick, "quotes", str(ARROW_FIXTURES / "quotes.parquet"))
 
     chunks = list(session.to_query_result())
     quotes = chunks[0]
@@ -160,12 +124,12 @@ def test_backend_session_add_file_and_query_quotes(migrated_data_paths: dict[str
     assert quotes[-1].ts_init == 1_577_919_652_000_000_125
 
 
-def test_backend_session_to_list_queries_quotes(migrated_data_paths: dict[str, str]) -> None:
+def test_backend_session_to_list_queries_quotes() -> None:
     """
     Test backend session to list queries quotes.
     """
     session = DataBackendSession()
-    session.add_file(NautilusDataType.QuoteTick, "quotes", migrated_data_paths["quotes.parquet"])
+    session.add_file(NautilusDataType.QuoteTick, "quotes", str(ARROW_FIXTURES / "quotes.parquet"))
 
     quotes = session.to_query_result().to_list()
 
@@ -175,14 +139,12 @@ def test_backend_session_to_list_queries_quotes(migrated_data_paths: dict[str, s
     assert quotes[-1].ts_init == 1_577_919_652_000_000_125
 
 
-def test_backend_session_to_list_returns_unread_records(
-    migrated_data_paths: dict[str, str],
-) -> None:
+def test_backend_session_to_list_returns_unread_records() -> None:
     """
     Test backend session to list returns unread records.
     """
     session = DataBackendSession(chunk_size=1_000)
-    session.add_file(NautilusDataType.QuoteTick, "quotes", migrated_data_paths["quotes.parquet"])
+    session.add_file(NautilusDataType.QuoteTick, "quotes", str(ARROW_FIXTURES / "quotes.parquet"))
     result = session.to_query_result()
 
     next(result)
@@ -193,9 +155,7 @@ def test_backend_session_to_list_returns_unread_records(
     assert quotes[0].ts_init == 1_577_900_944_000_000_879
 
 
-def test_backend_session_to_list_returns_empty_for_empty_query(
-    migrated_data_paths: dict[str, str],
-) -> None:
+def test_backend_session_to_list_returns_empty_for_empty_query() -> None:
     """
     Test backend session to list returns empty for empty query.
     """
@@ -203,19 +163,19 @@ def test_backend_session_to_list_returns_empty_for_empty_query(
     session.add_file(
         NautilusDataType.QuoteTick,
         "quotes",
-        migrated_data_paths["quotes.parquet"],
+        str(ARROW_FIXTURES / "quotes.parquet"),
         "SELECT * FROM quotes WHERE 1=0",
     )
 
     assert session.to_query_result().to_list() == []
 
 
-def test_backend_session_add_file_and_query_trades(migrated_data_paths: dict[str, str]) -> None:
+def test_backend_session_add_file_and_query_trades() -> None:
     """
     Test backend session add file and query trades.
     """
     session = DataBackendSession()
-    session.add_file(NautilusDataType.TradeTick, "trades", migrated_data_paths["trades.parquet"])
+    session.add_file(NautilusDataType.TradeTick, "trades", str(ARROW_FIXTURES / "trades.parquet"))
 
     result = session.to_query_result()
     chunk_count = sum(1 for _ in result)
@@ -223,12 +183,12 @@ def test_backend_session_add_file_and_query_trades(migrated_data_paths: dict[str
     assert chunk_count > 0
 
 
-def test_backend_session_add_file_and_query_bars(migrated_data_paths: dict[str, str]) -> None:
+def test_backend_session_add_file_and_query_bars() -> None:
     """
     Test backend session add file and query bars.
     """
     session = DataBackendSession()
-    session.add_file(NautilusDataType.Bar, "bars", migrated_data_paths["bars.parquet"])
+    session.add_file(NautilusDataType.Bar, "bars", str(ARROW_FIXTURES / "bars.parquet"))
 
     result = session.to_query_result()
     chunk_count = sum(1 for _ in result)
@@ -236,7 +196,7 @@ def test_backend_session_add_file_and_query_bars(migrated_data_paths: dict[str, 
     assert chunk_count > 0
 
 
-def test_backend_session_add_file_and_query_deltas(migrated_data_paths: dict[str, str]) -> None:
+def test_backend_session_add_file_and_query_deltas() -> None:
     """
     Test backend session add file and query deltas.
     """
@@ -244,7 +204,7 @@ def test_backend_session_add_file_and_query_deltas(migrated_data_paths: dict[str
     session.add_file(
         NautilusDataType.OrderBookDelta,
         "deltas",
-        migrated_data_paths["deltas.parquet"],
+        str(ARROW_FIXTURES / "deltas.parquet"),
     )
 
     result = session.to_query_result()
@@ -253,13 +213,13 @@ def test_backend_session_add_file_and_query_deltas(migrated_data_paths: dict[str
     assert chunk_count > 0
 
 
-def test_backend_session_multiple_files(migrated_data_paths: dict[str, str]) -> None:
+def test_backend_session_multiple_files() -> None:
     """
     Test backend session multiple files.
     """
     session = DataBackendSession()
-    session.add_file(NautilusDataType.TradeTick, "trades", migrated_data_paths["trades.parquet"])
-    session.add_file(NautilusDataType.QuoteTick, "quotes", migrated_data_paths["quotes.parquet"])
+    session.add_file(NautilusDataType.TradeTick, "trades", str(ARROW_FIXTURES / "trades.parquet"))
+    session.add_file(NautilusDataType.QuoteTick, "quotes", str(ARROW_FIXTURES / "quotes.parquet"))
 
     result = session.to_query_result()
     chunk_count = sum(1 for _ in result)
