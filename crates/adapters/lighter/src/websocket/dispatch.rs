@@ -64,9 +64,9 @@ use crate::{
 };
 
 /// Default GTC / Day order lifetime when the caller did not specify an
-/// explicit expire-time. Lighter rejects `OrderExpiry = -1` for GTC limits
-/// with `21711 invalid expiry`, so the adapter substitutes a 28-day window
-/// (matches the upstream venue convention).
+/// explicit expire-time. The adapter uses an explicit 28-day window because
+/// the venue has rejected `OrderExpiry = -1` in this path with
+/// `21711 invalid expiry`; this matches the upstream venue convention.
 pub(crate) const ORDER_EXPIRY_DEFAULT_GTC_MS: i64 = 28 * 24 * 60 * 60 * 1_000;
 
 /// Venue minimum GTD lifetime plus one second for signing and transport.
@@ -2044,16 +2044,22 @@ pub(crate) fn nautilus_to_lighter_order_type(
 ///   Lighter uses `TimeInForce` as the post-trigger execution instruction,
 ///   while `OrderExpiry` controls how long the trigger can rest.
 /// - `Gtd` with an explicit expire_time: the millisecond timestamp, provided
-///   it is within the venue's 5-minute to 30-day lifetime range.
+///   it is within the venue's 5-minute to 30-day lifetime range. When
+///   `use_gtd` is false, the strategy expiry must fit within the venue's
+///   default 28-day fallback window; the strategy's local GTD manager
+///   (`manage_gtd_expiry`) sends the cancel. The native 5-minute lower bound
+///   is intentionally not applied in this mode.
 /// - `Ioc` / `Fok`: `ORDER_EXPIRY_IOC` (`0`): Lighter requires this exact
 ///   value for IOC semantics; any other value is rejected by the sequencer.
 /// - `Gtc` / `Day` / `Gtd` without expiry: `now_ms + ORDER_EXPIRY_DEFAULT_GTC_MS`.
-///   The venue rejects `-1` for these TIFs with `21711 invalid expiry`.
+///   The adapter uses an explicit 28-day expiry for these TIFs because the
+///   venue has rejected `-1` with `21711 invalid expiry`.
 pub(crate) fn order_expiry_for(
     order_type: OrderType,
     tif: &TimeInForce,
     expire_time: Option<UnixNanos>,
     now_ms: i64,
+    use_gtd: bool,
 ) -> anyhow::Result<i64> {
     if order_type == OrderType::Market {
         return Ok(ORDER_EXPIRY_IOC);
@@ -2063,6 +2069,24 @@ pub(crate) fn order_expiry_for(
         && let Some(ts) = expire_time
     {
         let expiry_ms = (ts.as_u64() / 1_000_000) as i64;
+
+        if !use_gtd {
+            // Lighter has no GTC wire discriminant for resting limit orders: the
+            // venue TIF stays `GoodTillTime`. The strategy expiry must fit in
+            // the fallback window so the venue cannot cancel it first. The
+            // local manager still owns the actual strategy expiry, including
+            // expiries shorter than the venue's native minimum.
+            let default_expiry_ms = now_ms.saturating_add(ORDER_EXPIRY_DEFAULT_GTC_MS);
+            anyhow::ensure!(
+                expiry_ms <= default_expiry_ms,
+                "Lighter locally managed GTD expire_time must be no more than 28 days from now; use native GTD for longer expiries",
+            );
+            log::warn!(
+                "Lighter GTD submitted with default expiry because use_gtd=false. Enable manage_gtd_expiry on the submitting strategy"
+            );
+            return Ok(default_expiry_ms);
+        }
+
         let min_expiry_ms = now_ms.saturating_add(ORDER_EXPIRY_MIN_GTD_MS);
         let max_expiry_ms = now_ms.saturating_add(ORDER_EXPIRY_MAX_GTD_MS);
         anyhow::ensure!(
@@ -3311,7 +3335,7 @@ mod tests {
         let expiry_ms = NOW_MS + ORDER_EXPIRY_MIN_GTD_MS + 123;
         let ts = UnixNanos::from((expiry_ms as u64) * 1_000_000);
         assert_eq!(
-            order_expiry_for(OrderType::Limit, &TimeInForce::Gtd, Some(ts), NOW_MS).unwrap(),
+            order_expiry_for(OrderType::Limit, &TimeInForce::Gtd, Some(ts), NOW_MS, true).unwrap(),
             expiry_ms,
         );
     }
@@ -3324,10 +3348,65 @@ mod tests {
         #[case] expected: &str,
     ) {
         let ts = UnixNanos::from(((NOW_MS + offset_ms) as u64) * 1_000_000);
-        let error =
-            order_expiry_for(OrderType::Limit, &TimeInForce::Gtd, Some(ts), NOW_MS).unwrap_err();
+        let error = order_expiry_for(OrderType::Limit, &TimeInForce::Gtd, Some(ts), NOW_MS, true)
+            .unwrap_err();
 
         assert!(error.to_string().contains(expected));
+    }
+
+    #[rstest]
+    fn order_expiry_for_managed_gtd_ignores_short_strategy_expiry() {
+        // With use_gtd=false the strategy's short expire_time must not be used as
+        // the venue expiry: the order rests on the default 28-day window and the
+        // strategy's manage_gtd_expiry timer cancels it locally.
+        let expiry_ms = NOW_MS + 60_000; // 1 minute: below the venue minimum
+        let ts = UnixNanos::from((expiry_ms as u64) * 1_000_000);
+
+        assert_eq!(
+            order_expiry_for(OrderType::Limit, &TimeInForce::Gtd, Some(ts), NOW_MS, false).unwrap(),
+            NOW_MS + ORDER_EXPIRY_DEFAULT_GTC_MS,
+        );
+    }
+
+    #[rstest]
+    fn order_expiry_for_managed_gtd_rejects_expiry_beyond_fallback_window() {
+        // A local timer cannot preserve an expiry after the venue has already
+        // removed the order, so an expiry beyond the 28-day fallback is denied.
+        let expiry_ms = NOW_MS + ORDER_EXPIRY_DEFAULT_GTC_MS + 1;
+        let ts = UnixNanos::from((expiry_ms as u64) * 1_000_000);
+
+        let error = order_expiry_for(OrderType::Limit, &TimeInForce::Gtd, Some(ts), NOW_MS, false)
+            .unwrap_err();
+
+        assert!(error.to_string().contains("locally managed GTD"));
+        assert!(error.to_string().contains("28 days"));
+    }
+
+    #[rstest]
+    #[case(OrderType::StopMarket)]
+    #[case(OrderType::MarketIfTouched)]
+    fn order_expiry_for_managed_gtd_applies_to_conditional_orders(#[case] order_type: OrderType) {
+        let expiry_ms = NOW_MS + 60_000;
+        let ts = UnixNanos::from((expiry_ms as u64) * 1_000_000);
+
+        assert_eq!(
+            order_expiry_for(order_type, &TimeInForce::Gtd, Some(ts), NOW_MS, false).unwrap(),
+            NOW_MS + ORDER_EXPIRY_DEFAULT_GTC_MS,
+        );
+    }
+
+    #[rstest]
+    fn order_expiry_for_managed_gtd_leaves_other_tifs_unchanged() {
+        // The opt-out only rewrites the explicit GTD expiry path; GTC and IOC
+        // never carried a strategy expiry and must keep their existing values.
+        assert_eq!(
+            order_expiry_for(OrderType::Limit, &TimeInForce::Gtc, None, NOW_MS, false).unwrap(),
+            NOW_MS + ORDER_EXPIRY_DEFAULT_GTC_MS,
+        );
+        assert_eq!(
+            order_expiry_for(OrderType::Limit, &TimeInForce::Ioc, None, NOW_MS, false).unwrap(),
+            ORDER_EXPIRY_IOC,
+        );
     }
 
     #[rstest]
@@ -3339,7 +3418,7 @@ mod tests {
         #[case] expire: Option<UnixNanos>,
     ) {
         assert_eq!(
-            order_expiry_for(OrderType::Limit, &tif, expire, NOW_MS).unwrap(),
+            order_expiry_for(OrderType::Limit, &tif, expire, NOW_MS, true).unwrap(),
             NOW_MS + ORDER_EXPIRY_DEFAULT_GTC_MS,
         );
     }
@@ -3351,7 +3430,7 @@ mod tests {
         // Lighter requires `0` for IOC semantics; -1 is rejected as an
         // invalid expiry timestamp by the sequencer.
         assert_eq!(
-            order_expiry_for(OrderType::Limit, &tif, None, NOW_MS).unwrap(),
+            order_expiry_for(OrderType::Limit, &tif, None, NOW_MS, true).unwrap(),
             ORDER_EXPIRY_IOC
         );
     }
@@ -3359,7 +3438,7 @@ mod tests {
     #[rstest]
     fn order_expiry_for_market_orders_returns_zero() {
         assert_eq!(
-            order_expiry_for(OrderType::Market, &TimeInForce::Gtc, None, NOW_MS).unwrap(),
+            order_expiry_for(OrderType::Market, &TimeInForce::Gtc, None, NOW_MS, true).unwrap(),
             ORDER_EXPIRY_IOC
         );
     }
@@ -3371,7 +3450,7 @@ mod tests {
         #[case] order_type: OrderType,
     ) {
         assert_eq!(
-            order_expiry_for(order_type, &TimeInForce::Gtc, None, NOW_MS).unwrap(),
+            order_expiry_for(order_type, &TimeInForce::Gtc, None, NOW_MS, true).unwrap(),
             NOW_MS + ORDER_EXPIRY_DEFAULT_GTC_MS,
         );
     }
@@ -3385,7 +3464,7 @@ mod tests {
         let expiry_ms = NOW_MS + ORDER_EXPIRY_MIN_GTD_MS + 456;
         let ts = UnixNanos::from((expiry_ms as u64) * 1_000_000);
         assert_eq!(
-            order_expiry_for(order_type, &TimeInForce::Gtd, Some(ts), NOW_MS).unwrap(),
+            order_expiry_for(order_type, &TimeInForce::Gtd, Some(ts), NOW_MS, true).unwrap(),
             expiry_ms,
         );
     }
@@ -3395,7 +3474,7 @@ mod tests {
     #[case(OrderType::LimitIfTouched)]
     fn order_expiry_for_conditional_limit_ioc_uses_positive_expiry(#[case] order_type: OrderType) {
         assert_eq!(
-            order_expiry_for(order_type, &TimeInForce::Ioc, None, NOW_MS).unwrap(),
+            order_expiry_for(order_type, &TimeInForce::Ioc, None, NOW_MS, true).unwrap(),
             NOW_MS + ORDER_EXPIRY_DEFAULT_GTC_MS,
         );
     }

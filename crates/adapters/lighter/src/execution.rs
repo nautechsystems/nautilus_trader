@@ -1596,6 +1596,7 @@ impl LighterExecutionClient {
             &order.time_in_force(),
             order.expire_time(),
             now_ms,
+            self.config.use_gtd,
         )?;
 
         let base_amount = quantity_to_ticks(&order.quantity(), instrument.size_precision())?;
@@ -6263,6 +6264,10 @@ mod tests {
     }
 
     fn test_config() -> LighterExecutionClientConfig {
+        test_config_with_use_gtd(true)
+    }
+
+    fn test_config_with_use_gtd(use_gtd: bool) -> LighterExecutionClientConfig {
         LighterExecutionClientConfig {
             account_id: account_id(),
             account_index: Some(TEST_ACCOUNT_INDEX),
@@ -6280,6 +6285,7 @@ mod tests {
             rest_quota_per_min: None,
             sendtx_quota_per_min: None,
             transport_backend: Default::default(),
+            use_gtd,
         }
     }
 
@@ -7655,6 +7661,105 @@ mod tests {
             event => panic!("expected denied event, was {event:?}"),
         }
         assert_nonce_reusable(&client.dispatch);
+    }
+
+    #[tokio::test]
+    async fn submit_gtd_order_with_short_expiry_dispatches_when_use_gtd_false() {
+        // With use_gtd=false the short strategy expire_time must not hit the venue
+        // lifetime check: the order reaches the dispatch step rather than being
+        // denied. It is rejected here by handler unavailability, which proves the
+        // adapter accepted the short expiry and moved on to signing/dispatch.
+        let (client, cache, mut rx) =
+            create_execution_client_with_config(test_config_with_use_gtd(false));
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let expiry = UnixNanos::from(
+            client
+                .clock
+                .get_time_ns()
+                .as_u64()
+                .saturating_add(60 * 1_000_000_000),
+        );
+        let order = test_limit_order_with(
+            &mut factory,
+            instrument_id,
+            "O-SHORT-GTD-MANAGED",
+            OrderSide::Buy,
+            TimeInForce::Gtd,
+            Some(expiry),
+            false,
+        );
+        let client_order_index = client
+            .dispatch
+            .derive_client_order_index(&order.client_order_id());
+        cache_order(&cache, order.clone());
+
+        let command = SubmitOrder::from_order(
+            &order,
+            trader_id(),
+            Some(client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        );
+        client.submit_order(command).unwrap();
+
+        let _submitted = recv_order_event(&mut rx).await;
+        let rejected = recv_order_event(&mut rx).await;
+
+        match rejected {
+            OrderEventAny::Rejected(event) => {
+                assert!(
+                    event
+                        .reason
+                        .contains("Lighter submit_order dispatch failed"),
+                );
+            }
+            event => panic!("expected rejected event, was {event:?}"),
+        }
+
+        assert!(client.dispatch.cloid_map.get(&client_order_index).is_none());
+        assert_nonce_reusable(&client.dispatch);
+    }
+
+    #[rstest]
+    fn prepare_managed_gtd_plan_uses_safe_venue_expiry() {
+        let (client, cache, _rx) =
+            create_execution_client_with_config(test_config_with_use_gtd(false));
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let expiry = UnixNanos::from(
+            client
+                .clock
+                .get_time_ns()
+                .as_u64()
+                .saturating_add(60 * 1_000_000_000),
+        );
+        let order = test_limit_order_with(
+            &mut factory,
+            instrument_id,
+            "O-SHORT-GTD-PLAN",
+            OrderSide::Buy,
+            TimeInForce::Gtd,
+            Some(expiry),
+            false,
+        );
+
+        let before_ms = (client.clock.get_time_ns().as_u64() / 1_000_000) as i64;
+        let plan = client
+            .prepare_create_order_plan(&order, 0)
+            .expect("managed GTD plan must validate");
+        let after_ms = (client.clock.get_time_ns().as_u64() / 1_000_000) as i64;
+
+        assert!(
+            (before_ms + crate::websocket::dispatch::ORDER_EXPIRY_DEFAULT_GTC_MS
+                ..=after_ms + crate::websocket::dispatch::ORDER_EXPIRY_DEFAULT_GTC_MS)
+                .contains(&plan.order_expiry)
+        );
+        assert_eq!(
+            plan.time_in_force,
+            crate::common::enums::LighterTimeInForce::GoodTillTime as u8,
+        );
     }
 
     #[tokio::test]
