@@ -13,6 +13,8 @@ useDefault = true
 description = "Public contract addresses, price-feed IDs, and published test keys"
 regexTarget = "match"
 regexes = [
+  # Public Hardhat default account used by the Polymarket signing fixtures.
+  "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
   # Fundless Derive test session key published in the upstream SDK test
   # suite (tests/test_sign_order.py) and reproduced in signing fixtures.
   "2ae8be44db8a590d20bffbe3b6872df9b569147d3bf6801a35a28281a4816bbd",

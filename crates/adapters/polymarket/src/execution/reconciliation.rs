@@ -45,7 +45,9 @@ use super::{
 use crate::{
     common::{
         consts::{DUST_POSITION_THRESHOLD, DUST_SNAP_THRESHOLD_DEC, USDC_DECIMALS},
-        enums::{PolymarketLiquiditySide, PolymarketOutcome, PolymarketTradeStatus},
+        enums::{
+            PolymarketLiquiditySide, PolymarketOutcome, PolymarketSignerType, PolymarketTradeStatus,
+        },
         models::{PolymarketMakerOrder, is_owned_by_account},
     },
     http::{
@@ -96,6 +98,7 @@ pub(crate) fn venue_leg_filled_before_and_quantity(
 /// Shared context for trade-to-fill-report conversion.
 pub(crate) struct FillContext<'a> {
     pub account_id: AccountId,
+    pub signer_type: PolymarketSignerType,
     pub user_address: &'a str,
     pub api_key: &'a str,
     pub pusd: Currency,
@@ -595,6 +598,7 @@ fn build_order_report_from_order(
         &order.owner,
         ctx.user_address,
         ctx.api_key,
+        ctx.signer_type,
     ) {
         return match scope {
             OrderEvidenceScope::Collection { .. } => {
@@ -830,7 +834,7 @@ fn classify_target_trade<'a>(
                 .find(|order| order.order_id == venue_order_id.as_str())
                 .context("validated target maker occurrence is missing")?;
             anyhow::ensure!(
-                maker_order.is_owned_by(ctx.user_address, ctx.api_key),
+                maker_order.is_owned_by(ctx.user_address, ctx.api_key, ctx.signer_type),
                 "target maker order {} is not owned by the account",
                 maker_order.order_id,
             );
@@ -869,6 +873,7 @@ fn classify_target_trade<'a>(
                     &trade.owner,
                     ctx.user_address,
                     ctx.api_key,
+                    ctx.signer_type,
                 ),
                 "target taker order {} is not owned by the account",
                 trade.taker_order_id,
@@ -1103,7 +1108,7 @@ pub(crate) fn build_fill_reports_from_trades(
             if !trade
                 .maker_orders
                 .iter()
-                .any(|mo| mo.is_owned_by(ctx.user_address, ctx.api_key))
+                .any(|mo| mo.is_owned_by(ctx.user_address, ctx.api_key, ctx.signer_type))
             {
                 let ts_event = parse_timestamp(&trade.match_time);
                 let instrument_id =
@@ -1135,7 +1140,7 @@ pub(crate) fn build_fill_reports_from_trades(
             )> = Vec::new();
 
             for mo in &trade.maker_orders {
-                if !mo.is_owned_by(ctx.user_address, ctx.api_key) {
+                if !mo.is_owned_by(ctx.user_address, ctx.api_key, ctx.signer_type) {
                     continue;
                 }
 
@@ -1253,6 +1258,7 @@ pub(crate) fn build_fill_reports_from_trades(
                 &trade.owner,
                 ctx.user_address,
                 ctx.api_key,
+                ctx.signer_type,
             ) {
                 log::debug!(
                     "Dropping confirmed taker trade {} not owned by the account",
@@ -1557,19 +1563,23 @@ pub(crate) async fn generate_mass_status(
 
     fill_tracker.snap_fill_reports(&mut fill_reports);
 
-    let positions = data_api_client
-        .get_positions(ctx.user_address)
-        .await
-        .context("failed to fetch positions for mass status")?;
+    let position_reports = if ctx.signer_type == PolymarketSignerType::Session {
+        Vec::new()
+    } else {
+        let positions = data_api_client
+            .get_positions(ctx.user_address)
+            .await
+            .context("failed to fetch positions for mass status")?;
 
-    let position_reports = build_reconciliation_position_reports(
-        &positions,
-        ctx.account_id,
-        ts_init,
-        instruments,
-        None,
-        load_ids,
-    )?;
+        build_reconciliation_position_reports(
+            &positions,
+            ctx.account_id,
+            ts_init,
+            instruments,
+            None,
+            load_ids,
+        )?
+    };
 
     log::debug!(
         "Generated mass status: {} orders ({} filtered), {} fills ({} instrument-filtered, \
@@ -1879,6 +1889,7 @@ mod tests {
 
     fn test_fill_context() -> FillContext<'static> {
         FillContext {
+            signer_type: PolymarketSignerType::Owner,
             account_id: AccountId::from("POLY-001"),
             user_address: TEST_USER_ADDRESS,
             api_key: TEST_API_KEY,
@@ -1987,6 +1998,31 @@ mod tests {
         .expect("foreign taker trade is outside local report scope");
 
         assert!(reports.is_empty());
+    }
+
+    #[rstest]
+    #[case(PolymarketSignerType::Owner, 1)]
+    #[case(PolymarketSignerType::Session, 0)]
+    fn shared_wallet_foreign_session_trade_is_not_owned(
+        #[case] signer_type: PolymarketSignerType,
+        #[case] expected_reports: usize,
+    ) {
+        let mut trade = confirmed_taker_trade();
+        trade.maker_address = TEST_USER_ADDRESS.to_string();
+        trade.owner = "another-session-api-key".to_string();
+        let mut ctx = test_fill_context();
+        ctx.signer_type = signer_type;
+        let (reports, _) = build_fill_reports_from_trades(
+            &[trade],
+            &ctx,
+            &test_instruments(),
+            FillReportScope::new(None, None),
+            UnixNanos::from(1),
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(reports.len(), expected_reports);
     }
 
     #[rstest]

@@ -19,7 +19,7 @@ use nautilus_network::websocket::TransportBackend;
 use pyo3::{PyResult, pymethods};
 
 use crate::{
-    common::enums::SignatureType,
+    common::enums::{PolymarketSignatureType, PolymarketSignerType},
     config::{
         PolymarketDataClientConfig, PolymarketExecutionClientConfig,
         PolymarketInstrumentProviderConfig, PolymarketUpDownEventSlugConfig,
@@ -229,7 +229,7 @@ impl PolymarketExecutionClientConfig {
     /// Configuration for the Polymarket execution client.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (account_id=None, private_key=None, api_key=None, api_secret=None, passphrase=None, funder=None, signature_type=None, base_url_http=None, base_url_ws=None, base_url_data_api=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, heartbeat_enabled=None, transport_backend=None, proxy_url=None, instrument_config=None))]
+    #[pyo3(signature = (account_id=None, private_key=None, api_key=None, api_secret=None, passphrase=None, funder=None, signature_type=None, base_url_http=None, base_url_ws=None, base_url_data_api=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, heartbeat_enabled=None, transport_backend=None, proxy_url=None, instrument_config=None, signer_type=None))]
     fn py_new(
         account_id: Option<String>,
         private_key: Option<String>,
@@ -237,7 +237,7 @@ impl PolymarketExecutionClientConfig {
         api_secret: Option<String>,
         passphrase: Option<String>,
         funder: Option<String>,
-        signature_type: Option<SignatureType>,
+        signature_type: Option<PolymarketSignatureType>,
         base_url_http: Option<String>,
         base_url_ws: Option<String>,
         base_url_data_api: Option<String>,
@@ -249,6 +249,7 @@ impl PolymarketExecutionClientConfig {
         transport_backend: Option<TransportBackend>,
         proxy_url: Option<String>,
         instrument_config: Option<PolymarketInstrumentProviderConfig>,
+        signer_type: Option<PolymarketSignerType>,
     ) -> PyResult<Self> {
         let default = Self::default();
         let config = Self {
@@ -259,6 +260,7 @@ impl PolymarketExecutionClientConfig {
             passphrase: passphrase.map(SecretString::from),
             funder,
             signature_type: signature_type.unwrap_or(default.signature_type),
+            signer_type: signer_type.unwrap_or_default(),
             base_url_http,
             base_url_ws,
             base_url_data_api,
@@ -272,6 +274,8 @@ impl PolymarketExecutionClientConfig {
             transport_backend: transport_backend.unwrap_or(default.transport_backend),
             instrument_config,
         };
+
+        config.validate_signer().map_err(to_pyvalue_err)?;
         config
             .validated_proxy_url()
             .map_err(|e| to_pyvalue_err(format!("Invalid Polymarket proxy URL: {e}")))?;

@@ -59,7 +59,7 @@ use crate::{
     common::{
         enums::{
             PolymarketLiquiditySide, PolymarketOrderSide, PolymarketOrderStatus,
-            PolymarketOrderType, PolymarketTradeStatus,
+            PolymarketOrderType, PolymarketSignerType, PolymarketTradeStatus,
         },
         models::PolymarketMakerOrder,
         parse::parse_decimal_exact,
@@ -517,6 +517,7 @@ pub(crate) struct WsDispatchContext<'a> {
     pub emitter: &'a ExecutionEventEmitter,
     pub account_id: AccountId,
     pub clock: &'static AtomicTime,
+    pub signer_type: PolymarketSignerType,
     pub user_address: &'a str,
     pub user_api_key: &'a str,
 }
@@ -1187,7 +1188,7 @@ fn dispatch_maker_fill_reports(
 }
 
 fn is_user_maker_order(order: &PolymarketMakerOrder, ctx: &WsDispatchContext<'_>) -> bool {
-    order.is_owned_by(ctx.user_address, ctx.user_api_key)
+    order.is_owned_by(ctx.user_address, ctx.user_api_key, ctx.signer_type)
 }
 
 fn build_ws_taker_fill_report_for_trade(
@@ -1901,6 +1902,7 @@ mod tests {
         emitter.set_sender(sender);
 
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -2164,6 +2166,7 @@ mod tests {
         );
 
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -2214,6 +2217,7 @@ mod tests {
         emitter.set_sender(sender);
 
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -2317,6 +2321,7 @@ mod tests {
         let emitter = test_emitter();
 
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -2348,6 +2353,7 @@ mod tests {
         let order_contexts = OrderContextRegistry::default();
         let emitter = test_emitter();
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -2405,6 +2411,7 @@ mod tests {
         );
 
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -2432,7 +2439,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_dispatch_maker_fill_owned_by_case_variant_address() {
+    #[case(PolymarketSignerType::Owner, 1)]
+    #[case(PolymarketSignerType::Session, 0)]
+    fn test_dispatch_maker_fill_owned_by_case_variant_address(
+        #[case] signer_type: PolymarketSignerType,
+        #[case] expected_fills: usize,
+    ) {
         let mut trade: PolymarketUserTrade = load("ws_user_trade.json");
         trade.trader_side = PolymarketLiquiditySide::Maker;
         let configured_address = trade.maker_orders[0].maker_address.clone();
@@ -2452,6 +2464,7 @@ mod tests {
         let order_contexts = OrderContextRegistry::default();
         let emitter = test_emitter();
         let ctx = WsDispatchContext {
+            signer_type,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -2467,8 +2480,11 @@ mod tests {
         let _ = dispatch_user_message(&UserWsMessage::Trade(trade), &ctx, &mut state);
 
         let fills = fill_tracker.pending_fills_for(&venue_order_id);
-        assert_eq!(fills.len(), 1);
-        assert_eq!(fills[0].venue_order_id, venue_order_id);
+        assert_eq!(fills.len(), expected_fills);
+
+        for fill in fills {
+            assert_eq!(fill.venue_order_id, venue_order_id);
+        }
     }
 
     #[rstest]
@@ -2489,6 +2505,7 @@ mod tests {
         let order_contexts = OrderContextRegistry::default();
         let emitter = test_emitter();
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -2529,6 +2546,7 @@ mod tests {
         let emitter = test_emitter();
 
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -2588,6 +2606,7 @@ mod tests {
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -2648,6 +2667,7 @@ mod tests {
         let order_contexts = OrderContextRegistry::default();
         let emitter = test_emitter();
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -2687,6 +2707,7 @@ mod tests {
         let order_contexts = OrderContextRegistry::default();
         let emitter = test_emitter();
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -2736,6 +2757,7 @@ mod tests {
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -2808,6 +2830,7 @@ mod tests {
         pending_submits.insert(venue_order_id, client_order_id);
 
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -2886,6 +2909,7 @@ mod tests {
         emitter.set_sender(sender);
 
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -2955,6 +2979,7 @@ mod tests {
         emitter.set_sender(sender);
 
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -3012,6 +3037,7 @@ mod tests {
         emitter.set_sender(sender);
 
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -3077,6 +3103,7 @@ mod tests {
         )));
 
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -3142,6 +3169,7 @@ mod tests {
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -3209,6 +3237,7 @@ mod tests {
         emitter.set_sender(sender);
 
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -3288,6 +3317,7 @@ mod tests {
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -3364,6 +3394,7 @@ mod tests {
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -3455,6 +3486,7 @@ mod tests {
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -3537,6 +3569,7 @@ mod tests {
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -3946,6 +3979,7 @@ mod tests {
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -4005,6 +4039,7 @@ mod tests {
         emitter.set_sender(sender);
 
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -4049,6 +4084,7 @@ mod tests {
         let emitter = test_emitter();
 
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -4126,6 +4162,7 @@ mod tests {
         emitter.set_sender(sender);
 
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -4259,6 +4296,7 @@ mod tests {
         emitter.set_sender(sender);
 
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -4452,6 +4490,7 @@ mod tests {
         emitter.set_sender(sender);
 
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -4626,6 +4665,7 @@ mod tests {
         emitter.set_sender(sender);
 
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -4771,6 +4811,7 @@ mod tests {
         emitter.set_sender(sender);
 
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -4884,6 +4925,7 @@ mod tests {
         emitter.set_sender(sender);
 
         let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,

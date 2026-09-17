@@ -11,7 +11,7 @@ The adapter is implemented in Rust and exposed to Python at
 operations therefore have the same behavior from Rust and Python.
 
 The adapter handles order preparation and signing for several wallet configurations. This guide
-covers market data, trade execution, and Deposit Wallet position operations.
+covers market data, trade execution, session key administration, and Deposit Wallet position operations.
 
 ## Installation
 
@@ -77,11 +77,13 @@ depending on the use case.
 - `PolymarketExecutionClientFactory`: Factory for Polymarket execution clients (used by the live
   node builder).
 - `PolymarketPositionClient`: Deposit Wallet split, merge, and redeem operations.
+- `PolymarketSessionKeyClient`: Owner-operated session authorization, listing, and revocation.
 
 :::note
 Python users configure live nodes through the exported configuration and factory classes, and call
-position operations through `PolymarketPositionClient`. The direct WebSocket, provider, data client,
-and execution client types are Rust-only implementation components.
+position operations through `PolymarketPositionClient` and session administration through
+`PolymarketSessionKeyClient`. The direct WebSocket, provider, data client, and execution client types
+are Rust-only implementation components.
 :::
 
 ## pUSD
@@ -131,7 +133,7 @@ Fund your wallet with pUSD before submitting orders. An unfunded wallet produces
 ### Setting EOA allowances
 
 The adapter includes a direct on-chain allowance command for EOA accounts. Use it only when the
-funding wallet is the signer (`SignatureType::Eoa`). Fund the EOA with POL for gas, set
+funding wallet is the signer (`PolymarketSignatureType::Eoa`). Fund the EOA with POL for gas, set
 `POLYMARKET_PK`, and run:
 
 ```bash
@@ -163,7 +165,7 @@ After the approval transaction confirms, refresh the CLOB cache. Rust callers ca
 `PolymarketClobHttpClient::update_balance_allowance` with `AssetType::Collateral` for pUSD. Use
 `AssetType::Conditional` with a conditional token ID for a conditional-token allowance. Both forms
 also need the account's signature type. The authenticated request maps to
-`GET /balance-allowance/update`. Use `SignatureType::Poly1271` for a Deposit Wallet.
+`GET /balance-allowance/update`. Use `PolymarketSignatureType::Poly1271` for a Deposit Wallet.
 
 The balance-allowance endpoint has two decoding paths:
 
@@ -233,6 +235,17 @@ Settings > API Keys > Relayer API Keys, as described in
 `POLYMARKET_RELAYER_SIGNER_ADDRESS` is the signer address shown when the Relayer key is created.
 The position client also reads `POLYMARKET_PK` and `POLYMARKET_FUNDER`.
 
+### Builder credentials
+
+Session authorization and revocation require Builder credentials approved for the session-key API.
+These are separate from the Relayer API key used for position operations. Follow Polymarket's
+[session-key requirements](https://docs.polymarket.com/trading/session-keys), and keep these values
+in the owner's administration environment:
+
+- `POLYMARKET_BUILDER_API_KEY`
+- `POLYMARKET_BUILDER_API_SECRET`
+- `POLYMARKET_BUILDER_PASSPHRASE`
+
 ### Deposit Wallet verification
 
 Construction fails when the funder equals the signing address. Before signing, the position client:
@@ -244,10 +257,168 @@ Construction fails when the funder equals the signing address. Before signing, t
 Polygon RPC defaults to `https://polygon.drpc.org`. Pass `base_url_rpc` to the
 `PolymarketPositionClient` constructor to use another trusted Polygon endpoint.
 
+## Session keys
+
+Session keys let a separate signer trade for a Deposit Wallet without giving the trading runtime
+its owner's private key. The adapter supports CLOB-scoped authorization. See Polymarket's
+[session-key documentation](https://docs.polymarket.com/trading/session-keys) for venue eligibility
+and Builder approval requirements.
+
+### Administer access
+
+Run `PolymarketSessionKeyClient` in the **owner's administration environment**, using a single
+administration process per wallet. Before authorizing a session:
+
+- Supply the owner private key, owner CLOB credentials, Builder credentials, and Deposit Wallet address
+  explicitly. The client does not read environment variables itself.
+- Generate and securely store the session keypair separately. Pass only its public address to the
+  authorization method.
+
+The Python example reads credentials from the administration process's environment and passes them
+into the client:
+
+```python
+import os
+
+from nautilus_trader.adapters.polymarket import PolymarketSessionKeyClient
+from nautilus_trader.adapters.polymarket import PolymarketSessionKeyClientConfig
+
+admin = PolymarketSessionKeyClient(
+    PolymarketSessionKeyClientConfig(
+        private_key=os.environ["POLYMARKET_PK"],
+        api_key=os.environ["POLYMARKET_API_KEY"],
+        api_secret=os.environ["POLYMARKET_API_SECRET"],
+        passphrase=os.environ["POLYMARKET_PASSPHRASE"],
+        builder_api_key=os.environ["POLYMARKET_BUILDER_API_KEY"],
+        builder_api_secret=os.environ["POLYMARKET_BUILDER_API_SECRET"],
+        builder_passphrase=os.environ["POLYMARKET_BUILDER_PASSPHRASE"],
+        funder=os.environ["POLYMARKET_FUNDER"],
+    ),
+)
+
+# Use the public address derived from the separately stored session private key.
+session_address = os.environ["SESSION_ADDRESS"]
+
+# Run these calls from an async function in the administration process.
+key = await admin.authorize_session_key(session_address)
+keys = await admin.list_session_keys()
+```
+
+Optional configuration:
+
+- `base_url_http` overrides the production CLOB endpoint.
+- `base_url_relayer` overrides the production Relayer endpoint.
+- `proxy_url` configures an HTTP or HTTPS proxy for both clients.
+
+The Rust example provides the same authorization and listing operations:
+
+```bash
+cargo run -p nautilus-polymarket --example polymarket-session-keys -- authorize "$SESSION_ADDRESS"
+cargo run -p nautilus-polymarket --example polymarket-session-keys -- list
+```
+
+Each administration method has a specific completion condition:
+
+| Method                  | Successful return requires                                                      |
+| ----------------------- | ------------------------------------------------------------------------------- |
+| `authorize_session_key` | On-chain confirmation; registry matches the address, CLOB scope, and expiration |
+| `list_session_keys`     | Validated active, unexpired registry entries                                    |
+| `revoke_session_key`    | On-chain confirmation; key absent from the active registry                      |
+
+#### Expiration
+
+Authorizations expire after 4,315 hours, matching the official SDK's wire value. Polymarket describes
+this period as 180 days, but its raw example and SDK use a value five hours shorter. The returned
+`valid_until` is the exact expiration in Unix seconds.
+
+#### Recover an interrupted operation
+
+After an authorization or revocation times out, encounters a transport failure, or is cancelled,
+retry with the **same operation, same address, and same client**. The client retains the signed
+request and idempotency key and rejects a different mutation until the pending operation resolves.
+
+Keep the client alive until the operation resolves: pending requests are held in memory.
+Unresolved-outcome errors include the idempotency key and any known transaction ID for diagnosis.
+
+:::warning
+Signed batches have a **600-second deadline**. If an unaccepted request expires, retrying cannot
+create a fresh batch, and the client remains blocked. Reconcile the registry and Relayer outcome
+before creating a new client. The same reconciliation is required after a process restart.
+:::
+
+### Configure session trading
+
+Create or derive CLOB credentials with the **session private key**, using the existing
+[CLOB credential workflow](#clob-credentials). Session mode requires:
+
+- Explicit session credentials and `funder`; it does not fall back to owner credentials from the environment.
+- `PolymarketSignatureType.Poly1271`; other wallet signature types are rejected.
+
+**Keep owner and Builder credentials outside the trading runtime.**
+
+In this example, `session_private_key` is the separately stored session key, and
+`session_api_key`, `session_api_secret`, and `session_passphrase` are its returned CLOB credentials:
+
+```python
+from nautilus_trader.adapters.polymarket import PolymarketExecutionClientConfig
+from nautilus_trader.adapters.polymarket import PolymarketSignatureType
+from nautilus_trader.adapters.polymarket import PolymarketSignerType
+
+execution = PolymarketExecutionClientConfig(
+    signer_type=PolymarketSignerType.Session,
+    signature_type=PolymarketSignatureType.Poly1271,
+    private_key=session_private_key,
+    api_key=session_api_key,
+    api_secret=session_api_secret,
+    passphrase=session_passphrase,
+    funder=deposit_wallet_address,
+)
+```
+
+Existing configurations default to `PolymarketSignerType.Owner`.
+
+#### Reconciliation and restarts
+
+Orders, trades, and notifications are scoped to the session's activity. Reconciliation requires the
+session API key to match order ownership; a shared wallet address alone does not establish ownership.
+
+Session cancel-all cancels known order IDs rather than using wallet-wide market cancellation.
+Mass status contains session orders and fills but omits wallet-wide positions. Direct position queries
+return an error because wallet holdings cannot establish a session's position.
+
+Configure the node accordingly:
+
+- **Position checks**: Set `LiveExecutionEngineConfig.position_check_interval_secs=None` to disable
+  periodic position checks for the node.
+- **History across restarts**: Configure [cache database persistence](../concepts/cache.md#database-configuration)
+  and keep `load_cache=True` to retain order and fill history.
+
+### Revoke or rotate access
+
+Rotate keys from the administration environment. Coordinate outstanding orders and reconciliation
+before switching credentials: **a new session does not inherit visibility into an old session's orders**.
+
+To revoke a key, use the administration client created above, from an async function:
+
+```python
+await admin.revoke_session_key(session_address)
+```
+
+Or run the Rust example:
+
+```bash
+cargo run -p nautilus-polymarket --example polymarket-session-keys -- revoke "$SESSION_ADDRESS"
+```
+
+:::warning
+Expired or revoked permissions cause venue rejections. A live transport connection does not prove
+that authorization remains active.
+:::
+
 ## Position operations
 
 `PolymarketPositionClient` splits pUSD into complete outcome-token sets, merges complete sets back
-to pUSD, and redeems resolved positions. The client supports Deposit Wallet (`SignatureType::Poly1271`)
+to pUSD, and redeems resolved positions. The client supports Deposit Wallet (`PolymarketSignatureType::Poly1271`)
 only. Safe, Proxy, and EOA paths are not available. The client does not deploy wallets, batch
 unrelated calls, size a merge to `"max"`, or redeem positions automatically.
 
@@ -399,8 +570,9 @@ Configure signing and authentication through these parameters or their environme
 | `api_secret`  | `POLYMARKET_API_SECRET` | CLOB L2 API secret                                           |
 | `passphrase`  | `POLYMARKET_PASSPHRASE` | CLOB L2 API passphrase                                       |
 
-When a parameter is not supplied explicitly, the client reads its environment variable. CLOB L2
-credentials authenticate the private-key signer. For `POLY_1271`, the Deposit Wallet remains the
+In owner mode, when a parameter is not supplied explicitly, the client reads its environment variable.
+Session mode requires explicit credentials and a funder. CLOB L2 credentials authenticate the
+private-key signer. For `POLY_1271`, the Deposit Wallet remains the
 `funder`; it is not the L2 authentication address.
 
 :::tip
@@ -1026,7 +1198,8 @@ the Polymarket order ID (`venue_order_id`). The execution reconciliation procedu
 is as follows:
 
 - Generate order reports for all instruments with active (open) orders, as reported by Polymarket.
-- Generate position reports from current user positions reported by Polymarket's Data API.
+- In owner mode, generate position reports from current user positions reported by Polymarket's Data API.
+  Session mode omits these wallet-wide positions; see [session keys](#session-keys).
 - Compare these reports with Nautilus execution state.
 - Generate missing orders to bring Nautilus execution state in line with positions reported by
   Polymarket.
@@ -1705,6 +1878,7 @@ Class/struct: `PolymarketExecutionClientConfig`.
 | `api_key`, `api_secret`, `passphrase`               | environment variables | CLOB L2 authentication credentials.                                                                                   |
 | `funder`                                            | `POLYMARKET_FUNDER`   | Funding wallet; proxy and deposit-wallet signatures require it to differ from the signing address.                    |
 | `signature_type`                                    | `Eoa`                 | `Eoa`, `PolyProxy`, `PolyGnosisSafe`, or `Poly1271`.                                                                  |
+| `signer_type`                                       | `Owner`               | `Owner` or `Session`; sessions require explicit credentials and `Poly1271`.                                           |
 | `base_url_http`, `base_url_ws`, `base_url_data_api` | `None`                | Override the respective production endpoint.                                                                          |
 | `proxy_url`                                         | `None`                | HTTP or HTTPS proxy for every execution transport.                                                                    |
 | `http_timeout_secs`                                 | `60`                  | HTTP timeout in seconds.                                                                                              |

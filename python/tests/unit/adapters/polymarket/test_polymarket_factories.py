@@ -29,7 +29,7 @@ from nautilus_trader.adapters.polymarket import PolymarketDataClientFactory
 from nautilus_trader.adapters.polymarket import PolymarketExecutionClientConfig
 from nautilus_trader.adapters.polymarket import PolymarketExecutionClientFactory
 from nautilus_trader.adapters.polymarket import PolymarketInstrumentProviderConfig
-from nautilus_trader.adapters.polymarket import SignatureType
+from nautilus_trader.adapters.polymarket import PolymarketSignatureType
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
 from nautilus_trader.live import LiveRiskEngineConfig
@@ -66,7 +66,7 @@ def test_polymarket_signature_type_exposes_poly_1271() -> None:
     """
     Test polymarket signature type exposes poly 1271.
     """
-    assert int(SignatureType.Poly1271) == 3
+    assert int(PolymarketSignatureType.Poly1271) == 3
 
 
 def test_live_node_builder_accepts_polymarket_data_factory() -> None:
@@ -121,7 +121,7 @@ def test_live_node_builder_accepts_polymarket_exec_factory() -> None:
                 api_secret=SMOKE_API_SECRET,
                 passphrase=SMOKE_PASSPHRASE,
                 funder=SMOKE_FUNDER,
-                signature_type=SignatureType.PolyGnosisSafe,
+                signature_type=PolymarketSignatureType.PolyGnosisSafe,
             ),
         )
         .build()

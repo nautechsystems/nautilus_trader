@@ -31,7 +31,10 @@ use nautilus_network::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    common::{enums::SignatureType, urls},
+    common::{
+        enums::{PolymarketSignatureType, PolymarketSignerType},
+        urls,
+    },
     filters::InstrumentFilter,
 };
 
@@ -471,8 +474,11 @@ pub struct PolymarketExecutionClientConfig {
     pub passphrase: Option<SecretString>,
     /// Falls back to `POLYMARKET_FUNDER` env var.
     pub funder: Option<String>,
-    #[builder(default = SignatureType::Eoa)]
-    pub signature_type: SignatureType,
+    #[builder(default = PolymarketSignatureType::Eoa)]
+    pub signature_type: PolymarketSignatureType,
+    /// Selects owner or delegated session signing.
+    #[builder(default)]
+    pub signer_type: PolymarketSignerType,
     pub base_url_http: Option<String>,
     pub base_url_ws: Option<String>,
     pub base_url_data_api: Option<String>,
@@ -505,7 +511,8 @@ pub struct PolymarketExecutionClientConfig {
 nautilus_core::impl_pyo3_config_getters!(PolymarketExecutionClientConfig {
     account_id: AccountId,
     funder: Option<String>,
-    signature_type: SignatureType,
+    signature_type: PolymarketSignatureType,
+    signer_type: PolymarketSignerType,
     base_url_http: Option<String>,
     base_url_ws: Option<String>,
     base_url_data_api: Option<String>,
@@ -528,6 +535,36 @@ impl PolymarketExecutionClientConfig {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn validate_signer(&self) -> anyhow::Result<()> {
+        if self.signer_type == PolymarketSignerType::Session {
+            anyhow::ensure!(
+                self.signature_type == PolymarketSignatureType::Poly1271,
+                "Session signers require POLY_1271"
+            );
+
+            for (name, value) in [
+                ("private_key", self.private_key.as_ref()),
+                ("api_key", self.api_key.as_ref()),
+                ("api_secret", self.api_secret.as_ref()),
+                ("passphrase", self.passphrase.as_ref()),
+            ] {
+                anyhow::ensure!(
+                    value.is_some_and(|value| !value.expose_secret().trim().is_empty()),
+                    "Session signers require explicit {name}; environment fallback is disabled"
+                );
+            }
+
+            anyhow::ensure!(
+                self.funder
+                    .as_ref()
+                    .is_some_and(|value| !value.trim().is_empty()),
+                "Session signers require an explicit Deposit Wallet funder"
+            );
+        }
+
+        Ok(())
     }
 
     /// Returns the validated proxy URL, if configured.
@@ -865,6 +902,55 @@ load_ids = ["0xabc-123.POLYMARKET"]
         assert_eq!(
             error.to_string(),
             "invalid URL: SOCKS proxy scheme 'socks5' is not yet supported for WebSocket connections; use an http:// or https:// proxy"
+        );
+    }
+
+    #[rstest]
+    #[case("private_key")]
+    #[case("api_key")]
+    #[case("api_secret")]
+    #[case("passphrase")]
+    #[case("funder")]
+    fn test_session_requires_explicit_credentials(#[case] missing: &str) {
+        let mut config = PolymarketExecutionClientConfig {
+            signer_type: PolymarketSignerType::Session,
+            signature_type: PolymarketSignatureType::Poly1271,
+            private_key: Some("key".into()),
+            api_key: Some("api".into()),
+            api_secret: Some("secret".into()),
+            passphrase: Some("pass".into()),
+            funder: Some("wallet".into()),
+            ..Default::default()
+        };
+
+        assert!(config.validate_signer().is_ok());
+
+        match missing {
+            "private_key" => config.private_key = None,
+            "api_key" => config.api_key = None,
+            "api_secret" => config.api_secret = None,
+            "passphrase" => config.passphrase = Some(" ".into()),
+            "funder" => config.funder = Some(" ".into()),
+            _ => unreachable!(),
+        }
+
+        assert!(config.validate_signer().is_err());
+    }
+
+    #[rstest]
+    #[case(PolymarketSignatureType::Eoa)]
+    #[case(PolymarketSignatureType::PolyProxy)]
+    #[case(PolymarketSignatureType::PolyGnosisSafe)]
+    fn test_session_rejects_other_signature_types(#[case] signature_type: PolymarketSignatureType) {
+        let config = PolymarketExecutionClientConfig {
+            signer_type: PolymarketSignerType::Session,
+            signature_type,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            config.validate_signer().unwrap_err().to_string(),
+            "Session signers require POLY_1271"
         );
     }
 }
