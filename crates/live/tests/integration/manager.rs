@@ -10057,6 +10057,133 @@ async fn test_adjust_fills_without_synthetic_reports_filters_to_current_lifecycl
 }
 
 #[tokio::test]
+async fn test_replace_current_lifecycle_adopts_unfilled_working_order_only() {
+    // Two lifecycles whose current one (O3 + O4, 2.000 @ 3050) does not reconstruct the venue
+    // position (1.000 @ 3142.04), so the history is replaced by a synthetic fill. O9 is working
+    // with no fills and must survive as an external order; O4 is partially filled and goes with
+    // its discarded fill, otherwise its filled quantity would be inferred on top of the synthetic.
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    ctx.add_instrument(test_instrument());
+    let ts_now: u64 = 1_000_000_000_000;
+
+    let make_fill = |venue_order_id: &str, trade_id: &str, side: OrderSide, px: &str, ts: u64| {
+        FillReport::new(
+            test_account_id(),
+            instrument_id,
+            VenueOrderId::from(venue_order_id),
+            TradeId::from(trade_id),
+            side,
+            Quantity::from("1.000"),
+            Price::from(px),
+            Money::from("0.00 USDT"),
+            LiquiditySide::Taker,
+            None,
+            None,
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+            None,
+        )
+    };
+    let mut mass_status = create_mass_status(
+        vec![
+            create_order_status_report(
+                Some(ClientOrderId::from("C-004")),
+                VenueOrderId::from("V-004"),
+                instrument_id,
+                OrderStatus::PartiallyFilled,
+                Quantity::from("2.000"),
+                Quantity::from("1.000"),
+            ),
+            create_order_status_report(
+                Some(ClientOrderId::from("C-009")),
+                VenueOrderId::from("V-009"),
+                instrument_id,
+                OrderStatus::Accepted,
+                Quantity::from("1.000"),
+                Quantity::from("0.000"),
+            ),
+        ],
+        vec![
+            make_fill(
+                "V-001",
+                "T-001",
+                OrderSide::Buy,
+                "3000.00",
+                ts_now - 4_000_000_000,
+            ),
+            make_fill(
+                "V-002",
+                "T-002",
+                OrderSide::Sell,
+                "3050.00",
+                ts_now - 3_000_000_000,
+            ),
+            make_fill(
+                "V-003",
+                "T-003",
+                OrderSide::Buy,
+                "3000.00",
+                ts_now - 2_000_000_000,
+            ),
+            make_fill(
+                "V-004",
+                "T-004",
+                OrderSide::Buy,
+                "3100.00",
+                ts_now - 1_000_000_000,
+            ),
+        ],
+    );
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from("1.000"),
+        UnixNanos::from(ts_now),
+        UnixNanos::from(ts_now),
+        None,
+        None,
+        Some(dec!(3142.04)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+
+    let accepted: Vec<ClientOrderId> = result
+        .events
+        .iter()
+        .filter_map(|e| match e {
+            OrderEventAny::Accepted(accepted) => Some(accepted.client_order_id),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        accepted.contains(&ClientOrderId::from("C-009")),
+        "working order not adopted, events: {:?}",
+        result.events
+    );
+    assert!(
+        !accepted.contains(&ClientOrderId::from("C-004")),
+        "partially filled order kept without its fills, events: {:?}",
+        result.events
+    );
+
+    let fills: Vec<&OrderFilled> = result
+        .events
+        .iter()
+        .filter_map(|e| match e {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(fills.len(), 1, "fills: {fills:?}");
+    assert!(fills[0].trade_id.as_str().starts_with("S-"));
+    assert_eq!(fills[0].last_qty, Quantity::from("1.000"));
+}
+
+#[tokio::test]
 async fn test_cross_zero_with_missing_cached_avg_px_returns_none() {
     // When cached position has no avg_px, cross-zero cannot generate close fill
     let mut ctx = TestContext::new();

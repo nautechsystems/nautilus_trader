@@ -154,8 +154,11 @@ fn process_mass_status_for_reconciliation_inner(
                 first_venue_order_id,
             )?;
 
-            // Replace with only synthetic
-            order_map.clear();
+            // Replace filled history with the synthetic report, keeping unfilled working orders
+            order_map.retain(|_, order| {
+                order.filled_qty.is_zero()
+                    && (order.order_status.is_open() || order.order_status.is_inflight())
+            });
             fill_map.clear();
             order_map.insert(first_venue_order_id, order);
             fill_map.insert(first_venue_order_id, vec![fill]);

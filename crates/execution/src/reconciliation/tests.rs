@@ -1013,22 +1013,20 @@ fn test_adjust_fills_multiple_zero_crossings_mismatch() {
     }
 }
 
-#[rstest]
-fn test_process_mass_status_without_synthetic_reports_preserves_mismatched_lifecycle(
-    instrument: InstrumentAny,
-) {
+fn create_two_lifecycle_mass_status(
+    instrument: &InstrumentAny,
+    order_reports: Vec<OrderStatusReport>,
+    venue_qty: Quantity,
+    venue_avg_px: Decimal,
+) -> ExecutionMassStatus {
     let account_id = AccountId::from("TEST-001");
     let instrument_id = instrument.id();
-    let venue_order_id1 = VenueOrderId::from("ORDER1");
-    let venue_order_id2 = VenueOrderId::from("ORDER2");
-    let venue_order_id4 = VenueOrderId::from("ORDER4");
-    let venue_order_id5 = VenueOrderId::from("ORDER5");
     let make_fill =
-        |venue_order_id: VenueOrderId, trade_id: &str, side: OrderSide, px: &str, ts_event: u64| {
+        |venue_order_id: &str, trade_id: &str, side: OrderSide, px: &str, ts_event: u64| {
             FillReport::new(
                 account_id,
                 instrument_id,
-                venue_order_id,
+                VenueOrderId::from(venue_order_id),
                 TradeId::from(trade_id),
                 side,
                 Quantity::from("0.05"),
@@ -1051,22 +1049,61 @@ fn test_process_mass_status_without_synthetic_reports_preserves_mismatched_lifec
         Some(UUID4::new()),
     );
     mass_status.add_fill_reports(vec![
-        make_fill(venue_order_id1, "TRADE1", OrderSide::Buy, "4000.00", 1_000),
-        make_fill(venue_order_id2, "TRADE2", OrderSide::Sell, "4050.00", 2_000),
-        make_fill(venue_order_id4, "TRADE4", OrderSide::Buy, "4000.00", 3_000),
-        make_fill(venue_order_id5, "TRADE5", OrderSide::Buy, "4100.00", 4_000),
+        make_fill("ORDER1", "TRADE1", OrderSide::Buy, "4000.00", 1_000),
+        make_fill("ORDER2", "TRADE2", OrderSide::Sell, "4050.00", 2_000),
+        make_fill("ORDER4", "TRADE4", OrderSide::Buy, "4000.00", 3_000),
+        make_fill("ORDER5", "TRADE5", OrderSide::Buy, "4100.00", 4_000),
     ]);
+    mass_status.add_order_reports(order_reports);
     mass_status.add_position_reports(vec![PositionStatusReport::new(
         account_id,
         instrument_id,
         PositionSide::Long,
-        Quantity::from("0.05"),
+        venue_qty,
         UnixNanos::from(5_000),
         UnixNanos::from(5_000),
         None,
         None,
-        Some(dec!(4142.04)),
+        Some(venue_avg_px),
     )]);
+    mass_status
+}
+
+fn create_limit_order_report(
+    instrument: &InstrumentAny,
+    venue_order_id: &str,
+    status: OrderStatus,
+    filled_qty: &str,
+) -> OrderStatusReport {
+    OrderStatusReport::new(
+        AccountId::from("TEST-001"),
+        instrument.id(),
+        Some(ClientOrderId::from(format!("O-{venue_order_id}").as_str())),
+        VenueOrderId::from(venue_order_id),
+        OrderSide::Buy.into(),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        status,
+        Quantity::from("0.05"),
+        Quantity::from(filled_qty),
+        UnixNanos::from(4_500),
+        UnixNanos::from(4_500),
+        UnixNanos::from(4_500),
+        None,
+    )
+}
+
+#[rstest]
+fn test_process_mass_status_without_synthetic_reports_preserves_mismatched_lifecycle(
+    instrument: InstrumentAny,
+) {
+    let venue_order_id4 = VenueOrderId::from("ORDER4");
+    let mass_status = create_two_lifecycle_mass_status(
+        &instrument,
+        vec![],
+        Quantity::from("0.05"),
+        dec!(4142.04),
+    );
     let raw_fills = mass_status.fill_reports();
 
     let generated =
@@ -1090,6 +1127,144 @@ fn test_process_mass_status_without_synthetic_reports_preserves_mismatched_lifec
     );
     assert!(preserved.orders.is_empty());
     assert_eq!(preserved.fills, raw_fills);
+}
+
+#[rstest]
+#[case::lifecycle_matches_venue(
+    Quantity::from("0.10"),
+    dec!(4050.00),
+    vec![VenueOrderId::from("ORDER4"), VenueOrderId::from("ORDER5")],
+    vec![]
+)]
+#[case::lifecycle_mismatches_venue(
+    Quantity::from("0.05"),
+    dec!(4142.04),
+    vec![VenueOrderId::from("ORDER4")],
+    vec![VenueOrderId::from("ORDER4")]
+)]
+fn test_process_mass_status_keeps_working_order_for_either_lifecycle_outcome(
+    instrument: InstrumentAny,
+    #[case] venue_qty: Quantity,
+    #[case] venue_avg_px: Decimal,
+    #[case] expected_fill_keys: Vec<VenueOrderId>,
+    #[case] expected_synthetic_order_keys: Vec<VenueOrderId>,
+) {
+    let working_venue_order_id = VenueOrderId::from("ORDER9");
+    let mass_status = create_two_lifecycle_mass_status(
+        &instrument,
+        vec![create_limit_order_report(
+            &instrument,
+            "ORDER9",
+            OrderStatus::Accepted,
+            "0.00",
+        )],
+        venue_qty,
+        venue_avg_px,
+    );
+
+    let result = process_mass_status_for_reconciliation(&mass_status, &instrument, None).unwrap();
+
+    // The surviving fill keys identify the branch taken: filtering keeps the two fills after
+    // the zero-crossing, replacing leaves one synthetic fill keyed on the first of them.
+    let fill_keys: Vec<VenueOrderId> = result.fills.keys().copied().collect();
+    assert_eq!(
+        fill_keys, expected_fill_keys,
+        "unexpected adjustment branch"
+    );
+
+    let synthetic_order_keys: Vec<VenueOrderId> = result
+        .orders
+        .keys()
+        .copied()
+        .filter(|id| *id != working_venue_order_id)
+        .collect();
+    assert_eq!(
+        synthetic_order_keys, expected_synthetic_order_keys,
+        "unexpected synthetic order reports"
+    );
+
+    assert!(
+        result.orders.contains_key(&working_venue_order_id),
+        "working order was dropped, orders: {:?}",
+        result.orders.keys().collect::<Vec<_>>()
+    );
+}
+
+#[rstest]
+#[case::accepted(OrderStatus::Accepted, "0.00", true)]
+#[case::submitted(OrderStatus::Submitted, "0.00", true)]
+#[case::triggered(OrderStatus::Triggered, "0.00", true)]
+#[case::pending_update(OrderStatus::PendingUpdate, "0.00", true)]
+#[case::pending_cancel(OrderStatus::PendingCancel, "0.00", true)]
+#[case::partially_filled(OrderStatus::PartiallyFilled, "0.05", false)]
+#[case::accepted_with_filled_qty(OrderStatus::Accepted, "0.05", false)]
+#[case::canceled(OrderStatus::Canceled, "0.00", false)]
+#[case::expired(OrderStatus::Expired, "0.00", false)]
+#[case::rejected(OrderStatus::Rejected, "0.00", false)]
+#[case::filled(OrderStatus::Filled, "0.05", false)]
+#[case::voided(OrderStatus::Voided, "0.00", false)]
+fn test_replace_current_lifecycle_retains_only_unfilled_working_orders(
+    instrument: InstrumentAny,
+    #[case] status: OrderStatus,
+    #[case] filled_qty: &str,
+    #[case] expected_retained: bool,
+) {
+    let venue_order_id = VenueOrderId::from("ORDER9");
+    let report = create_limit_order_report(&instrument, "ORDER9", status, filled_qty);
+    let mass_status = create_two_lifecycle_mass_status(
+        &instrument,
+        vec![report.clone()],
+        Quantity::from("0.05"),
+        dec!(4142.04),
+    );
+
+    let result = process_mass_status_for_reconciliation(&mass_status, &instrument, None).unwrap();
+
+    assert_eq!(result.fills.len(), 1);
+    assert!(
+        result.fills[&VenueOrderId::from("ORDER4")][0]
+            .trade_id
+            .as_str()
+            .starts_with("S-")
+    );
+    assert_eq!(
+        result.orders.get(&venue_order_id),
+        expected_retained.then_some(&report),
+        "orders: {:?}",
+        result.orders.keys().collect::<Vec<_>>()
+    );
+    assert_eq!(result.orders.len(), 1 + usize::from(expected_retained));
+}
+
+#[rstest]
+#[case::unfilled(OrderStatus::Accepted, "0.00")]
+#[case::partially_filled(OrderStatus::PartiallyFilled, "0.05")]
+fn test_replace_current_lifecycle_synthetic_report_replaces_first_fill_order(
+    instrument: InstrumentAny,
+    #[case] status: OrderStatus,
+    #[case] filled_qty: &str,
+) {
+    let venue_order_id = VenueOrderId::from("ORDER4");
+    let mass_status = create_two_lifecycle_mass_status(
+        &instrument,
+        vec![create_limit_order_report(
+            &instrument,
+            "ORDER4",
+            status,
+            filled_qty,
+        )],
+        Quantity::from("0.05"),
+        dec!(4142.04),
+    );
+
+    let result = process_mass_status_for_reconciliation(&mass_status, &instrument, None).unwrap();
+
+    assert_eq!(result.orders.len(), 1);
+    let synthetic = &result.orders[&venue_order_id];
+    assert_eq!(synthetic.order_type, OrderType::Market);
+    assert_eq!(synthetic.order_status, OrderStatus::Filled);
+    assert_eq!(synthetic.filled_qty, synthetic.quantity);
+    assert_eq!(synthetic.client_order_id, None);
 }
 
 #[rstest]
