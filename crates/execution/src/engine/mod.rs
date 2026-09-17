@@ -111,11 +111,12 @@ const TIMER_PURGE_ACCOUNT_EVENTS: &str = "ExecEngine_PURGE_ACCOUNT_EVENTS";
 /// processing. It supports multiple execution venues through registered clients and
 /// provides sophisticated order management capabilities.
 ///
-/// An order handed to an execution client keeps its `Initialized` (or `Released`) status until
-/// the client's first status event is applied, so cached status alone cannot distinguish it from
-/// an order that has not been routed yet. The engine records each handoff until that first status
-/// transition, and a later submit command naming the order is stale for it: the engine neither
-/// routes the order to a client again nor denies it when the later command fails validation.
+/// An order handed to a registered or external execution client keeps its `Initialized` (or
+/// `Released`) status until the client's first status event is applied, so cached status alone
+/// cannot distinguish it from an order that has not been routed yet. The engine records each
+/// handoff until that first status transition, and a later submit command naming the order is
+/// stale for it: the engine neither routes the order to a client again nor denies it when the
+/// later command fails validation.
 pub struct ExecutionEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
@@ -2005,6 +2006,21 @@ impl ExecutionEngine {
             let topic = format!("commands.trading.{cid}");
             msgbus::publish_any(topic.into(), &command);
 
+            // The external client now owns the submitted orders, exactly like a registered client
+            match &command {
+                TradingCommand::SubmitOrder(cmd) => {
+                    self.handed_off_orders
+                        .borrow_mut()
+                        .insert(cmd.client_order_id);
+                }
+                TradingCommand::SubmitOrderList(cmd) => {
+                    self.handed_off_orders
+                        .borrow_mut()
+                        .extend(cmd.order_list.client_order_ids.iter().copied());
+                }
+                _ => {}
+            }
+
             if self.config.debug {
                 log::debug!("Skipping execution command for external client {cid}: {command}");
             }
@@ -2071,34 +2087,33 @@ impl ExecutionEngine {
     fn validate_submission(&self, command: &TradingCommand) -> SubmissionValidationResult {
         match command {
             TradingCommand::SubmitOrder(cmd) => {
+                let client_order_id = cmd.client_order_id;
                 let cache = self.cache.borrow();
-                let Some(order) = cache.order(&cmd.client_order_id) else {
-                    return SubmissionValidationResult::Valid;
-                };
 
-                if !Self::has_submittable_status(&order) {
+                if let Some(order) = cache.order(&client_order_id)
+                    && !Self::has_submittable_status(&order)
+                {
                     return SubmissionValidationResult::StaleOrder {
-                        client_order_id: order.client_order_id(),
+                        client_order_id,
                         status: order.status(),
                     };
                 }
 
-                if self.is_handed_off(order.client_order_id()) {
-                    return SubmissionValidationResult::HandedOff {
-                        client_order_id: order.client_order_id(),
-                    };
+                if self.is_handed_off(client_order_id) {
+                    return SubmissionValidationResult::HandedOff { client_order_id };
                 }
 
                 SubmissionValidationResult::Valid
             }
             TradingCommand::SubmitOrderList(cmd) => {
                 let cache = self.cache.borrow();
-                let has_ineligible_order = cmd
-                    .order_list
-                    .client_order_ids
-                    .iter()
-                    .filter_map(|client_order_id| cache.order(client_order_id))
-                    .any(|order| !self.is_eligible_for_submission(&order));
+                let client_order_ids = &cmd.order_list.client_order_ids;
+                let has_ineligible_order = client_order_ids.iter().any(|client_order_id| {
+                    self.is_handed_off(*client_order_id)
+                        || cache
+                            .order(client_order_id)
+                            .is_some_and(|order| !Self::has_submittable_status(&order))
+                });
 
                 if !has_ineligible_order {
                     return SubmissionValidationResult::Valid;
@@ -2119,12 +2134,14 @@ impl ExecutionEngine {
         )
     }
 
+    // The handoff record is checked independently of the cache because an external client is
+    // handed the command without the engine caching its orders (see the type-level documentation).
     fn is_handed_off(&self, client_order_id: ClientOrderId) -> bool {
         self.handed_off_orders.borrow().contains(&client_order_id)
     }
 
     // A cached order accepts a submit command only while it has a submittable status and has not
-    // already been handed to an execution client (see the type-level documentation).
+    // already been handed to an execution client.
     fn is_eligible_for_submission(&self, order: &OrderAny) -> bool {
         Self::has_submittable_status(order) && !self.is_handed_off(order.client_order_id())
     }
