@@ -13,413 +13,310 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Display-mode Arrow encoder for [`OrderBookDepth10`].
+//! Nested display-mode Arrow encoding for [`OrderBookDepth`].
 
 use std::sync::Arc;
 
 use arrow::{
-    array::{
-        ArrayRef, Float64Builder, StringBuilder, TimestampNanosecondBuilder, UInt8Builder,
-        UInt32Builder, UInt64Builder,
-    },
-    datatypes::{DataType, Field, Schema},
+    array::{StringBuilder, TimestampNanosecondBuilder, UInt8Builder, UInt64Builder},
+    datatypes::Schema,
     error::ArrowError,
     record_batch::RecordBatch,
 };
-use nautilus_model::data::depth::{DEPTH10_LEN, OrderBookDepth10};
+use nautilus_model::data::OrderBookDepth;
 
-use super::{
-    float64_field, price_to_f64, quantity_to_f64, timestamp_field, unix_nanos_to_i64, utf8_field,
+use super::{price_to_f64, quantity_to_f64, unix_nanos_to_i64};
+use crate::arrow::{
+    depth_display::{DepthSideBuilder, schema},
+    timestamp_data_type,
 };
 
-/// Returns the display-mode Arrow schema for [`OrderBookDepth10`].
+/// Returns the nested depth display schema.
 ///
-/// Column order: `instrument_id`, then all `bid_price_{0..N}`,
-/// `ask_price_{0..N}`, `bid_size_{0..N}`, `ask_size_{0..N}`,
-/// `bid_count_{0..N}`, `ask_count_{0..N}`, then `flags`, `sequence`,
-/// `ts_event`, `ts_init`.
+/// The compatibility name does not limit the number of levels.
 #[must_use]
 pub fn depth10_schema() -> Schema {
-    let mut fields = Vec::with_capacity(1 + 6 * DEPTH10_LEN + 4);
-    fields.push(utf8_field("instrument_id", false));
-
-    for i in 0..DEPTH10_LEN {
-        fields.push(float64_field(&format!("bid_price_{i}"), false));
-    }
-
-    for i in 0..DEPTH10_LEN {
-        fields.push(float64_field(&format!("ask_price_{i}"), false));
-    }
-
-    for i in 0..DEPTH10_LEN {
-        fields.push(float64_field(&format!("bid_size_{i}"), false));
-    }
-
-    for i in 0..DEPTH10_LEN {
-        fields.push(float64_field(&format!("ask_size_{i}"), false));
-    }
-
-    for i in 0..DEPTH10_LEN {
-        fields.push(Field::new(
-            format!("bid_count_{i}"),
-            DataType::UInt32,
-            false,
-        ));
-    }
-
-    for i in 0..DEPTH10_LEN {
-        fields.push(Field::new(
-            format!("ask_count_{i}"),
-            DataType::UInt32,
-            false,
-        ));
-    }
-
-    fields.push(Field::new("flags", DataType::UInt8, false));
-    fields.push(Field::new("sequence", DataType::UInt64, false));
-    fields.push(timestamp_field("ts_event", false));
-    fields.push(timestamp_field("ts_init", false));
-
-    Schema::new(fields)
+    schema()
 }
 
-/// Encodes depth-10 snapshots as a display-friendly Arrow [`RecordBatch`].
+/// Encodes every level into nested `bids` and `asks` lists.
 ///
-/// Emits `Float64` columns per level for prices and sizes, `UInt32` columns
-/// per level for counts, a `Utf8` `instrument_id` column, and
-/// `Timestamp(Nanosecond)` columns for event and init times. Mixed-instrument
-/// batches are supported. Precision is lost on the conversion to `f64`; use
-/// [`crate::arrow::book_depth10_to_arrow_record_batch_bytes`] for catalog
-/// storage.
-///
-/// Returns an empty [`RecordBatch`] with the correct schema when `data` is empty.
+/// Each level contains a display price and size, count, and exact integer order ID.
+/// Empty sides remain empty lists. Mixed instruments and depths share one schema.
+/// Prices and sizes use `Float64`, with nulls for undefined values; use raw catalog
+/// output when exact decimal values are required. The compatibility name does not
+/// impose a ten-level limit.
 ///
 /// # Errors
 ///
-/// Returns an [`ArrowError`] if the Arrow `RecordBatch` cannot be constructed.
-pub fn encode_depth10(data: &[OrderBookDepth10]) -> Result<RecordBatch, ArrowError> {
-    let mut instrument_id_builder = StringBuilder::new();
-    let mut bid_price_builders: Vec<Float64Builder> = (0..DEPTH10_LEN)
-        .map(|_| Float64Builder::with_capacity(data.len()))
-        .collect();
-    let mut ask_price_builders: Vec<Float64Builder> = (0..DEPTH10_LEN)
-        .map(|_| Float64Builder::with_capacity(data.len()))
-        .collect();
-    let mut bid_size_builders: Vec<Float64Builder> = (0..DEPTH10_LEN)
-        .map(|_| Float64Builder::with_capacity(data.len()))
-        .collect();
-    let mut ask_size_builders: Vec<Float64Builder> = (0..DEPTH10_LEN)
-        .map(|_| Float64Builder::with_capacity(data.len()))
-        .collect();
-    let mut bid_count_builders: Vec<UInt32Builder> = (0..DEPTH10_LEN)
-        .map(|_| UInt32Builder::with_capacity(data.len()))
-        .collect();
-    let mut ask_count_builders: Vec<UInt32Builder> = (0..DEPTH10_LEN)
-        .map(|_| UInt32Builder::with_capacity(data.len()))
-        .collect();
-    let mut flags_builder = UInt8Builder::with_capacity(data.len());
-    let mut sequence_builder = UInt64Builder::with_capacity(data.len());
-    let mut ts_event_builder = TimestampNanosecondBuilder::with_capacity(data.len());
-    let mut ts_init_builder = TimestampNanosecondBuilder::with_capacity(data.len());
+/// Returns an error if Arrow cannot construct the batch or list offsets overflow.
+pub fn encode_depth10(data: &[OrderBookDepth]) -> Result<RecordBatch, ArrowError> {
+    let mut instruments = StringBuilder::new();
+    let mut bids = DepthSideBuilder::new();
+    let mut asks = DepthSideBuilder::new();
+    let mut flags = UInt8Builder::with_capacity(data.len());
+    let mut sequence = UInt64Builder::with_capacity(data.len());
+    let mut ts_event =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
+    let mut ts_init =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
 
     for depth in data {
-        instrument_id_builder.append_value(depth.instrument_id.to_string());
-        for i in 0..DEPTH10_LEN {
-            bid_price_builders[i].append_value(price_to_f64(&depth.bids[i].price));
-            ask_price_builders[i].append_value(price_to_f64(&depth.asks[i].price));
-            bid_size_builders[i].append_value(quantity_to_f64(&depth.bids[i].size));
-            ask_size_builders[i].append_value(quantity_to_f64(&depth.asks[i].size));
-            bid_count_builders[i].append_value(depth.bid_counts[i]);
-            ask_count_builders[i].append_value(depth.ask_counts[i]);
+        instruments.append_value(depth.instrument_id.to_string());
+        for (side, orders, counts) in [
+            (&mut bids, &depth.bids, &depth.bid_counts),
+            (&mut asks, &depth.asks, &depth.ask_counts),
+        ] {
+            if orders.len() != counts.len() {
+                return Err(ArrowError::InvalidArgumentError(
+                    "Depth orders and counts must have equal lengths".to_string(),
+                ));
+            }
+
+            for (order, count) in orders.iter().zip(counts) {
+                side.prices.append_option(
+                    (!order.price.is_undefined()).then(|| price_to_f64(&order.price)),
+                );
+                side.sizes.append_option(
+                    (!order.size.is_undefined()).then(|| quantity_to_f64(&order.size)),
+                );
+                side.counts.append_value(*count);
+                side.order_ids.append_value(order.order_id);
+            }
+            side.finish_row()?;
         }
-        flags_builder.append_value(depth.flags);
-        sequence_builder.append_value(depth.sequence);
-        ts_event_builder.append_value(unix_nanos_to_i64(depth.ts_event.as_u64()));
-        ts_init_builder.append_value(unix_nanos_to_i64(depth.ts_init.as_u64()));
+        flags.append_value(depth.flags);
+        sequence.append_value(depth.sequence);
+        ts_event.append_value(unix_nanos_to_i64(depth.ts_event.as_u64()));
+        ts_init.append_value(unix_nanos_to_i64(depth.ts_init.as_u64()));
     }
 
-    let mut columns: Vec<ArrayRef> = Vec::with_capacity(1 + 6 * DEPTH10_LEN + 4);
-    columns.push(Arc::new(instrument_id_builder.finish()));
-
-    for mut b in bid_price_builders {
-        columns.push(Arc::new(b.finish()));
-    }
-
-    for mut b in ask_price_builders {
-        columns.push(Arc::new(b.finish()));
-    }
-
-    for mut b in bid_size_builders {
-        columns.push(Arc::new(b.finish()));
-    }
-
-    for mut b in ask_size_builders {
-        columns.push(Arc::new(b.finish()));
-    }
-
-    for mut b in bid_count_builders {
-        columns.push(Arc::new(b.finish()));
-    }
-
-    for mut b in ask_count_builders {
-        columns.push(Arc::new(b.finish()));
-    }
-
-    columns.push(Arc::new(flags_builder.finish()));
-    columns.push(Arc::new(sequence_builder.finish()));
-    columns.push(Arc::new(ts_event_builder.finish()));
-    columns.push(Arc::new(ts_init_builder.finish()));
-
-    RecordBatch::try_new(Arc::new(depth10_schema()), columns)
+    RecordBatch::try_new(
+        Arc::new(depth10_schema()),
+        vec![
+            Arc::new(instruments.finish()),
+            Arc::new(bids.finish()?),
+            Arc::new(asks.finish()?),
+            Arc::new(flags.finish()),
+            Arc::new(sequence.finish()),
+            Arc::new(ts_event.finish()),
+            Arc::new(ts_init.finish()),
+        ],
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use arrow::{
         array::{
-            Array, Float64Array, StringArray, TimestampNanosecondArray, UInt8Array, UInt32Array,
-            UInt64Array,
+            Array, Float64Array, ListArray, StringArray, StructArray, TimestampNanosecondArray,
+            UInt8Array, UInt32Array, UInt64Array,
         },
-        datatypes::TimeUnit,
+        datatypes::{DataType, Field, Fields, TimeUnit},
     };
     use nautilus_model::{
-        data::{order::BookOrder, stubs::stub_depth10},
+        data::BookOrder,
+        enums::OrderSide,
         identifiers::InstrumentId,
-        types::{Price, Quantity},
+        types::{PRICE_UNDEF, Price, QUANTITY_UNDEF, Quantity},
     };
     use rstest::rstest;
 
     use super::*;
 
     #[rstest]
-    fn test_encode_depth10_schema() {
+    fn test_depth_display_schema_and_empty_batch() {
         let batch = encode_depth10(&[]).unwrap();
-        let fields = batch.schema().fields().clone();
+        let levels: Fields = vec![
+            Field::new("price", DataType::Float64, true),
+            Field::new("size", DataType::Float64, true),
+            Field::new("count", DataType::UInt32, false),
+            Field::new("order_id", DataType::UInt64, false),
+        ]
+        .into();
+        let side = DataType::List(Arc::new(Field::new(
+            "item",
+            DataType::Struct(levels),
+            false,
+        )));
+        let expected = Schema::new(vec![
+            Field::new("instrument_id", DataType::Utf8, false),
+            Field::new("bids", side.clone(), false),
+            Field::new("asks", side, false),
+            Field::new("flags", DataType::UInt8, false),
+            Field::new("sequence", DataType::UInt64, false),
+            Field::new(
+                "ts_event",
+                DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into())),
+                false,
+            ),
+            Field::new(
+                "ts_init",
+                DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into())),
+                false,
+            ),
+        ]);
 
-        let expected_len = 1 + 6 * DEPTH10_LEN + 4;
-        assert_eq!(fields.len(), expected_len);
-
-        assert_eq!(fields[0].name(), "instrument_id");
-        assert_eq!(fields[0].data_type(), &DataType::Utf8);
-
-        for i in 0..DEPTH10_LEN {
-            assert_eq!(fields[1 + i].name(), &format!("bid_price_{i}"));
-            assert_eq!(fields[1 + i].data_type(), &DataType::Float64);
-        }
-
-        for i in 0..DEPTH10_LEN {
-            assert_eq!(
-                fields[1 + DEPTH10_LEN + i].name(),
-                &format!("ask_price_{i}")
-            );
-        }
-
-        for i in 0..DEPTH10_LEN {
-            assert_eq!(
-                fields[1 + 2 * DEPTH10_LEN + i].name(),
-                &format!("bid_size_{i}")
-            );
-        }
-
-        for i in 0..DEPTH10_LEN {
-            assert_eq!(
-                fields[1 + 3 * DEPTH10_LEN + i].name(),
-                &format!("ask_size_{i}")
-            );
-        }
-
-        for i in 0..DEPTH10_LEN {
-            assert_eq!(
-                fields[1 + 4 * DEPTH10_LEN + i].name(),
-                &format!("bid_count_{i}")
-            );
-            assert_eq!(
-                fields[1 + 4 * DEPTH10_LEN + i].data_type(),
-                &DataType::UInt32
-            );
-        }
-
-        for i in 0..DEPTH10_LEN {
-            assert_eq!(
-                fields[1 + 5 * DEPTH10_LEN + i].name(),
-                &format!("ask_count_{i}")
-            );
-        }
-
-        let trailer_start = 1 + 6 * DEPTH10_LEN;
-        assert_eq!(fields[trailer_start].name(), "flags");
-        assert_eq!(fields[trailer_start].data_type(), &DataType::UInt8);
-        assert_eq!(fields[trailer_start + 1].name(), "sequence");
-        assert_eq!(fields[trailer_start + 1].data_type(), &DataType::UInt64);
-        assert_eq!(fields[trailer_start + 2].name(), "ts_event");
-        assert_eq!(
-            fields[trailer_start + 2].data_type(),
-            &DataType::Timestamp(TimeUnit::Nanosecond, None)
-        );
-        assert_eq!(fields[trailer_start + 3].name(), "ts_init");
+        assert_eq!(batch.num_rows(), 0);
+        assert_eq!(batch.schema().as_ref(), &expected);
+        assert_eq!(depth10_schema(), expected);
     }
 
     #[rstest]
-    fn test_encode_depth10_values(stub_depth10: OrderBookDepth10) {
-        let data = vec![stub_depth10];
+    fn test_depth_display_preserves_mixed_depths_and_every_field() {
+        let data = [
+            depth("AAPL.XNAS", 0, 3, 1),
+            depth("MSFT.XNAS", 5, 0, 2),
+            depth("NVDA.XNAS", 25, 27, 3),
+        ];
         let batch = encode_depth10(&data).unwrap();
-
-        assert_eq!(batch.num_rows(), 1);
-
-        let instrument_id_col = batch
-            .column(0)
+        let ids = batch
+            .column_by_name("instrument_id")
+            .unwrap()
             .as_any()
             .downcast_ref::<StringArray>()
             .unwrap();
-        assert_eq!(
-            instrument_id_col.value(0),
-            stub_depth10.instrument_id.to_string()
-        );
-
-        let bid_price_0 = batch
-            .column(1)
-            .as_any()
-            .downcast_ref::<Float64Array>()
-            .unwrap();
-        assert!((bid_price_0.value(0) - stub_depth10.bids[0].price.as_f64()).abs() < 1e-9);
-
-        let ask_price_0 = batch
-            .column(1 + DEPTH10_LEN)
-            .as_any()
-            .downcast_ref::<Float64Array>()
-            .unwrap();
-        assert!((ask_price_0.value(0) - stub_depth10.asks[0].price.as_f64()).abs() < 1e-9);
-
-        let bid_size_0 = batch
-            .column(1 + 2 * DEPTH10_LEN)
-            .as_any()
-            .downcast_ref::<Float64Array>()
-            .unwrap();
-        assert!((bid_size_0.value(0) - stub_depth10.bids[0].size.as_f64()).abs() < 1e-9);
-
-        let bid_count_0 = batch
-            .column(1 + 4 * DEPTH10_LEN)
-            .as_any()
-            .downcast_ref::<UInt32Array>()
-            .unwrap();
-        assert_eq!(bid_count_0.value(0), stub_depth10.bid_counts[0]);
-
-        let trailer_start = 1 + 6 * DEPTH10_LEN;
-        let flags_col = batch
-            .column(trailer_start)
+        let flags = batch
+            .column_by_name("flags")
+            .unwrap()
             .as_any()
             .downcast_ref::<UInt8Array>()
             .unwrap();
-        let sequence_col = batch
-            .column(trailer_start + 1)
+        let sequence = batch
+            .column_by_name("sequence")
+            .unwrap()
             .as_any()
             .downcast_ref::<UInt64Array>()
             .unwrap();
-        let ts_event_col = batch
-            .column(trailer_start + 2)
+        let ts_event = batch
+            .column_by_name("ts_event")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .unwrap();
+        let ts_init = batch
+            .column_by_name("ts_init")
+            .unwrap()
             .as_any()
             .downcast_ref::<TimestampNanosecondArray>()
             .unwrap();
 
-        assert_eq!(flags_col.value(0), stub_depth10.flags);
-        assert_eq!(sequence_col.value(0), stub_depth10.sequence);
-        assert_eq!(ts_event_col.value(0), stub_depth10.ts_event.as_u64() as i64);
+        assert_eq!(batch.num_rows(), 3);
+        assert_eq!(batch.schema().as_ref(), &depth10_schema());
+
+        for (row, (instrument, bid_len, ask_len, seed)) in [
+            ("AAPL.XNAS", 0, 3, 1_u32),
+            ("MSFT.XNAS", 5, 0, 2),
+            ("NVDA.XNAS", 25, 27, 3),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_eq!(ids.value(row), instrument);
+            assert_eq!(flags.value(row), u8::try_from(seed).unwrap());
+            assert_eq!(sequence.value(row), u64::from(seed) + 30);
+            assert_eq!(ts_event.value(row), i64::from(seed) + 40);
+            assert_eq!(ts_init.value(row), i64::from(seed) + 50);
+
+            for (name, len, offset) in [("bids", bid_len, 0_u32), ("asks", ask_len, 100)] {
+                let list = batch
+                    .column_by_name(name)
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<ListArray>()
+                    .unwrap();
+                let values = list.value(row);
+                let levels = values.as_any().downcast_ref::<StructArray>().unwrap();
+                let prices = levels
+                    .column_by_name("price")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<Float64Array>()
+                    .unwrap();
+                let sizes = levels
+                    .column_by_name("size")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<Float64Array>()
+                    .unwrap();
+                let counts = levels
+                    .column_by_name("count")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<UInt32Array>()
+                    .unwrap();
+                let order_ids = levels
+                    .column_by_name("order_id")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<UInt64Array>()
+                    .unwrap();
+                assert!(!list.is_null(row));
+                assert_eq!(levels.len(), len);
+                assert_eq!(levels.null_count(), 0);
+
+                for i in 0..len {
+                    let n = seed + offset + u32::try_from(i).unwrap();
+                    assert_eq!(prices.value(i), f64::from(n) + 0.25);
+                    assert_eq!(sizes.value(i), f64::from(n) + 0.5);
+                    assert_eq!(counts.value(i), n + 10);
+                    assert_eq!(order_ids.value(i), u64::MAX - u64::from(n));
+                }
+            }
+        }
     }
 
     #[rstest]
-    fn test_encode_depth10_multi_row_values(stub_depth10: OrderBookDepth10) {
-        // Guards against row-indexing bugs in the wide depth10 schema by
-        // placing distinct values at the same level across two rows and
-        // asserting each row-column independently.
-        let row0 = stub_depth10;
-        let mut row1 = stub_depth10;
-        row1.bids[0] = BookOrder::new(
-            row1.bids[0].side,
-            Price::from("200.00"),
-            Quantity::from(250),
-            row1.bids[0].order_id,
-        );
-        row1.asks[0] = BookOrder::new(
-            row1.asks[0].side,
-            Price::from("201.00"),
-            Quantity::from(350),
-            row1.asks[0].order_id,
-        );
-        row1.bid_counts[0] = 42;
-        row1.ask_counts[0] = 43;
-
-        let batch = encode_depth10(&[row0, row1]).unwrap();
-        assert_eq!(batch.num_rows(), 2);
-
-        let bid_price_0 = batch
-            .column(1)
-            .as_any()
-            .downcast_ref::<Float64Array>()
-            .unwrap();
-        let ask_price_0 = batch
-            .column(1 + DEPTH10_LEN)
-            .as_any()
-            .downcast_ref::<Float64Array>()
-            .unwrap();
-        let bid_size_0 = batch
-            .column(1 + 2 * DEPTH10_LEN)
-            .as_any()
-            .downcast_ref::<Float64Array>()
-            .unwrap();
-        let ask_size_0 = batch
-            .column(1 + 3 * DEPTH10_LEN)
-            .as_any()
-            .downcast_ref::<Float64Array>()
-            .unwrap();
-        let bid_count_0 = batch
-            .column(1 + 4 * DEPTH10_LEN)
-            .as_any()
-            .downcast_ref::<UInt32Array>()
-            .unwrap();
-        let ask_count_0 = batch
-            .column(1 + 5 * DEPTH10_LEN)
-            .as_any()
-            .downcast_ref::<UInt32Array>()
-            .unwrap();
-
-        assert!((bid_price_0.value(0) - row0.bids[0].price.as_f64()).abs() < 1e-9);
-        assert!((bid_price_0.value(1) - 200.00).abs() < 1e-9);
-        assert!((ask_price_0.value(0) - row0.asks[0].price.as_f64()).abs() < 1e-9);
-        assert!((ask_price_0.value(1) - 201.00).abs() < 1e-9);
-        assert!((bid_size_0.value(0) - row0.bids[0].size.as_f64()).abs() < 1e-9);
-        assert!((bid_size_0.value(1) - 250.0).abs() < 1e-9);
-        assert!((ask_size_0.value(0) - row0.asks[0].size.as_f64()).abs() < 1e-9);
-        assert!((ask_size_0.value(1) - 350.0).abs() < 1e-9);
-        assert_eq!(bid_count_0.value(0), row0.bid_counts[0]);
-        assert_eq!(bid_count_0.value(1), 42);
-        assert_eq!(ask_count_0.value(0), row0.ask_counts[0]);
-        assert_eq!(ask_count_0.value(1), 43);
+    fn test_depth_display_undefined_fields_are_null() {
+        let mut data = depth("AAPL.XNAS", 1, 1, 1);
+        data.bids[0].price = Price::from_raw(PRICE_UNDEF, 0);
+        data.asks[0].size = Quantity::from_raw(QUANTITY_UNDEF, 0);
+        let batch = encode_depth10(&[data]).unwrap();
+        for (name, field) in [("bids", "price"), ("asks", "size")] {
+            let list = batch
+                .column_by_name(name)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .unwrap();
+            let values = list.value(0);
+            let levels = values.as_any().downcast_ref::<StructArray>().unwrap();
+            assert_eq!(levels.len(), 1);
+            assert!(levels.column_by_name(field).unwrap().is_null(0));
+        }
     }
 
-    #[rstest]
-    fn test_encode_depth10_empty() {
-        let batch = encode_depth10(&[]).unwrap();
-        assert_eq!(batch.num_rows(), 0);
-    }
-
-    #[rstest]
-    fn test_encode_depth10_mixed_instruments(stub_depth10: OrderBookDepth10) {
-        let mut other = stub_depth10;
-        other.instrument_id = InstrumentId::from("MSFT.XNAS");
-
-        let data = vec![stub_depth10, other];
-        let batch = encode_depth10(&data).unwrap();
-        assert_eq!(batch.num_rows(), 2);
-
-        let instrument_id_col = batch
-            .column(0)
-            .as_any()
-            .downcast_ref::<StringArray>()
-            .unwrap();
-        assert_eq!(
-            instrument_id_col.value(0),
-            stub_depth10.instrument_id.to_string()
-        );
-        assert_eq!(instrument_id_col.value(1), "MSFT.XNAS");
+    fn depth(instrument: &str, bids: usize, asks: usize, seed: u32) -> OrderBookDepth {
+        let side = |len, offset, side| {
+            let orders: Vec<_> = (0..len)
+                .map(|i| {
+                    let n = seed + offset + u32::try_from(i).unwrap();
+                    BookOrder::new(
+                        side,
+                        format!("{n}.25").parse().unwrap(),
+                        format!("{n}.5").parse().unwrap(),
+                        u64::MAX - u64::from(n),
+                    )
+                })
+                .collect();
+            let counts: Vec<_> = (0..len)
+                .map(|i| seed + offset + u32::try_from(i).unwrap() + 10)
+                .collect();
+            (orders, counts)
+        };
+        let (bids, bid_counts) = side(bids, 0, OrderSide::Buy);
+        let (asks, ask_counts) = side(asks, 100, OrderSide::Sell);
+        OrderBookDepth::new_checked(
+            InstrumentId::from(instrument),
+            bids,
+            asks,
+            bid_counts,
+            ask_counts,
+            u8::try_from(seed).unwrap(),
+            u64::from(seed) + 30,
+            (u64::from(seed) + 40).into(),
+            (u64::from(seed) + 50).into(),
+        )
+        .unwrap()
     }
 }

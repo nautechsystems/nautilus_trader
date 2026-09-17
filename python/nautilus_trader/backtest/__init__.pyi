@@ -44,6 +44,8 @@ class AccountAdjustmentOutcome:
 @typing.final
 class BacktestDataConfig:
     @property
+    def catalog_backend(self) -> persistence.CatalogBackend: ...
+    @property
     def data_type(self) -> str: ...
     @property
     def catalog_path(self) -> str: ...
@@ -90,6 +92,7 @@ class BacktestDataConfig:
         bar_spec: model.BarSpecification | None = None,
         bar_types: typing.Sequence[str] | None = None,
         optimize_file_loading: bool | None = None,
+        catalog_backend: persistence.CatalogBackend | None = None,
     ) -> BacktestDataConfig: ...
 
 @typing.final

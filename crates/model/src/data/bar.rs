@@ -34,11 +34,11 @@ use nautilus_core::{
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use super::HasTsInit;
+use super::{ARROW_TIMESTAMP_NANOSECOND, HasTsInit};
 use crate::{
     enums::{AggregationSource, BarAggregation, PriceType},
     identifiers::InstrumentId,
-    types::{Price, Quantity, fixed::FIXED_SIZE_BINARY},
+    types::{Price, Quantity, fixed::FIXED_DECIMAL},
 };
 
 pub const BAR_SPEC_1_SECOND_LAST: BarSpecification = BarSpecification {
@@ -193,7 +193,7 @@ pub fn get_bar_interval(bar_type: &BarType) -> SignedDuration {
     }
 }
 
-/// Returns the bar interval as [`DurationNanos`].
+/// Returns the bar interval as `UnixNanos`.
 ///
 /// # Panics
 ///
@@ -1216,13 +1216,19 @@ impl Bar {
     #[must_use]
     pub fn get_fields() -> IndexMap<String, String> {
         let mut metadata = IndexMap::new();
-        metadata.insert("open".to_string(), FIXED_SIZE_BINARY.to_string());
-        metadata.insert("high".to_string(), FIXED_SIZE_BINARY.to_string());
-        metadata.insert("low".to_string(), FIXED_SIZE_BINARY.to_string());
-        metadata.insert("close".to_string(), FIXED_SIZE_BINARY.to_string());
-        metadata.insert("volume".to_string(), FIXED_SIZE_BINARY.to_string());
-        metadata.insert("ts_event".to_string(), "UInt64".to_string());
-        metadata.insert("ts_init".to_string(), "UInt64".to_string());
+        metadata.insert("open".to_string(), FIXED_DECIMAL.to_string());
+        metadata.insert("high".to_string(), FIXED_DECIMAL.to_string());
+        metadata.insert("low".to_string(), FIXED_DECIMAL.to_string());
+        metadata.insert("close".to_string(), FIXED_DECIMAL.to_string());
+        metadata.insert("volume".to_string(), FIXED_DECIMAL.to_string());
+        metadata.insert(
+            "ts_event".to_string(),
+            ARROW_TIMESTAMP_NANOSECOND.to_string(),
+        );
+        metadata.insert(
+            "ts_init".to_string(),
+            ARROW_TIMESTAMP_NANOSECOND.to_string(),
+        );
         metadata
     }
 }
@@ -1539,24 +1545,24 @@ mod tests {
     }
 
     #[rstest]
-    #[case(BarAggregation::Millisecond, 1, DurationNanos::from_millis(1))]
-    #[case(BarAggregation::Millisecond, 10, DurationNanos::from_millis(10))]
-    #[case(BarAggregation::Second, 1, DurationNanos::from_secs(1))]
-    #[case(BarAggregation::Second, 10, DurationNanos::from_secs(10))]
-    #[case(BarAggregation::Minute, 1, DurationNanos::from_mins(1))]
-    #[case(BarAggregation::Minute, 30, DurationNanos::from_mins(30))]
-    #[case(BarAggregation::Hour, 1, DurationNanos::from_hours(1))]
-    #[case(BarAggregation::Hour, 4, DurationNanos::from_hours(4))]
-    #[case(BarAggregation::Day, 1, DurationNanos::from_days(1))]
-    #[case(BarAggregation::Day, 2, DurationNanos::from_hours(48))]
-    #[case(BarAggregation::Week, 1, DurationNanos::from_hours(168))]
-    #[case(BarAggregation::Week, 2, DurationNanos::from_hours(336))]
-    #[case(BarAggregation::Month, 1, DurationNanos::from_hours(720))]
-    #[case(BarAggregation::Month, 3, DurationNanos::from_hours(2_160))]
-    #[case(BarAggregation::Year, 1, DurationNanos::from_hours(8_760))]
-    #[case(BarAggregation::Year, 2, DurationNanos::from_hours(17_520))]
+    #[case(BarAggregation::Millisecond, 1, DurationNanos::new(1_000_000))]
+    #[case(BarAggregation::Millisecond, 10, DurationNanos::new(10_000_000))]
+    #[case(BarAggregation::Second, 1, DurationNanos::new(1_000_000_000))]
+    #[case(BarAggregation::Second, 10, DurationNanos::new(10_000_000_000))]
+    #[case(BarAggregation::Minute, 1, DurationNanos::new(60_000_000_000))]
+    #[case(BarAggregation::Minute, 30, DurationNanos::new(1_800_000_000_000))]
+    #[case(BarAggregation::Hour, 1, DurationNanos::new(3_600_000_000_000))]
+    #[case(BarAggregation::Hour, 4, DurationNanos::new(14_400_000_000_000))]
+    #[case(BarAggregation::Day, 1, DurationNanos::new(86_400_000_000_000))]
+    #[case(BarAggregation::Day, 2, DurationNanos::new(172_800_000_000_000))]
+    #[case(BarAggregation::Week, 1, DurationNanos::new(604_800_000_000_000))]
+    #[case(BarAggregation::Week, 2, DurationNanos::new(1_209_600_000_000_000))]
+    #[case(BarAggregation::Month, 1, DurationNanos::new(2_592_000_000_000_000))]
+    #[case(BarAggregation::Month, 3, DurationNanos::new(7_776_000_000_000_000))]
+    #[case(BarAggregation::Year, 1, DurationNanos::new(31_536_000_000_000_000))]
+    #[case(BarAggregation::Year, 2, DurationNanos::new(63_072_000_000_000_000))]
     #[should_panic(expected = "Aggregation not time based")]
-    #[case(BarAggregation::Tick, 1, DurationNanos::ZERO)]
+    #[case(BarAggregation::Tick, 1, DurationNanos::new(0))]
     fn test_get_bar_interval_ns(
         #[case] aggregation: BarAggregation,
         #[case] step: usize,

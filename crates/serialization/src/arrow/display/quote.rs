@@ -28,6 +28,7 @@ use nautilus_model::data::QuoteTick;
 use super::{
     float64_field, price_to_f64, quantity_to_f64, timestamp_field, unix_nanos_to_i64, utf8_field,
 };
+use crate::arrow::timestamp_data_type;
 
 /// Returns the display-mode Arrow schema for [`QuoteTick`].
 #[must_use]
@@ -62,8 +63,10 @@ pub fn encode_quotes(data: &[QuoteTick]) -> Result<RecordBatch, ArrowError> {
     let mut ask_price_builder = Float64Builder::with_capacity(data.len());
     let mut bid_size_builder = Float64Builder::with_capacity(data.len());
     let mut ask_size_builder = Float64Builder::with_capacity(data.len());
-    let mut ts_event_builder = TimestampNanosecondBuilder::with_capacity(data.len());
-    let mut ts_init_builder = TimestampNanosecondBuilder::with_capacity(data.len());
+    let mut ts_event_builder =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
+    let mut ts_init_builder =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
 
     for quote in data {
         instrument_id_builder.append_value(quote.instrument_id.to_string());
@@ -136,12 +139,12 @@ mod tests {
         assert_eq!(fields[5].name(), "ts_event");
         assert_eq!(
             fields[5].data_type(),
-            &DataType::Timestamp(TimeUnit::Nanosecond, None)
+            &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into()))
         );
         assert_eq!(fields[6].name(), "ts_init");
         assert_eq!(
             fields[6].data_type(),
-            &DataType::Timestamp(TimeUnit::Nanosecond, None)
+            &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into()))
         );
     }
 

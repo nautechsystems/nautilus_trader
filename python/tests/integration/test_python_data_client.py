@@ -1387,7 +1387,7 @@ def adapter_payloads() -> tuple[int, object, dict[str, object]]:
     """
     from nautilus_trader.model import Bar
     from nautilus_trader.model import BarType
-    from nautilus_trader.model import OrderBookDepth10
+    from nautilus_trader.model import OrderBookDepth
 
     start_ns = 1704164645000000000
     bar_type = BarType.from_str("EUR/USD.PYTHON-1-MINUTE-LAST-EXTERNAL")
@@ -1429,7 +1429,7 @@ def adapter_payloads() -> tuple[int, object, dict[str, object]]:
             start_ns + 83,
             start_ns + 89,
         ),
-        "book_depth": OrderBookDepth10(
+        "book_depth": OrderBookDepth(
             INSTRUMENT_ID,
             [bid] * 10,
             [ask] * 10,

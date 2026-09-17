@@ -101,7 +101,7 @@ pub fn parse_tardis_ws_message(
                         info.size_precision,
                         info.instrument_id,
                     ) {
-                        Ok(depth10) => Some(Data::BookDepth10(Box::new(depth10))),
+                        Ok(depth10) => Some(Data::BookDepth(Box::new(depth10))),
                         Err(e) => {
                             log::error!("Failed to parse book snapshot as depth10: {e}");
                             None
@@ -877,11 +877,12 @@ mod tests {
         assert_eq!(depth10.asks[1].size, Quantity::from(67939));
         assert_eq!(depth10.ask_counts[1], 1);
 
-        // Check empty levels are NULL_ORDER
-        assert_eq!(depth10.bids[2], NULL_ORDER);
-        assert_eq!(depth10.bid_counts[2], 0);
-        assert_eq!(depth10.asks[2], NULL_ORDER);
-        assert_eq!(depth10.ask_counts[2], 0);
+        assert_eq!(depth10.bids.len(), 2);
+        assert_eq!(depth10.asks.len(), 2);
+        assert_eq!(depth10.bid_counts.as_slice(), &[1; 2]);
+        assert_eq!(depth10.ask_counts.as_slice(), &[1; 2]);
+        assert_eq!(depth10.bids[1].order_id, 0);
+        assert_eq!(depth10.asks[1].order_id, 0);
     }
 
     #[rstest]
@@ -1000,7 +1001,7 @@ mod tests {
         let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Depth10);
 
         assert!(result.is_some());
-        assert!(matches!(result.unwrap(), Data::BookDepth10(_)));
+        assert!(matches!(result.unwrap(), Data::BookDepth(_)));
     }
 
     #[rstest]
@@ -1032,7 +1033,7 @@ mod tests {
         let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Depth10);
 
         assert!(result.is_some());
-        assert!(matches!(result.unwrap(), Data::BookDepth10(_)));
+        assert!(matches!(result.unwrap(), Data::BookDepth(_)));
     }
 
     #[rstest]

@@ -20,8 +20,8 @@ use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, CustomData, Data, DataType, FundingRateUpdate,
-        HasTsInit, IndexPriceUpdate, MarkPriceUpdate, OptionGreekValues, OptionGreeks,
-        OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick, depth::DEPTH10_LEN,
+        HasTsInit, IndexPriceUpdate, MarkPriceUpdate, NautilusRecordType, OptionGreekValues,
+        OptionGreeks, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick, depth::DEPTH10_LEN,
         is_monotonically_increasing_by_init, to_variant,
     },
     enums::{
@@ -39,6 +39,7 @@ use nautilus_model::{
 use nautilus_persistence::{
     backend::{
         catalog::ParquetDataCatalog,
+        parquet::delete::DeleteOperationKind,
         session::{DataBackendSession, QueryResult},
     },
     test_data::{
@@ -46,13 +47,18 @@ use nautilus_persistence::{
         RustTestHashMapCustomData, RustTestParamsCustomData, RustTestPriceMapCustomData,
     },
 };
-use nautilus_serialization::{arrow::ArrowSchemaProvider, ensure_custom_data_registered};
+use nautilus_serialization::{
+    arrow::{ArrowSchemaProvider, DecodeTypedFromRecordBatch, EncodeToRecordBatch},
+    ensure_custom_data_registered,
+};
 use nautilus_testkit::common::get_nautilus_test_data_file_path;
 use object_store::local::LocalFileSystem;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::json;
 use tempfile::TempDir;
+
+use crate::fixtures::migrate_market_data_fixture;
 
 fn create_temp_catalog() -> (TempDir, ParquetDataCatalog) {
     let temp_dir = TempDir::new().unwrap();
@@ -300,11 +306,12 @@ fn create_index_bar(ts_init: u64) -> Bar {
 #[rstest]
 fn test_quote_tick_query() {
     let expected_length = 9_500;
-    let file_path = get_nautilus_test_data_file_path("quotes.parquet");
+    let fixture = migrate_market_data_fixture(get_nautilus_test_data_file_path("quotes.parquet"));
+    let file_path = fixture.path().to_str().unwrap();
 
     let mut catalog = DataBackendSession::new(10_000);
     catalog
-        .add_file::<QuoteTick>("quote_005", file_path.as_str(), None, None)
+        .add_file::<QuoteTick>("quote_005", file_path, None, None)
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
     let ticks: Vec<Data> = query_result.collect::<Result<_, _>>().unwrap();
@@ -321,14 +328,17 @@ fn test_quote_tick_query() {
 
 #[rstest]
 fn test_quote_tick_query_with_filter() {
-    let file_path = get_nautilus_test_data_file_path("quotes-3-groups-filter-query.parquet");
+    let fixture = migrate_market_data_fixture(get_nautilus_test_data_file_path(
+        "quotes-3-groups-filter-query.parquet",
+    ));
+    let file_path = fixture.path().to_str().unwrap();
 
     let mut catalog = DataBackendSession::new(10);
     catalog
         .add_file::<QuoteTick>(
             "quote_005",
-            file_path.as_str(),
-            Some("SELECT * FROM quote_005 WHERE ts_init >= 1701388832486000000 ORDER BY ts_init"),
+            file_path,
+            Some("SELECT * FROM quote_005 WHERE ts_init >= to_timestamp_nanos(1701388832486000000) ORDER BY ts_init"),
             None,
         )
         .unwrap();
@@ -341,14 +351,18 @@ fn test_quote_tick_query_with_filter() {
 fn test_quote_tick_multiple_query() {
     let expected_length = 9_600;
     let mut catalog = DataBackendSession::new(5_000);
-    let file_path_quotes = get_nautilus_test_data_file_path("quotes.parquet");
-    let file_path_trades = get_nautilus_test_data_file_path("trades.parquet");
+    let quotes_fixture =
+        migrate_market_data_fixture(get_nautilus_test_data_file_path("quotes.parquet"));
+    let file_path_quotes = quotes_fixture.path().to_str().unwrap();
+    let trades_fixture =
+        migrate_market_data_fixture(get_nautilus_test_data_file_path("trades.parquet"));
+    let file_path_trades = trades_fixture.path().to_str().unwrap();
 
     catalog
-        .add_file::<QuoteTick>("quote_tick", file_path_quotes.as_str(), None, None)
+        .add_file::<QuoteTick>("quote_tick", file_path_quotes, None, None)
         .unwrap();
     catalog
-        .add_file::<TradeTick>("quote_tick_2", file_path_trades.as_str(), None, None)
+        .add_file::<TradeTick>("quote_tick_2", file_path_trades, None, None)
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
     let ticks: Vec<Data> = query_result.collect::<Result<_, _>>().unwrap();
@@ -360,11 +374,12 @@ fn test_quote_tick_multiple_query() {
 #[rstest]
 fn test_trade_tick_query() {
     let expected_length = 100;
-    let file_path = get_nautilus_test_data_file_path("trades.parquet");
+    let fixture = migrate_market_data_fixture(get_nautilus_test_data_file_path("trades.parquet"));
+    let file_path = fixture.path().to_str().unwrap();
 
     let mut catalog = DataBackendSession::new(10_000);
     catalog
-        .add_file::<TradeTick>("trade_001", file_path.as_str(), None, None)
+        .add_file::<TradeTick>("trade_001", file_path, None, None)
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
     let ticks: Vec<Data> = query_result.collect::<Result<_, _>>().unwrap();
@@ -382,11 +397,12 @@ fn test_trade_tick_query() {
 #[rstest]
 fn test_bar_query() {
     let expected_length = 10;
-    let file_path = get_nautilus_test_data_file_path("bars.parquet");
+    let fixture = migrate_market_data_fixture(get_nautilus_test_data_file_path("bars.parquet"));
+    let file_path = fixture.path().to_str().unwrap();
 
     let mut catalog = DataBackendSession::new(10_000);
     catalog
-        .add_file::<Bar>("bar_001", file_path.as_str(), None, None)
+        .add_file::<Bar>("bar_001", file_path, None, None)
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
     let ticks: Vec<Data> = query_result.collect::<Result<_, _>>().unwrap();
@@ -410,11 +426,12 @@ fn test_datafusion_parquet_round_trip() {
     use pretty_assertions::assert_eq;
 
     // Read original data from parquet
-    let file_path = get_nautilus_test_data_file_path("quotes.parquet");
+    let fixture = migrate_market_data_fixture(get_nautilus_test_data_file_path("quotes.parquet"));
+    let file_path = fixture.path().to_str().unwrap();
 
     let mut session = DataBackendSession::new(1000);
     session
-        .add_file::<QuoteTick>("test_data", file_path.as_str(), None, None)
+        .add_file::<QuoteTick>("test_data", file_path, None, None)
         .unwrap();
     let query_result: QueryResult = session.get_query_result();
     let quote_ticks: Vec<Data> = query_result.collect::<Result<_, _>>().unwrap();
@@ -570,7 +587,7 @@ fn test_rust_get_intervals_without_identifier_on_empty_directory() {
 
 #[rstest]
 fn test_rust_consolidate_catalog() {
-    let (_temp_dir, catalog) = create_temp_catalog();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
 
     let bars1 = vec![create_bar(1), create_bar(2)];
     catalog.write_to_parquet(&bars1, None, None, None).unwrap();
@@ -589,7 +606,7 @@ fn test_rust_consolidate_catalog() {
 
 #[rstest]
 fn test_rust_consolidate_catalog_with_time_range() {
-    let (_temp_dir, catalog) = create_temp_catalog();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
 
     let bars1 = vec![create_bar(1)];
     catalog.write_to_parquet(&bars1, None, None, None).unwrap();
@@ -741,8 +758,9 @@ fn test_rust_consolidate_index_with_deduplication() {
 #[rstest]
 fn test_register_object_store_from_uri_local_file() {
     // Test registering object store from local file URI
-    let file_path = get_nautilus_test_data_file_path("trades.parquet");
-    let parent_path = std::path::Path::new(&file_path).parent().unwrap();
+    let fixture = migrate_market_data_fixture(get_nautilus_test_data_file_path("trades.parquet"));
+    let file_path = fixture.path().to_str().unwrap();
+    let parent_path = std::path::Path::new(file_path).parent().unwrap();
     let file_uri = format!("file://{}", parent_path.display());
 
     let mut session = DataBackendSession::new(1000);
@@ -754,7 +772,7 @@ fn test_register_object_store_from_uri_local_file() {
 
     // Add file using the registered object store
     session
-        .add_file::<TradeTick>("trade_ticks", &file_path, None, None)
+        .add_file::<TradeTick>("trade_ticks", file_path, None, None)
         .unwrap();
     let query_result: QueryResult = session.get_query_result();
     let ticks: Vec<Data> = query_result.collect::<Result<_, _>>().unwrap();
@@ -1094,7 +1112,7 @@ fn test_rust_write_order_book_depths() {
             assert_eq!(actual_order.price, expected_order.price);
             assert_eq!(actual_order.size, expected_order.size);
             assert_ne!(expected_order.order_id, 0);
-            assert_eq!(actual_order.order_id, 0);
+            assert_eq!(actual_order.order_id, expected_order.order_id);
         }
     }
 }
@@ -1127,13 +1145,27 @@ fn test_rust_write_and_read_account_state() {
         )
         .with_info(Some(info)),
     ];
+    let batch =
+        AccountState::encode_batch(&AccountState::metadata(&account_states[0]), &account_states)
+            .unwrap();
     catalog
-        .write_to_parquet(&account_states, None, None, None)
+        .write_record_batches(
+            &NautilusRecordType::AccountState,
+            None,
+            &[batch],
+            &Default::default(),
+        )
         .unwrap();
-
-    let loaded = catalog
-        .query_typed::<AccountState>(None, None, None, None, None, true)
+    let batches = catalog
+        .query_record_batches("account_state", None, None, None, None, true)
         .unwrap();
+    let loaded = batches
+        .into_iter()
+        .flat_map(|batch| {
+            let schema = batch.schema();
+            AccountState::decode_typed_batch(schema.metadata(), batch).unwrap()
+        })
+        .collect::<Vec<_>>();
 
     assert_eq!(
         serde_json::to_value(loaded).unwrap(),
@@ -1793,7 +1825,7 @@ fn test_generic_query_typed_data_with_where_clause() {
             Some(vec!["ETH/USDT.BINANCE".to_string()]),
             Some(UnixNanos::from(500)),
             Some(UnixNanos::from(2500)),
-            Some("ts_init >= 1500"),
+            Some("ts_init >= arrow_cast(1500, 'Timestamp(Nanosecond, Some(\"UTC\"))')"),
             None,
             true, // optimize_file_loading=true (default)
         )
@@ -1974,7 +2006,7 @@ fn test_generic_consolidate_data_by_period_with_time_range() {
 
 #[rstest]
 fn test_consolidation_workflow_end_to_end() {
-    let (_temp_dir, catalog) = create_temp_catalog();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
 
     // Create multiple small files
     let mut bars_list = Vec::new();
@@ -2934,8 +2966,10 @@ fn test_prepare_delete_operations_basic() {
     // Verify operation types are valid
     for operation in &operations {
         assert!(matches!(
-            operation.operation_type.as_str(),
-            "remove" | "split_before" | "split_after"
+            operation.kind,
+            DeleteOperationKind::Remove
+                | DeleteOperationKind::SplitBefore
+                | DeleteOperationKind::SplitAfter
         ));
     }
 }
@@ -3105,23 +3139,23 @@ fn test_make_object_store_path() {
     use nautilus_persistence::backend::catalog::make_object_store_path;
 
     // Test basic path construction
-    let path = make_object_store_path("base", &["data", "quotes", "EURUSD"]);
+    let path = make_object_store_path("base", ["data", "quotes", "EURUSD"]);
     assert_eq!(path, "base/data/quotes/EURUSD");
 
     // Test empty base path
-    let path = make_object_store_path("", &["data", "quotes"]);
+    let path = make_object_store_path("", ["data", "quotes"]);
     assert_eq!(path, "data/quotes");
 
     // Test with trailing slashes in base
-    let path = make_object_store_path("base/", &["data", "quotes"]);
+    let path = make_object_store_path("base/", ["data", "quotes"]);
     assert_eq!(path, "base/data/quotes");
 
     // Test with leading slashes in components
-    let path = make_object_store_path("base", &["/data", "/quotes"]);
+    let path = make_object_store_path("base", ["/data", "/quotes"]);
     assert_eq!(path, "base/data/quotes");
 
     // Test with backslashes (Windows-style)
-    let path = make_object_store_path("base\\", &["data\\", "quotes"]);
+    let path = make_object_store_path("base\\", ["data\\", "quotes"]);
     assert_eq!(path, "base/data/quotes");
 }
 
@@ -3623,7 +3657,7 @@ fn test_rust_custom_data_binary_roundtrip() {
             ts_init: UnixNanos::from(2),
         },
     ];
-    let custom_data = original_data
+    let custom_data: Vec<CustomData> = original_data
         .iter()
         .cloned()
         .map(|item| CustomData::new(Arc::new(item), data_type.clone()))
@@ -4294,16 +4328,17 @@ fn test_query_directory_based_registration_with_cloud_uri() {
 fn test_duplicate_table_registration() {
     // Test that registering the same table twice doesn't cause duplicate data
     let mut session = DataBackendSession::new(1000);
-    let file_path = get_nautilus_test_data_file_path("quotes.parquet");
+    let fixture = migrate_market_data_fixture(get_nautilus_test_data_file_path("quotes.parquet"));
+    let file_path = fixture.path().to_str().unwrap();
 
     // First registration
     session
-        .add_file::<QuoteTick>("test_table", file_path.as_str(), None, None)
+        .add_file::<QuoteTick>("test_table", file_path, None, None)
         .unwrap();
 
     // Second registration of the same table (should not add duplicate data)
     session
-        .add_file::<QuoteTick>("test_table", file_path.as_str(), None, None)
+        .add_file::<QuoteTick>("test_table", file_path, None, None)
         .unwrap();
 
     let query_result: QueryResult = session.get_query_result();
