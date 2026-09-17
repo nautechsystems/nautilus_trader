@@ -334,6 +334,49 @@ timestamped quote snapshot or quote history that can map safely to `QuoteTick`.
 venue event timestamp for `OrderBookDepth.ts_event`; use `subscribe_book_depth` for a live
 depth stream or `request_book_snapshot` for a REST `OrderBook` snapshot.
 
+## Order book recovery
+
+### Sequence validation
+
+The adapter checks each incremental update's `begin_nonce` against the previous book's `nonce`.
+A mismatch suppresses book output and starts an unsubscribe/subscribe replacement.
+
+The venue's `offset` is not a continuity counter: it can skip values and change across servers on
+reconnect. See the [Lighter order book contract](https://apidocs.lighter.xyz/docs/websocket-reference#order-book).
+
+### Snapshot requirements
+
+Initial and replacement subscriptions wait up to **10 seconds** for a typed `subscribed/order_book`
+snapshot after the subscription write completes. A missing snapshot starts or retries recovery,
+including when a control acknowledgement or `Already Subscribed` response arrives without a book.
+Control acknowledgements release subscription slots but do not complete book recovery.
+
+Book output resumes only after a matching snapshot replaces the cached levels. An empty snapshot
+clears the book too.
+
+### Retry limits and reconnects
+
+Each recovery episode permits **at most eight replacement attempts within 180 seconds**, with
+exponential backoff and jitter. Replacement unsubscribe and subscribe writes target the same
+connection.
+
+Reconnect retires obsolete subscription generations and preserves an active recovery's remaining
+budget.
+
+### Consumers and terminal failure
+
+Deltas and depth share a recovery episode for each market:
+
+- Removing one consumer preserves the other.
+- Removing the final consumer cancels pending writes and snapshot waits.
+- Shutdown cancels all owned work.
+
+Exhaustion or permanent rejection suppresses book output until reconnect or an explicit
+unsubscribe/subscribe cycle. Other markets continue independently.
+
+See [Order book recovery ownership](../developer_guide/adapters.md#order-book-recovery-ownership)
+for the shared recovery machinery and adapter responsibilities.
+
 ## Orders capability
 
 ### Order identification

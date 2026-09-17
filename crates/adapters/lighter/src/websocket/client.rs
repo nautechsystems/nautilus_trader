@@ -1131,24 +1131,29 @@ impl LighterWebSocketClient {
 
         if let Err(e) = self
             .send_cmd(HandlerCommand::Subscribe {
-                channel,
+                channel: channel.clone(),
                 auth,
                 response_tx: Some(response_tx),
             })
             .await
         {
-            self.restore_subscription_args(&topic, generation, previous);
+            if matches!(channel, LighterWsChannel::OrderBook(_)) {
+                self.remove_subscription_args(&channel, generation);
+            } else {
+                self.restore_subscription_args(&topic, generation, previous);
+            }
+
             return Err(e);
         }
 
         match response_rx.await {
             Ok(Ok(())) => Ok(()),
             Ok(Err(message)) => {
-                self.remove_subscription_args(&topic, generation);
+                self.remove_subscription_args(&channel, generation);
                 Err(LighterWsError::Client(message))
             }
             Err(e) => {
-                self.remove_subscription_args(&topic, generation);
+                self.remove_subscription_args(&channel, generation);
                 Err(LighterWsError::Client(format!(
                     "handler dropped subscription result for {topic}: {e}",
                 )))
@@ -1177,8 +1182,16 @@ impl LighterWebSocketClient {
         }
     }
 
-    fn remove_subscription_args(&self, topic: &str, generation: u64) {
-        let Entry::Occupied(entry) = self.subscription_args.entry(topic.to_string()) else {
+    fn remove_subscription_args(&self, channel: &LighterWsChannel, generation: u64) {
+        let topic = channel.topic_key();
+        // Remove the failed caller before deciding whether another book consumer needs replay.
+        if matches!(channel, LighterWsChannel::OrderBook(_))
+            && !self.subscriptions.remove_reference(&topic)
+        {
+            return;
+        }
+
+        let Entry::Occupied(entry) = self.subscription_args.entry(topic) else {
             return;
         };
 
@@ -1203,12 +1216,7 @@ impl LighterWebSocketClient {
             return Ok(());
         }
 
-        if let Err(e) = self.send_subscribe(channel, None).await {
-            self.subscriptions.remove_reference(topic.as_str());
-            return Err(e);
-        }
-
-        Ok(())
+        self.send_subscribe(channel, None).await
     }
 
     async fn unsubscribe_order_book_stream(&self, market_index: i16) -> Result<(), LighterWsError> {
@@ -1288,6 +1296,54 @@ mod tests {
         let registry = Arc::new(MarketRegistry::new());
         registry.insert(market_index, symbol, product);
         registry
+    }
+
+    #[rstest]
+    #[case::only_caller(1, false, false)]
+    #[case::other_consumer(2, false, true)]
+    #[case::other_consumer_leaves(2, true, false)]
+    fn book_failed_initial_waiter_preserves_other_consumer_replay(
+        #[case] references: usize,
+        #[case] other_leaves: bool,
+        #[case] retained: bool,
+    ) {
+        let client = LighterWebSocketClient::new(
+            Some("wss://example/test".into()),
+            LighterEnvironment::Testnet,
+            registry_with(0, "ETH", LighterProductType::Perp),
+            TransportBackend::default(),
+            30,
+            None,
+        );
+        let topic = "order_book:0";
+        for _ in 0..references {
+            client.subscriptions.add_reference(topic);
+        }
+
+        client.subscription_args.insert(
+            topic.into(),
+            SubscriptionArgs {
+                channel: LighterWsChannel::OrderBook(0),
+                auth: None,
+                generation: 7,
+            },
+        );
+
+        if other_leaves {
+            assert!(!client.subscriptions.remove_reference(topic));
+        }
+
+        client.remove_subscription_args(&LighterWsChannel::OrderBook(0), 7);
+
+        assert_eq!(client.subscription_args.contains_key(topic), retained);
+        assert_eq!(
+            client.subscriptions.get_reference_count(topic),
+            references - 1 - usize::from(other_leaves)
+        );
+
+        if retained {
+            assert_eq!(client.subscription_args.get(topic).unwrap().generation, 7);
+        }
     }
 
     #[rstest]

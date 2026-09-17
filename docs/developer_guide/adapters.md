@@ -826,6 +826,52 @@ snapshot according to the venue contract. Map removal to `NotAvailableForTrading
 disappearance means the instrument is unavailable. Update the full private cache even when
 emissions are filtered to active subscriptions.
 
+### Order book recovery ownership
+
+[`nautilus_live::book`](../../crates/live/src/book/mod.rs) provides the recovery machinery shared by
+OKX and Lighter. Keep venue-specific book synchronization and recovery in each adapter's `src/book/`,
+with WebSocket handlers dispatching commands and frames.
+
+#### Recovery state and retry budgets
+
+Keep one `BookRecoveryState` per subscribed book under the adapter's existing state lock or owning
+task. It admits one recovery owner, rejects stale failure reports, cancels obsolete work, and
+suppresses output after terminal failure.
+
+`BookRecovery::run` owns replacement attempts, child cancellation tokens, snapshot waits, backoff,
+and the total retry budget. The adapter supplies its replacement operation and error classifier.
+Keep the same invocation alive across reconnects so reconnect cannot replenish the budget.
+
+#### Snapshot acceptance
+
+A confirmed write alone never establishes a usable book. Coordinate replacement and acceptance in
+this order:
+
+1. Close `SnapshotGate` before replacement.
+1. Open the gate after the intended connection confirms the subscription write.
+1. Accept the snapshot under the same ownership boundary that starts and fails recovery, then
+   replace all levels, including for an empty snapshot.
+
+`PendingSnapshot` cancels initial waits when the snapshot is accepted or the pending owner is removed.
+
+#### Venue rules and shared decisions
+
+The adapter owns sequencing, channel routing, wire commands, acknowledgement correlation, and
+snapshot parsing. The shared types describe the result of validation and monitoring:
+
+- `BookSequenceOutcome`: accept, suppress, or recover. Adapters retain their validation rules and
+  gap diagnostics.
+- `BookSyncSignalKind`: stale feeds and missing snapshots.
+
+Lighter retains its subscription generations and control-ack/typed-snapshot correlation. OKX retains
+its documented [acknowledgement-correlation limits](../integrations/okx.md#snapshot-correlation-limitation).
+
+#### Task lifetime and cancellation
+
+Run asynchronous work inside the client's task scope or handler-owned futures. The handler must
+continue draining commands and frames while writes wait, allowing unsubscribe, shutdown, and
+recovery deadlines to cancel obsolete operations.
+
 ### Execution client
 
 Execution clients translate commands, preserve order identity, publish account state, and generate

@@ -46,6 +46,7 @@ use nautilus_common::testing::wait_until_async;
 use nautilus_core::UnixNanos;
 use nautilus_lighter::{
     common::{
+        consts::LIGHTER_ERROR_CODE_ALREADY_SUBSCRIBED,
         enums::{LighterCandleResolution, LighterEnvironment, LighterProductType, LighterTxType},
         symbol::MarketRegistry,
     },
@@ -66,6 +67,7 @@ use nautilus_network::{
     SocketState, SocketStateSink, transport::TransportError, websocket::TransportBackend,
 };
 use parking_lot::Mutex;
+use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 
@@ -137,6 +139,7 @@ fn spot_instrument(
 #[derive(Clone, Default)]
 struct TestServerState {
     connection_count: Arc<tokio::sync::Mutex<usize>>,
+    book_ack_mode: Arc<AtomicUsize>,
     upgrade_attempts: Arc<AtomicUsize>,
     transient_upgrade_failures: Arc<AtomicUsize>,
     reject_upgrade: Arc<AtomicBool>,
@@ -228,19 +231,31 @@ async fn handle_socket(socket: WebSocket, state: Arc<TestServerState>) {
                 let kind = value.get("type").and_then(Value::as_str).unwrap_or("");
                 match kind {
                     "subscribe" => {
-                        state.subscribes.lock().await.push(value.clone());
-
                         let channel = value
                             .get("channel")
                             .and_then(Value::as_str)
                             .map(|s| s.replace('/', ":"))
                             .unwrap_or_default();
 
-                        let ack = json!({"type":"subscribed", "channel": channel});
-                        if sink
-                            .send(Message::Text(ack.to_string().into()))
-                            .await
-                            .is_err()
+                        let mode = if channel.starts_with("order_book:") {
+                            state.book_ack_mode.load(Ordering::SeqCst)
+                        } else {
+                            0
+                        };
+
+                        state.subscribes.lock().await.push(value.clone());
+
+                        let ack = if mode == 2 {
+                            json!({"type":"error", "code": LIGHTER_ERROR_CODE_ALREADY_SUBSCRIBED, "message": format!("Already Subscribed to : {channel}")})
+                        } else {
+                            json!({"type":"subscribed", "channel": channel})
+                        };
+
+                        if mode != 1
+                            && sink
+                                .send(Message::Text(ack.to_string().into()))
+                                .await
+                                .is_err()
                         {
                             break;
                         }
@@ -894,6 +909,52 @@ async fn test_order_book_update_before_snapshot_is_dropped() {
     );
 
     harness.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[case::control_ack_only(0)]
+#[case::silent(1)]
+#[case::already_subscribed(2)]
+#[tokio::test]
+async fn book_missing_initial_snapshot_recovers(#[case] mode: usize) {
+    let state = Arc::new(TestServerState::default());
+    state.book_ack_mode.store(mode, Ordering::SeqCst);
+    let addr = start_ws_server(state.clone()).await;
+    let mut harness = ClientHarness::build(addr).await;
+    let id = harness.instrument(PERP_MARKET_INDEX);
+    let subscriber = harness.client.clone();
+    let subscription = tokio::spawn(async move { subscriber.subscribe_book(id).await });
+    await_subscribe_count(&state, 1).await;
+    // The replacement receives a typed snapshot after the first deadline expires.
+    state
+        .enqueue_push(load_json("ws_order_book_subscribed.json"))
+        .await;
+
+    if mode == 0 {
+        // The missing predecessor snapshot leaves one trailing completion to retire.
+        state
+            .enqueue_push(load_json("ws_order_book_subscribed.json"))
+            .await;
+    }
+
+    state.book_ack_mode.store(0, Ordering::SeqCst);
+    let event = next_event_within(&mut harness.client, Duration::from_secs(30))
+        .await
+        .unwrap();
+
+    let NautilusWsMessage::Deltas(deltas) = event else {
+        panic!("expected snapshot deltas");
+    };
+
+    subscription.await.unwrap().unwrap();
+
+    assert_eq!(deltas.instrument_id, id);
+    assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+
+    let replacements = if mode == 0 { 2 } else { 1 };
+    assert_eq!(state.subscribes().await.len(), replacements + 1);
+    assert_eq!(state.unsubscribes().await.len(), replacements);
+    harness.client.disconnect().await.unwrap();
 }
 
 #[tokio::test]
