@@ -1804,6 +1804,256 @@ fn test_submit_order_list_with_terminal_leg_reconstructs_and_denies_missing_elig
     assert!(submitted_order_ids.borrow().is_empty());
 }
 
+/// A later list that re-submits an order already handed to the execution client must not deny
+/// that order or route it again, whether the list arrives before or after the client's
+/// `OrderSubmitted` event and whether or not the list itself would pass validation (here the
+/// custom position ID is invalid under NETTING). Only the fresh member is denied, and the
+/// original order still completes its lifecycle from the client's later events.
+#[rstest]
+#[case::invalid_list_before_submitted(false, Some("invalid-netting-position"))]
+#[case::invalid_list_after_submitted(true, Some("invalid-netting-position"))]
+#[case::valid_list_before_submitted(false, None)]
+fn test_submit_order_list_preserves_order_already_handed_to_client(
+    mut execution_engine: ExecutionEngine,
+    #[case] submitted_before_list: bool,
+    #[case] list_position_id: Option<&str>,
+) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let account_id = AccountId::test_default();
+    let client_id = ClientId::from("STUB");
+    let instrument = audusd_sim();
+    let stub_client = StubExecutionClient::new(
+        client_id,
+        account_id,
+        Venue::test_default(),
+        OmsType::Netting,
+        None,
+    );
+    let submitted_order_ids = stub_client.submitted_order_ids();
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(CashAccount::default().into())
+        .unwrap();
+
+    let original = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-ORIGINAL"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(original.clone(), None, None, true)
+        .unwrap();
+
+    let submit_order = SubmitOrder {
+        trader_id,
+        client_id: Some(client_id),
+        strategy_id,
+        instrument_id: instrument.id,
+        client_order_id: original.client_order_id(),
+        order_init: original.init_event().clone(),
+        exec_algorithm_id: None,
+        position_id: None,
+        params: None,
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        correlation_id: None,
+        causation_id: None,
+    };
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    assert_eq!(
+        submitted_order_ids.borrow().as_slice(),
+        &[original.client_order_id()],
+    );
+    assert_eq!(
+        cached_order_or(&execution_engine, &original).status(),
+        OrderStatus::Initialized,
+    );
+
+    if submitted_before_list {
+        execution_engine.process(&TestOrderEventStubs::submitted(&original, account_id));
+    }
+
+    let fresh = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-FRESH"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("1.10000"))
+        .build();
+    let order_list = OrderList::new(
+        OrderListId::from("L-LATER"),
+        instrument.id,
+        strategy_id,
+        vec![original.client_order_id(), fresh.client_order_id()],
+        UnixNanos::default(),
+    );
+    let submit_order_list = SubmitOrderList {
+        trader_id,
+        client_id: Some(client_id),
+        strategy_id,
+        instrument_id: instrument.id,
+        order_list,
+        order_inits: vec![original.init_event().clone(), fresh.init_event().clone()],
+        exec_algorithm_id: None,
+        position_id: list_position_id.map(PositionId::from),
+        params: None,
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        correlation_id: None,
+        causation_id: None,
+    };
+    execution_engine.execute(TradingCommand::SubmitOrderList(submit_order_list));
+
+    let (expected_original_status, expected_original_event_count) = if submitted_before_list {
+        (OrderStatus::Submitted, 2)
+    } else {
+        (OrderStatus::Initialized, 1)
+    };
+    {
+        let cache = execution_engine.cache().borrow();
+        let cached_original = cache.order(&original.client_order_id()).unwrap();
+        let cached_fresh = cache.order(&fresh.client_order_id()).unwrap();
+        assert_eq!(cached_original.status(), expected_original_status);
+        assert_eq!(cached_original.event_count(), expected_original_event_count);
+        assert_eq!(cached_fresh.status(), OrderStatus::Denied);
+        let OrderEventAny::Denied(denied) = cached_fresh.last_event() else {
+            panic!("Expected fresh order to be denied");
+        };
+        assert_eq!(denied.reason, "ORDER_LIST_DENIED: L-LATER");
+        assert_eq!(
+            submitted_order_ids.borrow().as_slice(),
+            &[original.client_order_id()],
+        );
+    }
+
+    if !submitted_before_list {
+        execution_engine.process(&TestOrderEventStubs::submitted(&original, account_id));
+    }
+    let venue_order_id = VenueOrderId::from("V-ORIGINAL");
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &original,
+        account_id,
+        venue_order_id,
+    ));
+    let fill = TestOrderEventStubs::filled(
+        &cached_order_or(&execution_engine, &original),
+        &instrument.clone().into(),
+        Some(TradeId::new("T-ORIGINAL")),
+        None,
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        Some(account_id),
+    );
+    execution_engine.process(&fill);
+
+    let cache = execution_engine.cache().borrow();
+    let cached_original = cache.order(&original.client_order_id()).unwrap();
+    assert_eq!(cached_original.status(), OrderStatus::Filled);
+    assert_eq!(cached_original.venue_order_id(), Some(venue_order_id));
+    assert_eq!(cached_original.filled_qty(), Quantity::from(100_000));
+    let position_id = PositionId::from(format!("{}-{strategy_id}", instrument.id));
+    let position = cache.position(&position_id).unwrap();
+    assert_eq!(position.side, PositionSide::Long);
+    assert_eq!(position.quantity, Quantity::from(100_000));
+    assert_eq!(cache.positions_open_count(None, None, None, None, None), 1);
+    assert_eq!(
+        submitted_order_ids.borrow().as_slice(),
+        &[original.client_order_id()],
+    );
+}
+
+#[rstest]
+fn test_submit_order_skips_duplicate_before_submitted_event(mut execution_engine: ExecutionEngine) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let account_id = AccountId::test_default();
+    let client_id = ClientId::from("STUB");
+    let instrument = audusd_sim();
+    let stub_client = StubExecutionClient::new(
+        client_id,
+        account_id,
+        Venue::test_default(),
+        OmsType::Netting,
+        None,
+    );
+    let submitted_order_ids = stub_client.submitted_order_ids();
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .quantity(Quantity::from(100_000))
+        .build();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, None, true)
+        .unwrap();
+
+    let submit_order = SubmitOrder {
+        trader_id,
+        client_id: Some(client_id),
+        strategy_id,
+        instrument_id: instrument.id,
+        client_order_id: order.client_order_id(),
+        order_init: order.init_event().clone(),
+        exec_algorithm_id: None,
+        position_id: None,
+        params: None,
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        correlation_id: None,
+        causation_id: None,
+    };
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order.clone()));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    assert_eq!(
+        cached_order_or(&execution_engine, &order).status(),
+        OrderStatus::Initialized,
+    );
+    assert_eq!(
+        submitted_order_ids.borrow().as_slice(),
+        &[order.client_order_id()],
+    );
+
+    execution_engine.process(&TestOrderEventStubs::submitted(&order, account_id));
+
+    let cache = execution_engine.cache().borrow();
+    let cached_order = cache.order(&order.client_order_id()).unwrap();
+    assert_eq!(cached_order.status(), OrderStatus::Submitted);
+    assert_eq!(cached_order.event_count(), 2);
+}
+
 #[rstest]
 fn test_submit_order_for_random_venue_logs(mut execution_engine: ExecutionEngine) {
     let trader_id = TraderId::test_default();

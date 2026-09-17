@@ -110,6 +110,12 @@ const TIMER_PURGE_ACCOUNT_EVENTS: &str = "ExecEngine_PURGE_ACCOUNT_EVENTS";
 /// handling routing to appropriate execution clients, position management, and event
 /// processing. It supports multiple execution venues through registered clients and
 /// provides sophisticated order management capabilities.
+///
+/// An order handed to an execution client keeps its `Initialized` (or `Released`) status until
+/// the client's first status event is applied, so cached status alone cannot distinguish it from
+/// an order that has not been routed yet. The engine records each handoff until that first status
+/// transition, and a later submit command naming the order is stale for it: the engine neither
+/// routes the order to a client again nor denies it when the later command fails validation.
 pub struct ExecutionEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
@@ -120,6 +126,7 @@ pub struct ExecutionEngine {
     external_clients: HashSet<ClientId>,
     pos_id_generator: PositionIdGenerator,
     config: ExecutionEngineConfig,
+    handed_off_orders: RefCell<AHashSet<ClientOrderId>>,
     command_count: Cell<u64>,
     event_count: u64,
     report_count: u64,
@@ -158,6 +165,7 @@ impl ExecutionEngine {
                 .collect(),
             pos_id_generator: PositionIdGenerator::new(trader_id, clock),
             config: config.unwrap_or_default(),
+            handed_off_orders: RefCell::new(AHashSet::new()),
             command_count: Cell::new(0),
             event_count: 0,
             report_count: 0,
@@ -1932,6 +1940,7 @@ impl ExecutionEngine {
 
         self.cache.borrow_mut().reset();
         self.pos_id_generator.reset();
+        self.handed_off_orders.borrow_mut().clear();
 
         self.stop_snapshot_timer();
         self.stop_purge_timers();
@@ -1975,6 +1984,12 @@ impl ExecutionEngine {
             } => {
                 log::warn!(
                     "Skipping stale submit command for {client_order_id} in status {status}"
+                );
+                return;
+            }
+            SubmissionValidationResult::HandedOff { client_order_id } => {
+                log::warn!(
+                    "Skipping duplicate submit command for {client_order_id} already handed to an execution client"
                 );
                 return;
             }
@@ -2061,17 +2076,20 @@ impl ExecutionEngine {
                     return SubmissionValidationResult::Valid;
                 };
 
-                if matches!(
-                    order.status(),
-                    OrderStatus::Initialized | OrderStatus::Released
-                ) {
-                    SubmissionValidationResult::Valid
-                } else {
-                    SubmissionValidationResult::StaleOrder {
+                if !Self::has_submittable_status(&order) {
+                    return SubmissionValidationResult::StaleOrder {
                         client_order_id: order.client_order_id(),
                         status: order.status(),
-                    }
+                    };
                 }
+
+                if self.is_handed_off(order.client_order_id()) {
+                    return SubmissionValidationResult::HandedOff {
+                        client_order_id: order.client_order_id(),
+                    };
+                }
+
+                SubmissionValidationResult::Valid
             }
             TradingCommand::SubmitOrderList(cmd) => {
                 let cache = self.cache.borrow();
@@ -2080,12 +2098,7 @@ impl ExecutionEngine {
                     .client_order_ids
                     .iter()
                     .filter_map(|client_order_id| cache.order(client_order_id))
-                    .any(|order| {
-                        !matches!(
-                            order.status(),
-                            OrderStatus::Initialized | OrderStatus::Released
-                        )
-                    });
+                    .any(|order| !self.is_eligible_for_submission(&order));
 
                 if !has_ineligible_order {
                     return SubmissionValidationResult::Valid;
@@ -2097,6 +2110,23 @@ impl ExecutionEngine {
             }
             _ => SubmissionValidationResult::Valid,
         }
+    }
+
+    fn has_submittable_status(order: &OrderAny) -> bool {
+        matches!(
+            order.status(),
+            OrderStatus::Initialized | OrderStatus::Released
+        )
+    }
+
+    fn is_handed_off(&self, client_order_id: ClientOrderId) -> bool {
+        self.handed_off_orders.borrow().contains(&client_order_id)
+    }
+
+    // A cached order accepts a submit command only while it has a submittable status and has not
+    // already been handed to an execution client (see the type-level documentation).
+    fn is_eligible_for_submission(&self, order: &OrderAny) -> bool {
+        Self::has_submittable_status(order) && !self.is_handed_off(order.client_order_id())
     }
 
     fn deny_submission(&self, command: &TradingCommand, reason: &OrderDeniedReason) {
@@ -2134,17 +2164,21 @@ impl ExecutionEngine {
             }
         }
 
-        let mut eligible_orders = orders
-            .iter()
-            .filter(|order| {
-                matches!(
-                    order.status(),
-                    OrderStatus::Initialized | OrderStatus::Released
-                )
-            })
-            .peekable();
+        let mut eligible_orders = Vec::with_capacity(orders.len());
 
-        if eligible_orders.peek().is_none() {
+        for order in &orders {
+            if self.is_eligible_for_submission(order) {
+                eligible_orders.push(order);
+            } else if Self::has_submittable_status(order) {
+                log::warn!(
+                    "Preserving {} already handed to an execution client, not denying for order list {}",
+                    order.client_order_id(),
+                    cmd.order_list.id,
+                );
+            }
+        }
+
+        if eligible_orders.is_empty() {
             log::warn!(
                 "Skipping stale submit command for order list {}",
                 cmd.order_list.id
@@ -2341,7 +2375,10 @@ impl ExecutionEngine {
                 }
                 .to_string(),
             );
+            return;
         }
+
+        self.handed_off_orders.borrow_mut().insert(client_order_id);
     }
 
     fn handle_submit_order_list(&self, client: &dyn ExecutionClient, cmd: SubmitOrderList) {
@@ -2506,7 +2543,12 @@ impl ExecutionEngine {
             for order in &orders {
                 self.deny_order(order, &reason);
             }
+            return;
         }
+
+        self.handed_off_orders
+            .borrow_mut()
+            .extend(orders.iter().map(Order::client_order_id));
     }
 
     fn add_order_from_init(
@@ -3752,6 +3794,11 @@ impl ExecutionEngine {
             }
         };
 
+        // The client's first status transition closes the handoff window
+        if !Self::has_submittable_status(&order) {
+            self.handed_off_orders.borrow_mut().remove(&client_order_id);
+        }
+
         if self.config.manage_own_order_books && should_handle_own_book_order(&order) {
             let needs_own_book = {
                 self.cache
@@ -4711,6 +4758,9 @@ enum SubmissionValidationResult {
     StaleOrder {
         client_order_id: ClientOrderId,
         status: OrderStatus,
+    },
+    HandedOff {
+        client_order_id: ClientOrderId,
     },
     Deny(OrderDeniedReason),
 }
