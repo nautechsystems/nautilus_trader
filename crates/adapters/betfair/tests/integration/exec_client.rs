@@ -3258,6 +3258,89 @@ async fn test_generate_order_status_reports_filters(
 }
 
 #[rstest]
+#[case::invalid_page(false)]
+#[case::cancelled_fetch(true)]
+#[tokio::test]
+async fn test_mass_status_failed_fetch_preserves_fills(#[case] cancel_fetch: bool) {
+    let (addr, state) = start_mock_http().await;
+    let snapshot =
+        load_json_fixture("rest/list_current_orders_execution_complete.json")["result"].clone();
+    let mut first = snapshot.clone();
+    first["moreAvailable"] = Value::Bool(true);
+    let mut invalid = snapshot.clone();
+    invalid["currentOrders"][0]["placedDate"] = Value::from("invalid-date");
+    state.betting_response_sequences.lock().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        VecDeque::from([first, invalid]),
+    );
+    state
+        .betting_overrides
+        .lock()
+        .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), snapshot);
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, _rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    connect_execution_ready(&mut client).await;
+
+    if cancel_fetch {
+        let gate = MockResponseGate {
+            method: METHOD_LIST_CURRENT_ORDERS.to_string(),
+            waiters: Arc::new(AtomicUsize::new(0)),
+            semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
+        };
+
+        *state.betting_response_gate.lock() = Some(gate.clone());
+        {
+            let pending = client.generate_mass_status(None);
+            tokio::pin!(pending);
+            tokio::select! {
+                result = &mut pending => panic!("snapshot completed before cancellation: {result:?}"),
+                () = wait_for_mock_state(&state, "second snapshot page blocked", |state| response_gate_waiter_count(state) == 2) => {}
+            }
+        }
+
+        // Release the cancelled HTTP request before starting the retry
+        gate.semaphore.add_permits(1);
+        wait_for_mock_state(&state, "cancelled page consumed", |state| {
+            state
+                .betting_response_sequences
+                .lock()
+                .get(METHOD_LIST_CURRENT_ORDERS)
+                .unwrap()
+                .is_empty()
+        })
+        .await;
+
+        *state.betting_response_gate.lock() = None;
+    } else {
+        assert!(client.generate_mass_status(None).await.is_err());
+    }
+
+    let recovered = client.generate_mass_status(None).await.unwrap().unwrap();
+    let repeated = client.generate_mass_status(None).await.unwrap().unwrap();
+    assert_eq!(recovered.order_reports().len(), 3);
+    assert_eq!(recovered.fill_reports().len(), 2);
+
+    for bet in ["228059821049", "228059869313"] {
+        let fills = &recovered.fill_reports()[&VenueOrderId::from(bet)];
+        assert_eq!(fills.len(), 1);
+        assert_eq!(fills[0].last_qty, Quantity::from(10));
+    }
+
+    assert!(repeated.fill_reports().is_empty());
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_generate_fill_reports() {
     let (addr, state) = start_mock_http().await;
@@ -3601,6 +3684,41 @@ async fn test_generate_reports_batches_market_ids_and_resets_pagination() {
             .collect::<Vec<_>>(),
         vec!["228059821049", "228059869313"],
     );
+
+    state.betting_response_sequences.lock().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        VecDeque::from([
+            current_orders_page(vec![executable_orders[1].clone()], true),
+            current_orders_page(vec![completed_orders[1].clone()], false),
+            current_orders_page(vec![executable_orders[0].clone()], false),
+        ]),
+    );
+    let mass_status = client.generate_mass_status(None).await.unwrap().unwrap();
+    let snapshot_params = state
+        .betting_request_params
+        .lock()
+        .iter()
+        .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
+        .skip(params.len())
+        .map(|(_, params)| params.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(mass_status.order_reports().len(), 3);
+    assert_eq!(snapshot_params.len(), 3);
+
+    for (params, expected_batch) in
+        snapshot_params
+            .iter()
+            .zip([&first_batch, &first_batch, &second_batch])
+    {
+        assert_eq!(&params["marketIds"], expected_batch);
+        assert_eq!(params["orderProjection"], "ALL");
+        assert!(params.get("orderBy").is_none());
+        assert!(params.get("dateRange").is_none());
+    }
+
+    assert!(snapshot_params[0].get("fromRecord").is_none());
+    assert_eq!(snapshot_params[1]["fromRecord"], 1);
+    assert!(snapshot_params[2].get("fromRecord").is_none());
 
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());
@@ -8138,24 +8256,35 @@ async fn test_command_before_reconnect_image_keeps_recovery_pending() {
 
 #[rstest]
 #[tokio::test]
-async fn test_post_reconnect_paginates_match_time_fill_recovery() {
+async fn test_post_reconnect_paginates_coherent_fill_snapshot() {
     let (addr, state) = start_mock_http().await;
     let fixture = load_fixture("rest/list_current_orders_execution_complete.json");
-    let response: Value = serde_json::from_str(&fixture).unwrap();
+    let mut response: Value = serde_json::from_str(&fixture).unwrap();
+    let matched = nautilus_core::time::get_atomic_clock_realtime()
+        .get_time_ns()
+        .saturating_sub(nautilus_core::DurationNanos::from_secs(60));
+
+    for order in response["result"]["currentOrders"].as_array_mut().unwrap() {
+        if order.get("matchedDate").is_some() {
+            order["matchedDate"] = Value::from(matched.to_rfc3339());
+        }
+    }
+
     let orders = response["result"]["currentOrders"]
         .as_array()
         .expect("currentOrders must be an array");
 
-    let order_page = response["result"].clone();
-    let mut fill_page1 = response["result"].clone();
-    fill_page1["currentOrders"] = Value::Array(vec![orders[1].clone()]);
-    fill_page1["moreAvailable"] = Value::Bool(true);
-    let mut fill_page2 = response["result"].clone();
-    fill_page2["currentOrders"] = Value::Array(vec![orders[2].clone()]);
-    fill_page2["moreAvailable"] = Value::Bool(false);
+    let mut page1 = response["result"].clone();
+    page1["currentOrders"] = Value::Array(vec![orders[0].clone(), orders[1].clone()]);
+    page1["currentOrders"][1]["sizeMatched"] = Value::from(4);
+    page1["moreAvailable"] = Value::Bool(true);
+    let mut page2 = response["result"].clone();
+    page2["currentOrders"] = Value::Array(vec![orders[1].clone(), orders[2].clone()]);
+    page2["currentOrders"][0]["sizeMatched"] = Value::from(8);
+    page2["moreAvailable"] = Value::Bool(false);
     state.betting_response_sequences.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
-        VecDeque::from([order_page, fill_page1, fill_page2]),
+        VecDeque::from([page1, page2]),
     );
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -8204,17 +8333,26 @@ async fn test_post_reconnect_paginates_match_time_fill_recovery() {
         .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
         .map(|(_, params)| params.clone())
         .collect::<Vec<_>>();
-    assert_eq!(list_params.len(), 3);
-    assert!(list_params[0].get("dateRange").is_none());
-    for params in &list_params[1..] {
+    assert_eq!(list_params.len(), 2);
+
+    for params in &list_params {
         assert_eq!(params["orderProjection"], "ALL");
-        assert_eq!(params["orderBy"], "BY_MATCH_TIME");
-        assert_eq!(params["sortDir"], "EARLIEST_TO_LATEST");
-        assert!(params["dateRange"]["from"].is_string());
-        assert!(params["dateRange"]["to"].is_string());
+        assert!(params.get("orderBy").is_none());
+        assert!(params.get("dateRange").is_none());
     }
-    assert!(list_params[1].get("fromRecord").is_none());
-    assert_eq!(list_params[2]["fromRecord"], 1);
+
+    assert!(list_params[0].get("fromRecord").is_none());
+    assert_eq!(list_params[1]["fromRecord"], 2);
+    let bet_id = VenueOrderId::from("228059821049");
+    assert_eq!(
+        mass_status.order_reports()[&bet_id].filled_qty,
+        Quantity::from(8)
+    );
+    assert_eq!(mass_status.fill_reports()[&bet_id].len(), 1);
+    assert_eq!(
+        mass_status.fill_reports()[&bet_id][0].last_qty,
+        Quantity::from(8)
+    );
 
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());
@@ -8226,7 +8364,17 @@ async fn test_post_reconnect_paginates_match_time_fill_recovery() {
 async fn test_post_reconnect_retries_transient_mass_status_failure() {
     let (addr, state) = start_mock_http().await;
     let fixture = load_fixture("rest/list_current_orders_execution_complete.json");
-    let response: Value = serde_json::from_str(&fixture).unwrap();
+    let mut response: Value = serde_json::from_str(&fixture).unwrap();
+    let matched = nautilus_core::time::get_atomic_clock_realtime()
+        .get_time_ns()
+        .saturating_sub(nautilus_core::DurationNanos::from_secs(60));
+
+    for order in response["result"]["currentOrders"].as_array_mut().unwrap() {
+        if order.get("matchedDate").is_some() {
+            order["matchedDate"] = Value::from(matched.to_rfc3339());
+        }
+    }
+
     state.betting_overrides.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         response["result"].clone(),
@@ -8270,26 +8418,18 @@ async fn test_post_reconnect_retries_transient_mass_status_failure() {
 
     assert_eq!(mass_status_counts, Some((3, 2)));
     assert!(!client.is_reconciling());
-    assert_eq!(
-        betting_method_count(&state, METHOD_LIST_CURRENT_ORDERS),
-        3,
-        "one failed order query plus the successful order and fill queries",
-    );
-    let fill_params = state
-        .betting_request_params
-        .lock()
-        .iter()
-        .filter(|(method, params)| {
-            method == METHOD_LIST_CURRENT_ORDERS && params.get("dateRange").is_some()
-        })
-        .map(|(_, params)| params.clone())
-        .collect::<Vec<_>>();
-    assert_eq!(fill_params.len(), 1);
-    assert_eq!(fill_params[0]["orderProjection"], "ALL");
-    assert_eq!(fill_params[0]["orderBy"], "BY_MATCH_TIME");
-    assert_eq!(fill_params[0]["sortDir"], "EARLIEST_TO_LATEST");
-    assert!(fill_params[0]["dateRange"]["from"].is_string());
-    assert!(fill_params[0]["dateRange"]["to"].is_string());
+    assert_eq!(betting_method_count(&state, METHOD_LIST_CURRENT_ORDERS), 2);
+    {
+        let params = state.betting_request_params.lock();
+        for (_, params) in params
+            .iter()
+            .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
+        {
+            assert_eq!(params["orderProjection"], "ALL");
+            assert!(params.get("orderBy").is_none());
+            assert!(params.get("dateRange").is_none());
+        }
+    }
 
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());
@@ -8397,17 +8537,6 @@ async fn test_post_reconnect_relogin_waits_for_reconciliation_and_does_not_loop(
                 .await
                 .is_err(),
             "full re-login must not replace the stream before reconciliation completes",
-        );
-        server_gate.semaphore.add_permits(1);
-        wait_for_mock_state(&server_state, "response gate waiter count 2", |state| {
-            response_gate_waiter_count(state) == 2
-        })
-        .await;
-        assert!(
-            tokio::time::timeout(Duration::from_millis(300), listener.accept())
-                .await
-                .is_err(),
-            "full re-login must not replace the stream before fill recovery completes",
         );
         server_gate.semaphore.add_permits(1);
 
@@ -8534,7 +8663,7 @@ async fn test_reconnect_transient_keep_alive_failure_continues_reconciliation() 
 
     assert_eq!(state.keep_alive_count.load(Ordering::Relaxed), 1);
     assert_eq!(state.login_count.load(Ordering::Relaxed), 1);
-    assert_eq!(betting_method_count(&state, METHOD_LIST_CURRENT_ORDERS), 2);
+    assert_eq!(betting_method_count(&state, METHOD_LIST_CURRENT_ORDERS), 1);
     assert!(!client.is_reconciling());
 
     client.disconnect().await.unwrap();
@@ -8598,7 +8727,17 @@ async fn test_reconnect_auth_failure_keeps_submissions_halted() {
 async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
     let (addr, state) = start_mock_http().await;
     let fixture = load_fixture("rest/list_current_orders_execution_complete.json");
-    let response: Value = serde_json::from_str(&fixture).unwrap();
+    let mut response: Value = serde_json::from_str(&fixture).unwrap();
+    let matched = nautilus_core::time::get_atomic_clock_realtime()
+        .get_time_ns()
+        .saturating_sub(nautilus_core::DurationNanos::from_secs(60));
+
+    for order in response["result"]["currentOrders"].as_array_mut().unwrap() {
+        if order.get("matchedDate").is_some() {
+            order["matchedDate"] = Value::from(matched.to_rfc3339());
+        }
+    }
+
     state.betting_overrides.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         response["result"].clone(),
@@ -8663,7 +8802,7 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
         .1;
     assert!(
         failed_params.get("dateRange").is_none(),
-        "fill recovery must not start before the order query succeeds",
+        "snapshot recovery must retain broad order coverage",
     );
 
     let response_gate = MockResponseGate {
@@ -8690,12 +8829,6 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
     assert_eq!(denied, expected);
     assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
 
-    response_gate.semaphore.add_permits(1);
-    wait_for_mock_state(&state, "response gate waiter count 2", |state| {
-        response_gate_waiter_count(state) == 2
-    })
-    .await;
-    assert!(client.is_reconciling());
     response_gate.semaphore.add_permits(1);
 
     let mut recovered_counts = None;
@@ -8728,8 +8861,8 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
 
     assert_eq!(recovered_counts, Some((3, 2)));
     assert!(!client.is_reconciling());
-    assert_eq!(response_gate.waiters.load(Ordering::Relaxed), 2);
-    assert_eq!(betting_method_count(&state, METHOD_LIST_CURRENT_ORDERS), 3);
+    assert_eq!(response_gate.waiters.load(Ordering::Relaxed), 1);
+    assert_eq!(betting_method_count(&state, METHOD_LIST_CURRENT_ORDERS), 2);
     assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 1);
 
     let list_params = state
@@ -8739,10 +8872,9 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
         .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
         .map(|(_, params)| params.clone())
         .collect::<Vec<_>>();
-    assert_eq!(list_params.len(), 3);
+    assert_eq!(list_params.len(), 2);
     assert!(list_params[0].get("dateRange").is_none());
     assert!(list_params[1].get("dateRange").is_none());
-    assert!(list_params[2].get("dateRange").is_some());
 
     client.disconnect().await.unwrap();
     assert!(!client.is_reconciling());
@@ -8806,12 +8938,6 @@ async fn test_submit_denied_during_reconciliation() {
     assert_eq!(denied, vec![ClientOrderId::from("O-HALT-001")]);
     assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
 
-    response_gate.semaphore.add_permits(1);
-    wait_for_mock_state(&state, "response gate waiter count 2", |state| {
-        response_gate_waiter_count(state) == 2
-    })
-    .await;
-    assert!(client.is_reconciling());
     response_gate.semaphore.add_permits(1);
 
     let mut saw_mass_status = false;
@@ -8904,11 +9030,7 @@ async fn test_queued_reconnect_generation_stays_halted() {
             response_gate_waiter_count(state) == 2
         })
         .await;
-        server_gate.semaphore.add_permits(1);
-        wait_for_mock_state(&server_state, "response gate waiter count 3", |state| {
-            response_gate_waiter_count(state) == 3
-        })
-        .await;
+
         release_second_rx.await.unwrap();
         server_gate.semaphore.add_permits(1);
 
@@ -8920,8 +9042,8 @@ async fn test_queued_reconnect_generation_stays_halted() {
 
     while rx.try_recv().is_ok() {}
 
-    wait_for_mock_state(&state, "response gate waiter count 3", |state| {
-        response_gate_waiter_count(state) == 3
+    wait_for_mock_state(&state, "response gate waiter count 2", |state| {
+        response_gate_waiter_count(state) == 2
     })
     .await;
     assert!(client.is_reconciling());
@@ -8958,7 +9080,7 @@ async fn test_queued_reconnect_generation_stays_halted() {
     .await
     .expect("current generation did not publish mass status");
     assert!(mass_status.order_reports().is_empty());
-    assert_eq!(response_gate.waiters.load(Ordering::Relaxed), 3);
+    assert_eq!(response_gate.waiters.load(Ordering::Relaxed), 2);
 
     wait_for_reconciliation_state(&client, false).await;
     assert!(!client.is_reconciling());

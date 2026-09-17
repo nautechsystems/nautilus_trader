@@ -86,9 +86,12 @@ pub static HIGH_PRECISION_MODE: u8 = cfg!(feature = "high-precision") as u8;
 /// The maximum fixed-point precision.
 pub const FIXED_PRECISION: u8 = 16;
 
+/// The maximum fixed-point precision used by standard-precision catalog data.
+pub const FIXED_PRECISION_STANDARD: u8 = 9;
+
 #[cfg(not(feature = "high-precision"))]
 /// The maximum fixed-point precision.
-pub const FIXED_PRECISION: u8 = 9;
+pub const FIXED_PRECISION: u8 = FIXED_PRECISION_STANDARD;
 
 // -----------------------------------------------------------------------------
 // PRECISION_BYTES (size of integer backing the fixed-point values)
@@ -102,17 +105,8 @@ pub const PRECISION_BYTES: i32 = 16;
 /// The width in bytes for fixed-point value types in standard-precision mode (64-bit).
 pub const PRECISION_BYTES: i32 = 8;
 
-// -----------------------------------------------------------------------------
-// FIXED_BINARY_SIZE
-// -----------------------------------------------------------------------------
-
-#[cfg(feature = "high-precision")]
-/// The data type name for the Arrow fixed-size binary representation.
-pub const FIXED_SIZE_BINARY: &str = "FixedSizeBinary(16)";
-
-#[cfg(not(feature = "high-precision"))]
-/// The data type name for the Arrow fixed-size binary representation.
-pub const FIXED_SIZE_BINARY: &str = "FixedSizeBinary(8)";
+/// The Arrow data type name for fixed-point value types.
+pub const FIXED_DECIMAL: &str = "Decimal128(38, 16)";
 
 // -----------------------------------------------------------------------------
 // FIXED_SCALAR
@@ -333,6 +327,64 @@ pub(crate) fn scaled_raw_to_decimal(scaled_raw: i128, precision: u8) -> Decimal 
         Decimal::from(scaled_raw / divisor)
             + Decimal::from_i128_with_scale(scaled_raw % divisor, scale)
     })
+}
+
+pub(crate) fn format_scaled_i128(raw: i128, precision: u8) -> String {
+    let sign = if raw < 0 { "-" } else { "" };
+    format!(
+        "{sign}{}",
+        format_scaled_u128(raw.unsigned_abs(), precision)
+    )
+}
+
+/// Parses a plain decimal string into its signed mantissa and fractional precision.
+pub(crate) fn parse_decimal_mantissa(value: &str) -> Result<(i128, u8), String> {
+    let (negative, unsigned) = value
+        .strip_prefix('-')
+        .map_or((false, value), |value| (true, value));
+    let unsigned = if negative {
+        unsigned
+    } else {
+        unsigned.strip_prefix('+').unwrap_or(unsigned)
+    };
+    let (whole, fraction) = unsigned.split_once('.').unwrap_or((unsigned, ""));
+    if fraction.contains('.') {
+        return Err(format!("Invalid decimal value '{value}'"));
+    }
+    let digits = format!("{whole}{fraction}");
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(format!("Invalid decimal value '{value}'"));
+    }
+    let precision = u8::try_from(fraction.len())
+        .map_err(|_| format!("Decimal value '{value}' has too many fractional digits"))?;
+    let mut mantissa = 0_i128;
+    for digit in digits.bytes().map(|byte| i128::from(byte - b'0')) {
+        mantissa = if negative {
+            mantissa
+                .checked_mul(10)
+                .and_then(|value| value.checked_sub(digit))
+        } else {
+            mantissa
+                .checked_mul(10)
+                .and_then(|value| value.checked_add(digit))
+        }
+        .ok_or_else(|| format!("Decimal value '{value}' exceeds i128 range"))?;
+    }
+    Ok((mantissa, precision))
+}
+
+pub(crate) fn format_scaled_u128(raw: u128, precision: u8) -> String {
+    if precision == 0 {
+        return raw.to_string();
+    }
+
+    let scale = 10_u128.pow(u32::from(precision));
+    format!(
+        "{}.{:0>width$}",
+        raw / scale,
+        raw % scale,
+        width = usize::from(precision),
+    )
 }
 
 /// Returns `lhs * rhs / FIXED_SCALAR`, truncated toward zero.
@@ -997,12 +1049,119 @@ mod tests {
 
     use super::*;
 
-    #[cfg(not(feature = "defi"))]
     #[rstest]
-    fn test_precision_boundaries() {
-        assert!(check_fixed_precision(0).is_ok());
-        assert!(check_fixed_precision(FIXED_PRECISION).is_ok());
-        assert!(check_fixed_precision(FIXED_PRECISION + 1).is_err());
+    #[case("1.00", 100, 2)]
+    #[case("+1.00", 100, 2)]
+    #[case("-1.00", -100, 2)]
+    #[case("-0.00", 0, 2)]
+    fn test_parse_decimal_mantissa_sign(
+        #[case] input: &str,
+        #[case] mantissa: i128,
+        #[case] precision: u8,
+    ) {
+        assert_eq!(parse_decimal_mantissa(input), Ok((mantissa, precision)));
+    }
+
+    #[rstest]
+    #[case("-+1.00")]
+    #[case("+-1.00")]
+    #[case("--1.00")]
+    #[case("++1.00")]
+    #[case("-+0.00")]
+    fn test_parse_decimal_mantissa_rejects_multiple_signs(#[case] input: &str) {
+        assert_eq!(
+            parse_decimal_mantissa(input),
+            Err(format!("Invalid decimal value '{input}'")),
+        );
+        assert!(input.parse::<crate::types::Price>().is_err());
+        assert!(input.parse::<crate::types::Quantity>().is_err());
+        assert!(
+            format!("{input} USD")
+                .parse::<crate::types::Money>()
+                .is_err()
+        );
+    }
+
+    #[rstest]
+    #[case(i128::MIN)]
+    #[case(i128::MAX)]
+    fn test_parse_decimal_mantissa_integer_limits(#[case] value: i128) {
+        assert_eq!(parse_decimal_mantissa(&value.to_string()), Ok((value, 0)));
+    }
+
+    #[rstest]
+    #[case("170141183460469231731687303715884105728")]
+    #[case("-170141183460469231731687303715884105729")]
+    fn test_parse_decimal_mantissa_overflow(#[case] input: &str) {
+        assert_eq!(
+            parse_decimal_mantissa(input),
+            Err(format!("Decimal value '{input}' exceeds i128 range")),
+        );
+    }
+
+    #[rstest]
+    #[case(".5", 5, 1)]
+    #[case("-.5", -5, 1)]
+    #[case("1.", 1, 0)]
+    #[case("0001.0200", 10200, 4)]
+    fn test_parse_decimal_mantissa_syntax(
+        #[case] input: &str,
+        #[case] mantissa: i128,
+        #[case] precision: u8,
+    ) {
+        assert_eq!(parse_decimal_mantissa(input), Ok((mantissa, precision)));
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case(".")]
+    #[case("+")]
+    #[case("-")]
+    #[case("1.2.3")]
+    #[case(" 1")]
+    #[case("1 ")]
+    #[case("1 2")]
+    #[case("１")]
+    fn test_parse_decimal_mantissa_invalid_syntax(#[case] input: &str) {
+        assert_eq!(
+            parse_decimal_mantissa(input),
+            Err(format!("Invalid decimal value '{input}'")),
+        );
+    }
+
+    #[rstest]
+    fn test_parse_decimal_mantissa_fraction_length_limit() {
+        let accepted = format!("0.{}", "0".repeat(255));
+        let rejected = format!("{accepted}0");
+
+        assert_eq!(parse_decimal_mantissa(&accepted), Ok((0, 255)));
+        assert_eq!(
+            parse_decimal_mantissa(&rejected),
+            Err(format!(
+                "Decimal value '{rejected}' has too many fractional digits"
+            )),
+        );
+    }
+
+    #[rstest]
+    fn test_decimal_string_domain_precision_limit() {
+        use crate::types::{Price, Quantity};
+
+        #[cfg(feature = "defi")]
+        let precision = crate::defi::WEI_PRECISION;
+        #[cfg(not(feature = "defi"))]
+        let precision = FIXED_PRECISION;
+        let accepted = format!("0.{}1", "0".repeat(usize::from(precision - 1)));
+        let rejected = format!("{accepted}0");
+        let price = accepted.parse::<Price>().unwrap();
+        let quantity = accepted.parse::<Quantity>().unwrap();
+
+        assert_eq!(price.raw, 1);
+        assert_eq!(price.precision, precision);
+        assert_eq!(quantity.raw, 1);
+        assert_eq!(quantity.precision, precision);
+        assert!(rejected.parse::<Price>().is_err());
+        assert!(rejected.parse::<Quantity>().is_err());
     }
 
     #[rstest]
@@ -1058,6 +1217,14 @@ mod tests {
         // and fractional parts lets `Decimal` drop scale instead, which is the only representable
         // outcome once the value needs more than a 96-bit mantissa.
         assert_eq!(scaled_raw_to_decimal(raw, precision).to_string(), expected);
+    }
+
+    #[cfg(not(feature = "defi"))]
+    #[rstest]
+    fn test_precision_boundaries() {
+        assert!(check_fixed_precision(0).is_ok());
+        assert!(check_fixed_precision(FIXED_PRECISION).is_ok());
+        assert!(check_fixed_precision(FIXED_PRECISION + 1).is_err());
     }
 
     #[cfg(feature = "defi")]

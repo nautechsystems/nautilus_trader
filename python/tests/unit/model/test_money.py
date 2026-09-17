@@ -660,7 +660,7 @@ def test_zero() -> None:
     assert m18.raw == 0
     assert m18.currency == TST18
     assert m18.is_zero()
-    assert str(m18) == "0 TST18"
+    assert str(m18) == "0.000000000000000000 TST18"
 
 
 def test_is_zero() -> None:

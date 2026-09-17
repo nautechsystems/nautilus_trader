@@ -18,7 +18,7 @@ use std::{any::Any, sync::Arc};
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     data::{
-        Bar, BarType, DataType, FundingRateUpdate, HasTsInit, OrderBookDelta, OrderBookDepth10,
+        Bar, BarType, DataType, FundingRateUpdate, HasTsInit, OrderBookDelta, OrderBookDepth,
         QuoteTick, TradeTick,
     },
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Venue},
@@ -304,7 +304,7 @@ pub struct BookDepthResponse {
     pub correlation_id: UUID4,
     pub client_id: ClientId,
     pub instrument_id: InstrumentId,
-    pub data: Vec<OrderBookDepth10>,
+    pub data: Vec<OrderBookDepth>,
     pub start: Option<UnixNanos>,
     pub end: Option<UnixNanos>,
     pub ts_init: UnixNanos,
@@ -323,7 +323,7 @@ impl BookDepthResponse {
         correlation_id: UUID4,
         client_id: ClientId,
         instrument_id: InstrumentId,
-        data: Vec<OrderBookDepth10>,
+        data: Vec<OrderBookDepth>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ts_init: UnixNanos,

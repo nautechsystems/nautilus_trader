@@ -41,7 +41,7 @@ use nautilus_databento::{
     types::{DatabentoImbalance, DatabentoStatistics},
 };
 use nautilus_model::{
-    data::{Bar, InstrumentStatus, OrderBookDelta, OrderBookDepth10, QuoteTick},
+    data::{Bar, InstrumentStatus, OrderBookDelta, OrderBookDepth, QuoteTick},
     identifiers::InstrumentId,
 };
 use time::macros::date;
@@ -104,8 +104,8 @@ fn bench_historical_loader(c: &mut Criterion) {
     group.throughput(Throughput::Elements(2));
     group.bench_function("mbp10_depth", |b| {
         b.iter(|| {
-            let items: Vec<OrderBookDepth10> = loader
-                .load_order_book_depth10(black_box(&mbp10_path), Some(instrument_id), None)
+            let items: Vec<OrderBookDepth> = loader
+                .load_order_book_depth(black_box(&mbp10_path), Some(instrument_id), None)
                 .unwrap();
             black_box(items);
         });

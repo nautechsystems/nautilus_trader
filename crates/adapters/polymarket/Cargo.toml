@@ -59,7 +59,6 @@ nautilus-execution = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true, features = ["transport-sockudo"] }
-nautilus-persistence-macros = { workspace = true }
 nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
@@ -203,4 +202,9 @@ doc = false
 name = "polymarket-new-market-monitor"
 path = "examples/new_market_monitor.rs"
 required-features = ["examples"]
+doc = false
+
+[[example]]
+name = "polymarket-session-keys"
+path = "examples/session_keys.rs"
 doc = false

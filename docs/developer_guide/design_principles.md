@@ -184,6 +184,18 @@ Canonical actor and strategy delivery must preserve publication order, exclusive
 and lifecycle eligibility, with bounded progress. Reentrancy must not change the ordering rule.
 Ordered delivery does not imply an event-time cache snapshot.
 
+The runtime owns drain scheduling at a small set of explicit ownership boundaries, after enclosing
+mutable borrows end. Individual dispatch, flush, and lifecycle methods must not each acquire a
+draining policy. Keep failure handling and cleanup under existing lifecycle owners. Share scheduling
+code only where it reduces complexity while preserving backtest settlement and live yielding rules.
+
+Deterministic callback order in the synchronous core and backtesting is a required activation
+criterion. Verify exact sequences through real native and Python components, including nested
+publication, fan-out, callback-generated commands, same-timestamp work, and continuation across
+bounded drain passes. Final counts and balances alone do not establish ordering.
+
 These are requirements for queued dispatch, not guarantees of existing synchronous paths.
 The [callback dispatch contract](callback_dispatch.md) specifies maintenance timing, ownership
-boundaries, lifecycle invalidation, and draining behavior.
+boundaries, lifecycle invalidation, and draining behavior. The
+[runtime conformance contract](runtime_conformance.md#callback-ordering-and-ownership) records
+implementation coverage and outstanding activation requirements.

@@ -27,6 +27,7 @@ pub mod config;
 pub mod factories;
 pub mod loader;
 pub mod positions;
+pub mod session;
 pub mod sort;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
@@ -509,7 +510,8 @@ pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(POLYMARKET), POLYMARKET)?;
     m.add(stringify!(POLYMARKET_CLIENT_ID), *POLYMARKET_CLIENT_ID)?;
     m.add(stringify!(POLYMARKET_VENUE), *POLYMARKET_VENUE)?;
-    m.add_class::<crate::common::enums::SignatureType>()?;
+    m.add_class::<crate::common::enums::PolymarketSignatureType>()?;
+    m.add_class::<crate::common::enums::PolymarketSignerType>()?;
     m.add_class::<PolymarketUpDownEventSlugConfig>()?;
     m.add_class::<PolymarketInstrumentProviderConfig>()?;
     m.add_class::<PolymarketDataClientConfig>()?;
@@ -518,6 +520,9 @@ pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PolymarketExecutionClientFactory>()?;
     m.add_class::<PolymarketFeeModel>()?;
     m.add_class::<loader::PyPolymarketDataLoader>()?;
+    m.add_class::<session::PyPolymarketSessionKeyClient>()?;
+    m.add_class::<session::PyPolymarketSessionKeyClientConfig>()?;
+    m.add_class::<session::PyPolymarketSessionKey>()?;
     m.add_class::<positions::PyPolymarketPositionClient>()?;
     m.add_class::<positions::PyPolymarketPositionOutcome>()?;
     m.add_class::<positions::PyPolymarketPositionTransaction>()?;

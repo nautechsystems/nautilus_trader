@@ -26,14 +26,15 @@ use jiff::{Timestamp, civil::Date, tz::Offset};
 use nautilus_core::{UnixNanos, datetime::unix_nanos_to_iso8601, string::formatting::Separable};
 use nautilus_model::{
     data::{
-        Bar, BarType, CatalogPathPrefix, Data, OptionGreeks, OrderBookDelta, OrderBookDeltas,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, BarType, Data, OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth,
+        QuoteTick, TradeTick,
     },
     identifiers::InstrumentId,
 };
+use nautilus_persistence::common::paths::CatalogPathPrefix;
 use nautilus_serialization::arrow::{
     bars_to_arrow_record_batch_bytes, book_deltas_to_arrow_record_batch_bytes,
-    book_depth10_to_arrow_record_batch_bytes, option_greeks_to_arrow_record_batch_bytes,
+    book_depths_to_arrow_record_batch_bytes, option_greeks_to_arrow_record_batch_bytes,
     quotes_to_arrow_record_batch_bytes, trades_to_arrow_record_batch_bytes,
 };
 use parquet::{arrow::ArrowWriter, basic::Compression, file::properties::WriterProperties};
@@ -171,7 +172,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
 
     // Initialize date collection maps
     let mut deltas_map: AHashMap<InstrumentId, Vec<OrderBookDelta>> = AHashMap::new();
-    let mut depths_map: AHashMap<InstrumentId, Vec<OrderBookDepth10>> = AHashMap::new();
+    let mut depths_map: AHashMap<InstrumentId, Vec<OrderBookDepth>> = AHashMap::new();
     let mut quotes_map: AHashMap<InstrumentId, Vec<QuoteTick>> = AHashMap::new();
     let mut trades_map: AHashMap<InstrumentId, Vec<TradeTick>> = AHashMap::new();
     let mut bars_map: AHashMap<BarType, Vec<Bar>> = AHashMap::new();
@@ -198,8 +199,8 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
                             compression,
                         );
                     }
-                    Data::BookDepth10(msg) => {
-                        handle_depth10_msg(
+                    Data::BookDepth(msg) => {
+                        handle_depth_msg(
                             *msg,
                             &mut depths_map,
                             &mut depths_cursors,
@@ -336,34 +337,34 @@ fn handle_deltas_msg(
         .extend(&*deltas.deltas);
 }
 
-fn handle_depth10_msg(
-    depth10: OrderBookDepth10,
-    map: &mut AHashMap<InstrumentId, Vec<OrderBookDepth10>>,
+fn handle_depth_msg(
+    depth: OrderBookDepth,
+    map: &mut AHashMap<InstrumentId, Vec<OrderBookDepth>>,
     cursors: &mut AHashMap<InstrumentId, DateCursor>,
     path: &Path,
     compression: Compression,
 ) {
     let cursor = cursors
-        .entry(depth10.instrument_id)
-        .or_insert_with(|| DateCursor::new(depth10.ts_init));
+        .entry(depth.instrument_id)
+        .or_insert_with(|| DateCursor::new(depth.ts_init));
 
-    if depth10.ts_init > cursor.end_ns {
-        if let Some(depths_vec) = map.remove(&depth10.instrument_id) {
+    if depth.ts_init > cursor.end_ns {
+        if let Some(depths_vec) = map.remove(&depth.instrument_id) {
             batch_and_write_depths(
                 &depths_vec,
-                &depth10.instrument_id,
+                &depth.instrument_id,
                 cursor.date_utc,
                 path,
                 compression,
             );
         }
         // Update cursor
-        *cursor = DateCursor::new(depth10.ts_init);
+        *cursor = DateCursor::new(depth.ts_init);
     }
 
-    map.entry(depth10.instrument_id)
+    map.entry(depth.instrument_id)
         .or_insert_with(|| Vec::with_capacity(100_000))
-        .push(depth10);
+        .push(depth);
 }
 
 fn handle_quote_msg(
@@ -503,23 +504,23 @@ fn batch_and_write_deltas(
 }
 
 fn batch_and_write_depths(
-    depths: &[OrderBookDepth10],
+    depths: &[OrderBookDepth],
     instrument_id: &InstrumentId,
     date: Date,
     path: &Path,
     compression: Compression,
 ) {
-    match book_depth10_to_arrow_record_batch_bytes(depths) {
+    match book_depths_to_arrow_record_batch_bytes(depths) {
         Ok(batch) => write_batch(
             &batch,
-            OrderBookDepth10::path_prefix(),
+            OrderBookDepth::path_prefix(),
             instrument_id,
             date,
             path,
             compression,
         ),
         Err(e) => {
-            log::error!("Error converting OrderBookDepth10 to Arrow: {e:?}");
+            log::error!("Error converting OrderBookDepth to Arrow: {e:?}");
         }
     }
 }

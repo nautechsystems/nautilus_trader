@@ -16,46 +16,25 @@
 //! Order book synchronization and recovery for OKX.
 //!
 //! - [`sync`] owns sequence validation, snapshot tracking, and recovery state transitions.
-//! - [`recovery`] owns recovery tasks, replacement subscriptions, and bounded retries.
+//! - [`recovery`] owns recovery tasks and replacement subscriptions, using the shared retry runner.
 //!
 //! The data client routes book events through the tracker and starts recovery when needed.
 //! Recovery tasks use the tracker to claim ownership and report failure; incoming snapshots
-//! complete recovery through the same tracker. The enums here describe their shared outcomes
-//! and channel scopes.
+//! complete recovery through the same tracker. Outcome types come from [`nautilus_live::book`];
+//! [`BookChannelScope`] keeps public and business socket routing local to OKX.
 
 pub(crate) mod recovery;
 pub(crate) mod sync;
 
-use nautilus_common::live::dst::time::Duration;
+use nautilus_live::book::recovery::BookRecoveryOutcome as RecoveryOutcome;
+pub(crate) use nautilus_live::book::{BookSequenceOutcome, BookSyncSignalKind};
 
 use crate::websocket::error::OKXWsError;
 
-#[derive(Debug, Clone)]
-pub(crate) enum BookRecoveryOutcome {
-    Pending,
-    Accepted,
-    Rejected(OKXWsError),
-}
+pub(crate) type BookRecoveryOutcome = RecoveryOutcome<OKXWsError>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BookChannelScope {
     Public,
     Business,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BookSyncSignalKind {
-    Stale { elapsed: Duration },
-    SnapshotMissing,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BookSequenceOutcome {
-    Accept,
-    Suppress,
-    Recover {
-        last_seq_id: Option<u64>,
-        prev_seq_id: Option<i64>,
-        seq_id: u64,
-    },
 }

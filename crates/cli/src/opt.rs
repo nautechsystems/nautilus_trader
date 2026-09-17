@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use clap::Parser;
+use nautilus_persistence::backend::migration::parse_storage_option;
 
 /// Command-line interface for NautilusTrader.
 #[derive(Debug, Parser)]
@@ -27,6 +28,7 @@ pub struct NautilusCli {
 #[derive(Parser, Debug)]
 pub enum Commands {
     Database(DatabaseOpt),
+    Catalog(CatalogOpt),
     #[cfg(feature = "defi")]
     Blockchain(BlockchainOpt),
 }
@@ -368,4 +370,35 @@ mod tests {
         // UniswapV2 is discovery-only, so it appears here but never in the snapshot listing.
         assert!(help.contains("UniswapV2"));
     }
+}
+
+/// Catalog management commands.
+#[derive(Debug, Parser)]
+pub struct CatalogOpt {
+    #[clap(subcommand)]
+    pub(crate) command: CatalogCommand,
+}
+
+/// Operations on persisted catalogs.
+#[derive(Debug, Parser)]
+pub enum CatalogCommand {
+    MigrateParquet(CatalogMigrationOpt),
+}
+
+/// Convert a Parquet catalog to the current Arrow storage format.
+#[derive(Debug, Parser)]
+pub struct CatalogMigrationOpt {
+    /// Source catalog path or object-store URI.
+    pub(crate) source: String,
+    /// Empty destination catalog path or object-store URI.
+    pub(crate) destination: String,
+    /// Validate source schemas without creating the destination.
+    #[arg(long)]
+    pub(crate) dry_run: bool,
+    /// Source object-store option in key=value form. Can be repeated.
+    #[arg(long = "source-option", value_parser = parse_storage_option)]
+    pub(crate) source_options: Vec<(String, String)>,
+    /// Destination object-store option in key=value form. Can be repeated.
+    #[arg(long = "target-option", value_parser = parse_storage_option)]
+    pub(crate) target_options: Vec<(String, String)>,
 }

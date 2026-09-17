@@ -9,6 +9,7 @@ import typing
 from nautilus_trader import common
 from nautilus_trader import core
 from nautilus_trader import model
+from nautilus_trader import persistence
 from nautilus_trader import portfolio
 from nautilus_trader import trading
 from nautilus_trader.live.providers import InstrumentProvider as InstrumentProvider
@@ -68,7 +69,7 @@ __all__ = [
     "SubmittedOrderExhaustionPolicy",
     "SubscribeBars",
     "SubscribeBookDeltas",
-    "SubscribeBookDepth10",
+    "SubscribeBookDepth",
     "SubscribeCustomData",
     "SubscribeFundingRates",
     "SubscribeIndexPrices",
@@ -83,7 +84,7 @@ __all__ = [
     "TradesResponse",
     "UnsubscribeBars",
     "UnsubscribeBookDeltas",
-    "UnsubscribeBookDepth10",
+    "UnsubscribeBookDepth",
     "UnsubscribeCustomData",
     "UnsubscribeFundingRates",
     "UnsubscribeIndexPrices",
@@ -212,7 +213,7 @@ class BookDepthResponse:
     @property
     def instrument_id(self) -> model.InstrumentId: ...
     @property
-    def data(self) -> list[model.OrderBookDepth10]: ...
+    def data(self) -> list[model.OrderBookDepth]: ...
     @property
     def correlation_id(self) -> core.UUID4: ...
     @property
@@ -227,7 +228,7 @@ class BookDepthResponse:
         cls,
         client_id: model.ClientId,
         instrument_id: model.InstrumentId,
-        data: typing.Sequence[model.OrderBookDepth10],
+        data: typing.Sequence[model.OrderBookDepth],
         correlation_id: core.UUID4,
         ts_init: int,
         start: int | None = None,
@@ -764,6 +765,10 @@ class LiveNodeConfig:
     @property
     def exec_clients(self) -> dict: ...
     @property
+    def streaming(self) -> persistence.StreamingConfig | None: ...
+    @property
+    def catalogs(self) -> list[persistence.DataCatalogConfig]: ...
+    @property
     def environment(self) -> common.Environment: ...
     @property
     def trader_id(self) -> model.TraderId: ...
@@ -834,6 +839,8 @@ class LiveNodeConfig:
         exec_engine: LiveExecutionEngineConfig | None = None,
         controller: trading.ImportableControllerConfig | None = None,
         plugins: typing.Sequence[PluginConfig] | None = None,
+        streaming: persistence.StreamingConfig | None = None,
+        catalogs: typing.Sequence[persistence.DataCatalogConfig] | None = None,
         *,
         data_clients: dict | None = None,
         exec_clients: dict | None = None,
@@ -1647,7 +1654,7 @@ class SubscribeBookDeltas:
     def managed(self) -> bool: ...
 
 @typing.final
-class SubscribeBookDepth10:
+class SubscribeBookDepth:
     @property
     def client_id(self) -> model.ClientId | None: ...
     @property
@@ -1919,7 +1926,7 @@ class UnsubscribeBookDeltas:
     def instrument_id(self) -> model.InstrumentId: ...
 
 @typing.final
-class UnsubscribeBookDepth10:
+class UnsubscribeBookDepth:
     @property
     def client_id(self) -> model.ClientId | None: ...
     @property

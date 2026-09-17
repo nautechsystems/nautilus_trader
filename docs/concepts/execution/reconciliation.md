@@ -152,6 +152,48 @@ Adapters choose the variant that matches the venue event:
 - Use `OrderWithFills` when one venue event contains both an order status and its fills. Binance
   Futures uses this for exchange-generated ADL, liquidation, and settlement orders.
 
+### Snapshot freshness and fill corrections
+
+A snapshot must not undo a fill that occurs after the state it describes. Receiving a snapshot
+after a stream event does not make the snapshot newer: REST requests and stream delivery can
+overlap during recovery. For example, a request can observe zero filled quantity, a stream can
+then deliver a fill of five units, and the older response can arrive last. Interpreting that
+response as a correction would wrongly void the five units.
+
+Snapshot corrections require a distinction between:
+
+- **A snapshot that predates a fill**: its lower filled quantity does not establish that the fill
+  was voided.
+- **A snapshot that covers the fill and reports a reduction**: the reduction can represent a
+  genuine correction, derived from retained fill history.
+- **An explicit venue fill-void event**: process it under the
+  [OrderFillVoided contract](../events/order_fill_voided.md), including its identity, quantity,
+  and ordering checks. It does not depend on inferring a correction from a snapshot total.
+
+Timestamp meaning matters when establishing coverage. The Derive adapter reports an order-update timestamp;
+Betfair's `matchedDate` describes the last match, not the time of a snapshot or correction.
+Response arrival time, equal timestamps, or timestamps from different clocks do not by themselves
+prove that a snapshot includes a fill.
+
+Rejecting a genuine correction as stale can leave local filled quantity and exposure overstated
+until later reconciliation resolves the discrepancy. Conversely, a stale snapshot carrying a
+misleadingly newer timestamp can still cause a false void if freshness checks trust that timestamp.
+
+The execution engine applies mass-status filled-quantity decreases to retained fills even when the
+snapshot contains no companion trades. It automatically skips an order snapshot when a cached fill
+or fill void has a local initialization timestamp at or after collection starts (`ExecutionMassStatus.ts_init`).
+This skips all changes from that order report, including status, quantity, and price updates.
+The engine still publishes the raw report and processes companion trades through normal deduplication.
+It does not queue the skipped snapshot. A later snapshot can apply a genuine correction once
+collection starts after the cached fill activity. This requires no configuration and does not
+suppress explicit fill-void events.
+
+This protection applies to runtime mass-status handling in `ExecutionEngine`. Startup reconciliation
+uses `ExecutionManager`, which does not apply this timestamp boundary. For runtime protection,
+adapters must capture the mass-status timestamp before collecting reports, using the same local
+clock as fill events. This boundary protects against overlapping local activity; it cannot detect
+venue state that is already stale when collection starts.
+
 ### Order-only fill projection
 
 During startup reconciliation, a bounded historical report can prove an order's status and filled

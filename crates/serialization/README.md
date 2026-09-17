@@ -266,7 +266,7 @@ cargo bench -p nautilus-serialization --no-default-features --features "capnp sb
 The `market_data_capnp_vs_sbe` bench covers:
 
 - All supported market data wire types: `BookOrder`, `OrderBookDelta`, `OrderBookDeltas`,
-  `OrderBookDepth10`, `QuoteTick`, `TradeTick`, `BarType`, `Bar`, `MarkPriceUpdate`,
+  `OrderBookDepth`, `QuoteTick`, `TradeTick`, `BarType`, `Bar`, `MarkPriceUpdate`,
   `IndexPriceUpdate`, `FundingRateUpdate`, `InstrumentStatus`, and `InstrumentClose`
 - `OrderBookDeltas` scaling at `1`, `10`, and `100` deltas
 - All `DataAny` market data variants

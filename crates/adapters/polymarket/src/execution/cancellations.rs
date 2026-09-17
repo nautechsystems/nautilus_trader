@@ -27,6 +27,7 @@ use parking_lot::Mutex;
 
 use super::{PolymarketExecutionClient, pending::PendingCancelTracker};
 use crate::{
+    common::enums::PolymarketSignerType,
     execution::types::{CancelOutcome, classify_http_command_failure},
     http::{error::sanitize_error_text, query::CancelResponse},
     websocket::dispatch::WsDispatchState,
@@ -278,7 +279,12 @@ impl PolymarketExecutionClient {
     pub(super) fn cancel_all_orders_command(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
         let cache = self.core.cache();
         let side = cmd.order_side;
-        let asset_id = if side.is_none() {
+        let cancel_by_id =
+            side.is_some() || self.config.signer_type == PolymarketSignerType::Session;
+
+        let asset_id = if cancel_by_id {
+            None
+        } else {
             let instrument = cache.instrument(&cmd.instrument_id).ok_or_else(|| {
                 anyhow::anyhow!(
                     "Cannot cancel all orders: instrument not found in cache for {}",
@@ -286,9 +292,8 @@ impl PolymarketExecutionClient {
                 )
             })?;
             Some(instrument.raw_symbol().to_string())
-        } else {
-            None
         };
+
         let open_orders = cache.orders_open(
             Some(&self.core.venue),
             Some(&cmd.instrument_id),
@@ -297,7 +302,7 @@ impl PolymarketExecutionClient {
             side,
         );
 
-        if side.is_some() && open_orders.is_empty() {
+        if cancel_by_id && open_orders.is_empty() {
             log::debug!(
                 "No cached {side:?} orders to cancel for instrument_id={}",
                 cmd.instrument_id
@@ -305,14 +310,14 @@ impl PolymarketExecutionClient {
             return Ok(());
         }
 
-        let cancel_guard = if side.is_none() {
-            CancelCommandGuard::market(self.ws_dispatch_state.clone(), cmd.instrument_id)
-        } else {
+        let cancel_guard = if cancel_by_id {
             let pending = open_orders
                 .iter()
                 .map(|order| (order.client_order_id(), order.instrument_id()))
                 .collect::<Vec<_>>();
             CancelCommandGuard::available_orders(self.ws_dispatch_state.clone(), &pending)
+        } else {
+            CancelCommandGuard::market(self.ws_dispatch_state.clone(), cmd.instrument_id)
         };
 
         let Some(cancel_guard) = cancel_guard else {
@@ -324,7 +329,7 @@ impl PolymarketExecutionClient {
         let mut orders = Vec::new();
 
         for order in open_orders {
-            if side.is_some()
+            if cancel_by_id
                 && !cancel_guard
                     .client_order_ids
                     .contains(&order.client_order_id())
@@ -343,7 +348,7 @@ impl PolymarketExecutionClient {
             }
         }
 
-        if side.is_some() && orders.is_empty() {
+        if cancel_by_id && orders.is_empty() {
             return Ok(());
         }
 
@@ -354,30 +359,28 @@ impl PolymarketExecutionClient {
 
         let spawned = self.spawn_task("cancel_all_orders", async move {
             let _cancel_guard = cancel_guard;
-            let response = match side {
-                None => {
-                    let asset_id = asset_id
-                        .as_deref()
-                        .expect("asset_id must be resolved for unsided cancellation");
-                    submitter.cancel_market_orders(asset_id).await
-                }
-                Some(_) => {
-                    let venue_order_ids = orders
-                        .iter()
-                        .map(|(venue_order_id, _)| venue_order_id.to_string())
-                        .collect::<Vec<_>>();
 
-                    let order_id_refs =
-                        venue_order_ids.iter().map(String::as_str).collect::<Vec<_>>();
-                    submitter.cancel_orders(&order_id_refs).await
-                }
+            let response = if cancel_by_id {
+                let venue_order_ids = orders
+                    .iter()
+                    .map(|(venue_order_id, _)| venue_order_id.to_string())
+                    .collect::<Vec<_>>();
+
+                let order_id_refs =
+                    venue_order_ids.iter().map(String::as_str).collect::<Vec<_>>();
+                submitter.cancel_orders(&order_id_refs).await
+            } else {
+                let asset_id = asset_id
+                    .as_deref()
+                    .expect("asset_id must be resolved for unsided cancellation");
+                submitter.cancel_market_orders(asset_id).await
             };
 
             match response {
                 Ok(response) => {
                     for (venue_order_id, order) in &orders {
                         let venue_order_id_str = venue_order_id.to_string();
-                        if side.is_some()
+                        if cancel_by_id
                             || response.not_canceled.contains_key(&venue_order_id_str)
                             || response
                                 .canceled

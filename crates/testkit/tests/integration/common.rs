@@ -15,9 +15,9 @@
 
 use std::{fs::File, mem::size_of};
 
-use arrow::datatypes::DataType;
+use arrow::datatypes::{DataType, TimeUnit};
 use nautilus_model::types::{price::PriceRaw, quantity::QuantityRaw};
-use nautilus_testkit::common::get_nautilus_test_data_file_path;
+use nautilus_testkit::common::{get_nautilus_test_data_file_path, get_test_data_file_path};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use rstest::rstest;
 
@@ -37,5 +37,33 @@ fn selected_fixture_fixed_widths_match_model_raw_types() {
         schema.field_with_name("bid_size").unwrap().data_type(),
         &DataType::FixedSizeBinary(i32::try_from(size_of::<QuantityRaw>()).unwrap()),
         "selected fixture quantity width must match QuantityRaw",
+    );
+}
+
+#[rstest]
+#[case("quotes.parquet", Some("bid_price"))]
+#[case("trades.parquet", Some("price"))]
+#[case("bars.parquet", Some("open"))]
+#[case("deltas.parquet", Some("price"))]
+#[case("quotes-3-groups-filter-query.parquet", Some("bid_price"))]
+#[case("depths.parquet", None)]
+fn current_arrow_fixture_uses_decimal128_and_utc_ns(
+    #[case] file_name: &str,
+    #[case] fixed_field: Option<&str>,
+) {
+    let filepath = get_test_data_file_path(&format!("nautilus/arrow/{file_name}"));
+    let file = File::open(filepath).unwrap();
+    let builder = ParquetRecordBatchReaderBuilder::try_new(file).unwrap();
+    let schema = builder.schema();
+
+    if let Some(fixed_field) = fixed_field {
+        assert_eq!(
+            schema.field_with_name(fixed_field).unwrap().data_type(),
+            &DataType::Decimal128(38, 16),
+        );
+    }
+    assert_eq!(
+        schema.field_with_name("ts_init").unwrap().data_type(),
+        &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into())),
     );
 }

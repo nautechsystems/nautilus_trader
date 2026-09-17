@@ -370,6 +370,7 @@ impl NautilusKernelBuilder {
             risk_engine: self.risk_engine,
             exec_engine: self.exec_engine,
             portfolio: self.portfolio,
+            #[cfg(feature = "streaming")]
             streaming: None,
             #[cfg(feature = "streaming")]
             catalogs: Vec::new(),

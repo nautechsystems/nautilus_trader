@@ -28,11 +28,11 @@
 mod allocator;
 
 use nautilus_backtest::{
-    config::{BacktestDataConfig, BacktestRunConfig, BacktestVenueConfig, NautilusDataType},
+    config::{BacktestDataConfig, BacktestRunConfig, BacktestVenueConfig},
     node::BacktestNode,
 };
 use nautilus_model::{
-    data::QuoteTick,
+    data::{NautilusDataType, QuoteTick},
     enums::{AccountType, BookType, OmsType},
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny, stubs::audusd_sim},

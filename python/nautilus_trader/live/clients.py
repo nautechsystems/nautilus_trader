@@ -64,7 +64,7 @@ if TYPE_CHECKING:
     from nautilus_trader.live import SubmitOrderList
     from nautilus_trader.live import SubscribeBars
     from nautilus_trader.live import SubscribeBookDeltas
-    from nautilus_trader.live import SubscribeBookDepth10
+    from nautilus_trader.live import SubscribeBookDepth
     from nautilus_trader.live import SubscribeCustomData
     from nautilus_trader.live import SubscribeFundingRates
     from nautilus_trader.live import SubscribeIndexPrices
@@ -78,7 +78,7 @@ if TYPE_CHECKING:
     from nautilus_trader.live import SubscribeTrades
     from nautilus_trader.live import UnsubscribeBars
     from nautilus_trader.live import UnsubscribeBookDeltas
-    from nautilus_trader.live import UnsubscribeBookDepth10
+    from nautilus_trader.live import UnsubscribeBookDepth
     from nautilus_trader.live import UnsubscribeCustomData
     from nautilus_trader.live import UnsubscribeFundingRates
     from nautilus_trader.live import UnsubscribeIndexPrices
@@ -243,7 +243,7 @@ class DataClient(_Client):
     async def _subscribe_book_deltas(self, command: SubscribeBookDeltas) -> None:
         raise NotImplementedError
 
-    async def _subscribe_book_depth10(self, command: SubscribeBookDepth10) -> None:
+    async def _subscribe_book_depth(self, command: SubscribeBookDepth) -> None:
         raise NotImplementedError
 
     async def _subscribe_quotes(self, command: SubscribeQuotes) -> None:
@@ -285,7 +285,7 @@ class DataClient(_Client):
     async def _unsubscribe_book_deltas(self, command: UnsubscribeBookDeltas) -> None:
         raise NotImplementedError
 
-    async def _unsubscribe_book_depth10(self, command: UnsubscribeBookDepth10) -> None:
+    async def _unsubscribe_book_depth(self, command: UnsubscribeBookDepth) -> None:
         raise NotImplementedError
 
     async def _unsubscribe_quotes(self, command: UnsubscribeQuotes) -> None:

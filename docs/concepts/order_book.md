@@ -39,14 +39,14 @@ Subscriptions and handlers are part of the Python strategy/actor layer:
 from nautilus_trader.model import BookType
 from nautilus_trader.model import OrderBook
 from nautilus_trader.model import OrderBookDeltas
-from nautilus_trader.model import OrderBookDepth10
+from nautilus_trader.model import OrderBookDepth
 
 
 # Incremental book deltas
 self.subscribe_book_deltas(instrument_id, BookType.L2_MBP)
 
 # Aggregated depth snapshots (up to 10 levels)
-self.subscribe_book_depth10(instrument_id, BookType.L2_MBP)
+self.subscribe_book_depth(instrument_id, BookType.L2_MBP)
 
 # Full book snapshots at a timed interval
 self.subscribe_book_at_interval(instrument_id, BookType.L2_MBP, interval_ms=1000)
@@ -58,7 +58,7 @@ Each subscription type delivers data to the corresponding handler:
 def on_book_deltas(self, deltas: OrderBookDeltas) -> None: ...
 
 
-def on_book_depth(self, depth: OrderBookDepth10) -> None: ...
+def on_book_depth(self, depth: OrderBookDepth) -> None: ...
 
 
 def on_book(self, order_book: OrderBook) -> None: ...
@@ -129,7 +129,7 @@ logs depends on how the update arrives:
 - **Snapshot deltas**: Once per snapshot, whether it arrives as an `F_SNAPSHOT` batch or as a
   single `F_SNAPSHOT` delta, since every delta in a rebuild shares the snapshot's sequence and
   timestamp.
-- **Depth snapshots**: Once, since an `OrderBookDepth10` replaces the book in a single update.
+- **Depth snapshots**: Once, since an `OrderBookDepth` replaces the book in a single update.
 
 A snapshot report describes the incoming snapshot, so it does not depend on whether each of its
 deltas reaches the book. An `L1_MBP` book driven by quotes or trades is the exception to all of

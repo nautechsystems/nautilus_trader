@@ -15,31 +15,36 @@
 
 //! Arrow serialization for BettingInstrument instruments.
 
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{borrow::Borrow, collections::HashMap, str::FromStr, sync::Arc};
 
+#[allow(unused_imports)]
 use arrow::{
     array::{
-        Array, BinaryArray, BinaryBuilder, Float64Array, StringArray, StringBuilder, UInt8Array,
-        UInt64Array,
+        Array, Float64Array, Float64Builder, Int64Array, Int64Builder, StringArray, StringBuilder,
+        UInt8Array, UInt64Array,
     },
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
     record_batch::RecordBatch,
 };
+#[allow(unused_imports)]
 use nautilus_core::Params;
 use nautilus_model::{
     identifiers::{InstrumentId, Symbol},
     instruments::betting::BettingInstrument,
     types::{money::Money, price::Price, quantity::Quantity},
 };
+#[allow(unused)]
 use rust_decimal::Decimal;
+#[allow(unused)]
+use serde_json::Value;
 use ustr::Ustr;
 
-use super::KEY_CLASS;
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
     KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, extract_column, extract_column_by_name_or_index,
-    extract_optional_string_column_by_name, optional_ustr_value,
+    extract_optional_string_column_by_name, json_string_field, optional_ustr_value,
+    record_batch_with_timestamps, record_batch_with_u64_timestamps, timestamp_data_type,
 };
 
 impl ArrowSchemaProvider for BettingInstrument {
@@ -56,12 +61,12 @@ impl ArrowSchemaProvider for BettingInstrument {
             Field::new("event_id", DataType::UInt64, false),
             Field::new("event_name", DataType::Utf8, false),
             Field::new("event_country_code", DataType::Utf8, false),
-            Field::new("event_open_date", DataType::UInt64, false),
+            Field::new("event_open_date", timestamp_data_type(), false),
             Field::new("betting_type", DataType::Utf8, false),
             Field::new("market_id", DataType::Utf8, false),
             Field::new("market_name", DataType::Utf8, false),
             Field::new("market_type", DataType::Utf8, false),
-            Field::new("market_start_time", DataType::UInt64, false),
+            Field::new("market_start_time", timestamp_data_type(), false),
             Field::new("selection_id", DataType::UInt64, false),
             Field::new("selection_name", DataType::Utf8, false),
             Field::new("selection_handicap", DataType::Float64, false),
@@ -80,13 +85,13 @@ impl ArrowSchemaProvider for BettingInstrument {
             Field::new("maker_fee", DataType::Utf8, false),
             Field::new("taker_fee", DataType::Utf8, false),
             Field::new("tick_scheme", DataType::Utf8, true),
-            Field::new("info", DataType::Binary, true), // nullable
-            Field::new("ts_event", DataType::UInt64, false),
-            Field::new("ts_init", DataType::UInt64, false),
+            json_string_field("info", true),
+            Field::new("ts_event", timestamp_data_type(), false),
+            Field::new("ts_init", timestamp_data_type(), false),
         ];
 
         let mut final_metadata = HashMap::new();
-        final_metadata.insert(KEY_CLASS.to_string(), "BettingInstrument".to_string());
+        final_metadata.insert("class".to_string(), "BettingInstrument".to_string());
 
         if let Some(meta) = metadata {
             final_metadata.extend(meta);
@@ -97,10 +102,13 @@ impl ArrowSchemaProvider for BettingInstrument {
 }
 
 impl EncodeToRecordBatch for BettingInstrument {
-    fn encode_batch(
+    fn encode_batch<T>(
         #[allow(unused)] metadata: &HashMap<String, String>,
-        data: &[Self],
-    ) -> Result<RecordBatch, ArrowError> {
+        data: &[T],
+    ) -> Result<RecordBatch, ArrowError>
+    where
+        T: std::borrow::Borrow<Self>,
+    {
         let mut id_builder = StringBuilder::new();
         let mut raw_symbol_builder = StringBuilder::new();
         let mut venue_name_builder = StringBuilder::new();
@@ -136,11 +144,11 @@ impl EncodeToRecordBatch for BettingInstrument {
         let mut maker_fee_builder = StringBuilder::new();
         let mut taker_fee_builder = StringBuilder::new();
         let mut tick_scheme_builder = StringBuilder::new();
-        let mut info_builder = BinaryBuilder::new();
+        let mut info_builder = StringBuilder::new();
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
 
-        for bi in data {
+        for bi in data.iter().map(Borrow::borrow) {
             id_builder.append_value(bi.id.to_string());
             raw_symbol_builder.append_value(bi.raw_symbol);
             // Extract venue_name from instrument_id (format: "SYMBOL.VENUE")
@@ -215,11 +223,10 @@ impl EncodeToRecordBatch for BettingInstrument {
                 tick_scheme_builder.append_null();
             }
 
-            // Encode info dict as JSON bytes (matching Python's msgspec.json.encode)
             if let Some(ref info) = bi.info {
-                match serde_json::to_vec(info) {
-                    Ok(json_bytes) => {
-                        info_builder.append_value(json_bytes);
+                match serde_json::to_string(info) {
+                    Ok(json) => {
+                        info_builder.append_value(json);
                     }
                     Err(e) => {
                         return Err(ArrowError::InvalidArgumentError(format!(
@@ -236,9 +243,9 @@ impl EncodeToRecordBatch for BettingInstrument {
         }
 
         let mut final_metadata = metadata.clone();
-        final_metadata.insert(KEY_CLASS.to_string(), "BettingInstrument".to_string());
+        final_metadata.insert("class".to_string(), "BettingInstrument".to_string());
 
-        RecordBatch::try_new(
+        record_batch_with_timestamps(
             Self::get_schema(Some(final_metadata)).into(),
             vec![
                 Arc::new(id_builder.finish()),
@@ -298,19 +305,18 @@ impl EncodeToRecordBatch for BettingInstrument {
     }
 }
 
-/// Decodes [`BettingInstrument`] instruments from a record batch.
-///
-/// Not a [`DecodeFromRecordBatch`] implementation because that trait requires `Into<Data>`.
+/// Helper function to decode BettingInstrument from RecordBatch
+/// (Cannot implement DecodeFromRecordBatch trait due to `Into<Data>` bound)
 ///
 /// # Errors
 ///
-/// Returns an `EncodingError` if the record batch cannot be decoded.
-///
-/// [`DecodeFromRecordBatch`]: crate::arrow::DecodeFromRecordBatch
+/// Returns an `EncodingError` if the RecordBatch cannot be decoded.
 pub fn decode_betting_instrument_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
     record_batch: &RecordBatch,
 ) -> Result<Vec<BettingInstrument>, EncodingError> {
+    let record_batch = record_batch_with_u64_timestamps(record_batch)?;
+    let record_batch = &record_batch;
     let cols = record_batch.columns();
     let num_rows = record_batch.num_rows();
 
@@ -369,7 +375,7 @@ pub fn decode_betting_instrument_batch(
     let taker_fee_values = extract_column::<StringArray>(cols, "taker_fee", 33, DataType::Utf8)?;
     let tick_scheme_values = extract_optional_string_column_by_name(record_batch, "tick_scheme")?;
     let info_values =
-        extract_column_by_name_or_index::<BinaryArray>(record_batch, "info", 35, DataType::Binary)?;
+        extract_column_by_name_or_index::<StringArray>(record_batch, "info", 35, DataType::Utf8)?;
     let ts_event_values = extract_column_by_name_or_index::<UInt64Array>(
         record_batch,
         "ts_event",
@@ -428,17 +434,16 @@ pub fn decode_betting_instrument_batch(
         let taker_fee = Decimal::from_str(taker_fee_values.value(i))
             .map_err(|e| EncodingError::ParseError("taker_fee", format!("row {i}: {e}")))?;
 
-        // Decode info dict from JSON bytes (matching Python's msgspec.json.decode)
         let info = if info_values.is_null(i) {
             None
         } else {
-            let info_bytes = info_values
+            let info_json = info_values
                 .as_any()
-                .downcast_ref::<BinaryArray>()
+                .downcast_ref::<StringArray>()
                 .ok_or_else(|| EncodingError::ParseError("info", format!("row {i}: invalid type")))?
                 .value(i);
 
-            match serde_json::from_slice::<Params>(info_bytes) {
+            match serde_json::from_str::<Params>(info_json) {
                 Ok(info_dict) => Some(info_dict),
                 Err(e) => {
                     return Err(EncodingError::ParseError(
@@ -559,7 +564,7 @@ mod tests {
         let mut columns = batch.columns().to_vec();
         columns[column_index] = Arc::new(UInt8Array::from(precisions.to_vec()));
 
-        RecordBatch::try_new(batch.schema(), columns).unwrap()
+        record_batch_with_timestamps(batch.schema(), columns).unwrap()
     }
 
     #[rstest]

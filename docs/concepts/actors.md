@@ -434,7 +434,7 @@ Common data operations map to these handlers:
 | `subscribe_instrument()`        | Subscription | `on_instrument()`               | Instrument definition updates.             |
 | `subscribe_instruments()`       | Subscription | `on_instrument()`               | Instrument definition updates for a venue. |
 | `subscribe_book_deltas()`       | Subscription | `on_book_deltas()`              | Order book deltas.                         |
-| `subscribe_book_depth10()`      | Subscription | `on_book_depth()`               | Order book depth snapshots.                |
+| `subscribe_book_depth()`        | Subscription | `on_book_depth()`               | Order book depth snapshots.                |
 | `subscribe_book_at_interval()`  | Subscription | `on_book()`                     | Order book snapshots at intervals.         |
 | `subscribe_quotes()`            | Subscription | `on_quote()`                    | Quote updates.                             |
 | `subscribe_trades()`            | Subscription | `on_trade()`                    | Trade updates.                             |

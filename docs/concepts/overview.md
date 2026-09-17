@@ -155,7 +155,7 @@ historical requests and live subscriptions depends on the provider and adapter. 
 
 - `OrderBookDelta` (single order book change)
 - `OrderBookDeltas` (container type)
-- `OrderBookDepth10` (fixed depth of 10 levels per side)
+- `OrderBookDepth` (variable-depth snapshots; ten levels stay inline)
 - `QuoteTick`
 - `TradeTick`
 - `Bar`

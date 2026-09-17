@@ -20,8 +20,7 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
-        OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
-        depth::DEPTH10_LEN,
+        OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick, depth::DEPTH10_LEN,
     },
     enums::{
         AccountType, AggregationSource, BookAction, LiquiditySide, OrderSide, OrderStatus,
@@ -162,7 +161,7 @@ pub fn parse_ws_order_book_deltas(
         .context("failed to construct OrderBookDeltas from Lighter WebSocket book")
 }
 
-/// Parses a full Lighter order book payload into a Nautilus [`OrderBookDepth10`].
+/// Parses a full Lighter order book payload into a Nautilus [`OrderBookDepth`].
 ///
 /// Call this only for snapshot or depth payloads that contain the full visible
 /// book. Incremental updates should be parsed as deltas.
@@ -170,12 +169,12 @@ pub fn parse_ws_order_book_deltas(
 /// # Errors
 ///
 /// Returns an error if any price or size cannot be converted.
-pub fn parse_ws_order_book_depth10(
+pub fn parse_ws_order_book_depth(
     book: &LighterWsOrderBook,
     instrument: &InstrumentAny,
     timestamp_ms: u64,
     ts_init: UnixNanos,
-) -> anyhow::Result<OrderBookDepth10> {
+) -> anyhow::Result<OrderBookDepth> {
     let ts_event = parse_millis_to_nanos(timestamp_ms)?;
     let sequence = u64::try_from(book.nonce).context("negative Lighter book nonce")?;
     let mut bids = [BookOrder::default(); DEPTH10_LEN];
@@ -221,7 +220,7 @@ pub fn parse_ws_order_book_depth10(
         );
     }
 
-    Ok(OrderBookDepth10::new(
+    Ok(OrderBookDepth::new(
         instrument.id(),
         bids,
         asks,
@@ -1716,32 +1715,29 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_ws_order_book_depth10_pads_levels() {
+    fn test_parse_ws_order_book_depth_preserves_sparse_levels() {
         let instrument = create_test_instrument();
-        let depth = parse_ws_order_book_depth10(
-            &stub_book(),
-            &instrument,
-            1774884082326,
-            UnixNanos::from(1),
-        )
-        .unwrap();
+        let depth =
+            parse_ws_order_book_depth(&stub_book(), &instrument, 1774884082326, UnixNanos::from(1))
+                .unwrap();
 
+        assert_eq!(depth.instrument_id, instrument.id());
+        assert_eq!(depth.bids.len(), 1);
+        assert_eq!(depth.asks.len(), 1);
         assert_eq!(depth.bids[0].price, Price::from("2064.30"));
-        // Populated level must round-trip price AND size, otherwise a
-        // future refactor that swaps fields or drops precision would not
-        // be caught by this test.
         assert_eq!(depth.bids[0].size, Quantity::from("1.0392"));
         assert_eq!(depth.bids[0].side, OrderSide::Buy.into());
+        assert_eq!(depth.bids[0].order_id, 0);
         assert_eq!(depth.asks[0].price, Price::from("2064.54"));
         assert_eq!(depth.asks[0].size, Quantity::from("0.3285"));
         assert_eq!(depth.asks[0].side, OrderSide::Sell.into());
+        assert_eq!(depth.asks[0].order_id, 0);
         assert_eq!(depth.sequence, 9_182_390_020);
-        assert_eq!(depth.bid_counts[0], 1);
-        assert_eq!(depth.ask_counts[0], 1);
-        assert_eq!(depth.bid_counts[1], 0);
-        assert_eq!(depth.ask_counts[1], 0);
-        assert!(depth.bids[1].size.is_zero());
-        assert!(depth.asks[1].size.is_zero());
+        assert_eq!(depth.bid_counts.as_slice(), &[1]);
+        assert_eq!(depth.ask_counts.as_slice(), &[1]);
+        assert_eq!(depth.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(depth.ts_event, UnixNanos::from(1_774_884_082_326_000_000));
+        assert_eq!(depth.ts_init, UnixNanos::from(1));
     }
 
     #[rstest]

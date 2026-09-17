@@ -27,7 +27,6 @@ import pytest
 
 from nautilus_trader.common import Cache
 from nautilus_trader.common import Clock
-from nautilus_trader.model import HIGH_PRECISION
 from nautilus_trader.model import Bar
 from nautilus_trader.model import BarAggregation
 from nautilus_trader.model import BarSpecification
@@ -40,7 +39,7 @@ from nautilus_trader.model import IndexPriceUpdate
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import MarkPriceUpdate
 from nautilus_trader.model import OrderBookDelta
-from nautilus_trader.model import OrderBookDepth10
+from nautilus_trader.model import OrderBookDepth
 from nautilus_trader.model import OrderSide
 from nautilus_trader.model import Price
 from nautilus_trader.model import PriceType
@@ -52,7 +51,7 @@ from nautilus_trader.persistence import BarDataWrangler
 from nautilus_trader.persistence import DataBackendSession
 from nautilus_trader.persistence import NautilusDataType
 from nautilus_trader.persistence import OrderBookDeltaDataWrangler
-from nautilus_trader.persistence import OrderBookDepth10DataWrangler
+from nautilus_trader.persistence import OrderBookDepthDataWrangler
 from nautilus_trader.persistence import ParquetDataCatalog
 from nautilus_trader.persistence import QuoteTickDataWrangler
 from nautilus_trader.persistence import StreamingFeatherWriter
@@ -65,11 +64,7 @@ from tests.stubs import TestDataProviderPyo3
 AUDUSD_SIM = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
 ONE_MIN_BID = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
 AUDUSD_1_MIN_BID = BarType(AUDUSD_SIM, ONE_MIN_BID)
-
-
-def _data_path(name: str) -> str:
-    subdir = "128-bit" if HIGH_PRECISION else "64-bit"
-    return str(TEST_DATA_DIR / "nautilus" / subdir / name)
+ARROW_FIXTURES = TEST_DATA_DIR / "nautilus" / "arrow"
 
 
 def _make_bar(ts: int) -> Bar:
@@ -116,7 +111,7 @@ def test_backend_session_add_file_and_query_quotes() -> None:
     Test backend session add file and query quotes.
     """
     session = DataBackendSession()
-    session.add_file(NautilusDataType.QuoteTick, "quotes", _data_path("quotes.parquet"))
+    session.add_file(NautilusDataType.QuoteTick, "quotes", str(ARROW_FIXTURES / "quotes.parquet"))
 
     chunks = list(session.to_query_result())
     quotes = chunks[0]
@@ -134,7 +129,7 @@ def test_backend_session_to_list_queries_quotes() -> None:
     Test backend session to list queries quotes.
     """
     session = DataBackendSession()
-    session.add_file(NautilusDataType.QuoteTick, "quotes", _data_path("quotes.parquet"))
+    session.add_file(NautilusDataType.QuoteTick, "quotes", str(ARROW_FIXTURES / "quotes.parquet"))
 
     quotes = session.to_query_result().to_list()
 
@@ -149,7 +144,7 @@ def test_backend_session_to_list_returns_unread_records() -> None:
     Test backend session to list returns unread records.
     """
     session = DataBackendSession(chunk_size=1_000)
-    session.add_file(NautilusDataType.QuoteTick, "quotes", _data_path("quotes.parquet"))
+    session.add_file(NautilusDataType.QuoteTick, "quotes", str(ARROW_FIXTURES / "quotes.parquet"))
     result = session.to_query_result()
 
     next(result)
@@ -168,7 +163,7 @@ def test_backend_session_to_list_returns_empty_for_empty_query() -> None:
     session.add_file(
         NautilusDataType.QuoteTick,
         "quotes",
-        _data_path("quotes.parquet"),
+        str(ARROW_FIXTURES / "quotes.parquet"),
         "SELECT * FROM quotes WHERE 1=0",
     )
 
@@ -180,7 +175,7 @@ def test_backend_session_add_file_and_query_trades() -> None:
     Test backend session add file and query trades.
     """
     session = DataBackendSession()
-    session.add_file(NautilusDataType.TradeTick, "trades", _data_path("trades.parquet"))
+    session.add_file(NautilusDataType.TradeTick, "trades", str(ARROW_FIXTURES / "trades.parquet"))
 
     result = session.to_query_result()
     chunk_count = sum(1 for _ in result)
@@ -193,7 +188,7 @@ def test_backend_session_add_file_and_query_bars() -> None:
     Test backend session add file and query bars.
     """
     session = DataBackendSession()
-    session.add_file(NautilusDataType.Bar, "bars", _data_path("bars.parquet"))
+    session.add_file(NautilusDataType.Bar, "bars", str(ARROW_FIXTURES / "bars.parquet"))
 
     result = session.to_query_result()
     chunk_count = sum(1 for _ in result)
@@ -209,7 +204,7 @@ def test_backend_session_add_file_and_query_deltas() -> None:
     session.add_file(
         NautilusDataType.OrderBookDelta,
         "deltas",
-        _data_path("deltas.parquet"),
+        str(ARROW_FIXTURES / "deltas.parquet"),
     )
 
     result = session.to_query_result()
@@ -223,8 +218,8 @@ def test_backend_session_multiple_files() -> None:
     Test backend session multiple files.
     """
     session = DataBackendSession()
-    session.add_file(NautilusDataType.TradeTick, "trades", _data_path("trades.parquet"))
-    session.add_file(NautilusDataType.QuoteTick, "quotes", _data_path("quotes.parquet"))
+    session.add_file(NautilusDataType.TradeTick, "trades", str(ARROW_FIXTURES / "trades.parquet"))
+    session.add_file(NautilusDataType.QuoteTick, "quotes", str(ARROW_FIXTURES / "quotes.parquet"))
 
     result = session.to_query_result()
     chunk_count = sum(1 for _ in result)
@@ -237,7 +232,7 @@ def test_backend_session_nautilus_data_type_variants() -> None:
     Test backend session nautilus data type variants.
     """
     assert NautilusDataType.OrderBookDelta is not None
-    assert NautilusDataType.OrderBookDepth10 is not None
+    assert NautilusDataType.OrderBookDepth is not None
     assert NautilusDataType.QuoteTick is not None
     assert NautilusDataType.TradeTick is not None
     assert NautilusDataType.Bar is not None
@@ -415,7 +410,7 @@ def test_catalog_write_and_read_order_book_depths(tmp_path: Path) -> None:
         for level in range(10)
     ]
     depths = [
-        OrderBookDepth10(
+        OrderBookDepth(
             instrument_id=AUDUSD_SIM,
             bids=bids,
             asks=asks,
@@ -451,7 +446,7 @@ def test_catalog_write_and_read_order_book_depths(tmp_path: Path) -> None:
                 assert actual_order.price == expected_order.price
                 assert actual_order.size == expected_order.size
                 assert expected_order.order_id != 0
-                assert actual_order.order_id == 0
+                assert actual_order.order_id == expected_order.order_id
 
 
 def test_catalog_append_data(tmp_path: Path) -> None:
@@ -520,7 +515,7 @@ def test_catalog_query_filters_and_timestamp_metadata(tmp_path: Path) -> None:
         ["AUD/USD.SIM"],
         start=1,
         end=6,
-        where_clause="ts_init >= 5",
+        where_clause="ts_init >= arrow_cast(5, 'Timestamp(Nanosecond, Some(\"UTC\"))')",
     )
 
     assert loaded == [_make_bar(5), _make_bar(6)]
@@ -640,11 +635,11 @@ def test_order_book_delta_wrangler_construction() -> None:
     assert wrangler.size_precision == 5
 
 
-def test_order_book_depth10_wrangler_construction() -> None:
+def test_order_book_depth_wrangler_construction() -> None:
     """
-    Test order book depth10 wrangler construction.
+    Test order book depth wrangler construction.
     """
-    wrangler = OrderBookDepth10DataWrangler(
+    wrangler = OrderBookDepthDataWrangler(
         instrument_id="ETHUSDT.BINANCE",
         price_precision=2,
         size_precision=5,
@@ -729,7 +724,7 @@ def test_streaming_feather_writer_write_trade(tmp_path: Path) -> None:
             ),
         ),
         (
-            "funding_rate_update",
+            "funding_rates",
             lambda instrument_id: FundingRateUpdate(
                 instrument_id,
                 Decimal("0.0001"),

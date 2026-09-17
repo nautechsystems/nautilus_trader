@@ -22,7 +22,7 @@ use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, DEPTH10_LEN, Data, FundingRateUpdate, IndexPriceUpdate,
         MarkPriceUpdate, NULL_ORDER, OptionGreekValues, OptionGreeks, OrderBookDelta,
-        OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
     },
     enums::{AggregationSource, BookAction, GreeksConvention, OrderSide, RecordFlag},
     identifiers::{InstrumentId, TradeId},
@@ -94,16 +94,16 @@ pub fn parse_tardis_ws_message(
                 }
             }
             _ => match book_snapshot_output {
-                BookSnapshotOutput::Depth10 => {
-                    match parse_book_snapshot_msg_as_depth10(
+                BookSnapshotOutput::Depth => {
+                    match parse_book_snapshot_msg_as_depth(
                         &msg,
                         info.price_precision,
                         info.size_precision,
                         info.instrument_id,
                     ) {
-                        Ok(depth10) => Some(Data::BookDepth10(Box::new(depth10))),
+                        Ok(depth) => Some(Data::BookDepth(Box::new(depth))),
                         Err(e) => {
-                            log::error!("Failed to parse book snapshot as depth10: {e}");
+                            log::error!("Failed to parse book snapshot as depth: {e}");
                             None
                         }
                     }
@@ -344,17 +344,17 @@ pub fn parse_book_snapshot_msg_as_deltas(
     )
 }
 
-/// Parse a book snapshot message into an [`OrderBookDepth10`].
+/// Parse a book snapshot message into an [`OrderBookDepth`].
 ///
 /// # Errors
 ///
 /// Returns an error if timestamp fields cannot be converted to nanoseconds.
-pub fn parse_book_snapshot_msg_as_depth10(
+pub fn parse_book_snapshot_msg_as_depth(
     msg: &BookSnapshotMsg,
     price_precision: u8,
     size_precision: u8,
     instrument_id: InstrumentId,
-) -> anyhow::Result<OrderBookDepth10> {
+) -> anyhow::Result<OrderBookDepth> {
     let ts_event = timestamp_to_unix_nanos(msg.timestamp, "event timestamp")?;
     let ts_init = timestamp_to_unix_nanos(msg.local_timestamp, "init timestamp")?;
 
@@ -383,7 +383,7 @@ pub fn parse_book_snapshot_msg_as_depth10(
         ask_counts[i] = 1;
     }
 
-    Ok(OrderBookDepth10::new(
+    Ok(OrderBookDepth::new(
         instrument_id,
         bids,
         asks,
@@ -829,7 +829,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_book_snapshot_message_as_depth10() {
+    fn test_parse_book_snapshot_message_as_depth() {
         let json_data = load_test_json("book_snapshot.json");
         let msg: BookSnapshotMsg = serde_json::from_str(&json_data).unwrap();
 
@@ -837,51 +837,48 @@ mod tests {
         let size_precision = 0;
         let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
 
-        let depth10 = parse_book_snapshot_msg_as_depth10(
-            &msg,
-            price_precision,
-            size_precision,
-            instrument_id,
-        )
-        .unwrap();
+        let depth =
+            parse_book_snapshot_msg_as_depth(&msg, price_precision, size_precision, instrument_id)
+                .unwrap();
 
-        assert_eq!(depth10.instrument_id, instrument_id);
-        assert_eq!(depth10.flags, RecordFlag::F_SNAPSHOT as u8);
-        assert_eq!(depth10.sequence, 0);
-        assert_eq!(depth10.ts_event, UnixNanos::from(1572010786950000000));
-        assert_eq!(depth10.ts_init, UnixNanos::from(1572010786961000000));
+        assert_eq!(depth.instrument_id, instrument_id);
+        assert_eq!(depth.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(depth.sequence, 0);
+        assert_eq!(depth.ts_event, UnixNanos::from(1572010786950000000));
+        assert_eq!(depth.ts_init, UnixNanos::from(1572010786961000000));
 
         // Check first bid level
-        assert_eq!(depth10.bids[0].side, OrderSide::Buy.into());
-        assert_eq!(depth10.bids[0].price, Price::from("7633.5"));
-        assert_eq!(depth10.bids[0].size, Quantity::from(1906067));
-        assert_eq!(depth10.bids[0].order_id, 0);
-        assert_eq!(depth10.bid_counts[0], 1);
+        assert_eq!(depth.bids[0].side, OrderSide::Buy.into());
+        assert_eq!(depth.bids[0].price, Price::from("7633.5"));
+        assert_eq!(depth.bids[0].size, Quantity::from(1906067));
+        assert_eq!(depth.bids[0].order_id, 0);
+        assert_eq!(depth.bid_counts[0], 1);
 
         // Check second bid level
-        assert_eq!(depth10.bids[1].side, OrderSide::Buy.into());
-        assert_eq!(depth10.bids[1].price, Price::from("7633.0"));
-        assert_eq!(depth10.bids[1].size, Quantity::from(65319));
-        assert_eq!(depth10.bid_counts[1], 1);
+        assert_eq!(depth.bids[1].side, OrderSide::Buy.into());
+        assert_eq!(depth.bids[1].price, Price::from("7633.0"));
+        assert_eq!(depth.bids[1].size, Quantity::from(65319));
+        assert_eq!(depth.bid_counts[1], 1);
 
         // Check first ask level
-        assert_eq!(depth10.asks[0].side, OrderSide::Sell.into());
-        assert_eq!(depth10.asks[0].price, Price::from("7634.0"));
-        assert_eq!(depth10.asks[0].size, Quantity::from(1467849));
-        assert_eq!(depth10.asks[0].order_id, 0);
-        assert_eq!(depth10.ask_counts[0], 1);
+        assert_eq!(depth.asks[0].side, OrderSide::Sell.into());
+        assert_eq!(depth.asks[0].price, Price::from("7634.0"));
+        assert_eq!(depth.asks[0].size, Quantity::from(1467849));
+        assert_eq!(depth.asks[0].order_id, 0);
+        assert_eq!(depth.ask_counts[0], 1);
 
         // Check second ask level
-        assert_eq!(depth10.asks[1].side, OrderSide::Sell.into());
-        assert_eq!(depth10.asks[1].price, Price::from("7634.5"));
-        assert_eq!(depth10.asks[1].size, Quantity::from(67939));
-        assert_eq!(depth10.ask_counts[1], 1);
+        assert_eq!(depth.asks[1].side, OrderSide::Sell.into());
+        assert_eq!(depth.asks[1].price, Price::from("7634.5"));
+        assert_eq!(depth.asks[1].size, Quantity::from(67939));
+        assert_eq!(depth.ask_counts[1], 1);
 
-        // Check empty levels are NULL_ORDER
-        assert_eq!(depth10.bids[2], NULL_ORDER);
-        assert_eq!(depth10.bid_counts[2], 0);
-        assert_eq!(depth10.asks[2], NULL_ORDER);
-        assert_eq!(depth10.ask_counts[2], 0);
+        assert_eq!(depth.bids.len(), 2);
+        assert_eq!(depth.asks.len(), 2);
+        assert_eq!(depth.bid_counts.as_slice(), &[1; 2]);
+        assert_eq!(depth.ask_counts.as_slice(), &[1; 2]);
+        assert_eq!(depth.bids[1].order_id, 0);
+        assert_eq!(depth.asks[1].order_id, 0);
     }
 
     #[rstest]
@@ -983,7 +980,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_tardis_ws_message_book_snapshot_routes_to_depth10() {
+    fn test_parse_tardis_ws_message_book_snapshot_routes_to_depth() {
         let json_data = load_test_json("book_snapshot.json");
         let msg: BookSnapshotMsg = serde_json::from_str(&json_data).unwrap();
         let ws_msg = WsMessage::BookSnapshot(msg);
@@ -997,14 +994,14 @@ mod tests {
             0,
         ));
 
-        let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Depth10);
+        let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Depth);
 
         assert!(result.is_some());
-        assert!(matches!(result.unwrap(), Data::BookDepth10(_)));
+        assert!(matches!(result.unwrap(), Data::BookDepth(_)));
     }
 
     #[rstest]
-    fn test_parse_tardis_ws_message_sparse_book_snapshot_routes_to_depth10() {
+    fn test_parse_tardis_ws_message_sparse_book_snapshot_routes_to_depth() {
         let json_data = r#"{
             "type": "book_snapshot",
             "symbol": "ETC",
@@ -1029,10 +1026,10 @@ mod tests {
             2,
         ));
 
-        let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Depth10);
+        let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Depth);
 
         assert!(result.is_some());
-        assert!(matches!(result.unwrap(), Data::BookDepth10(_)));
+        assert!(matches!(result.unwrap(), Data::BookDepth(_)));
     }
 
     #[rstest]

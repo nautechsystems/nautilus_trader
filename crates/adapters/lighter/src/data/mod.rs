@@ -36,10 +36,10 @@ use nautilus_common::{
             BarsResponse, BookResponse, DataResponse, FundingRatesResponse, InstrumentResponse,
             InstrumentsResponse, RequestBars, RequestBookDepth, RequestBookSnapshot,
             RequestFundingRates, RequestInstrument, RequestInstruments, RequestQuotes,
-            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
+            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth,
             SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
             SubscribeInstrumentStatus, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
-            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
+            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth,
             UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
             UnsubscribeInstrumentStatus, UnsubscribeMarkPrices, UnsubscribeQuotes,
             UnsubscribeTrades,
@@ -469,11 +469,11 @@ impl LighterDataClient {
                                     log::error!("Failed to send order book deltas: {e}");
                                 }
                             }
-                            Some(NautilusWsMessage::Depth10(depth)) => {
+                            Some(NautilusWsMessage::Depth(depth)) => {
                                 if let Err(e) =
-                                    data_sender.send(DataEvent::Data(Data::BookDepth10(depth)))
+                                    data_sender.send(DataEvent::Data(Data::BookDepth(depth)))
                                 {
-                                    log::error!("Failed to send order book depth10: {e}");
+                                    log::error!("Failed to send order book depth: {e}");
                                 }
                             }
                             Some(NautilusWsMessage::Bar(bar)) => {
@@ -1160,20 +1160,17 @@ impl DataClient for LighterDataClient {
         Ok(())
     }
 
-    fn subscribe_book_depth10(&mut self, subscription: SubscribeBookDepth10) -> anyhow::Result<()> {
-        log::debug!(
-            "Subscribing to book depth10: {}",
-            subscription.instrument_id
-        );
+    fn subscribe_book_depth(&mut self, subscription: SubscribeBookDepth) -> anyhow::Result<()> {
+        log::debug!("Subscribing to book depth: {}", subscription.instrument_id);
 
-        validate_book_depth10_subscription(subscription.book_type)?;
+        validate_book_depth_subscription(subscription.book_type)?;
 
         let ws = self.ws_client.clone();
         let instrument_id = subscription.instrument_id;
 
         self.spawn_task(async move {
-            if let Err(e) = ws.subscribe_book_depth10(instrument_id).await {
-                log::error!("Failed to subscribe to Lighter book depth10: {e:?}");
+            if let Err(e) = ws.subscribe_book_depth(instrument_id).await {
+                log::error!("Failed to subscribe to Lighter book depth: {e:?}");
             }
         });
 
@@ -1296,12 +1293,12 @@ impl DataClient for LighterDataClient {
         Ok(())
     }
 
-    fn unsubscribe_book_depth10(
+    fn unsubscribe_book_depth(
         &mut self,
-        unsubscription: &UnsubscribeBookDepth10,
+        unsubscription: &UnsubscribeBookDepth,
     ) -> anyhow::Result<()> {
         log::debug!(
-            "Unsubscribing from book depth10: {}",
+            "Unsubscribing from book depth: {}",
             unsubscription.instrument_id
         );
 
@@ -1309,8 +1306,8 @@ impl DataClient for LighterDataClient {
         let instrument_id = unsubscription.instrument_id;
 
         self.spawn_task(async move {
-            if let Err(e) = ws.unsubscribe_book_depth10(instrument_id).await {
-                log::error!("Failed to unsubscribe from Lighter book depth10: {e:?}");
+            if let Err(e) = ws.unsubscribe_book_depth(instrument_id).await {
+                log::error!("Failed to unsubscribe from Lighter book depth: {e:?}");
             }
         });
 
@@ -1807,7 +1804,7 @@ impl DataClient for LighterDataClient {
     fn request_book_depth(&self, request: RequestBookDepth) -> anyhow::Result<()> {
         anyhow::bail!(
             "Lighter does not support historical order book depth requests for {}; \
-             use request_book_snapshot for an L2 snapshot or subscribe_book_depth10 for live depth10",
+             use request_book_snapshot for an L2 snapshot or subscribe_book_depth for live depth",
             request.instrument_id,
         )
     }
@@ -1838,8 +1835,8 @@ fn validate_book_deltas_subscription(book_type: BookType) -> anyhow::Result<()> 
     validate_l2_mbp_book_type(book_type, "deltas")
 }
 
-fn validate_book_depth10_subscription(book_type: BookType) -> anyhow::Result<()> {
-    validate_l2_mbp_book_type(book_type, "depth10")
+fn validate_book_depth_subscription(book_type: BookType) -> anyhow::Result<()> {
+    validate_l2_mbp_book_type(book_type, "depth")
 }
 
 fn validate_l2_mbp_book_type(book_type: BookType, label: &str) -> anyhow::Result<()> {
@@ -1966,18 +1963,18 @@ mod tests {
     }
 
     #[rstest]
-    fn test_validate_book_depth10_accepts_l2_mbp() {
-        assert!(validate_book_depth10_subscription(BookType::L2_MBP).is_ok());
+    fn test_validate_book_depth_accepts_l2_mbp() {
+        assert!(validate_book_depth_subscription(BookType::L2_MBP).is_ok());
     }
 
     #[rstest]
     #[case(BookType::L1_MBP)]
     #[case(BookType::L3_MBO)]
-    fn test_validate_book_depth10_rejects_other_book_types(#[case] book_type: BookType) {
-        let err = validate_book_depth10_subscription(book_type).unwrap_err();
+    fn test_validate_book_depth_rejects_other_book_types(#[case] book_type: BookType) {
+        let err = validate_book_depth_subscription(book_type).unwrap_err();
         assert!(
-            err.to_string().contains("depth10"),
-            "expected error to cite depth10, was: {err}",
+            err.to_string().contains("depth"),
+            "expected error to cite depth, was: {err}",
         );
     }
 
@@ -2471,10 +2468,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_subscribe_book_depth10_rejects_unsupported_book_type() {
+    fn test_subscribe_book_depth_rejects_unsupported_book_type() {
         let mut client = create_data_client_for_test();
         let instrument_id = InstrumentId::new(Symbol::new("ETH-PERP"), *LIGHTER_VENUE);
-        let subscription = SubscribeBookDepth10::new(
+        let subscription = SubscribeBookDepth::new(
             instrument_id,
             BookType::L1_MBP,
             Some(ClientId::new("LIGHTER")),
@@ -2487,7 +2484,7 @@ mod tests {
             None,
         );
 
-        let err = DataClient::subscribe_book_depth10(&mut client, subscription).unwrap_err();
+        let err = DataClient::subscribe_book_depth(&mut client, subscription).unwrap_err();
 
         assert!(err.to_string().contains("L2_MBP"));
     }

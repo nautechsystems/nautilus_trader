@@ -110,9 +110,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             log::info!("Subscribing to order book L2_25 for {instrument_id}");
             ws_client.subscribe_book_25(instrument_id).await?;
         }
-        "depth10" | "book10" => {
+        "depth" | "book10" => {
             log::info!("Subscribing to order book depth 10 for {instrument_id}");
-            ws_client.subscribe_book_depth10(instrument_id).await?;
+            ws_client.subscribe_book_depth(instrument_id).await?;
         }
         "bars" => {
             let bar_type = BarType::from(format!("{symbol}.BITMEX-1-MINUTE-LAST-EXTERNAL"));
@@ -174,7 +174,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             log::info!("- Subscribing to order book depth 10");
 
-            if let Err(e) = ws_client.subscribe_book_depth10(instrument_id).await {
+            if let Err(e) = ws_client.subscribe_book_depth(instrument_id).await {
                 log::error!("Failed to subscribe to depth 10: {e}");
             } else {
                 log::info!("  ✓ Order book depth 10 subscription successful");
@@ -193,7 +193,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => {
             log::error!("Unknown subscription type: {subscription_type}");
             log::info!(
-                "Available types: quotes, trades, orderbook, orderbook25, depth10, bars, funding, liquidation, all"
+                "Available types: quotes, trades, orderbook, orderbook25, depth, bars, funding, liquidation, all"
             );
             return Ok(());
         }

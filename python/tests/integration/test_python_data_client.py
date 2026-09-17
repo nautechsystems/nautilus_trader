@@ -1068,7 +1068,7 @@ async def test_historical_data_families_preserve_payload_and_correlation(
         "instruments",
         "instrument",
         "book_deltas",
-        "book_depth10",
+        "book_depth",
         "quotes",
         "trades",
         "mark_prices",
@@ -1099,7 +1099,7 @@ async def test_all_subscription_families_preserve_subscribe_and_unsubscribe_fiel
     )
     extra = (
         {"book_type": BookType.L2_MBP, "managed": False}
-        if kind in ("book_deltas", "book_depth10")
+        if kind in ("book_deltas", "book_depth")
         else {}
     )
 
@@ -1176,7 +1176,7 @@ async def test_all_subscription_families_preserve_subscribe_and_unsubscribe_fiel
             assert command.instrument_id == INSTRUMENT_ID
         with pytest.raises(AttributeError):
             command.ts_init = 131
-    if kind in ("book_deltas", "book_depth10"):
+    if kind in ("book_deltas", "book_depth"):
         assert commands[0].book_type == BookType.L2_MBP
         assert commands[0].managed is False
         assert commands[0].depth == (7 if kind == "book_deltas" else 10)
@@ -1387,7 +1387,7 @@ def adapter_payloads() -> tuple[int, object, dict[str, object]]:
     """
     from nautilus_trader.model import Bar
     from nautilus_trader.model import BarType
-    from nautilus_trader.model import OrderBookDepth10
+    from nautilus_trader.model import OrderBookDepth
 
     start_ns = 1704164645000000000
     bar_type = BarType.from_str("EUR/USD.PYTHON-1-MINUTE-LAST-EXTERNAL")
@@ -1429,7 +1429,7 @@ def adapter_payloads() -> tuple[int, object, dict[str, object]]:
             start_ns + 83,
             start_ns + 89,
         ),
-        "book_depth": OrderBookDepth10(
+        "book_depth": OrderBookDepth(
             INSTRUMENT_ID,
             [bid] * 10,
             [ask] * 10,
@@ -1445,7 +1445,7 @@ def adapter_payloads() -> tuple[int, object, dict[str, object]]:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("kind", ["bars", "book_depth10", "book_deltas", "option_greeks", "data"])
+@pytest.mark.parametrize("kind", ["bars", "book_depth", "book_deltas", "option_greeks", "data"])
 async def test_additional_live_payloads_reach_strategy_without_losing_fields(
     kind,
     adapter_payloads,
@@ -1461,7 +1461,7 @@ async def test_additional_live_payloads_reach_strategy_without_losing_fields(
     data_type = DataType("LiveAdapterData", metadata={"source": "external"})
     payload = {
         "bars": values["bars"],
-        "book_depth10": values["book_depth"],
+        "book_depth": values["book_depth"],
         "book_deltas": values["book_deltas"],
         "option_greeks": OptionGreeks(
             INSTRUMENT_ID,
@@ -1500,9 +1500,7 @@ async def test_additional_live_payloads_reach_strategy_without_losing_fields(
             identity = (
                 bar_type if kind == "bars" else data_type if kind == "data" else INSTRUMENT_ID
             )
-            kwargs = (
-                {"book_type": BookType.L2_MBP} if kind in ("book_deltas", "book_depth10") else {}
-            )
+            kwargs = {"book_type": BookType.L2_MBP} if kind in ("book_deltas", "book_depth") else {}
             getattr(self, f"subscribe_{kind}")(identity, client_id=ClientId("PYTHON"), **kwargs)
 
     def receive(self, data):
@@ -1511,7 +1509,7 @@ async def test_additional_live_payloads_reach_strategy_without_losing_fields(
 
     callback = {
         "bars": "on_bar",
-        "book_depth10": "on_book_depth",
+        "book_depth": "on_book_depth",
         "book_deltas": "on_book_deltas",
         "option_greeks": "on_option_greeks",
         "data": "on_data",

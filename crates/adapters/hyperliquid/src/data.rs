@@ -35,10 +35,10 @@ use nautilus_common::{
             BarsResponse, BookResponse, CustomDataResponse, DataResponse, FundingRatesResponse,
             InstrumentResponse, InstrumentsResponse, RequestBars, RequestBookSnapshot,
             RequestCustomData, RequestFundingRates, RequestInstrument, RequestInstruments,
-            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
+            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth,
             SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
             SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
-            UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCustomData,
+            UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeCustomData,
             UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
             UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
@@ -529,11 +529,11 @@ impl HyperliquidDataClient {
                                         log::error!("Failed to send order book deltas: {e}");
                                     }
                                 }
-                                NautilusWsMessage::Depth10(depth) => {
+                                NautilusWsMessage::Depth(depth) => {
                                     if let Err(e) =
-                                        data_sender.send(DataEvent::Data(Data::BookDepth10(depth)))
+                                        data_sender.send(DataEvent::Data(Data::BookDepth(depth)))
                                     {
-                                        log::error!("Failed to send order book depth10: {e}");
+                                        log::error!("Failed to send order book depth: {e}");
                                     }
                                 }
                                 NautilusWsMessage::Candle(bar) => {
@@ -954,23 +954,20 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn subscribe_book_depth10(&mut self, subscription: SubscribeBookDepth10) -> anyhow::Result<()> {
-        log::debug!(
-            "Subscribing to book depth10: {}",
-            subscription.instrument_id
-        );
+    fn subscribe_book_depth(&mut self, subscription: SubscribeBookDepth) -> anyhow::Result<()> {
+        log::debug!("Subscribing to book depth: {}", subscription.instrument_id);
 
         if subscription.book_type != BookType::L2_MBP {
-            anyhow::bail!("Hyperliquid only supports L2_MBP order book depth10");
+            anyhow::bail!("Hyperliquid only supports L2_MBP order book depth");
         }
 
         let ws = self.ws_client.clone();
         let instrument_id = subscription.instrument_id;
         let (n_sig_figs, mantissa) = parse_book_precision_params(subscription.params.as_ref())?;
-        self.register_stream_health(MarketDataChannel::Depth10, instrument_id);
+        self.register_stream_health(MarketDataChannel::Depth, instrument_id);
 
-        self.spawn_task("subscribe_book_depth10", async move {
-            ws.subscribe_book_depth10_with_options(instrument_id, n_sig_figs, mantissa)
+        self.spawn_task("subscribe_book_depth", async move {
+            ws.subscribe_book_depth_with_options(instrument_id, n_sig_figs, mantissa)
                 .await
         });
 
@@ -1081,21 +1078,21 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn unsubscribe_book_depth10(
+    fn unsubscribe_book_depth(
         &mut self,
-        unsubscription: &UnsubscribeBookDepth10,
+        unsubscription: &UnsubscribeBookDepth,
     ) -> anyhow::Result<()> {
         log::debug!(
-            "Unsubscribing from book depth10: {}",
+            "Unsubscribing from book depth: {}",
             unsubscription.instrument_id
         );
 
         let ws = self.ws_client.clone();
         let instrument_id = unsubscription.instrument_id;
-        self.remove_stream_health(MarketDataChannel::Depth10, instrument_id);
+        self.remove_stream_health(MarketDataChannel::Depth, instrument_id);
 
-        self.spawn_task("unsubscribe_book_depth10", async move {
-            ws.unsubscribe_book_depth10(instrument_id).await
+        self.spawn_task("unsubscribe_book_depth", async move {
+            ws.unsubscribe_book_depth(instrument_id).await
         });
 
         Ok(())
@@ -1826,7 +1823,7 @@ fn instrument_definitions_match(a: &InstrumentAny, b: &InstrumentAny) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum MarketDataChannel {
     Deltas,
-    Depth10,
+    Depth,
     Quote,
 }
 
@@ -1834,7 +1831,7 @@ impl MarketDataChannel {
     const fn as_str(self) -> &'static str {
         match self {
             Self::Deltas => "deltas",
-            Self::Depth10 => "depth10",
+            Self::Depth => "depth",
             Self::Quote => "quote",
         }
     }
@@ -1968,7 +1965,7 @@ impl MarketDataStreamHealthMonitor {
 
             let quote_is_fresh = matches!(
                 channel,
-                MarketDataChannel::Deltas | MarketDataChannel::Depth10
+                MarketDataChannel::Deltas | MarketDataChannel::Depth
             ) && fresh_quote_instruments.contains(instrument_id);
 
             let venue_age = stream.last_venue_ts_event.map(|ts_event| {
@@ -2077,8 +2074,8 @@ fn stream_health_update(
             deltas.instrument_id,
             deltas.ts_event,
         )),
-        NautilusWsMessage::Depth10(depth) => Some((
-            MarketDataChannel::Depth10,
+        NautilusWsMessage::Depth(depth) => Some((
+            MarketDataChannel::Depth,
             depth.instrument_id,
             depth.ts_event,
         )),
@@ -2124,7 +2121,7 @@ async fn handle_stream_health_events(
     ws_client: &HyperliquidWebSocketClient,
     events: &[MarketDataStaleEvent],
 ) {
-    // Deltas and depth10 share one venue `l2Book` stream
+    // Deltas and depth share one venue `l2Book` stream
     let mut resubscribed_books: AHashSet<InstrumentId> = AHashSet::new();
     let mut reconnect_requested = false;
 
@@ -2134,7 +2131,7 @@ async fn handle_stream_health_events(
         match event.action {
             StaleStreamAction::Warn => {}
             StaleStreamAction::Resubscribe => match event.channel {
-                MarketDataChannel::Deltas | MarketDataChannel::Depth10 => {
+                MarketDataChannel::Deltas | MarketDataChannel::Depth => {
                     if resubscribed_books.insert(event.instrument_id)
                         && let Err(e) = ws_client.resubscribe_book(event.instrument_id).await
                     {
@@ -2570,7 +2567,7 @@ mod tests {
         let instrument_id = btc_perp_id();
         let start = Instant::now();
 
-        monitor.subscribe(MarketDataChannel::Depth10, instrument_id, start);
+        monitor.subscribe(MarketDataChannel::Depth, instrument_id, start);
         assert_eq!(
             monitor
                 .check_stale(
@@ -2582,7 +2579,7 @@ mod tests {
         );
 
         monitor.record_receive(
-            MarketDataChannel::Depth10,
+            MarketDataChannel::Depth,
             instrument_id,
             start + Duration::from_secs(7),
             UnixNanos::from(7_000_000_000),
@@ -2905,9 +2902,9 @@ mod tests {
             )),
         );
         assert_eq!(
-            stream_health_update(&NautilusWsMessage::Depth10(Box::new(depth))),
+            stream_health_update(&NautilusWsMessage::Depth(Box::new(depth.clone()))),
             Some((
-                MarketDataChannel::Depth10,
+                MarketDataChannel::Depth,
                 depth.instrument_id,
                 depth.ts_event
             )),

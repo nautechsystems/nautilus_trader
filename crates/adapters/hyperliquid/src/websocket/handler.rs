@@ -55,7 +55,7 @@ use super::{
     },
     parse::{
         parse_ws_asset_context, parse_ws_candle, parse_ws_fill_report, parse_ws_open_interest,
-        parse_ws_order_book_deltas, parse_ws_order_book_depth10, parse_ws_order_status_report,
+        parse_ws_order_book_deltas, parse_ws_order_book_depth, parse_ws_order_status_report,
         parse_ws_public_trade, parse_ws_quote_tick, parse_ws_trade_tick, parse_ws_twap_history_row,
         parse_ws_twap_slice_fill,
     },
@@ -122,8 +122,8 @@ pub enum HandlerCommand {
     /// Cache spot fill coin mappings for instrument lookup.
     CacheSpotFillCoins(AHashMap<Ustr, Ustr>),
     /// Flag whether the `l2Book` stream for `coin` should also be emitted
-    /// as [`NautilusWsMessage::Depth10`] snapshots.
-    SetDepth10Sub { coin: Ustr, subscribed: bool },
+    /// as [`NautilusWsMessage::Depth`] snapshots.
+    SetDepthSub { coin: Ustr, subscribed: bool },
 }
 
 #[derive(Default)]
@@ -252,7 +252,7 @@ pub(super) struct FeedHandler {
     asset_context_subs: AHashMap<Ustr, AHashSet<AssetContextDataType>>,
     trade_subs: AHashMap<Ustr, TradeStreamUses>,
     all_dex_asset_ctxs_instrument_ids: AHashMap<Ustr, Vec<Option<InstrumentId>>>,
-    depth10_subs: AHashSet<Ustr>,
+    depth_subs: AHashSet<Ustr>,
     processed_trade_ids: FifoCache<u64, 10_000>,
     processed_public_trade_ids: FifoCache<(Ustr, u64), 10_000>,
     asset_context_caches: AssetContextCaches,
@@ -306,7 +306,7 @@ impl FeedHandler {
             asset_context_subs: AHashMap::new(),
             trade_subs: AHashMap::new(),
             all_dex_asset_ctxs_instrument_ids: AHashMap::new(),
-            depth10_subs: AHashSet::new(),
+            depth_subs: AHashSet::new(),
             processed_trade_ids: FifoCache::new(),
             processed_public_trade_ids: FifoCache::new(),
             asset_context_caches: AssetContextCaches::default(),
@@ -504,11 +504,11 @@ impl FeedHandler {
                         HandlerCommand::CacheSpotFillCoins(_) => {
                             // No longer needed - raw_symbol now contains the proper format
                         }
-                        HandlerCommand::SetDepth10Sub { coin, subscribed } => {
+                        HandlerCommand::SetDepthSub { coin, subscribed } => {
                             if subscribed {
-                                self.depth10_subs.insert(coin);
+                                self.depth_subs.insert(coin);
                             } else {
-                                self.depth10_subs.remove(&coin);
+                                self.depth_subs.remove(&coin);
                             }
                         }
                     }
@@ -573,7 +573,7 @@ impl FeedHandler {
                                         ts_init,
                                         &self.asset_context_subs,
                                         &self.trade_subs,
-                                        &self.depth10_subs,
+                                        &self.depth_subs,
                                         &mut self.processed_trade_ids,
                                         &mut self.processed_public_trade_ids,
                                         &mut self.asset_context_caches,
@@ -689,7 +689,7 @@ impl FeedHandler {
         ts_init: UnixNanos,
         asset_context_subs: &AHashMap<Ustr, AHashSet<AssetContextDataType>>,
         trade_subs: &AHashMap<Ustr, TradeStreamUses>,
-        depth10_subs: &AHashSet<Ustr>,
+        depth_subs: &AHashSet<Ustr>,
         processed_trade_ids: &mut FifoCache<u64, 10_000>,
         processed_public_trade_ids: &mut FifoCache<(Ustr, u64), 10_000>,
         asset_context_caches: &mut AssetContextCaches,
@@ -843,7 +843,7 @@ impl FeedHandler {
                 result.extend(Self::handle_l2_book(
                     &data,
                     instruments,
-                    depth10_subs,
+                    depth_subs,
                     ts_init,
                 ));
             }
@@ -1072,7 +1072,7 @@ impl FeedHandler {
     fn handle_l2_book(
         data: &super::messages::WsBookData,
         instruments: &AHashMap<Ustr, InstrumentAny>,
-        depth10_subs: &AHashSet<Ustr>,
+        depth_subs: &AHashSet<Ustr>,
         ts_init: UnixNanos,
     ) -> Vec<NautilusWsMessage> {
         let mut out = Vec::new();
@@ -1087,10 +1087,10 @@ impl FeedHandler {
             Err(e) => log::error!("Error parsing order book deltas: {e}"),
         }
 
-        if depth10_subs.contains(&data.coin) {
-            match parse_ws_order_book_depth10(data, instrument, ts_init) {
-                Ok(depth) => out.push(NautilusWsMessage::Depth10(Box::new(depth))),
-                Err(e) => log::error!("Error parsing order book depth10: {e}"),
+        if depth_subs.contains(&data.coin) {
+            match parse_ws_order_book_depth(data, instrument, ts_init) {
+                Ok(depth) => out.push(NautilusWsMessage::Depth(Box::new(depth))),
+                Err(e) => log::error!("Error parsing order book depth: {e}"),
             }
         }
 
@@ -2256,15 +2256,15 @@ mod tests {
     }
 
     #[rstest]
-    fn handle_l2_book_emits_deltas_only_when_not_in_depth10_subs() {
+    fn handle_l2_book_emits_deltas_only_when_not_in_depth_subs() {
         let mut instruments = AHashMap::new();
         instruments.insert(Ustr::from("BTC"), btc_perp());
-        let depth10_subs = AHashSet::<Ustr>::new();
+        let depth_subs = AHashSet::<Ustr>::new();
 
         let msgs = FeedHandler::handle_l2_book(
             &one_level_book(),
             &instruments,
-            &depth10_subs,
+            &depth_subs,
             UnixNanos::default(),
         );
 
@@ -2273,33 +2273,33 @@ mod tests {
     }
 
     #[rstest]
-    fn handle_l2_book_emits_deltas_and_depth10_when_coin_in_subs() {
+    fn handle_l2_book_emits_deltas_and_depth_when_coin_in_subs() {
         let mut instruments = AHashMap::new();
         instruments.insert(Ustr::from("BTC"), btc_perp());
-        let mut depth10_subs = AHashSet::<Ustr>::new();
-        depth10_subs.insert(Ustr::from("BTC"));
+        let mut depth_subs = AHashSet::<Ustr>::new();
+        depth_subs.insert(Ustr::from("BTC"));
 
         let msgs = FeedHandler::handle_l2_book(
             &one_level_book(),
             &instruments,
-            &depth10_subs,
+            &depth_subs,
             UnixNanos::default(),
         );
 
         assert_eq!(msgs.len(), 2);
         assert!(matches!(msgs[0], NautilusWsMessage::Deltas(_)));
-        assert!(matches!(msgs[1], NautilusWsMessage::Depth10(_)));
+        assert!(matches!(msgs[1], NautilusWsMessage::Depth(_)));
     }
 
     #[rstest]
     fn handle_l2_book_returns_empty_when_instrument_unknown() {
         let instruments = AHashMap::<Ustr, InstrumentAny>::new();
-        let depth10_subs = AHashSet::<Ustr>::new();
+        let depth_subs = AHashSet::<Ustr>::new();
 
         let msgs = FeedHandler::handle_l2_book(
             &one_level_book(),
             &instruments,
-            &depth10_subs,
+            &depth_subs,
             UnixNanos::default(),
         );
 

@@ -2735,7 +2735,7 @@ impl ExecutionClient for DydxExecutionClient {
         &self,
         lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
-        let ts_init = UnixNanos::default();
+        let ts_init = self.clock.get_time_ns();
 
         let orders_response = self
             .http_client
@@ -3045,6 +3045,7 @@ where
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
+    use axum::{Json, Router, http::Uri, routing::get};
     use jiff::Timestamp;
     use nautilus_common::{
         cache::Cache, clock::VirtualClock, factories::OrderFactory, messages::ExecutionEvent,
@@ -3058,6 +3059,7 @@ mod tests {
     };
     use rstest::rstest;
     use rust_decimal_macros::dec;
+    use serde_json::Value;
 
     use super::*;
     use crate::{
@@ -3175,6 +3177,52 @@ mod tests {
         client.emitter.set_sender(sender);
 
         (client, cache, receiver)
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_mass_status_captures_collection_start() {
+        let clock: &'static AtomicTime =
+            Box::leak(Box::new(AtomicTime::new(false, UnixNanos::from(100))));
+
+        let router = Router::new().fallback(get(move |uri: Uri| async move {
+            clock.set_time(UnixNanos::from(200));
+
+            let fixture = if uri.path() == "/v4/orders" {
+                include_str!("../../test_data/http_get_orders.json")
+            } else if uri.path() == "/v4/fills" {
+                include_str!("../../test_data/http_get_fills.json")
+            } else {
+                include_str!("../../test_data/http_get_subaccount.json")
+            };
+
+            let value: Value = serde_json::from_str(fixture).unwrap();
+            Json(value["result"].clone())
+        }));
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+
+        let (mut client, _cache, _rx) = create_execution_client();
+        client.clock = clock;
+        client.http_client = DydxHttpClient::new(
+            Some(format!("http://{addr}")),
+            5,
+            None,
+            client.config.network,
+            None,
+        )
+        .unwrap();
+
+        let snapshot = client.generate_mass_status(None).await.unwrap().unwrap();
+        server.abort();
+
+        assert_eq!(snapshot.ts_init, UnixNanos::from(100));
+        assert_eq!(clock.get_time_ns(), UnixNanos::from(200));
     }
 
     fn cache_order(cache: &Rc<RefCell<Cache>>, order: OrderAny) {

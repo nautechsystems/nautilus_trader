@@ -15824,6 +15824,436 @@ fn test_reconcile_execution_mass_status_with_order_reports(mut execution_engine:
 }
 
 #[rstest]
+#[case::client_id(true)]
+#[case::venue_id(false)]
+fn test_reconcile_execution_mass_status_corrects_fills_without_new_trades(
+    test_clock: Rc<RefCell<dyn clock::Clock>>,
+    test_cache: Rc<RefCell<Cache>>,
+    #[values(false, true)] preserve_unresolved_submissions: bool,
+    #[case] include_client_id: bool,
+) {
+    let mut execution_engine = ExecutionEngine::new(
+        test_clock,
+        test_cache,
+        Some(ExecutionEngineConfig {
+            preserve_unresolved_submissions,
+            ..Default::default()
+        }),
+    );
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let client_order_id = order.client_order_id();
+    let venue_order_id = VenueOrderId::from("V-001");
+    let initial_fill = OrderEventAny::Filled(build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        client_order_id,
+        venue_order_id,
+        AccountId::test_default(),
+        TradeId::from("T-SNAPSHOT"),
+        order.order_side(),
+        order.order_type(),
+        Quantity::from(80_000),
+        Price::from("1.00000"),
+        instrument.quote_currency(),
+        LiquiditySide::Taker,
+        None,
+        None,
+    ));
+    execution_engine.process(&initial_fill);
+    let mut report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument.id(),
+        OrderStatus::PartiallyFilled,
+        Quantity::from(100_000),
+        Quantity::from(80_000),
+    );
+    report.avg_px = Some(dec!(1.00000));
+    report.order_type = order.order_type();
+    report.client_order_id = include_client_id.then_some(client_order_id);
+    report.filled_qty = Quantity::from(60_000);
+    execution_engine.reconcile_order_status_report(&report);
+    assert_eq!(
+        execution_engine
+            .cache()
+            .borrow()
+            .order(&client_order_id)
+            .unwrap()
+            .filled_qty(),
+        Quantity::from(80_000),
+    );
+
+    let mut mass_status = ExecutionMassStatus::new(
+        ClientId::from("SIM"),
+        AccountId::test_default(),
+        Venue::from("SIM"),
+        UnixNanos::from(2_000_000),
+        None,
+    );
+    mass_status.add_order_reports(vec![report]);
+    execution_engine.reconcile_execution_mass_status(&mass_status);
+    execution_engine.reconcile_execution_mass_status(&mass_status);
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache.order(&client_order_id).unwrap();
+
+    let voids = order
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::FillVoided(event) => Some(event),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(order.quantity(), Quantity::from(100_000));
+    assert_eq!(order.filled_qty(), Quantity::from(60_000));
+    assert_eq!(order.leaves_qty(), Quantity::from(40_000));
+    let positions = cache.positions_open(None, Some(&instrument.id()), None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].quantity, Quantity::from(60_000));
+    assert_eq!(positions[0].side, PositionSide::Long);
+    assert_eq!(positions[0].fill_voids.len(), 1);
+    assert_eq!(voids.len(), 1);
+    assert_eq!(voids[0].voided_qty, Quantity::from(20_000));
+    assert_eq!(voids[0].last_px, Price::from("1.00000"));
+}
+
+#[rstest]
+#[case::older(99, 60_000)]
+#[case::equal(100, 80_000)]
+#[case::newer(101, 80_000)]
+fn test_reconcile_execution_mass_status_respects_snapshot_start(
+    test_clock: Rc<RefCell<dyn clock::Clock>>,
+    test_cache: Rc<RefCell<Cache>>,
+    #[values(false, true)] preserve_unresolved_submissions: bool,
+    #[case] fill_ts: u64,
+    #[case] expected_qty: u64,
+) {
+    let mut execution_engine = ExecutionEngine::new(
+        test_clock,
+        test_cache,
+        Some(ExecutionEngineConfig {
+            preserve_unresolved_submissions,
+            ..Default::default()
+        }),
+    );
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let client_order_id = order.client_order_id();
+    let venue_order_id = VenueOrderId::from("V-001");
+    let mut initial_fill = build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        client_order_id,
+        venue_order_id,
+        AccountId::test_default(),
+        TradeId::from("T-SNAPSHOT"),
+        order.order_side(),
+        order.order_type(),
+        Quantity::from(80_000),
+        Price::from("1.00000"),
+        instrument.quote_currency(),
+        LiquiditySide::Taker,
+        None,
+        None,
+    );
+    initial_fill.ts_init = UnixNanos::from(fill_ts);
+    initial_fill.ts_event = UnixNanos::from(9_000_000);
+    execution_engine.process(&OrderEventAny::Filled(initial_fill));
+    let mut report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument.id(),
+        OrderStatus::PartiallyFilled,
+        Quantity::from(100_000),
+        Quantity::from(80_000),
+    );
+    report.avg_px = Some(dec!(1.00000));
+    report.order_type = order.order_type();
+    report.client_order_id = None;
+    report.filled_qty = Quantity::from(60_000);
+    execution_engine.reconcile_order_status_report(&report);
+    assert_eq!(
+        execution_engine
+            .cache()
+            .borrow()
+            .order(&client_order_id)
+            .unwrap()
+            .filled_qty(),
+        Quantity::from(80_000),
+    );
+
+    let mut mass_status = ExecutionMassStatus::new(
+        ClientId::from("SIM"),
+        AccountId::test_default(),
+        Venue::from("SIM"),
+        UnixNanos::from(100),
+        None,
+    );
+    mass_status.add_order_reports(vec![report]);
+    execution_engine.reconcile_execution_mass_status(&mass_status);
+    execution_engine.reconcile_execution_mass_status(&mass_status);
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache.order(&client_order_id).unwrap();
+
+    let voids = order
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::FillVoided(event) => Some(event),
+            _ => None,
+        })
+        .count();
+
+    assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(order.quantity(), Quantity::from(100_000));
+    assert_eq!(order.filled_qty(), Quantity::from(expected_qty));
+    assert_eq!(order.leaves_qty(), Quantity::from(100_000 - expected_qty));
+    let positions = cache.positions_open(None, Some(&instrument.id()), None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].quantity, Quantity::from(expected_qty));
+    assert_eq!(positions[0].side, PositionSide::Long);
+    assert_eq!(positions[0].fill_voids.len(), usize::from(fill_ts < 100));
+    assert_eq!(voids, usize::from(fill_ts < 100));
+}
+
+#[rstest]
+#[case::partial(20_000)]
+#[case::full(80_000)]
+fn test_reconcile_execution_mass_status_preserves_newer_fill_void(
+    test_clock: Rc<RefCell<dyn clock::Clock>>,
+    test_cache: Rc<RefCell<Cache>>,
+    #[values(false, true)] preserve_unresolved_submissions: bool,
+    #[case] voided_qty: u64,
+) {
+    let mut execution_engine = ExecutionEngine::new(
+        test_clock,
+        test_cache,
+        Some(ExecutionEngineConfig {
+            preserve_unresolved_submissions,
+            ..Default::default()
+        }),
+    );
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let client_order_id = order.client_order_id();
+    let venue_order_id = VenueOrderId::from("V-001");
+    let mut initial_fill = build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        client_order_id,
+        venue_order_id,
+        AccountId::test_default(),
+        TradeId::from("T-SNAPSHOT"),
+        order.order_side(),
+        order.order_type(),
+        Quantity::from(80_000),
+        Price::from("1.00000"),
+        instrument.quote_currency(),
+        LiquiditySide::Taker,
+        None,
+        None,
+    );
+    initial_fill.ts_init = UnixNanos::from(50);
+    initial_fill.ts_event = UnixNanos::from(9_000_000);
+    execution_engine.process(&OrderEventAny::Filled(initial_fill));
+    let mut correction = build_fill_void_from_cached_fill(
+        &execution_engine,
+        client_order_id.as_str(),
+        "T-SNAPSHOT",
+        Quantity::from(voided_qty),
+    );
+
+    if let OrderEventAny::FillVoided(event) = &mut correction {
+        event.ts_init = UnixNanos::from(101);
+        event.is_reopened = true;
+    }
+
+    execution_engine.process(&correction);
+    let mut report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument.id(),
+        OrderStatus::PartiallyFilled,
+        Quantity::from(100_000),
+        Quantity::from(80_000),
+    );
+    report.avg_px = Some(dec!(1.00000));
+    report.order_type = order.order_type();
+    report.client_order_id = None;
+
+    let mut mass_status = ExecutionMassStatus::new(
+        ClientId::from("SIM"),
+        AccountId::test_default(),
+        Venue::from("SIM"),
+        UnixNanos::from(100),
+        None,
+    );
+    mass_status.add_order_reports(vec![report]);
+    execution_engine.reconcile_execution_mass_status(&mass_status);
+    execution_engine.reconcile_execution_mass_status(&mass_status);
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    assert_eq!(order.filled_qty(), Quantity::from(80_000 - voided_qty));
+    assert_eq!(order.leaves_qty(), Quantity::from(20_000 + voided_qty));
+    assert_eq!(
+        order
+            .events()
+            .into_iter()
+            .filter(|event| matches!(event, OrderEventAny::FillVoided(_)))
+            .count(),
+        1
+    );
+}
+
+#[rstest]
+#[case::client_id(true)]
+#[case::venue_id(false)]
+fn test_reconcile_execution_mass_status_delivers_trades_with_stale_order_snapshot(
+    test_clock: Rc<RefCell<dyn clock::Clock>>,
+    test_cache: Rc<RefCell<Cache>>,
+    #[values(false, true)] preserve_unresolved_submissions: bool,
+    #[case] include_client_id: bool,
+) {
+    let mut execution_engine = ExecutionEngine::new(
+        test_clock,
+        test_cache,
+        Some(ExecutionEngineConfig {
+            preserve_unresolved_submissions,
+            ..Default::default()
+        }),
+    );
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let client_order_id = order.client_order_id();
+    let venue_order_id = VenueOrderId::from("V-001");
+    let mut initial_fill = build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        client_order_id,
+        venue_order_id,
+        AccountId::test_default(),
+        TradeId::from("T-SNAPSHOT"),
+        order.order_side(),
+        order.order_type(),
+        Quantity::from(80_000),
+        Price::from("1.00000"),
+        instrument.quote_currency(),
+        LiquiditySide::Taker,
+        None,
+        None,
+    );
+    initial_fill.ts_init = UnixNanos::from(101);
+    initial_fill.ts_event = UnixNanos::from(9_000_000);
+    execution_engine.process(&OrderEventAny::Filled(initial_fill));
+    let mut report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument.id(),
+        OrderStatus::PartiallyFilled,
+        Quantity::from(100_000),
+        Quantity::from(80_000),
+    );
+    report.avg_px = Some(dec!(1.00000));
+    report.order_type = order.order_type();
+    report.client_order_id = include_client_id.then_some(client_order_id);
+    report.filled_qty = Quantity::from(60_000);
+    execution_engine.reconcile_order_status_report(&report);
+    assert_eq!(
+        execution_engine
+            .cache()
+            .borrow()
+            .order(&client_order_id)
+            .unwrap()
+            .filled_qty(),
+        Quantity::from(80_000),
+    );
+
+    let mut mass_status = ExecutionMassStatus::new(
+        ClientId::from("SIM"),
+        AccountId::test_default(),
+        Venue::from("SIM"),
+        UnixNanos::from(100),
+        None,
+    );
+    let duplicate = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        TradeId::from("T-SNAPSHOT"),
+        Quantity::from(80_000),
+        Price::from("1.00000"),
+    );
+    let additional = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        TradeId::from("T-ADDITIONAL"),
+        Quantity::from(10_000),
+        Price::from("1.00000"),
+    );
+    mass_status.add_fill_reports(vec![duplicate, additional]);
+    let raw_topic = MessagingSwitchboard::reconciliation_raw_order_status_report_topic();
+    let pattern: msgbus::MStr<msgbus::Pattern> = raw_topic.into();
+    let (handler, saver) = get_any_saving_handler::<OrderStatusReport>(None);
+    msgbus::subscribe_any(pattern, handler.clone(), None);
+    mass_status.add_order_reports(vec![report.clone()]);
+    execution_engine.reconcile_execution_mass_status(&mass_status);
+    execution_engine.reconcile_execution_mass_status(&mass_status);
+
+    msgbus::unsubscribe_any(pattern, &handler);
+    assert_eq!(saver.get_messages(), vec![report.clone(), report.clone()]);
+    {
+        let cache = execution_engine.cache().borrow();
+        let order = cache.order(&client_order_id).unwrap();
+
+        let voids = order
+            .events()
+            .into_iter()
+            .filter_map(|event| match event {
+                OrderEventAny::FillVoided(event) => Some(event),
+                _ => None,
+            })
+            .count();
+
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(order.quantity(), Quantity::from(100_000));
+        assert_eq!(order.filled_qty(), Quantity::from(90_000));
+        assert_eq!(order.leaves_qty(), Quantity::from(10_000));
+        let positions = cache.positions_open(None, Some(&instrument.id()), None, None, None);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity, Quantity::from(90_000));
+        assert_eq!(positions[0].side, PositionSide::Long);
+        assert_eq!(positions[0].fill_voids.len(), 0);
+        assert_eq!(voids, 0);
+        assert_eq!(positions[0].commissions(), vec![Money::from("0.10 USD")]);
+    }
+
+    let mut fresh_status = ExecutionMassStatus::new(
+        ClientId::from("SIM"),
+        AccountId::test_default(),
+        Venue::from("SIM"),
+        UnixNanos::from(2_000_000),
+        None,
+    );
+    fresh_status.add_order_reports(vec![report]);
+    execution_engine.reconcile_execution_mass_status(&fresh_status);
+    let cache = execution_engine.cache().borrow();
+    assert_eq!(
+        cache.order(&client_order_id).unwrap().filled_qty(),
+        Quantity::from(60_000)
+    );
+    let positions = cache.positions_open(None, Some(&instrument.id()), None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].quantity, Quantity::from(60_000));
+}
+
+#[rstest]
 #[case(OrderStatus::Canceled)]
 #[case(OrderStatus::Expired)]
 fn test_reconcile_execution_mass_status_applies_real_fill_before_terminal_order_report(

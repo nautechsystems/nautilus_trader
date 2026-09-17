@@ -65,9 +65,9 @@ use serde::{Deserialize, Deserializer, Serialize};
 #[cfg(feature = "defi")]
 use super::fixed::compare_raw_signed;
 use super::fixed::{
-    FIXED_PRECISION, FIXED_SCALAR, canonical_raw, check_fixed_precision,
-    mantissa_exponent_to_fixed_i128, mantissa_exponent_to_raw_checked, raw_scales_match,
-    scaled_raw_to_decimal,
+    FIXED_PRECISION, FIXED_SCALAR, canonical_raw, check_fixed_precision, format_scaled_i128,
+    mantissa_exponent_to_fixed_i128, mantissa_exponent_to_raw_checked, parse_decimal_mantissa,
+    raw_scales_match, scaled_raw_to_decimal,
 };
 #[cfg(feature = "high-precision")]
 use super::fixed::{PRECISION_DIFF_SCALAR, f64_to_fixed_i128, fixed_i128_to_f64};
@@ -490,6 +490,20 @@ impl Price {
         format!("{self}").separate_with_underscores()
     }
 
+    fn raw_at_precision(&self) -> i128 {
+        let precision_diff = FIXED_PRECISION.saturating_sub(self.precision);
+        let rescaled_raw = self.raw / PriceRaw::pow(10, u32::from(precision_diff));
+        Self::raw_as_i128(rescaled_raw)
+    }
+
+    fn raw_as_i128(raw: PriceRaw) -> i128 {
+        #[allow(
+            clippy::useless_conversion,
+            reason = "i128::from is a widening conversion when PriceRaw is i64"
+        )]
+        i128::from(raw)
+    }
+
     /// Creates a new [`Price`] from a `Decimal` value with specified precision.
     ///
     /// Uses pure integer arithmetic on the Decimal's mantissa and scale for fast conversion.
@@ -609,18 +623,26 @@ impl FromStr for Price {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         let clean_value = value.replace('_', "");
 
-        let decimal = if clean_value.contains('e') || clean_value.contains('E') {
-            Decimal::from_scientific(&clean_value)
-                .map_err(|e| format!("Error parsing `input` string '{value}' as Decimal: {e}"))?
-        } else {
-            Decimal::from_str(&clean_value)
-                .map_err(|e| format!("Error parsing `input` string '{value}' as Decimal: {e}"))?
-        };
+        if clean_value.contains('e') || clean_value.contains('E') {
+            let decimal = Decimal::from_scientific(&clean_value)
+                .map_err(|e| format!("Error parsing `input` string '{value}' as Decimal: {e}"))?;
+            let precision = decimal.scale() as u8;
+            return Self::from_decimal_dp(decimal, precision).map_err(|e| e.to_string());
+        }
 
-        // Use decimal scale to preserve caller-specified precision (including trailing zeros)
-        let precision = decimal.scale() as u8;
-
-        Self::from_decimal_dp(decimal, precision).map_err(|e| e.to_string())
+        let (mantissa, precision) = parse_decimal_mantissa(&clean_value)
+            .map_err(|e| format!("Error parsing `input` string '{value}' as Decimal: {e}"))?;
+        let exponent = -i8::try_from(precision).map_err(|e| e.to_string())?;
+        let raw = mantissa_exponent_to_raw_checked::<PriceRaw>(
+            mantissa,
+            exponent,
+            precision,
+            "Price::from_str",
+            "PriceRaw",
+            "Price",
+        )
+        .map_err(|e| e.to_string())?;
+        Self::from_raw_checked(raw, precision).map_err(|e| e.to_string())
     }
 }
 
@@ -815,21 +837,21 @@ impl Div<f64> for Price {
 
 impl Debug for Price {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.precision > crate::types::fixed::MAX_FLOAT_PRECISION {
-            write!(f, "{}({})", stringify!(Price), self.raw)
-        } else {
-            write!(f, "{}({})", stringify!(Price), self.as_decimal())
-        }
+        write!(f, "{}({self})", stringify!(Price))
     }
 }
 
 impl Display for Price {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.precision > crate::types::fixed::MAX_FLOAT_PRECISION {
-            write!(f, "{}", self.raw)
-        } else {
-            write!(f, "{}", self.as_decimal())
+        if self.precision == ERROR_PRICE.precision {
+            return write!(f, "{}", self.raw);
         }
+
+        write!(
+            f,
+            "{}",
+            format_scaled_i128(self.raw_at_precision(), self.precision),
+        )
     }
 }
 
@@ -897,6 +919,25 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    #[case(PRICE_RAW_MAX, dec!(17014118346046))]
+    #[case(PRICE_RAW_MIN, dec!(-17014118346046))]
+    fn test_as_decimal_above_decimal_mantissa(#[case] raw: PriceRaw, #[case] expected: Decimal) {
+        // Regression: a precision-16 price above roughly 7.92e12 rescales to a raw value beyond
+        // `Decimal`'s 96-bit mantissa, which used to panic during conversion.
+        let price = Price::from_raw(raw, 16);
+
+        assert_eq!(price.as_decimal(), expected);
+    }
+
+    #[rstest]
+    fn test_error_sentinel_formatting() {
+        assert_eq!(ERROR_PRICE.to_string(), "0");
+        assert_eq!(format!("{ERROR_PRICE:?}"), "Price(0)");
+        assert_eq!(ERROR_PRICE.to_formatted_string(), "0");
+    }
 
     #[rstest]
     fn test_error_sentinel_comparisons_preserve_raw_zero_semantics() {
@@ -1170,6 +1211,17 @@ mod tests {
     }
 
     #[rstest]
+    #[case(PRICE_RAW_MIN)]
+    #[case(PRICE_RAW_MAX)]
+    fn test_from_str_raw_limits(#[case] raw: PriceRaw) {
+        let original = Price::from_raw(raw, FIXED_PRECISION);
+        let decoded = original.to_string().parse::<Price>().unwrap();
+
+        assert_eq!(decoded.raw, raw);
+        assert_eq!(decoded.precision, FIXED_PRECISION);
+    }
+
+    #[rstest]
     fn test_negative_price_from_str() {
         let price: Price = "-123.45".parse().unwrap();
         assert_eq!(price.precision, 2);
@@ -1361,8 +1413,8 @@ mod tests {
         case(
             2_000_000_000_000_000_000.0,
             18,
-            "Price(2000000000000000000)",
-            "2000000000000000000"
+            "Price(2.000000000000000000)",
+            "2.000000000000000000"
         )
     )] // High precision
     fn test_string_formatting_precision_handling(
@@ -1628,6 +1680,32 @@ mod tests {
         assert_eq!(deserialized.precision, 4);
     }
 
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    fn test_high_precision_16_serde_json_round_trip() {
+        let price = Price::from_raw(1_234_567_890_123_456_789_i128, 16);
+        let json = serde_json::to_string(&price).unwrap();
+        let deserialized: Price = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized, price);
+        assert_eq!(deserialized.precision, 16);
+        assert_eq!(deserialized.raw, 1_234_567_890_123_456_789_i128);
+    }
+
+    #[cfg(all(feature = "high-precision", feature = "defi"))]
+    #[rstest]
+    #[case(17, 12_345_678_901_234_567_891_i128)]
+    #[case(18, 123_456_789_012_345_678_901_i128)]
+    fn test_defi_precision_serde_json_round_trip(#[case] precision: u8, #[case] raw: PriceRaw) {
+        let price = Price::from_raw(raw, precision);
+        let json = serde_json::to_string(&price).unwrap();
+        let deserialized: Price = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized, price);
+        assert_eq!(deserialized.precision, precision);
+        assert_eq!(deserialized.raw, raw);
+    }
+
     #[rstest]
     fn test_price_deserialize_invalid_string_returns_error() {
         let result = serde_json::from_str::<Price>("\"not-a-price\"");
@@ -1682,16 +1760,18 @@ mod tests {
         assert_eq!(price.as_f64(), 0.0);
     }
 
-    #[cfg(feature = "high-precision")]
+    #[cfg(all(feature = "defi", feature = "high-precision"))]
     #[rstest]
-    #[case(PRICE_RAW_MAX, dec!(17014118346046))]
-    #[case(PRICE_RAW_MIN, dec!(-17014118346046))]
-    fn test_as_decimal_above_decimal_mantissa(#[case] raw: PriceRaw, #[case] expected: Decimal) {
-        // Regression: a precision-16 price above roughly 7.92e12 rescales to a raw value beyond
-        // `Decimal`'s 96-bit mantissa, which used to panic during conversion.
-        let price = Price::from_raw(raw, 16);
+    fn test_wei_above_decimal_mantissa_formats_exactly() {
+        let raw = 80_000_000_000_000_000_250_000_000_000_i128;
+        let price = Price::from_raw(raw, 18);
 
-        assert_eq!(price.as_decimal(), expected);
+        assert_eq!(price.to_string(), "80000000000.000000250000000000");
+        assert_eq!(Price::from_str(&price.to_string()).unwrap(), price);
+        assert_eq!(
+            serde_json::from_str::<Price>(&serde_json::to_string(&price).unwrap()).unwrap(),
+            price,
+        );
     }
 
     #[rstest]
@@ -1844,10 +1924,9 @@ mod property_tests {
         /// Property: Price string serialization round-trip should preserve value and precision
         #[rstest]
         fn prop_price_serde_round_trip(
-            value in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() < 1e6),
-            precision in precision_strategy()
+            (precision, raw) in valid_precision_raw_strategy()
         ) {
-            let original = Price::new(value, precision);
+            let original = Price::from_raw(raw, precision);
 
             // String round-trip (this should be exact and is the most important)
             let string_repr = original.to_string();

@@ -17,13 +17,13 @@ use std::{collections::HashMap, io::Cursor, str::FromStr};
 
 use datafusion::arrow::ipc::reader::StreamReader;
 use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::{data::OrderBookDepth10, identifiers::InstrumentId};
+use nautilus_model::{data::OrderBookDepth, identifiers::InstrumentId};
 use nautilus_serialization::arrow::DecodeFromRecordBatch;
 use pyo3::prelude::*;
 
 #[pyclass]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.persistence")]
-pub struct OrderBookDepth10DataWrangler {
+pub struct OrderBookDepthDataWrangler {
     instrument_id: InstrumentId,
     price_precision: u8,
     size_precision: u8,
@@ -32,12 +32,12 @@ pub struct OrderBookDepth10DataWrangler {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl OrderBookDepth10DataWrangler {
+impl OrderBookDepthDataWrangler {
     #[new]
     fn py_new(instrument_id: &str, price_precision: u8, size_precision: u8) -> PyResult<Self> {
         let instrument_id = InstrumentId::from_str(instrument_id).map_err(to_pyvalue_err)?;
         let metadata =
-            OrderBookDepth10::get_metadata(&instrument_id, price_precision, size_precision);
+            OrderBookDepth::get_metadata(&instrument_id, price_precision, size_precision);
 
         Ok(Self {
             instrument_id,
@@ -65,7 +65,7 @@ impl OrderBookDepth10DataWrangler {
     fn process_record_batch_bytes(
         &self,
         #[gen_stub(override_type(type_repr = "bytes"))] data: &[u8],
-    ) -> PyResult<Vec<OrderBookDepth10>> {
+    ) -> PyResult<Vec<OrderBookDepth>> {
         // Create a StreamReader (from Arrow IPC)
         let cursor = Cursor::new(data);
         let reader = match StreamReader::try_new(cursor, None) {
@@ -82,7 +82,7 @@ impl OrderBookDepth10DataWrangler {
                 Err(e) => return Err(to_pyvalue_err(e)),
             };
 
-            let batch_depths = OrderBookDepth10::decode_batch(&self.metadata, record_batch)
+            let batch_depths = OrderBookDepth::decode_batch(&self.metadata, record_batch)
                 .map_err(to_pyvalue_err)?;
             depths.extend(batch_depths);
         }

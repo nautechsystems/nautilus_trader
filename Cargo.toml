@@ -33,10 +33,10 @@ members = [
   "crates/indicators",
   "crates/infrastructure",
   "crates/live",
+  "crates/macros",
   "crates/model",
   "crates/network",
   "crates/persistence",
-  "crates/persistence/macros",
   "crates/plugin",
   "crates/portfolio",
   "crates/pyo3",
@@ -77,10 +77,10 @@ nautilus-execution = { path = "crates/execution", version = "0.65.0" }
 nautilus-indicators = { path = "crates/indicators", version = "0.65.0" }
 nautilus-infrastructure = { path = "crates/infrastructure", version = "0.65.0", default-features = false }
 nautilus-live = { path = "crates/live", version = "0.65.0", default-features = false }
+nautilus-macros = { path = "crates/macros", version = "0.65.0" }
 nautilus-model = { path = "crates/model", version = "0.65.0" }
 nautilus-network = { path = "crates/network", version = "0.65.0", default-features = false }
 nautilus-persistence = { path = "crates/persistence", version = "0.65.0" }
-nautilus-persistence-macros = { path = "crates/persistence/macros", version = "0.65.0" }
 nautilus-portfolio = { path = "crates/portfolio", version = "0.65.0" }
 nautilus-risk = { path = "crates/risk", version = "0.65.0" }
 nautilus-serialization = { path = "crates/serialization", version = "0.65.0" }
@@ -131,7 +131,6 @@ arrow = { version = "59.3.0", default-features = false, features = [
   "ipc",
   "ffi",
 ] }
-arrow-row = "59.3.0"
 async-stream = "0.3.6"
 async-trait = "0.1.92"
 aws-lc-rs = { version = "1.18.1", default-features = false, features = [
@@ -207,10 +206,12 @@ object_store = { version = "0.13.2", default-features = false, features = [
 parking_lot = "0.12.5"
 parquet = { version = "59.3.0", default-features = false, features = [
   "arrow",
+  "arrow_canonical_extension_types",
   "async",
 ] }
 pem = "4.0.0"
 percent-encoding = "2.3.2"
+proc-macro2 = "1.0.107"
 pyo3 = { version = "0.29.2", default-features = false, features = [
   "hashbrown",
   "indexmap",
@@ -227,6 +228,7 @@ pyo3-async-runtimes = { version = "0.29.0", default-features = false, features =
 pyo3-stub-gen = { version = "=0.20.0", default-features = false, features = [
   "rust_decimal",
 ] }
+quote = "1.0.47"
 rand = { version = "0.10.2", default-features = false, features = [
   "std",
   "thread_rng",
@@ -282,6 +284,7 @@ sqlx = { version = "0.9.0", default-features = false, features = [
   "rust_decimal",
 ] }
 strum = { version = "0.28.0", features = ["derive"] }
+syn = { version = "3.0.4", features = ["full"] }
 sysinfo = { version = "0.39.6", default-features = false, features = [
   "system",
 ] }
@@ -318,7 +321,6 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
   "fmt",
   "registry",
 ] }
-unbounded-interval-tree = { version = "1.1.2", default-features = false }
 url = { version = "2.5.8", default-features = false }
 ustr = { version = "1.1.0", features = ["serde"] }
 uuid = { version = "1.26.1", features = ["v4", "serde"] }

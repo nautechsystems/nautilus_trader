@@ -85,7 +85,7 @@ use std::{any::Any, fmt::Debug, time::Duration};
 
 use anyhow::Context;
 use nautilus_common::{
-    actor::{Actor, DataActor, DataActorNative},
+    actor::{self, Actor, DataActor, DataActorNative},
     cache::database::{CacheDatabaseAdapter, CacheDatabaseFactory},
     clients::ExecutionClient,
     component::Component,
@@ -126,7 +126,9 @@ use crate::{
     dispatch::drain_callbacks,
     execution::{
         client::LiveExecutionClient,
-        manager::{ExecutionManager, ExecutionManagerConfig, TargetedOrderReportResult},
+        manager::{
+            ExecutionManager, ExecutionManagerConfig, TargetedOrderQuery, TargetedOrderReportResult,
+        },
         submission::SubmittedOrderExhaustionPolicy,
     },
     runner::{AsyncRunner, AsyncRunnerChannels, PendingRunnerEvent},
@@ -572,10 +574,22 @@ impl LiveNode {
     }
 
     /// Disposes the live node kernel and releases resources.
+    ///
+    /// Discards any retained runner messages and attempts callback cleanup. Logs latched callback
+    /// failures and cleanup rejection; externally retained work can prevent clearing.
     pub fn dispose(&mut self) {
         self.close_external_ingress();
         self.handle.set_stopped();
         self.kernel.dispose();
+        drop(self.runner.take());
+
+        if let Some(e) = actor::callback_failure() {
+            log::error!("Callback dispatch failed before disposal cleanup: {e}");
+        }
+
+        if let Err(e) = actor::clear_callbacks() {
+            log::error!("Failed to clear callback dispatch during disposal: {e}");
+        }
     }
 
     async fn process_runner_for(&mut self, duration: Duration) -> usize {
@@ -1634,11 +1648,22 @@ impl LiveNode {
                             );
                             self.process_reconciliation_events(&reconciliation.events);
                             if !reconciliation.targeted_queries.is_empty() {
-                                targeted_order_report_task = Some(
-                                    self.start_targeted_order_report_check(
-                                        reconciliation.targeted_queries,
-                                    ),
-                                );
+                                if is_shutting_down {
+                                    let planned_client_order_ids = reconciliation
+                                        .targeted_queries
+                                        .iter()
+                                        .map(TargetedOrderQuery::client_order_id)
+                                        .collect::<Vec<_>>();
+                                    self.cleanup_cancelled_report_tasks(
+                                        &planned_client_order_ids,
+                                    );
+                                } else {
+                                    targeted_order_report_task = Some(
+                                        self.start_targeted_order_report_check(
+                                            reconciliation.targeted_queries,
+                                        ),
+                                    );
+                                }
                             }
                         }
                         ReportTaskOutcome::TimedOut => {
@@ -1700,7 +1725,11 @@ impl LiveNode {
 
                     match result {
                         ReportTaskOutcome::Completed(PositionReportTaskResult::Positions(result)) => {
-                            position_report_task = self.handle_position_report_result(result);
+                            if is_shutting_down {
+                                self.cleanup_cancelled_report_tasks(&[]);
+                            } else {
+                                position_report_task = self.handle_position_report_result(result);
+                            }
                         }
                         ReportTaskOutcome::Completed(PositionReportTaskResult::Fills(result)) => {
                             self.handle_position_fill_report_result(result);
@@ -3468,6 +3497,7 @@ mod tests {
             runner::{get_data_event_sender, get_exec_event_sender, get_system_event_sender},
             sender::DispatchSender,
         },
+        logging::{logger::LoggerConfig, logging_sync_to_disk, writer::FileWriterConfig},
         messages::{
             data::{SubscribeCommand, SubscribeQuotes},
             execution::{GenerateFillReports, QueryAccount, SubmitOrder, TradingCommand},
@@ -3763,7 +3793,6 @@ mod tests {
         let state = node.state();
         let trader_stopped = node.kernel.trader.borrow().is_stopped();
         let failure = actor::callback_failure();
-        let cleanup = actor::clear_callbacks();
         node.dispose();
 
         assert!(
@@ -3788,7 +3817,8 @@ mod tests {
         assert_eq!(state, NodeState::Stopped);
         assert!(trader_stopped);
         assert_eq!(failure, Some(CallbackDispatchError::DeliveryUnwound));
-        assert_eq!(cleanup, Ok(()));
+        assert_eq!(actor::callback_failure(), None);
+        assert_eq!(actor::clear_callbacks(), Ok(()));
     }
 
     #[rstest]
@@ -7147,6 +7177,181 @@ mod tests {
         assert!(node.kernel.trader().borrow().is_disposed());
         assert_eq!(node.kernel.trader().borrow().component_count(), 0);
         assert_eq!(node.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    fn test_dispose_releases_retained_callback_roots(
+        #[values(false, true)] fatal: bool,
+        #[values(false, true)] external: bool,
+    ) {
+        actor::clear_callbacks().unwrap();
+        let directory =
+            std::env::temp_dir().join(format!("nautilus-callback-disposal-{}", UUID4::new()));
+
+        let config = LiveNodeConfig {
+            logging: LoggerConfig {
+                fileout_level: LevelFilter::Info,
+                file_config: Some(FileWriterConfig {
+                    directory: Some(directory.to_str().unwrap().to_string()),
+                    file_name: Some("disposal".to_string()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut node = LiveNode::build("CallbackDisposalNode".to_string(), Some(config)).unwrap();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let observed = received.clone();
+
+        let retained = DispatchMessage::from(()).dispatch(|()| {
+            nautilus_common::runner::get_time_event_sender().send(TimeEventMessage::new(
+                TimeEvent::new("disposal".into(), UUID4::new(), 17.into(), 23.into()),
+                TimeEventCallback::RustLocal(Rc::new(move |_| {
+                    observed.borrow_mut().push("delivered");
+                })),
+            ));
+
+            external.then(|| DispatchMessage::new((), std::thread::current().id()))
+        });
+
+        if let Some(retained) = &retained {
+            assert!(retained.is_rooted());
+        }
+
+        assert_eq!(actor::clear_callbacks(), Err(CallbackDispatchError::Active));
+
+        if fatal {
+            crate::dispatch::tests::latch_callback_failure();
+        }
+
+        node.dispose();
+
+        assert!(node.runner.is_none());
+        assert!(received.borrow().is_empty());
+        assert_eq!(Rc::strong_count(&received), 1);
+        assert_eq!(
+            actor::callback_failure(),
+            (fatal && external).then_some(CallbackDispatchError::DeliveryUnwound)
+        );
+        assert_eq!(
+            actor::clear_callbacks(),
+            if external {
+                Err(CallbackDispatchError::Active)
+            } else {
+                Ok(())
+            }
+        );
+
+        logging_sync_to_disk().unwrap();
+        let output = std::fs::read_to_string(directory.join("disposal.log")).unwrap();
+        drop(retained);
+        node.dispose();
+
+        assert_eq!(actor::callback_failure(), None);
+        assert_eq!(actor::clear_callbacks(), Ok(()));
+        drop(node);
+        std::fs::remove_dir_all(directory).unwrap();
+
+        let errors: Vec<_> = output
+            .lines()
+            .filter(|line| line.contains("[ERROR]"))
+            .filter_map(|line| {
+                line.split_once(".nautilus_live::node: ")
+                    .map(|(_, text)| text)
+            })
+            .collect();
+
+        let mut expected = Vec::new();
+
+        if fatal {
+            expected.push(
+                "Callback dispatch failed before disposal cleanup: Callback delivery unwound",
+            );
+        }
+
+        if external {
+            expected.push(
+                "Failed to clear callback dispatch during disposal: Callback work or access is still active",
+            );
+        }
+
+        assert_eq!(errors, expected);
+    }
+
+    #[tokio::test]
+    async fn test_dispose_releases_stop_generated_callback_roots() {
+        actor::clear_callbacks().unwrap();
+
+        let config = LiveNodeConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            timeout_connection: Duration::ZERO,
+            timeout_reconciliation: Duration::ZERO,
+            timeout_portfolio: Duration::ZERO,
+            timeout_shutdown: Duration::ZERO,
+            ..Default::default()
+        };
+
+        let mut node =
+            LiveNode::build("StopCallbackDisposalNode".to_string(), Some(config)).unwrap();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        node.add_actor(StopCallbackActor {
+            core: DataActorCore::new(DataActorConfig {
+                actor_id: Some(ActorId::from("STOP-CALLBACK")),
+                ..Default::default()
+            }),
+            received: received.clone(),
+        })
+        .unwrap();
+
+        node.start().await.unwrap();
+
+        assert!(node.kernel.trader().borrow().is_running());
+        assert_eq!(actor::clear_callbacks(), Ok(()));
+
+        node.dispose();
+
+        assert_eq!(*received.borrow(), ["stop", "queued"]);
+        assert_eq!(Rc::strong_count(&received), 1);
+        assert!(node.runner.is_none());
+        assert!(node.kernel.trader().borrow().is_disposed());
+        assert_eq!(node.state(), NodeState::Stopped);
+        assert_eq!(actor::clear_callbacks(), Ok(()));
+    }
+
+    #[derive(Debug)]
+    struct StopCallbackActor {
+        core: DataActorCore,
+        received: Rc<RefCell<Vec<&'static str>>>,
+    }
+
+    nautilus_actor!(StopCallbackActor);
+
+    impl DataActor for StopCallbackActor {
+        fn on_stop(&mut self) -> anyhow::Result<()> {
+            self.received.borrow_mut().push("stop");
+            let received = self.received.clone();
+            DispatchMessage::from(()).dispatch(|()| {
+                nautilus_common::runner::get_time_event_sender().send(TimeEventMessage::new(
+                    TimeEvent::new("stop-disposal".into(), UUID4::new(), 31.into(), 37.into()),
+                    TimeEventCallback::RustLocal(Rc::new(move |_| {
+                        received.borrow_mut().push("delivered");
+                    })),
+                ));
+            });
+
+            let clear_result = actor::clear_callbacks();
+            anyhow::ensure!(
+                clear_result == Err(CallbackDispatchError::Active),
+                "Expected active callback roots during stop, received {clear_result:?}"
+            );
+            self.received.borrow_mut().push("queued");
+            Ok(())
+        }
     }
 
     #[rstest]

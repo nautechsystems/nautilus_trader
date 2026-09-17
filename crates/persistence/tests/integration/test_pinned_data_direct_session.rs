@@ -21,9 +21,12 @@ use nautilus_persistence::backend::session::DataBackendSession;
 use nautilus_testkit::common::ensure_histdata_eurusd_quotes_parquet;
 use rstest::rstest;
 
+use crate::fixtures::migrate_market_data_fixture;
+
 #[rstest]
 fn test_pinned_quotes_through_direct_session() {
-    let filepath = ensure_histdata_eurusd_quotes_parquet();
+    let fixture = migrate_market_data_fixture(ensure_histdata_eurusd_quotes_parquet());
+    let filepath = fixture.path();
     let mut session = DataBackendSession::new(1_000);
     session
         .add_file::<QuoteTick>(

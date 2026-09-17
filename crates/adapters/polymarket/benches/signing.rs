@@ -29,7 +29,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use nautilus_polymarket::{
     common::{
         credential::{Credential, EvmPrivateKey},
-        enums::{PolymarketOrderSide, SignatureType},
+        enums::{PolymarketOrderSide, PolymarketSignatureType},
     },
     http::models::PolymarketOrder,
     signing::eip712::{OrderSigner, order_hash, sign_clob_auth},
@@ -50,8 +50,8 @@ fn signer() -> OrderSigner {
     OrderSigner::new(&key).unwrap()
 }
 
-fn sample_order(signature_type: SignatureType) -> PolymarketOrder {
-    let order_address = if signature_type == SignatureType::Poly1271 {
+fn sample_order(signature_type: PolymarketSignatureType) -> PolymarketOrder {
+    let order_address = if signature_type == PolymarketSignatureType::Poly1271 {
         TEST_DEPOSIT_WALLET
     } else {
         TEST_ADDRESS
@@ -76,7 +76,7 @@ fn sample_order(signature_type: SignatureType) -> PolymarketOrder {
 
 fn bench_sign_order(c: &mut Criterion) {
     let signer = signer();
-    let order = sample_order(SignatureType::Eoa);
+    let order = sample_order(PolymarketSignatureType::Eoa);
     c.bench_function("sign_order", |b| {
         b.iter(|| {
             let sig = signer.sign_order(black_box(&order), false).unwrap();
@@ -87,7 +87,7 @@ fn bench_sign_order(c: &mut Criterion) {
 
 fn bench_sign_order_neg_risk(c: &mut Criterion) {
     let signer = signer();
-    let order = sample_order(SignatureType::Eoa);
+    let order = sample_order(PolymarketSignatureType::Eoa);
     c.bench_function("sign_order_neg_risk", |b| {
         b.iter(|| {
             let sig = signer.sign_order(black_box(&order), true).unwrap();
@@ -98,7 +98,7 @@ fn bench_sign_order_neg_risk(c: &mut Criterion) {
 
 fn bench_sign_order_poly_1271(c: &mut Criterion) {
     let signer = signer();
-    let order = sample_order(SignatureType::Poly1271);
+    let order = sample_order(PolymarketSignatureType::Poly1271);
     c.bench_function("sign_order_poly_1271", |b| {
         b.iter(|| {
             let sig = signer.sign_order(black_box(&order), false).unwrap();
@@ -108,7 +108,7 @@ fn bench_sign_order_poly_1271(c: &mut Criterion) {
 }
 
 fn bench_order_hash(c: &mut Criterion) {
-    let order = sample_order(SignatureType::Eoa);
+    let order = sample_order(PolymarketSignatureType::Eoa);
     c.bench_function("order_hash", |b| {
         b.iter(|| {
             let h = order_hash(black_box(&order), false).unwrap();

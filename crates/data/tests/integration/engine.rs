@@ -42,16 +42,15 @@ use nautilus_common::{
         RequestBookDeltas, RequestBookDepth, RequestBookSnapshot, RequestCommand,
         RequestCustomData, RequestFundingRates, RequestInstrument, RequestInstruments, RequestJoin,
         RequestOptionChainReferencePrice, RequestQuotes, RequestTrades, SubscribeBars,
-        SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand,
+        SubscribeBookDeltas, SubscribeBookDepth, SubscribeBookSnapshots, SubscribeCommand,
         SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
         SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
         SubscribeMarkPrices, SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes,
         SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
-        UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand,
-        UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
-        UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
-        UnsubscribeMarkPrices, UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes,
-        UnsubscribeTrades,
+        UnsubscribeBookDepth, UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeCustomData,
+        UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+        UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeMarkPrices,
+        UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
     },
     msgbus::{
         self, BusPayloadType, BusTap, Endpoint, MStr, MessageBus, Topic, TypedHandler,
@@ -87,7 +86,7 @@ use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, CustomData, DEPTH10_LEN, Data, DataRef, DataType,
         FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate,
-        OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
         greeks::OptionGreekValues,
         option_chain::{OptionChainSlice, OptionGreeks, StrikeRange},
         stubs::{
@@ -389,7 +388,7 @@ impl Drop for CatalogTempDir {
 fn register_empty_catalog(data_engine: &mut DataEngine, label: &str) -> CatalogTempDir {
     let catalog_dir = CatalogTempDir::new(label);
     let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -417,7 +416,7 @@ fn register_quote_catalog(
             None,
         )
         .unwrap();
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -445,7 +444,7 @@ fn register_trade_catalog(
             None,
         )
         .unwrap();
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -474,7 +473,7 @@ fn register_bar_catalog(
             None,
         )
         .unwrap();
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -517,7 +516,7 @@ fn register_custom_catalog(
         last_timestamp,
     );
 
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -1063,7 +1062,7 @@ fn test_subscribe_book_deltas_unmanaged_skips_book_updater(
     );
 
     let deltas_topic = switchboard::get_book_deltas_topic(audusd_sim.id);
-    let depth_topic = switchboard::get_book_depth10_topic(audusd_sim.id);
+    let depth_topic = switchboard::get_book_depth_topic(audusd_sim.id);
 
     let sub_deltas =
         DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
@@ -1080,23 +1079,22 @@ fn test_subscribe_book_deltas_unmanaged_skips_book_updater(
         )));
     data_engine.execute(sub_deltas);
 
-    let sub_depth =
-        DataCommand::Subscribe(SubscribeCommand::BookDepth10(SubscribeBookDepth10::new(
-            audusd_sim.id,
-            BookType::L2_MBP,
-            Some(client_id),
-            Some(venue),
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-            false, // unmanaged
-            None,
-            None,
-        )));
+    let sub_depth = DataCommand::Subscribe(SubscribeCommand::BookDepth(SubscribeBookDepth::new(
+        audusd_sim.id,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        false, // unmanaged
+        None,
+        None,
+    )));
     data_engine.execute(sub_depth);
 
     assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
-    assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 0);
+    assert_eq!(msgbus::subscriber_count_depth(depth_topic), 0);
     assert!(
         data_engine.get_cache().order_book(&audusd_sim.id).is_none(),
         "unmanaged subscriptions must not auto-create an order book",
@@ -1104,7 +1102,7 @@ fn test_subscribe_book_deltas_unmanaged_skips_book_updater(
 }
 
 #[rstest]
-fn test_unsubscribe_depth10_keeps_deltas_book_updater(
+fn test_unsubscribe_depth_keeps_deltas_book_updater(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<VirtualClock>>,
@@ -1125,9 +1123,9 @@ fn test_unsubscribe_depth10_keeps_deltas_book_updater(
     );
 
     let deltas_topic = switchboard::get_book_deltas_topic(audusd_sim.id);
-    let depth_topic = switchboard::get_book_depth10_topic(audusd_sim.id);
+    let depth_topic = switchboard::get_book_depth_topic(audusd_sim.id);
 
-    // Subscribe to both deltas and depth10
+    // Subscribe to both deltas and depth
     let sub_deltas =
         DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
             audusd_sim.id,
@@ -1143,28 +1141,27 @@ fn test_unsubscribe_depth10_keeps_deltas_book_updater(
         )));
     data_engine.execute(sub_deltas);
 
-    let sub_depth =
-        DataCommand::Subscribe(SubscribeCommand::BookDepth10(SubscribeBookDepth10::new(
-            audusd_sim.id,
-            BookType::L2_MBP,
-            Some(client_id),
-            Some(venue),
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-            true,
-            None,
-            None,
-        )));
+    let sub_depth = DataCommand::Subscribe(SubscribeCommand::BookDepth(SubscribeBookDepth::new(
+        audusd_sim.id,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    )));
     data_engine.execute(sub_depth);
 
     // BookUpdater subscribed to both topics
     assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 1);
-    assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 1);
+    assert_eq!(msgbus::subscriber_count_depth(depth_topic), 1);
 
-    // Unsubscribe from depth10 only
-    let unsub_depth = DataCommand::Unsubscribe(UnsubscribeCommand::BookDepth10(
-        UnsubscribeBookDepth10::new(
+    // Unsubscribe from depth only
+    let unsub_depth =
+        DataCommand::Unsubscribe(UnsubscribeCommand::BookDepth(UnsubscribeBookDepth::new(
             audusd_sim.id,
             Some(client_id),
             Some(venue),
@@ -1172,13 +1169,12 @@ fn test_unsubscribe_depth10_keeps_deltas_book_updater(
             UnixNanos::default(),
             None,
             None,
-        ),
-    ));
+        )));
     data_engine.execute(unsub_depth);
 
-    // BookUpdater should remain subscribed to deltas but not depth10
+    // BookUpdater should remain subscribed to deltas but not depth
     assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 1);
-    assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 0);
+    assert_eq!(msgbus::subscriber_count_depth(depth_topic), 0);
 
     // Now unsubscribe from deltas - BookUpdater should be fully removed
     let unsub_deltas =
@@ -1194,11 +1190,11 @@ fn test_unsubscribe_depth10_keeps_deltas_book_updater(
     data_engine.execute(unsub_deltas);
 
     assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
-    assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 0);
+    assert_eq!(msgbus::subscriber_count_depth(depth_topic), 0);
 }
 
 #[rstest]
-fn test_book_depth10_releases_after_final_route_owner(
+fn test_book_depth_releases_after_final_route_owner(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<VirtualClock>>,
@@ -1217,11 +1213,11 @@ fn test_book_depth10_releases_after_final_route_owner(
         &recorder,
         &mut data_engine,
     );
-    let depth_topic = switchboard::get_book_depth10_topic(audusd_sim.id);
+    let depth_topic = switchboard::get_book_depth_topic(audusd_sim.id);
 
     for _ in 0..2 {
-        data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDepth10(
-            SubscribeBookDepth10::new(
+        data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDepth(
+            SubscribeBookDepth::new(
                 audusd_sim.id,
                 BookType::L2_MBP,
                 Some(client_id),
@@ -1236,32 +1232,30 @@ fn test_book_depth10_releases_after_final_route_owner(
         )));
     }
     assert_eq!(recorder.borrow().len(), 1);
-    assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 1);
+    assert_eq!(msgbus::subscriber_count_depth(depth_topic), 1);
 
     let unsubscribe = || {
-        DataCommand::Unsubscribe(UnsubscribeCommand::BookDepth10(
-            UnsubscribeBookDepth10::new(
-                audusd_sim.id,
-                Some(client_id),
-                Some(venue),
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-                None,
-            ),
-        ))
+        DataCommand::Unsubscribe(UnsubscribeCommand::BookDepth(UnsubscribeBookDepth::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )))
     };
     data_engine.execute(unsubscribe());
     assert_eq!(recorder.borrow().len(), 1);
-    assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 1);
+    assert_eq!(msgbus::subscriber_count_depth(depth_topic), 1);
 
     data_engine.execute(unsubscribe());
     assert_eq!(recorder.borrow().len(), 2);
     assert!(matches!(
         &recorder.borrow()[1],
-        DataCommand::Unsubscribe(UnsubscribeCommand::BookDepth10(_))
+        DataCommand::Unsubscribe(UnsubscribeCommand::BookDepth(_))
     ));
-    assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 0);
+    assert_eq!(msgbus::subscriber_count_depth(depth_topic), 0);
 }
 
 fn make_es_future(instrument_id: &str, symbol: &str) -> FuturesContract {
@@ -1325,7 +1319,7 @@ fn test_emit_quotes_from_book_depths_publishes_top_of_book(stub_msgbus: Rc<RefCe
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
-    data_engine.process_data(Data::BookDepth10(Box::new(depth)));
+    data_engine.process_data(Data::BookDepth(Box::new(depth.clone())));
 
     let messages = saver.get_messages();
     assert_eq!(
@@ -1337,11 +1331,11 @@ fn test_emit_quotes_from_book_depths_publishes_top_of_book(stub_msgbus: Rc<RefCe
     assert!(cached_quote.is_some(), "synthetic quote should be cached",);
 
     // Same top-of-book: must not republish
-    data_engine.process_data(Data::BookDepth10(Box::new(depth)));
+    data_engine.process_data(Data::BookDepth(Box::new(depth.clone())));
     assert_eq!(saver.get_messages().len(), 1);
 
     // Shifted top-of-book: must republish
-    let mut shifted = depth;
+    let mut shifted = depth.clone();
     shifted.bids[0] = BookOrder::new(
         depth.bids[0].side,
         Price::new(98.50, 2),
@@ -1350,7 +1344,7 @@ fn test_emit_quotes_from_book_depths_publishes_top_of_book(stub_msgbus: Rc<RefCe
     );
     shifted.ts_event = UnixNanos::from(depth.ts_event.as_u64() + 1);
     shifted.ts_init = UnixNanos::from(depth.ts_init.as_u64() + 1);
-    data_engine.process_data(Data::BookDepth10(Box::new(shifted)));
+    data_engine.process_data(Data::BookDepth(Box::new(shifted)));
 
     let messages = saver.get_messages();
     assert_eq!(
@@ -1378,7 +1372,7 @@ fn test_emit_quotes_from_book_depths_skips_no_order_side_padding(
     let instrument_id = InstrumentId::from("AAPL.XNAS");
     let padded_bids: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
     let padded_asks: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
-    let depth = OrderBookDepth10::new(
+    let depth = OrderBookDepth::new(
         instrument_id,
         padded_bids,
         padded_asks,
@@ -1394,7 +1388,7 @@ fn test_emit_quotes_from_book_depths_skips_no_order_side_padding(
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
-    data_engine.process_data(Data::BookDepth10(Box::new(depth)));
+    data_engine.process_data(Data::BookDepth(Box::new(depth)));
 
     assert!(
         saver.get_messages().is_empty(),
@@ -4760,7 +4754,7 @@ fn test_unsubscribe_composite_keeps_overlapping_exact_alive(
 }
 
 #[rstest]
-fn test_unsubscribe_composite_deltas_keeps_composite_depth10_alive(
+fn test_unsubscribe_composite_deltas_keeps_composite_depth_alive(
     stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
 ) {
@@ -4804,8 +4798,8 @@ fn test_unsubscribe_composite_deltas_keeps_composite_depth10_alive(
             Some(parent_params()),
         ),
     )));
-    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDepth10(
-        SubscribeBookDepth10::new(
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDepth(
+        SubscribeBookDepth::new(
             composite_id,
             BookType::L2_MBP,
             Some(client_id),
@@ -4833,21 +4827,21 @@ fn test_unsubscribe_composite_deltas_keeps_composite_depth10_alive(
 
     let mut depth = stub_depth10();
     depth.instrument_id = esz1_id;
-    data_engine.process_data(Data::BookDepth10(Box::new(depth)));
+    data_engine.process_data(Data::BookDepth(Box::new(depth)));
 
     let cache_view = cache.borrow();
     let esz1_book = cache_view
         .order_book(&esz1_id)
-        .expect("ESZ1 book must exist while composite depth10 sub is active");
+        .expect("ESZ1 book must exist while composite depth sub is active");
     assert!(
         esz1_book.update_count >= 1,
-        "depth10 publish must reach the per-underlying book; \
-         composite depth10 sub kept alive after deltas unsubscribed",
+        "depth publish must reach the per-underlying book; \
+         composite depth sub kept alive after deltas unsubscribed",
     );
 }
 
 #[rstest]
-fn test_unsubscribe_composite_deltas_keeps_exact_depth10_deltas_handler_alive(
+fn test_unsubscribe_composite_deltas_keeps_exact_depth_deltas_handler_alive(
     stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
 ) {
@@ -4883,8 +4877,8 @@ fn test_unsubscribe_composite_deltas_keeps_exact_depth10_deltas_handler_alive(
     );
 
     let composite_id = InstrumentId::from("ES.FUT.XCME");
-    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDepth10(
-        SubscribeBookDepth10::new(
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDepth(
+        SubscribeBookDepth::new(
             esz1_id,
             BookType::L2_MBP,
             Some(client_id),
@@ -4932,12 +4926,12 @@ fn test_unsubscribe_composite_deltas_keeps_exact_depth10_deltas_handler_alive(
     assert_eq!(
         cache_view.order_book(&esz1_id).unwrap().update_count,
         1,
-        "exact depth10 sub keeps the per-underlying deltas handler alive after composite deltas unsubscribed",
+        "exact depth sub keeps the per-underlying deltas handler alive after composite deltas unsubscribed",
     );
 }
 
 #[rstest]
-fn test_snapshot_after_deltas_keeps_depth10_handler_alive(
+fn test_snapshot_after_deltas_keeps_depth_handler_alive(
     stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
 ) {
@@ -5009,7 +5003,7 @@ fn test_snapshot_after_deltas_keeps_depth10_handler_alive(
 
     let mut depth = stub_depth10();
     depth.instrument_id = esz1_id;
-    data_engine.process_data(Data::BookDepth10(Box::new(depth)));
+    data_engine.process_data(Data::BookDepth(Box::new(depth)));
 
     let cache_view = cache.borrow();
     let book = cache_view
@@ -5017,8 +5011,8 @@ fn test_snapshot_after_deltas_keeps_depth10_handler_alive(
         .expect("ESZ1 book must exist while snapshot sub is active");
     assert!(
         book.update_count >= 1,
-        "depth10 publish must reach the per-underlying book; \
-         deltas-then-snapshots path now registers the depth10 handler",
+        "depth publish must reach the per-underlying book; \
+         deltas-then-snapshots path now registers the depth handler",
     );
 }
 
@@ -5313,7 +5307,7 @@ fn test_parent_subscribe_with_unparsable_id_returns_error(
 }
 
 #[rstest]
-fn test_depth10_parent_subscribe_with_unparsable_id_returns_error(
+fn test_depth_parent_subscribe_with_unparsable_id_returns_error(
     stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
 ) {
@@ -5336,7 +5330,7 @@ fn test_depth10_parent_subscribe_with_unparsable_id_returns_error(
     );
 
     let runner = InstrumentId::from("1.211334112-31570229.BETFAIR");
-    let sub = DataCommand::Subscribe(SubscribeCommand::BookDepth10(SubscribeBookDepth10::new(
+    let sub = DataCommand::Subscribe(SubscribeCommand::BookDepth(SubscribeBookDepth::new(
         runner,
         BookType::L2_MBP,
         Some(client_id),
@@ -5354,16 +5348,16 @@ fn test_depth10_parent_subscribe_with_unparsable_id_returns_error(
         let cache_view = cache.borrow();
         assert!(
             cache_view.order_book(&runner).is_none(),
-            "parent depth10 subscribe with an unparsable Betfair runner id must NOT create a book",
+            "parent depth subscribe with an unparsable Betfair runner id must NOT create a book",
         );
     }
     assert!(
-        !data_engine.subscribed_book_depth10().contains(&runner),
-        "rejected parent depth10 subscribe must NOT leave the id in book_depth10_subs",
+        !data_engine.subscribed_book_depth().contains(&runner),
+        "rejected parent depth subscribe must NOT leave the id in book_depth_subs",
     );
 
     // Retrying without the parent flag on the same id must succeed.
-    let retry = DataCommand::Subscribe(SubscribeCommand::BookDepth10(SubscribeBookDepth10::new(
+    let retry = DataCommand::Subscribe(SubscribeCommand::BookDepth(SubscribeBookDepth::new(
         runner,
         BookType::L2_MBP,
         Some(client_id),
@@ -5378,7 +5372,7 @@ fn test_depth10_parent_subscribe_with_unparsable_id_returns_error(
     data_engine.execute(retry);
     assert!(
         cache.borrow().order_book(&runner).is_some(),
-        "concrete depth10 subscribe after a rejected parent attempt must still create the exact-id book",
+        "concrete depth subscribe after a rejected parent attempt must still create the exact-id book",
     );
 }
 
@@ -5728,7 +5722,7 @@ fn test_emit_quotes_from_book_publishes_on_depth_apply(
         &mut data_engine,
     );
 
-    let sub = DataCommand::Subscribe(SubscribeCommand::BookDepth10(SubscribeBookDepth10::new(
+    let sub = DataCommand::Subscribe(SubscribeCommand::BookDepth(SubscribeBookDepth::new(
         instrument_id,
         BookType::L2_MBP,
         Some(client_id),
@@ -5746,7 +5740,7 @@ fn test_emit_quotes_from_book_publishes_on_depth_apply(
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
-    data_engine.process_data(Data::BookDepth10(Box::new(depth)));
+    data_engine.process_data(Data::BookDepth(Box::new(depth)));
 
     let messages = saver.get_messages();
     assert_eq!(
@@ -5759,21 +5753,21 @@ fn test_emit_quotes_from_book_publishes_on_depth_apply(
 #[derive(Clone, Copy, Debug)]
 enum BookSubscriptionKind {
     Deltas,
-    Depth10,
+    Depth,
 }
 
 impl BookSubscriptionKind {
     fn failure(self) -> MockSubscribeFailure {
         match self {
             Self::Deltas => MockSubscribeFailure::BookDeltas,
-            Self::Depth10 => MockSubscribeFailure::BookDepth10,
+            Self::Depth => MockSubscribeFailure::BookDepth,
         }
     }
 }
 
 #[rstest]
 #[case::deltas(BookSubscriptionKind::Deltas)]
-#[case::depth10(BookSubscriptionKind::Depth10)]
+#[case::depth(BookSubscriptionKind::Depth)]
 fn test_shared_book_subscription_retries_after_client_failure(
     #[case] kind: BookSubscriptionKind,
     audusd_sim: CurrencyPair,
@@ -5808,7 +5802,7 @@ fn test_shared_book_subscription_retries_after_client_failure(
             None,
             None,
         )),
-        BookSubscriptionKind::Depth10 => SubscribeCommand::BookDepth10(SubscribeBookDepth10::new(
+        BookSubscriptionKind::Depth => SubscribeCommand::BookDepth(SubscribeBookDepth::new(
             audusd_sim.id,
             BookType::L2_MBP,
             Some(client_id),
@@ -5845,17 +5839,15 @@ fn test_shared_book_subscription_retries_after_client_failure(
             None,
             None,
         )),
-        BookSubscriptionKind::Depth10 => {
-            UnsubscribeCommand::BookDepth10(UnsubscribeBookDepth10::new(
-                audusd_sim.id,
-                Some(client_id),
-                Some(venue),
-                command_id,
-                UnixNanos::from(2),
-                None,
-                None,
-            ))
-        }
+        BookSubscriptionKind::Depth => UnsubscribeCommand::BookDepth(UnsubscribeBookDepth::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            command_id,
+            UnixNanos::from(2),
+            None,
+            None,
+        )),
     };
     data_engine.execute(DataCommand::Unsubscribe(unsubscribe(UUID4::new())));
     assert_eq!(
@@ -6078,7 +6070,7 @@ fn test_reset_clears_book_state_and_timers(
     );
 
     let deltas_topic = switchboard::get_book_deltas_topic(audusd_sim.id);
-    let depth_topic = switchboard::get_book_depth10_topic(audusd_sim.id);
+    let depth_topic = switchboard::get_book_depth_topic(audusd_sim.id);
 
     let sub_deltas =
         DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
@@ -6119,7 +6111,7 @@ fn test_reset_clears_book_state_and_timers(
     data_engine.reset();
 
     assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
-    assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 0);
+    assert_eq!(msgbus::subscriber_count_depth(depth_topic), 0);
     assert!(data_engine.subscribed_book_snapshots().is_empty());
     assert!(data_engine.get_clock().timer_names().is_empty());
     assert_eq!(data_engine.command_count(), 0);
@@ -6186,7 +6178,7 @@ fn test_reset_clears_book_and_option_chain_state_and_allows_resubscribe(
 
     let book_id = audusd_sim.id;
     let deltas_topic = switchboard::get_book_deltas_topic(book_id);
-    let depth_topic = switchboard::get_book_depth10_topic(book_id);
+    let depth_topic = switchboard::get_book_depth_topic(book_id);
     let greeks_topic = switchboard::get_option_greeks_topic(call_id);
     let series_id = make_series_id();
 
@@ -6234,7 +6226,7 @@ fn test_reset_clears_book_and_option_chain_state_and_allows_resubscribe(
     subscribe_all(&data_engine);
 
     assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 1);
-    assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 1);
+    assert_eq!(msgbus::subscriber_count_depth(depth_topic), 1);
     assert!(!data_engine.borrow().subscribed_book_snapshots().is_empty());
     assert!(!data_engine.borrow().get_clock().timer_names().is_empty());
     assert!(data_engine.borrow().has_option_chain_manager(&series_id));
@@ -6243,7 +6235,7 @@ fn test_reset_clears_book_and_option_chain_state_and_allows_resubscribe(
     data_engine.borrow_mut().reset();
 
     assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
-    assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 0);
+    assert_eq!(msgbus::subscriber_count_depth(depth_topic), 0);
     assert!(data_engine.borrow().subscribed_book_snapshots().is_empty());
     assert!(data_engine.borrow().get_clock().timer_names().is_empty());
     assert!(!data_engine.borrow().has_option_chain_manager(&series_id));
@@ -6256,7 +6248,7 @@ fn test_reset_clears_book_and_option_chain_state_and_allows_resubscribe(
     subscribe_all(&data_engine);
 
     assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 1);
-    assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 1);
+    assert_eq!(msgbus::subscriber_count_depth(depth_topic), 1);
     assert!(!data_engine.borrow().subscribed_book_snapshots().is_empty());
     assert!(!data_engine.borrow().get_clock().timer_names().is_empty());
     assert!(data_engine.borrow().has_option_chain_manager(&series_id));
@@ -6738,7 +6730,7 @@ fn test_catalog_start_ns_prefill_custom_data_without_identifier_merges_catalog_i
         5_000,
         6_000,
     );
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     let data_type = DataType::new(type_name, None, None);
     let correlation_id = UUID4::new();
 
@@ -8702,8 +8694,8 @@ fn streamable_subscribe_cases(
             BusPayloadType::OrderBookDeltas,
         ),
         (
-            "book depth10",
-            SubscribeCommand::BookDepth10(SubscribeBookDepth10::new(
+            "book depth",
+            SubscribeCommand::BookDepth(SubscribeBookDepth::new(
                 instrument_id,
                 BookType::L2_MBP,
                 Some(client_id),
@@ -8715,7 +8707,7 @@ fn streamable_subscribe_cases(
                 None,
                 None,
             )),
-            BusPayloadType::OrderBookDepth10,
+            BusPayloadType::OrderBookDepth,
         ),
         (
             "quotes",
@@ -8890,7 +8882,7 @@ fn data_streaming_payload_types() -> Vec<BusPayloadType> {
         BusPayloadType::Custom(Ustr::from("RustTestCustomData")),
         BusPayloadType::Instrument,
         BusPayloadType::OrderBookDeltas,
-        BusPayloadType::OrderBookDepth10,
+        BusPayloadType::OrderBookDepth,
         BusPayloadType::QuoteTick,
         BusPayloadType::TradeTick,
         BusPayloadType::Bar,
@@ -10341,7 +10333,7 @@ fn test_process_book_deltas(
 #[rstest]
 #[case::owned(false)]
 #[case::borrowed(true)]
-fn test_process_book_depth10(
+fn test_process_book_depth(
     #[case] borrowed: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
@@ -10351,7 +10343,7 @@ fn test_process_book_depth10(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let sub = SubscribeBookDepth10::new(
+    let sub = SubscribeBookDepth::new(
         audusd_sim.id,
         BookType::L3_MBO,
         Some(client_id),
@@ -10363,17 +10355,17 @@ fn test_process_book_depth10(
         None,
         None,
     );
-    let cmd = DataCommand::Subscribe(SubscribeCommand::BookDepth10(sub));
+    let cmd = DataCommand::Subscribe(SubscribeCommand::BookDepth(sub));
 
     data_engine.borrow_mut().execute(cmd);
 
     let depth = stub_depth10();
-    let (handler, saver) = get_typed_message_saving_handler::<OrderBookDepth10>(None);
-    let topic = switchboard::get_book_depth10_topic(depth.instrument_id);
-    msgbus::subscribe_book_depth10(topic.into(), handler, None);
+    let (handler, saver) = get_typed_message_saving_handler::<OrderBookDepth>(None);
+    let topic = switchboard::get_book_depth_topic(depth.instrument_id);
+    msgbus::subscribe_book_depth(topic.into(), handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    dispatch_data(&mut data_engine, Data::from(depth), borrowed);
+    dispatch_data(&mut data_engine, Data::from(depth.clone()), borrowed);
     let _cache = &data_engine.get_cache();
     let messages = saver.get_messages();
 
@@ -17995,7 +17987,7 @@ fn test_process_pipeline_deltas_publishes_on_pipeline_topic_only(
 }
 
 #[rstest]
-fn test_process_pipeline_depth10_publishes_on_pipeline_topic_only(
+fn test_process_pipeline_depth_publishes_on_pipeline_topic_only(
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
     let _ = stub_msgbus;
@@ -18005,24 +17997,23 @@ fn test_process_pipeline_depth10_publishes_on_pipeline_topic_only(
 
     let depth = stub_depth10();
     let instrument_id = depth.instrument_id;
-    let live_topic = switchboard::get_book_depth10_topic(instrument_id);
+    let live_topic = switchboard::get_book_depth_topic(instrument_id);
     let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
     let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
 
-    let (live_handler, live_saver) = get_typed_message_saving_handler::<OrderBookDepth10>(Some(
-        Ustr::from("pipeline-depth-live"),
-    ));
-    let (pipeline_handler, pipeline_saver) = get_typed_message_saving_handler::<OrderBookDepth10>(
+    let (live_handler, live_saver) =
+        get_typed_message_saving_handler::<OrderBookDepth>(Some(Ustr::from("pipeline-depth-live")));
+    let (pipeline_handler, pipeline_saver) = get_typed_message_saving_handler::<OrderBookDepth>(
         Some(Ustr::from("pipeline-depth-pipeline")),
     );
-    msgbus::subscribe_book_depth10(live_topic.into(), live_handler, None);
-    msgbus::subscribe_book_depth10(pipeline_topic.into(), pipeline_handler, None);
+    msgbus::subscribe_book_depth(live_topic.into(), live_handler, None);
+    msgbus::subscribe_book_depth(pipeline_topic.into(), pipeline_handler, None);
 
-    data_engine.process_pipeline(Data::BookDepth10(Box::new(depth)));
+    data_engine.process_pipeline(Data::BookDepth(Box::new(depth.clone())));
 
     assert!(
         live_saver.get_messages().is_empty(),
-        "pipeline depth10 must not publish on the live topic",
+        "pipeline depth must not publish on the live topic",
     );
     let pipeline_messages = pipeline_saver.get_messages();
     assert_eq!(pipeline_messages.len(), 1);
@@ -18179,9 +18170,7 @@ fn test_process_pipeline_skips_synthetic_trade_republish(stub_msgbus: Rc<RefCell
 }
 
 #[rstest]
-fn test_process_pipeline_depth10_skips_derived_quote_emission(
-    stub_msgbus: Rc<RefCell<MessageBus>>,
-) {
+fn test_process_pipeline_depth_skips_derived_quote_emission(stub_msgbus: Rc<RefCell<MessageBus>>) {
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
@@ -18201,15 +18190,15 @@ fn test_process_pipeline_depth10_skips_derived_quote_emission(
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
-    data_engine.process_pipeline(Data::BookDepth10(Box::new(depth)));
+    data_engine.process_pipeline(Data::BookDepth(Box::new(depth)));
 
     assert!(
         saver.get_messages().is_empty(),
-        "pipeline depth10 must not emit a derived quote even when emit_quotes_from_book_depths is set",
+        "pipeline depth must not emit a derived quote even when emit_quotes_from_book_depths is set",
     );
     assert!(
         cache.borrow().quote(&instrument_id).is_none(),
-        "no derived quote should be cached for pipeline depth10",
+        "no derived quote should be cached for pipeline depth",
     );
 }
 
@@ -18297,7 +18286,7 @@ fn quote_at(instrument_id: InstrumentId, ts: u64) -> QuoteTick {
     )
 }
 
-fn book_depth_at(instrument_id: InstrumentId, ts: u64) -> OrderBookDepth10 {
+fn book_depth_at(instrument_id: InstrumentId, ts: u64) -> OrderBookDepth {
     let mut depth = stub_depth10();
     depth.instrument_id = instrument_id;
     depth.ts_event = UnixNanos::from(ts);
@@ -18758,7 +18747,7 @@ fn time_range_book_depth_response(
     instrument_id: InstrumentId,
     client_id: ClientId,
     data_count: u64,
-    depths: Vec<OrderBookDepth10>,
+    depths: Vec<OrderBookDepth>,
 ) -> DataResponse {
     DataResponse::BookDepth(BookDepthResponse::new(
         request.request_id,
@@ -19829,13 +19818,13 @@ fn test_time_range_pipeline_supports_book_depth_variant(
     let (handler, saver) =
         get_any_saving_handler::<BookDepthResponse>(Some(Ustr::from("time-range-depth-parent")));
     msgbus::register_response_handler(&parent_id, handler);
-    let live_topic = switchboard::get_book_depth10_topic(instrument_id);
+    let live_topic = switchboard::get_book_depth_topic(instrument_id);
     let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
     let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
-    let (pipeline_handler, pipeline_saver) = get_typed_message_saving_handler::<OrderBookDepth10>(
+    let (pipeline_handler, pipeline_saver) = get_typed_message_saving_handler::<OrderBookDepth>(
         Some(Ustr::from("time-range-depth-payload")),
     );
-    msgbus::subscribe_book_depth10(pipeline_topic.into(), pipeline_handler, None);
+    msgbus::subscribe_book_depth(pipeline_topic.into(), pipeline_handler, None);
 
     let params: Params = serde_json::from_value(json!({"time_range_generator": ""})).unwrap();
     let depth = NonZeroUsize::new(10).unwrap();
@@ -19860,7 +19849,7 @@ fn test_time_range_pipeline_supports_book_depth_variant(
         instrument_id,
         client_id,
         1,
-        vec![depth_msg],
+        vec![depth_msg.clone()],
     ));
 
     let pipeline_messages = pipeline_saver.get_messages();
@@ -21515,7 +21504,7 @@ fn register_quote_catalog_with_quotes(
         None => (None, None),
     };
     catalog.write_to_parquet(quotes, start, end, None).unwrap();
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -21533,7 +21522,7 @@ fn register_trade_catalog_with_trades(
         None => (None, None),
     };
     catalog.write_to_parquet(trades, start, end, None).unwrap();
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -21551,7 +21540,7 @@ fn register_bar_catalog_with_bars(
         None => (None, None),
     };
     catalog.write_to_parquet(bars, start, end, None).unwrap();
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -21682,7 +21671,7 @@ fn register_funding_catalog_with_rates(
         None => (None, None),
     };
     catalog.write_to_parquet(rates, start, end, None).unwrap();
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -21739,7 +21728,7 @@ fn register_custom_catalog_with_data(
     catalog
         .write_custom_data_batch(data, start, end, None)
         .unwrap();
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -21775,7 +21764,7 @@ fn register_instrument_catalog_with_instruments(
     let catalog_dir = CatalogTempDir::new(label);
     let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
     catalog.write_instruments(instruments).unwrap();
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -23662,7 +23651,7 @@ fn register_deltas_catalog_with_deltas(
         None => (None, None),
     };
     catalog.write_to_parquet(deltas, start, end, None).unwrap();
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -23684,7 +23673,7 @@ fn recorded_request_book_deltas(
 fn register_depth_catalog_with_depths(
     data_engine: &mut DataEngine,
     label: &str,
-    depths: &[OrderBookDepth10],
+    depths: &[OrderBookDepth],
     interval: Option<(u64, u64)>,
 ) -> CatalogTempDir {
     let catalog_dir = CatalogTempDir::new(label);
@@ -23694,7 +23683,7 @@ fn register_depth_catalog_with_depths(
         None => (None, None),
     };
     catalog.write_to_parquet(depths, start, end, None).unwrap();
-    data_engine.register_catalog(catalog, None);
+    data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
 
@@ -24158,10 +24147,10 @@ fn test_book_depth_response_publishes_pipeline_depths(
     let mut data_engine = DataEngine::new(clock, cache, None);
 
     let pipeline_topic =
-        switchboard::MessagingSwitchboard::default().get_pipeline_book_depth10_topic(instrument_id);
+        switchboard::MessagingSwitchboard::default().get_pipeline_book_depth_topic(instrument_id);
     let (handler, saver) =
-        get_typed_message_saving_handler::<OrderBookDepth10>(Some(Ustr::from("depth-response")));
-    msgbus::subscribe_book_depth10(pipeline_topic.into(), handler, None);
+        get_typed_message_saving_handler::<OrderBookDepth>(Some(Ustr::from("depth-response")));
+    msgbus::subscribe_book_depth(pipeline_topic.into(), handler, None);
 
     data_engine.response(DataResponse::BookDepth(BookDepthResponse::new(
         UUID4::new(),

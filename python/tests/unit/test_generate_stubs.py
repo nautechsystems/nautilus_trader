@@ -1923,6 +1923,9 @@ ADAPTER_CONFIG_SECRET_FIELDS = {
     "api_secret",
     "api_passphrase",
     "app_key",
+    "builder_api_key",
+    "builder_api_secret",
+    "builder_passphrase",
     "http_rpc_url",
     "password",
     "passphrase",
@@ -2847,6 +2850,7 @@ def test_adapter_config_secret_values_are_not_exposed(tmp_path: Path) -> None:
         "chain": Chain(Blockchain.ARBITRUM, 42161),
         "client_id": AccountId("BLOCKCHAIN-001"),
         "dex_ids": [DexType.UNISWAP_V3],
+        "funder": "0x3333333333333333333333333333333333333333",
         "gas_buffer_bps": 100,
         "gas_limit": 1_000_000,
         "identity": provider_identity,
@@ -3288,6 +3292,8 @@ def _collect_rust_config_source_blocks(config_names: object):  # noqa: C901
                 )
         for match in RUST_CONFIG_IMPL_RE.finditer(content):
             class_name = match.group(1)
+            if class_name.startswith("Py") and class_name[2:] in config_names:
+                class_name = class_name[2:]
             if class_name in config_names:
                 impl_blocks.setdefault(class_name, []).append(
                     _rust_block_after_position(content, match.start()),

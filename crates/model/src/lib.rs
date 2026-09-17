@@ -147,3 +147,6 @@ pub mod stubs;
 
 #[cfg(feature = "defi")]
 pub mod defi;
+
+/// Generates custom-data model behavior.
+pub use nautilus_macros::custom_data;

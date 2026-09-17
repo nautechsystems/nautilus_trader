@@ -16,33 +16,32 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use arrow::{
-    array::{FixedSizeBinaryArray, FixedSizeBinaryBuilder, UInt64Array},
+    array::{Decimal128Array, UInt64Array},
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
     record_batch::RecordBatch,
 };
-use nautilus_model::{
-    data::{Bar, BarType},
-    types::fixed::PRECISION_BYTES,
-};
+use nautilus_model::data::{Bar, BarType};
 
 use super::{
-    DecodeDataFromRecordBatch, EncodingError, KEY_BAR_TYPE, KEY_PRICE_PRECISION,
-    KEY_SIZE_PRECISION, decode_price, decode_quantity, extract_column, parse_precision,
-    validate_precision_bytes,
+    DecodeDataFromRecordBatch, EncodingError, KEY_BAR_TYPE, KEY_IDENTIFIER, KEY_PRICE_PRECISION,
+    KEY_SIZE_PRECISION, decode_required_decimal_price, decode_required_decimal_quantity,
+    decode_required_timestamp, extract_column, fixed_decimal_data_type,
+    identifier_array_from_display, required_price_decimal_array, required_quantity_decimal_array,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for Bar {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
         let fields = vec![
-            Field::new("open", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("high", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("low", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("close", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("volume", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("ts_event", DataType::UInt64, false),
-            Field::new("ts_init", DataType::UInt64, false),
+            Field::new("open", fixed_decimal_data_type(), true),
+            Field::new("high", fixed_decimal_data_type(), true),
+            Field::new("low", fixed_decimal_data_type(), true),
+            Field::new("close", fixed_decimal_data_type(), true),
+            Field::new("volume", fixed_decimal_data_type(), true),
+            Field::new("ts_event", crate::arrow::timestamp_data_type(), false),
+            Field::new("ts_init", crate::arrow::timestamp_data_type(), false),
+            Field::new(KEY_IDENTIFIER, DataType::Utf8, true),
         ];
 
         match metadata {
@@ -59,63 +58,80 @@ fn parse_metadata(metadata: &HashMap<String, String>) -> Result<(BarType, u8, u8
     let bar_type = BarType::from_str(bar_type_str)
         .map_err(|e| EncodingError::ParseError(KEY_BAR_TYPE, e.to_string()))?;
 
-    let price_precision = parse_precision(metadata, KEY_PRICE_PRECISION)?;
-    let size_precision = parse_precision(metadata, KEY_SIZE_PRECISION)?;
+    let price_precision = metadata
+        .get(KEY_PRICE_PRECISION)
+        .ok_or_else(|| EncodingError::MissingMetadata(KEY_PRICE_PRECISION))?
+        .parse::<u8>()
+        .map_err(|e| EncodingError::ParseError(KEY_PRICE_PRECISION, e.to_string()))?;
+
+    let size_precision = metadata
+        .get(KEY_SIZE_PRECISION)
+        .ok_or_else(|| EncodingError::MissingMetadata(KEY_SIZE_PRECISION))?
+        .parse::<u8>()
+        .map_err(|e| EncodingError::ParseError(KEY_SIZE_PRECISION, e.to_string()))?;
 
     Ok((bar_type, price_precision, size_precision))
 }
 
 impl EncodeToRecordBatch for Bar {
-    fn encode_batch(
+    fn encode_batch<T>(
         metadata: &HashMap<String, String>,
-        data: &[Self],
-    ) -> Result<RecordBatch, ArrowError> {
-        let mut open_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
-        let mut high_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
-        let mut low_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
-        let mut close_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
-        let mut volume_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
+        data: &[T],
+    ) -> Result<RecordBatch, ArrowError>
+    where
+        T: std::borrow::Borrow<Self>,
+    {
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
 
-        for bar in data {
-            open_builder
-                .append_value(bar.open.raw().to_le_bytes())
-                .unwrap();
-            high_builder
-                .append_value(bar.high.raw().to_le_bytes())
-                .unwrap();
-            low_builder
-                .append_value(bar.low.raw().to_le_bytes())
-                .unwrap();
-            close_builder
-                .append_value(bar.close.raw().to_le_bytes())
-                .unwrap();
-            volume_builder
-                .append_value(bar.volume.raw().to_le_bytes())
-                .unwrap();
+        for bar in data.iter().map(std::borrow::Borrow::borrow) {
             ts_event_builder.append_value(bar.ts_event.as_u64());
             ts_init_builder.append_value(bar.ts_init.as_u64());
         }
 
-        let open_array = open_builder.finish();
-        let high_array = high_builder.finish();
-        let low_array = low_builder.finish();
-        let close_array = close_builder.finish();
-        let volume_array = volume_builder.finish();
         let ts_event_array = ts_event_builder.finish();
         let ts_init_array = ts_init_builder.finish();
 
-        RecordBatch::try_new(
+        crate::arrow::record_batch_with_timestamps(
             Self::get_schema(Some(metadata.clone())).into(),
             vec![
-                Arc::new(open_array),
-                Arc::new(high_array),
-                Arc::new(low_array),
-                Arc::new(close_array),
-                Arc::new(volume_array),
+                Arc::new(required_price_decimal_array(
+                    data.iter()
+                        .map(std::borrow::Borrow::borrow)
+                        .map(|bar| bar.open.raw()),
+                    "open",
+                )?),
+                Arc::new(required_price_decimal_array(
+                    data.iter()
+                        .map(std::borrow::Borrow::borrow)
+                        .map(|bar| bar.high.raw()),
+                    "high",
+                )?),
+                Arc::new(required_price_decimal_array(
+                    data.iter()
+                        .map(std::borrow::Borrow::borrow)
+                        .map(|bar| bar.low.raw()),
+                    "low",
+                )?),
+                Arc::new(required_price_decimal_array(
+                    data.iter()
+                        .map(std::borrow::Borrow::borrow)
+                        .map(|bar| bar.close.raw()),
+                    "close",
+                )?),
+                Arc::new(required_quantity_decimal_array(
+                    data.iter()
+                        .map(std::borrow::Borrow::borrow)
+                        .map(|bar| bar.volume.raw()),
+                    "volume",
+                )?),
                 Arc::new(ts_event_array),
                 Arc::new(ts_init_array),
+                Arc::new(identifier_array_from_display(
+                    data.iter()
+                        .map(std::borrow::Borrow::borrow)
+                        .map(|bar| bar.bar_type),
+                )),
             ],
         )
     }
@@ -131,56 +147,34 @@ impl DecodeFromRecordBatch for Bar {
         record_batch: RecordBatch,
     ) -> Result<Vec<Self>, EncodingError> {
         let (bar_type, price_precision, size_precision) = parse_metadata(metadata)?;
+        let record_batch = crate::arrow::record_batch_with_u64_timestamps(&record_batch)?;
+        let record_batch = &record_batch;
         let cols = record_batch.columns();
 
-        let open_values = extract_column::<FixedSizeBinaryArray>(
-            cols,
-            "open",
-            0,
-            DataType::FixedSizeBinary(PRECISION_BYTES),
-        )?;
-        let high_values = extract_column::<FixedSizeBinaryArray>(
-            cols,
-            "high",
-            1,
-            DataType::FixedSizeBinary(PRECISION_BYTES),
-        )?;
-        let low_values = extract_column::<FixedSizeBinaryArray>(
-            cols,
-            "low",
-            2,
-            DataType::FixedSizeBinary(PRECISION_BYTES),
-        )?;
-        let close_values = extract_column::<FixedSizeBinaryArray>(
-            cols,
-            "close",
-            3,
-            DataType::FixedSizeBinary(PRECISION_BYTES),
-        )?;
-        let volume_values = extract_column::<FixedSizeBinaryArray>(
-            cols,
-            "volume",
-            4,
-            DataType::FixedSizeBinary(PRECISION_BYTES),
-        )?;
+        let open_values =
+            extract_column::<Decimal128Array>(cols, "open", 0, fixed_decimal_data_type())?;
+        let high_values =
+            extract_column::<Decimal128Array>(cols, "high", 1, fixed_decimal_data_type())?;
+        let low_values =
+            extract_column::<Decimal128Array>(cols, "low", 2, fixed_decimal_data_type())?;
+        let close_values =
+            extract_column::<Decimal128Array>(cols, "close", 3, fixed_decimal_data_type())?;
+        let volume_values =
+            extract_column::<Decimal128Array>(cols, "volume", 4, fixed_decimal_data_type())?;
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 5, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 6, DataType::UInt64)?;
 
-        validate_precision_bytes(open_values, "open")?;
-        validate_precision_bytes(high_values, "high")?;
-        validate_precision_bytes(low_values, "low")?;
-        validate_precision_bytes(close_values, "close")?;
-        validate_precision_bytes(volume_values, "volume")?;
-
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|i| {
-                let open = decode_price(open_values.value(i), price_precision, "open", i)?;
-                let high = decode_price(high_values.value(i), price_precision, "high", i)?;
-                let low = decode_price(low_values.value(i), price_precision, "low", i)?;
-                let close = decode_price(close_values.value(i), price_precision, "close", i)?;
-                let volume = decode_quantity(volume_values.value(i), size_precision, "volume", i)?;
-                let ts_event = ts_event_values.value(i).into();
-                let ts_init = ts_init_values.value(i).into();
+                let open = decode_required_decimal_price(open_values, price_precision, "open", i)?;
+                let high = decode_required_decimal_price(high_values, price_precision, "high", i)?;
+                let low = decode_required_decimal_price(low_values, price_precision, "low", i)?;
+                let close =
+                    decode_required_decimal_price(close_values, price_precision, "close", i)?;
+                let volume =
+                    decode_required_decimal_quantity(volume_values, size_precision, "volume", i)?;
+                let ts_event = decode_required_timestamp(ts_event_values, "ts_event", i)?;
+                let ts_init = decode_required_timestamp(ts_init_values, "ts_init", i)?;
 
                 Ok(Self {
                     bar_type,
@@ -213,14 +207,14 @@ impl DecodeDataFromRecordBatch for Bar {
 mod tests {
     use std::sync::Arc;
 
-    use arrow::{array::Array, record_batch::RecordBatch};
+    use arrow::array::{Array, TimestampNanosecondArray};
     use nautilus_model::types::{
         Price, Quantity, fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw,
     };
     use rstest::rstest;
 
     use super::*;
-    use crate::arrow::{fixed_size_binary, get_raw_price, get_raw_quantity};
+    use crate::arrow::{get_raw_price, get_raw_quantity};
 
     #[rstest]
     fn test_get_schema() {
@@ -228,13 +222,14 @@ mod tests {
         let metadata = Bar::get_metadata(&bar_type, 2, 0);
         let schema = Bar::get_schema(Some(metadata.clone()));
         let expected_fields = vec![
-            Field::new("open", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("high", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("low", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("close", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("volume", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("ts_event", DataType::UInt64, false),
-            Field::new("ts_init", DataType::UInt64, false),
+            Field::new("open", fixed_decimal_data_type(), true),
+            Field::new("high", fixed_decimal_data_type(), true),
+            Field::new("low", fixed_decimal_data_type(), true),
+            Field::new("close", fixed_decimal_data_type(), true),
+            Field::new("volume", fixed_decimal_data_type(), true),
+            Field::new("ts_event", crate::arrow::timestamp_data_type(), false),
+            Field::new("ts_init", crate::arrow::timestamp_data_type(), false),
+            Field::new(KEY_IDENTIFIER, DataType::Utf8, true),
         ];
         let expected_schema = Schema::new_with_metadata(expected_fields, metadata);
         assert_eq!(schema, expected_schema);
@@ -244,14 +239,21 @@ mod tests {
     fn test_get_schema_map() {
         let schema_map = Bar::get_schema_map();
         let mut expected_map = HashMap::new();
-        let fixed_size_binary = format!("FixedSizeBinary({PRECISION_BYTES})");
+        let fixed_size_binary = "Decimal128(38, 16)".to_string();
         expected_map.insert("open".to_string(), fixed_size_binary.clone());
         expected_map.insert("high".to_string(), fixed_size_binary.clone());
         expected_map.insert("low".to_string(), fixed_size_binary.clone());
         expected_map.insert("close".to_string(), fixed_size_binary.clone());
         expected_map.insert("volume".to_string(), fixed_size_binary);
-        expected_map.insert("ts_event".to_string(), "UInt64".to_string());
-        expected_map.insert("ts_init".to_string(), "UInt64".to_string());
+        expected_map.insert(
+            "ts_event".to_string(),
+            "Timestamp(Nanosecond, Some(\"UTC\"))".to_string(),
+        );
+        expected_map.insert(
+            "ts_init".to_string(),
+            "Timestamp(Nanosecond, Some(\"UTC\"))".to_string(),
+        );
+        expected_map.insert(KEY_IDENTIFIER.to_string(), "Utf8".to_string());
         assert_eq!(schema_map, expected_map);
     }
 
@@ -287,28 +289,34 @@ mod tests {
         let columns = record_batch.columns();
         let open_values = columns[0]
             .as_any()
-            .downcast_ref::<FixedSizeBinaryArray>()
+            .downcast_ref::<Decimal128Array>()
             .unwrap();
         let high_values = columns[1]
             .as_any()
-            .downcast_ref::<FixedSizeBinaryArray>()
+            .downcast_ref::<Decimal128Array>()
             .unwrap();
         let low_values = columns[2]
             .as_any()
-            .downcast_ref::<FixedSizeBinaryArray>()
+            .downcast_ref::<Decimal128Array>()
             .unwrap();
         let close_values = columns[3]
             .as_any()
-            .downcast_ref::<FixedSizeBinaryArray>()
+            .downcast_ref::<Decimal128Array>()
             .unwrap();
         let volume_values = columns[4]
             .as_any()
-            .downcast_ref::<FixedSizeBinaryArray>()
+            .downcast_ref::<Decimal128Array>()
             .unwrap();
-        let ts_event_values = columns[5].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ts_init_values = columns[6].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let ts_event_values = columns[5]
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .unwrap();
+        let ts_init_values = columns[6]
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .unwrap();
 
-        assert_eq!(columns.len(), 7);
+        assert_eq!(columns.len(), 8);
         assert_eq!(open_values.len(), 2);
         assert_eq!(
             get_raw_price(open_values.value(0)),
@@ -367,31 +375,34 @@ mod tests {
         let bar_type = BarType::from_str("AAPL.XNAS-1-MINUTE-LAST-INTERNAL").unwrap();
         let metadata = Bar::get_metadata(&bar_type, 2, 0);
 
-        let open = fixed_size_binary(vec![
+        let open = crate::arrow::test_support::decimal_array_from_bytes(vec![
             &((100.10 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
             &((10.00 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
         ]);
-        let high = fixed_size_binary(vec![
+        let high = crate::arrow::test_support::decimal_array_from_bytes(vec![
             &((102.00 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
             &((10.00 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
         ]);
-        let low = fixed_size_binary(vec![
+        let low = crate::arrow::test_support::decimal_array_from_bytes(vec![
             &((100.00 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
             &((10.00 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
         ]);
-        let close = fixed_size_binary(vec![
+        let close = crate::arrow::test_support::decimal_array_from_bytes(vec![
             &((101.00 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
             &((10.01 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
         ]);
-        let volume = fixed_size_binary(vec![
+        let volume = crate::arrow::test_support::decimal_array_from_bytes(vec![
             &((11.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
             &((10.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
         ]);
         let ts_event = UInt64Array::from(vec![1, 2]);
         let ts_init = UInt64Array::from(vec![3, 4]);
 
-        let record_batch = RecordBatch::try_new(
-            Bar::get_schema(Some(metadata.clone())).into(),
+        let record_batch = crate::arrow::record_batch_with_timestamps(
+            crate::arrow::schema_without_identifier_column(&Bar::get_schema(Some(
+                metadata.clone(),
+            )))
+            .into(),
             vec![
                 Arc::new(open),
                 Arc::new(high),
@@ -416,17 +427,26 @@ mod tests {
         let invalid_price: PriceRaw = PriceRaw::MAX - 1000;
         let valid_price = (100.00 * FIXED_SCALAR) as PriceRaw;
 
-        let open = fixed_size_binary(vec![&invalid_price.to_le_bytes()]);
-        let high = fixed_size_binary(vec![&valid_price.to_le_bytes()]);
-        let low = fixed_size_binary(vec![&valid_price.to_le_bytes()]);
-        let close = fixed_size_binary(vec![&valid_price.to_le_bytes()]);
-        let volume =
-            fixed_size_binary(vec![&((100.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes()]);
+        let open = crate::arrow::test_support::decimal_array_from_bytes(vec![
+            &invalid_price.to_le_bytes(),
+        ]);
+        let high =
+            crate::arrow::test_support::decimal_array_from_bytes(vec![&valid_price.to_le_bytes()]);
+        let low =
+            crate::arrow::test_support::decimal_array_from_bytes(vec![&valid_price.to_le_bytes()]);
+        let close =
+            crate::arrow::test_support::decimal_array_from_bytes(vec![&valid_price.to_le_bytes()]);
+        let volume = crate::arrow::test_support::decimal_array_from_bytes(vec![
+            &((100.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+        ]);
         let ts_event = UInt64Array::from(vec![1]);
         let ts_init = UInt64Array::from(vec![2]);
 
-        let record_batch = RecordBatch::try_new(
-            Bar::get_schema(Some(metadata.clone())).into(),
+        let record_batch = crate::arrow::record_batch_with_timestamps(
+            crate::arrow::schema_without_identifier_column(&Bar::get_schema(Some(
+                metadata.clone(),
+            )))
+            .into(),
             vec![
                 Arc::new(open),
                 Arc::new(high),
@@ -454,17 +474,25 @@ mod tests {
         let mut metadata = Bar::get_metadata(&bar_type, 2, 0);
 
         let valid_price = (100.00 * FIXED_SCALAR) as PriceRaw;
-        let open = fixed_size_binary(vec![&valid_price.to_le_bytes()]);
-        let high = fixed_size_binary(vec![&valid_price.to_le_bytes()]);
-        let low = fixed_size_binary(vec![&valid_price.to_le_bytes()]);
-        let close = fixed_size_binary(vec![&valid_price.to_le_bytes()]);
-        let volume =
-            fixed_size_binary(vec![&((100.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes()]);
+        let open =
+            crate::arrow::test_support::decimal_array_from_bytes(vec![&valid_price.to_le_bytes()]);
+        let high =
+            crate::arrow::test_support::decimal_array_from_bytes(vec![&valid_price.to_le_bytes()]);
+        let low =
+            crate::arrow::test_support::decimal_array_from_bytes(vec![&valid_price.to_le_bytes()]);
+        let close =
+            crate::arrow::test_support::decimal_array_from_bytes(vec![&valid_price.to_le_bytes()]);
+        let volume = crate::arrow::test_support::decimal_array_from_bytes(vec![
+            &((100.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+        ]);
         let ts_event = UInt64Array::from(vec![1]);
         let ts_init = UInt64Array::from(vec![2]);
 
-        let record_batch = RecordBatch::try_new(
-            Bar::get_schema(Some(metadata.clone())).into(),
+        let record_batch = crate::arrow::record_batch_with_timestamps(
+            crate::arrow::schema_without_identifier_column(&Bar::get_schema(Some(
+                metadata.clone(),
+            )))
+            .into(),
             vec![
                 Arc::new(open),
                 Arc::new(high),

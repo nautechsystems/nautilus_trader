@@ -69,7 +69,7 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        bar::{binance_bar_data_type, parse_binance_bar_type},
+        bar::{binance_bar_data_type, binance_bars_to_custom_data, parse_binance_bar_type},
         consts::{BINANCE_VENUE, BINANCE_WS_HEARTBEAT_SECS},
         credential::resolve_credentials,
         enums::{BinanceEnvironment, BinanceProductType},
@@ -2298,7 +2298,7 @@ impl DataClient for BinanceSpotDataClient {
                         client_id,
                         Some(venue),
                         data_type,
-                        bars,
+                        binance_bars_to_custom_data(bar_type, bars),
                         start_nanos,
                         end_nanos,
                         clock.get_time_ns(),

@@ -54,6 +54,7 @@ use nautilus_core::{
 };
 use nautilus_live::{
     SocketControl,
+    book::snapshot::snapshot_expired,
     task::{TaskGroup, TaskGroupGuard, TaskSpawner},
 };
 use nautilus_model::{
@@ -315,8 +316,7 @@ impl OKXDataClient {
 
             match result {
                 Ok(()) => {
-                    if timeout.is_zero() || time::timeout(timeout, cancel.cancelled()).await.is_ok()
-                    {
+                    if !snapshot_expired(&cancel, timeout).await {
                         return;
                     }
 
@@ -1307,16 +1307,7 @@ fn handle_book_sequence_outcome(
     match outcome {
         BookSequenceOutcome::Accept => true,
         BookSequenceOutcome::Suppress => false,
-        BookSequenceOutcome::Recover {
-            last_seq_id,
-            prev_seq_id,
-            seq_id,
-        } => {
-            log::warn!(
-                "Book sequence gap for {instrument_id}: last_seq_id={last_seq_id:?}, \
-                 prev_seq_id={prev_seq_id:?}, seq_id={seq_id}; requesting a fresh snapshot"
-            );
-
+        BookSequenceOutcome::Recover => {
             start_recovery(
                 instrument_id,
                 book_channels,

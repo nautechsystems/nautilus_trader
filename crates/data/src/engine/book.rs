@@ -22,7 +22,7 @@ use nautilus_common::{
     timer::TimeEvent,
 };
 use nautilus_model::{
-    data::{OrderBookDeltas, OrderBookDepth10, QuoteTick},
+    data::{OrderBookDeltas, OrderBookDepth, QuoteTick},
     enums::InstrumentClass,
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::Instrument,
@@ -130,12 +130,12 @@ impl Handler<OrderBookDeltas> for BookUpdater {
     }
 }
 
-impl Handler<OrderBookDepth10> for BookUpdater {
+impl Handler<OrderBookDepth> for BookUpdater {
     fn id(&self) -> Ustr {
         self.id
     }
 
-    fn handle(&self, depth: &OrderBookDepth10) {
+    fn handle(&self, depth: &OrderBookDepth) {
         let mut emit: Option<QuoteTick> = None;
         {
             let mut cache = self.cache.borrow_mut();

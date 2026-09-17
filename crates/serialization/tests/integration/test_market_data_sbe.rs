@@ -25,7 +25,7 @@ use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, FundingRateUpdate, IndexPriceUpdate,
         InstrumentClose, InstrumentStatus, MarkPriceUpdate, OptionGreekValues, OptionGreeks,
-        OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
         stubs::{
             quote_ethusdt_binance, stub_bar, stub_delta, stub_deltas, stub_depth10,
             stub_instrument_close, stub_instrument_status, stub_trade_ethusdt_buy,
@@ -327,13 +327,31 @@ fn test_order_book_deltas_rejects_group_above_maximum() {
 }
 
 #[rstest]
-fn test_order_book_depth10_roundtrip() {
+fn test_order_book_depth_roundtrip() {
     let value = stub_depth10();
 
     let bytes = value.to_sbe().unwrap();
-    let decoded = OrderBookDepth10::from_sbe(&bytes).unwrap();
+    let decoded = OrderBookDepth::from_sbe(&bytes).unwrap();
 
-    assert_order_book_depth10_matches_capnp_parity(&value, &decoded);
+    assert_order_book_depth_matches_capnp_parity(&value, &decoded);
+}
+
+#[rstest]
+#[case(0)]
+#[case(9)]
+#[case(11)]
+fn test_depth_encoding_rejects_other_depths(#[case] levels: usize) {
+    let mut depth = stub_depth10();
+    depth.bids.resize(levels, depth.bids[0]);
+    depth.bid_counts.resize(levels, 1);
+    assert_eq!(
+        depth.to_sbe().unwrap_err(),
+        SbeEncodeError::InvalidGroupSize {
+            group: "bids",
+            count: levels,
+            expected: 10,
+        }
+    );
 }
 
 #[rstest]
@@ -640,7 +658,7 @@ fn test_bar_type_step_overflow_returns_encode_error() {
 }
 
 #[rstest]
-fn test_order_book_depth10_header_block_length_matches_fixed_body() {
+fn test_order_book_depth_header_block_length_matches_fixed_body() {
     let value = stub_depth10();
 
     let bytes = value.to_sbe().unwrap();
@@ -705,7 +723,7 @@ fn test_data_any_order_book_deltas_roundtrip() {
 }
 
 #[rstest]
-fn test_data_any_order_book_depth10_roundtrip() {
+fn test_data_any_order_book_depth_roundtrip() {
     assert_data_any_roundtrip_matches_capnp_parity(DataAny::from(stub_depth10()));
 }
 
@@ -829,11 +847,11 @@ fn assert_order_book_deltas_fields(expected: &OrderBookDeltas, actual: &OrderBoo
     }
 }
 
-fn assert_order_book_depth10_matches_capnp_parity(
-    expected: &OrderBookDepth10,
-    actual: &OrderBookDepth10,
+fn assert_order_book_depth_matches_capnp_parity(
+    expected: &OrderBookDepth,
+    actual: &OrderBookDepth,
 ) {
-    let expected = normalize_depth10_capnp_parity(*expected);
+    let expected = normalize_depth_capnp_parity(expected.clone());
 
     assert_eq!(expected.instrument_id, actual.instrument_id);
     assert_eq!(expected.bid_counts, actual.bid_counts);
@@ -915,8 +933,8 @@ fn assert_data_any_roundtrip_matches_capnp_parity(value: DataAny) {
         (DataAny::BookDeltas(expected), DataAny::BookDeltas(actual)) => {
             assert_order_book_deltas_fields(&expected, &actual);
         }
-        (DataAny::BookDepth10(expected), DataAny::BookDepth10(actual)) => {
-            assert_order_book_depth10_matches_capnp_parity(&expected, &actual);
+        (DataAny::BookDepth(expected), DataAny::BookDepth(actual)) => {
+            assert_order_book_depth_matches_capnp_parity(&expected, &actual);
         }
         (expected, actual) => {
             panic!("DataAny variant mismatch: expected {expected:?}, was {actual:?}");
@@ -941,7 +959,7 @@ fn normalize_bar_capnp_parity(mut bar: Bar) -> Bar {
     bar
 }
 
-fn normalize_depth10_capnp_parity(mut depth: OrderBookDepth10) -> OrderBookDepth10 {
+fn normalize_depth_capnp_parity(mut depth: OrderBookDepth) -> OrderBookDepth {
     for bid in &mut depth.bids {
         bid.order_id = 0;
     }

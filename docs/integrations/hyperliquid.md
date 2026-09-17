@@ -680,7 +680,7 @@ The adapter supports the following data subscriptions. All perpetual data types
 | Public trades     | ✓    | -        | ✓     | `HyperliquidPublicTrade`      | Opt-in custom data with counterparties and hash. |
 | Quote ticks       | ✓    | -        | -     | `QuoteTick`                   | Best bid/offer.                                  |
 | Order book deltas | ✓    | ✓        | -     | `OrderBookDelta`              | L2 snapshots.                                    |
-| Order book depth  | ✓    | -        | -     | `OrderBookDepth10`            | Top-10 L2 snapshots.                             |
+| Order book depth  | ✓    | -        | -     | `OrderBookDepth`              | Top-10 L2 snapshots.                             |
 | Bars              | ✓    | -        | ✓     | `Bar`                         | Supported intervals below.                       |
 | Mark prices       | ✓    | -        | -     | `MarkPriceUpdate`             | Perpetual mark price ticks.                      |
 | Index prices      | ✓    | -        | -     | `IndexPriceUpdate`            | Underlying reference prices.                     |
@@ -708,7 +708,7 @@ response. Real-time trades remain available via the WebSocket `trades` channel.
 The `l2Book` subscription accepts optional `nSigFigs` and `mantissa` parameters
 that thin the venue-side book aggregation. Pass them as `n_sig_figs` and
 `mantissa` in the `params` dict on `subscribe_book_deltas` or
-`subscribe_book_depth10`, and the adapter forwards them to the venue.
+`subscribe_book_depth`, and the adapter forwards them to the venue.
 
 Hyperliquid accepts `nSigFigs` values `2`, `3`, `4`, `5`, or omitted for full
 precision. `mantissa` is only valid when `nSigFigs=5` and accepts `1`, `2`, or
@@ -726,7 +726,7 @@ self.subscribe_book_deltas(
 
 Omitting both params subscribes to the full-depth book.
 
-Book deltas and depth10 snapshots for the same instrument share one venue
+Book deltas and depth snapshots for the same instrument share one venue
 `l2Book` stream:
 
 - The first subscription opens the stream and sets its precision options.

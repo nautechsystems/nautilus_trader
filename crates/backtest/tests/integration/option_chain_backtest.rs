@@ -34,14 +34,14 @@
 use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use nautilus_backtest::{
-    config::{BacktestDataConfig, BacktestRunConfig, BacktestVenueConfig, NautilusDataType},
+    config::{BacktestDataConfig, BacktestRunConfig, BacktestVenueConfig},
     node::BacktestNode,
 };
 use nautilus_common::actor::DataActor;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
-        QuoteTick,
+        NautilusDataType, QuoteTick,
         greeks::OptionGreekValues,
         option_chain::{OptionChainSlice, OptionGreeks, StrikeRange},
     },

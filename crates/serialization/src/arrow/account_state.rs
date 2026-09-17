@@ -13,9 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashMap;
+
+use arrow::{datatypes::Schema, error::ArrowError, record_batch::RecordBatch};
 use nautilus_model::events::AccountState;
 
-use super::json::{JsonFieldSpec, impl_json_arrow};
+use super::{
+    ArrowSchemaProvider, DecodeTypedFromRecordBatch, EncodeToRecordBatch, EncodingError,
+    json::{JsonFieldSpec, decode_batch, encode_batch, metadata_for_type, schema_for_type},
+};
 
 const ACCOUNT_STATE_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("account_id", false),
@@ -25,12 +31,51 @@ const ACCOUNT_STATE_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8_json("margins", false),
     JsonFieldSpec::boolean("is_reported", false),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
     JsonFieldSpec::utf8_json("info", true),
 ];
 
-impl_json_arrow!(typed AccountState, "AccountState", ACCOUNT_STATE_FIELDS, &["info"]);
+impl ArrowSchemaProvider for AccountState {
+    fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
+        schema_for_type("AccountState", metadata, ACCOUNT_STATE_FIELDS)
+    }
+}
+
+impl EncodeToRecordBatch for AccountState {
+    fn encode_batch<T>(
+        metadata: &HashMap<String, String>,
+        data: &[T],
+    ) -> Result<RecordBatch, ArrowError>
+    where
+        T: std::borrow::Borrow<Self>,
+    {
+        encode_batch(
+            "AccountState",
+            metadata,
+            data.iter().map(std::borrow::Borrow::borrow),
+            ACCOUNT_STATE_FIELDS,
+        )
+    }
+
+    fn metadata(&self) -> HashMap<String, String> {
+        metadata_for_type("AccountState")
+    }
+}
+
+impl DecodeTypedFromRecordBatch for AccountState {
+    fn decode_typed_batch(
+        metadata: &HashMap<String, String>,
+        record_batch: RecordBatch,
+    ) -> Result<Vec<Self>, EncodingError> {
+        let fields = if record_batch.schema().index_of("info").is_ok() {
+            ACCOUNT_STATE_FIELDS
+        } else {
+            &ACCOUNT_STATE_FIELDS[..ACCOUNT_STATE_FIELDS.len() - 1]
+        };
+        decode_batch(metadata, &record_batch, fields, Some("AccountState"))
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -40,7 +85,6 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::arrow::{DecodeTypedFromRecordBatch, EncodeToRecordBatch, json::encode_batch};
 
     #[rstest]
     fn test_account_state_round_trip(cash_account_state: AccountState) {

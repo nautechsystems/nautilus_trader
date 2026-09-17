@@ -31,13 +31,17 @@ use pyo3::prelude::*;
 ///
 /// Returns a `PyErr` if registering any module components fails.
 // Allow unused `m` when no feature-gated content registers on the module
-#[allow(unused_variables)]
+#[allow(deprecated, unused_variables)]
 #[pymodule]
 pub fn serialization(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "arrow")]
     {
         m.add_function(wrap_pyfunction!(
             crate::python::arrow::get_arrow_schema_map,
+            m
+        )?)?;
+        m.add_function(wrap_pyfunction!(
+            crate::python::arrow::get_arrow_schema_bytes,
             m
         )?)?;
         m.add_function(wrap_pyfunction!(
@@ -49,7 +53,7 @@ pub fn serialization(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             m
         )?)?;
         m.add_function(wrap_pyfunction!(
-            crate::python::arrow::py_book_depth10_to_arrow_record_batch_bytes,
+            crate::python::arrow::py_book_depths_to_arrow_record_batch_bytes,
             m
         )?)?;
         m.add_function(wrap_pyfunction!(

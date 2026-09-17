@@ -60,7 +60,7 @@ use nautilus_core::{
 use nautilus_model::{
     data::{
         Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
-        MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
         close::InstrumentClose,
         option_chain::{OptionChainSlice, OptionGreeks},
     },
@@ -708,10 +708,10 @@ impl PyStrategyInner {
         Ok(())
     }
 
-    fn dispatch_on_book_depth(&mut self, depth: &OrderBookDepth10) -> PyResult<()> {
+    fn dispatch_on_book_depth(&mut self, depth: &OrderBookDepth) -> PyResult<()> {
         if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_book_depth", ((*depth).into_py_any(py)?,))
+                py_self.call_method1(py, "on_book_depth", (depth.clone().into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -809,7 +809,7 @@ impl PyStrategyInner {
         Ok(())
     }
 
-    fn dispatch_on_historical_book_depth(&mut self, depths: Vec<OrderBookDepth10>) -> PyResult<()> {
+    fn dispatch_on_historical_book_depth(&mut self, depths: Vec<OrderBookDepth>) -> PyResult<()> {
         if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 let py_depths = depths
@@ -1161,7 +1161,7 @@ impl DataActor for PyStrategyInner {
             .map_err(|e| anyhow::anyhow!("Python on_book_deltas failed: {e}"))
     }
 
-    fn on_book_depth(&mut self, depth: &OrderBookDepth10) -> anyhow::Result<()> {
+    fn on_book_depth(&mut self, depth: &OrderBookDepth) -> anyhow::Result<()> {
         self.dispatch_on_book_depth(depth)
             .map_err(|e| anyhow::anyhow!("Python on_book_depth failed: {e}"))
     }
@@ -1225,7 +1225,7 @@ impl DataActor for PyStrategyInner {
             .map_err(|e| anyhow::anyhow!("Python on_historical_book_deltas failed: {e}"))
     }
 
-    fn on_historical_book_depth(&mut self, depths: &[OrderBookDepth10]) -> anyhow::Result<()> {
+    fn on_historical_book_depth(&mut self, depths: &[OrderBookDepth]) -> anyhow::Result<()> {
         self.dispatch_on_historical_book_depth(depths.to_vec())
             .map_err(|e| anyhow::anyhow!("Python on_historical_book_depth failed: {e}"))
     }
@@ -2247,7 +2247,7 @@ impl PyStrategy {
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_book_depth")]
-    fn py_on_book_depth(&mut self, depth: &OrderBookDepth10) {}
+    fn py_on_book_depth(&mut self, depth: &OrderBookDepth) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_book")]
@@ -2387,7 +2387,7 @@ impl PyStrategy {
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_book_depth")]
-    fn py_on_historical_book_depth(&mut self, depths: Vec<OrderBookDepth10>) {}
+    fn py_on_historical_book_depth(&mut self, depths: Vec<OrderBookDepth>) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_quotes")]
@@ -2546,9 +2546,9 @@ impl PyStrategy {
         Ok(())
     }
 
-    #[pyo3(name = "subscribe_book_depth10")]
+    #[pyo3(name = "subscribe_book_depth")]
     #[pyo3(signature = (instrument_id, book_type, client_id=None, managed=false, params=None))]
-    fn py_subscribe_book_depth10(
+    fn py_subscribe_book_depth(
         &mut self,
         instrument_id: InstrumentId,
         book_type: BookType,
@@ -2563,7 +2563,7 @@ impl PyStrategy {
                 None => Ok(None),
             }
         })?;
-        DataActor::subscribe_book_depth10(
+        DataActor::subscribe_book_depth(
             self.inner_mut(),
             instrument_id,
             book_type,
@@ -2919,9 +2919,9 @@ impl PyStrategy {
         Ok(())
     }
 
-    #[pyo3(name = "unsubscribe_book_depth10")]
+    #[pyo3(name = "unsubscribe_book_depth")]
     #[pyo3(signature = (instrument_id, client_id=None, params=None))]
-    fn py_unsubscribe_book_depth10(
+    fn py_unsubscribe_book_depth(
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -2934,7 +2934,7 @@ impl PyStrategy {
                 None => Ok(None),
             }
         })?;
-        DataActor::unsubscribe_book_depth10(self.inner_mut(), instrument_id, client_id, params_map);
+        DataActor::unsubscribe_book_depth(self.inner_mut(), instrument_id, client_id, params_map);
         Ok(())
     }
 
@@ -3642,8 +3642,7 @@ mod tests {
     use nautilus_model::{
         data::{
             Bar, BarType, CustomData, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
-            MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick,
-            TradeTick,
+            MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
             close::InstrumentClose,
             greeks::OptionGreekValues,
             option_chain::{OptionChainSlice, OptionGreeks},
@@ -4018,7 +4017,7 @@ class IndicatorEventStrategy:
         OrderBookDeltas::new(instrument.id, vec![delta])
     }
 
-    fn sample_book_depth() -> OrderBookDepth10 {
+    fn sample_book_depth() -> OrderBookDepth {
         stub_depth10()
     }
 
@@ -4488,7 +4487,7 @@ class IndicatorEventStrategy:
     }
 
     #[rstest::rstest]
-    fn test_python_book_depth10_subscription_methods_send_commands() {
+    fn test_python_book_depth_subscription_methods_send_commands() {
         pyo3::Python::initialize();
         Python::attach(|py| {
             let (_, mut rust_strategy) = create_registered_tracking_strategy(py);
@@ -4499,21 +4498,21 @@ class IndicatorEventStrategy:
             );
 
             let instrument_id = sample_instrument().id;
-            let client_id = Some(ClientId::new("DEPTH10-CLIENT"));
+            let client_id = Some(ClientId::new("DEPTH-CLIENT"));
             rust_strategy
-                .py_subscribe_book_depth10(instrument_id, BookType::L2_MBP, client_id, true, None)
+                .py_subscribe_book_depth(instrument_id, BookType::L2_MBP, client_id, true, None)
                 .unwrap();
             rust_strategy
-                .py_unsubscribe_book_depth10(instrument_id, client_id, None)
+                .py_unsubscribe_book_depth(instrument_id, client_id, None)
                 .unwrap();
 
             let commands = saver.get_messages();
             let [
-                DataCommand::Subscribe(SubscribeCommand::BookDepth10(subscribe)),
-                DataCommand::Unsubscribe(UnsubscribeCommand::BookDepth10(unsubscribe)),
+                DataCommand::Subscribe(SubscribeCommand::BookDepth(subscribe)),
+                DataCommand::Unsubscribe(UnsubscribeCommand::BookDepth(unsubscribe)),
             ] = commands.as_slice()
             else {
-                panic!("expected BookDepth10 subscribe and unsubscribe commands, was {commands:?}");
+                panic!("expected BookDepth subscribe and unsubscribe commands, was {commands:?}");
             };
 
             assert_eq!(subscribe.instrument_id, instrument_id);
@@ -5651,7 +5650,7 @@ class IndicatorEventStrategy:
 
         Python::attach(|py| {
             let first = stub_depth10();
-            let mut second = first;
+            let mut second = first.clone();
             second.sequence = 17;
             second.ts_event = UnixNanos::from(18);
             second.ts_init = UnixNanos::from(19);
@@ -5668,7 +5667,7 @@ class IndicatorEventStrategy:
                 .bind(py)
                 .get_item(0)
                 .unwrap()
-                .extract::<Vec<OrderBookDepth10>>()
+                .extract::<Vec<OrderBookDepth>>()
                 .unwrap();
 
             assert_eq!(actual, expected);

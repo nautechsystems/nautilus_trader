@@ -40,9 +40,9 @@ use nautilus_common::{
             InstrumentsResponse, OptionChainReferencePriceResponse, QuotesResponse, RequestBars,
             RequestFundingRates, RequestInstrument, RequestInstruments,
             RequestOptionChainReferencePrice, RequestQuotes, RequestTrades, SubscribeBookDeltas,
-            SubscribeBookDepth10, SubscribeFundingRates, SubscribeIndexPrices, SubscribeMarkPrices,
+            SubscribeBookDepth, SubscribeFundingRates, SubscribeIndexPrices, SubscribeMarkPrices,
             SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, TradesResponse,
-            UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeFundingRates,
+            UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeFundingRates,
             UnsubscribeIndexPrices, UnsubscribeMarkPrices, UnsubscribeOptionGreeks,
             UnsubscribeQuotes, UnsubscribeTrades,
         },
@@ -91,7 +91,7 @@ use crate::{
         DeriveWebSocketSubscriptionHandle, DeriveWsError, DeriveWsMessage, WsMessageContext,
         bar_spec_to_derive_period, orderbook_channel, parse_candle_record, parse_funding_rate,
         parse_funding_rate_history_record, parse_index_price, parse_mark_price,
-        parse_option_greeks, parse_orderbook_deltas, parse_orderbook_depth10, parse_public_ws_data,
+        parse_option_greeks, parse_orderbook_deltas, parse_orderbook_depth, parse_public_ws_data,
         parse_ticker_quote, parse_ticker_quote_from_rest, parse_trade_tick,
         parse_trade_tick_from_rest, ticker_channel, trades_channel,
     },
@@ -113,7 +113,7 @@ pub struct DeriveDataClient {
     data_sender: EventSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     active_book_delta_channels: Arc<AtomicMap<InstrumentId, String>>,
-    active_book_depth10_channels: Arc<AtomicMap<InstrumentId, String>>,
+    active_book_depth_channels: Arc<AtomicMap<InstrumentId, String>>,
     active_ticker_channels: Arc<AtomicMap<InstrumentId, String>>,
     active_quote_subs: Arc<AtomicSet<InstrumentId>>,
     active_trade_subs: Arc<AtomicSet<InstrumentId>>,
@@ -184,7 +184,7 @@ impl DeriveDataClient {
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
             active_book_delta_channels: Arc::new(AtomicMap::new()),
-            active_book_depth10_channels: Arc::new(AtomicMap::new()),
+            active_book_depth_channels: Arc::new(AtomicMap::new()),
             active_ticker_channels: Arc::new(AtomicMap::new()),
             active_quote_subs: Arc::new(AtomicSet::new()),
             active_trade_subs: Arc::new(AtomicSet::new()),
@@ -233,7 +233,7 @@ impl DeriveDataClient {
         let _guard = self.subscription_lock.lock();
         self.channel_subscriptions.clear();
         self.active_book_delta_channels.store(AHashMap::new());
-        self.active_book_depth10_channels.store(AHashMap::new());
+        self.active_book_depth_channels.store(AHashMap::new());
         self.active_ticker_channels.store(AHashMap::new());
         self.active_quote_subs.store(AHashSet::new());
         self.active_trade_subs.store(AHashSet::new());
@@ -282,7 +282,7 @@ impl DeriveDataClient {
             data_sender: self.data_sender.clone(),
             instruments: Arc::clone(&self.instruments),
             active_book_delta_channels: Arc::clone(&self.active_book_delta_channels),
-            active_book_depth10_channels: Arc::clone(&self.active_book_depth10_channels),
+            active_book_depth_channels: Arc::clone(&self.active_book_depth_channels),
             active_ticker_channels: Arc::clone(&self.active_ticker_channels),
             active_quote_subs: Arc::clone(&self.active_quote_subs),
             active_trade_subs: Arc::clone(&self.active_trade_subs),
@@ -362,10 +362,10 @@ impl DeriveDataClient {
                 let channel = msg.channel.as_str();
                 let deltas_active =
                     channel_is_active(&ctx.active_book_delta_channels, instrument_id, channel);
-                let depth10_active =
-                    channel_is_active(&ctx.active_book_depth10_channels, instrument_id, channel);
+                let depth_active =
+                    channel_is_active(&ctx.active_book_depth_channels, instrument_id, channel);
 
-                if !deltas_active && !depth10_active {
+                if !deltas_active && !depth_active {
                     return;
                 }
 
@@ -390,15 +390,15 @@ impl DeriveDataClient {
                     }
                 }
 
-                if depth10_active {
-                    match parse_orderbook_depth10(
+                if depth_active {
+                    match parse_orderbook_depth(
                         &msg,
                         instrument.price_precision(),
                         instrument.size_precision(),
                         ts_init,
                     ) {
-                        Ok(depth) => Self::send_data(ctx, Data::BookDepth10(Box::new(depth))),
-                        Err(e) => log::warn!("Failed to parse Derive orderbook depth10: {e}"),
+                        Ok(depth) => Self::send_data(ctx, Data::BookDepth(Box::new(depth))),
+                        Err(e) => log::warn!("Failed to parse Derive orderbook depth: {e}"),
                     }
                 }
             }
@@ -582,7 +582,7 @@ impl DeriveDataClient {
             lock: Arc::clone(&self.subscription_lock),
             dispatch: SubscriptionDispatchState {
                 active_book_delta_channels: Arc::clone(&self.active_book_delta_channels),
-                active_book_depth10_channels: Arc::clone(&self.active_book_depth10_channels),
+                active_book_depth_channels: Arc::clone(&self.active_book_depth_channels),
                 active_ticker_channels: Arc::clone(&self.active_ticker_channels),
                 active_quote_subs: Arc::clone(&self.active_quote_subs),
                 active_trade_subs: Arc::clone(&self.active_trade_subs),
@@ -845,13 +845,13 @@ impl DataClient for DeriveDataClient {
         Ok(())
     }
 
-    fn subscribe_book_depth10(&mut self, cmd: SubscribeBookDepth10) -> anyhow::Result<()> {
+    fn subscribe_book_depth(&mut self, cmd: SubscribeBookDepth) -> anyhow::Result<()> {
         if cmd.book_type != BookType::L2_MBP {
             anyhow::bail!("Derive only supports L2_MBP order book depth");
         }
 
         let instrument_id = cmd.instrument_id;
-        let owner = ChannelOwner::BookDepth10(instrument_id);
+        let owner = ChannelOwner::BookDepth(instrument_id);
         let lifecycle = self.subscription_lifecycle();
         if lifecycle.is_active(owner) {
             return Ok(());
@@ -871,7 +871,7 @@ impl DataClient for DeriveDataClient {
         let include_expired = self.config.include_expired;
         let instruments = Arc::clone(&self.instruments);
 
-        self.spawn_task("subscribe_book_depth10", async move {
+        self.spawn_task("subscribe_book_depth", async move {
             if needs_load
                 && let Err(e) = Self::lazy_load_instrument(
                     http_client,
@@ -882,7 +882,7 @@ impl DataClient for DeriveDataClient {
                 .await
             {
                 lifecycle.rollback(owner, generation);
-                log::error!("Lazy-load failed for {instrument_id} (book depth10): {e}");
+                log::error!("Lazy-load failed for {instrument_id} (book depth): {e}");
                 return Ok(());
             }
 
@@ -1004,8 +1004,8 @@ impl DataClient for DeriveDataClient {
         self.unsubscribe_channel_owner(ChannelOwner::BookDeltas(cmd.instrument_id))
     }
 
-    fn unsubscribe_book_depth10(&mut self, cmd: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
-        self.unsubscribe_channel_owner(ChannelOwner::BookDepth10(cmd.instrument_id))
+    fn unsubscribe_book_depth(&mut self, cmd: &UnsubscribeBookDepth) -> anyhow::Result<()> {
+        self.unsubscribe_channel_owner(ChannelOwner::BookDepth(cmd.instrument_id))
     }
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
@@ -1691,7 +1691,7 @@ enum TickerFeed {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum ChannelOwner {
     BookDeltas(InstrumentId),
-    BookDepth10(InstrumentId),
+    BookDepth(InstrumentId),
     Ticker {
         instrument_id: InstrumentId,
         feed: TickerFeed,
@@ -1729,7 +1729,7 @@ struct RemovedSubscription {
 #[derive(Debug, Clone)]
 struct SubscriptionDispatchState {
     active_book_delta_channels: Arc<AtomicMap<InstrumentId, String>>,
-    active_book_depth10_channels: Arc<AtomicMap<InstrumentId, String>>,
+    active_book_depth_channels: Arc<AtomicMap<InstrumentId, String>>,
     active_ticker_channels: Arc<AtomicMap<InstrumentId, String>>,
     active_quote_subs: Arc<AtomicSet<InstrumentId>>,
     active_trade_subs: Arc<AtomicSet<InstrumentId>>,
@@ -1905,8 +1905,8 @@ impl SubscriptionDispatchState {
                     channel.expect("book channel present").to_string(),
                 );
             }
-            ChannelOwner::BookDepth10(instrument_id) => {
-                self.active_book_depth10_channels.insert(
+            ChannelOwner::BookDepth(instrument_id) => {
+                self.active_book_depth_channels.insert(
                     instrument_id,
                     channel.expect("book channel present").to_string(),
                 );
@@ -1932,8 +1932,8 @@ impl SubscriptionDispatchState {
             ChannelOwner::BookDeltas(instrument_id) => {
                 self.active_book_delta_channels.remove(&instrument_id);
             }
-            ChannelOwner::BookDepth10(instrument_id) => {
-                self.active_book_depth10_channels.remove(&instrument_id);
+            ChannelOwner::BookDepth(instrument_id) => {
+                self.active_book_depth_channels.remove(&instrument_id);
             }
             ChannelOwner::Ticker {
                 instrument_id,
@@ -2527,7 +2527,7 @@ mod tests {
                 data_sender: data_sender.into(),
                 instruments,
                 active_book_delta_channels: Arc::new(AtomicMap::new()),
-                active_book_depth10_channels: Arc::new(AtomicMap::new()),
+                active_book_depth_channels: Arc::new(AtomicMap::new()),
                 active_ticker_channels: Arc::new(AtomicMap::new()),
                 active_quote_subs: Arc::new(AtomicSet::new()),
                 active_trade_subs: Arc::new(AtomicSet::new()),
@@ -2764,25 +2764,25 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_orderbook_subscription_emits_for_depth10_subscription() {
+    fn test_handle_orderbook_subscription_emits_for_depth_subscription() {
         let instrument = perp_instrument();
         let instrument_id = instrument.id();
         let (ctx, mut rx) = make_ctx(Some(instrument));
-        ctx.active_book_depth10_channels
+        ctx.active_book_depth_channels
             .insert(instrument_id, "orderbook.ETH-PERP.1.10".to_string());
         let payload = subscription_payload("orderbook.ETH-PERP.1.10", &orderbook_json());
 
         DeriveDataClient::handle_ws_message(DeriveWsMessage::Subscription(payload), &ctx);
 
         match rx.try_recv().unwrap() {
-            DataEvent::Data(Data::BookDepth10(depth)) => {
+            DataEvent::Data(Data::BookDepth(depth)) => {
                 assert_eq!(depth.instrument_id, instrument_id);
                 assert_eq!(depth.bids[0].price, Price::from("3500.00"));
                 assert_eq!(depth.bids[0].size, Quantity::from("1.000"));
                 assert_eq!(depth.asks[0].price, Price::from("3501.00"));
                 assert_eq!(depth.asks[0].size, Quantity::from("2.000"));
             }
-            other => panic!("expected depth10 data event, was {other:?}"),
+            other => panic!("expected depth data event, was {other:?}"),
         }
     }
 
@@ -3410,7 +3410,7 @@ mod tests {
             .active_book_delta_channels
             .insert(instrument_id, "orderbook.ETH-PERP.1.10".to_string());
         client
-            .active_book_depth10_channels
+            .active_book_depth_channels
             .insert(instrument_id, "orderbook.ETH-PERP.1.10".to_string());
         client
             .active_ticker_channels
@@ -3438,7 +3438,7 @@ mod tests {
         );
         assert!(
             !client
-                .active_book_depth10_channels
+                .active_book_depth_channels
                 .contains_key(&instrument_id)
         );
         assert!(!client.active_ticker_channels.contains_key(&instrument_id));
@@ -3479,7 +3479,7 @@ mod tests {
             .active_book_delta_channels
             .insert(instrument_id, "orderbook.ETH-PERP.1.10".to_string());
         client
-            .active_book_depth10_channels
+            .active_book_depth_channels
             .insert(instrument_id, "orderbook.ETH-PERP.1.10".to_string());
         client
             .active_ticker_channels
@@ -3521,7 +3521,7 @@ mod tests {
         );
         assert!(
             !client
-                .active_book_depth10_channels
+                .active_book_depth_channels
                 .contains_key(&instrument_id)
         );
         assert!(!client.active_ticker_channels.contains_key(&instrument_id));

@@ -44,7 +44,7 @@ use nautilus_network::{http::HttpClient, retry::RetryConfig};
 use nautilus_polymarket::{
     common::{
         credential::Credential,
-        enums::{PolymarketOrderType, SignatureType},
+        enums::{PolymarketOrderType, PolymarketSignatureType},
     },
     config::{PolymarketInstrumentProviderConfig, PolymarketUpDownEventSlugConfig},
     filters::{
@@ -937,7 +937,7 @@ async fn test_update_balance_allowance_accepts_empty_response() {
     client
         .update_balance_allowance(GetBalanceAllowanceParams {
             asset_type: Some(AssetType::Collateral),
-            signature_type: Some(SignatureType::Eoa),
+            signature_type: Some(PolymarketSignatureType::Eoa),
             ..Default::default()
         })
         .await

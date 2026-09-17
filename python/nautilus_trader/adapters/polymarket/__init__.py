@@ -39,8 +39,12 @@ __all__ = [
     "PolymarketRtdsCryptoPrice",
     "PolymarketRtdsCryptoTwap",
     "PolymarketRtdsEquityPrice",
+    "PolymarketSessionKey",
+    "PolymarketSessionKeyClient",
+    "PolymarketSessionKeyClientConfig",
+    "PolymarketSignatureType",
+    "PolymarketSignerType",
     "PolymarketUpDownEventSlugConfig",
-    "SignatureType",
 ]
 
 fixup_module_names(globals(), __name__)

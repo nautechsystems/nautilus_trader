@@ -838,6 +838,7 @@ fn build_config(addr: SocketAddr) -> LighterExecutionClientConfig {
         rest_quota_per_min: None,
         sendtx_quota_per_min: None,
         transport_backend: Default::default(),
+        use_gtd: true,
     }
 }
 

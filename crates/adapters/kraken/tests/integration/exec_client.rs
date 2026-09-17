@@ -52,7 +52,7 @@ use nautilus_common::{
     },
     testing::wait_until_async,
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_kraken::{
     common::{
         consts::{KRAKEN_CLIENT_ID, KRAKEN_VENUE},
@@ -131,6 +131,7 @@ struct TestServerState {
     cancel_request_count: Arc<AtomicUsize>,
     batch_cancel_request_count: Arc<AtomicUsize>,
     cancel_all_request_count: Arc<AtomicUsize>,
+    collection_request_ts: Arc<tokio::sync::Mutex<Option<UnixNanos>>>,
     orders_status_response: Arc<tokio::sync::Mutex<Option<String>>>,
     orders_status_request_body: Arc<tokio::sync::Mutex<Option<String>>>,
     fills_response: Arc<tokio::sync::Mutex<Option<String>>>,
@@ -148,6 +149,7 @@ impl Default for TestServerState {
             cancel_request_count: Arc::new(AtomicUsize::new(0)),
             batch_cancel_request_count: Arc::new(AtomicUsize::new(0)),
             cancel_all_request_count: Arc::new(AtomicUsize::new(0)),
+            collection_request_ts: Arc::new(tokio::sync::Mutex::new(None)),
             orders_status_response: Arc::new(tokio::sync::Mutex::new(None)),
             orders_status_request_body: Arc::new(tokio::sync::Mutex::new(None)),
             fills_response: Arc::new(tokio::sync::Mutex::new(None)),
@@ -222,6 +224,14 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
 
 async fn handle_http_request(State(state): State<TestServerState>, req: Request) -> Response {
     let path = req.uri().path().to_string();
+
+    if matches!(
+        path.as_str(),
+        "/derivatives/api/v3/openorders" | "/0/private/OpenOrders"
+    ) {
+        *state.collection_request_ts.lock().await = Some(get_atomic_clock_realtime().get_time_ns());
+    }
+
     match path.as_str() {
         "/health" => Response::builder()
             .status(StatusCode::OK)
@@ -412,6 +422,14 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
         "/0/private/GetWebSocketsToken" => json_response(
             r#"{"error":[],"result":{"token":"TEST-TOKEN","expires":900}}"#.to_string(),
         ),
+        "/0/private/OpenOrders" => json_response(load_test_data("http_open_orders.json")),
+        "/0/private/TradesHistory" => {
+            let mut value: Value =
+                serde_json::from_str(&load_test_data("http_trades_history.json")).unwrap();
+            value["result"]["trades"] = json!({});
+            value["result"]["count"] = json!(0);
+            json_response(value.to_string())
+        }
         "/0/private/Balance" => json_response(load_test_data("http_spot_balance.json")),
         "/0/private/BalanceEx" => json_response(load_test_data("http_spot_balance_ex.json")),
         "/0/private/AddOrder" => {
@@ -1434,6 +1452,28 @@ const ORDERS_STATUS_HELD_BY_CLIENT_ID: &str = r#"{
         }
     ]
 }"#;
+
+#[rstest]
+#[case::spot(true)]
+#[case::futures(false)]
+#[tokio::test]
+async fn test_mass_status_captures_collection_start(#[case] spot: bool) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let before = get_atomic_clock_realtime().get_time_ns();
+
+    let snapshot = if spot {
+        let (client, _rx, _cache) = create_test_spot_execution_client(addr);
+        client.generate_mass_status(None).await.unwrap().unwrap()
+    } else {
+        let (client, _rx, _cache) = create_test_execution_client(addr);
+        client.generate_mass_status(None).await.unwrap().unwrap()
+    };
+
+    let request_ts = state.collection_request_ts.lock().await.unwrap();
+
+    assert!(snapshot.ts_init >= before);
+    assert!(snapshot.ts_init <= request_ts);
+}
 
 #[rstest]
 #[tokio::test]

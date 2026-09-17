@@ -1840,7 +1840,7 @@ mod tests {
         msgbus::{
             MessageBus, MessagingSwitchboard, TypedHandler, set_message_bus,
             switchboard::{
-                get_bars_topic, get_book_deltas_topic, get_book_depth10_topic, get_custom_topic,
+                get_bars_topic, get_book_deltas_topic, get_book_depth_topic, get_custom_topic,
                 get_event_order_topic,
             },
         },
@@ -5057,27 +5057,27 @@ class ModuleStrategy(Strategy):
         let instrument_id = InstrumentId::from("AUD/USD.SIM");
         let data_type = DataType::new(stringify!(TestRetirementData), None, None);
         let deltas_topic = get_book_deltas_topic(instrument_id);
-        let depth_topic = get_book_depth10_topic(instrument_id);
+        let depth_topic = get_book_depth_topic(instrument_id);
         let data_topic = get_custom_topic(&data_type);
 
         {
             let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id.inner());
             actor.subscribe_data(data_type, None, None);
             actor.subscribe_book_deltas(instrument_id, BookType::L3_MBO, None, None, false, None);
-            actor.subscribe_book_depth10(instrument_id, BookType::L2_MBP, None, false, None);
+            actor.subscribe_book_depth(instrument_id, BookType::L2_MBP, None, false, None);
         }
 
         // Positive control: without these the checks after retirement would be vacuous
         assert_eq!(msgbus::subscriptions_count_any(data_topic).unwrap(), 1);
         assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 1);
-        assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 1);
+        assert_eq!(msgbus::subscriber_count_depth(depth_topic), 1);
 
         trader.remove_actor(&actor_id).unwrap();
 
         // Retirement must leave no handler behind for any of the component's subscription kinds
         assert_eq!(msgbus::subscriptions_count_any(data_topic).unwrap(), 0);
         assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
-        assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 0);
+        assert_eq!(msgbus::subscriber_count_depth(depth_topic), 0);
     }
 
     #[rstest]

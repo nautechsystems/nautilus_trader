@@ -313,6 +313,7 @@ impl PolymarketExecutionClient {
         let clock = self.clock;
         let signature_type = self.config.signature_type;
         let stopping = self.stopping.clone();
+        let signer_type = self.config.signer_type;
         let user_address = self
             .secrets
             .funder
@@ -331,6 +332,7 @@ impl PolymarketExecutionClient {
 
         if let Err(e) = self.session_tasks.spawn(async move {
             let ctx = WsDispatchContext {
+                signer_type,
                 token_instruments: &token_instruments,
                 fill_tracker: &fill_tracker,
                 pending_submits: &pending_submits,

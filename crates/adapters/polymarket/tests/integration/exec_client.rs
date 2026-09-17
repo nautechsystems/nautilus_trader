@@ -62,7 +62,7 @@ use nautilus_model::{
 use nautilus_polymarket::{
     common::{
         consts::{POLYMARKET_CLIENT_ID, POLYMARKET_PRICE_PRECISION, POLYMARKET_VENUE},
-        enums::SignatureType,
+        enums::{PolymarketSignatureType, PolymarketSignerType},
     },
     config::{PolymarketExecutionClientConfig, PolymarketInstrumentProviderConfig},
     execution::PolymarketExecutionClient,
@@ -302,7 +302,7 @@ async fn test_exec_client_poly1271_requires_distinct_funder() {
         cache,
     );
     let mut config = create_test_exec_config(addr);
-    config.signature_type = SignatureType::Poly1271;
+    config.signature_type = PolymarketSignatureType::Poly1271;
     config.funder = Some(TEST_SIGNER_ADDRESS.to_string());
 
     let error = PolymarketExecutionClient::new(core, config).unwrap_err();
@@ -334,7 +334,7 @@ async fn test_exec_client_poly1271_uses_signer_for_api_auth() {
     );
     let mut config = create_test_exec_config(addr);
     let funder = "0x1111111111111111111111111111111111111111".to_string();
-    config.signature_type = SignatureType::Poly1271;
+    config.signature_type = PolymarketSignatureType::Poly1271;
     config.funder = Some(funder.clone());
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -13273,6 +13273,201 @@ async fn test_cancel_all_with_side_uses_cached_matching_orders(
     assert_eq!(state.orders_get_count.load(Ordering::Acquire), 0);
     assert_eq!(*state.market_cancel_delete_count.lock().await, 0);
     assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_session_cancel_all_without_side_uses_only_cached_ids() {
+    let state = TestServerState::default();
+    let venue_order_id = "0xsession-cached";
+    *state.batch_cancel_response.lock().await = Some(json!({
+        "canceled": [venue_order_id], "not_canceled": {}
+    }));
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    config.signer_type = PolymarketSignerType::Session;
+    config.signature_type = PolymarketSignatureType::Poly1271;
+    config.funder = Some("0x1111111111111111111111111111111111111111".to_string());
+    let (mut client, mut rx, cache) = create_test_execution_client_from_config(config);
+    client.start().unwrap();
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+    let mut order = make_limit_order(
+        "O-SESSION-CACHED",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    submit_and_accept_order(&cache, &mut order, venue_order_id);
+    client
+        .cancel_all_orders(make_cancel_all_cmd(
+            StrategyId::from("S-001"),
+            instrument_id,
+            None,
+        ))
+        .unwrap();
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { *state.batch_cancel_delete_count.lock().await == 1 }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    assert_eq!(
+        state.batch_cancel_bodies.lock().await.as_slice(),
+        [json!([venue_order_id])]
+    );
+    assert_eq!(*state.market_cancel_delete_count.lock().await, 0);
+    assert_eq!(state.orders_get_count.load(Ordering::Acquire), 0);
+    assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
+#[case("session signer expired")]
+#[case("session signer revoked")]
+#[tokio::test]
+async fn test_session_rejection_is_reported_without_owner_fallback(#[case] reason: &str) {
+    let state = TestServerState::default();
+    *state.order_response_status.lock().await = StatusCode::BAD_REQUEST;
+    *state.order_response.lock().await = Some(json!({"error":reason}));
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    config.signer_type = PolymarketSignerType::Session;
+    config.signature_type = PolymarketSignatureType::Poly1271;
+    config.funder = Some("0x1111111111111111111111111111111111111111".to_string());
+    let (mut client, mut rx, cache) = create_test_execution_client_from_config(config);
+    client.start().unwrap();
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+    let order = make_limit_order(
+        "O-SESSION-REJECT",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    let rejected = assert_order_event(recv_execution_event(&mut rx).await, "Rejected");
+    assert_eq!(order_event_reason(&rejected), reason);
+    assert_eq!(*state.order_post_count.lock().await, 1);
+    assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_session_position_query_fails_instead_of_reporting_flat() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let mut config = create_test_exec_config(addr);
+    config.signer_type = PolymarketSignerType::Session;
+    config.signature_type = PolymarketSignatureType::Poly1271;
+    config.funder = Some("0x1111111111111111111111111111111111111111".to_string());
+    let (client, _rx, _cache) = create_test_execution_client_from_config(config);
+
+    let cmd = GeneratePositionStatusReports {
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        instrument_id: None,
+        start: None,
+        end: None,
+        params: None,
+        log_receipt_level: LogLevel::Info,
+        correlation_id: None,
+        causation_id: None,
+    };
+
+    let error = client
+        .generate_position_status_reports(&cmd)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Session positions cannot be inferred from wallet-wide holdings"
+    );
+}
+
+#[rstest]
+#[case(PolymarketSignerType::Owner, true)]
+#[case(PolymarketSignerType::Session, false)]
+#[tokio::test]
+async fn test_mass_status_shared_wallet_order_ownership(
+    #[case] signer_type: PolymarketSignerType,
+    #[case] expected_order: bool,
+) {
+    let state = TestServerState::default();
+    let funder = "0x1111111111111111111111111111111111111111";
+    let mut order = load_json("http_open_orders_page.json")["data"][0].clone();
+    let venue_order_id = VenueOrderId::from(order["id"].as_str().unwrap());
+    order["maker_address"] = json!(funder);
+    order["owner"] = json!("foreign-api-key");
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [order], "next_cursor": "LTE="
+    }));
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [], "next_cursor": "LTE="
+    }));
+    *state.positions_response_override.lock().await = Some(json!([]));
+    let addr = start_mock_server(state).await;
+    let mut config = create_test_exec_config(addr);
+    config.signer_type = signer_type;
+    config.signature_type = PolymarketSignatureType::Poly1271;
+    config.funder = Some(funder.to_string());
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    client.on_instrument(cache.borrow().instrument(&instrument_id).unwrap().clone());
+
+    let report = client.generate_mass_status(None).await.unwrap().unwrap();
+    let ids = report.order_reports().keys().copied().collect::<Vec<_>>();
+
+    let expected_ids = if expected_order {
+        vec![venue_order_id]
+    } else {
+        vec![]
+    };
+
+    assert_eq!(ids, expected_ids);
+    assert_eq!(report.fill_reports().len(), 0);
+    assert_eq!(report.position_reports().len(), 0);
+    assert!(report.reports_complete());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_session_mass_status_omits_wallet_positions() {
+    let state = TestServerState::default();
+    *state.orders_response_override.lock().await = Some(json!({"data":[], "next_cursor":"LTE="}));
+    *state.trades_response_override.lock().await = Some(json!({"data":[], "next_cursor":"LTE="}));
+    *state.positions_response_override.lock().await =
+        Some(json!({"invalid":"wallet positions must not be requested"}));
+    let addr = start_mock_server(state).await;
+    let mut config = create_test_exec_config(addr);
+    config.signer_type = PolymarketSignerType::Session;
+    config.signature_type = PolymarketSignatureType::Poly1271;
+    config.funder = Some("0x1111111111111111111111111111111111111111".to_string());
+    let (client, _rx, _cache) = create_test_execution_client_from_config(config);
+    let report = client.generate_mass_status(None).await.unwrap().unwrap();
+    assert_eq!(report.order_reports().len(), 0);
+    assert_eq!(report.fill_reports().len(), 0);
+    assert_eq!(report.position_reports().len(), 0);
 }
 
 #[rstest]

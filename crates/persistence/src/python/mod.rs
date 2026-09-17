@@ -22,6 +22,7 @@
 
 pub mod backend;
 pub mod catalog;
+pub mod config;
 pub mod feather;
 pub mod wranglers;
 
@@ -54,12 +55,17 @@ pub fn persistence(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::backend::session::DataBackendSession>()?;
     m.add_class::<crate::backend::session::DataQueryResult>()?;
     m.add_class::<backend::session::NautilusDataType>()?;
+    m.add_class::<config::PyCatalogBackend>()?;
+    m.add_class::<crate::config::StreamingConfig>()?;
+    m.add_class::<config::PyRotationConfig>()?;
+    m.add_class::<crate::test_data::RustTestFixedCustomData>()?;
+    m.add_class::<backend::writer::PyStreamingWriter>()?;
     m.add_class::<crate::config::DataCatalogConfig>()?;
     m.add_class::<catalog::PyParquetDataCatalog>()?;
     m.add_class::<feather::PyStreamingFeatherWriter>()?;
     m.add_class::<wranglers::bar::BarDataWrangler>()?;
     m.add_class::<wranglers::delta::OrderBookDeltaDataWrangler>()?;
-    m.add_class::<wranglers::depth::OrderBookDepth10DataWrangler>()?;
+    m.add_class::<wranglers::depth::OrderBookDepthDataWrangler>()?;
     m.add_class::<wranglers::quote::QuoteTickDataWrangler>()?;
     m.add_class::<wranglers::trade::TradeTickDataWrangler>()?;
     m.add_class::<crate::test_data::RustTestCustomData>()?;

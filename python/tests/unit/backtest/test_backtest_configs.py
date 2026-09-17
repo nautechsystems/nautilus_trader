@@ -33,6 +33,7 @@ from nautilus_trader.backtest import InterestRateRecord
 from nautilus_trader.common import CacheConfig
 from nautilus_trader.common import LoggerConfig
 from nautilus_trader.common import MessageBusConfig
+from nautilus_trader.config import LiveNodeConfig
 from nautilus_trader.core import UUID4
 from nautilus_trader.data import DataEngineConfig
 from nautilus_trader.execution import BestPriceFillModel
@@ -56,6 +57,7 @@ from nautilus_trader.model import OtoTriggerMode
 from nautilus_trader.model import PriceType
 from nautilus_trader.model import StandardMarginModel
 from nautilus_trader.persistence import DataCatalogConfig
+from nautilus_trader.persistence import RotationConfig
 from nautilus_trader.persistence import StreamingConfig
 from nautilus_trader.risk import RiskEngineConfig
 from nautilus_trader.trading import ImportableControllerConfig
@@ -167,19 +169,28 @@ def test_engine_config_accepts_controller_config() -> None:
     assert config.controller.controller_path == "tests.unit.common.actor:StrategyCreatingController"
 
 
-def test_engine_config_accepts_streaming_and_catalog_configs() -> None:
+@pytest.mark.parametrize("config_type", [BacktestEngineConfig, LiveNodeConfig])
+def test_engine_config_accepts_streaming_and_catalog_configs(
+    config_type: type[BacktestEngineConfig | LiveNodeConfig],
+) -> None:
     """
     Test engine config retains streaming and catalog configs.
     """
-    streaming = StreamingConfig(catalog_path="/data/output")
+    streaming = StreamingConfig(
+        catalog_path="/data/output",
+        fs_protocol="s3",
+        flush_interval_ms=250,
+        replace_existing=True,
+    )
     catalog = DataCatalogConfig(path="/data/input", name="history")
 
-    config = BacktestEngineConfig(streaming=streaming, catalogs=[catalog])
+    config = config_type(streaming=streaming, catalogs=[catalog])
 
+    assert type(config.streaming) is StreamingConfig
     assert config.streaming.catalog_path == "/data/output"
-    assert config.streaming.fs_protocol == "file"
-    assert config.streaming.flush_interval_ms == 1_000
-    assert config.streaming.replace_existing is False
+    assert config.streaming.fs_protocol == "s3"
+    assert config.streaming.flush_interval_ms == 250
+    assert config.streaming.replace_existing is True
     assert config.catalogs == [catalog]
 
 
@@ -204,6 +215,35 @@ def test_streaming_config_consumes_rotation_inputs() -> None:
     assert config.rotation_mode == "SCHEDULED_DATES"
     assert config.rotation_interval_ns == 5_000
     assert config.schedule_ns == 750
+
+
+def test_streaming_config_exposes_shared_rotation() -> None:
+    """
+    Retain shared rotation and legacy readback properties.
+    """
+    config = StreamingConfig(
+        catalog_path="catalog",
+        rotation_config=RotationConfig.interval(17),
+        writer_backend="parquet",
+    )
+    assert config.rotation_config.mode == "interval"
+    assert config.rotation_config.interval_ns == 17
+    assert config.rotation_mode == "INTERVAL"
+    assert config.rotation_interval_ns == 17
+    assert config.writer_backend == "Parquet"
+
+
+def test_streaming_config_rejects_ambiguous_rotation() -> None:
+    """
+    Reject conflicting rotation representations.
+    """
+    with pytest.raises(ValueError, match="cannot be combined"):
+        StreamingConfig(
+            catalog_path="catalog",
+            rotation_config=RotationConfig.size(17),
+            rotation_mode="SIZE",
+            max_file_size=23,
+        )
 
 
 def test_venue_config_required_params() -> None:
@@ -562,7 +602,7 @@ def test_data_config_accepts_compatible_timestamp_inputs(value: object) -> None:
     assert config.end_time == 1_700_000_000_000_000_000
 
 
-@pytest.mark.parametrize("data_type", ["InvalidType", "nautilus_trader.model:TradeTick", "trades"])
+@pytest.mark.parametrize("data_type", ["InvalidType", "nautilus_trader.model:TradeTick"])
 def test_data_config_invalid_data_type(data_type: str) -> None:
     """
     Test data config invalid data type.
@@ -573,10 +613,40 @@ def test_data_config_invalid_data_type(data_type: str) -> None:
             catalog_path="/data/catalog",
         )
 
+    assert str(exc_info.value) == f"Invalid `NautilusDataType`: '{data_type}'"
+
+
+@pytest.mark.parametrize(
+    ("data_type", "expected"),
+    [("trades", "TradeTick"), ("OrderBookDepth", "OrderBookDepth")],
+)
+def test_data_config_uses_model_data_type(data_type: str, expected: str) -> None:
+    """
+    Resolve catalog aliases and canonical names through the model selector.
+    """
+    config = BacktestDataConfig(
+        data_type=data_type,
+        catalog_path="/data/catalog",
+        instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
+    )
+
+    assert config.data_type == expected
+
+
+@pytest.mark.parametrize("data_type", ["Instrument", "OrderBook", "Custom:Signal", "Defi"])
+def test_data_config_rejects_unsupported_family(data_type: str) -> None:
+    """
+    Reject model families that config-driven backtests cannot load.
+    """
+    with pytest.raises(ValueError, match="data_type has unsupported value") as exc_info:
+        BacktestDataConfig(
+            data_type=data_type,
+            catalog_path="/data/catalog",
+            instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
+        )
+
     assert str(exc_info.value) == (
-        f"Invalid `NautilusDataType`: '{data_type}' (expected one of: QuoteTick, TradeTick, Bar, "
-        "OrderBookDelta, OrderBookDepth10, MarkPriceUpdate, IndexPriceUpdate, "
-        "FundingRateUpdate, InstrumentStatus, OptionGreeks, InstrumentClose)"
+        f"data_type has unsupported value: {data_type} is not supported by BacktestDataConfig"
     )
 
 

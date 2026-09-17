@@ -25,8 +25,7 @@ use nautilus_model::types::Currency;
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, Data, FundingRateUpdate, IndexPriceUpdate,
-        MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
-        depth::DEPTH10_LEN,
+        MarkPriceUpdate, OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick, depth::DEPTH10_LEN,
     },
     enums::{
         AccountType, AggregationSource, BarAggregation, OrderSide, OrderStatus, OrderType,
@@ -169,14 +168,14 @@ pub fn parse_book10_msg_vec(
             let instrument_id = instrument.id();
             let price_precision = instrument.price_precision();
             match parse_book10_msg(&msg, instrument, instrument_id, price_precision, ts_init) {
-                Ok(depth) => depths.push(Data::BookDepth10(Box::new(depth))),
+                Ok(depth) => depths.push(Data::BookDepth(Box::new(depth))),
                 Err(e) => {
                     log::error!("Failed to parse orderBook10 for symbol={}: {e}", msg.symbol);
                 }
             }
         } else {
             log::error!(
-                "Instrument cache miss: depth10 message dropped for symbol={}",
+                "Instrument cache miss: depth message dropped for symbol={}",
                 msg.symbol
             );
         }
@@ -282,7 +281,7 @@ pub fn parse_book_msg(
     )
 }
 
-/// Parses an `OrderBook10` message into an `OrderBookDepth10` object.
+/// Parses an `OrderBook10` message into an `OrderBookDepth` object.
 ///
 /// # Errors
 ///
@@ -293,7 +292,7 @@ pub fn parse_book10_msg(
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
-) -> anyhow::Result<OrderBookDepth10> {
+) -> anyhow::Result<OrderBookDepth> {
     let mut bids = Vec::with_capacity(DEPTH10_LEN);
     let mut asks = Vec::with_capacity(DEPTH10_LEN);
 
@@ -340,7 +339,7 @@ pub fn parse_book10_msg(
 
     let ts_event = UnixNanos::from(msg.timestamp);
 
-    Ok(OrderBookDepth10::new(
+    Ok(OrderBookDepth::new(
         instrument_id,
         bids,
         asks,
@@ -1305,7 +1304,7 @@ mod tests {
         let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
         let msg: BitmexOrderBook10Msg = serde_json::from_str(&json_data).unwrap();
         let instrument = create_test_perpetual_instrument();
-        let depth10 = parse_book10_msg(
+        let depth = parse_book10_msg(
             &msg,
             &instrument,
             instrument.id(),
@@ -1314,27 +1313,27 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(depth10.instrument_id, instrument_id);
+        assert_eq!(depth.instrument_id, instrument_id);
 
         // Check first bid level
-        assert_eq!(depth10.bids[0].price, Price::from("98490.3"));
-        assert_eq!(depth10.bids[0].size, Quantity::from(22400));
-        assert_eq!(depth10.bids[0].side, OrderSide::Buy.into());
+        assert_eq!(depth.bids[0].price, Price::from("98490.3"));
+        assert_eq!(depth.bids[0].size, Quantity::from(22400));
+        assert_eq!(depth.bids[0].side, OrderSide::Buy.into());
 
         // Check first ask level
-        assert_eq!(depth10.asks[0].price, Price::from("98490.4"));
-        assert_eq!(depth10.asks[0].size, Quantity::from(17600));
-        assert_eq!(depth10.asks[0].side, OrderSide::Sell.into());
+        assert_eq!(depth.asks[0].price, Price::from("98490.4"));
+        assert_eq!(depth.asks[0].size, Quantity::from(17600));
+        assert_eq!(depth.asks[0].side, OrderSide::Sell.into());
 
         // Check counts (should be 1 for each populated level)
-        assert_eq!(depth10.bid_counts, [1; DEPTH10_LEN]);
-        assert_eq!(depth10.ask_counts, [1; DEPTH10_LEN]);
+        assert_eq!(depth.bid_counts.as_slice(), &[1; DEPTH10_LEN]);
+        assert_eq!(depth.ask_counts.as_slice(), &[1; DEPTH10_LEN]);
 
         // Check flags and timestamps
-        assert_eq!(depth10.sequence, 0);
-        assert_eq!(depth10.flags, RecordFlag::F_SNAPSHOT as u8);
-        assert_eq!(depth10.ts_event, 1732436353513000000); // 2024-11-24T08:19:13.513Z in nanos
-        assert_eq!(depth10.ts_init, 3);
+        assert_eq!(depth.sequence, 0);
+        assert_eq!(depth.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(depth.ts_event, 1732436353513000000); // 2024-11-24T08:19:13.513Z in nanos
+        assert_eq!(depth.ts_init, 3);
     }
 
     #[rstest]
