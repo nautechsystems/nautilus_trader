@@ -17,7 +17,11 @@ workspace = true
 
 [features]
 default = []
-defi = ["dep:nautilus-blockchain", "nautilus-model/defi"]
+defi = [
+  "dep:nautilus-blockchain",
+  "nautilus-model/defi",
+  "nautilus-persistence/defi",
+]
 
 [package.metadata.docs.rs]
 all-features = true

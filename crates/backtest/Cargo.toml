@@ -24,7 +24,12 @@ default = []
 examples = ["nautilus-trading/examples"]
 high-precision = ["nautilus-model/high-precision"]
 mimalloc = ["dep:mimalloc"]
-defi = ["nautilus-common/defi", "nautilus-data/defi", "nautilus-model/defi"]
+defi = [
+  "nautilus-common/defi",
+  "nautilus-data/defi",
+  "nautilus-model/defi",
+  "nautilus-persistence?/defi",
+]
 plugin = []
 streaming = ["nautilus-persistence", "nautilus-system/streaming"]
 extension-module = [

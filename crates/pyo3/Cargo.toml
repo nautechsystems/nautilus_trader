@@ -32,6 +32,7 @@ defi = [
   "dep:nautilus-blockchain",
   "nautilus-backtest/defi",
   "nautilus-blockchain/python",
+  "nautilus-persistence/defi",
 ]
 extension-module = [
   "nautilus-analysis/extension-module",
