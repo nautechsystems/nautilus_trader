@@ -434,7 +434,7 @@ impl BookSyncTracker {
     ) -> Vec<BookSyncSignal> {
         let mut state = self.state.lock();
 
-        let expired = state
+        let mut expired = state
             .pending_snapshots
             .iter()
             .filter_map(|(instrument_id, pending)| {
@@ -448,6 +448,9 @@ impl BookSyncTracker {
                 })
             })
             .collect::<Vec<_>>();
+
+        // Sort by instrument; the pending map iterates in per-process hash order
+        expired.sort_by_key(|signal| signal.instrument_id);
 
         for signal in &expired {
             state.pending_snapshots.remove(&signal.instrument_id);
@@ -912,6 +915,46 @@ mod tests {
         assert_eq!(public[0].instrument_id, public_id);
         assert!(has_pending_snapshot(&tracker, spread_id));
         assert!(!has_pending_snapshot(&tracker, public_id));
+    }
+
+    #[rstest]
+    fn take_expired_snapshots_returns_instruments_in_sorted_order() {
+        let book_channels = AtomicMap::new();
+        let tracker = BookSyncTracker::default();
+        let now = Instant::now();
+
+        // Insert in non-sorted order; expiry must still report sorted by instrument
+        for id in [
+            "ETH-USDT.OKX",
+            "BTC-USDT.OKX",
+            "SOL-USDT.OKX",
+            "DOGE-USDT.OKX",
+            "XRP-USDT.OKX",
+        ] {
+            book_channels.insert(InstrumentId::from(id), OKXBookChannel::Book);
+        }
+
+        tracker.seed_pending_snapshots(
+            &book_channels,
+            BookChannelScope::Public,
+            Duration::from_secs(3),
+            now.checked_sub(Duration::from_secs(4)).unwrap(),
+        );
+
+        let expired = tracker.take_expired_snapshots(&book_channels, BookChannelScope::Public, now);
+
+        let instrument_ids: Vec<InstrumentId> =
+            expired.iter().map(|signal| signal.instrument_id).collect();
+        assert_eq!(
+            instrument_ids,
+            [
+                InstrumentId::from("BTC-USDT.OKX"),
+                InstrumentId::from("DOGE-USDT.OKX"),
+                InstrumentId::from("ETH-USDT.OKX"),
+                InstrumentId::from("SOL-USDT.OKX"),
+                InstrumentId::from("XRP-USDT.OKX"),
+            ]
+        );
     }
 
     #[rstest]

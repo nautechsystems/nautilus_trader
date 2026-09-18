@@ -218,11 +218,11 @@ The hook also covers `backtest`, bringing the total to 17 crates.
 Adapter crates and infrastructure crates (Redis, Postgres) are out of scope unless an audited
 slice is listed here. Audited OKX DST-path production files route state-affecting clock reads and
 timers through the DST seams and sort reconnect and bulk-unsubscribe subscription commands. The
-static hook covers `book_sync.rs`, `common/parse.rs`, `common/task.rs`, `data.rs`, `execution.rs`,
-`http/client.rs`, `http/models.rs`, `websocket/client.rs`, `websocket/dispatch.rs`,
-`websocket/handler.rs`, `websocket/messages.rs`, and `websocket/parse.rs` in
-`crates/adapters/okx/src`. These files also serve paths outside a proven runtime slice: static
-coverage alone does not establish their runtime eligibility.
+static hook covers `book/mod.rs`, `book/recovery.rs`, `book/sync.rs`, `common/parse.rs`,
+`common/task.rs`, `data.rs`, `execution.rs`, `http/client.rs`, `http/models.rs`,
+`websocket/client.rs`, `websocket/dispatch.rs`, `websocket/handler.rs`, `websocket/messages.rs`,
+and `websocket/parse.rs` in `crates/adapters/okx/src`. These files also serve paths outside a
+proven runtime slice: static coverage alone does not establish their runtime eligibility.
 
 Focused Madsim tests in `crates/adapters/okx/tests/integration/dst.rs` cover subscribe-wire bytes for public
 WebSocket quotes, trades, and books, business WebSocket bars, and multi-instrument quote reconnect

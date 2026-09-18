@@ -625,7 +625,12 @@ impl OKXDataClient {
                         log::debug!("No subscribed instruments for index ticker: {inst_id}");
                         return;
                     };
-                    let symbols: Vec<Ustr> = subscribed_symbols.iter().copied().collect();
+
+                    let mut symbols: Vec<Ustr> = subscribed_symbols.iter().copied().collect();
+
+                    // Sort the fan-out; the subscribed set iterates in per-process hash order
+                    symbols.sort();
+
                     drop(map_guard);
 
                     let instruments_guard = instruments_by_symbol.load();
@@ -3219,6 +3224,102 @@ mod tests {
             }
             other => panic!("Expected DataEvent::Data(Data::Quote), was {other:?}"),
         }
+    }
+
+    #[rstest]
+    fn index_ticker_fan_out_emits_subscribed_symbols_in_sorted_order() {
+        // Five full symbols sharing one base pair, registered in non-sorted order
+        let symbols = [
+            "BTC-USDT-SWAP",
+            "BTC-USDT-241227",
+            "BTC-USDT-240628",
+            "BTC-USDT-250328",
+            "BTC-USDT-240906",
+        ];
+
+        let instruments_by_symbol = Arc::new(AtomicMap::new());
+
+        for symbol in symbols {
+            let mut pair = currency_pair_btcusdt();
+            let id = format!("{symbol}.OKX");
+            pair.id = InstrumentId::from(id.as_str());
+            pair.raw_symbol = Symbol::from(symbol);
+            instruments_by_symbol.insert(Ustr::from(symbol), InstrumentAny::CurrencyPair(pair));
+        }
+
+        let index_ticker_map = Arc::new(AtomicMap::new());
+        index_ticker_map.insert(
+            Ustr::from("BTC-USDT"),
+            AHashSet::from_iter(symbols.iter().map(|symbol| Ustr::from(symbol))),
+        );
+
+        let book_channels = Arc::new(AtomicMap::new());
+        let book_sync = BookSyncTracker::default();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let http = offline_http_client();
+        let update_lock = InstrumentUpdateLock::default();
+        let mut quote_cache = QuoteCache::new();
+        let mut funding_cache = AHashMap::new();
+        let option_greeks_subs = Arc::new(AtomicMap::new());
+        let task_group = TaskGroup::new();
+        let tasks = task_group.spawner().expect("task spawner");
+
+        OKXDataClient::handle_ws_message(
+            OKXWsMessage::ChannelData {
+                channel: OKXWsChannel::IndexTickers,
+                inst_id: Some(Ustr::from("BTC-USDT")),
+                data: json!([{
+                    "instId": "BTC-USDT",
+                    "idxPx": "65000.1",
+                    "high24h": "66000.0",
+                    "low24h": "64000.0",
+                    "open24h": "64500.0",
+                    "sodUtc0": "64500.0",
+                    "sodUtc8": "64600.0",
+                    "ts": "1710000000000"
+                }]),
+            },
+            &sender.into(),
+            &instruments_by_symbol,
+            &http,
+            &OKXDataClientConfig::default(),
+            &update_lock,
+            &book_channels,
+            &book_sync,
+            None,
+            None,
+            &mut quote_cache,
+            &mut funding_cache,
+            &index_ticker_map,
+            &option_greeks_subs,
+            BookChannelScope::Public,
+            Duration::ZERO,
+            &tasks,
+            get_atomic_clock_realtime(),
+        );
+
+        let mut instrument_ids = Vec::new();
+
+        while let Ok(event) = receiver.try_recv() {
+            match event {
+                DataEvent::Data(Data::IndexPrice(update)) => {
+                    instrument_ids.push(update.instrument_id);
+                }
+                other => panic!("Expected DataEvent::Data(Data::IndexPrice), was {other:?}"),
+            }
+        }
+
+        assert_eq!(
+            instrument_ids,
+            [
+                "BTC-USDT-240628.OKX",
+                "BTC-USDT-240906.OKX",
+                "BTC-USDT-241227.OKX",
+                "BTC-USDT-250328.OKX",
+                "BTC-USDT-SWAP.OKX",
+            ]
+            .map(InstrumentId::from)
+        );
     }
 
     #[rstest]
