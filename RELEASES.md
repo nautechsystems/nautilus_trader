@@ -7,10 +7,14 @@ Released on TBD (UTC).
 - Added `historical_base_url` and `live_gateway_addr` overrides to `DatabentoDataClientConfig`
 - Added `tardis_http_url` override to `TardisDataClientConfig` and `TardisReplayConfig`
 - Added Polymarket session signing and owner-operated session key authorization, listing, and revocation
+- Added `IndexPriceUpdate`, `InstrumentClose`, `FundingRateUpdate`, and `Custom` to `DataBackendSession.add_file`
 - Migrated Polymarket trade and position history to Data API v2 with cursor pagination
 
 ### Breaking Changes
 
+- Removed `nautilus_trader.persistence.NautilusDataType` - import from `nautilus_trader.model`
+- Removed `NautilusDataType.OrderBook` variant and `"OrderBook"`/`"order_book"` spellings
+- Changed `DataBackendSession.add_file` to accept `model.NautilusDataType`, rejecting `Instrument` and `Defi`
 - Changed Rust `OrderCore.events` to read-only `events()`; construct cores with `OrderCore::new`
 - Changed Python Hyperliquid data and execution client config parameter order to `base_url_http` before `base_url_ws`
 - Changed Polymarket `polymarket_trade_sort_key` inputs to v2 `transaction_hash` and `token_id` fields
@@ -41,6 +45,7 @@ Released on TBD (UTC).
 ### Internal Improvements
 
 - Standardized network config field layouts across adapters: URL override block, then `proxy_url`
+- Standardized `Data` and `NautilusDataType` ordering with `Custom` first
 - Renamed the variable-depth Cap'n Proto `OrderBookDepth10` schema declarations to `OrderBookDepth` while pinning node IDs and field ordinals for wire continuity
 - Improved cache order query benchmark coverage
 - Optimized cache order queries and exchange rate lookups from bars

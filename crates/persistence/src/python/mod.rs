@@ -54,7 +54,6 @@ pub fn persistence(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // and examples can use them; they are not gated behind cfg(test) to keep the extension build simple.
     m.add_class::<crate::backend::session::DataBackendSession>()?;
     m.add_class::<crate::backend::session::DataQueryResult>()?;
-    m.add_class::<backend::session::NautilusDataType>()?;
     m.add_class::<config::PyCatalogBackend>()?;
     m.add_class::<crate::config::StreamingConfig>()?;
     m.add_class::<config::PyRotationConfig>()?;

@@ -252,9 +252,6 @@ pub fn decode_batch_to_data(
                 NautilusDataType::Instrument => {
                     anyhow::bail!("Instrument batches require instrument-specific decoding")
                 }
-                NautilusDataType::OrderBook => {
-                    anyhow::bail!("Order book snapshots do not have a catalog batch representation")
-                }
                 #[cfg(feature = "defi")]
                 NautilusDataType::Defi => {
                     anyhow::bail!("DeFi batches require DeFi-specific decoding")

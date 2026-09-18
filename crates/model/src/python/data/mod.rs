@@ -110,16 +110,6 @@ crate::for_each_data_type!(define_nautilus_data_type_class_attrs);
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl PyNautilusDataType {
-    #[classattr]
-    #[expect(
-        non_snake_case,
-        clippy::use_self,
-        reason = "PyO3 stub generation expands class attributes outside the impl scope"
-    )]
-    fn OrderBook() -> PyNautilusDataType {
-        Self::new(NautilusDataType::OrderBook)
-    }
-
     #[cfg(feature = "defi")]
     #[classattr]
     #[expect(
@@ -258,6 +248,7 @@ impl PyNautilusRecordType {
 /// Returns an error for data variants without a Python representation.
 pub fn data_to_pyobject(py: Python<'_>, data: Data) -> PyResult<Py<PyAny>> {
     match data {
+        Data::Custom(custom) => Py::new(py, custom).map(Py::into_any),
         Data::Instrument(instrument) => instrument_any_to_pyobject(py, *instrument),
         Data::Quote(quote) => Py::new(py, quote).map(Py::into_any),
         Data::Trade(trade) => Py::new(py, trade).map(Py::into_any),
@@ -271,7 +262,6 @@ pub fn data_to_pyobject(py: Python<'_>, data: Data) -> PyResult<Py<PyAny>> {
         Data::OptionGreeks(greeks) => Py::new(py, greeks).map(Py::into_any),
         Data::InstrumentStatus(status) => Py::new(py, status).map(Py::into_any),
         Data::InstrumentClose(close) => Py::new(py, close).map(Py::into_any),
-        Data::Custom(custom) => Py::new(py, custom).map(Py::into_any),
         #[cfg(feature = "defi")]
         Data::Defi(_) => Err(to_pytype_err("Unsupported DeFi data variant")),
     }

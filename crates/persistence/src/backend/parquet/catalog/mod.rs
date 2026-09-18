@@ -898,9 +898,5 @@ fn ensure_latest_query(query: &CatalogQuery) -> anyhow::Result<()> {
         query.as_of == CatalogAsOf::Latest,
         "Parquet catalog does not support historical queries"
     );
-    anyhow::ensure!(
-        query.data_type != NautilusDataType::OrderBook,
-        "Parquet catalog does not support order book snapshots"
-    );
     Ok(())
 }

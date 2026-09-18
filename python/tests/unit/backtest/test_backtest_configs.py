@@ -602,7 +602,10 @@ def test_data_config_accepts_compatible_timestamp_inputs(value: object) -> None:
     assert config.end_time == 1_700_000_000_000_000_000
 
 
-@pytest.mark.parametrize("data_type", ["InvalidType", "nautilus_trader.model:TradeTick"])
+@pytest.mark.parametrize(
+    "data_type",
+    ["InvalidType", "nautilus_trader.model:TradeTick", "OrderBook"],
+)
 def test_data_config_invalid_data_type(data_type: str) -> None:
     """
     Test data config invalid data type.
@@ -633,7 +636,7 @@ def test_data_config_uses_model_data_type(data_type: str, expected: str) -> None
     assert config.data_type == expected
 
 
-@pytest.mark.parametrize("data_type", ["Instrument", "OrderBook", "Custom:Signal", "Defi"])
+@pytest.mark.parametrize("data_type", ["Instrument", "Custom:Signal", "Defi"])
 def test_data_config_rejects_unsupported_family(data_type: str) -> None:
     """
     Reject model families that config-driven backtests cannot load.

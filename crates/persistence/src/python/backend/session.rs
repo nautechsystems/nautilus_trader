@@ -18,14 +18,16 @@ use std::collections::HashMap;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::{
-        Bar, InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDepth,
-        QuoteTick, TradeTick,
+        Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
+        MarkPriceUpdate, NautilusDataType, OptionGreeks, OrderBookDelta, OrderBookDepth, QuoteTick,
+        TradeTick,
     },
     python::data::data_to_pyobject,
 };
 use nautilus_serialization::arrow::{ArrowSchemaProvider, custom::CustomDataDecoder};
 use pyo3::{IntoPyObjectExt, prelude::*};
 
+use super::conversion::catalog_data_type_from_py;
 use crate::backend::session::{DataBackendSession, DataQueryResult, QueryError};
 
 /// Wrapper to pass a raw pointer across the GIL release boundary.
@@ -33,34 +35,6 @@ struct SendPtr<T>(*mut T);
 
 // SAFETY: Access is serialized by the calling `PyRefMut`
 unsafe impl<T> Send for SendPtr<T> {}
-
-#[repr(C)]
-#[pyclass(frozen, eq, eq_int, from_py_object)]
-#[pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.persistence")]
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-pub enum NautilusDataType {
-    // Custom = 0,  # First slot reserved for custom data
-    OrderBookDelta = 1,
-    OrderBookDepth = 2,
-    QuoteTick = 3,
-    TradeTick = 4,
-    Bar = 5,
-    MarkPriceUpdate = 6,
-    OptionGreeks = 7,
-    InstrumentStatus = 8,
-}
-
-#[pymethods]
-#[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl NautilusDataType {
-    #[expect(
-        clippy::trivially_copy_pass_by_ref,
-        reason = "PyO3 special methods use a borrowed receiver"
-    )]
-    const fn __hash__(&self) -> isize {
-        *self as isize
-    }
-}
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -97,39 +71,15 @@ impl DataBackendSession {
     #[pyo3(signature = (data_type, table_name, file_path, sql_query=None))]
     fn py_add_file(
         mut slf: PyRefMut<'_, Self>,
-        data_type: NautilusDataType,
+        data_type: &Bound<'_, PyAny>,
         table_name: &str,
         file_path: &str,
         sql_query: Option<&str>,
     ) -> PyResult<()> {
         let _guard = slf.runtime.enter();
+        let data_type = catalog_data_type_from_py(data_type)?;
 
-        match data_type {
-            NautilusDataType::OrderBookDelta => slf
-                .add_file::<OrderBookDelta>(table_name, file_path, sql_query, None)
-                .map_err(to_pyruntime_err),
-            NautilusDataType::OrderBookDepth => slf
-                .add_file::<OrderBookDepth>(table_name, file_path, sql_query, None)
-                .map_err(to_pyruntime_err),
-            NautilusDataType::QuoteTick => slf
-                .add_file::<QuoteTick>(table_name, file_path, sql_query, None)
-                .map_err(to_pyruntime_err),
-            NautilusDataType::TradeTick => slf
-                .add_file::<TradeTick>(table_name, file_path, sql_query, None)
-                .map_err(to_pyruntime_err),
-            NautilusDataType::Bar => slf
-                .add_file::<Bar>(table_name, file_path, sql_query, None)
-                .map_err(to_pyruntime_err),
-            NautilusDataType::MarkPriceUpdate => slf
-                .add_file::<MarkPriceUpdate>(table_name, file_path, sql_query, None)
-                .map_err(to_pyruntime_err),
-            NautilusDataType::OptionGreeks => slf
-                .add_file::<OptionGreeks>(table_name, file_path, sql_query, None)
-                .map_err(to_pyruntime_err),
-            NautilusDataType::InstrumentStatus => slf
-                .add_file::<InstrumentStatus>(table_name, file_path, sql_query, None)
-                .map_err(to_pyruntime_err),
-        }
+        slf.add_file_for_data_type(&data_type, table_name, file_path, sql_query)
     }
 
     /// Registers a Parquet file for a custom data type identified by `type_name`.
@@ -146,19 +96,12 @@ impl DataBackendSession {
         sql_query: Option<&str>,
     ) -> PyResult<()> {
         let _guard = slf.runtime.enter();
-        let mut metadata = HashMap::new();
-        metadata.insert("type_name".to_string(), type_name.to_string());
-        let base_schema = CustomDataDecoder::get_schema(Some(metadata));
-        base_schema.field_with_name("ts_init").map_err(|_| {
-            to_pyruntime_err(format!(
-                "custom data type '{type_name}' is not registered with an Arrow schema containing ts_init"
-            ))
-        })?;
-        // Use schemaless registration so DataFusion preserves the parquet file's
-        // schema metadata (e.g. `bar_type`) on output batches, since the
-        // explicit-schema variant strips per-batch metadata that decoders rely on.
-        slf.add_file::<CustomDataDecoder>(table_name, file_path, sql_query, Some(type_name))
-            .map_err(to_pyruntime_err)
+
+        let data_type = NautilusDataType::Custom {
+            type_name: type_name.to_string(),
+        };
+
+        slf.add_file_for_data_type(&data_type, table_name, file_path, sql_query)
     }
 
     fn to_query_result(mut slf: PyRefMut<'_, Self>) -> DataQueryResult {
@@ -197,6 +140,80 @@ impl DataBackendSession {
         let storage_options = storage_options.map(|m| m.into_iter().collect());
         slf.register_object_store_from_uri(uri, storage_options)
             .map_err(to_pyruntime_err)
+    }
+}
+
+impl DataBackendSession {
+    fn add_file_for_data_type(
+        &mut self,
+        data_type: &NautilusDataType,
+        table_name: &str,
+        file_path: &str,
+        sql_query: Option<&str>,
+    ) -> PyResult<()> {
+        match data_type {
+            NautilusDataType::OrderBookDelta => self
+                .add_file::<OrderBookDelta>(table_name, file_path, sql_query, None)
+                .map_err(to_pyruntime_err),
+            NautilusDataType::OrderBookDepth => self
+                .add_file::<OrderBookDepth>(table_name, file_path, sql_query, None)
+                .map_err(to_pyruntime_err),
+            NautilusDataType::QuoteTick => self
+                .add_file::<QuoteTick>(table_name, file_path, sql_query, None)
+                .map_err(to_pyruntime_err),
+            NautilusDataType::TradeTick => self
+                .add_file::<TradeTick>(table_name, file_path, sql_query, None)
+                .map_err(to_pyruntime_err),
+            NautilusDataType::Bar => self
+                .add_file::<Bar>(table_name, file_path, sql_query, None)
+                .map_err(to_pyruntime_err),
+            NautilusDataType::MarkPriceUpdate => self
+                .add_file::<MarkPriceUpdate>(table_name, file_path, sql_query, None)
+                .map_err(to_pyruntime_err),
+            NautilusDataType::IndexPriceUpdate => self
+                .add_file::<IndexPriceUpdate>(table_name, file_path, sql_query, None)
+                .map_err(to_pyruntime_err),
+            NautilusDataType::FundingRateUpdate => self
+                .add_file::<FundingRateUpdate>(table_name, file_path, sql_query, None)
+                .map_err(to_pyruntime_err),
+            NautilusDataType::OptionGreeks => self
+                .add_file::<OptionGreeks>(table_name, file_path, sql_query, None)
+                .map_err(to_pyruntime_err),
+            NautilusDataType::InstrumentStatus => self
+                .add_file::<InstrumentStatus>(table_name, file_path, sql_query, None)
+                .map_err(to_pyruntime_err),
+            NautilusDataType::InstrumentClose => self
+                .add_file::<InstrumentClose>(table_name, file_path, sql_query, None)
+                .map_err(to_pyruntime_err),
+            NautilusDataType::Custom { type_name } => {
+                let mut metadata = HashMap::new();
+                metadata.insert("type_name".to_string(), type_name.clone());
+                let base_schema = CustomDataDecoder::get_schema(Some(metadata));
+                base_schema.field_with_name("ts_init").map_err(|_| {
+                    to_pyruntime_err(format!(
+                        "custom data type '{type_name}' is not registered with an Arrow schema containing ts_init"
+                    ))
+                })?;
+
+                // Use schemaless registration so DataFusion preserves the parquet file's
+                // schema metadata (e.g. `bar_type`) on output batches, since the
+                // explicit-schema variant strips per-batch metadata that decoders rely on.
+                self.add_file::<CustomDataDecoder>(
+                    table_name,
+                    file_path,
+                    sql_query,
+                    Some(type_name.as_str()),
+                )
+                .map_err(to_pyruntime_err)
+            }
+            NautilusDataType::Instrument => Err(to_pyvalue_err(format!(
+                "DataBackendSession does not support data type {data_type}"
+            ))),
+            #[cfg(feature = "defi")]
+            NautilusDataType::Defi => Err(to_pyvalue_err(format!(
+                "DataBackendSession does not support data type {data_type}"
+            ))),
+        }
     }
 }
 

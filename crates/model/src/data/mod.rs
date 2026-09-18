@@ -39,11 +39,6 @@ pub mod registry;
 pub mod status;
 pub mod trade;
 
-/// Arrow schema-map name for compact string enum columns.
-pub const ARROW_ENUM_DICTIONARY: &str = "Dictionary(Int8, Utf8)";
-/// Arrow schema-map name for UTC nanosecond instants.
-pub const ARROW_TIMESTAMP_NANOSECOND: &str = "Timestamp(Nanosecond, Some(\"UTC\"))";
-
 #[cfg(any(test, feature = "test-support"))]
 pub mod stubs;
 
@@ -59,6 +54,12 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "defi")]
 use crate::defi::DefiData;
+use crate::{
+    for_each_data_type,
+    identifiers::InstrumentId,
+    instruments::{Instrument, InstrumentAny},
+};
+
 // Re-exports
 #[rustfmt::skip]  // Keep these grouped
 pub use bar::{Bar, BarSpecification, BarType};
@@ -103,57 +104,10 @@ pub use registry::{
 pub use status::InstrumentStatus;
 pub use trade::TradeTick;
 
-/// Canonical custom data type name for calculated option Greeks.
-pub const GREEKS_DATA_TYPE_NAME: &str = "GreeksData";
-
-use crate::{
-    identifiers::InstrumentId,
-    instruments::{Instrument, InstrumentAny},
-};
-
-/// Invokes a macro with every built-in typed data family.
-///
-/// Each tuple contains the canonical family name, concrete type, `Data` variant,
-/// `DataBatch` variant, and catalog path prefix. The first four fields use the same name whenever
-/// the family has one concrete representation. Custom and DeFi data have no single built-in
-/// concrete type; `Deltas` and `Data` are aggregate compatibility batches. Consumers handle
-/// those variants explicitly.
-#[macro_export]
-macro_rules! for_each_data_type {
-    ($macro:ident) => {
-        $macro! {
-            (Instrument, InstrumentAny, Instrument, Instrument, "instruments"),
-            (QuoteTick, QuoteTick, Quote, Quote, "quotes"),
-            (TradeTick, TradeTick, Trade, Trade, "trades"),
-            (Bar, Bar, Bar, Bar, "bars"),
-            (OrderBookDelta, OrderBookDelta, BookDelta, BookDelta, "order_book_deltas"),
-            (OrderBookDepth, OrderBookDepth, BookDepth, BookDepth, "order_book_depths"),
-            (MarkPriceUpdate, MarkPriceUpdate, MarkPrice, MarkPrice, "mark_prices"),
-            (IndexPriceUpdate, IndexPriceUpdate, IndexPrice, IndexPrice, "index_prices"),
-            (FundingRateUpdate, FundingRateUpdate, FundingRate, FundingRate, "funding_rates"),
-            (InstrumentStatus, InstrumentStatus, InstrumentStatus, InstrumentStatus, "instrument_status"),
-            (OptionGreeks, OptionGreeks, OptionGreeks, OptionGreeks, "option_greeks"),
-            (InstrumentClose, InstrumentClose, InstrumentClose, InstrumentClose, "instrument_closes"),
-        }
-    };
-    ($macro:ident, $($args:tt)*) => {
-        $macro! {
-            ($($args)*);
-            (Instrument, InstrumentAny, Instrument, Instrument, "instruments"),
-            (QuoteTick, QuoteTick, Quote, Quote, "quotes"),
-            (TradeTick, TradeTick, Trade, Trade, "trades"),
-            (Bar, Bar, Bar, Bar, "bars"),
-            (OrderBookDelta, OrderBookDelta, BookDelta, BookDelta, "order_book_deltas"),
-            (OrderBookDepth, OrderBookDepth, BookDepth, BookDepth, "order_book_depths"),
-            (MarkPriceUpdate, MarkPriceUpdate, MarkPrice, MarkPrice, "mark_prices"),
-            (IndexPriceUpdate, IndexPriceUpdate, IndexPrice, IndexPrice, "index_prices"),
-            (FundingRateUpdate, FundingRateUpdate, FundingRate, FundingRate, "funding_rates"),
-            (InstrumentStatus, InstrumentStatus, InstrumentStatus, InstrumentStatus, "instrument_status"),
-            (OptionGreeks, OptionGreeks, OptionGreeks, OptionGreeks, "option_greeks"),
-            (InstrumentClose, InstrumentClose, InstrumentClose, InstrumentClose, "instrument_closes"),
-        }
-    };
-}
+/// Arrow schema-map name for compact string enum columns.
+pub const ARROW_ENUM_DICTIONARY: &str = "Dictionary(Int8, Utf8)";
+/// Arrow schema-map name for UTC nanosecond instants.
+pub const ARROW_TIMESTAMP_NANOSECOND: &str = "Timestamp(Nanosecond, Some(\"UTC\"))";
 
 /// A built-in Nautilus data type.
 ///
@@ -161,6 +115,7 @@ macro_rules! for_each_data_type {
 /// larger (~10x) than the smallest.
 #[derive(Debug)]
 pub enum Data {
+    Custom(CustomData),
     Instrument(Box<InstrumentAny>),
     BookDelta(OrderBookDelta),
     BookDeltas(Box<OrderBookDeltas>),
@@ -174,9 +129,130 @@ pub enum Data {
     OptionGreeks(OptionGreeks),
     InstrumentStatus(InstrumentStatus),
     InstrumentClose(InstrumentClose),
-    Custom(CustomData),
     #[cfg(feature = "defi")]
     Defi(Box<DefiData>), // This variant is significantly larger
+}
+
+/// Data family selector used by request and catalog APIs.
+///
+/// This is a type-level descriptor, not a decoded data value. [`Data::BookDeltas`] maps to
+/// [`NautilusDataType::OrderBookDelta`] because both share the same storage and request family.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub enum NautilusDataType {
+    /// User-defined data type identified by `type_name`.
+    Custom { type_name: String },
+    /// Instrument definitions.
+    Instrument,
+    /// Order book deltas, single or batched.
+    OrderBookDelta,
+    /// Order book depth snapshots.
+    OrderBookDepth,
+    /// Quote ticks.
+    QuoteTick,
+    /// Trade ticks.
+    TradeTick,
+    /// Aggregated bars.
+    Bar,
+    /// Mark price updates.
+    MarkPriceUpdate,
+    /// Index price updates.
+    IndexPriceUpdate,
+    /// Funding rate updates.
+    FundingRateUpdate,
+    /// Option greeks.
+    OptionGreeks,
+    /// Instrument status updates.
+    InstrumentStatus,
+    /// Instrument closes.
+    InstrumentClose,
+    /// Decentralized finance data.
+    #[cfg(feature = "defi")]
+    Defi,
+}
+
+impl Display for NautilusDataType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Custom { type_name } => write!(f, "Custom:{type_name}"),
+            Self::Instrument => f.write_str("Instrument"),
+            Self::OrderBookDelta => f.write_str("OrderBookDelta"),
+            Self::OrderBookDepth => f.write_str("OrderBookDepth"),
+            Self::QuoteTick => f.write_str("QuoteTick"),
+            Self::TradeTick => f.write_str("TradeTick"),
+            Self::Bar => f.write_str("Bar"),
+            Self::MarkPriceUpdate => f.write_str("MarkPriceUpdate"),
+            Self::IndexPriceUpdate => f.write_str("IndexPriceUpdate"),
+            Self::FundingRateUpdate => f.write_str("FundingRateUpdate"),
+            Self::OptionGreeks => f.write_str("OptionGreeks"),
+            Self::InstrumentStatus => f.write_str("InstrumentStatus"),
+            Self::InstrumentClose => f.write_str("InstrumentClose"),
+            #[cfg(feature = "defi")]
+            Self::Defi => f.write_str("Defi"),
+        }
+    }
+}
+
+impl FromStr for NautilusDataType {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> anyhow::Result<Self> {
+        match s {
+            custom if custom.starts_with("Custom:") => Ok(Self::Custom {
+                type_name: custom.trim_start_matches("Custom:").to_string(),
+            }),
+            "Instrument" | "instruments" | "instrument" => Ok(Self::Instrument),
+            "QuoteTick" | "quotes" | "quote" | "quote_tick" => Ok(Self::QuoteTick),
+            "TradeTick" | "trades" | "trade" | "trade_tick" => Ok(Self::TradeTick),
+            "Bar" | "bars" | "bar" => Ok(Self::Bar),
+            "OrderBookDelta" | "OrderBookDeltas" | "order_book_deltas" | "order_book_delta" => {
+                Ok(Self::OrderBookDelta)
+            }
+            "OrderBookDepth" | "order_book_depths" => Ok(Self::OrderBookDepth),
+            "MarkPriceUpdate" | "mark_price_updates" | "mark_prices" | "mark_price_update" => {
+                Ok(Self::MarkPriceUpdate)
+            }
+            "IndexPriceUpdate" | "index_price_updates" | "index_prices" | "index_price_update" => {
+                Ok(Self::IndexPriceUpdate)
+            }
+            "FundingRateUpdate" | "funding_rate_update" | "funding_rates" => {
+                Ok(Self::FundingRateUpdate)
+            }
+            "InstrumentStatus" | "instrument_status" => Ok(Self::InstrumentStatus),
+            "OptionGreeks" | "option_greeks" => Ok(Self::OptionGreeks),
+            "InstrumentClose" | "instrument_closes" | "instrument_close" => {
+                Ok(Self::InstrumentClose)
+            }
+            #[cfg(feature = "defi")]
+            "Defi" => Ok(Self::Defi),
+            _ => anyhow::bail!("Invalid `NautilusDataType`: '{s}'"),
+        }
+    }
+}
+
+impl NautilusDataType {
+    /// Returns the discriminant tag for a [`Data`] value.
+    #[must_use]
+    pub fn from_data(data: &Data) -> Self {
+        match data {
+            Data::Custom(c) => Self::Custom {
+                type_name: c.data_type.type_name().to_string(),
+            },
+            Data::Instrument(_) => Self::Instrument,
+            Data::Quote(_) => Self::QuoteTick,
+            Data::Trade(_) => Self::TradeTick,
+            Data::Bar(_) => Self::Bar,
+            Data::BookDelta(_) | Data::BookDeltas(_) => Self::OrderBookDelta,
+            Data::BookDepth(_) => Self::OrderBookDepth,
+            Data::MarkPrice(_) => Self::MarkPriceUpdate,
+            Data::IndexPrice(_) => Self::IndexPriceUpdate,
+            Data::FundingRate(_) => Self::FundingRateUpdate,
+            Data::InstrumentStatus(_) => Self::InstrumentStatus,
+            Data::OptionGreeks(_) => Self::OptionGreeks,
+            Data::InstrumentClose(_) => Self::InstrumentClose,
+            #[cfg(feature = "defi")]
+            Data::Defi(_) => Self::Defi,
+        }
+    }
 }
 
 /// Borrowed data item used by typed replay paths.
@@ -203,6 +279,7 @@ pub enum DataRef<'a> {
 impl<'a> From<&'a Data> for DataRef<'a> {
     fn from(data: &'a Data) -> Self {
         match data {
+            Data::Custom(custom) => Self::Custom(custom),
             Data::Instrument(instrument) => Self::Instrument(instrument),
             Data::BookDelta(delta) => Self::BookDelta(delta),
             Data::BookDeltas(deltas) => Self::BookDeltas(deltas),
@@ -216,7 +293,6 @@ impl<'a> From<&'a Data> for DataRef<'a> {
             Data::OptionGreeks(greeks) => Self::OptionGreeks(greeks),
             Data::InstrumentStatus(status) => Self::InstrumentStatus(status),
             Data::InstrumentClose(close) => Self::InstrumentClose(close),
-            Data::Custom(custom) => Self::Custom(custom),
             #[cfg(feature = "defi")]
             Data::Defi(defi) => Self::Defi(defi),
         }
@@ -228,6 +304,18 @@ impl DataRef<'_> {
     #[must_use]
     pub fn instrument_id(&self) -> InstrumentId {
         match self {
+            Self::Custom(custom) => custom
+                .data_type
+                .identifier()
+                .and_then(|s| InstrumentId::from_str(s).ok())
+                .or_else(|| {
+                    custom
+                        .data_type
+                        .metadata()
+                        .and_then(|m| m.get_str("instrument_id"))
+                        .and_then(|s| InstrumentId::from_str(s).ok())
+                })
+                .unwrap_or_else(|| InstrumentId::from("NULL.NULL")),
             Self::Instrument(instrument) => instrument.id(),
             Self::BookDelta(delta) => delta.instrument_id,
             Self::BookDeltas(deltas) => deltas.instrument_id,
@@ -241,18 +329,6 @@ impl DataRef<'_> {
             Self::OptionGreeks(greeks) => greeks.instrument_id,
             Self::InstrumentStatus(status) => status.instrument_id,
             Self::InstrumentClose(close) => close.instrument_id,
-            Self::Custom(custom) => custom
-                .data_type
-                .identifier()
-                .and_then(|s| InstrumentId::from_str(s).ok())
-                .or_else(|| {
-                    custom
-                        .data_type
-                        .metadata()
-                        .and_then(|m| m.get_str("instrument_id"))
-                        .and_then(|s| InstrumentId::from_str(s).ok())
-                })
-                .unwrap_or_else(|| InstrumentId::from("NULL.NULL")),
             #[cfg(feature = "defi")]
             Self::Defi(defi) => defi.instrument_id(),
         }
@@ -271,6 +347,7 @@ impl DataRef<'_> {
     #[must_use]
     pub fn to_owned_data(&self) -> Data {
         match self {
+            Self::Custom(custom) => Data::Custom((**custom).clone()),
             Self::Instrument(instrument) => Data::Instrument(Box::new((*instrument).clone())),
             Self::BookDelta(delta) => Data::BookDelta(**delta),
             Self::BookDeltas(deltas) => Data::BookDeltas(Box::new((**deltas).clone())),
@@ -284,7 +361,6 @@ impl DataRef<'_> {
             Self::OptionGreeks(greeks) => Data::OptionGreeks(**greeks),
             Self::InstrumentStatus(status) => Data::InstrumentStatus(**status),
             Self::InstrumentClose(close) => Data::InstrumentClose(**close),
-            Self::Custom(custom) => Data::Custom((**custom).clone()),
             #[cfg(feature = "defi")]
             Self::Defi(defi) => Data::Defi(Box::new((**defi).clone())),
         }
@@ -294,6 +370,7 @@ impl DataRef<'_> {
 impl HasTsInit for DataRef<'_> {
     fn ts_init(&self) -> UnixNanos {
         match self {
+            Self::Custom(custom) => custom.data.ts_init(),
             Self::Instrument(instrument) => Instrument::ts_init(*instrument),
             Self::BookDelta(delta) => delta.ts_init,
             Self::BookDeltas(deltas) => deltas.ts_init,
@@ -307,7 +384,6 @@ impl HasTsInit for DataRef<'_> {
             Self::OptionGreeks(greeks) => greeks.ts_init,
             Self::InstrumentStatus(status) => status.ts_init,
             Self::InstrumentClose(close) => close.ts_init,
-            Self::Custom(custom) => custom.data.ts_init(),
             #[cfg(feature = "defi")]
             Self::Defi(defi) => defi.ts_init(),
         }
@@ -436,14 +512,6 @@ macro_rules! data_batch_from_data_vec {
         $(($variant:ident, $type:ident, $data:ident, $batch:ident, $prefix:literal)),+ $(,)?
     ) => {
         match $data_type {
-            $(
-                NautilusDataType::$variant => Ok(Self::$batch(
-                    to_variant_for_batch::<$type>($data_type, $input)?.into(),
-                )),
-            )+
-            NautilusDataType::OrderBook => {
-                anyhow::bail!("order book snapshots cannot be represented as a data batch")
-            }
             NautilusDataType::Custom { .. } => {
                 let expected_len = $input.len();
                 let custom = $input
@@ -460,6 +528,11 @@ macro_rules! data_batch_from_data_vec {
                 );
                 Ok(Self::Custom(custom.into()))
             }
+            $(
+                NautilusDataType::$variant => Ok(Self::$batch(
+                    to_variant_for_batch::<$type>($data_type, $input)?.into(),
+                )),
+            )+
             #[cfg(feature = "defi")]
             NautilusDataType::Defi => {
                 let expected_len = $input.len();
@@ -540,6 +613,7 @@ impl DataBatch {
     #[must_use]
     pub fn len(&self) -> usize {
         match self {
+            Self::Custom(data) => data.len(),
             Self::Instrument(data) => data.len(),
             Self::BookDelta(data) => data.len(),
             Self::BookDeltas(data) => data.len(),
@@ -553,7 +627,6 @@ impl DataBatch {
             Self::OptionGreeks(data) => data.len(),
             Self::InstrumentStatus(data) => data.len(),
             Self::InstrumentClose(data) => data.len(),
-            Self::Custom(data) => data.len(),
             #[cfg(feature = "defi")]
             Self::Defi(data) => data.len(),
         }
@@ -568,6 +641,7 @@ impl DataBatch {
     #[must_use]
     pub fn data_type_name(&self) -> &'static str {
         match self {
+            Self::Custom(_) => "custom",
             Self::Instrument(_) => "instruments",
             Self::BookDelta(_) => "order_book_deltas",
             Self::BookDeltas(_) => "order_book_deltas_batches",
@@ -581,7 +655,6 @@ impl DataBatch {
             Self::OptionGreeks(_) => "option_greeks",
             Self::InstrumentStatus(_) => "instrument_status",
             Self::InstrumentClose(_) => "instrument_closes",
-            Self::Custom(_) => "custom",
             #[cfg(feature = "defi")]
             Self::Defi(_) => "defi",
         }
@@ -598,6 +671,7 @@ impl DataBatch {
     #[must_use]
     pub fn get(&self, index: usize) -> Option<DataRef<'_>> {
         match self {
+            Self::Custom(data) => data.get(index).map(DataRef::Custom),
             Self::Instrument(data) => data.get(index).map(DataRef::Instrument),
             Self::BookDelta(data) => data.get(index).map(DataRef::BookDelta),
             Self::BookDeltas(data) => data.get(index).map(DataRef::BookDeltas),
@@ -611,7 +685,6 @@ impl DataBatch {
             Self::OptionGreeks(data) => data.get(index).map(DataRef::OptionGreeks),
             Self::InstrumentStatus(data) => data.get(index).map(DataRef::InstrumentStatus),
             Self::InstrumentClose(data) => data.get(index).map(DataRef::InstrumentClose),
-            Self::Custom(data) => data.get(index).map(DataRef::Custom),
             #[cfg(feature = "defi")]
             Self::Defi(data) => data.get(index).map(DataRef::Defi),
         }
@@ -651,6 +724,7 @@ impl DataBatch {
         }
 
         match self {
+            Self::Custom(data) => Self::Custom(data.slice(start, end)),
             Self::Instrument(data) => Self::Instrument(data.slice(start, end)),
             Self::BookDelta(data) => Self::BookDelta(data.slice(start, end)),
             Self::BookDeltas(data) => Self::BookDeltas(data.slice(start, end)),
@@ -664,7 +738,6 @@ impl DataBatch {
             Self::OptionGreeks(data) => Self::OptionGreeks(data.slice(start, end)),
             Self::InstrumentStatus(data) => Self::InstrumentStatus(data.slice(start, end)),
             Self::InstrumentClose(data) => Self::InstrumentClose(data.slice(start, end)),
-            Self::Custom(data) => Self::Custom(data.slice(start, end)),
             #[cfg(feature = "defi")]
             Self::Defi(data) => Self::Defi(data.slice(start, end)),
         }
@@ -773,94 +846,6 @@ impl FromDataBatch for DefiData {
     }
 }
 
-/// Data family selector used by request and catalog APIs.
-///
-/// This is a type-level descriptor, not a decoded data value. [`Data::BookDeltas`] maps to
-/// [`NautilusDataType::OrderBookDelta`] because both share the same storage and request family.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
-pub enum NautilusDataType {
-    Instrument,
-    OrderBook,
-    QuoteTick,
-    TradeTick,
-    Bar,
-    OrderBookDelta,
-    OrderBookDepth,
-    MarkPriceUpdate,
-    IndexPriceUpdate,
-    FundingRateUpdate,
-    InstrumentStatus,
-    OptionGreeks,
-    InstrumentClose,
-    /// User-defined data type identified by `type_name`.
-    Custom {
-        type_name: String,
-    },
-    #[cfg(feature = "defi")]
-    Defi,
-}
-
-impl Display for NautilusDataType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Instrument => f.write_str("Instrument"),
-            Self::OrderBook => f.write_str("OrderBook"),
-            Self::QuoteTick => f.write_str("QuoteTick"),
-            Self::TradeTick => f.write_str("TradeTick"),
-            Self::Bar => f.write_str("Bar"),
-            Self::OrderBookDelta => f.write_str("OrderBookDelta"),
-            Self::OrderBookDepth => f.write_str("OrderBookDepth"),
-            Self::MarkPriceUpdate => f.write_str("MarkPriceUpdate"),
-            Self::IndexPriceUpdate => f.write_str("IndexPriceUpdate"),
-            Self::FundingRateUpdate => f.write_str("FundingRateUpdate"),
-            Self::InstrumentStatus => f.write_str("InstrumentStatus"),
-            Self::OptionGreeks => f.write_str("OptionGreeks"),
-            Self::InstrumentClose => f.write_str("InstrumentClose"),
-            #[cfg(feature = "defi")]
-            Self::Defi => f.write_str("Defi"),
-            Self::Custom { type_name } => write!(f, "Custom:{type_name}"),
-        }
-    }
-}
-
-impl FromStr for NautilusDataType {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> anyhow::Result<Self> {
-        match s {
-            "Instrument" | "instruments" | "instrument" => Ok(Self::Instrument),
-            "OrderBook" | "order_book" => Ok(Self::OrderBook),
-            "QuoteTick" | "quotes" | "quote" | "quote_tick" => Ok(Self::QuoteTick),
-            "TradeTick" | "trades" | "trade" | "trade_tick" => Ok(Self::TradeTick),
-            "Bar" | "bars" | "bar" => Ok(Self::Bar),
-            "OrderBookDelta" | "OrderBookDeltas" | "order_book_deltas" | "order_book_delta" => {
-                Ok(Self::OrderBookDelta)
-            }
-            "OrderBookDepth" | "order_book_depths" => Ok(Self::OrderBookDepth),
-            "MarkPriceUpdate" | "mark_price_updates" | "mark_prices" | "mark_price_update" => {
-                Ok(Self::MarkPriceUpdate)
-            }
-            "IndexPriceUpdate" | "index_price_updates" | "index_prices" | "index_price_update" => {
-                Ok(Self::IndexPriceUpdate)
-            }
-            "FundingRateUpdate" | "funding_rate_update" | "funding_rates" => {
-                Ok(Self::FundingRateUpdate)
-            }
-            "InstrumentStatus" | "instrument_status" => Ok(Self::InstrumentStatus),
-            "OptionGreeks" | "option_greeks" => Ok(Self::OptionGreeks),
-            "InstrumentClose" | "instrument_closes" | "instrument_close" => {
-                Ok(Self::InstrumentClose)
-            }
-            #[cfg(feature = "defi")]
-            "Defi" => Ok(Self::Defi),
-            custom if custom.starts_with("Custom:") => Ok(Self::Custom {
-                type_name: custom.trim_start_matches("Custom:").to_string(),
-            }),
-            _ => anyhow::bail!("Invalid `NautilusDataType`: '{s}'"),
-        }
-    }
-}
-
 /// Catalog record selector used to query Arrow-backed persisted records.
 #[derive(
     Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, strum::Display, strum::EnumIter,
@@ -941,32 +926,6 @@ impl FromStr for NautilusRecordType {
     }
 }
 
-impl NautilusDataType {
-    /// Returns the discriminant tag for a [`Data`] value.
-    #[must_use]
-    pub fn from_data(data: &Data) -> Self {
-        match data {
-            Data::Instrument(_) => Self::Instrument,
-            Data::Quote(_) => Self::QuoteTick,
-            Data::Trade(_) => Self::TradeTick,
-            Data::Bar(_) => Self::Bar,
-            Data::BookDelta(_) | Data::BookDeltas(_) => Self::OrderBookDelta,
-            Data::BookDepth(_) => Self::OrderBookDepth,
-            Data::MarkPrice(_) => Self::MarkPriceUpdate,
-            Data::IndexPrice(_) => Self::IndexPriceUpdate,
-            Data::FundingRate(_) => Self::FundingRateUpdate,
-            Data::InstrumentStatus(_) => Self::InstrumentStatus,
-            Data::OptionGreeks(_) => Self::OptionGreeks,
-            Data::InstrumentClose(_) => Self::InstrumentClose,
-            Data::Custom(c) => Self::Custom {
-                type_name: c.data_type.type_name().to_string(),
-            },
-            #[cfg(feature = "defi")]
-            Data::Defi(_) => Self::Defi,
-        }
-    }
-}
-
 impl<'de> Deserialize<'de> for Data {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -1041,6 +1000,7 @@ impl<'de> Deserialize<'de> for Data {
 impl Clone for Data {
     fn clone(&self) -> Self {
         match self {
+            Self::Custom(x) => Self::Custom(x.clone()),
             Self::Instrument(x) => Self::Instrument(x.clone()),
             Self::BookDelta(x) => Self::BookDelta(*x),
             Self::BookDeltas(x) => Self::BookDeltas(x.clone()),
@@ -1054,7 +1014,6 @@ impl Clone for Data {
             Self::OptionGreeks(x) => Self::OptionGreeks(*x),
             Self::InstrumentStatus(x) => Self::InstrumentStatus(*x),
             Self::InstrumentClose(x) => Self::InstrumentClose(*x),
-            Self::Custom(x) => Self::Custom(x.clone()),
             #[cfg(feature = "defi")]
             Self::Defi(x) => Self::Defi(x.clone()),
         }
@@ -1064,6 +1023,7 @@ impl Clone for Data {
 impl PartialEq for Data {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
+            (Self::Custom(a), Self::Custom(b)) => a == b,
             (Self::Instrument(a), Self::Instrument(b)) => a == b,
             (Self::BookDelta(a), Self::BookDelta(b)) => a == b,
             (Self::BookDeltas(a), Self::BookDeltas(b)) => a == b,
@@ -1077,7 +1037,6 @@ impl PartialEq for Data {
             (Self::OptionGreeks(a), Self::OptionGreeks(b)) => a == b,
             (Self::InstrumentStatus(a), Self::InstrumentStatus(b)) => a == b,
             (Self::InstrumentClose(a), Self::InstrumentClose(b)) => a == b,
-            (Self::Custom(a), Self::Custom(b)) => a == b,
             #[cfg(feature = "defi")]
             (Self::Defi(a), Self::Defi(b)) => a == b,
             _ => false,
@@ -1091,6 +1050,7 @@ impl Serialize for Data {
         S: serde::Serializer,
     {
         match self {
+            Self::Custom(x) => x.serialize(serializer),
             Self::Instrument(instrument) => serde_json::json!({
                 "type": "Instrument",
                 "data": instrument,
@@ -1108,7 +1068,6 @@ impl Serialize for Data {
             Self::OptionGreeks(x) => x.serialize(serializer),
             Self::InstrumentStatus(x) => x.serialize(serializer),
             Self::InstrumentClose(x) => x.serialize(serializer),
-            Self::Custom(x) => x.serialize(serializer),
             #[cfg(feature = "defi")]
             Self::Defi(_) => Err(serde::ser::Error::custom(
                 "Data::Defi serialization is not supported",
@@ -1269,6 +1228,50 @@ impl From<DefiData> for Data {
     }
 }
 
+/// Invokes a macro with every built-in typed data family.
+///
+/// Each tuple contains the canonical family name, concrete type, `Data` variant,
+/// `DataBatch` variant, and catalog path prefix. The first four fields use the same name whenever
+/// the family has one concrete representation. Custom and DeFi data have no single built-in
+/// concrete type; `Deltas` and `Data` are aggregate compatibility batches. Consumers handle
+/// those variants explicitly.
+#[macro_export]
+macro_rules! for_each_data_type {
+    ($macro:ident) => {
+        $macro! {
+            (Instrument, InstrumentAny, Instrument, Instrument, "instruments"),
+            (QuoteTick, QuoteTick, Quote, Quote, "quotes"),
+            (TradeTick, TradeTick, Trade, Trade, "trades"),
+            (Bar, Bar, Bar, Bar, "bars"),
+            (OrderBookDelta, OrderBookDelta, BookDelta, BookDelta, "order_book_deltas"),
+            (OrderBookDepth, OrderBookDepth, BookDepth, BookDepth, "order_book_depths"),
+            (MarkPriceUpdate, MarkPriceUpdate, MarkPrice, MarkPrice, "mark_prices"),
+            (IndexPriceUpdate, IndexPriceUpdate, IndexPrice, IndexPrice, "index_prices"),
+            (FundingRateUpdate, FundingRateUpdate, FundingRate, FundingRate, "funding_rates"),
+            (InstrumentStatus, InstrumentStatus, InstrumentStatus, InstrumentStatus, "instrument_status"),
+            (OptionGreeks, OptionGreeks, OptionGreeks, OptionGreeks, "option_greeks"),
+            (InstrumentClose, InstrumentClose, InstrumentClose, InstrumentClose, "instrument_closes"),
+        }
+    };
+    ($macro:ident, $($args:tt)*) => {
+        $macro! {
+            ($($args)*);
+            (Instrument, InstrumentAny, Instrument, Instrument, "instruments"),
+            (QuoteTick, QuoteTick, Quote, Quote, "quotes"),
+            (TradeTick, TradeTick, Trade, Trade, "trades"),
+            (Bar, Bar, Bar, Bar, "bars"),
+            (OrderBookDelta, OrderBookDelta, BookDelta, BookDelta, "order_book_deltas"),
+            (OrderBookDepth, OrderBookDepth, BookDepth, BookDepth, "order_book_depths"),
+            (MarkPriceUpdate, MarkPriceUpdate, MarkPrice, MarkPrice, "mark_prices"),
+            (IndexPriceUpdate, IndexPriceUpdate, IndexPrice, IndexPrice, "index_prices"),
+            (FundingRateUpdate, FundingRateUpdate, FundingRate, FundingRate, "funding_rates"),
+            (InstrumentStatus, InstrumentStatus, InstrumentStatus, InstrumentStatus, "instrument_status"),
+            (OptionGreeks, OptionGreeks, OptionGreeks, OptionGreeks, "option_greeks"),
+            (InstrumentClose, InstrumentClose, InstrumentClose, InstrumentClose, "instrument_closes"),
+        }
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -1318,7 +1321,6 @@ mod tests {
 
     #[rstest]
     #[case(NautilusDataType::Instrument, "Instrument")]
-    #[case(NautilusDataType::OrderBook, "OrderBook")]
     #[case(NautilusDataType::QuoteTick, "QuoteTick")]
     #[case(NautilusDataType::OrderBookDelta, "OrderBookDelta")]
     #[case(
@@ -1340,7 +1342,6 @@ mod tests {
 
     #[rstest]
     #[case("instruments", NautilusDataType::Instrument)]
-    #[case("order_book", NautilusDataType::OrderBook)]
     #[case("quotes", NautilusDataType::QuoteTick)]
     #[case("order_book_deltas", NautilusDataType::OrderBookDelta)]
     #[case("instrument_closes", NautilusDataType::InstrumentClose)]
@@ -1358,6 +1359,13 @@ mod tests {
     #[case("OrderBookDepth10")]
     #[case("order_book_depth10")]
     fn nautilus_data_type_rejects_former_depth10_spellings(#[case] value: &str) {
+        assert!(value.parse::<NautilusDataType>().is_err());
+    }
+
+    #[rstest]
+    #[case("OrderBook")]
+    #[case("order_book")]
+    fn nautilus_data_type_rejects_order_book_spellings(#[case] value: &str) {
         assert!(value.parse::<NautilusDataType>().is_err());
     }
 

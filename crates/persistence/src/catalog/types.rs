@@ -275,7 +275,6 @@ macro_rules! data_path_prefix_match {
     ) => {
         match $data_type {
             $(NautilusDataType::$variant => Cow::Borrowed($prefix),)+
-            NautilusDataType::OrderBook => Cow::Borrowed("order_book"),
             NautilusDataType::Custom { type_name } => Cow::Owned(format!("custom/{type_name}")),
             #[cfg(feature = "defi")]
             NautilusDataType::Defi => Cow::Borrowed("defi"),

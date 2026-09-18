@@ -1248,7 +1248,6 @@ mod tests {
 
     #[rstest]
     #[case(NautilusDataType::Instrument)]
-    #[case(NautilusDataType::OrderBook)]
     #[case(NautilusDataType::Custom { type_name: "Signal".to_string() })]
     fn test_data_config_rejects_unsupported_family(#[case] data_type: NautilusDataType) {
         let error = BacktestDataConfig::builder()

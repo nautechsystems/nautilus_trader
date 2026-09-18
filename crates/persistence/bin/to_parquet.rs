@@ -20,8 +20,7 @@ use datafusion::parquet::{
     basic::{Compression, ZstdLevel},
     file::properties::WriterProperties,
 };
-use nautilus_model::data::{Bar, OrderBookDelta, QuoteTick, TradeTick};
-use nautilus_persistence::python::backend::session::NautilusDataType;
+use nautilus_model::data::{Bar, NautilusDataType, OrderBookDelta, QuoteTick, TradeTick};
 use nautilus_serialization::arrow::EncodeToRecordBatch;
 use serde_json::from_reader;
 

@@ -81,9 +81,6 @@ pub(crate) fn data_to_arrow_batches(
                 NautilusDataType::Instrument => {
                     anyhow::bail!("Instrument definitions do not have one shared Arrow schema")
                 }
-                NautilusDataType::OrderBook => {
-                    anyhow::bail!("Order book snapshots do not have one shared Arrow schema")
-                }
                 $(NautilusDataType::$variant => encode!($type),)+
                 NautilusDataType::Custom { .. } => {
                     let custom = data

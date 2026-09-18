@@ -34,10 +34,15 @@ from nautilus_trader.model import BarType
 from nautilus_trader.model import BookAction
 from nautilus_trader.model import BookOrder
 from nautilus_trader.model import CurrencyPair
+from nautilus_trader.model import CustomData
+from nautilus_trader.model import DataType
 from nautilus_trader.model import FundingRateUpdate
 from nautilus_trader.model import IndexPriceUpdate
+from nautilus_trader.model import InstrumentClose
+from nautilus_trader.model import InstrumentCloseType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import MarkPriceUpdate
+from nautilus_trader.model import NautilusDataType
 from nautilus_trader.model import OrderBookDelta
 from nautilus_trader.model import OrderBookDepth
 from nautilus_trader.model import OrderSide
@@ -47,13 +52,14 @@ from nautilus_trader.model import Quantity
 from nautilus_trader.model import QuoteTick
 from nautilus_trader.model import Symbol
 from nautilus_trader.model import Venue
+from nautilus_trader.model import register_custom_data_class
 from nautilus_trader.persistence import BarDataWrangler
 from nautilus_trader.persistence import DataBackendSession
-from nautilus_trader.persistence import NautilusDataType
 from nautilus_trader.persistence import OrderBookDeltaDataWrangler
 from nautilus_trader.persistence import OrderBookDepthDataWrangler
 from nautilus_trader.persistence import ParquetDataCatalog
 from nautilus_trader.persistence import QuoteTickDataWrangler
+from nautilus_trader.persistence import RustTestCustomData
 from nautilus_trader.persistence import StreamingFeatherWriter
 from nautilus_trader.persistence import TradeTickDataWrangler
 from tests.providers import TEST_DATA_DIR
@@ -237,6 +243,111 @@ def test_backend_session_nautilus_data_type_variants() -> None:
     assert NautilusDataType.TradeTick is not None
     assert NautilusDataType.Bar is not None
     assert NautilusDataType.MarkPriceUpdate is not None
+
+
+def test_backend_session_add_file_and_query_index_prices(tmp_path: Path) -> None:
+    """
+    Test backend session add file and query index prices.
+    """
+    path = str(tmp_path / "catalog")
+    os.makedirs(path, exist_ok=True)
+    catalog = ParquetDataCatalog(path)
+    update = IndexPriceUpdate(AUDUSD_SIM, Price.from_str("100.00"), 1_000, 1_000)
+    catalog.write_index_price_updates([update])
+    parquet_files = list((tmp_path / "catalog" / "data" / "index_prices").rglob("*.parquet"))
+
+    session = DataBackendSession()
+    session.add_file(NautilusDataType.IndexPriceUpdate, "index_prices", str(parquet_files[0]))
+
+    assert len(parquet_files) == 1
+    assert session.to_query_result().to_list() == [update]
+
+
+def test_backend_session_add_file_and_query_instrument_closes(tmp_path: Path) -> None:
+    """
+    Test backend session add file and query instrument closes.
+    """
+    path = str(tmp_path / "catalog")
+    os.makedirs(path, exist_ok=True)
+    catalog = ParquetDataCatalog(path)
+    close = InstrumentClose(
+        AUDUSD_SIM,
+        Price.from_str("1.00001"),
+        InstrumentCloseType.END_OF_SESSION,
+        1_000,
+        1_000,
+    )
+    catalog.write_instrument_closes([close])
+    parquet_files = list((tmp_path / "catalog" / "data" / "instrument_closes").rglob("*.parquet"))
+
+    session = DataBackendSession()
+    session.add_file(NautilusDataType.InstrumentClose, "instrument_closes", str(parquet_files[0]))
+
+    assert len(parquet_files) == 1
+    assert session.to_query_result().to_list() == [close]
+
+
+def test_backend_session_add_file_and_query_custom_data(tmp_path: Path) -> None:
+    """
+    Test backend session add file and query custom data through NautilusDataType.Custom.
+    """
+    register_custom_data_class(RustTestCustomData)
+    path = str(tmp_path / "catalog")
+    os.makedirs(path, exist_ok=True)
+    catalog = ParquetDataCatalog(path)
+    instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+    data_type = DataType("RustTestCustomData", None, str(instrument_id))
+    original = [
+        RustTestCustomData(instrument_id, 1.23, True, 1, 1),
+        RustTestCustomData(instrument_id, 4.56, False, 2, 2),
+    ]
+    catalog.write_custom_data([CustomData(data_type, item) for item in original])
+    parquet_files = list(
+        (tmp_path / "catalog" / "data" / "custom" / "RustTestCustomData").rglob("*.parquet"),
+    )
+
+    session = DataBackendSession()
+    session.add_file(NautilusDataType.Custom("RustTestCustomData"), "custom", str(parquet_files[0]))
+
+    loaded = session.to_query_result().to_list()
+
+    assert len(parquet_files) == 1
+    assert [item.data.value for item in loaded] == [item.value for item in original]
+    assert [item.data.flag for item in loaded] == [item.flag for item in original]
+    assert [item.ts_init for item in loaded] == [item.ts_init for item in original]
+
+
+def test_backend_session_add_file_rejects_unregistered_custom_data_type() -> None:
+    """
+    Test backend session add file rejects an unregistered custom data type.
+    """
+    session = DataBackendSession()
+
+    with pytest.raises(RuntimeError, match="custom data type 'Unregistered' is not registered"):
+        session.add_file(NautilusDataType.Custom("Unregistered"), "custom", "unused.parquet")
+
+
+def test_backend_session_add_file_rejects_instrument_data_type() -> None:
+    """
+    Test backend session add file rejects the instrument data type.
+    """
+    session = DataBackendSession()
+
+    with pytest.raises(
+        ValueError,
+        match="DataBackendSession does not support data type Instrument",
+    ):
+        session.add_file(NautilusDataType.Instrument, "instruments", "unused.parquet")
+
+
+def test_backend_session_add_file_rejects_invalid_data_type_argument() -> None:
+    """
+    Test backend session add file rejects a non-NautilusDataType argument.
+    """
+    session = DataBackendSession()
+
+    with pytest.raises(TypeError, match="data_type must be NautilusDataType"):
+        session.add_file("quotes", "quotes", "unused.parquet")
 
 
 def test_catalog_construction(tmp_path: Path) -> None:

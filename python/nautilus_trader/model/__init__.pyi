@@ -6289,7 +6289,6 @@ class NautilusDataType:
     InstrumentStatus: NautilusDataType
     OptionGreeks: NautilusDataType
     InstrumentClose: NautilusDataType
-    OrderBook: NautilusDataType
     Defi: NautilusDataType
     @property
     def type_name(self) -> str | None: ...
