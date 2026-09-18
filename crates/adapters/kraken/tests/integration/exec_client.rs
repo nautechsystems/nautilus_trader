@@ -410,7 +410,7 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
         }
         "/0/private/TradeVolume" => {
             if state.trade_volume_api_error.load(Ordering::Relaxed) {
-                json_response(r#"{"error":["EGeneral:Permission denied"],"result":{}}"#.to_string())
+                json_response(r#"{"error":["EGeneral:Permission denied"]}"#.to_string())
             } else {
                 json_response(
                     r#"{"error":[],"result":{"fees":{"XBTUSDT":{"fee":"0.2900"},"AAPLZUSD.EQ":{"fee":"0.1900"}},"fees_maker":{"XBTUSDT":{"fee":"0.1700"},"AAPLZUSD.EQ":{"fee":"0.0300"}}}}"#

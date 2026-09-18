@@ -797,9 +797,7 @@ async fn mock_spot_trade_volume(req: Request, state: Arc<TestServerState>) -> Re
         return Response::builder()
             .status(StatusCode::OK)
             .header("content-type", "application/json")
-            .body(Body::from(
-                r#"{"error":["EGeneral:Permission denied"],"result":{}}"#,
-            ))
+            .body(Body::from(r#"{"error":["EGeneral:Permission denied"]}"#))
             .unwrap();
     }
 
