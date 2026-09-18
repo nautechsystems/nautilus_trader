@@ -4383,11 +4383,10 @@ impl ExecutionEngine {
     ) -> anyhow::Result<Vec<PositionEvent>> {
         if let Some(position_id) = prior_position_id {
             let prior_snapshot = {
-                let mut cache = self.cache.borrow_mut();
-                let mut position = cache
-                    .position_mut(&position_id)
+                let cache = self.cache.borrow();
+                let position = cache
+                    .position(&position_id)
                     .ok_or_else(|| anyhow::anyhow!("position {position_id} is not cached"))?;
-                position.sync_replay_index();
 
                 if archive_prior && position.has_replay_trade_id(fill.trade_id) {
                     log::warn!(
@@ -4974,7 +4973,6 @@ mod tests {
             voided_qty: Quantity::from(1),
             commission_voided: None,
         });
-        position.rebuild_replay_index();
 
         let cache = Rc::new(RefCell::new(Cache::default()));
         cache

@@ -1006,8 +1006,8 @@ mod tests {
             AccountId, ClientOrderId,
             stubs::{instrument_id_aud_usd_sim, strategy_id_ema_cross, trader_id},
         },
-        instruments::{InstrumentAny, stubs::audusd_sim},
-        stubs::{TestDefault, stub_position_long},
+        instruments::InstrumentAny,
+        stubs::TestDefault,
         types::{AccountBalance, Money, Price, Quantity},
     };
     use rstest::rstest;
@@ -1094,47 +1094,46 @@ mod tests {
         realized_return: f64,
         currency: Currency,
     ) -> Position {
-        let mut position = stub_position_long(audusd_sim());
-        position.events.clear();
-        position.adjustments.clear();
-        position.replay_events.clear();
-        position.fill_voids.clear();
-        position.trader_id = trader_id();
-        position.strategy_id = strategy_id_ema_cross();
-        position.instrument_id = instrument_id_aud_usd_sim();
-        position.id = PositionId::new(id);
-        position.account_id = AccountId::new("test-account");
-        position.opening_order_id = ClientOrderId::test_default();
-        position.closing_order_id = None;
-        position.entry = OrderSide::Buy;
-        position.side = PositionSide::Flat;
-        position.signed_qty = 0.0;
-        position.quantity = Quantity::default();
-        position.peak_qty = Quantity::default();
-        position.price_precision = 2;
-        position.size_precision = 2;
-        position.multiplier = Quantity::default();
-        position.is_inverse = false;
-        position.is_currency_pair = true;
-        position.instrument_class = InstrumentClass::Spot;
-        position.base_currency = None;
-        position.quote_currency = Currency::USD();
-        position.settlement_currency = Currency::USD();
-        position.ts_init = UnixNanos::default();
-        position.ts_opened = UnixNanos::default();
-        position.ts_last = UnixNanos::default();
-        position.ts_closed = Some(UnixNanos::from(1_706_659_200_000_000_000));
-        position.duration_ns = DurationNanos::new(2);
-        position.avg_px_open = 0.0;
-        position.avg_px_close = None;
-        position.realized_return = realized_return;
-        position.realized_pnl = Some(Money::new(realized_pnl, currency));
-        position.trade_ids = AHashSet::new();
-        position.buy_qty = Quantity::default();
-        position.sell_qty = Quantity::default();
-        position.commissions = IndexMap::new();
-        position.rebuild_replay_index();
-        position
+        Position {
+            events: Vec::new(),
+            adjustments: Vec::new(),
+            replay_events: Vec::new(),
+            fill_voids: Vec::new(),
+            trader_id: trader_id(),
+            strategy_id: strategy_id_ema_cross(),
+            instrument_id: instrument_id_aud_usd_sim(),
+            id: PositionId::new(id),
+            account_id: AccountId::new("test-account"),
+            opening_order_id: ClientOrderId::test_default(),
+            closing_order_id: None,
+            entry: OrderSide::Buy,
+            side: PositionSide::Flat,
+            signed_qty: 0.0,
+            quantity: Quantity::default(),
+            peak_qty: Quantity::default(),
+            price_precision: 2,
+            size_precision: 2,
+            multiplier: Quantity::default(),
+            is_inverse: false,
+            is_currency_pair: true,
+            instrument_class: InstrumentClass::Spot,
+            base_currency: None,
+            quote_currency: Currency::USD(),
+            settlement_currency: Currency::USD(),
+            ts_init: UnixNanos::default(),
+            ts_opened: UnixNanos::default(),
+            ts_last: UnixNanos::default(),
+            ts_closed: Some(UnixNanos::from(1_706_659_200_000_000_000)),
+            duration_ns: DurationNanos::new(2),
+            avg_px_open: 0.0,
+            avg_px_close: None,
+            realized_return,
+            realized_pnl: Some(Money::new(realized_pnl, currency)),
+            trade_ids: AHashSet::new(),
+            buy_qty: Quantity::default(),
+            sell_qty: Quantity::default(),
+            commissions: IndexMap::new(),
+        }
     }
 
     struct MockAccount {

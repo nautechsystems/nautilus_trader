@@ -3000,7 +3000,8 @@ impl Cache {
         self.add_position_inner(position.clone(), oms_type, false, false)
     }
 
-    /// Replaces a cached position by value, optionally carrying its durable replay state.
+    /// Replaces the cached position holding `position.id`, optionally moving the prior cycle's
+    /// durable replay state into it.
     ///
     /// # Errors
     ///
@@ -3014,7 +3015,8 @@ impl Cache {
         self.add_position_inner(position, oms_type, true, carry_replay_state)
     }
 
-    /// Replaces an orderless cached position by value, optionally carrying its replay state.
+    /// Replaces the cached orderless position holding `position.id`, optionally moving the prior
+    /// cycle's durable replay state into it.
     ///
     /// # Errors
     ///
@@ -3043,29 +3045,28 @@ impl Cache {
         check_predicate_false(value.is_empty(), stringify!(value))?;
 
         let position_id = position.id;
-        if let Some(position_cell) = self.positions.get(&position_id) {
+        let strategy_id = position.strategy_id;
+        let instrument_id = position.instrument_id;
+        let account_id = position.account_id;
+        let opening_order_id = position.opening_order_id;
+
+        log::debug!("Adding {position}");
+
+        // Reuse the existing cell on a NETTING reopen so the prior value is replaced in place,
+        // which also lets the carried replay state move out of it instead of being copied. The
+        // transfer and the swap share one borrow, so a failure above cannot strip the prior.
+        let position_cell = if let Some(position_cell) = self.positions.get(&position_id).cloned() {
             let mut prior = position_cell.borrow_mut();
             if carry_replay_state {
                 position.transfer_replay_state_from(&mut prior);
             }
             *prior = position;
+            drop(prior);
+            position_cell
         } else {
-            self.positions
-                .insert(position_id, SharedCell::new(position));
-        }
-
-        let (strategy_id, instrument_id, account_id, opening_order_id) = {
-            let position = self
-                .positions
-                .get(&position_id)
-                .expect("Inserted position is missing")
-                .borrow();
-            (
-                position.strategy_id,
-                position.instrument_id,
-                position.account_id,
-                position.opening_order_id,
-            )
+            let position_cell = SharedCell::new(position);
+            self.positions.insert(position_id, position_cell.clone());
+            position_cell
         };
 
         self.index.position_oms.insert(position_id, oms_type);
@@ -3074,8 +3075,6 @@ impl Cache {
         self.index.positions_closed.remove(&position_id); // Cleanup for NETTING reopen
         self.index.strategies.insert(strategy_id);
         self.index.strategy_orders.entry(strategy_id).or_default();
-
-        log::debug!("Adding position {position_id}");
 
         if index_order {
             self.index_position_id_in_memory(
@@ -3115,12 +3114,7 @@ impl Cache {
         }
 
         if let Some(database) = &mut self.database {
-            let position = self
-                .positions
-                .get(&position_id)
-                .expect("Inserted position is missing")
-                .borrow();
-            database.add_position(&position)?;
+            database.add_position(&position_cell.borrow())?;
             // TODO: Implement position snapshots
             // if self.snapshot_positions {
             //     database.snapshot_position_state(

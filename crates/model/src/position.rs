@@ -65,28 +65,10 @@ use crate::{
 pub struct Position {
     pub events: Vec<OrderFilled>,
     pub adjustments: Vec<PositionAdjusted>,
-    /// Durable replay history read by the derived replay index.
-    ///
-    /// Code mutating this vector directly must call [`Self::rebuild_replay_index`].
     #[serde(default)]
     pub replay_events: Vec<PositionReplayEvent>,
-    /// Durable fill-void history read by the derived replay index.
-    ///
-    /// Code mutating this vector directly must call [`Self::rebuild_replay_index`].
     #[serde(default)]
     pub fill_voids: Vec<PositionFillVoid>,
-    #[serde(skip)]
-    replay_trade_counts: AHashMap<TradeId, usize>,
-    #[serde(skip)]
-    replay_fill_keys: AHashSet<(TradeId, Option<UUID4>)>,
-    #[serde(skip)]
-    replay_voided_trades: AHashSet<TradeId>,
-    #[serde(skip)]
-    replay_index_event_len: usize,
-    #[serde(skip)]
-    replay_index_void_len: usize,
-    #[serde(skip)]
-    replay_index_valid: bool,
     pub trader_id: TraderId,
     pub strategy_id: StrategyId,
     pub instrument_id: InstrumentId,
@@ -174,12 +156,6 @@ impl Position {
             adjustments: Vec::<PositionAdjusted>::new(),
             replay_events: Vec::new(),
             fill_voids: Vec::new(),
-            replay_trade_counts: AHashMap::new(),
-            replay_fill_keys: AHashSet::new(),
-            replay_voided_trades: AHashSet::new(),
-            replay_index_event_len: 0,
-            replay_index_void_len: 0,
-            replay_index_valid: true,
             trade_ids: AHashSet::<TradeId>::new(),
             buy_qty: Quantity::zero(instrument.size_precision()),
             sell_qty: Quantity::zero(instrument.size_precision()),
@@ -232,12 +208,6 @@ impl Position {
             adjustments: Vec::new(),
             replay_events: Vec::new(),
             fill_voids: Vec::new(),
-            replay_trade_counts: AHashMap::new(),
-            replay_fill_keys: AHashSet::new(),
-            replay_voided_trades: AHashSet::new(),
-            replay_index_event_len: 0,
-            replay_index_void_len: 0,
-            replay_index_valid: true,
             trader_id: self.trader_id,
             strategy_id: self.strategy_id,
             instrument_id: self.instrument_id,
@@ -285,53 +255,12 @@ impl Position {
         snapshot
     }
 
-    /// Rebuilds the derived replay identity index from the durable histories.
-    pub fn rebuild_replay_index(&mut self) {
-        self.replay_trade_counts.clear();
-        self.replay_fill_keys.clear();
-        self.replay_voided_trades.clear();
-
-        for event in &self.replay_events {
-            if let PositionReplayEvent::Filled(fill) = event {
-                *self.replay_trade_counts.entry(fill.trade_id).or_default() += 1;
-                self.replay_fill_keys
-                    .insert((fill.trade_id, fill.causation_id));
-            }
-        }
-
-        for record in &self.fill_voids {
-            self.replay_voided_trades.insert(record.event.trade_id);
-        }
-
-        self.replay_index_event_len = self.replay_events.len();
-        self.replay_index_void_len = self.fill_voids.len();
-        self.replay_index_valid = true;
-    }
-
-    /// Rebuilds the derived replay identity index when its tracked lengths are stale.
-    pub fn sync_replay_index(&mut self) {
-        if !self.replay_index_is_synced() {
-            self.rebuild_replay_index();
-        }
-    }
-
     /// Moves durable replay state from `prior` and keeps this position's current replay events.
     pub fn transfer_replay_state_from(&mut self, prior: &mut Self) {
-        self.sync_replay_index();
-        prior.sync_replay_index();
         let current_replay = std::mem::take(&mut self.replay_events);
         self.replay_events = std::mem::take(&mut prior.replay_events);
         self.fill_voids = std::mem::take(&mut prior.fill_voids);
-        self.replay_trade_counts = std::mem::take(&mut prior.replay_trade_counts);
-        self.replay_fill_keys = std::mem::take(&mut prior.replay_fill_keys);
-        self.replay_voided_trades = std::mem::take(&mut prior.replay_voided_trades);
-        self.replay_index_event_len = prior.replay_index_event_len;
-        self.replay_index_void_len = prior.replay_index_void_len;
-        self.replay_index_valid = true;
-
-        for event in current_replay {
-            self.push_replay_event(event);
-        }
+        self.replay_events.extend(current_replay);
     }
 
     /// Purges all order fill events for the given client order ID and recalculates derived state.
@@ -350,7 +279,6 @@ impl Position {
         });
         self.fill_voids
             .retain(|record| record.event.client_order_id != client_order_id);
-        self.rebuild_replay_index();
 
         let filtered_events: Vec<OrderFilled> = self
             .events
@@ -476,8 +404,6 @@ impl Position {
     }
 
     fn apply_fill(&mut self, fill: &OrderFilled, record_replay: bool) -> CorrectnessResult<()> {
-        self.sync_replay_index();
-
         if record_replay
             && (self.side == PositionSide::Flat || !self.trade_ids.contains(&fill.trade_id))
             && self.is_duplicate_replay_fill(fill)
@@ -508,7 +434,8 @@ impl Position {
                 !self.trade_ids.contains(&fill.trade_id),
                 "`fill.trade_id` already contained in `trade_ids`",
             )?;
-            self.push_replay_event(PositionReplayEvent::Filled(fill.clone()));
+            self.replay_events
+                .push(PositionReplayEvent::Filled(fill.clone()));
         }
 
         self.events.push(fill.clone());
@@ -588,26 +515,12 @@ impl Position {
         self.realized_pnl = None;
     }
 
-    fn replay_index_is_synced(&self) -> bool {
-        self.replay_index_valid
-            && self.replay_index_event_len == self.replay_events.len()
-            && self.replay_index_void_len == self.fill_voids.len()
-    }
-
-    fn replay_contains_trade(&self, trade_id: TradeId) -> bool {
-        if self.replay_index_is_synced() {
-            self.replay_trade_counts.contains_key(&trade_id)
-        } else {
-            self.replay_events.iter().any(|event| {
-                matches!(event, PositionReplayEvent::Filled(fill) if fill.trade_id == trade_id)
-            })
-        }
-    }
-
     /// Returns whether durable replay history contains `trade_id`.
     #[must_use]
     pub fn has_replay_trade_id(&self, trade_id: TradeId) -> bool {
-        self.replay_contains_trade(trade_id)
+        self.replay_events.iter().any(
+            |event| matches!(event, PositionReplayEvent::Filled(fill) if fill.trade_id == trade_id),
+        )
     }
 
     fn is_duplicate_replay_fill(&self, fill: &OrderFilled) -> bool {
@@ -619,19 +532,14 @@ impl Position {
 
         if self.trade_ids.contains(&fill.trade_id) {
             return !continues_latest_fill
-                || if self.replay_index_is_synced() {
-                    self.replay_fill_keys
-                        .contains(&(fill.trade_id, fill.causation_id))
-                } else {
-                    self.replay_events.iter().any(|event| {
-                        matches!(
-                            event,
-                            PositionReplayEvent::Filled(replayed)
-                                if replayed.trade_id == fill.trade_id
-                                    && replayed.causation_id == fill.causation_id
-                        )
-                    })
-                };
+                || self.replay_events.iter().any(|event| {
+                    matches!(
+                        event,
+                        PositionReplayEvent::Filled(replayed)
+                            if replayed.trade_id == fill.trade_id
+                                && replayed.causation_id == fill.causation_id
+                    )
+                });
         }
 
         let replay_starts_current_cycle = self.replay_events.is_empty()
@@ -642,35 +550,16 @@ impl Position {
                     Some(current),
                 ) if replayed.event_id == current.event_id
             );
-        let corrected_trade = if self.replay_index_is_synced() {
-            self.replay_voided_trades.contains(&fill.trade_id)
-        } else {
-            self.fill_voids
-                .iter()
-                .any(|record| record.event.trade_id == fill.trade_id)
-        };
+        let corrected_trade = self
+            .fill_voids
+            .iter()
+            .any(|record| record.event.trade_id == fill.trade_id);
         let current_cycle_only = replay_starts_current_cycle && !corrected_trade;
         if current_cycle_only {
             return false;
         }
 
-        self.replay_contains_trade(fill.trade_id)
-    }
-
-    fn push_replay_event(&mut self, event: PositionReplayEvent) {
-        let was_synced = self.replay_index_is_synced();
-        if was_synced && let PositionReplayEvent::Filled(fill) = &event {
-            *self.replay_trade_counts.entry(fill.trade_id).or_default() += 1;
-            self.replay_fill_keys
-                .insert((fill.trade_id, fill.causation_id));
-        }
-        self.replay_events.push(event);
-
-        if was_synced {
-            self.replay_index_event_len += 1;
-        } else {
-            self.replay_index_valid = false;
-        }
+        self.has_replay_trade_id(fill.trade_id)
     }
 
     fn handle_buy_order_fill(&mut self, fill: &OrderFilled) {
@@ -819,8 +708,8 @@ impl Position {
 
     fn apply_adjustment_state(&mut self, adjustment: PositionAdjusted, record_replay: bool) {
         if record_replay {
-            self.sync_replay_index();
-            self.push_replay_event(PositionReplayEvent::Adjusted(adjustment));
+            self.replay_events
+                .push(PositionReplayEvent::Adjusted(adjustment));
         }
 
         // Apply quantity change if present
@@ -898,7 +787,6 @@ impl Position {
         voided_qty: Quantity,
         commission_voided: Option<Money>,
     ) -> anyhow::Result<Option<Money>> {
-        self.sync_replay_index();
         let fragments = self.fill_fragments(event.client_order_id, event.trade_id);
 
         let fragment_qty = fragments
@@ -939,20 +827,11 @@ impl Position {
             );
         }
 
-        let was_synced = self.replay_index_is_synced();
-        let voided_trade_id = event.trade_id;
         self.fill_voids.push(PositionFillVoid {
             event,
             voided_qty,
             commission_voided,
         });
-
-        if was_synced {
-            self.replay_voided_trades.insert(voided_trade_id);
-            self.replay_index_void_len += 1;
-        } else {
-            self.replay_index_valid = false;
-        }
 
         Ok(self.rebuild_from_replay())
     }
@@ -1726,7 +1605,7 @@ mod tests {
             CryptoFuture, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny, stubs::*,
         },
         orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
-        position::{Position, PositionFillVoid, PositionReplayEvent, fold_net_position},
+        position::{Position, PositionFillVoid, fold_net_position},
         stubs::*,
         types::{Currency, Money, Price, Quantity},
     };
@@ -3539,188 +3418,6 @@ mod tests {
         assert_eq!(position.sell_qty, Quantity::from(3));
         assert_eq!(position.replay_events.len(), 3);
         assert!(position.is_duplicate_replay_fill(&reopening));
-    }
-
-    #[rstest]
-    fn test_replay_index_matches_linear_duplicate_predicate(audusd_sim: CurrencyPair) {
-        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
-        let position_id = PositionId::from("P-INDEX-DIFFERENTIAL");
-        let fill =
-            |order_id: &str, trade_id: &str, side: OrderSide, quantity: u32, ts_event: u64| {
-                OrderFilledSpec::builder()
-                    .instrument_id(instrument.id())
-                    .client_order_id(ClientOrderId::from(order_id))
-                    .trade_id(TradeId::from(trade_id))
-                    .order_side(side)
-                    .last_qty(Quantity::from(quantity))
-                    .last_px(Price::from("1.00000"))
-                    .currency(Currency::USD())
-                    .position_id(position_id)
-                    .ts_event(UnixNanos::from(ts_event))
-                    .build()
-            };
-        let opening = fill("O-OPEN", "T-OPEN", OrderSide::Buy, 10, 1);
-        let closing = fill("O-CLOSE", "T-CLOSE", OrderSide::Sell, 10, 2);
-        let unique = fill("O-UNIQUE", "T-UNIQUE", OrderSide::Buy, 1, 3);
-        let ordinary_duplicate = fill("O-DUP", "T-OPEN", OrderSide::Buy, 1, 4);
-
-        let mut position = Position::new(&instrument, opening.clone());
-        position.apply(&closing);
-        assert!(position.replay_index_is_synced());
-        assert_duplicate_predicates_match(&position, [&unique, &ordinary_duplicate]);
-
-        let fragment = fill("O-FRAGMENT", "T-FRAGMENT", OrderSide::Sell, 10, 5);
-        let mut fragment_position = Position::new(&instrument, opening.clone());
-        fragment_position.apply(&fragment);
-        let mut continuing = fragment.clone();
-        continuing.event_id = uuid4();
-        continuing.causation_id = Some(fragment.event_id);
-        assert!(!fragment_position.is_duplicate_replay_fill(&continuing));
-        assert_duplicate_predicates_match(&fragment_position, [&continuing]);
-
-        let mut duplicate_fragment_position = fragment_position.clone();
-        let mut prior_with_candidate_key = continuing.clone();
-        prior_with_candidate_key.event_id = uuid4();
-        duplicate_fragment_position
-            .push_replay_event(PositionReplayEvent::Filled(prior_with_candidate_key));
-        assert!(duplicate_fragment_position.replay_index_is_synced());
-        assert!(duplicate_fragment_position.is_duplicate_replay_fill(&continuing));
-        assert_duplicate_predicates_match(&duplicate_fragment_position, [&continuing]);
-
-        let voided = fill("O-VOIDED", "T-VOIDED", OrderSide::Buy, 1, 5);
-        let mut voided_position = Position::new(&instrument, opening.clone());
-        voided_position.apply(&voided);
-        voided_position
-            .apply_fill_void(
-                matching_fill_void(&voided, voided.last_qty, None),
-                voided.last_qty,
-                None,
-            )
-            .unwrap();
-        assert!(voided_position.replay_index_is_synced());
-        assert!(matches!(
-            (voided_position.replay_events.first(), voided_position.events.first()),
-            (Some(PositionReplayEvent::Filled(replayed)), Some(current))
-                if replayed.event_id == current.event_id
-        ));
-        assert!(!voided_position.trade_ids.contains(&voided.trade_id));
-        assert!(
-            voided_position
-                .replay_voided_trades
-                .contains(&voided.trade_id)
-        );
-        assert!(voided_position.is_duplicate_replay_fill(&voided));
-        assert_duplicate_predicates_match(&voided_position, [&voided]);
-
-        let removed_trade = closing.clone();
-        position.purge_events_for_order(closing.client_order_id);
-        assert!(position.replay_index_is_synced());
-        assert!(!position.has_replay_trade_id(removed_trade.trade_id));
-        assert!(!position.is_duplicate_replay_fill(&removed_trade));
-        assert_duplicate_predicates_match(
-            &position,
-            [&removed_trade, &ordinary_duplicate, &unique],
-        );
-
-        let adjustment = PositionAdjusted::new(
-            opening.trader_id,
-            opening.strategy_id,
-            opening.instrument_id,
-            position_id,
-            opening.account_id,
-            PositionAdjustmentType::Funding,
-            None,
-            Some(Money::from("1.00 USD")),
-            Some("index adjustment".into()),
-            uuid4(),
-            UnixNanos::from(6),
-            UnixNanos::from(6),
-        );
-        position.apply_adjustment(adjustment);
-        assert!(position.replay_index_is_synced());
-        assert_duplicate_predicates_match(&position, [&ordinary_duplicate, &unique]);
-
-        let mut restored: Position =
-            serde_json::from_value(serde_json::to_value(&position).unwrap()).unwrap();
-        assert!(!restored.replay_index_is_synced());
-        assert_duplicate_predicates_match(&restored, [&ordinary_duplicate, &unique]);
-        restored.apply_adjustment(PositionAdjusted::new(
-            opening.trader_id,
-            opening.strategy_id,
-            opening.instrument_id,
-            position_id,
-            opening.account_id,
-            PositionAdjustmentType::Funding,
-            None,
-            Some(Money::from("2.00 USD")),
-            Some("restored index adjustment".into()),
-            uuid4(),
-            UnixNanos::from(7),
-            UnixNanos::from(7),
-        ));
-        assert!(restored.replay_index_is_synced());
-        restored.apply(&unique);
-        assert!(restored.replay_index_is_synced());
-        assert!(restored.has_replay_trade_id(unique.trade_id));
-        assert_duplicate_predicates_match(&restored, [&ordinary_duplicate, &unique]);
-    }
-
-    fn assert_duplicate_predicates_match<'a>(
-        position: &Position,
-        fills: impl IntoIterator<Item = &'a OrderFilled>,
-    ) {
-        for fill in fills {
-            assert_eq!(
-                position.is_duplicate_replay_fill(fill),
-                linear_duplicate_replay_fill(position, fill),
-                "indexed predicate differed for {}",
-                fill.trade_id,
-            );
-        }
-    }
-
-    fn linear_duplicate_replay_fill(position: &Position, fill: &OrderFilled) -> bool {
-        let continues_latest_fill = fill.causation_id.is_some_and(|source_id| {
-            position.events.last().is_some_and(|latest| {
-                latest.trade_id == fill.trade_id && latest.event_id == source_id
-            })
-        });
-
-        if position.trade_ids.contains(&fill.trade_id) {
-            return !continues_latest_fill
-                || position.replay_events.iter().any(|event| {
-                    matches!(
-                        event,
-                        PositionReplayEvent::Filled(replayed)
-                            if replayed.trade_id == fill.trade_id
-                                && replayed.causation_id == fill.causation_id
-                    )
-                });
-        }
-
-        let replay_starts_current_cycle = position.replay_events.is_empty()
-            || matches!(
-                (position.replay_events.first(), position.events.first()),
-                (
-                    Some(PositionReplayEvent::Filled(replayed)),
-                    Some(current),
-                ) if replayed.event_id == current.event_id
-            );
-        let corrected_trade = position
-            .fill_voids
-            .iter()
-            .any(|record| record.event.trade_id == fill.trade_id);
-        let current_cycle_only = replay_starts_current_cycle && !corrected_trade;
-        if current_cycle_only {
-            return false;
-        }
-
-        position.replay_events.iter().any(|event| {
-            matches!(
-                event,
-                PositionReplayEvent::Filled(replayed) if replayed.trade_id == fill.trade_id
-            )
-        })
     }
 
     #[rstest]

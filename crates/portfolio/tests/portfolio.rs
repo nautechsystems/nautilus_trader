@@ -4056,13 +4056,16 @@ fn test_position_records_account_currency_realized_pnl(
         position_id,
     );
     let position = Position::new(&instrument_audusd, fill);
-    let mut closed_position = position.clone();
-    closed_position.side = PositionSide::Flat;
-    closed_position.signed_qty = 0.0;
-    closed_position.quantity = Quantity::from("0");
-    closed_position.ts_last = UnixNanos::from(1);
-    closed_position.ts_closed = Some(UnixNanos::from(1));
-    closed_position.realized_pnl = Some(Money::from("12.34 USD"));
+
+    let closed_position = Position {
+        side: PositionSide::Flat,
+        signed_qty: 0.0,
+        quantity: Quantity::from("0"),
+        ts_last: UnixNanos::from(1),
+        ts_closed: Some(UnixNanos::from(1)),
+        realized_pnl: Some(Money::from("12.34 USD")),
+        ..position.clone()
+    };
 
     portfolio
         .cache()
@@ -4096,14 +4099,17 @@ fn test_position_records_account_currency_realized_pnl(
 
     // A NETTING reopen reuses the position ID under a new `ts_opened`, so this is a
     // distinct cycle whose close must record again rather than dedup against the first.
-    let mut reopened_closed_position = position;
-    reopened_closed_position.side = PositionSide::Flat;
-    reopened_closed_position.signed_qty = 0.0;
-    reopened_closed_position.quantity = Quantity::from("0");
-    reopened_closed_position.ts_opened = UnixNanos::from(2);
-    reopened_closed_position.ts_last = UnixNanos::from(3);
-    reopened_closed_position.ts_closed = Some(UnixNanos::from(3));
-    reopened_closed_position.realized_pnl = Some(Money::from("20.00 USD"));
+    let reopened_closed_position = Position {
+        side: PositionSide::Flat,
+        signed_qty: 0.0,
+        quantity: Quantity::from("0"),
+        ts_opened: UnixNanos::from(2),
+        ts_last: UnixNanos::from(3),
+        ts_closed: Some(UnixNanos::from(3)),
+        realized_pnl: Some(Money::from("20.00 USD")),
+        ..position
+    };
+
     portfolio
         .cache()
         .borrow_mut()
@@ -8027,9 +8033,12 @@ fn test_build_snapshot_clears_stale_flag_after_stale_side_closes(
         .unwrap();
     assert!(portfolio.build_snapshot(&account_id).unwrap().is_stale);
 
-    let mut closed_long = long_position;
-    closed_long.side = PositionSide::Flat;
-    closed_long.ts_closed = Some(UnixNanos::from(1));
+    let closed_long = Position {
+        side: PositionSide::Flat,
+        ts_closed: Some(UnixNanos::from(1)),
+        ..long_position
+    };
+
     portfolio
         .cache()
         .borrow_mut()
@@ -8478,12 +8487,13 @@ fn test_snapshot_timer_arms_and_disarms_on_position_lifecycle(
     );
 
     // Close the position: cache must reflect flat state first, then disarm on event
-    let mut flat_position = position.clone();
-    flat_position.side = PositionSide::Flat;
     portfolio
         .cache()
         .borrow_mut()
-        .update_position(&flat_position)
+        .update_position(&Position {
+            side: PositionSide::Flat,
+            ..position.clone()
+        })
         .unwrap();
     portfolio.update_position(&PositionEvent::PositionClosed(get_closed_position(
         &position,
@@ -9024,9 +9034,12 @@ fn test_account_scoped_query_preserves_other_account_missing_price(
     expected.sort();
     assert_eq!(portfolio.missing_price_instruments(&venue, None), expected);
 
-    let mut closed = account_a_position.unwrap();
-    closed.side = PositionSide::Flat;
-    closed.ts_closed = Some(UnixNanos::from(1));
+    let closed = Position {
+        side: PositionSide::Flat,
+        ts_closed: Some(UnixNanos::from(1)),
+        ..account_a_position.unwrap()
+    };
+
     portfolio
         .cache()
         .borrow_mut()
@@ -9519,9 +9532,12 @@ fn test_flat_venue_clears_missing_price_tracker(
     );
 
     // Flatten the position so positions_open returns empty at the venue
-    let mut closed = position;
-    closed.side = PositionSide::Flat;
-    closed.ts_closed = Some(UnixNanos::from(1));
+    let closed = Position {
+        side: PositionSide::Flat,
+        ts_closed: Some(UnixNanos::from(1)),
+        ..position
+    };
+
     portfolio
         .cache()
         .borrow_mut()
