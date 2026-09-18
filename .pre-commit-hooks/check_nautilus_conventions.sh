@@ -6,6 +6,7 @@
 # 3. std::fmt conventions: import Debug/Display (use as `impl Debug`/`impl Display`),
 #    but fully qualify std::fmt::Formatter and std::fmt::Result (do not import them)
 # 4. debug_struct should always use stringify! macro for its value
+# 5. Deprecated Atomic::fetch_update is banned (renamed to try_update upstream)
 #
 # Use '// nautilus-import-ok' comment to allow specific exceptions
 
@@ -474,8 +475,35 @@ else
   echo "Python submodule registrations skipped ($PYO3_LIB not found)"
 fi
 
+# Check for deprecated Atomic::fetch_update (renamed to try_update upstream)
+echo "Checking for deprecated fetch_update usage..."
+
+FETCH_UPDATE_VIOLATIONS=0
+fetch_update_output=$(rg -n --no-heading '\.fetch_update\b' crates examples --type rust 2> /dev/null | grep -v ':[0-9]*:[[:space:]]*//' || true)
+
+if [[ -n "$fetch_update_output" ]]; then
+  echo
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^([^:]+):([0-9]+):(.*)$ ]]; then
+      file="${BASH_REMATCH[1]}"
+      line_num="${BASH_REMATCH[2]}"
+      line_content="${BASH_REMATCH[3]}"
+      echo -e "${RED}Error:${NC} Use try_update instead of deprecated fetch_update in $file:$line_num"
+      echo "  ${line_content:0:100}"
+      FETCH_UPDATE_VIOLATIONS=$((FETCH_UPDATE_VIOLATIONS + 1))
+    fi
+  done <<< "$fetch_update_output"
+
+  echo
+  echo -e "${RED}Found $FETCH_UPDATE_VIOLATIONS deprecated fetch_update violation(s)${NC}"
+  echo
+  echo -e "${YELLOW}To fix:${NC} Replace .fetch_update( with .try_update( (drop-in rename)"
+else
+  echo "No deprecated fetch_update usage found"
+fi
+
 # Exit with error if any violations found
-if [ $VIOLATIONS -gt 0 ] || [ $BANNER_VIOLATIONS -gt 0 ] || [ $FMT_VIOLATIONS -gt 0 ] || [ "$GOT_VIOLATIONS" -gt 0 ] || [ $MACRO_VIOLATIONS -gt 0 ] || [ $MODULE_VIOLATIONS -gt 0 ]; then
+if [ $VIOLATIONS -gt 0 ] || [ $BANNER_VIOLATIONS -gt 0 ] || [ $FMT_VIOLATIONS -gt 0 ] || [ "$GOT_VIOLATIONS" -gt 0 ] || [ $MACRO_VIOLATIONS -gt 0 ] || [ $MODULE_VIOLATIONS -gt 0 ] || [ $FETCH_UPDATE_VIOLATIONS -gt 0 ]; then
   exit 1
 fi
 

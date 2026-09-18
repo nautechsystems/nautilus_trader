@@ -232,6 +232,9 @@ the lint does not apply:
 )]
 ```
 
+Use `try_update` instead of the deprecated `fetch_update` on standard atomics. The pre-commit hook
+rejects `fetch_update`.
+
 ## Type qualification
 
 | Item                          | Convention                                                                  |

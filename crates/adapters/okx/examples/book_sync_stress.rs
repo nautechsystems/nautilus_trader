@@ -835,7 +835,7 @@ async fn proxy(mut socket: WebSocket, wire: Arc<Wire>, business: bool) {
                     let is_book = ["books", "books-rpi", "sprd-books5"].contains(&channel) && frame["data"].is_array();
                     if is_book {
                         let snapshot = frame["action"] == "snapshot" || channel == "sprd-books5";
-                        if !business && snapshot && wire.cuts_remaining.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1)).is_ok() {
+                        if !business && snapshot && wire.cuts_remaining.try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1)).is_ok() {
                             wire.cuts.fetch_add(1, Ordering::SeqCst);
                             break;
                         }

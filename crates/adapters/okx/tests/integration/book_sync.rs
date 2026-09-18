@@ -102,7 +102,7 @@ impl BookSession {
                 };
 
                 if let OKXWsMessage::BookData { action: OKXBookAction::Snapshot, .. } = &message {
-                    if stream_faults.drop_snapshots.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1)).is_ok() {
+                    if stream_faults.drop_snapshots.try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1)).is_ok() {
                         continue;
                     }
 
@@ -206,7 +206,7 @@ async fn book_socket(mut socket: WebSocket, venue: Arc<Venue>) {
 
         if venue
             .transient_rejections
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
             .is_ok()
         {
             snapshot = serde_json::json!({"event": "error", "code": venue.transient_code.load(Ordering::SeqCst).to_string(), "msg": "Temporary subscription failure", "arg": request["args"][0]});

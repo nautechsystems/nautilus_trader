@@ -92,7 +92,7 @@ fn filter_frame(text: &str, state: &BookWire) -> Option<String> {
     if (frame["action"] == "snapshot" || frame["arg"]["channel"] == "sprd-books5")
         && state
             .drop_snapshots
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
             .is_ok()
     {
         state.dropped.fetch_add(1, Ordering::SeqCst);
@@ -102,7 +102,7 @@ fn filter_frame(text: &str, state: &BookWire) -> Option<String> {
     if frame["action"] == "update"
         && state
             .corrupt_updates
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
             .is_ok()
     {
         frame["data"][0]["prevSeqId"] = json!(i64::MAX);
