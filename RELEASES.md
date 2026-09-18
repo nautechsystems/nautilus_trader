@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added `tardis_http_url` override to `TardisDataClientConfig` and `TardisReplayConfig`
 - Added Polymarket session signing and owner-operated session key authorization, listing, and revocation
 - Added `IndexPriceUpdate`, `InstrumentClose`, `FundingRateUpdate`, and `Custom` to `DataBackendSession.add_file`
+- Added Lighter support for 64-bit market IDs at and above 4095
 - Migrated Polymarket trade and position history to Data API v2 with cursor pagination
 
 ### Breaking Changes
@@ -40,6 +41,8 @@ Released on TBD (UTC).
 - Fixed Betfair false fill voids from inconsistent order and fill snapshots during reconciliation
 - Fixed Betfair order quantities in replacement queries and quantity reduction recovery
 - Fixed Lighter book recovery after missing snapshots, sequence gaps, and reconnects
+- Fixed Lighter websocket subscription hangs on unparsable confirmations
+- Fixed Lighter spot stats parsing for empty mid prices
 - Fixed OKX order book snapshots retaining stale price levels after resubscription
 
 ### Internal Improvements

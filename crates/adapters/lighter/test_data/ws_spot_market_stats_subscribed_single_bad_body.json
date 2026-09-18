@@ -1,0 +1,6 @@
+{
+  "channel": "spot_market_stats:4098",
+  "spot_market_stats": 42,
+  "timestamp": 1789706424060,
+  "type": "subscribed/spot_market_stats"
+}

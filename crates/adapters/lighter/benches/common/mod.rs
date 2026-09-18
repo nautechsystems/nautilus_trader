@@ -165,8 +165,8 @@ pub(crate) fn fixed_signed_tx() -> SignedTx {
 pub(crate) const TRADER_ID: &str = "BENCH-001";
 pub(crate) const ACCOUNT_ID: &str = "LIGHTER-001";
 pub(crate) const BENCH_ACCOUNT_INDEX: i64 = 1234;
-pub(crate) const ETH_MARKET_INDEX: i16 = 0;
-pub(crate) const BTC_MARKET_INDEX: i16 = 1;
+pub(crate) const ETH_MARKET_INDEX: i64 = 0;
+pub(crate) const BTC_MARKET_INDEX: i64 = 1;
 
 #[must_use]
 pub(crate) fn clock() -> &'static AtomicTime {
@@ -219,7 +219,7 @@ fn perp_instrument(coin: &str, price_precision: u8, size_precision: u8) -> Instr
 
 /// Maps market index -> instrument for hot-path lookups in the data benches.
 #[must_use]
-pub(crate) fn instrument_cache() -> AHashMap<i16, InstrumentAny> {
+pub(crate) fn instrument_cache() -> AHashMap<i64, InstrumentAny> {
     let mut cache = AHashMap::new();
     cache.insert(ETH_MARKET_INDEX, eth_perp());
     cache.insert(BTC_MARKET_INDEX, btc_perp());

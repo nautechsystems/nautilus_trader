@@ -513,7 +513,7 @@ impl TradeDedupCache {
 #[derive(Debug, Default)]
 struct PositionSnapshot {
     reports: AHashMap<InstrumentId, PositionStatusReport>,
-    skipped_market_ids: Option<AHashSet<i16>>,
+    skipped_market_ids: Option<AHashSet<i64>>,
 }
 
 /// Per-client WebSocket dispatch state.
@@ -546,7 +546,7 @@ pub(crate) struct WsDispatchState {
     /// iterates over this set because Lighter's `accountActiveOrders` is
     /// per-market and the venue's REST quota would make a full-market
     /// fan-out prohibitively slow.
-    pub(crate) active_markets: Arc<DashSet<i16>>,
+    pub(crate) active_markets: Arc<DashSet<i64>>,
     /// WS-driven position reports and their coverage state. Lighter has no REST
     /// equivalent, so both values share one lock to keep reconciliation from
     /// pairing reports from one frame with completeness from another.
@@ -1194,13 +1194,13 @@ impl WsDispatchState {
     }
 
     /// Record a market_index as having reported account activity.
-    pub(crate) fn note_active_market(&self, market_index: i16) {
+    pub(crate) fn note_active_market(&self, market_index: i64) {
         self.active_markets.insert(market_index);
     }
 
     /// Snapshot account-active markets for fan-out at reconciliation time.
-    pub(crate) fn active_markets_snapshot(&self) -> Vec<i16> {
-        let mut markets: Vec<i16> = self.active_markets.iter().map(|m| *m).collect();
+    pub(crate) fn active_markets_snapshot(&self) -> Vec<i64> {
+        let mut markets: Vec<i64> = self.active_markets.iter().map(|m| *m).collect();
         markets.sort_unstable();
         markets
     }
@@ -1555,7 +1555,7 @@ impl WsDispatchState {
         &self,
         reports: &[PositionStatusReport],
         retained: &[InstrumentId],
-        skipped_market_ids: &[i16],
+        skipped_market_ids: &[i64],
     ) -> Vec<InstrumentId> {
         let mut snapshot = self.position_snapshot.lock();
         let removed = replace_position_reports(&mut snapshot.reports, reports, retained);
@@ -1569,8 +1569,8 @@ impl WsDispatchState {
         &self,
         reports: &[PositionStatusReport],
         closed: &[InstrumentId],
-        covered_market_ids: &[i16],
-        skipped_market_ids: &[i16],
+        covered_market_ids: &[i64],
+        skipped_market_ids: &[i64],
     ) -> Vec<InstrumentId> {
         let mut snapshot = self.position_snapshot.lock();
         let removed = update_position_reports(&mut snapshot.reports, reports, closed);
@@ -1586,7 +1586,7 @@ impl WsDispatchState {
     /// Snapshot cached position reports and their coverage under one lock.
     pub(crate) fn snapshot_positions_with_coverage(
         &self,
-    ) -> (Vec<PositionStatusReport>, Option<AHashSet<i16>>) {
+    ) -> (Vec<PositionStatusReport>, Option<AHashSet<i64>>) {
         let snapshot = self.position_snapshot.lock();
         (
             snapshot.reports.values().cloned().collect(),

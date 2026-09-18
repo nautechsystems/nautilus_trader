@@ -38,8 +38,8 @@ from pathlib import Path
 
 
 CHAIN_ID_TESTNET = 300
-UPSTREAM_VERSION = "1.1.2"
-UPSTREAM_REVISION = "6957dd8a1b36894ca9580be0d51de30aeea3bd4a"
+UPSTREAM_VERSION = "1.1.4"
+UPSTREAM_REVISION = "a38b6405f362fc14a562fe7a97df03f3ee756bc1"
 
 # Tx type discriminants, mirrored from the lighter-go constants.
 TX_TYPE_L2_CREATE_ORDER = 14
@@ -144,6 +144,7 @@ def setup_lib(path: Path) -> ctypes.CDLL:
         ctypes.c_uint8,
         ctypes.c_uint8,
         ctypes.c_longlong,
+        ctypes.c_longlong,  # order_version (added in signer 1.1.3)
         ctypes.c_int,
         ctypes.c_longlong,
     ]
@@ -317,6 +318,7 @@ def gen_modify_order(lib: ctypes.CDLL, ctx: dict, fields: dict) -> dict:
         0,  # default self-trade equality: account index
         fields["skip_nonce"],
         ctx["nonce"],
+        0,  # NIL_ORDER_VERSION: not a hash element, selects unversioned modify
         ctx["api_key_index"],
         ctx["account_index"],
     )
@@ -600,6 +602,102 @@ def main() -> int:
     return 0
 
 
+def _widened_tx_vectors(
+    lib: ctypes.CDLL,
+    base_ctx: dict,
+    create_fields: dict,
+    modify_fields: dict,
+) -> list[dict]:
+    """
+    Widened market ids from the post-September-2026 64-bit allocation.
+
+    4095 is the first new-allocation index (live on Mainnet and Testnet); 32767 is the
+    largest index the official signer accepts. Ids above that are rejected by the SDK
+    signer ("MarketIndex is not valid"), so the Rust side pins them via preimage/render
+    tests instead of oracle vectors.
+
+    """
+    vectors: list[dict] = []
+
+    widened_create = {
+        **create_fields,
+        "market_index": 4095,
+        "client_order_index": 300,
+    }
+    ctx = {**base_ctx, "nonce": 17}
+    vectors.append(
+        build_vector(
+            "create_order",
+            ctx,
+            widened_create,
+            gen_create_order(lib, ctx, widened_create),
+        ),
+    )
+
+    widened_cancel = {
+        "market_index": 4095,
+        "index": 300,
+        "skip_nonce": 0,
+    }
+    ctx = {**base_ctx, "nonce": 18}
+    vectors.append(
+        build_vector(
+            "cancel_order",
+            ctx,
+            widened_cancel,
+            gen_cancel_order(lib, ctx, widened_cancel),
+        ),
+    )
+
+    widened_modify = {
+        **modify_fields,
+        "market_index": 4095,
+        "index": 300,
+    }
+    ctx = {**base_ctx, "nonce": 19}
+    vectors.append(
+        build_vector(
+            "modify_order",
+            ctx,
+            widened_modify,
+            gen_modify_order(lib, ctx, widened_modify),
+        ),
+    )
+
+    widened_leverage = {
+        "market_index": 4095,
+        "initial_margin_fraction": 500,
+        "margin_mode": 1,
+        "skip_nonce": 0,
+    }
+    ctx = {**base_ctx, "nonce": 20}
+    vectors.append(
+        build_vector(
+            "update_leverage",
+            ctx,
+            widened_leverage,
+            gen_update_leverage(lib, ctx, widened_leverage),
+        ),
+    )
+
+    sdk_max_create = {
+        **create_fields,
+        "market_index": 32767,
+        "client_order_index": 301,
+    }
+    ctx = {**base_ctx, "nonce": 21}
+    vectors.append(
+        build_vector(
+            "create_order",
+            ctx,
+            sdk_max_create,
+            gen_create_order(lib, ctx, sdk_max_create),
+        ),
+    )
+
+    return vectors
+
+
 def build_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
     """
     Assemble the L2 tx vectors in deterministic nonce order.
@@ -873,6 +971,8 @@ def build_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
             gen_modify_order(lib, ctx, production_modify),
         ),
     )
+
+    vectors.extend(_widened_tx_vectors(lib, base_ctx, create_fields, modify_fields))
 
     return vectors
 

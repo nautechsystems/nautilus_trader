@@ -20,7 +20,8 @@ use ahash::AHashMap;
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::{
     serialization::{
-        deserialize_decimal, deserialize_decimal_from_str, deserialize_optional_decimal,
+        deserialize_decimal, deserialize_decimal_from_str, deserialize_decimal_or_zero,
+        deserialize_optional_decimal,
     },
     string::secret::SecretString,
 };
@@ -67,12 +68,12 @@ pub enum NautilusWsMessage {
     ExecutionReports(Vec<ExecutionReport>),
     PositionSnapshot {
         reports: Vec<PositionStatusReport>,
-        skipped_market_ids: Vec<i16>,
+        skipped_market_ids: Vec<i64>,
     },
     PositionUpdate {
         reports: Vec<PositionStatusReport>,
-        closed_market_ids: Vec<i16>,
-        skipped_market_ids: Vec<i16>,
+        closed_market_ids: Vec<i64>,
+        skipped_market_ids: Vec<i64>,
     },
     AccountState(Box<AccountState>),
     SendTxAck {
@@ -303,18 +304,18 @@ impl LighterWsChannelKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LighterWsChannel {
-    OrderBook(i16),
-    Ticker(i16),
+    OrderBook(i64),
+    Ticker(i64),
     MarketStats(LighterMarketSelection),
     SpotMarketStats(LighterMarketSelection),
-    Trade(i16),
+    Trade(i64),
     Candle {
-        market_index: i16,
+        market_index: i64,
         resolution: LighterCandleResolution,
     },
     AccountAll(i64),
     AccountOrders {
-        market_index: i16,
+        market_index: i64,
         account_index: i64,
     },
     AccountAllOrders(i64),
@@ -407,7 +408,7 @@ impl LighterWsChannel {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum LighterMarketSelection {
     All,
-    Market(i16),
+    Market(i64),
 }
 
 impl LighterMarketSelection {
@@ -624,12 +625,12 @@ pub enum LighterMarketStatsPayload {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct LighterMarketStats {
     pub symbol: Ustr,
-    pub market_id: i16,
+    pub market_id: i64,
     #[serde(deserialize_with = "deserialize_decimal_from_str")]
     pub index_price: Decimal,
     #[serde(deserialize_with = "deserialize_decimal_from_str")]
     pub mark_price: Decimal,
-    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub mid_price: Decimal,
     #[serde(deserialize_with = "deserialize_decimal_from_str")]
     pub open_interest: Decimal,
@@ -668,10 +669,10 @@ pub enum LighterSpotMarketStatsPayload {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct LighterSpotMarketStats {
     pub symbol: Ustr,
-    pub market_id: i16,
+    pub market_id: i64,
     #[serde(deserialize_with = "deserialize_decimal_from_str")]
     pub index_price: Decimal,
-    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub mid_price: Decimal,
     #[serde(deserialize_with = "deserialize_decimal_from_str")]
     pub last_trade_price: Decimal,
@@ -689,7 +690,7 @@ pub struct LighterSpotMarketStats {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct LighterPosition {
-    pub market_id: i16,
+    pub market_id: i64,
     pub symbol: Ustr,
     #[serde(deserialize_with = "deserialize_decimal_from_str")]
     pub initial_margin_fraction: Decimal,
@@ -859,12 +860,18 @@ mod tests {
         include_str!("../../test_data/ws_market_stats_subscribed_single.json");
     const WS_MARKET_STATS_UPDATE_ALL: &str =
         include_str!("../../test_data/ws_market_stats_update_all.json");
+    const WS_MARKET_STATS_UPDATE_SINGLE_WIDENED: &str =
+        include_str!("../../test_data/ws_market_stats_update_single_widened.json");
     const WS_SPOT_MARKET_STATS_UPDATE_SINGLE: &str =
         include_str!("../../test_data/ws_spot_market_stats_update_single.json");
     const WS_SPOT_MARKET_STATS_SUBSCRIBED_SINGLE: &str =
         include_str!("../../test_data/ws_spot_market_stats_subscribed_single.json");
     const WS_SPOT_MARKET_STATS_UPDATE_ALL: &str =
         include_str!("../../test_data/ws_spot_market_stats_update_all.json");
+    const WS_SPOT_MARKET_STATS_UPDATE_SINGLE_WIDENED: &str =
+        include_str!("../../test_data/ws_spot_market_stats_update_single_widened.json");
+    const WS_SPOT_MARKET_STATS_SUBSCRIBED_SINGLE_EMPTY_MID: &str =
+        include_str!("../../test_data/ws_spot_market_stats_subscribed_single_empty_mid.json");
     const WS_ACCOUNT_ALL_ASSETS_UPDATE: &str =
         include_str!("../../test_data/ws_account_all_assets_update.json");
     const WS_ACCOUNT_ORDERS_UPDATE: &str =
@@ -1256,6 +1263,70 @@ mod tests {
                 );
             }
             _ => panic!("expected all market stats frame"),
+        }
+    }
+
+    #[rstest]
+    fn test_market_stats_frame_deserializes_widened_market_id() {
+        let frame: LighterWsFrame =
+            serde_json::from_str(WS_MARKET_STATS_UPDATE_SINGLE_WIDENED).unwrap();
+
+        match frame {
+            LighterWsFrame::MarketStats {
+                channel,
+                market_stats: LighterMarketStatsPayload::One(stats),
+                timestamp,
+            } => {
+                assert_eq!(channel, Ustr::from("market_stats:40000"));
+                assert_eq!(stats.symbol, Ustr::from("FUTURE"));
+                assert_eq!(stats.market_id, 40_000);
+                assert_eq!(stats.mark_price, Decimal::from_str("12.47").unwrap());
+                assert_eq!(timestamp, 1_774_883_844_933);
+            }
+            _ => panic!("expected single market stats frame"),
+        }
+    }
+
+    #[rstest]
+    fn test_spot_market_stats_frame_deserializes_widened_market_id() {
+        let frame: LighterWsFrame =
+            serde_json::from_str(WS_SPOT_MARKET_STATS_UPDATE_SINGLE_WIDENED).unwrap();
+
+        match frame {
+            LighterWsFrame::SpotMarketStats {
+                channel,
+                spot_market_stats: LighterSpotMarketStatsPayload::One(stats),
+                timestamp,
+            } => {
+                assert_eq!(channel, Ustr::from("spot_market_stats:50000"));
+                assert_eq!(stats.symbol, Ustr::from("FUTURE/USDC"));
+                assert_eq!(stats.market_id, 50_000);
+                assert_eq!(stats.mid_price, Decimal::from_str("1.000001").unwrap());
+                assert_eq!(timestamp, 1_774_883_844_933);
+            }
+            _ => panic!("expected single spot market stats frame"),
+        }
+    }
+
+    #[rstest]
+    fn test_spot_market_stats_frame_deserializes_empty_mid_as_zero() {
+        let frame: LighterWsFrame =
+            serde_json::from_str(WS_SPOT_MARKET_STATS_SUBSCRIBED_SINGLE_EMPTY_MID).unwrap();
+
+        match frame {
+            LighterWsFrame::SpotMarketStats {
+                channel,
+                spot_market_stats: LighterSpotMarketStatsPayload::One(stats),
+                timestamp,
+            } => {
+                assert_eq!(channel, Ustr::from("spot_market_stats:4098"));
+                assert_eq!(stats.symbol, Ustr::from("ETH/USDC"));
+                assert_eq!(stats.market_id, 4098);
+                assert_eq!(stats.mid_price, Decimal::ZERO);
+                assert_eq!(stats.index_price, Decimal::from_str("2471.940000").unwrap());
+                assert_eq!(timestamp, 1_789_706_424_060);
+            }
+            _ => panic!("expected single spot market stats frame"),
         }
     }
 

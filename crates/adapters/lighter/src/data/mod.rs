@@ -353,7 +353,7 @@ impl LighterDataClient {
             .map(|(instrument, _)| instrument.clone())
             .collect();
 
-        let mut ws_cache: Vec<(i16, InstrumentAny)> = Vec::with_capacity(instruments.len());
+        let mut ws_cache: Vec<(i64, InstrumentAny)> = Vec::with_capacity(instruments.len());
         self.instruments.rcu(|m| {
             for instrument in &instruments {
                 m.insert(instrument.id(), instrument.clone());
@@ -582,7 +582,7 @@ impl LighterDataClient {
                                     }
                                 });
 
-                                let ws_cache: Vec<(i16, InstrumentAny)> = items
+                                let ws_cache: Vec<(i64, InstrumentAny)> = items
                                     .iter()
                                     .filter_map(|(instrument, _)| {
                                         registry
@@ -1460,7 +1460,7 @@ impl DataClient for LighterDataClient {
                         }
                     });
 
-                    let ws_cache: Vec<(i16, InstrumentAny)> = instruments
+                    let ws_cache: Vec<(i64, InstrumentAny)> = instruments
                         .iter()
                         .filter_map(|i| registry.market_index(&i.id()).map(|idx| (idx, i.clone())))
                         .collect();
@@ -2319,6 +2319,25 @@ mod tests {
         assert!(matches!(
             channel,
             LighterWsChannel::SpotMarketStats(LighterMarketSelection::Market(2048)),
+        ));
+    }
+
+    #[rstest]
+    fn test_index_market_stats_channel_routes_widened_ids_by_instrument_type() {
+        let client = create_data_client_for_test();
+        let perp_id = cache_test_instrument(&client, 40_000, "ETH", LighterProductType::Perp);
+        let spot_id = cache_test_instrument(&client, 50_000, "ETH", LighterProductType::Spot);
+
+        let perp_channel = client.index_market_stats_channel(perp_id).unwrap();
+        let spot_channel = client.index_market_stats_channel(spot_id).unwrap();
+
+        assert!(matches!(
+            perp_channel,
+            LighterWsChannel::MarketStats(LighterMarketSelection::Market(40_000)),
+        ));
+        assert!(matches!(
+            spot_channel,
+            LighterWsChannel::SpotMarketStats(LighterMarketSelection::Market(50_000)),
         ));
     }
 
@@ -3189,7 +3208,7 @@ mod tests {
 
     fn cache_test_instrument(
         client: &LighterDataClient,
-        market_index: i16,
+        market_index: i64,
         venue_symbol: &str,
         product_type: LighterProductType,
     ) -> InstrumentId {

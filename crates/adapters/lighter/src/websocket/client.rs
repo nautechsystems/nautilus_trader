@@ -103,7 +103,7 @@ pub struct LighterWebSocketClient {
     subscriptions: SubscriptionState,
     subscription_args: Arc<DashMap<String, SubscriptionArgs>>,
     next_subscription_generation: Arc<AtomicU64>,
-    instruments: Arc<DashMap<i16, InstrumentAny>>,
+    instruments: Arc<DashMap<i64, InstrumentAny>>,
     registry: Arc<MarketRegistry>,
     task_handle: TaskSlot<()>,
     transport_backend: TransportBackend,
@@ -365,13 +365,13 @@ impl LighterWebSocketClient {
 
     /// Returns a clone of the shared instrument cache.
     #[must_use]
-    pub fn instruments_cache(&self) -> Arc<DashMap<i16, InstrumentAny>> {
+    pub fn instruments_cache(&self) -> Arc<DashMap<i64, InstrumentAny>> {
         Arc::clone(&self.instruments)
     }
 
     /// Caches a batch of instruments along with their venue `market_index`,
     /// replaying them to the handler if a connection is already established.
-    pub fn cache_instruments(&self, instruments: Vec<(i16, InstrumentAny)>) {
+    pub fn cache_instruments(&self, instruments: Vec<(i64, InstrumentAny)>) {
         self.instruments.clear();
         for (market_index, instrument) in &instruments {
             self.instruments.insert(*market_index, instrument.clone());
@@ -387,7 +387,7 @@ impl LighterWebSocketClient {
     }
 
     /// Caches a single instrument and pushes it to the handler if connected.
-    pub fn cache_instrument(&self, market_index: i16, instrument: InstrumentAny) {
+    pub fn cache_instrument(&self, market_index: i64, instrument: InstrumentAny) {
         self.instruments.insert(market_index, instrument.clone());
 
         if let Ok(cmd_tx) = self.cmd_tx.try_read() {
@@ -523,7 +523,7 @@ impl LighterWebSocketClient {
             control.register(move || reconnect_handle.request_reconnect());
         }
 
-        let initial_instruments: Vec<(i16, InstrumentAny)> = self
+        let initial_instruments: Vec<(i64, InstrumentAny)> = self
             .instruments
             .iter()
             .map(|entry| (*entry.key(), entry.value().clone()))
@@ -1208,7 +1208,7 @@ impl LighterWebSocketClient {
         Ok(())
     }
 
-    async fn subscribe_order_book_stream(&self, market_index: i16) -> Result<(), LighterWsError> {
+    async fn subscribe_order_book_stream(&self, market_index: i64) -> Result<(), LighterWsError> {
         let channel = LighterWsChannel::OrderBook(market_index);
         let topic = channel.topic_key();
 
@@ -1219,7 +1219,7 @@ impl LighterWebSocketClient {
         self.send_subscribe(channel, None).await
     }
 
-    async fn unsubscribe_order_book_stream(&self, market_index: i16) -> Result<(), LighterWsError> {
+    async fn unsubscribe_order_book_stream(&self, market_index: i64) -> Result<(), LighterWsError> {
         let channel = LighterWsChannel::OrderBook(market_index);
         let topic = channel.topic_key();
 
@@ -1243,7 +1243,7 @@ impl LighterWebSocketClient {
             .map_err(|e| LighterWsError::Client(format!("handler unavailable: {e}")))
     }
 
-    fn market_index_for(&self, instrument_id: &InstrumentId) -> Result<i16, LighterWsError> {
+    fn market_index_for(&self, instrument_id: &InstrumentId) -> Result<i64, LighterWsError> {
         self.registry.market_index(instrument_id).ok_or_else(|| {
             LighterWsError::Client(format!(
                 "no Lighter market_index registered for instrument: {instrument_id}"
@@ -1289,7 +1289,7 @@ mod tests {
     };
 
     fn registry_with(
-        market_index: i16,
+        market_index: i64,
         symbol: &str,
         product: LighterProductType,
     ) -> Arc<MarketRegistry> {

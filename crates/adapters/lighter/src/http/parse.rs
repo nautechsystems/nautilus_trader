@@ -634,11 +634,13 @@ mod tests {
         },
         http::models::{
             LighterCandles, LighterFunding, LighterFundingDirection, LighterMarketConfig,
-            LighterSimpleOrder,
+            LighterOrderBookDetails, LighterSimpleOrder,
         },
     };
 
     const HTTP_CANDLES: &str = include_str!("../../test_data/http_candles.json");
+    const HTTP_ORDER_BOOK_DETAILS_WIDENED_IDS: &str =
+        include_str!("../../test_data/http_order_book_details_widened_ids.json");
 
     fn create_test_instrument() -> InstrumentAny {
         let instrument_id = InstrumentId::new(Symbol::new("ETH-PERP"), Venue::new("LIGHTER"));
@@ -703,7 +705,7 @@ mod tests {
 
     fn stub_order_book(
         symbol: &str,
-        market_id: i16,
+        market_id: i64,
         market_type: LighterProductType,
     ) -> LighterOrderBook {
         LighterOrderBook {
@@ -725,7 +727,7 @@ mod tests {
         }
     }
 
-    fn stub_perp_detail(symbol: &str, market_id: i16) -> LighterPerpOrderBookDetail {
+    fn stub_perp_detail(symbol: &str, market_id: i64) -> LighterPerpOrderBookDetail {
         LighterPerpOrderBookDetail {
             order_book: stub_order_book(symbol, market_id, LighterProductType::Perp),
             size_decimals: 4,
@@ -757,7 +759,7 @@ mod tests {
         }
     }
 
-    fn stub_spot_detail(symbol: &str, market_id: i16) -> LighterSpotOrderBookDetail {
+    fn stub_spot_detail(symbol: &str, market_id: i64) -> LighterSpotOrderBookDetail {
         LighterSpotOrderBookDetail {
             order_book: stub_order_book(symbol, market_id, LighterProductType::Spot),
             size_decimals: 6,
@@ -1544,5 +1546,52 @@ mod tests {
 
     fn instrument_id(symbol: &str) -> InstrumentId {
         InstrumentId::new(Symbol::new(symbol), Venue::new("LIGHTER"))
+    }
+
+    #[rstest]
+    fn test_parse_order_book_details_instruments_routes_widened_ids_by_market_type() {
+        let registry = MarketRegistry::new();
+        let details: LighterOrderBookDetails =
+            serde_json::from_str(HTTP_ORDER_BOOK_DETAILS_WIDENED_IDS).unwrap();
+
+        let instruments = parse_order_book_details_instruments(
+            &registry,
+            &details.order_book_details,
+            &details.spot_order_book_details,
+            UnixNanos::from(1),
+        )
+        .unwrap();
+
+        assert_eq!(instruments.len(), 4);
+
+        let eth_perp = instrument_id("ETH-PERP");
+        let future_perp = instrument_id("FUTURE-PERP");
+        let eth_spot = instrument_id("ETH/USDC-SPOT");
+        let future_spot = instrument_id("FUTURE/USDC-SPOT");
+
+        assert_eq!(registry.market_index(&eth_perp), Some(4095));
+        assert_eq!(registry.market_index(&future_perp), Some(40_000));
+        assert_eq!(registry.market_index(&eth_spot), Some(4098));
+        assert_eq!(registry.market_index(&future_spot), Some(50_000));
+
+        let mut kinds: Vec<(&str, &str)> = instruments
+            .iter()
+            .map(|instrument| match instrument {
+                InstrumentAny::CryptoPerpetual(perp) => (perp.id.symbol.as_str(), "perp"),
+                InstrumentAny::CurrencyPair(pair) => (pair.id.symbol.as_str(), "spot"),
+                other => panic!("unexpected instrument kind, was {other:?}"),
+            })
+            .collect();
+
+        kinds.sort_unstable();
+        assert_eq!(
+            kinds,
+            vec![
+                ("ETH-PERP", "perp"),
+                ("ETH/USDC-SPOT", "spot"),
+                ("FUTURE-PERP", "perp"),
+                ("FUTURE/USDC-SPOT", "spot"),
+            ],
+        );
     }
 }

@@ -1514,7 +1514,7 @@ impl LighterHttpClient {
             .collect()
     }
 
-    fn market_index(&self, instrument: &InstrumentAny) -> LighterHttpResult<i16> {
+    fn market_index(&self, instrument: &InstrumentAny) -> LighterHttpResult<i64> {
         self.market_registry
             .market_index(&instrument.id())
             .ok_or_else(|| {

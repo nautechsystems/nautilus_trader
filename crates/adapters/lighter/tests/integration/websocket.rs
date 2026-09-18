@@ -71,11 +71,11 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 
-const PERP_MARKET_INDEX: i16 = 0;
+const PERP_MARKET_INDEX: i64 = 0;
 const PERP_VENUE_SYMBOL: &str = "ETH";
-const SECOND_MARKET_INDEX: i16 = 1;
+const SECOND_MARKET_INDEX: i64 = 1;
 const SECOND_VENUE_SYMBOL: &str = "BTC";
-const SPOT_MARKET_INDEX: i16 = 2048;
+const SPOT_MARKET_INDEX: i64 = 2048;
 const SPOT_VENUE_SYMBOL: &str = "ETH";
 
 fn data_path() -> PathBuf {
@@ -89,7 +89,7 @@ fn load_json(filename: &str) -> Value {
 }
 
 fn perp_instrument(
-    market_index: i16,
+    market_index: i64,
     venue_symbol: &str,
     registry: &MarketRegistry,
 ) -> InstrumentAny {
@@ -114,7 +114,7 @@ fn perp_instrument(
 }
 
 fn spot_instrument(
-    market_index: i16,
+    market_index: i64,
     venue_symbol: &str,
     registry: &MarketRegistry,
 ) -> InstrumentAny {
@@ -369,7 +369,7 @@ impl ClientHarness {
         Self { client, registry }
     }
 
-    fn instrument(&self, market_index: i16) -> InstrumentId {
+    fn instrument(&self, market_index: i64) -> InstrumentId {
         self.registry
             .instrument_id(market_index)
             .expect("registered")
@@ -445,13 +445,13 @@ async fn await_subscription_count_at_most(client: &LighterWebSocketClient, targe
 
 /// Returns a clone of the order_book fixture rewritten to target a specific
 /// `market_index`.
-fn book_snapshot_frame_for_market(market_index: i16) -> Value {
+fn book_snapshot_frame_for_market(market_index: i64) -> Value {
     let mut frame = load_json("ws_order_book_subscribed.json");
     frame["channel"] = json!(format!("order_book:{market_index}"));
     frame
 }
 
-fn book_update_frame_for_market(market_index: i16) -> Value {
+fn book_update_frame_for_market(market_index: i64) -> Value {
     let mut frame = json!({
         "channel": "order_book:0",
         "last_updated_at": 1778138389656150_u64,

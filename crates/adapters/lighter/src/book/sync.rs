@@ -38,22 +38,22 @@ use crate::{
 
 #[derive(Default)]
 pub(crate) struct BookSync {
-    pub(crate) delta_subs: AHashSet<i16>,
-    pub(crate) depth_subs: AHashSet<i16>,
-    pub(crate) snapshots_seen: AHashSet<i16>,
-    pub(crate) states: AHashMap<i16, CachedOrderBook>,
-    pub(crate) recovery: AHashMap<i16, BookRecoveryState<LighterWsError>>,
+    pub(crate) delta_subs: AHashSet<i64>,
+    pub(crate) depth_subs: AHashSet<i64>,
+    pub(crate) snapshots_seen: AHashSet<i64>,
+    pub(crate) states: AHashMap<i64, CachedOrderBook>,
+    pub(crate) recovery: AHashMap<i64, BookRecoveryState<LighterWsError>>,
     pub(crate) work: FuturesUnordered<BookWork>,
-    pub(crate) initial: AHashMap<i16, PendingSnapshot>,
-    pub(crate) writes: AHashMap<i16, BookWrite>,
-    pub(crate) expected: AHashMap<i16, (u64, u64)>,
-    pub(crate) trailing: AHashMap<i16, (u64, u64)>,
+    pub(crate) initial: AHashMap<i64, PendingSnapshot>,
+    pub(crate) writes: AHashMap<i64, BookWrite>,
+    pub(crate) expected: AHashMap<i64, (u64, u64)>,
+    pub(crate) trailing: AHashMap<i64, (u64, u64)>,
 }
 
 impl BookSync {
     pub(crate) fn validate_sequence(
         &mut self,
-        market_index: i16,
+        market_index: i64,
         book: &LighterWsOrderBook,
         is_snapshot: bool,
     ) -> BookSequenceOutcome {
@@ -108,7 +108,7 @@ impl BookSync {
 
     pub(crate) fn apply(
         &mut self,
-        market_index: i16,
+        market_index: i64,
         instrument: &InstrumentAny,
         book: &LighterWsOrderBook,
         timestamp: u64,
@@ -153,12 +153,12 @@ impl BookSync {
         })
     }
 
-    pub(crate) fn clear_cached_order_book(&mut self, market_index: i16) {
+    pub(crate) fn clear_cached_order_book(&mut self, market_index: i64) {
         self.snapshots_seen.remove(&market_index);
         self.states.remove(&market_index);
     }
 
-    pub(crate) fn cancel(&mut self, market_index: i16) {
+    pub(crate) fn cancel(&mut self, market_index: i64) {
         self.recovery.remove(&market_index);
         self.expected.remove(&market_index);
         self.writes.remove(&market_index);
@@ -190,7 +190,7 @@ impl BookSync {
 
     pub(crate) fn emit_cached_order_book_deltas_snapshot(
         &self,
-        market_index: i16,
+        market_index: i64,
         instrument: &InstrumentAny,
         ts_init: UnixNanos,
     ) -> Option<NautilusWsMessage> {
@@ -207,7 +207,7 @@ impl BookSync {
 
     pub(crate) fn emit_cached_order_book_depth_snapshot(
         &self,
-        market_index: i16,
+        market_index: i64,
         instrument: &InstrumentAny,
         ts_init: UnixNanos,
     ) -> Option<NautilusWsMessage> {
@@ -223,7 +223,7 @@ impl BookSync {
 
     fn order_book_messages(
         &self,
-        market_index: i16,
+        market_index: i64,
         book: &LighterWsOrderBook,
         instrument: &InstrumentAny,
         timestamp: u64,

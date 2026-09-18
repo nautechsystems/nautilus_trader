@@ -37,7 +37,7 @@ use crate::{
 const BOOK_SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub(crate) fn recover(
-    market_index: i16,
+    market_index: i64,
     recovery: Arc<BookRecovery<LighterWsError>>,
     cmd_tx: tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
 ) -> BookWork {
@@ -77,7 +77,7 @@ pub(crate) fn recover(
 }
 
 pub(crate) fn subscribe(
-    market_index: i16,
+    market_index: i64,
     generation: u64,
     cancel: CancellationToken,
     write: Option<BookWrite>,
@@ -141,7 +141,7 @@ pub(crate) fn subscribe(
     })
 }
 
-pub(crate) fn wait_for_snapshot(market_index: i16, cancel: CancellationToken) -> BookWork {
+pub(crate) fn wait_for_snapshot(market_index: i64, cancel: CancellationToken) -> BookWork {
     Box::pin(async move {
         snapshot_expired(&cancel, BOOK_SNAPSHOT_TIMEOUT).await;
 
@@ -156,18 +156,18 @@ pub(crate) type BookWork = Pin<Box<dyn Future<Output = BookWorkResult> + Send + 
 
 pub(crate) enum BookWorkResult {
     Sent {
-        market_index: i16,
+        market_index: i64,
         generation: u64,
         cancel: CancellationToken,
         write: Option<BookWrite>,
         result: Result<u64, LighterWsError>,
     },
     Initial {
-        market_index: i16,
+        market_index: i64,
         cancel: CancellationToken,
     },
     Recovery {
-        market_index: i16,
+        market_index: i64,
         recovery: Arc<BookRecovery<LighterWsError>>,
         result: Result<(), LighterWsError>,
     },

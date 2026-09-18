@@ -540,7 +540,7 @@ impl LighterExecutionClient {
             .await
             .context("failed to request Lighter instruments")?;
 
-        let ws_cache: Vec<(i16, InstrumentAny)> = instruments
+        let ws_cache: Vec<(i64, InstrumentAny)> = instruments
             .iter()
             .filter_map(|instrument| {
                 self.registry
@@ -2612,7 +2612,7 @@ struct PreparedCreateOrder {
 
 struct CreateOrderPlan {
     order: OrderAny,
-    market_index: i16,
+    market_index: i64,
     base_amount: i64,
     price: u32,
     order_type: u8,
@@ -2638,7 +2638,7 @@ struct CancelOrderPlan {
     strategy_id: StrategyId,
     instrument_id: InstrumentId,
     venue_order_id: Option<VenueOrderId>,
-    market_index: i16,
+    market_index: i64,
     venue_index: i64,
 }
 
@@ -4749,7 +4749,7 @@ impl ExecutionClient for LighterExecutionClient {
         // / `cmd.end` are present so the venue, not the client, scopes the
         // pagination: important under the 60 req/min REST quota.
         if !cmd.open_only {
-            let inactive_markets: Vec<i16> = match cmd.instrument_id {
+            let inactive_markets: Vec<i64> = match cmd.instrument_id {
                 Some(id) => self
                     .registry
                     .market_index(&id)
@@ -4970,7 +4970,7 @@ impl ExecutionClient for LighterExecutionClient {
             .iter()
             .map(|report| report.venue_order_id)
             .collect();
-        let mut fill_markets: Vec<i16> = fill_reports
+        let mut fill_markets: Vec<i64> = fill_reports
             .iter()
             .filter(|report| !reported_orders.contains(&report.venue_order_id))
             .filter_map(|report| self.registry.market_index(&report.instrument_id))
@@ -5182,7 +5182,7 @@ impl LighterExecutionClient {
     fn cached_position_reports(
         &self,
         cmd: &GeneratePositionStatusReports,
-    ) -> anyhow::Result<(Vec<PositionStatusReport>, bool, Option<AHashSet<i16>>)> {
+    ) -> anyhow::Result<(Vec<PositionStatusReport>, bool, Option<AHashSet<i64>>)> {
         // Lighter has no REST position source. The latest complete WebSocket
         // snapshot is authoritative, while a skipped row keeps the retained
         // cache available only as explicitly incomplete mass-status data.
@@ -6203,7 +6203,7 @@ mod tests {
     const TEST_ACCOUNT_INDEX_I64: i64 = 12345;
     const TEST_API_KEY_INDEX: u8 = 5;
     const TEST_NEXT_NONCE: i64 = 42;
-    const TEST_MARKET_INDEX: i16 = 0;
+    const TEST_MARKET_INDEX: i64 = 0;
     const TEST_ORDER_NONCE: i64 = 281_474_720_725_346;
     const TEST_SUBMISSION_NONCE: i64 = 2_042;
 
