@@ -156,6 +156,9 @@ mod tests {
 
         assert!(stream.nodelay().unwrap());
         assert!(socket.keepalive().unwrap());
+
+        // socket2 has no tcp_keepalive_time getter on Windows
+        #[cfg(unix)]
         assert_eq!(socket.tcp_keepalive_time().unwrap(), KEEPALIVE_TIME);
 
         #[cfg(target_os = "linux")]
