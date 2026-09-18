@@ -46,21 +46,40 @@ IN_SCOPE_CRATES=(
 
 # Audited OKX DST-path production files. Static coverage alone does not
 # establish runtime eligibility for every capability those files serve.
+#
+# A file is gated when it carries DST-path runtime logic that could grow a
+# banned pattern; the rest stay excluded. Re-audit a file if that changes.
+# Files under src/python/ are skipped separately by the /python/ path rule,
+# per the repo-wide Python/FFI policy.
+#
+# - Module declarations: lib.rs and the common/http/websocket mod.rs files.
+# - Pure venue types: common/enums.rs, websocket/enums.rs, both error.rs
+#   files, common/models.rs.
+# - Pure tables and mappings: common/urls.rs, common/consts.rs (pure
+#   predicates, validators, and resolvers; contains-only retry lookup).
+# - Deterministic helpers: common/credential.rs (caller-provided timestamp;
+#   config-or-environment resolution), common/failure.rs.
+# - Construction wiring only: factories.rs.
+# - Test-only or placeholder: common/testing.rs, http/parse.rs.
+
 ADAPTER_PATHS=(
   "crates/adapters/okx/src/book/mod.rs"
   "crates/adapters/okx/src/book/recovery.rs"
   "crates/adapters/okx/src/book/sync.rs"
   "crates/adapters/okx/src/common/parse.rs"
   "crates/adapters/okx/src/common/task.rs"
+  "crates/adapters/okx/src/config.rs"
   "crates/adapters/okx/src/data.rs"
   "crates/adapters/okx/src/execution.rs"
   "crates/adapters/okx/src/http/client.rs"
   "crates/adapters/okx/src/http/models.rs"
+  "crates/adapters/okx/src/http/query.rs"
   "crates/adapters/okx/src/websocket/client.rs"
   "crates/adapters/okx/src/websocket/dispatch.rs"
   "crates/adapters/okx/src/websocket/handler.rs"
   "crates/adapters/okx/src/websocket/messages.rs"
   "crates/adapters/okx/src/websocket/parse.rs"
+  "crates/adapters/okx/src/websocket/subscription.rs"
 )
 
 # Rule-1 L-dispositioned sites from the codebase audit: log timing, progress

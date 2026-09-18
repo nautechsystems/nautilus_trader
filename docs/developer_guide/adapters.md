@@ -58,6 +58,7 @@ work that proves conformance.
 | [Data events and request freshness](#data-client)     | Data clients               |
 | [Backpressure](#backpressure)                         | Every adapter              |
 | [Task management](#task-management)                   | Every adapter              |
+| [Deterministic simulation](#deterministic-simulation) | Maintained adapters        |
 
 ### Execution and reconciliation
 
@@ -101,8 +102,12 @@ comparable across venues, so a local structure has to prove the same contract on
 Two execution clients implement the same trait without trading through a venue API, so the baseline
 does not apply to them: [sandbox](../../crates/adapters/sandbox/src/execution.rs) simulates fills
 locally, and [blockchain](../../crates/adapters/blockchain/src/execution/client.rs) executes
-on-chain behind the `defi` feature. Deterministic simulation eligibility also sits outside the
-baseline, as an optional capability proven per adapter rather than a requirement.
+on-chain behind the `defi` feature. Deterministic simulation is a maintained-adapter requirement
+rather than an optional capability: every maintained adapter must satisfy the
+[adapter DST contract](../concepts/dst.md#adapter-dst-contract) or carry a venue-scoped migration
+record tracking the gap. OKX is the reference implementation;
+[deterministic simulation](#deterministic-simulation) defines the seams, gates, and the bar for new
+adapters.
 
 | Target                     | Shared piece                                                                                           | Contract                                                                      |
 | -------------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
@@ -118,6 +123,8 @@ baseline, as an optional capability proven per adapter rather than a requirement
 | Reconnect requests         | [`request_reconnect`](../../crates/network/src/websocket/client.rs)                                    | [Reconnection and shutdown](#reconnection-and-shutdown)                       |
 | Retry machinery            | [`RetryManager`](../../crates/network/src/retry.rs)                                                    | [Error handling and retry logic](#error-handling-and-retry-logic)             |
 | Inferred fill commission   | [`ExecutionClient`](../../crates/common/src/clients/execution.rs)                                      | [Commission failure handling](#commission-failure-handling)                   |
+| Time, tasks, and runtime   | [`nautilus_common::live::dst`](../../crates/common/src/live/dst.rs)                                    | [Deterministic simulation](#deterministic-simulation)                         |
+| Wall-clock reads           | [`duration_since_unix_epoch`](../../crates/core/src/time.rs)                                           | [Deterministic simulation](#deterministic-simulation)                         |
 
 Where a venue transmits a discrete value as an IEEE-754 field rather than a decimal string or JSON
 number, contain that at the parsing boundary as a documented exception instead of letting `f64`
@@ -126,6 +133,36 @@ spread inward from it.
 Retry classification is the exception to this table: it stays adapter-owned because venue status
 codes and rate-limit semantics differ. The shared machinery around it is not. See
 [error handling and retry logic](#error-handling-and-retry-logic) for both halves.
+
+### Deterministic simulation
+
+Every maintained adapter, an Official-tier adapter per
+[ADAPTERS.md](../../ADAPTERS.md#adapter-tiers), must satisfy the
+[adapter DST contract](../concepts/dst.md#adapter-dst-contract). An adapter that does not yet
+conform carries a venue-scoped migration record tracking the gap. Unclaimed capabilities stay
+outside the contract until a slice proves them.
+
+OKX is the reference implementation. It proves the contract through shared seams, static gates, and
+behavioral gates:
+
+- **Seams:** the `nautilus_common::live::dst` facade for time, tasks, runtime, and signals; the
+  `nautilus_core::time` wall-clock seam; the simulated HTTP and WebSocket transport in
+  `nautilus-network`; and the shared subscription, reconnect, and retry machinery in the baseline
+  table above.
+- **Static gates:** `check-dst-conventions` covers every DST-path production file (`ADAPTER_PATHS`
+  in `.pre-commit-hooks/check_dst_conventions.sh`), and the nightly `dst-smoke` gate runs the
+  simulation Clippy and test legs.
+- **Behavioral gates:** `crates/adapters/okx/tests/integration/dst.rs` pins exact subscribe bytes
+  and exact per-operation wire fields against controlled local peers; complete wire-to-domain
+  fresh-process comparison lives in the downstream harness.
+
+The [OKX integration guide's DST section](../integrations/okx.md#deterministic-simulation-testing)
+records the audited slice.
+
+A new adapter proves the contract from its first transport: gate DST-path files as they are added,
+drive every endpoint from configuration to a local peer, and pin wire bytes before expanding the
+slice. Do not introduce a shared abstraction until a second adapter proves the same boundary is
+needed.
 
 ## Structure of an adapter
 

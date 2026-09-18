@@ -149,6 +149,26 @@ The contract holds **only when every row below is satisfied**:
 | Local tasks              | Gate out `tokio::task::LocalSet` under simulation.                       | `madsim` does not provide `LocalSet`; use `spawn_local` without it.                                                                                    |
 | Blocking tasks           | Gate out or remove `tokio::task::spawn_blocking`.                        | The blocking call escapes the deterministic scheduler.                                                                                                 |
 
+### Adapter DST contract
+
+An adapter is DST-compliant only when every requirement below holds for each **claimed path**.
+The [adapter developer guide](../developer_guide/adapters.md#deterministic-simulation) names the
+reference implementation and states the maintained-adapter requirement; this section states the
+contract itself.
+
+| Requirement          | Rule                                                                                                                                                                                                                                                                    |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Build boundary       | Exposes and propagates the `simulation` feature; claimed paths build and run under `cfg(madsim)` with no test-only production behavior.                                                                                                                                 |
+| Static gate          | Every claimed-path production file covered by `check-dst-conventions`, or a recorded exclusion rationale.                                                                                                                                                               |
+| Deterministic inputs | Wall time, monotonic time, timers, randomness, and generated identifiers from the `nautilus_common::live::dst` facade, the `nautilus_core::time` wall-clock seam, or injected declared inputs; auth inputs from deterministic sources.                                  |
+| Async control        | Tasks, timers, and runtime control through the DST facade; `biased;` on every production `select!`; deterministic connect, reconnect, retry, unsubscribe, and shutdown.                                                                                                 |
+| Wire identity        | Ordered collections or explicit sorts at every wire and domain emission boundary; retries and reconnects preserve protocol identifiers and reproduce byte-identical requests from the same declared inputs; uncertain outcomes use the shared command-failure taxonomy. |
+| Controlled transport | Every claimed-path endpoint targets a controlled local peer through supported production configuration; no hardcoded venue host, credentials, or live venue state; fixed synthetic credentials allowed on private paths.                                                |
+| Fresh-process proof  | Same seed, configuration, and peer script produce identical wire transcripts and domain output across fresh processes; at least one calibrated mutation rejected; upstream pins subscribe bytes and wire fields, full comparison lives downstream.                      |
+
+A capability the adapter does not claim stays outside the contract until a slice proves it. Slices
+expand the proven set; the gates prevent regression.
+
 ## Static enforcement
 
 Static enforcement has two layers:
@@ -159,9 +179,10 @@ Static enforcement has two layers:
 | `check-dst-conventions` | The pre-commit hook applies path-aware and cfg-aware structural checks that Clippy cannot express cleanly.                |
 
 The hook lives at `.pre-commit-hooks/check_dst_conventions.sh` and runs in the standard pre-commit
-suite and CI. Rules 1 to 4 and 6 scan the 17 in-scope workspace crates and the selected OKX
-files listed below. Rule 5 covers its two audited files. Rule 7 scans the nine crates on the
-madsim build path, those OKX files, and `crates/network/src/websocket/client.rs`.
+suite and CI. Rules 1 to 4 and 6 scan the 17 in-scope workspace crates and the audited adapter
+files in the hook's `ADAPTER_PATHS` list. Rule 5 covers its two audited files. Rule 7 scans the
+nine crates on the madsim build path, those adapter files, and
+`crates/network/src/websocket/client.rs`.
 
 | Rule | Rejects                                                                                                                                        | Scope or exception                                                                                          |
 | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
@@ -216,22 +237,14 @@ The transitive closure of `nautilus-live` contains 16 in-scope crates:
 The hook also covers `backtest`, bringing the total to 17 crates.
 
 Adapter crates and infrastructure crates (Redis, Postgres) are out of scope unless an audited
-slice is listed here. Audited OKX DST-path production files route state-affecting clock reads and
-timers through the DST seams and sort reconnect and bulk-unsubscribe subscription commands. The
-static hook covers `book/mod.rs`, `book/recovery.rs`, `book/sync.rs`, `common/parse.rs`,
-`common/task.rs`, `data.rs`, `execution.rs`, `http/client.rs`, `http/models.rs`,
-`websocket/client.rs`, `websocket/dispatch.rs`, `websocket/handler.rs`, `websocket/messages.rs`,
-and `websocket/parse.rs` in `crates/adapters/okx/src`. These files also serve paths outside a
-proven runtime slice: static coverage alone does not establish their runtime eligibility.
+slice is recorded in the adapter's integration guide. An audited slice names the DST-path files
+the static gate covers, the exclusion rationale for the rest, and the runtime slices the adapter's
+`dst` tests prove.
 
-Focused Madsim tests in `crates/adapters/okx/tests/integration/dst.rs` cover subscribe-wire bytes for public
-WebSocket quotes, trades, and books, business WebSocket bars, and multi-instrument quote reconnect
-in topic order. Reconnect also clears quote and funding caches in `data.rs` so a new generation
-cannot reuse prior values. Private-path tests cover the login frame (key, passphrase, and
-signature derived from the simulated wall clock), single order-submit wire fields, and
-batch order-submit wire fields in input order. Complete request-to-wire-to-domain fresh-process
-comparison stays in the downstream DST harness. Other public channels, private data, and execution
-share the DST facades and convention gate but remain unproven runtime slices.
+:::warning
+Static coverage alone does not establish runtime eligibility: covered files may also serve paths
+outside a proven runtime slice.
+:::
 
 ## Simulated HTTP and WebSocket transport
 
@@ -418,12 +431,8 @@ has set semantics.
 #### Instrument store
 
 `InstrumentStore.instruments` in `crates/common/src/providers.rs` uses `IndexMap` with the `ahash`
-hasher. The order is observable because these adapters publish one `DataEvent::Instrument` per
-entry from `get_all()` or `list_all()`:
-
-- Betfair.
-- Derive.
-- Polymarket.
+hasher. The order is observable in adapters that publish one `DataEvent::Instrument` per entry
+from `get_all()` or `list_all()`.
 
 #### Order emulator
 
@@ -722,15 +731,14 @@ The nightly workflow and local pre-flight use the same DST targets:
 `check-code-sim` runs pinned stable Clippy with `--features simulation` and `cfg(madsim)` across
 `nautilus-common`, `nautilus-core`, `nautilus-event-store`, `nautilus-network`,
 `nautilus-execution`, and `nautilus-live`. A separate `--no-default-features` leg compiles and lints
-the OKX adapter without enabling OKX's default `high-precision` feature in the standard-precision
-core leg.
+each audited adapter without its default features in the standard-precision core leg.
 
 `cargo-test-sim` uses three feature-coherent nextest invocations:
 
 | Precision | Packages                                                                                                              | Features                    | Selection                                                                                      |
 | --------- | --------------------------------------------------------------------------------------------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------- |
 | Standard  | `nautilus-common`, `nautilus-core`, `nautilus-event-store`, `nautilus-network`, `nautilus-execution`, `nautilus-live` | `simulation`                | All compatible common, event-store, network, and execution tests; focused live and core tests. |
-| Standard  | `nautilus-okx`                                                                                                        | `simulation`                | Integration `dst` tests only, without OKX's default `high-precision` feature.                  |
+| Standard  | Each audited adapter                                                                                                  | `simulation`                | Integration `dst` tests only, without adapter default features.                                |
 | High      | `nautilus-common`, `nautilus-execution`                                                                               | `simulation,high-precision` | All tests in both packages.                                                                    |
 
 Nextest compiles the selected library and test targets, so the gate does not run a separate Cargo
@@ -793,17 +801,17 @@ runtime. `default_std_rng()` therefore takes its host-RNG fallback in these test
 
 The focused `nautilus-core` selection pins `wall_clock_now` against virtual time.
 
-#### OKX adapter tests
+#### Adapter tests
 
-The standard-precision OKX leg runs the integration `dst` tests under `simulation` without the
-crate's default `high-precision` feature. Those `#[madsim::test]` cases cover public WebSocket
-quotes, trades, and books, business WebSocket bars, and multi-instrument quote reconnect order.
+Each audited adapter runs its integration `dst` tests under `simulation` without the crate's
+default features. Those `#[madsim::test]` cases pin the slice the adapter's integration guide
+records: subscribe bytes, reconnect behavior, authentication frames, and per-operation wire fields.
 
 #### Overall gate coverage
 
 `#[madsim::test]` cases in `nautilus-common`, `nautilus-core`, `nautilus-network`,
-`nautilus-live`, and `nautilus-okx` provide deterministic-scheduler coverage. The complete gate
-catches drift in the cfg-gated seams but does not verify end-to-end adapter determinism.
+`nautilus-live`, and the audited adapters provide deterministic-scheduler coverage. The complete
+gate catches drift in the cfg-gated seams but does not verify end-to-end adapter determinism.
 
 ## Further reading
 

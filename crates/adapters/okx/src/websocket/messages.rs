@@ -1508,9 +1508,11 @@ pub struct WsCancelAlgoOrderParams {
     /// Instrument ID code (numeric). Replaced `instId` for WebSocket order operations.
     pub inst_id_code: u64,
     /// Algo order ID.
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub algo_id: Option<String>,
     /// Client algo order ID.
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub algo_cl_ord_id: Option<String>,
 }
@@ -2489,6 +2491,29 @@ mod tests {
         assert!(json.contains("\"instIdCode\":10459"));
         assert!(!json.contains("\"instId\""));
         assert!(json.contains("\"algoId\":\"987654321\""));
+    }
+
+    #[rstest]
+    fn test_ws_cancel_algo_order_params_builder_allows_either_identifier() {
+        use super::WsCancelAlgoOrderParamsBuilder;
+
+        let by_cl_ord_id = WsCancelAlgoOrderParamsBuilder::default()
+            .inst_id_code(10459u64)
+            .algo_cl_ord_id("Odstalgocancel0000001".to_string())
+            .build()
+            .unwrap();
+        let json = serde_json::to_value(&by_cl_ord_id).unwrap();
+        assert_eq!(json["algoClOrdId"], "Odstalgocancel0000001");
+        assert!(json.get("algoId").is_none());
+
+        let by_algo_id = WsCancelAlgoOrderParamsBuilder::default()
+            .inst_id_code(10459u64)
+            .algo_id("987654321".to_string())
+            .build()
+            .unwrap();
+        let json = serde_json::to_value(&by_algo_id).unwrap();
+        assert_eq!(json["algoId"], "987654321");
+        assert!(json.get("algoClOrdId").is_none());
     }
 
     #[rstest]

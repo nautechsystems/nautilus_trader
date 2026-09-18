@@ -36,10 +36,10 @@ create_case() {
   for adapter_path in \
     book/mod.rs book/recovery.rs book/sync.rs \
     common/parse.rs common/task.rs \
-    data.rs execution.rs \
-    http/client.rs http/models.rs \
+    config.rs data.rs execution.rs \
+    http/client.rs http/models.rs http/query.rs \
     websocket/client.rs websocket/dispatch.rs websocket/handler.rs \
-    websocket/messages.rs websocket/parse.rs; do
+    websocket/messages.rs websocket/parse.rs websocket/subscription.rs; do
     : > "$case_dir/crates/adapters/okx/src/$adapter_path"
   done
 }
@@ -205,6 +205,12 @@ printf '%s\n' 'pub async fn run() { tokio::time::sleep(delay).await; }' \
   > "$adapter_case/crates/adapters/okx/src/websocket/dispatch.rs"
 printf '%s\n' 'pub async fn run() { tokio::time::sleep(delay).await; }' \
   > "$adapter_case/crates/adapters/okx/src/common/task.rs"
+printf '%s\n' 'pub async fn run() { tokio::time::sleep(delay).await; }' \
+  > "$adapter_case/crates/adapters/okx/src/config.rs"
+printf '%s\n' 'pub async fn run() { tokio::time::sleep(delay).await; }' \
+  > "$adapter_case/crates/adapters/okx/src/http/query.rs"
+printf '%s\n' 'pub async fn run() { tokio::time::sleep(delay).await; }' \
+  > "$adapter_case/crates/adapters/okx/src/websocket/subscription.rs"
 run_hook "$adapter_case"
 if [ "$RUN_STATUS" -ne 1 ]; then
   echo "Expected the audited OKX path to reject a raw Tokio timer"
@@ -217,6 +223,9 @@ rg -Fq "Error (rule7): crates/adapters/okx/src/data.rs:2" "$adapter_case/plain.t
 rg -Fq "Error (rule7): crates/adapters/okx/src/execution.rs:1" "$adapter_case/plain.txt"
 rg -Fq "Error (rule7): crates/adapters/okx/src/websocket/dispatch.rs:1" "$adapter_case/plain.txt"
 rg -Fq "Error (rule7): crates/adapters/okx/src/common/task.rs:1" "$adapter_case/plain.txt"
+rg -Fq "Error (rule7): crates/adapters/okx/src/config.rs:1" "$adapter_case/plain.txt"
+rg -Fq "Error (rule7): crates/adapters/okx/src/http/query.rs:1" "$adapter_case/plain.txt"
+rg -Fq "Error (rule7): crates/adapters/okx/src/websocket/subscription.rs:1" "$adapter_case/plain.txt"
 
 # A missing audited file must fail loudly; split book files must stay gated
 missing_case="$CASE_ROOT/missing-adapter"
