@@ -2537,11 +2537,6 @@ mod tests {
             &[PAYLOAD_TYPE_ORDER_FILLED],
         ),
         cache_mutation(
-            "replace_position_without_order",
-            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
-            &[PAYLOAD_TYPE_ORDER_FILLED],
-        ),
-        cache_mutation(
             "update_account",
             CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
             &[PAYLOAD_TYPE_ACCOUNT_STATE],

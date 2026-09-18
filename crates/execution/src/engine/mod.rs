@@ -4414,19 +4414,12 @@ impl ExecutionEngine {
         if let Some(position_id) = prior_position_id {
             debug_assert_eq!(position_id, position.id);
 
-            if is_orderless_leg {
-                self.cache.borrow_mut().replace_position_without_order(
-                    position,
-                    oms_type,
-                    self.config.carry_replay_events_on_reopen,
-                )?;
-            } else {
-                self.cache.borrow_mut().replace_position(
-                    position,
-                    oms_type,
-                    self.config.carry_replay_events_on_reopen,
-                )?;
-            }
+            self.cache.borrow_mut().replace_position(
+                &position,
+                oms_type,
+                !is_orderless_leg,
+                self.config.carry_replay_events_on_reopen,
+            )?;
         } else if is_orderless_leg {
             self.cache
                 .borrow_mut()

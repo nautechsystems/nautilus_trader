@@ -3003,31 +3003,21 @@ impl Cache {
     /// Replaces the cached position holding `position.id`, optionally moving the prior cycle's
     /// durable replay state into it.
     ///
+    /// Pass `index_order` false when the opening fill intentionally has no backing order, matching
+    /// [`Self::add_position_without_order`]. The carry runs under the same borrow as the swap, so a
+    /// validation failure cannot leave the prior position stripped of its replay history.
+    ///
     /// # Errors
     ///
     /// Returns an error if validating or persisting the position fails.
     pub fn replace_position(
         &mut self,
-        position: Position,
+        position: &Position,
         oms_type: OmsType,
+        index_order: bool,
         carry_replay_state: bool,
     ) -> anyhow::Result<()> {
-        self.add_position_inner(position, oms_type, true, carry_replay_state)
-    }
-
-    /// Replaces the cached orderless position holding `position.id`, optionally moving the prior
-    /// cycle's durable replay state into it.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if validating or persisting the position fails.
-    pub fn replace_position_without_order(
-        &mut self,
-        position: Position,
-        oms_type: OmsType,
-        carry_replay_state: bool,
-    ) -> anyhow::Result<()> {
-        self.add_position_inner(position, oms_type, false, carry_replay_state)
+        self.add_position_inner(position.clone(), oms_type, index_order, carry_replay_state)
     }
 
     fn add_position_inner(
