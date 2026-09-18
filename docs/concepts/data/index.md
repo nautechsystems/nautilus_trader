@@ -535,9 +535,10 @@ For a precision below `FIXED_PRECISION`, the raw value must be divisible by
 produce an incorrect value.
 :::
 
-Current catalog price and size columns use `Decimal128(38, 16)`. Their decoded values are decimals;
-their physical mantissas use the storage scale, which can differ from the model's raw integer scale.
-Use `from_raw()` only for integers already encoded at the active model scale.
+Current catalog price and size columns for fixed-point market data use `Decimal128(38, 16)`. Their
+decoded values are decimals; their physical mantissas use the storage scale, which can differ from
+the model's raw integer scale. Use `from_raw()` only for integers already encoded at the active model
+scale.
 
 #### Legacy raw value correction
 

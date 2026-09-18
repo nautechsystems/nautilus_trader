@@ -80,5 +80,19 @@ Parquet promotion can write multiple destination files. It does not provide the 
 or historical query pin of a transactional catalog backend. Coordinate readers if an application
 requires all files from a promotion to become visible together.
 
+### Overlapping schema-group intervals
+
+Promotion groups restored Feather batches by full schema, including precision metadata, and writes
+one catalog file per group. Filenames carry a hash of the promotion identity, so two groups for one
+identifier can still share a timestamp interval. One run produces two such groups when its records
+differ in schema, for example an empty order book depth staged alongside a populated one for the same
+instrument.
+
+The catalog requires disjoint closed `ts_init` intervals per identifier directory, so the second
+overlapping write fails with a non-disjoint-intervals error. Files written by earlier groups in that
+attempt remain in the catalog, the staged Feather source is retained, and no promotion identity is
+recorded, so retrying reproduces the error. The same rejection and retention applies to automatic
+promotion and to manual conversion through `ParquetDataCatalog.convert_stream_to_data()`.
+
 See the [catalog guide](../concepts/data/index.md#data-catalog) for query and storage behavior and
 [Parquet migration](migrate_parquet_catalog.md) for importing older catalogs.

@@ -140,8 +140,11 @@ impl ParquetDataCatalog {
     ///
     /// # Note
     ///
-    /// This method is currently not fully implemented. Feather file reading
-    /// requires complex deserialization logic that needs to be added.
+    /// This method reads through the run reader: it lists the run's data-type directories, reads
+    /// every Feather file through the Arrow IPC stream reader with staged batch restoration, decodes
+    /// quotes, trades, order book deltas and depths, bars, index and mark prices, option Greeks,
+    /// funding rates, instrument status and closes, and custom data files into `Data` values, skips
+    /// unknown data types, and sorts the result by `ts_init`.
     ///
     /// # Examples
     ///
@@ -560,7 +563,8 @@ impl ParquetDataCatalog {
 
         // Process each feather file independently so that each file's identifier
         // (instrument_id or bar_type from schema metadata) is preserved when writing
-        // to parquet. This matches the Python _convert_feather_table_to_parquet approach.
+        // to parquet. Conversion then groups each file's restored batches by full schema
+        // before writing one catalog file per group.
         for file_path in feather_files {
             let batches = self.read_feather_file(&file_path)?;
             self.convert_feather_batches_to_parquet(
