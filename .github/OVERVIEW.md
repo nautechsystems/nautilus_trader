@@ -85,6 +85,9 @@ artifact integrity records, and verification flow. This section records CI-speci
   trusted repository maintainers before the workflow reaches the self-hosted build pool.
 - `build.yml` cancels superseded pull request runs. Push runs use commit-specific concurrency groups,
   so a later push cannot replace an earlier candidate's result.
+- Jobs that publish wheels to R2, merge `nightly`, or dispatch documentation builds declare a GitHub
+  Environment with a deployment branch policy: `r2-develop` (`develop`), `r2-nightly` (`nightly`),
+  `release` (`master`), `nightly-merge` (`develop`), and `build-docs` (`master` and `nightly`).
 
 ### Publication integrity
 
