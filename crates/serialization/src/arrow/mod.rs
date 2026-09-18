@@ -1976,9 +1976,7 @@ mod tests {
             Bar, BarSpecification, BarType, BookOrder, DEPTH10_LEN, OrderBookDelta, OrderBookDepth,
             QuoteTick, order::NULL_ORDER,
         },
-        enums::{
-            AggregationSource, BarAggregation, BookAction, CurrencyType, OrderSide, PriceType,
-        },
+        enums::{AggregationSource, BarAggregation, BookAction, OrderSide, PriceType},
         identifiers::InstrumentId,
         types::{Price, Quantity},
     };
@@ -1989,6 +1987,8 @@ mod tests {
     #[cfg(feature = "high-precision")]
     #[rstest]
     fn test_money_rejects_currency_precision_above_catalog_scale() {
+        use nautilus_model::enums::CurrencyType;
+
         if nautilus_model::types::fixed::check_fixed_precision(18).is_err() {
             return;
         }
