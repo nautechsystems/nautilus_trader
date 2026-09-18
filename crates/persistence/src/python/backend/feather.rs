@@ -55,7 +55,10 @@ use object_store::ObjectStoreExt;
 use pyo3::{exceptions::PyIOError, prelude::*};
 
 use crate::{
-    common::storage::{StorageBackend, create_storage_backend_from_path},
+    common::{
+        paths::normalize_path_separators,
+        storage::{StorageBackend, create_storage_backend_from_path},
+    },
     python::backend::writer_record_filter_from_py,
     writer::{
         feather::{FeatherWriter, RotationConfig, WriterClock},
@@ -563,10 +566,13 @@ where
 }
 
 fn run_kind_and_instance_id_from_path(path: &str) -> Option<(String, String)> {
-    let parsed_url = url::Url::parse(path).ok();
-    let path = parsed_url
-        .as_ref()
-        .map_or(path, |url| url.path().trim_start_matches('/'));
+    let normalized = normalize_path_separators(path);
+    let parsed_url = url::Url::parse(&normalized).ok();
+
+    let path = parsed_url.as_ref().map_or(normalized.as_str(), |url| {
+        url.path().trim_start_matches('/')
+    });
+
     let components: Vec<&str> = path
         .trim_matches('/')
         .split('/')
@@ -589,7 +595,7 @@ fn run_kind_and_instance_id_from_path(path: &str) -> Option<(String, String)> {
 mod tests {
     use rstest::rstest;
 
-    use super::block_on_local;
+    use super::{block_on_local, run_kind_and_instance_id_from_path};
 
     #[rstest]
     fn block_on_local_rejects_current_thread_runtime() {
@@ -626,5 +632,35 @@ mod tests {
             error.to_string(),
             "RuntimeError: Cannot run test operation from an active Tokio runtime"
         );
+    }
+
+    #[rstest]
+    #[case(
+        r"C:\Users\Administrator\AppData\Local\Temp\pytest-0\backtest\run-greeks",
+        "backtest",
+        "run-greeks"
+    )]
+    #[case("C:/catalog/backtest/run-1", "backtest", "run-1")]
+    #[case(r"\\server\share\live\run-2", "live", "run-2")]
+    #[case("/tmp/catalog/sandbox/run-3", "sandbox", "run-3")]
+    #[case("file:///C:/catalog/backtest/run-1", "backtest", "run-1")]
+    fn run_kind_and_instance_id_handles_platform_paths(
+        #[case] path: &str,
+        #[case] kind: &str,
+        #[case] instance_id: &str,
+    ) {
+        assert_eq!(
+            run_kind_and_instance_id_from_path(path),
+            Some((kind.to_string(), instance_id.to_string())),
+        );
+    }
+
+    #[rstest]
+    fn run_kind_and_instance_id_rejects_non_run_paths() {
+        assert_eq!(
+            run_kind_and_instance_id_from_path(r"C:\catalog\data\quotes"),
+            None
+        );
+        assert_eq!(run_kind_and_instance_id_from_path("/tmp/catalog"), None);
     }
 }

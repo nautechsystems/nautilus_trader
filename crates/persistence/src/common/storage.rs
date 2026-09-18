@@ -34,7 +34,8 @@ use object_store::{
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::common::paths::make_object_store_path;
+pub use crate::common::paths::normalize_path_to_uri;
+use crate::common::paths::{file_uri_to_native_path, make_object_store_path, path_to_file_uri};
 
 /// File name used to represent run sessions, including runs that wrote no data files.
 pub const RUN_MANIFEST_FILENAME: &str = "_nautilus_run_manifest.json";
@@ -281,26 +282,6 @@ pub fn datafusion_root_url(uri: &str) -> anyhow::Result<Url> {
     Ok(url)
 }
 
-/// Normalizes a local path or storage URI for persistence backends.
-///
-/// # Errors
-///
-/// Returns an error if a relative path cannot be resolved against the current directory.
-pub fn normalize_path_to_uri(path: &str) -> anyhow::Result<String> {
-    if path.contains("://") {
-        return Ok(path.to_string());
-    }
-
-    if is_absolute_path(path) {
-        return Ok(path_to_file_uri(path));
-    }
-
-    let current_dir = std::env::current_dir().map_err(|e| {
-        anyhow::anyhow!("Failed to resolve current directory for relative path '{path}': {e}")
-    })?;
-    Ok(path_to_file_uri(&current_dir.join(path).to_string_lossy()))
-}
-
 /// Resolves a storage location for overlap checks without creating files.
 ///
 /// Local paths follow existing symlinks and normalize missing suffixes. Remote locations use
@@ -344,40 +325,6 @@ pub fn normalize_storage_location(path: &str) -> anyhow::Result<String> {
     url.set_fragment(None);
     url.set_query(None);
     Ok(url.as_str().trim_end_matches('/').to_string())
-}
-
-fn is_absolute_path(path: &str) -> bool {
-    path.starts_with('/')
-        || path.starts_with("\\\\")
-        || (path.len() >= 3
-            && path.chars().nth(1) == Some(':')
-            && matches!(path.chars().nth(2), Some('\\' | '/')))
-}
-
-fn path_to_file_uri(path: &str) -> String {
-    if path.starts_with('/') {
-        format!("file://{path}")
-    } else if path.len() >= 3 && path.chars().nth(1) == Some(':') {
-        format!("file:///{}", path.replace('\\', "/"))
-    } else if let Some(path) = path.strip_prefix("\\\\") {
-        format!("file://{}", path.replace('\\', "/"))
-    } else {
-        format!("file://{path}")
-    }
-}
-
-#[cfg(windows)]
-fn file_uri_to_native_path(uri: &str) -> String {
-    uri.strip_prefix("file://")
-        .or_else(|| uri.strip_prefix("file:"))
-        .unwrap_or(uri)
-        .trim_start_matches('/')
-        .replace('/', "\\")
-}
-
-#[cfg(not(windows))]
-fn file_uri_to_native_path(uri: &str) -> String {
-    uri.strip_prefix("file://").unwrap_or(uri).to_string()
 }
 
 /// Creates an OpenDAL-backed storage backend from a Nautilus storage URI.
@@ -546,20 +493,6 @@ mod tests {
             create_storage_backend_from_path("file:///tmp/nautilus-catalog", None).unwrap();
 
         assert_eq!(storage.datafusion_root_url().unwrap().as_str(), "file:///");
-    }
-
-    #[rstest]
-    #[case("/tmp/test", "file:///tmp/test")]
-    #[case("C:\\tmp\\test", "file:///C:/tmp/test")]
-    #[case("C:/tmp/test", "file:///C:/tmp/test")]
-    #[case("\\\\server\\share\\file", "file://server/share/file")]
-    #[case("s3://bucket/path", "s3://bucket/path")]
-    #[case("https://example.com/path", "https://example.com/path")]
-    fn normalize_path_to_uri_handles_local_paths_and_storage_uris(
-        #[case] path: &str,
-        #[case] expected: &str,
-    ) {
-        assert_eq!(normalize_path_to_uri(path).unwrap(), expected);
     }
 
     #[rstest]

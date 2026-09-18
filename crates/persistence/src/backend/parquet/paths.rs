@@ -27,8 +27,9 @@ use nautilus_core::{
 };
 
 pub use crate::common::paths::{
-    CatalogPathPrefix, extract_identifier_from_path, make_object_store_path,
-    make_sql_safe_identifier, safe_directory_identifier, urisafe_instrument_id,
+    CatalogPathPrefix, extract_identifier_from_path, extract_path_components,
+    local_to_object_store_path, make_object_store_path, make_sql_safe_identifier,
+    normalize_path_separators, safe_directory_identifier, urisafe_instrument_id,
 };
 
 /// Converts timestamps to a filename using ISO 8601 format.
@@ -98,7 +99,10 @@ pub fn extract_sql_safe_filename(file_path: &str) -> String {
         return "unknown_file".to_string();
     }
 
-    let filename = file_path.split('/').next_back().unwrap_or("unknown_file");
+    let filename = file_path
+        .split(['/', '\\'])
+        .next_back()
+        .unwrap_or("unknown_file");
 
     // Remove .parquet extension
     let name_without_ext = if let Some(dot_pos) = filename.rfind(".parquet") {
@@ -120,24 +124,6 @@ pub fn make_local_path<P: AsRef<Path>>(base_path: P, components: &[&str]) -> Pat
         path.push(component);
     }
     path
-}
-
-/// Converts a local `PathBuf` to an object store path string.
-#[must_use]
-pub fn local_to_object_store_path(local_path: &Path) -> String {
-    local_path.to_string_lossy().replace('\\', "/")
-}
-
-/// Extracts path components using platform-appropriate path parsing.
-#[must_use]
-pub fn extract_path_components(path_str: &str) -> Vec<String> {
-    // Normalize separators and split
-    let normalized = path_str.replace('\\', "/");
-    normalized
-        .split('/')
-        .filter(|s| !s.is_empty())
-        .map(ToString::to_string)
-        .collect()
 }
 
 /// Checks if a filename's timestamp range intersects with a query interval.

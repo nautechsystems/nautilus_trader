@@ -34,7 +34,10 @@ use nautilus_core::UnixNanos;
 use nautilus_model::data::Data;
 
 use crate::{
-    common::{conversion::FeatherConversionSummary, storage::StorageBackend},
+    common::{
+        conversion::FeatherConversionSummary, paths::normalize_path_separators,
+        storage::StorageBackend,
+    },
     writer::{
         run::{FeatherSessionSource, RunStatus},
         traits::StreamingSink,
@@ -102,13 +105,8 @@ impl PromotionSession {
     }
 
     fn from_local_path(path: &str) -> Option<Self> {
-        let normalized;
-        let path = if path.as_bytes().get(1) == Some(&b':') {
-            normalized = path.replace('\\', "/");
-            PathBuf::from(&normalized)
-        } else {
-            PathBuf::from(path)
-        };
+        let normalized = normalize_path_separators(path);
+        let path = PathBuf::from(&normalized);
         let instance_id = path.file_name()?.to_string_lossy().to_string();
         let kind = path.parent()?.file_name()?.to_string_lossy().to_string();
         if !is_run_kind(&kind) {
@@ -1144,6 +1142,27 @@ mod tests {
         assert_eq!(session.catalog_uri, "C:/catalog");
         assert_eq!(session.kind, "backtest");
         assert_eq!(session.instance_id, "run-1");
+    }
+
+    #[rstest]
+    fn promotion_session_parses_windows_unc_path() {
+        let session =
+            PromotionSession::from_uri(r"\\server\share\live\run-2").expect("valid UNC run path");
+
+        // catalog_uri is platform-dependent here (Windows retains a trailing
+        // separator at the UNC prefix+root floor), so only kind/instance_id are asserted.
+        assert_eq!(session.kind, "live");
+        assert_eq!(session.instance_id, "run-2");
+    }
+
+    #[rstest]
+    fn promotion_session_parses_posix_path() {
+        let session =
+            PromotionSession::from_uri("/tmp/catalog/sandbox/run-3").expect("valid run path");
+
+        assert_eq!(session.catalog_uri, "/tmp/catalog");
+        assert_eq!(session.kind, "sandbox");
+        assert_eq!(session.instance_id, "run-3");
     }
 
     #[rstest]

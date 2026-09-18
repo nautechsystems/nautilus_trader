@@ -3304,6 +3304,15 @@ fn test_extract_sql_safe_filename() {
     // Test empty path
     let filename = extract_sql_safe_filename("");
     assert_eq!(filename, "unknown_file");
+
+    // Test Windows-style path with backslashes
+    let filename = extract_sql_safe_filename(
+        r"data\quote_tick\EURUSD\2021-01-01T00-00-00-000000000Z_2021-01-02T00-00-00-000000000Z.parquet",
+    );
+    assert_eq!(
+        filename,
+        "2021_01_01t00_00_00_000000000z_2021_01_02t00_00_00_000000000z"
+    );
 }
 
 #[rstest]
