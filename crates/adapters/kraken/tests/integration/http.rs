@@ -101,6 +101,8 @@ struct TestServerState {
     open_positions_json: Arc<tokio::sync::Mutex<Option<String>>>,
     trade_volume_request_count: Arc<AtomicUsize>,
     trade_volume_failures_remaining: Arc<AtomicUsize>,
+    /// When true, `/0/private/TradeVolume` returns a Kraken API permission error.
+    trade_volume_api_error: Arc<AtomicBool>,
     trade_volume_bodies: Arc<tokio::sync::Mutex<Vec<Value>>>,
     trade_volume_omitted_fee: Arc<tokio::sync::Mutex<Option<String>>>,
     trade_volume_omitted_maker_fee: Arc<tokio::sync::Mutex<Option<String>>>,
@@ -130,6 +132,7 @@ impl Default for TestServerState {
             open_positions_json: Arc::new(tokio::sync::Mutex::new(None)),
             trade_volume_request_count: Arc::new(AtomicUsize::new(0)),
             trade_volume_failures_remaining: Arc::new(AtomicUsize::new(0)),
+            trade_volume_api_error: Arc::new(AtomicBool::new(false)),
             trade_volume_bodies: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             trade_volume_omitted_fee: Arc::new(tokio::sync::Mutex::new(None)),
             trade_volume_omitted_maker_fee: Arc::new(tokio::sync::Mutex::new(None)),
@@ -789,6 +792,15 @@ async fn mock_spot_trade_volume(req: Request, state: Arc<TestServerState>) -> Re
             .unwrap();
     }
 
+    // Kraken signals API errors with HTTP 200 and a populated `error` array.
+    if state.trade_volume_api_error.load(Ordering::Relaxed) {
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"error":["EGeneral:Permission denied"]}"#))
+            .unwrap();
+    }
+
     let result = if let Some(pairs) = body["pair"].as_array() {
         let mut fees = serde_json::Map::new();
         let mut fees_maker = serde_json::Map::new();
@@ -1396,6 +1408,55 @@ async fn test_spot_domain_request_instruments_uses_account_fee_rates_and_retries
             {"asset": "AAPL/USD", "aclass": "equity_pair"}
         ])
     );
+}
+
+/// A failed `TradeVolume` request must not abort instrument loading.
+///
+/// The fee request runs on the execution client connect path, so aborting the listing costs the
+/// account state and reconciliation entirely. Instruments must load with the public base-tier
+/// rates from `AssetPairs` instead. This covers both fee call sites: the main listing and the
+/// tokenized (`aclass=equity_pair`) request.
+#[rstest]
+#[tokio::test]
+async fn test_spot_domain_request_instruments_falls_back_to_public_fees_on_error() {
+    let (addr, state) = start_test_server().await;
+    state.trade_volume_api_error.store(true, Ordering::Relaxed);
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "dGVzdF9hcGlfc2VjcmV0X2Jhc2U2NA==".to_string(),
+        KrakenEnvironment::Live,
+        Some(format!("http://{addr}")),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instruments = client
+        .request_instruments(None)
+        .await
+        .expect("instruments must still load when the account fee request fails");
+
+    // Public base-tier rates from test_data/http_asset_pairs.json (0.25% / 0.4%), which are
+    // distinct from the account rates the TradeVolume mock would otherwise return.
+    let currency_pair = instruments
+        .iter()
+        .find(|instrument| instrument.raw_symbol().as_str() == "XBTUSDT")
+        .expect("XBTUSDT instrument");
+    assert_eq!(currency_pair.maker_fee(), dec!(0.0025));
+    assert_eq!(currency_pair.taker_fee(), dec!(0.004));
+
+    // The tokenized fee request fails the same way and must also fall back rather than abort,
+    // using the public rates from test_data/http_asset_pairs_tokenized.json.
+    let tokenized = instruments
+        .iter()
+        .find(|instrument| instrument.raw_symbol().as_str() == "AAPLxUSD")
+        .expect("tokenized instrument must survive a failed equity_pair fee request");
+    assert_eq!(tokenized.maker_fee(), dec!(-0.0002));
+    assert_eq!(tokenized.taker_fee(), dec!(0.001));
 }
 
 #[rstest]

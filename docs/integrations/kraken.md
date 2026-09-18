@@ -76,10 +76,14 @@ from Kraken's
 The API key must include the `Funds permissions - Query` permission, shown as
 **Query Funds** when creating the key.
 
-If `TradeVolume` fails or omits any requested pair, the Spot data or execution
-client cannot connect. The adapter does not silently publish instruments with
-public base-tier fees. For pairs without a maker/taker schedule, Kraken returns
-one fee, which the adapter applies to both maker and taker activity.
+If the `TradeVolume` request fails, the adapter logs a warning and uses the
+public base-tier rates from `AssetPairs` instead, so a transient or isolated
+failure does not stop the Spot data or execution client connecting. A key
+missing `Funds permissions - Query` altogether still fails later, when the
+execution client requests account state. If the request succeeds but the
+response omits the fee for a requested pair, the client cannot connect. For pairs without a
+maker/taker schedule, Kraken returns one fee, which the adapter applies to both
+maker and taker activity.
 
 Without Spot API credentials, the adapter uses the public base-tier rates from
 `AssetPairs`. These rates can differ from the account's actual fee tier.

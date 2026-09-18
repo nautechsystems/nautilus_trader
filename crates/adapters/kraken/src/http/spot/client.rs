@@ -1599,7 +1599,9 @@ impl KrakenSpotHttpClient {
     /// When `pairs` is `None` (loading all), also fetches tokenized asset pairs
     /// (xStocks) and merges them with the default currency pairs.
     /// When credentials are configured, instruments use account fee rates from `TradeVolume`;
-    /// otherwise, they use the public base-tier rates from `AssetPairs`.
+    /// otherwise, they use the public base-tier rates from `AssetPairs`. When the `TradeVolume`
+    /// request itself fails, instruments load with the public rates rather than failing, so a fee
+    /// problem cannot take down the execution client on connect.
     pub async fn request_instruments(
         &self,
         pairs: Option<Vec<String>>,
@@ -1728,10 +1730,23 @@ impl KrakenSpotHttpClient {
                     .collect(),
             ),
         };
-        let response = self
+        // A failure to resolve account fee rates must not abort instrument loading: this runs on
+        // the execution client connect path, where losing the listing costs the account state and
+        // reconciliation. Fall back to the public base-tier rates from `AssetPairs` instead.
+        // A malformed response is still an error, see the fee-key lookup below.
+        let response = match self
             .inner
             .get_trade_volume(&SpotTradeVolumeParams { pair: pair_ids })
-            .await?;
+            .await
+        {
+            Ok(response) => response,
+            Err(e) => {
+                log::warn!(
+                    "Failed to request Kraken account fee rates, falling back to public rates: {e}"
+                );
+                return Ok(AHashMap::new());
+            }
+        };
 
         fee_keys
             .into_iter()
