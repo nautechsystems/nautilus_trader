@@ -43,7 +43,7 @@ use nautilus_common::{
         DataEvent,
         data::{
             RequestBookSnapshot, RequestCustomData, RequestInstrument, RequestInstruments,
-            RequestTrades, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCustomData,
+            RequestTrades, SubscribeBookDeltas, SubscribeBookDepth, SubscribeCustomData,
             SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
             SubscribeInstruments, SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas,
             UnsubscribeCustomData, UnsubscribeInstrument, UnsubscribeInstrumentClose,
@@ -675,9 +675,9 @@ impl DataClient for PolymarketDataClient {
         Ok(())
     }
 
-    fn subscribe_book_depth10(&mut self, _cmd: SubscribeBookDepth10) -> anyhow::Result<()> {
+    fn subscribe_book_depth(&mut self, _cmd: SubscribeBookDepth) -> anyhow::Result<()> {
         anyhow::bail!(
-            "Polymarket does not support OrderBookDepth10 subscriptions; use managed L2_MBP order book deltas"
+            "Polymarket does not support OrderBookDepth subscriptions; use managed L2_MBP order book deltas"
         )
     }
 

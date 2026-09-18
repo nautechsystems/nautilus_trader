@@ -37,6 +37,7 @@ use nautilus_core::{
     AtomicTime,
     string::secret::{REDACTED, SecretString},
 };
+pub use nautilus_live::book::snapshot::SnapshotGate;
 use nautilus_model::identifiers::ClientOrderId;
 use nautilus_network::{
     RECONNECTED,
@@ -44,7 +45,6 @@ use nautilus_network::{
     retry::{RetryError, RetryManager, create_websocket_retry_manager},
     websocket::{AuthTracker, SubscriptionState, TEXT_PING, TEXT_PONG, WebSocketClient},
 };
-use parking_lot::{Mutex, MutexGuard};
 use serde_json::{Map, Value};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_util::sync::CancellationToken;
@@ -142,36 +142,6 @@ impl Debug for HandlerCommand {
                 .field("op", op)
                 .finish(),
         }
-    }
-}
-
-/// Coordinates subscription sends with snapshot acceptance.
-///
-/// Clones share one gate, which is initially open.
-#[derive(Debug, Clone, Default)]
-pub struct SnapshotGate {
-    closed: Arc<Mutex<bool>>,
-}
-
-impl SnapshotGate {
-    pub(crate) fn open(&self) {
-        *self.closed.lock() = false;
-    }
-
-    pub(crate) fn lock(&self) -> SnapshotGateGuard<'_> {
-        SnapshotGateGuard(self.closed.lock())
-    }
-}
-
-pub(crate) struct SnapshotGateGuard<'a>(MutexGuard<'a, bool>);
-
-impl SnapshotGateGuard<'_> {
-    pub(crate) fn close(&mut self) {
-        *self.0 = true;
-    }
-
-    pub(crate) fn is_closed(&self) -> bool {
-        *self.0
     }
 }
 

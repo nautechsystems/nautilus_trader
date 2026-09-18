@@ -138,6 +138,7 @@ legitimately have no book changes.
 
 ### Retry loop and limits
 
+The adapter uses the [shared book recovery machinery](../developer_guide/adapters.md#order-book-recovery-ownership).
 Each instrument has one recovery loop. It retries transient transport failures, retryable venue
 rejections, and missing snapshots.
 
@@ -173,6 +174,10 @@ book output for that subscription. Subscription intent remains registered for re
 to restart synchronization.
 
 ### Snapshot correlation limitation
+
+Incremental book channels accept a snapshot only while establishing or recovering synchronization.
+Once synchronized, the client discards unsolicited snapshots without replacing the book or resetting
+its sequence. Channels that publish recurring full snapshots continue to accept them.
 
 Book subscription sends wait for a completed transport write on the intended connection.
 Both sends in a replacement use the same connection; a connection change fails the attempt.

@@ -50,7 +50,7 @@ use super::{
     responses::confirm_modify_replacement,
 };
 use crate::{
-    common::enums::SignatureType,
+    common::enums::{PolymarketSignatureType, PolymarketSignerType},
     http::{
         clob::PolymarketClobHttpClient,
         query::{GetBalanceAllowanceParams, GetTradesParams},
@@ -83,12 +83,14 @@ impl TargetOrderAuthority {
 
 impl PolymarketExecutionClient {
     pub(super) fn fill_context(&self) -> FillContext<'_> {
+        let signer_type = self.config.signer_type;
         let user_address = self
             .secrets
             .funder
             .as_deref()
             .unwrap_or(&self.secrets.address);
         FillContext {
+            signer_type,
             account_id: self.core.account_id,
             user_address,
             api_key: self.secrets.credential.api_key_str(),
@@ -426,6 +428,7 @@ impl PolymarketExecutionClient {
         let emitter = self.emitter.clone();
         let ws_dispatch_state = self.ws_dispatch_state.clone();
         let clock = self.clock;
+        let signer_type = self.config.signer_type;
         let user_address = self
             .secrets
             .funder
@@ -447,6 +450,7 @@ impl PolymarketExecutionClient {
             match http_client.get_order_optional(&venue_order_id_str).await {
                 Ok(Some(order)) => {
                     let ctx = FillContext {
+                        signer_type,
                         account_id,
                         user_address: &user_address,
                         api_key: api_key.expose_secret(),
@@ -981,6 +985,10 @@ impl PolymarketExecutionClient {
         &self,
         cmd: &GeneratePositionStatusReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        anyhow::ensure!(
+            self.config.signer_type != PolymarketSignerType::Session,
+            "Session positions cannot be inferred from wallet-wide holdings"
+        );
         let ctx = self.fill_context();
         let positions = self
             .data_api_client
@@ -1059,7 +1067,7 @@ pub(super) async fn fetch_and_emit_account_state(
     http_client: &PolymarketClobHttpClient,
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
-    signature_type: SignatureType,
+    signature_type: PolymarketSignatureType,
     order_reservations: &Mutex<AHashMap<ClientOrderId, Money>>,
 ) -> anyhow::Result<()> {
     let params = GetBalanceAllowanceParams {
@@ -1110,7 +1118,7 @@ fn balance_with_order_reservations(
 
 pub(super) async fn fetch_collateral_balance_pusd(
     http_client: &PolymarketClobHttpClient,
-    signature_type: SignatureType,
+    signature_type: PolymarketSignatureType,
 ) -> anyhow::Result<Decimal> {
     let params = GetBalanceAllowanceParams {
         asset_type: Some(crate::http::query::AssetType::Collateral),

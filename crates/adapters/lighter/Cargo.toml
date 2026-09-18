@@ -114,6 +114,7 @@ dotenvy = { workspace = true }
 iai = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
+toml = { workspace = true }
 
 [[bench]]
 name = "signing_sign_verify"

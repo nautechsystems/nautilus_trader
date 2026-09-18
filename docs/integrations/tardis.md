@@ -38,7 +38,7 @@ The following normalized Tardis Machine formats are supported by NautilusTrader.
 | Tardis format       | Nautilus data type                                            |
 | :------------------ | :------------------------------------------------------------ |
 | `book_change`       | `OrderBookDeltas`                                             |
-| `book_snapshot_*`   | `OrderBookDepth10` or `OrderBookDeltas`                       |
+| `book_snapshot_*`   | `OrderBookDepth` or `OrderBookDeltas`                         |
 | `quote`             | `QuoteTick`                                                   |
 | `quote_10s`         | `QuoteTick`                                                   |
 | `trade`             | `TradeTick`                                                   |
@@ -256,7 +256,7 @@ Next, ensure you have a configuration JSON file available.
 - `normalize_symbols` (`bool | null`): applies Nautilus symbol normalization. Defaults to `true`.
 - `output_path` (`str | null`): output directory for Parquet data. When unset, uses
   `<NAUTILUS_PATH>/catalog/data` if `NAUTILUS_PATH` is set, then the current working directory.
-- `book_snapshot_output` (`"deltas" | "depth10" | null`): output format for snapshots. Defaults
+- `book_snapshot_output` (`"deltas" | "depth" | null`): output format for snapshots. Defaults
   to `"deltas"`.
 - `extract_bbo_as_quotes` (`bool | null`): also writes `QuoteTick` data from best bid/offer fields
   in Tardis Machine `option_summary` messages. Defaults to `false`.
@@ -293,22 +293,22 @@ An example configuration file is available at `crates/adapters/tardis/bin/exampl
 The `book_snapshot_output` configuration option controls how Tardis `book_snapshot_*` messages are
 converted and stored.
 
-| Value     | Nautilus type      | Output directory     | Description                             |
-| :-------- | :----------------- | :------------------- | :-------------------------------------- |
-| `deltas`  | `OrderBookDeltas`  | `order_book_deltas/` | Clear and add deltas for each snapshot. |
-| `depth10` | `OrderBookDepth10` | `order_book_depths/` | Snapshots with up to 10 price levels.   |
+| Value    | Nautilus type     | Output directory     | Description                             |
+| :------- | :---------------- | :------------------- | :-------------------------------------- |
+| `deltas` | `OrderBookDeltas` | `order_book_deltas/` | Clear and add deltas for each snapshot. |
+| `depth`  | `OrderBookDepth`  | `order_book_depths/` | Snapshots with up to 10 price levels.   |
 
 **When to use each format:**
 
 - **`deltas` (default)**: use when you need to reconstruct book state or combine snapshots with
   `book_change` data. Each snapshot becomes a clear delta followed by an add delta for each level.
-- **`depth10`**: use when a strategy needs periodic depth snapshots. Each snapshot is a single
+- **`depth`**: use when a strategy needs periodic depth snapshots. Each snapshot is a single
   record, and snapshots with more than 10 levels keep only the first 10.
 
 **Avoiding file overwrites:**
 
 When downloading both `book_snapshot_*` and `book_change` data for the same instrument and date
-range, `depth10` writes snapshots to `order_book_depths/` and avoids overwriting
+range, `depth` writes snapshots to `order_book_depths/` and avoids overwriting
 `order_book_deltas/`.
 
 Example configuration with explicit format:
@@ -316,7 +316,7 @@ Example configuration with explicit format:
 ```json
 {
   "tardis_ws_url": "ws://localhost:8001",
-  "book_snapshot_output": "depth10",
+  "book_snapshot_output": "depth",
   "options": [
     {
       "exchange": "binance-futures",
@@ -567,8 +567,8 @@ processing multi-gigabyte CSV files without exhausting system memory.
 Python provides streaming functions for the following CSV data:
 
 - Order book deltas (`stream_tardis_deltas` and `stream_tardis_batched_deltas`).
-- Order book depth snapshots (`stream_tardis_depth10_from_snapshot5` and
-  `stream_tardis_depth10_from_snapshot25`).
+- Order book depth snapshots (`stream_tardis_depth_from_snapshot5` and
+  `stream_tardis_depth_from_snapshot25`).
 - Quote ticks (`stream_tardis_quotes`).
 - Trade ticks (`stream_tardis_trades`).
 - Funding rates (`stream_tardis_funding_rates`).
@@ -615,7 +615,7 @@ For order book data, streaming is available for both deltas and depth snapshots:
 from pathlib import Path
 
 from nautilus_trader.adapters.tardis import stream_tardis_deltas
-from nautilus_trader.adapters.tardis import stream_tardis_depth10_from_snapshot5
+from nautilus_trader.adapters.tardis import stream_tardis_depth_from_snapshot5
 
 
 filepath = Path("book_snapshot_5.csv")
@@ -625,8 +625,8 @@ for chunk in stream_tardis_deltas(filepath):
     print(f"Processing {len(chunk)} deltas")
     # Process delta chunk
 
-# Stream depth10 snapshots from snapshot_5 files
-for chunk in stream_tardis_depth10_from_snapshot5(filepath):
+# Stream depth snapshots from snapshot_5 files
+for chunk in stream_tardis_depth_from_snapshot5(filepath):
     print(f"Processing {len(chunk)} depth snapshots")
     # Process depth chunk
 ```
@@ -818,7 +818,7 @@ Pass `factory` and `config` to `LiveNode.builder(...).add_data_client(...)`. See
 `examples/live/tardis/data_tester.py` for the node registration pattern and
 `crates/adapters/tardis/examples/node_data_tester.rs` for a complete Rust replay client.
 
-The Rust data client config can set `book_snapshot_output` to `depth10`. The Python data client
+The Rust data client config can set `book_snapshot_output` to `depth`. The Python data client
 config uses the default `deltas` output; the standalone replay JSON configuration supports both
 values.
 

@@ -41,7 +41,7 @@ use nautilus_common::{
             // Subscription commands
             SubscribeBars,
             SubscribeBookDeltas,
-            SubscribeBookDepth10,
+            SubscribeBookDepth,
             SubscribeCustomData,
             SubscribeFundingRates,
             SubscribeIndexPrices,
@@ -54,7 +54,7 @@ use nautilus_common::{
             SubscribeTrades,
             UnsubscribeBars,
             UnsubscribeBookDeltas,
-            UnsubscribeBookDepth10,
+            UnsubscribeBookDepth,
             UnsubscribeCustomData,
             UnsubscribeFundingRates,
             UnsubscribeIndexPrices,
@@ -427,7 +427,7 @@ fn test_book_deltas_subscription(
 }
 
 #[rstest]
-fn test_book_depth10_subscription(
+fn test_book_depth_subscription(
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     client_id: ClientId,
@@ -440,7 +440,7 @@ fn test_book_depth10_subscription(
     let inst_id = instrument.id;
     let depth = NonZeroUsize::new(10);
 
-    let sub = SubscribeCommand::BookDepth10(SubscribeBookDepth10::new(
+    let sub = SubscribeCommand::BookDepth(SubscribeBookDepth::new(
         inst_id,
         BookType::L2_MBP,
         Some(client_id),
@@ -453,13 +453,13 @@ fn test_book_depth10_subscription(
         None,
     ));
     adapter.execute_subscribe(sub.clone());
-    assert!(adapter.subscriptions_book_depth10.contains(&inst_id));
+    assert!(adapter.subscriptions_book_depth.contains(&inst_id));
 
     // Idempotency check
     adapter.execute_subscribe(sub.clone());
-    assert_eq!(adapter.subscriptions_book_depth10.len(), 1);
+    assert_eq!(adapter.subscriptions_book_depth.len(), 1);
 
-    let unsub = UnsubscribeCommand::BookDepth10(UnsubscribeBookDepth10::new(
+    let unsub = UnsubscribeCommand::BookDepth(UnsubscribeBookDepth::new(
         inst_id,
         Some(client_id),
         Some(venue),
@@ -469,7 +469,7 @@ fn test_book_depth10_subscription(
         None,
     ));
     adapter.execute_unsubscribe(&unsub);
-    assert!(!adapter.subscriptions_book_depth10.contains(&inst_id));
+    assert!(!adapter.subscriptions_book_depth.contains(&inst_id));
 }
 
 #[rstest]
@@ -1138,7 +1138,7 @@ fn test_book_deltas_unsubscribe_idempotent(
 }
 
 #[rstest]
-fn test_book_depth10_unsubscribe_noop(
+fn test_book_depth_unsubscribe_noop(
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     client_id: ClientId,
@@ -1147,7 +1147,7 @@ fn test_book_depth10_unsubscribe_noop(
     let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let inst_id = audusd_sim().id;
-    let unsub = UnsubscribeCommand::BookDepth10(UnsubscribeBookDepth10::new(
+    let unsub = UnsubscribeCommand::BookDepth(UnsubscribeBookDepth::new(
         inst_id,
         Some(client_id),
         Some(venue),
@@ -1157,11 +1157,11 @@ fn test_book_depth10_unsubscribe_noop(
         None,
     ));
     adapter.execute_unsubscribe(&unsub);
-    assert!(adapter.subscriptions_book_depth10.is_empty());
+    assert!(adapter.subscriptions_book_depth.is_empty());
 }
 
 #[rstest]
-fn test_book_depth10_unsubscribe_idempotent(
+fn test_book_depth_unsubscribe_idempotent(
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     client_id: ClientId,
@@ -1170,7 +1170,7 @@ fn test_book_depth10_unsubscribe_idempotent(
     let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let inst_id = audusd_sim().id;
-    let sub = SubscribeCommand::BookDepth10(SubscribeBookDepth10::new(
+    let sub = SubscribeCommand::BookDepth(SubscribeBookDepth::new(
         inst_id,
         BookType::L2_MBP,
         Some(client_id),
@@ -1183,7 +1183,7 @@ fn test_book_depth10_unsubscribe_idempotent(
         None,
     ));
     adapter.execute_subscribe(sub.clone());
-    let unsub = UnsubscribeCommand::BookDepth10(UnsubscribeBookDepth10::new(
+    let unsub = UnsubscribeCommand::BookDepth(UnsubscribeBookDepth::new(
         inst_id,
         Some(client_id),
         Some(venue),
@@ -1194,7 +1194,7 @@ fn test_book_depth10_unsubscribe_idempotent(
     ));
     adapter.execute_unsubscribe(&unsub);
     adapter.execute_unsubscribe(&unsub);
-    assert!(adapter.subscriptions_book_depth10.is_empty());
+    assert!(adapter.subscriptions_book_depth.is_empty());
 }
 
 #[rstest]

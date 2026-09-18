@@ -333,7 +333,7 @@ pub struct LighterOrderBookDepth {
 }
 
 /// A single book level returned by the order-book REST snapshot and the
-/// WebSocket ticker / order_book / order_book_depth10 frames.
+/// WebSocket ticker / order_book / order_book_depth frames.
 ///
 /// Lighter sends empty strings on the bid or ask side of a ticker frame when
 /// that side currently has no resting orders; [`deserialize_decimal_or_zero`]

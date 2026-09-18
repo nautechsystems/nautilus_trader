@@ -26,8 +26,8 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{
-        Bar, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, OrderBookDepth,
+        QuoteTick, TradeTick,
     },
     events::AccountState,
     reports::PositionStatusReport,
@@ -59,7 +59,7 @@ pub enum NautilusWsMessage {
     Trades(Vec<TradeTick>),
     Quote(QuoteTick),
     Deltas(OrderBookDeltas),
-    Depth10(Box<OrderBookDepth10>),
+    Depth(Box<OrderBookDepth>),
     Bar(Bar),
     MarkPrice(MarkPriceUpdate),
     IndexPrice(IndexPriceUpdate),

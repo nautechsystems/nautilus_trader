@@ -826,6 +826,52 @@ snapshot according to the venue contract. Map removal to `NotAvailableForTrading
 disappearance means the instrument is unavailable. Update the full private cache even when
 emissions are filtered to active subscriptions.
 
+### Order book recovery ownership
+
+[`nautilus_live::book`](../../crates/live/src/book/mod.rs) provides the recovery machinery shared by
+OKX and Lighter. Keep venue-specific book synchronization and recovery in each adapter's `src/book/`,
+with WebSocket handlers dispatching commands and frames.
+
+#### Recovery state and retry budgets
+
+Keep one `BookRecoveryState` per subscribed book under the adapter's existing state lock or owning
+task. It admits one recovery owner, rejects stale failure reports, cancels obsolete work, and
+suppresses output after terminal failure.
+
+`BookRecovery::run` owns replacement attempts, child cancellation tokens, snapshot waits, backoff,
+and the total retry budget. The adapter supplies its replacement operation and error classifier.
+Keep the same invocation alive across reconnects so reconnect cannot replenish the budget.
+
+#### Snapshot acceptance
+
+A confirmed write alone never establishes a usable book. Coordinate replacement and acceptance in
+this order:
+
+1. Close `SnapshotGate` before replacement.
+1. Open the gate after the intended connection confirms the subscription write.
+1. Accept the snapshot under the same ownership boundary that starts and fails recovery, then
+   replace all levels, including for an empty snapshot.
+
+`PendingSnapshot` cancels initial waits when the snapshot is accepted or the pending owner is removed.
+
+#### Venue rules and shared decisions
+
+The adapter owns sequencing, channel routing, wire commands, acknowledgement correlation, and
+snapshot parsing. The shared types describe the result of validation and monitoring:
+
+- `BookSequenceOutcome`: accept, suppress, or recover. Adapters retain their validation rules and
+  gap diagnostics.
+- `BookSyncSignalKind`: stale feeds and missing snapshots.
+
+Lighter retains its subscription generations and control-ack/typed-snapshot correlation. OKX retains
+its documented [acknowledgement-correlation limits](../integrations/okx.md#snapshot-correlation-limitation).
+
+#### Task lifetime and cancellation
+
+Run asynchronous work inside the client's task scope or handler-owned futures. The handler must
+continue draining commands and frames while writes wait, allowing unsubscribe, shutdown, and
+recovery deadlines to cancel obsolete operations.
+
 ### Execution client
 
 Execution clients translate commands, preserve order identity, publish account state, and generate
@@ -878,6 +924,33 @@ client declares a history bound, as described in
 [bounded mass-status reports](#bounded-mass-status-reports), or when it does not use the realtime
 clock. Returning `Ok(None)` logs a warning and leaves that client unreconciled, while an error
 fails startup.
+
+##### Mass-status timestamp contract
+
+`ExecutionMassStatus.ts_init` marks the start of snapshot collection. For every producer,
+including reconnect snapshots and custom `generate_mass_status` implementations:
+
+- **Capture before collection:** Read the adapter's local clock before the first request,
+  cache read, or concurrent collection task.
+- **Use a consistent clock:** Use the same local clock as execution fill and fill-void
+  initialization timestamps. Never substitute a venue timestamp or zero.
+- **Preserve the boundary:** Keep that value through snapshot construction and publication.
+  Neither completion time nor individual report timestamps replace it.
+
+Runtime reconciliation skips an order snapshot when a cached fill or fill void has `ts_init`
+at or after this boundary. Companion trades still process normally.
+
+Incorrect timestamps change reconciliation behavior:
+
+- A **completion timestamp** can make an older snapshot appear newer than an overlapping fill,
+  causing the engine to void that fill incorrectly.
+- A **zero timestamp** can suppress legitimate snapshot corrections indefinitely.
+
+**Test custom producers:** Delay a report response and assert that the mass-status timestamp
+is captured before collection starts and remains unchanged when collection finishes.
+
+See [Snapshot freshness and fill corrections](../concepts/execution/reconciliation.md#snapshot-freshness-and-fill-corrections)
+for the startup distinction and limits when venue state is already stale.
 
 ##### Bulk report filters
 

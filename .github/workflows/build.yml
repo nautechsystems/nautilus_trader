@@ -100,7 +100,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-      security-events: write
+      security-events: write # Required for the called security-audit workflow to upload Zizmor SARIF
     uses: $/.github/workflows/security-audit.yml
     with:
       force: >-

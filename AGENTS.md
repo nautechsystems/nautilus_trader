@@ -9,14 +9,31 @@ guide for the area you change.
 **NautilusTrader can execute live trades involving real capital. Hold every change to a very high
 standard for correctness, reliability, testing, clarity, and maintainability.**
 
-- Read the affected code and search for existing patterns before proposing or making changes.
-- Keep each change focused on the requested outcome. Note unrelated issues instead of fixing them.
-- Match the existing style and use established functions, types, names, and dependencies.
+### Environment
+
 - Use the uv-managed Python project environment at its default location, `python/.venv`. Do not
   create or use a root `.venv`; run direct uv project commands from `python/` or pass
   `--project python` from the repository root.
+
+### Scope and style
+
+- Read the affected code and search for existing patterns before proposing or making changes.
+- Keep each change focused on the requested outcome with the minimum public API. Note unrelated
+  issues instead of fixing them, and avoid drive-by refactors, renames, and abstractions
+  unrelated to the contribution.
+- Match the existing style and use established functions, types, names, and dependencies.
+
+### Correctness
+
 - Preserve exact arithmetic for prices, quantities, money, fees, and other discrete values. Use the
   project domain types or `Decimal`.
+- Keep scripts and paths portable across Linux, macOS, and Windows. Normalize path separators with
+  the shared helpers (for example `normalize_path_separators` in
+  `nautilus_persistence::common::paths`) before splitting or joining; never split a raw path on
+  `/` alone.
+
+### Tests
+
 - Do not add test-only behavior, branches, attributes, or interfaces to production code.
 - Do not weaken, remove, bypass, or rewrite tests or required behavior merely to obtain a passing
   result. Fix the underlying problem and preserve the behavior the tests are intended to protect.
@@ -24,12 +41,16 @@ standard for correctness, reliability, testing, clarity, and maintainability.**
   independently verify that the test is wrong.
 - Do not let tests depend on adapter environment variables; `make pre-flight` runs with all of
   them unset via `scripts/strip-adapter-env.bash`. Register new adapter environment variables there.
-- Expose the minimum public API and keep the patch focused. Avoid drive-by refactors, renames, and
-  abstractions unrelated to the contribution.
+
+### Change mechanics
+
 - Change generated artifacts through their source and generator. Never edit them by hand.
 - Do not modify `RELEASES.md`. Maintainers keep it current.
 - Do not modify `.github/workflows` or `.github/actions` for an external contribution. These paths
   are maintainer-only.
+
+### Commit messages
+
 - Do not use Conventional Commits syntax for commit messages or pull request titles.
 - Do not put an issue or pull request number in a commit subject or pull request title. A squash
   merge appends the number; reference issues from the commit body instead.

@@ -29,7 +29,7 @@ use nautilus_core::{
 use nautilus_model::{
     data::{
         Bar, CustomData, DataBatch, FromDataBatch, FundingRateUpdate, NautilusDataType,
-        OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick,
     },
     identifiers::{ClientId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -754,8 +754,8 @@ fn order_book_deltas_from_query_result(data: DataBatch) -> anyhow::Result<Vec<Or
     OrderBookDelta::from_batch(data)
 }
 
-fn order_book_depths_from_query_result(data: DataBatch) -> anyhow::Result<Vec<OrderBookDepth10>> {
-    OrderBookDepth10::from_batch(data)
+fn order_book_depths_from_query_result(data: DataBatch) -> anyhow::Result<Vec<OrderBookDepth>> {
+    OrderBookDepth::from_batch(data)
 }
 
 fn request_start(req: &RequestCommand) -> Option<Timestamp> {
@@ -1131,7 +1131,7 @@ fn build_book_deltas_catalog_response(
 
 fn build_book_depth_catalog_response(
     cmd: &RequestBookDepth,
-    data: Vec<OrderBookDepth10>,
+    data: Vec<OrderBookDepth>,
     start: UnixNanos,
     end: UnixNanos,
     used_client_id: Option<ClientId>,

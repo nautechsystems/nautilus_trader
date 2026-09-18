@@ -30,7 +30,7 @@ use std::{
 use csv::{Reader, ReaderBuilder};
 use flate2::read::GzDecoder;
 pub use load::{
-    load_deltas, load_depth10_from_snapshot5, load_depth10_from_snapshot25, load_funding_rates,
+    load_deltas, load_depth_from_snapshot5, load_depth_from_snapshot25, load_funding_rates,
     load_options_chain, load_quotes, load_trades,
 };
 use nautilus_model::{
@@ -44,8 +44,8 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 pub use stream::{
-    stream_deltas, stream_depth10_from_snapshot5, stream_depth10_from_snapshot25,
-    stream_funding_rates, stream_options_chain, stream_quotes, stream_trades,
+    stream_deltas, stream_depth_from_snapshot5, stream_depth_from_snapshot25, stream_funding_rates,
+    stream_options_chain, stream_quotes, stream_trades,
 };
 
 use super::csv::record::{

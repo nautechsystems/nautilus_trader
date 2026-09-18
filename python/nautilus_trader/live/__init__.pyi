@@ -68,7 +68,7 @@ __all__ = [
     "SubmitOrderList",
     "SubscribeBars",
     "SubscribeBookDeltas",
-    "SubscribeBookDepth10",
+    "SubscribeBookDepth",
     "SubscribeCustomData",
     "SubscribeFundingRates",
     "SubscribeIndexPrices",
@@ -83,7 +83,7 @@ __all__ = [
     "TradesResponse",
     "UnsubscribeBars",
     "UnsubscribeBookDeltas",
-    "UnsubscribeBookDepth10",
+    "UnsubscribeBookDepth",
     "UnsubscribeCustomData",
     "UnsubscribeFundingRates",
     "UnsubscribeIndexPrices",
@@ -1650,7 +1650,7 @@ class SubscribeBookDeltas:
     def managed(self) -> bool: ...
 
 @typing.final
-class SubscribeBookDepth10:
+class SubscribeBookDepth:
     @property
     def client_id(self) -> model.ClientId | None: ...
     @property
@@ -1922,7 +1922,7 @@ class UnsubscribeBookDeltas:
     def instrument_id(self) -> model.InstrumentId: ...
 
 @typing.final
-class UnsubscribeBookDepth10:
+class UnsubscribeBookDepth:
     @property
     def client_id(self) -> model.ClientId | None: ...
     @property

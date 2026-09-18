@@ -45,7 +45,7 @@ pub struct ExecutionMassStatus {
     pub venue: Venue,
     /// The report ID.
     pub report_id: UUID4,
-    /// UNIX timestamp (nanoseconds) when the object was initialized.
+    /// Local UNIX timestamp (nanoseconds) captured before report collection starts.
     pub ts_init: UnixNanos,
     /// Lower timestamp bound applied to historical reports, when bounded.
     #[serde(default)]

@@ -65,7 +65,7 @@ pub fn persistence(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<feather::PyStreamingFeatherWriter>()?;
     m.add_class::<wranglers::bar::BarDataWrangler>()?;
     m.add_class::<wranglers::delta::OrderBookDeltaDataWrangler>()?;
-    m.add_class::<wranglers::depth::OrderBookDepth10DataWrangler>()?;
+    m.add_class::<wranglers::depth::OrderBookDepthDataWrangler>()?;
     m.add_class::<wranglers::quote::QuoteTickDataWrangler>()?;
     m.add_class::<wranglers::trade::TradeTickDataWrangler>()?;
     m.add_class::<crate::test_data::RustTestCustomData>()?;

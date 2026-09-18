@@ -48,9 +48,8 @@ use nautilus_common::{
         DataEvent, DataResponse, SystemEvent,
         data::{
             RequestBookSnapshot, RequestInstrument, RequestInstruments, RequestTrades,
-            SubscribeBookDepth10, SubscribeCustomData, SubscribeInstrument,
-            SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeQuotes,
-            UnsubscribeInstrument,
+            SubscribeBookDepth, SubscribeCustomData, SubscribeInstrument, SubscribeInstrumentClose,
+            SubscribeInstrumentStatus, SubscribeQuotes, UnsubscribeInstrument,
         },
         system::SocketState,
     },
@@ -475,7 +474,7 @@ fn yes_instrument_id() -> InstrumentId {
 
 #[derive(Clone, Copy)]
 enum UnsupportedGenericSubscription {
-    BookDepth10,
+    BookDepth,
 }
 
 async fn wait_for_market_payload_count(
@@ -678,9 +677,9 @@ async fn test_subscribe_instrument_does_not_replay_cached_definition() {
 }
 
 #[rstest]
-#[case::book_depth10(
-    UnsupportedGenericSubscription::BookDepth10,
-    "Polymarket does not support OrderBookDepth10 subscriptions; use managed L2_MBP order book deltas"
+#[case::book_depth(
+    UnsupportedGenericSubscription::BookDepth,
+    "Polymarket does not support OrderBookDepth subscriptions; use managed L2_MBP order book deltas"
 )]
 #[tokio::test]
 async fn test_unsupported_generic_subscription_returns_exact_reason(
@@ -693,8 +692,8 @@ async fn test_unsupported_generic_subscription_returns_exact_reason(
     let instrument_id = yes_instrument_id();
 
     let result = match subscription {
-        UnsupportedGenericSubscription::BookDepth10 => {
-            client.subscribe_book_depth10(SubscribeBookDepth10::new(
+        UnsupportedGenericSubscription::BookDepth => {
+            client.subscribe_book_depth(SubscribeBookDepth::new(
                 instrument_id,
                 BookType::L2_MBP,
                 Some(*POLYMARKET_CLIENT_ID),

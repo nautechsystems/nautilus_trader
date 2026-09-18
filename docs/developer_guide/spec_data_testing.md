@@ -190,7 +190,7 @@ Test order book subscription modes and snapshot requests.
 | ------ | -------------------------- | ----------------------------------- | ----------------- |
 | TC-D10 | Subscribe book deltas      | Stream `OrderBookDeltas` updates.   | No book support.  |
 | TC-D11 | Subscribe book at interval | Periodic `OrderBook` snapshots.     | No book support.  |
-| TC-D12 | Subscribe book depth       | `OrderBookDepth10` snapshots.       | No book depth.    |
+| TC-D12 | Subscribe book depth       | `OrderBookDepth` snapshots.         | No book depth.    |
 | TC-D13 | Request book snapshot      | One-time book snapshot request.     | No book snapshot. |
 | TC-D14 | Managed book from deltas   | Build local book from delta stream. | No book support.  |
 
@@ -266,8 +266,8 @@ DataTesterConfig::builder()
 | Field              | Value                                                                                |
 | ------------------ | ------------------------------------------------------------------------------------ |
 | **Prerequisite**   | Adapter connected, instrument loaded.                                                |
-| **Action**         | DataTester subscribes to `OrderBookDepth10` snapshots.                               |
-| **Event sequence** | `OrderBookDepth10` events received in `on_book_depth`.                               |
+| **Action**         | DataTester subscribes to `OrderBookDepth` snapshots.                                 |
+| **Event sequence** | `OrderBookDepth` events received in `on_book_depth`.                                 |
 | **Pass criteria**  | Depth snapshots received with up to 10 bid/ask levels; prices are correctly ordered. |
 | **Skip when**      | Adapter does not support book depth subscriptions.                                   |
 

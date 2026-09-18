@@ -982,6 +982,7 @@ impl PolymarketExecutionClient {
         let tick_decimals = u32::from(instrument.min_price_increment_precision());
         let size_precision = instrument.size_precision();
         let neg_risk = self.get_neg_risk(&instrument_id);
+        let signer_type = self.config.signer_type;
         let user_address = self
             .secrets
             .funder
@@ -1075,6 +1076,7 @@ impl PolymarketExecutionClient {
             }
 
             let fill_context = FillContext {
+                signer_type,
                 account_id,
                 user_address: &user_address,
                 api_key: api_key.expose_secret(),

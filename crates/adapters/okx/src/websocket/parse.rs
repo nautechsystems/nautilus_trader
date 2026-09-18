@@ -24,7 +24,7 @@ use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, Data, FundingRateUpdate, IndexPriceUpdate,
         InstrumentStatus, MarkPriceUpdate, OptionGreekValues, OrderBookDelta, OrderBookDeltas,
-        OrderBookDepth10, QuoteTick, TradeTick, depth::DEPTH10_LEN, option_chain::OptionGreeks,
+        OrderBookDepth, QuoteTick, TradeTick, depth::DEPTH10_LEN, option_chain::OptionGreeks,
     },
     enums::{
         AggregationSource, AggressorSide, BookAction, LiquiditySide, OrderSide, OrderStatus,
@@ -819,7 +819,7 @@ pub fn parse_candle_msg_vec(
     Ok(bars)
 }
 
-/// Parses vector of OKX book messages into Nautilus depth10 updates.
+/// Parses vector of OKX book messages into Nautilus depth updates.
 ///
 /// # Errors
 ///
@@ -831,20 +831,20 @@ pub fn parse_book10_msg_vec(
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Vec<Data>> {
-    let mut depth10_updates = Vec::with_capacity(data.len());
+    let mut depth_updates = Vec::with_capacity(data.len());
 
     for msg in data {
-        let depth10 = parse_book10_msg(
+        let depth = parse_book10_msg(
             &msg,
             *instrument_id,
             price_precision,
             size_precision,
             ts_init,
         )?;
-        depth10_updates.push(Data::BookDepth(Box::new(depth10)));
+        depth_updates.push(Data::BookDepth(Box::new(depth)));
     }
 
-    Ok(depth10_updates)
+    Ok(depth_updates)
 }
 
 /// Parses an OKX book message into Nautilus order book deltas.
@@ -1046,7 +1046,7 @@ pub fn parse_quote_msg(
     )
 }
 
-/// Parses an OKX book message into a Nautilus [`OrderBookDepth10`].
+/// Parses an OKX book message into a Nautilus [`OrderBookDepth`].
 ///
 /// Converts order book data into a fixed-depth snapshot with top 10 levels for both sides.
 ///
@@ -1059,7 +1059,7 @@ pub fn parse_book10_msg(
     price_precision: u8,
     size_precision: u8,
     ts_init: UnixNanos,
-) -> anyhow::Result<OrderBookDepth10> {
+) -> anyhow::Result<OrderBookDepth> {
     let zero_price = Price::zero(price_precision);
     let zero_qty = Quantity::zero(size_precision);
     let empty_bid = BookOrder::new(OrderSide::Buy, zero_price, zero_qty, 0);
@@ -1090,7 +1090,7 @@ pub fn parse_book10_msg(
 
     let ts_event = parse_millisecond_timestamp(msg.ts);
 
-    Ok(OrderBookDepth10::new(
+    Ok(OrderBookDepth::new(
         instrument_id,
         bids,
         asks,
@@ -3354,8 +3354,7 @@ mod tests {
         };
 
         let instrument_id = InstrumentId::from("BTC-USDT.OKX");
-        let depth10 =
-            parse_book10_msg(&msgs[0], instrument_id, 2, 0, UnixNanos::default()).unwrap();
+        let depth = parse_book10_msg(&msgs[0], instrument_id, 2, 0, UnixNanos::default()).unwrap();
 
         let expected_bids = [
             ("8476.97", "256"),
@@ -3378,23 +3377,23 @@ mod tests {
             ("8506.96", "100"),
         ];
 
-        assert_eq!(depth10.instrument_id, instrument_id);
-        assert_eq!(depth10.sequence, 123_456);
-        assert_eq!(depth10.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
-        assert_eq!(depth10.ts_init, UnixNanos::default());
-        assert_eq!(depth10.flags, RecordFlag::F_SNAPSHOT as u8);
-        assert_eq!(depth10.bids.len(), expected_bids.len());
-        assert_eq!(depth10.asks.len(), expected_asks.len());
-        assert_eq!(depth10.bid_counts.as_slice(), &[12, 1, 1, 1, 1, 1, 1, 3]);
-        assert_eq!(depth10.ask_counts.as_slice(), &[13, 2, 1, 1, 1, 1, 1, 2]);
-        for (order, (price, size)) in depth10.bids.iter().zip(expected_bids) {
+        assert_eq!(depth.instrument_id, instrument_id);
+        assert_eq!(depth.sequence, 123_456);
+        assert_eq!(depth.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
+        assert_eq!(depth.ts_init, UnixNanos::default());
+        assert_eq!(depth.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(depth.bids.len(), expected_bids.len());
+        assert_eq!(depth.asks.len(), expected_asks.len());
+        assert_eq!(depth.bid_counts.as_slice(), &[12, 1, 1, 1, 1, 1, 1, 3]);
+        assert_eq!(depth.ask_counts.as_slice(), &[13, 2, 1, 1, 1, 1, 1, 2]);
+        for (order, (price, size)) in depth.bids.iter().zip(expected_bids) {
             assert_eq!(order.side, Some(OrderSide::Buy));
             assert_eq!(order.price, Price::from(price));
             assert_eq!(order.size, Quantity::from(size));
             assert_eq!(order.order_id, 0);
         }
 
-        for (order, (price, size)) in depth10.asks.iter().zip(expected_asks) {
+        for (order, (price, size)) in depth.asks.iter().zip(expected_asks) {
             assert_eq!(order.side, Some(OrderSide::Sell));
             assert_eq!(order.price, Price::from(price));
             assert_eq!(order.size, Quantity::from(size));
@@ -3412,18 +3411,18 @@ mod tests {
         };
 
         let instrument_id = InstrumentId::from("BTC-USDT.OKX");
-        let depth10_vec =
+        let depth_vec =
             parse_book10_msg_vec(msgs, &instrument_id, 2, 0, UnixNanos::default()).unwrap();
 
-        assert_eq!(depth10_vec.len(), 1);
+        assert_eq!(depth_vec.len(), 1);
 
-        if let Data::BookDepth(d) = &depth10_vec[0] {
+        if let Data::BookDepth(d) = &depth_vec[0] {
             assert_eq!(d.instrument_id, instrument_id);
             assert_eq!(d.sequence, 123_456);
             assert_eq!(d.bids[0].price, Price::from("8476.97"));
             assert_eq!(d.asks[0].price, Price::from("8476.98"));
         } else {
-            panic!("Expected Depth10");
+            panic!("Expected Depth");
         }
     }
 
@@ -4452,19 +4451,18 @@ mod tests {
         };
 
         let instrument_id = InstrumentId::from("BTC-USDT.OKX");
-        let depth10 =
-            parse_book10_msg(&book_msg, instrument_id, 2, 0, UnixNanos::default()).unwrap();
+        let depth = parse_book10_msg(&book_msg, instrument_id, 2, 0, UnixNanos::default()).unwrap();
 
-        assert_eq!(depth10.instrument_id, instrument_id);
-        assert_eq!(depth10.bids.len(), 1);
-        assert_eq!(depth10.asks.len(), 2);
-        assert_eq!(depth10.bids[0].price, Price::from("8476.97"));
-        assert_eq!(depth10.bids[0].size, Quantity::from("256"));
-        assert_eq!(depth10.bids[0].side, Some(OrderSide::Buy));
-        assert_eq!(depth10.bids[0].order_id, 0);
-        assert_eq!(depth10.bid_counts.as_slice(), &[12]);
-        assert_eq!(depth10.ask_counts.as_slice(), &[13, 2]);
-        for (order, (price, size)) in depth10
+        assert_eq!(depth.instrument_id, instrument_id);
+        assert_eq!(depth.bids.len(), 1);
+        assert_eq!(depth.asks.len(), 2);
+        assert_eq!(depth.bids[0].price, Price::from("8476.97"));
+        assert_eq!(depth.bids[0].size, Quantity::from("256"));
+        assert_eq!(depth.bids[0].side, Some(OrderSide::Buy));
+        assert_eq!(depth.bids[0].order_id, 0);
+        assert_eq!(depth.bid_counts.as_slice(), &[12]);
+        assert_eq!(depth.ask_counts.as_slice(), &[13, 2]);
+        for (order, (price, size)) in depth
             .asks
             .iter()
             .zip([("8476.98", "415"), ("8477.00", "7")])
@@ -4474,10 +4472,10 @@ mod tests {
             assert_eq!(order.side, Some(OrderSide::Sell));
             assert_eq!(order.order_id, 0);
         }
-        assert_eq!(depth10.sequence, 123_456);
-        assert_eq!(depth10.flags, RecordFlag::F_SNAPSHOT as u8);
-        assert_eq!(depth10.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
-        assert_eq!(depth10.ts_init, UnixNanos::default());
+        assert_eq!(depth.sequence, 123_456);
+        assert_eq!(depth.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(depth.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
+        assert_eq!(depth.ts_init, UnixNanos::default());
     }
 
     #[rstest]

@@ -35,7 +35,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{
-        Bar, BarType, CustomData, DataType, FundingRateUpdate, OrderBookDelta, OrderBookDepth10,
+        Bar, BarType, CustomData, DataType, FundingRateUpdate, OrderBookDelta, OrderBookDepth,
         QuoteTick, TradeTick,
     },
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Venue},
@@ -105,7 +105,7 @@ response!(PyTradesResponse, TradesResponse, "TradesResponse", instrument_id: Ins
 response!(PyFundingRatesResponse, FundingRatesResponse, "FundingRatesResponse", instrument_id: InstrumentId, Vec<FundingRateUpdate>);
 response!(PyBarsResponse, BarsResponse, "BarsResponse", bar_type: BarType, Vec<Bar>);
 response!(PyBookDeltasResponse, BookDeltasResponse, "BookDeltasResponse", instrument_id: InstrumentId, Vec<OrderBookDelta>);
-response!(PyBookDepthResponse, BookDepthResponse, "BookDepthResponse", instrument_id: InstrumentId, Vec<OrderBookDepth10>);
+response!(PyBookDepthResponse, BookDepthResponse, "BookDepthResponse", instrument_id: InstrumentId, Vec<OrderBookDepth>);
 response!(PyBookResponse, BookResponse, "BookResponse", instrument_id: InstrumentId, OrderBook);
 
 /// An owned `InstrumentResponse` response.

@@ -21,12 +21,12 @@ use std::{
 use nautilus_core::{UnixNanos, ffi::abort_on_panic};
 
 use crate::{
-    data::depth::{DEPTH10_LEN, OrderBookDepth10},
+    data::depth::{DEPTH10_LEN, OrderBookDepth},
     ffi::data::order::BookOrderFfi,
     identifiers::InstrumentId,
 };
 
-/// The stable C representation of an [`OrderBookDepth10`].
+/// The stable C representation of an [`OrderBookDepth`].
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct OrderBookDepth10Ffi {
@@ -41,7 +41,7 @@ pub struct OrderBookDepth10Ffi {
     pub ts_init: UnixNanos,
 }
 
-impl From<OrderBookDepth10Ffi> for OrderBookDepth10 {
+impl From<OrderBookDepth10Ffi> for OrderBookDepth {
     fn from(value: OrderBookDepth10Ffi) -> Self {
         Self {
             instrument_id: value.instrument_id,
@@ -57,10 +57,10 @@ impl From<OrderBookDepth10Ffi> for OrderBookDepth10 {
     }
 }
 
-impl TryFrom<OrderBookDepth10> for OrderBookDepth10Ffi {
+impl TryFrom<OrderBookDepth> for OrderBookDepth10Ffi {
     type Error = anyhow::Error;
 
-    fn try_from(value: OrderBookDepth10) -> Result<Self, Self::Error> {
+    fn try_from(value: OrderBookDepth) -> Result<Self, Self::Error> {
         anyhow::ensure!(
             [
                 value.bids.len(),
@@ -150,13 +150,13 @@ pub extern "C" fn orderbook_depth10_clone(depth: &OrderBookDepth10Ffi) -> OrderB
 
 #[unsafe(no_mangle)]
 pub extern "C" fn orderbook_depth10_eq(lhs: &OrderBookDepth10Ffi, rhs: &OrderBookDepth10Ffi) -> u8 {
-    u8::from(OrderBookDepth10::from(*lhs) == OrderBookDepth10::from(*rhs))
+    u8::from(OrderBookDepth::from(*lhs) == OrderBookDepth::from(*rhs))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn orderbook_depth10_hash(delta: &OrderBookDepth10Ffi) -> u64 {
     let mut hasher = DefaultHasher::new();
-    OrderBookDepth10::from(*delta).hash(&mut hasher);
+    OrderBookDepth::from(*delta).hash(&mut hasher);
     hasher.finish()
 }
 
@@ -292,7 +292,7 @@ mod tests {
             (ffi.flags, ffi.sequence, ffi.ts_event, ffi.ts_init),
             (31, 23, UnixNanos::from(41), UnixNanos::from(43))
         );
-        assert_eq!(OrderBookDepth10::from(ffi), depth);
+        assert_eq!(OrderBookDepth::from(ffi), depth);
     }
 
     #[rstest]

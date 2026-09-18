@@ -175,11 +175,11 @@ fn create_order_book_delta(ts_init: u64) -> OrderBookDelta {
     )
 }
 
-fn create_order_book_depth10(ts_init: u64) -> OrderBookDepth {
-    create_order_book_depth(ts_init, 2, 3)
+fn create_order_book_depth(ts_init: u64) -> OrderBookDepth {
+    create_order_book_depth_with_precision(ts_init, 2, 3)
 }
 
-fn create_order_book_depth(
+fn create_order_book_depth_with_precision(
     ts_init: u64,
     price_precision: u8,
     size_precision: u8,
@@ -512,12 +512,12 @@ fn test_rust_consolidate_depth_uses_populated_precision(
     #[case] populated_ts: u64,
 ) {
     let (temp_dir, mut catalog) = create_temp_catalog();
-    let mut empty = create_order_book_depth10(empty_ts);
+    let mut empty = create_order_book_depth(empty_ts);
     empty.bids.clear();
     empty.asks.clear();
     empty.bid_counts.clear();
     empty.ask_counts.clear();
-    let populated = create_order_book_depth10(populated_ts);
+    let populated = create_order_book_depth(populated_ts);
 
     catalog
         .write_to_parquet(&[empty], None, None, None)
@@ -572,7 +572,7 @@ fn test_rust_consolidate_depth_uses_populated_precision(
 #[rstest]
 fn test_rust_consolidate_depth_conflict_names_winning_precision_files() {
     let (temp_dir, mut catalog) = create_temp_catalog();
-    let mut fallback = create_order_book_depth10(1);
+    let mut fallback = create_order_book_depth(1);
     fallback.bids.clear();
     fallback.asks.clear();
     fallback.bid_counts.clear();
@@ -580,8 +580,8 @@ fn test_rust_consolidate_depth_conflict_names_winning_precision_files() {
 
     for (depth, suffix) in [
         (fallback, "fallback"),
-        (create_order_book_depth(2, 2, 3), "p2"),
-        (create_order_book_depth(3, 4, 5), "p4"),
+        (create_order_book_depth_with_precision(2, 2, 3), "p2"),
+        (create_order_book_depth_with_precision(3, 4, 5), "p4"),
     ] {
         catalog
             .write_to_parquet(&[depth], None, None, None)
@@ -629,8 +629,8 @@ fn test_rust_consolidate_depth_conflict_names_winning_precision_files() {
 #[rstest]
 fn test_rust_consolidate_all_empty_depths() {
     let (temp_dir, mut catalog) = create_temp_catalog();
-    let mut first = create_order_book_depth10(1);
-    let mut second = create_order_book_depth10(2);
+    let mut first = create_order_book_depth(1);
+    let mut second = create_order_book_depth(2);
     for depth in [&mut first, &mut second] {
         depth.bids.clear();
         depth.asks.clear();
@@ -1211,7 +1211,7 @@ fn test_rust_write_order_book_deltas() {
 fn test_rust_write_order_book_depths() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
 
-    let depths = vec![create_order_book_depth10(1), create_order_book_depth10(2)];
+    let depths = vec![create_order_book_depth(1), create_order_book_depth(2)];
     catalog.write_to_parquet(&depths, None, None, None).unwrap();
 
     let loaded = catalog
@@ -3521,6 +3521,15 @@ fn test_extract_sql_safe_filename() {
     // Test empty path
     let filename = extract_sql_safe_filename("");
     assert_eq!(filename, "unknown_file");
+
+    // Test Windows-style path with backslashes
+    let filename = extract_sql_safe_filename(
+        r"data\quote_tick\EURUSD\2021-01-01T00-00-00-000000000Z_2021-01-02T00-00-00-000000000Z.parquet",
+    );
+    assert_eq!(
+        filename,
+        "2021_01_01t00_00_00_000000000z_2021_01_02t00_00_00_000000000z"
+    );
 }
 
 #[rstest]

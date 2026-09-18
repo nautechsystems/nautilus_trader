@@ -1436,109 +1436,8 @@ pub(crate) fn create_object_store_location_from_path(
     })
 }
 
-/// Normalizes a path to URI format for consistent object store usage.
-///
-/// If the path is already a URI (contains "://"), returns it as-is.
-/// Otherwise, converts local paths to file:// URIs with proper cross-platform handling.
-///
-/// Supported URI schemes:
-/// - `s3://` for AWS S3
-/// - `gs://` or `gcs://` for Google Cloud Storage
-/// - `az://` or `abfs://` for Azure Blob Storage
-/// - `http://` or `https://` for HTTP/WebDAV
-/// - `file://` for local files
-///
-/// # Cross-platform Path Handling
-///
-/// - Unix absolute paths: `/path/to/file` → `file:///path/to/file`
-/// - Windows drive paths: `C:\path\to\file` → `file:///C:/path/to/file`
-/// - Windows UNC paths: `\\server\share\file` → `file://server/share/file`
-/// - Relative paths: converted to absolute using current directory
-///
-/// # Errors
-///
-/// Returns an error if the path is relative and the current working directory cannot be
-/// resolved.
-pub fn normalize_path_to_uri(path: &str) -> anyhow::Result<String> {
-    if path.contains("://") {
-        // Already a URI - return as-is
-        Ok(path.to_string())
-    } else if is_absolute_path(path) {
-        Ok(path_to_file_uri(path))
-    } else {
-        // Relative path - make it absolute first
-        let cwd = std::env::current_dir().map_err(|e| {
-            anyhow::anyhow!("Failed to resolve current directory for relative path '{path}': {e}")
-        })?;
-        let absolute_path = cwd.join(path);
-        Ok(path_to_file_uri(&absolute_path.to_string_lossy()))
-    }
-}
-
-/// Checks if a path is absolute on the current platform.
-#[must_use]
-fn is_absolute_path(path: &str) -> bool {
-    if path.starts_with('/') {
-        // Unix absolute path
-        true
-    } else if path.len() >= 3
-        && path.chars().nth(1) == Some(':')
-        && path.chars().nth(2) == Some('\\')
-    {
-        // Windows drive path like C:\
-        true
-    } else if path.len() >= 3
-        && path.chars().nth(1) == Some(':')
-        && path.chars().nth(2) == Some('/')
-    {
-        // Windows drive path with forward slashes like C:/
-        true
-    } else if path.starts_with("\\\\") {
-        // Windows UNC path
-        true
-    } else {
-        false
-    }
-}
-
-/// Converts an absolute path to a file:// URI with proper platform handling.
-#[must_use]
-fn path_to_file_uri(path: &str) -> String {
-    if path.starts_with('/') {
-        // Unix absolute path
-        format!("file://{path}")
-    } else if path.len() >= 3 && path.chars().nth(1) == Some(':') {
-        // Windows drive path - normalize separators and add proper prefix
-        let normalized = path.replace('\\', "/");
-        format!("file:///{normalized}")
-    } else if let Some(without_prefix) = path.strip_prefix("\\\\") {
-        // Windows UNC path \\server\share -> file://server/share
-        let normalized = without_prefix.replace('\\', "/");
-        format!("file://{normalized}")
-    } else {
-        // Fallback - treat as relative to root
-        format!("file://{path}")
-    }
-}
-
-/// Converts a file:// URI to a native path for the current platform.
-/// On Windows, `file:///C:/x/y` becomes `C:\x\y` so `LocalFileSystem` and `std::fs` work correctly.
-#[cfg(windows)]
-pub(crate) fn file_uri_to_native_path(uri: &str) -> String {
-    let without_scheme = uri
-        .strip_prefix("file://")
-        .or_else(|| uri.strip_prefix("file:"))
-        .unwrap_or(uri);
-    // Strip leading slash so "/C:/x/y" -> "C:/x/y", then use native separators
-    let without_leading = without_scheme.trim_start_matches('/');
-    without_leading.replace('/', "\\")
-}
-
-/// Converts a file:// URI to a path string for Unix (no-op; `object_store` accepts slash paths).
-#[cfg(not(windows))]
-pub(crate) fn file_uri_to_native_path(uri: &str) -> String {
-    uri.strip_prefix("file://").unwrap_or(uri).to_string()
-}
+pub(crate) use crate::common::paths::file_uri_to_native_path;
+pub use crate::common::paths::normalize_path_to_uri;
 
 /// Appends an encoded object-store path to the local storage URI.
 /// Preserve the encoded names used by the native object-store backend.
@@ -2644,7 +2543,7 @@ mod tests {
             "64-bit"
         };
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../test_data/nautilus")
+            .join("../../test_data/nautilus/legacy")
             .join(precision_dir)
             .join("depths.parquet");
         let file = std::fs::File::open(path).unwrap();
@@ -2730,7 +2629,7 @@ mod tests {
             "64-bit"
         };
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../test_data/nautilus")
+            .join("../../test_data/nautilus/legacy")
             .join(precision_dir)
             .join(file_name);
         let file = std::fs::File::open(path).unwrap();
@@ -2836,7 +2735,7 @@ mod tests {
                 "64-bit"
             };
             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../test_data/nautilus")
+                .join("../../test_data/nautilus/legacy")
                 .join(precision_dir)
                 .join(file_name);
             let file = std::fs::File::open(path).unwrap();
@@ -3118,100 +3017,6 @@ mod tests {
                 .as_str()
                 .trim_end_matches('/'),
             "s3://test-bucket"
-        );
-    }
-
-    #[rstest]
-    fn test_normalize_path_to_uri() {
-        // Unix absolute paths
-        assert_eq!(
-            normalize_path_to_uri("/tmp/test").unwrap(),
-            "file:///tmp/test"
-        );
-
-        // Windows drive paths
-        assert_eq!(
-            normalize_path_to_uri("C:\\tmp\\test").unwrap(),
-            "file:///C:/tmp/test"
-        );
-        assert_eq!(
-            normalize_path_to_uri("C:/tmp/test").unwrap(),
-            "file:///C:/tmp/test"
-        );
-        assert_eq!(
-            normalize_path_to_uri("D:\\data\\file.txt").unwrap(),
-            "file:///D:/data/file.txt"
-        );
-
-        // Windows UNC paths
-        assert_eq!(
-            normalize_path_to_uri("\\\\server\\share\\file").unwrap(),
-            "file://server/share/file"
-        );
-
-        // Already URIs - should remain unchanged
-        assert_eq!(
-            normalize_path_to_uri("s3://bucket/path").unwrap(),
-            "s3://bucket/path"
-        );
-        assert_eq!(
-            normalize_path_to_uri("file:///tmp/test").unwrap(),
-            "file:///tmp/test"
-        );
-        assert_eq!(
-            normalize_path_to_uri("https://example.com/path").unwrap(),
-            "https://example.com/path"
-        );
-    }
-
-    #[rstest]
-    fn test_is_absolute_path() {
-        // Unix absolute paths
-        assert!(is_absolute_path("/tmp/test"));
-        assert!(is_absolute_path("/"));
-
-        // Windows drive paths
-        assert!(is_absolute_path("C:\\tmp\\test"));
-        assert!(is_absolute_path("C:/tmp/test"));
-        assert!(is_absolute_path("D:\\"));
-        assert!(is_absolute_path("Z:/"));
-
-        // Windows UNC paths
-        assert!(is_absolute_path("\\\\server\\share"));
-        assert!(is_absolute_path("\\\\localhost\\c$"));
-
-        // Relative paths
-        assert!(!is_absolute_path("tmp/test"));
-        assert!(!is_absolute_path("./test"));
-        assert!(!is_absolute_path("../test"));
-        assert!(!is_absolute_path("test.txt"));
-
-        // Edge cases
-        assert!(!is_absolute_path(""));
-        assert!(!is_absolute_path("C"));
-        assert!(!is_absolute_path("C:"));
-        assert!(!is_absolute_path("\\"));
-    }
-
-    #[rstest]
-    fn test_path_to_file_uri() {
-        // Unix absolute paths
-        assert_eq!(path_to_file_uri("/tmp/test"), "file:///tmp/test");
-        assert_eq!(path_to_file_uri("/"), "file:///");
-
-        // Windows drive paths
-        assert_eq!(path_to_file_uri("C:\\tmp\\test"), "file:///C:/tmp/test");
-        assert_eq!(path_to_file_uri("C:/tmp/test"), "file:///C:/tmp/test");
-        assert_eq!(path_to_file_uri("D:\\"), "file:///D:/");
-
-        // Windows UNC paths
-        assert_eq!(
-            path_to_file_uri("\\\\server\\share\\file"),
-            "file://server/share/file"
-        );
-        assert_eq!(
-            path_to_file_uri("\\\\localhost\\c$\\test"),
-            "file://localhost/c$/test"
         );
     }
 }
@@ -4147,7 +3952,7 @@ mod migration_tests {
             "64-bit"
         };
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../test_data/nautilus")
+            .join("../../test_data/nautilus/legacy")
             .join(precision_dir)
             .join("depths.parquet");
         let file = std::fs::File::open(path).unwrap();
@@ -4233,7 +4038,7 @@ mod migration_tests {
             "64-bit"
         };
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../test_data/nautilus")
+            .join("../../test_data/nautilus/legacy")
             .join(precision_dir)
             .join(file_name);
         let file = std::fs::File::open(path).unwrap();
@@ -4339,7 +4144,7 @@ mod migration_tests {
                 "64-bit"
             };
             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../test_data/nautilus")
+                .join("../../test_data/nautilus/legacy")
                 .join(precision_dir)
                 .join(file_name);
             let file = std::fs::File::open(path).unwrap();

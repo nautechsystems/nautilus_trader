@@ -1091,7 +1091,7 @@ fn marker_manifest_for(
 const fn data_marker_class_to_data_class(class: DataMarkerClass) -> DataClass {
     match class {
         DataMarkerClass::BookDeltas => DataClass::BookDeltas,
-        DataMarkerClass::BookDepth10 => DataClass::BookDepth10,
+        DataMarkerClass::BookDepth => DataClass::BookDepth,
         DataMarkerClass::Quote => DataClass::Quote,
         DataMarkerClass::Trade => DataClass::Trade,
         DataMarkerClass::Bar => DataClass::Bar,

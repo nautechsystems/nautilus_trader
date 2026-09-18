@@ -123,7 +123,7 @@ integration. It does not authorize queued callback activation.
 | Startup readiness          | Data commands and callbacks; trading commands stay queued                       | First running-loop drain after successful startup                                 |
 | Event settlement           | `drain_command_queues` after enclosing engine work and after each timer handler | Bounded running-loop passes with yield and stop checks                            |
 | Normal stop                | Settle due work, stop trader, settle stop-generated commands, stop engines      | Residual deadline and final buffered dispatch; standalone runner retains channels |
-| Fatal failure and teardown | Release owned work before clearing callback state                               | Existing lifecycle handles failure; disposal cleanup remains outstanding          |
+| Fatal failure and teardown | Release owned work before clearing callback state                               | Existing lifecycle handles failure; disposal releases runner before cleanup       |
 
 ### Backtest boundaries
 
@@ -159,13 +159,14 @@ and normal shutdown processes buffered events afterward. The `start`/`stop` path
 whereas `run_with_mode` owns receivers locally. The terminal cleanup owner is `LiveNode::dispose`,
 not normal stop or the end of the running loop.
 
-:::info Disposal contract, not implemented cleanup
-Callback cleanup in `LiveNode::dispose` remains outstanding. The required sequence is:
+:::info Terminal ownership cleanup
+`LiveNode::dispose` performs callback cleanup in this order:
 
 1. Dispose the kernel. Ensure no engine or component borrow remains before releasing the runner.
 1. Release the retained runner and discard its pending messages, including work queued by stop
    callbacks during disposal.
-1. Attempt to clear callback state.
+1. Log any latched callback failure, then attempt to clear callback state. Log cleanup rejection
+   without forcing a reset.
 
 Disposal must not become another callback delivery loop. Preserve normal stop and runner reuse.
 Do not close channels in normal stop or at the end of the running loop to make clearing succeed;
@@ -173,9 +174,12 @@ releasing the retained runner belongs to disposal.
 :::
 
 Dropping the runner does not prove that all roots are released. Clearing must still reject active
-scopes or externally retained roots and report failure without forcing a reset. Verify that:
+scopes or externally retained roots and report failure without forcing a reset. A rejected clear
+leaves callback state intact; disposal can be retried after the blocking ownership is released.
+Verify that:
 
 - A rooted message in the retained runner blocks clearing before disposal and is released by disposal.
+- Stop-generated rooted messages are discarded by disposal without callback delivery.
 - A fatal running-loop latch clears on disposal when ownership permits.
 - External ownership continues to block clearing.
 
@@ -228,9 +232,10 @@ On callback failure:
 
 Both paths retain the fatal callback latch; they do not clear callback ownership.
 
-Startup, residual flushes, and disposal do not integrate callback drains or ownership cleanup.
-Activation requires explicit scheduling and ownership coverage for these paths, without assuming
-that each lifecycle method needs a drain.
+Startup and residual flushes do not integrate callback drains. Disposal releases owned work before
+attempting callback cleanup, without delivering callbacks. Activation still requires explicit
+scheduling and ownership coverage for live lifecycle paths, without assuming that each lifecycle
+method needs a drain.
 Live report futures can retain client borrows across loop iterations. A loop-top drain alone does
 not establish client access safety; queued callback activation must account for those retained borrows.
 
@@ -240,7 +245,7 @@ These boundaries do not activate queued actor delivery. Before activation, runti
 
 - Preserve the [independent ingress boundaries](#sender-types-and-ingress) when activating additional callback routes or
   introducing reusable invocation storage.
-- Complete live lifecycle drain boundaries and callback ownership cleanup.
+- Complete live lifecycle drain boundaries and ownership coverage outside terminal disposal.
 - Establish native and Python ownership safety for every activated callback route.
 - Validate queued callbacks through complete backtest and live runtime lifecycles.
 - Prove deterministic callback sequences through native and Python components in the synchronous core

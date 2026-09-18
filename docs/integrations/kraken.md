@@ -205,7 +205,7 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 | `QuoteTick`         | ✓    | ✓       | Spot ticker; Futures L2 book.            |
 | `TradeTick`         | ✓    | ✓       |                                          |
 | `OrderBookDeltas`   | ✓    | ✓       | Spot L2/L3 and Futures L2 updates.       |
-| `OrderBookDepth10`  | -    | -       | Use `OrderBookDeltas` with depth `10`.   |
+| `OrderBookDepth`    | -    | -       | Use `OrderBookDeltas` with depth `10`.   |
 | `Bar`               | ✓    | -       | Spot WS OHLC channel. See bar section.   |
 | `MarkPriceUpdate`   | -    | ✓       | From futures ticker feed.                |
 | `IndexPriceUpdate`  | -    | ✓       | From futures ticker feed.                |

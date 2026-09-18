@@ -29,7 +29,7 @@ use serde::{
 
 use crate::{
     common::{
-        enums::{PolymarketOrderType, SignatureType},
+        enums::{PolymarketOrderType, PolymarketSignatureType},
         parse::{deserialize_decimal_from_str, deserialize_optional_decimal_from_str},
     },
     http::models::PolymarketOrder,
@@ -78,7 +78,7 @@ pub struct GetBalanceAllowanceParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub signature_type: Option<SignatureType>,
+    pub signature_type: Option<PolymarketSignatureType>,
 }
 
 /// Body parameters for `DELETE /cancel-market-orders`.

@@ -29,6 +29,7 @@ use super::{
     is_remote_uri_scheme, make_object_store_path, query_intersects_filename, remote_full_uri,
     remote_store_root_url, timestamps_to_filename, urisafe_instrument_id,
 };
+use crate::common::paths::normalize_path_separators;
 
 impl ParquetDataCatalog {
     /// Extends the timestamp range of an existing Parquet file by renaming it.
@@ -595,7 +596,7 @@ impl ParquetDataCatalog {
     }
 
     fn object_store_path(&self, path: &str) -> anyhow::Result<String> {
-        let normalized_path = path.replace('\\', "/");
+        let normalized_path = normalize_path_separators(path);
 
         if self.is_remote_uri() {
             if normalized_path.contains("://") {
@@ -643,7 +644,8 @@ impl ParquetDataCatalog {
         } else {
             self.base_path.clone()
         };
-        let normalized_base = base_path.replace('\\', "/");
+
+        let normalized_base = normalize_path_separators(&base_path);
         let base = normalized_base.trim_end_matches('/');
 
         if base.is_empty() {
@@ -658,7 +660,7 @@ impl ParquetDataCatalog {
     }
 
     fn path_under_base(&self, path: &str) -> String {
-        let normalized_path = path.replace('\\', "/");
+        let normalized_path = normalize_path_separators(path);
         let path = normalized_path
             .trim_start_matches('/')
             .trim_end_matches('/');
@@ -667,7 +669,7 @@ impl ParquetDataCatalog {
             return path.to_string();
         }
 
-        let normalized_base = self.base_path.replace('\\', "/");
+        let normalized_base = normalize_path_separators(&self.base_path);
         let base = normalized_base
             .trim_start_matches('/')
             .trim_end_matches('/');

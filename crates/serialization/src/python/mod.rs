@@ -56,14 +56,6 @@ pub fn serialization(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             crate::python::arrow::py_book_depths_to_arrow_record_batch_bytes,
             m
         )?)?;
-        #[allow(
-            deprecated,
-            reason = "registers a one-release Python compatibility alias"
-        )]
-        m.add_function(wrap_pyfunction!(
-            crate::python::arrow::py_book_depth10_to_arrow_record_batch_bytes,
-            m
-        )?)?;
         m.add_function(wrap_pyfunction!(
             crate::python::arrow::py_quotes_to_arrow_record_batch_bytes,
             m

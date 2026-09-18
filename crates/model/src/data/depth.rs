@@ -289,9 +289,6 @@ impl HasTsInit for OrderBookDepth {
     }
 }
 
-/// Temporary source-compatible alias for the former fixed-depth type name.
-pub type OrderBookDepth10 = OrderBookDepth;
-
 #[cfg(test)]
 mod tests {
     use std::{
@@ -321,7 +318,7 @@ mod tests {
         BookOrder::new(side, Price::from(price), Quantity::from(size), order_id)
     }
 
-    fn create_test_depth10() -> OrderBookDepth {
+    fn create_test_depth() -> OrderBookDepth {
         let instrument_id = InstrumentId::from("EURUSD.SIM");
 
         // Create bid orders (descending prices)
@@ -368,7 +365,7 @@ mod tests {
         )
     }
 
-    fn create_empty_depth10() -> OrderBookDepth {
+    fn create_empty_depth() -> OrderBookDepth {
         let instrument_id = InstrumentId::from("EMPTY.TEST");
 
         // Create empty orders with zero prices and quantities
@@ -390,7 +387,7 @@ mod tests {
 
     #[rstest]
     fn test_order_book_depths_new() {
-        let depth = create_test_depth10();
+        let depth = create_test_depth();
 
         assert_eq!(depth.instrument_id, InstrumentId::from("EURUSD.SIM"));
         assert_eq!(depth.bids.len(), DEPTH10_LEN);
@@ -566,7 +563,7 @@ mod tests {
 
     #[rstest]
     fn test_order_book_depths_deserialize_rejects_mismatched_counts() {
-        let mut value = serde_json::to_value(create_test_depth10()).unwrap();
+        let mut value = serde_json::to_value(create_test_depth()).unwrap();
         value["bid_counts"].as_array_mut().unwrap().pop();
 
         let error = serde_json::from_value::<OrderBookDepth>(value).unwrap_err();
@@ -580,7 +577,7 @@ mod tests {
 
     #[rstest]
     fn test_order_book_depths_deserialize_drops_legacy_padding_and_zero_size_levels() {
-        let mut legacy = create_test_depth10();
+        let mut legacy = create_test_depth();
         legacy.bids[1] = NULL_ORDER;
         legacy.bids[2].size = Quantity::zero(legacy.bids[2].size.precision);
         let payload = serde_json::to_string(&legacy).unwrap();
@@ -604,7 +601,7 @@ mod tests {
 
     #[rstest]
     fn test_order_book_depths_msgpack_deserialize_drops_legacy_padding_and_zero_size_levels() {
-        let mut legacy = create_test_depth10();
+        let mut legacy = create_test_depth();
         legacy.bids[1] = NULL_ORDER;
         legacy.bids[2].size = Quantity::zero(legacy.bids[2].size.precision);
         let payload = rmp_serde::to_vec_named(&legacy).unwrap();
@@ -663,7 +660,7 @@ mod tests {
 
     #[rstest]
     fn test_order_book_depths_lengths() {
-        let depth = create_test_depth10();
+        let depth = create_test_depth();
 
         // The legacy depth-10 fixture retains all ten levels.
         assert_eq!(depth.bids.len(), 10);
@@ -674,7 +671,7 @@ mod tests {
 
     #[rstest]
     fn test_order_book_depths_indexing() {
-        let depth = create_test_depth10();
+        let depth = create_test_depth();
 
         // Test first and last elements of each array
         assert_eq!(depth.bids[0].price, Price::from("1.0500"));
@@ -689,7 +686,7 @@ mod tests {
 
     #[rstest]
     fn test_order_book_depths_bid_ask_ordering() {
-        let depth = create_test_depth10();
+        let depth = create_test_depth();
 
         // Verify bid prices are in descending order (highest to lowest)
         for i in 0..9 {
@@ -722,7 +719,7 @@ mod tests {
 
     #[rstest]
     fn test_order_book_depths_clone() {
-        let depth1 = create_test_depth10();
+        let depth1 = create_test_depth();
         let depth2 = depth1.clone();
 
         assert_eq!(depth1.instrument_id, depth2.instrument_id);
@@ -738,7 +735,7 @@ mod tests {
 
     #[rstest]
     fn test_order_book_depths_inline_and_spilled_storage() {
-        let inline = create_test_depth10();
+        let inline = create_test_depth();
         let bid = inline.bids[0];
         let ask = inline.asks[0];
         let spilled = OrderBookDepth::new(
@@ -767,7 +764,7 @@ mod tests {
 
     #[rstest]
     fn test_order_book_depths_debug() {
-        let depth = create_test_depth10();
+        let depth = create_test_depth();
         let debug_str = format!("{depth:?}");
 
         assert!(debug_str.contains("OrderBookDepth"));
@@ -778,9 +775,9 @@ mod tests {
 
     #[rstest]
     fn test_order_book_depths_partial_eq() {
-        let depth1 = create_test_depth10();
-        let depth2 = create_test_depth10();
-        let depth3 = create_empty_depth10();
+        let depth1 = create_test_depth();
+        let depth2 = create_test_depth();
+        let depth3 = create_empty_depth();
 
         assert_eq!(depth1, depth2); // Same data
         assert_ne!(depth1, depth3); // Different data
@@ -789,8 +786,8 @@ mod tests {
 
     #[rstest]
     fn test_order_book_depths_eq_consistency() {
-        let depth1 = create_test_depth10();
-        let depth2 = create_test_depth10();
+        let depth1 = create_test_depth();
+        let depth2 = create_test_depth();
 
         assert_eq!(depth1, depth2);
         assert_eq!(depth2, depth1); // Symmetry
@@ -799,8 +796,8 @@ mod tests {
 
     #[rstest]
     fn test_order_book_depths_hash() {
-        let depth1 = create_test_depth10();
-        let depth2 = create_test_depth10();
+        let depth1 = create_test_depth();
+        let depth2 = create_test_depth();
 
         let mut hasher1 = DefaultHasher::new();
         let mut hasher2 = DefaultHasher::new();
@@ -813,8 +810,8 @@ mod tests {
 
     #[rstest]
     fn test_order_book_depths_hash_different_objects() {
-        let depth1 = create_test_depth10();
-        let depth2 = create_empty_depth10();
+        let depth1 = create_test_depth();
+        let depth2 = create_empty_depth();
 
         let mut hasher1 = DefaultHasher::new();
         let mut hasher2 = DefaultHasher::new();
@@ -827,7 +824,7 @@ mod tests {
 
     #[rstest]
     fn test_order_book_depths_display() {
-        let depth = create_test_depth10();
+        let depth = create_test_depth();
         let display_str = format!("{depth}");
 
         assert!(display_str.contains("EURUSD.SIM"));
@@ -839,7 +836,7 @@ mod tests {
 
     #[rstest]
     fn test_order_book_depths_display_format() {
-        let depth = create_test_depth10();
+        let depth = create_test_depth();
         let expected = "EURUSD.SIM,flags=32,sequence=12345,ts_event=1000000000,ts_init=2000000000";
 
         assert_eq!(format!("{depth}"), expected);
@@ -847,7 +844,7 @@ mod tests {
 
     #[rstest]
     fn test_order_book_depths_serialization() {
-        let depth = create_test_depth10();
+        let depth = create_test_depth();
 
         // Test JSON serialization
         let json = serde_json::to_string(&depth).unwrap();
@@ -860,7 +857,7 @@ mod tests {
     fn test_order_book_depths_serializable_trait() {
         fn assert_serializable<T: Serializable>(_: &T) {}
 
-        let depth = create_test_depth10();
+        let depth = create_test_depth();
 
         // Verify Serializable trait is implemented (compile-time check)
         assert_serializable(&depth);
@@ -868,7 +865,7 @@ mod tests {
 
     #[rstest]
     fn test_order_book_depths_has_ts_init() {
-        let depth = create_test_depth10();
+        let depth = create_test_depth();
 
         assert_eq!(depth.ts_init(), UnixNanos::from(2_000_000_000));
     }
@@ -924,7 +921,7 @@ mod tests {
 
     #[rstest]
     fn test_order_book_depths_empty_values() {
-        let depth = create_empty_depth10();
+        let depth = create_empty_depth();
 
         assert_eq!(depth.instrument_id, InstrumentId::from("EMPTY.TEST"));
         assert_eq!(depth.flags, 0);
@@ -1033,7 +1030,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_book_depth10_with_stub(stub_depth10: OrderBookDepth) {
+    fn test_order_book_depth_with_stub(stub_depth10: OrderBookDepth) {
         let depth = stub_depth10;
 
         assert_eq!(depth.instrument_id, InstrumentId::from("AAPL.XNAS"));

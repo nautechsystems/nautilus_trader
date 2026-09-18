@@ -16,7 +16,7 @@
 //! Example demonstrating live execution testing with the Polymarket adapter.
 //!
 //! Uses an event-scoped instrument provider to load only the configured event (avoiding
-//! loading all 71K+ instruments) and `SignatureType::PolyGnosisSafe` for Gnosis
+//! loading all 71K+ instruments) and `PolymarketSignatureType::PolyGnosisSafe` for Gnosis
 //! Safe proxy wallet authentication.
 //!
 //! Edit the constants below to change the target event, market token, and order size.
@@ -38,7 +38,7 @@ use nautilus_model::{
     types::Quantity,
 };
 use nautilus_polymarket::{
-    common::{consts::POLYMARKET_CLIENT_ID, enums::SignatureType},
+    common::{consts::POLYMARKET_CLIENT_ID, enums::PolymarketSignatureType},
     config::{
         PolymarketDataClientConfig, PolymarketExecutionClientConfig,
         PolymarketInstrumentProviderConfig,
@@ -88,7 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // PolyGnosisSafe: POLYMARKET_PK is the EOA signer, POLYMARKET_FUNDER is the Gnosis Safe proxy
     let exec_config = PolymarketExecutionClientConfig {
         account_id,
-        signature_type: SignatureType::PolyGnosisSafe,
+        signature_type: PolymarketSignatureType::PolyGnosisSafe,
         instrument_config: Some(instrument_config),
         ..Default::default()
     };

@@ -27,8 +27,8 @@ from nautilus_trader.adapters.bitmex import CancelBroadcaster
 from nautilus_trader.adapters.bitmex import SubmitBroadcaster
 from nautilus_trader.adapters.tardis import stream_tardis_batched_deltas
 from nautilus_trader.adapters.tardis import stream_tardis_deltas
-from nautilus_trader.adapters.tardis import stream_tardis_depth10_from_snapshot5
-from nautilus_trader.adapters.tardis import stream_tardis_depth10_from_snapshot25
+from nautilus_trader.adapters.tardis import stream_tardis_depth_from_snapshot5
+from nautilus_trader.adapters.tardis import stream_tardis_depth_from_snapshot25
 from nautilus_trader.adapters.tardis import stream_tardis_funding_rates
 from nautilus_trader.adapters.tardis import stream_tardis_options_chain
 from nautilus_trader.adapters.tardis import stream_tardis_quotes
@@ -60,8 +60,8 @@ TARDIS_STREAM_FUNCTIONS = (
     stream_tardis_quotes,
     stream_tardis_options_chain,
     stream_tardis_trades,
-    stream_tardis_depth10_from_snapshot5,
-    stream_tardis_depth10_from_snapshot25,
+    stream_tardis_depth_from_snapshot5,
+    stream_tardis_depth_from_snapshot25,
     stream_tardis_funding_rates,
 )
 

@@ -39,14 +39,15 @@ drains before selecting another event, with yielding and stop checks between pen
 The runtime owns scheduling at a small set of explicit ownership boundaries. Startup and shutdown
 paths still need ownership and scheduling coverage before activation; this does not require a drain
 in each lifecycle or flush method. After successful live startup, the first running-loop drain is
-the existing delivery boundary. Live disposal callback cleanup remains outstanding, and the manual
-`start`/`stop` path has no continuous queued callback delivery schedule.
+the existing delivery boundary. Live disposal releases the retained runner after kernel disposal,
+then attempts callback cleanup; external roots can still block clearing. The manual `start`/`stop`
+path has no continuous queued callback delivery schedule.
 
 - **Implementation**: [Dispatch](../../crates/common/src/actor/dispatch.rs), `PublicationScope` and
   `drain`; [allocation access](../../crates/common/src/actor/access.rs), `AllocationGuard`;
   [live bounded drain](../../crates/live/src/dispatch.rs), `drain_callbacks` wrapping `actor::drain_callbacks`;
   [runner](../../crates/live/src/runner.rs), `AsyncRunner::run`; and
-  [live node](../../crates/live/src/node/mod.rs), `run_with_mode`.
+  [live node](../../crates/live/src/node/mod.rs), `run_with_mode` and `dispose`.
 - **Representative checks**: `nested_publication_reserves_all_outer_recipients` in the dispatch
   module checks outer-recipient ordering across a nested publication.
   `test_actor_and_component_views_share_access` in the access module checks exclusion across views.
@@ -55,7 +56,11 @@ the existing delivery boundary. Live disposal callback cleanup remains outstandi
   `test_runner_stop_preserves_messages_and_channel_only_scheduling` checks ordered reuse after stop
   without an added yield for channel-only work. In the live node module,
   `test_callback_failure_stops_later_live_events` checks that failure stops later event dispatch,
-  stops the trader, and preserves the latch.
+  stops the trader, and preserves the latch until disposal.
+  `test_dispose_releases_retained_callback_roots` checks runner ownership release, fatal latch
+  cleanup, rejection while external roots remain, and disposal error diagnostics.
+  `test_dispose_releases_stop_generated_callback_roots`
+  checks that disposal releases stop-generated rooted messages without delivering them.
 - **Limit**: These checks do not establish production callback ordering or ownership safety.
   Runtime integration must end enclosing mutable borrows before draining and preserve native,
   Python, and dynamic-backend lifecycle eligibility. Unchecked access remains outside the private

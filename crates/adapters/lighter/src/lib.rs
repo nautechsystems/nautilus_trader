@@ -83,6 +83,8 @@ pub mod http;
 pub mod signing;
 pub mod websocket;
 
+pub(crate) mod book;
+
 #[cfg(feature = "python")]
 pub mod python;
 

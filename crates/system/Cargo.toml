@@ -21,7 +21,12 @@ crate-type = ["rlib"]
 
 [features]
 default = []
-defi = ["nautilus-common/defi", "nautilus-data/defi", "nautilus-model/defi"]
+defi = [
+  "nautilus-common/defi",
+  "nautilus-data/defi",
+  "nautilus-model/defi",
+  "nautilus-persistence?/defi",
+]
 extension-module = ["python", "pyo3/extension-module", "streaming"]
 live = ["nautilus-common/live"]
 python = [

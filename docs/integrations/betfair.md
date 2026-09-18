@@ -198,7 +198,7 @@ Startup:
 1. Connect the HTTP client and fetch initial account funds.
 2. Seed OCM state from cached orders.
 3. Connect the Betfair execution stream and subscribe to order updates.
-4. Generate startup mass status from `listCurrentOrders`.
+4. Generate order and fill reports from the same `listCurrentOrders` observations.
 5. Reconcile order and fill reports into the execution engine.
 
 Cached open orders with venue identity are restored as already accepted. The adapter also restores
@@ -275,8 +275,8 @@ a recent window before allowing new submissions.
 | 1    | Transport loss or a server `connectionClosed` status. | Advances the reconciliation generation and halts new submissions immediately.                                        |
 | 2    | Replacement `Connection` message.                     | Marks authentication and retained subscriptions pending and raises `pending_resync`.                                 |
 | 3    | Complete `SUB_IMAGE` or `RESUB_DELTA`.                | Queues the current generation once. OCMs remain buffered until recovery completes.                                   |
-| 4    | Reconnect task receives the generation.               | Refreshes the session, requests `getAccountFunds`, then queries orders and fills with up to four bounded attempts.   |
-| 5    | Both `listCurrentOrders` queries succeed.             | Dispatches the complete mass status, commits fill deduplication, and reopens submissions under one generation check. |
+| 4    | Reconnect task receives the generation.               | Refreshes the session, requests `getAccountFunds`, then fetches one order snapshot with up to four bounded attempts. |
+| 5    | All snapshot pages succeed.                           | Dispatches the complete mass status, commits fill deduplication, and reopens submissions under one generation check. |
 
 The account-state refresh is best effort: a request or parse failure is logged but does not prevent
 mass-status dispatch or reopening the gate. A keep-alive failure other than `LoginFailed` continues
@@ -304,10 +304,18 @@ If the client disconnects while a reconciliation is still in flight, `clear_resy
 the active halt so a subsequent connect/submit cycle starts clean.
 
 The lookback window for the mass-status fetch is `stream_gap_recovery_lookback_mins` (default `10`).
-Fill recovery requests `OrderProjection::All`, orders results by match time, and bounds the request
-at the recovery timestamp. Betfair applies the date range to match time, so the result includes an
-order placed before the lookback when it matched during the gap, including execution-complete and
-settled orders still returned by `listCurrentOrders`.
+Order and fill reports use the same `OrderProjection::All` observations from one paginated
+`listCurrentOrders` traversal, batched in groups of up to 250 market IDs when a market filter is configured.
+If pages repeat a Bet ID, both reports use its last observation.
+Fill recovery selects orders locally by `matchedDate`, including both window bounds, and sorts them
+by match time. An order placed before the lookback remains eligible when it matched during the gap,
+including execution-complete and settled orders still returned by `listCurrentOrders`. Orders
+outside the fill window still contribute status and replacement history without advancing fill
+deduplication.
+
+Normal mass-status generation uses the caller's optional `lookback_mins` for its lower
+bound, with no upper bound. When no lookback is supplied, every order with a `matchedDate` is eligible.
+Normal generation commits deduplication only when the complete report is ready to return.
 
 ## Tick scheme and pricing
 

@@ -27,7 +27,7 @@ use ustr::Ustr;
 use crate::common::{
     enums::{
         PolymarketLiquiditySide, PolymarketOrderSide, PolymarketOrderStatus, PolymarketOrderType,
-        PolymarketOutcome, PolymarketTradeStatus, SignatureType,
+        PolymarketOutcome, PolymarketSignatureType, PolymarketTradeStatus,
     },
     models::PolymarketMakerOrder,
     parse::{
@@ -94,7 +94,7 @@ pub struct PolymarketOrder {
     )]
     pub taker_amount: Decimal,
     pub side: PolymarketOrderSide,
-    pub signature_type: SignatureType,
+    pub signature_type: PolymarketSignatureType,
     /// Unix seconds timestamp when a GTD order auto-expires. `"0"` for non-GTD.
     /// Not included in the EIP-712 signed hash; protocol enforces this value.
     pub expiration: String,
@@ -734,7 +734,9 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
-    use crate::common::enums::{PolymarketOrderStatus, PolymarketTradeStatus, SignatureType};
+    use crate::common::enums::{
+        PolymarketOrderStatus, PolymarketSignatureType, PolymarketTradeStatus,
+    };
 
     fn load<T: serde::de::DeserializeOwned>(filename: &str) -> T {
         let path = format!("test_data/{filename}");
@@ -910,7 +912,7 @@ mod tests {
             "0x0000000000000000000000000000000000000000000000000000000000000000"
         );
         assert_eq!(order.side, PolymarketOrderSide::Buy);
-        assert_eq!(order.signature_type, SignatureType::Eoa);
+        assert_eq!(order.signature_type, PolymarketSignatureType::Eoa);
         assert!(debug.contains(REDACTED));
         assert!(!debug.contains(order.signature.expose_secret()));
     }
@@ -987,7 +989,7 @@ mod tests {
         assert_eq!(order.maker_amount, dec!(1000000));
         assert_eq!(order.taker_amount, dec!(2000000));
         assert_eq!(order.side, PolymarketOrderSide::Buy);
-        assert_eq!(order.signature_type, SignatureType::PolyProxy);
+        assert_eq!(order.signature_type, PolymarketSignatureType::PolyProxy);
         assert_eq!(order.expiration, "0");
         assert_eq!(order.timestamp, "1713398400000");
 

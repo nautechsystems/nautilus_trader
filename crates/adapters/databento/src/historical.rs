@@ -25,7 +25,7 @@ use databento::{
 use indexmap::IndexMap;
 use nautilus_core::{AtomicMap, UnixNanos, consts::NAUTILUS_USER_AGENT, time::AtomicTime};
 use nautilus_model::{
-    data::{Bar, Data, InstrumentStatus, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
+    data::{Bar, Data, InstrumentStatus, OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick},
     enums::BarAggregation,
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -471,16 +471,16 @@ impl DatabentoHistoricalClient {
         Ok(result)
     }
 
-    /// Fetches order book depth10 snapshots for the given parameters.
+    /// Fetches order book depth snapshots for the given parameters.
     ///
     /// # Errors
     ///
     /// Returns an error if the API request or data processing fails.
-    pub async fn get_range_order_book_depth10(
+    pub async fn get_range_order_book_depth(
         &self,
         params: RangeQueryParams,
         depth: Option<usize>,
-    ) -> anyhow::Result<Vec<OrderBookDepth10>> {
+    ) -> anyhow::Result<Vec<OrderBookDepth>> {
         let symbols: Vec<&str> = params.symbols.iter().map(String::as_str).collect();
         check_consistent_symbology(&symbols)?;
 
@@ -519,7 +519,7 @@ impl DatabentoHistoricalClient {
         let metadata = decoder.metadata().clone();
         let mut metadata_cache = MetadataCache::new(metadata);
         let mut precision_cache = AHashMap::new();
-        let mut result: Vec<OrderBookDepth10> = Vec::new();
+        let mut result: Vec<OrderBookDepth> = Vec::new();
 
         let mut process_record = |record: dbn::RecordRef| -> anyhow::Result<()> {
             let sym_map = self.symbol_venue_map.load();

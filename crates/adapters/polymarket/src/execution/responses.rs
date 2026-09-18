@@ -1811,6 +1811,7 @@ mod tests {
         let instruments = AtomicMap::new();
         instruments.insert(trade.asset_id, instrument);
         let ctx = crate::execution::reconciliation::FillContext {
+            signer_type: crate::common::enums::PolymarketSignerType::Owner,
             account_id: AccountId::from("POLY-001"),
             user_address: "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
             api_key: "00000000-0000-0000-0000-000000000001",
@@ -1858,6 +1859,7 @@ mod tests {
         let instruments = AtomicMap::new();
         instruments.insert(trade.asset_id, instrument);
         let ctx = crate::execution::reconciliation::FillContext {
+            signer_type: crate::common::enums::PolymarketSignerType::Owner,
             account_id: AccountId::from("POLY-001"),
             user_address: &configured_address,
             api_key: foreign_api_key,
@@ -1899,6 +1901,7 @@ mod tests {
         trade.trader_side = trader_side;
         let instruments = AtomicMap::new();
         let ctx = crate::execution::reconciliation::FillContext {
+            signer_type: crate::common::enums::PolymarketSignerType::Owner,
             account_id: AccountId::from("POLY-001"),
             user_address: "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
             api_key: "00000000-0000-0000-0000-000000000001",
@@ -1941,6 +1944,7 @@ mod tests {
         // Neither the address nor the API key matches any maker order, so the
         // whole confirmed trade is dropped; the drop must be observable.
         let ctx = crate::execution::reconciliation::FillContext {
+            signer_type: crate::common::enums::PolymarketSignerType::Owner,
             account_id: AccountId::from("POLY-001"),
             user_address: "0x000000000000000000000000000000000000dead",
             api_key: "ffffffff-ffff-ffff-ffff-ffffffffffff",
@@ -1987,6 +1991,7 @@ mod tests {
         let instruments = AtomicMap::new();
         instruments.insert(taker.asset_id, instrument);
         let ctx = crate::execution::reconciliation::FillContext {
+            signer_type: crate::common::enums::PolymarketSignerType::Owner,
             account_id: AccountId::from("POLY-001"),
             user_address: &configured_address,
             api_key: "00000000-0000-0000-0000-000000000001",
@@ -2064,6 +2069,7 @@ mod tests {
         token_instruments.insert(ws_order.asset_id, instrument);
         let mut state = WsDispatchState::default();
         let ctx = WsDispatchContext {
+            signer_type: crate::common::enums::PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -2670,6 +2676,7 @@ mod tests {
         let token_instruments = AtomicMap::new();
         token_instruments.insert(asset_id, instrument);
         let ctx = WsDispatchContext {
+            signer_type: crate::common::enums::PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -2778,6 +2785,7 @@ mod tests {
         let token_instruments = AtomicMap::new();
         token_instruments.insert(cancel_order.asset_id, instrument);
         let ctx = WsDispatchContext {
+            signer_type: crate::common::enums::PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
@@ -2894,6 +2902,7 @@ mod tests {
         let token_instruments = AtomicMap::new();
         token_instruments.insert(asset_id, instrument);
         let ctx = WsDispatchContext {
+            signer_type: crate::common::enums::PolymarketSignerType::Owner,
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,

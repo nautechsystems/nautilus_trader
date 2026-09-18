@@ -1037,6 +1037,10 @@ impl ExecutionEngine {
     /// This handles exchange-generated orders (liquidation, ADL, settlement) that were
     /// not submitted locally.
     pub fn reconcile_order_status_report(&mut self, report: &OrderStatusReport) {
+        self.handle_order_status_report(report, false);
+    }
+
+    fn handle_order_status_report(&mut self, report: &OrderStatusReport, is_snapshot: bool) {
         msgbus::publish_any(
             MessagingSwitchboard::reconciliation_raw_order_status_report_topic(),
             report,
@@ -1059,8 +1063,17 @@ impl ExecutionEngine {
 
         if let Some(order) = order {
             let ts_now = self.clock.borrow().timestamp_ns();
-            let events =
-                generate_reconciliation_order_events(&order, report, instrument.as_ref(), ts_now);
+
+            let events = if is_snapshot {
+                generate_reconciliation_order_snapshot_events(
+                    &order,
+                    report,
+                    instrument.as_ref(),
+                    ts_now,
+                )
+            } else {
+                generate_reconciliation_order_events(&order, report, instrument.as_ref(), ts_now)
+            };
 
             for event in &events {
                 self.handle_event(event);
@@ -1756,6 +1769,9 @@ impl ExecutionEngine {
     /// Processes all order reports, fill reports, and position reports contained
     /// in the mass status. Order reports are paired with their companion fills so
     /// real trade IDs and commissions are applied before any residual inferred fill.
+    /// Filled-quantity decreases generate fill voids even when no companion fills are present.
+    /// Order snapshots are skipped when cached fill activity is initialized at or after
+    /// collection starts (`mass_status.ts_init`); companion trades still reconcile.
     pub fn reconcile_execution_mass_status(&mut self, mass_status: &ExecutionMassStatus) {
         self.report_count += 1;
 
@@ -1771,13 +1787,26 @@ impl ExecutionEngine {
         let mut paired_venue_ids = AHashSet::new();
 
         for order_report in order_reports.values() {
+            if self.is_order_snapshot_stale(order_report, mass_status.ts_init) {
+                msgbus::publish_any(
+                    MessagingSwitchboard::reconciliation_raw_order_status_report_topic(),
+                    order_report,
+                );
+
+                log::debug!(
+                    "Skipping snapshot for {} after concurrent fill activity",
+                    order_report.venue_order_id,
+                );
+                continue;
+            }
+
             if let Some(fills) = fill_reports.get(&order_report.venue_order_id)
                 && !fills.is_empty()
             {
                 self.reconcile_order_with_fills(order_report, fills);
                 paired_venue_ids.insert(order_report.venue_order_id);
             } else {
-                self.reconcile_order_status_report(order_report);
+                self.handle_order_status_report(order_report, true);
             }
         }
 
@@ -1811,6 +1840,27 @@ impl ExecutionEngine {
                 .map(Vec::len)
                 .sum::<usize>()
         );
+    }
+
+    fn is_order_snapshot_stale(&self, report: &OrderStatusReport, ts_snapshot: UnixNanos) -> bool {
+        let cache = self.cache.borrow();
+
+        let order = report
+            .client_order_id
+            .and_then(|id| cache.order(&id))
+            .or_else(|| {
+                cache
+                    .client_order_id(&report.venue_order_id)
+                    .and_then(|id| cache.order(id))
+            });
+
+        order.is_some_and(|order| {
+            order.events().into_iter().any(|event| match event {
+                OrderEventAny::Filled(fill) => fill.ts_init >= ts_snapshot,
+                OrderEventAny::FillVoided(void) => void.ts_init >= ts_snapshot,
+                _ => false,
+            })
+        })
     }
 
     /// Executes a trading command by routing it to the appropriate execution client.

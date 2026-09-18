@@ -64,6 +64,6 @@ quote = QuoteTick(
 
 ## Related guides
 
-- [OrderBookDepth10](order_book_depth10.md) covers fixed-depth snapshots with top levels.
+- [OrderBookDepth](order_book_depth.md) covers fixed-depth snapshots with top levels.
 - [Bars and aggregation](index.md#bars-and-aggregation) covers quote-to-bar aggregation.
 - [Python API reference](/docs/python-api-latest/model/data.html) lists Python members.

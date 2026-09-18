@@ -128,18 +128,18 @@ loader = DatabentoDataLoader()
 path = DATABENTO_DATA_DIR / "es-front-glbx-mbp10.dbn.zst"
 
 # Option 1 (recommended): Let the loader infer the instrument ID from DBN metadata
-depth10 = loader.load_order_book_depth10(filepath=path)
+depth = loader.load_order_book_depth(filepath=path)
 
 # Option 2: Explicitly specify a valid Nautilus instrument ID (symbol.venue format)
 # instrument_id = InstrumentId.from_str("ESZ3.GLBX")  # E-mini S&P December 2023 futures on Globex
-# depth10 = loader.load_order_book_depth10(
+# depth = loader.load_order_book_depth(
 #     filepath=path,
 #     instrument_id=instrument_id,
 # )
 
 # %%
 # Write data to catalog (this takes ~20 seconds or ~250,000/second for writing MBP-10 at the moment)
-catalog.write_order_book_depths(depth10)
+catalog.write_order_book_depths(depth)
 
 # %%
 # Test reading from catalog

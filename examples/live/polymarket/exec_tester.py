@@ -33,7 +33,7 @@ from nautilus_trader.adapters.polymarket import PolymarketDataClientFactory
 from nautilus_trader.adapters.polymarket import PolymarketExecutionClientConfig
 from nautilus_trader.adapters.polymarket import PolymarketExecutionClientFactory
 from nautilus_trader.adapters.polymarket import PolymarketInstrumentProviderConfig
-from nautilus_trader.adapters.polymarket import SignatureType
+from nautilus_trader.adapters.polymarket import PolymarketSignatureType
 from nautilus_trader.common import Environment
 from nautilus_trader.config import LiveExecutionEngineConfig
 from nautilus_trader.config import LiveRiskEngineConfig
@@ -99,7 +99,7 @@ def main() -> None:
             PolymarketExecutionClientFactory(),
             PolymarketExecutionClientConfig(
                 account_id=ACCOUNT_ID,
-                signature_type=SignatureType.PolyGnosisSafe,
+                signature_type=PolymarketSignatureType.PolyGnosisSafe,
                 instrument_config=instrument_config,
             ),
         )

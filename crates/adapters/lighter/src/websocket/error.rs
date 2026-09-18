@@ -19,7 +19,7 @@ use nautilus_network::error::SendError;
 use thiserror::Error;
 
 /// Errors emitted by the Lighter WebSocket client.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum LighterWsError {
     /// Underlying transport failure.
     #[error("network error: {0}")]

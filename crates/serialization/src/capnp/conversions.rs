@@ -26,7 +26,7 @@ use nautilus_model::{
         bar::{Bar, BarSpecification, BarType},
         delta::OrderBookDelta,
         deltas::OrderBookDeltas,
-        depth::OrderBookDepth10,
+        depth::OrderBookDepth,
         order::BookOrder,
     },
     enums::{
@@ -2333,8 +2333,8 @@ impl<'a> FromCapnp<'a> for OrderBookDeltas {
     }
 }
 
-impl<'a> ToCapnp<'a> for OrderBookDepth10 {
-    type Builder = market_capnp::order_book_depth10::Builder<'a>;
+impl<'a> ToCapnp<'a> for OrderBookDepth {
+    type Builder = market_capnp::order_book_depth::Builder<'a>;
 
     fn to_capnp(&self, mut builder: Self::Builder) {
         let instrument_id_builder = builder.reborrow().init_instrument_id();
@@ -2386,8 +2386,8 @@ impl<'a> ToCapnp<'a> for OrderBookDepth10 {
     }
 }
 
-impl<'a> FromCapnp<'a> for OrderBookDepth10 {
-    type Reader = market_capnp::order_book_depth10::Reader<'a>;
+impl<'a> FromCapnp<'a> for OrderBookDepth {
+    type Reader = market_capnp::order_book_depth::Reader<'a>;
 
     fn from_capnp(reader: Self::Reader) -> Result<Self, Box<dyn Error>> {
         let instrument_id_reader = reader.get_instrument_id()?;
@@ -5101,11 +5101,11 @@ mod tests {
         OrderBookDeltas
     );
     capnp_simple_roundtrip_test!(
-        order_book_depth10_capnp_roundtrip,
-        sample_order_book_depth10(),
-        market_capnp::order_book_depth10::Builder,
-        market_capnp::order_book_depth10::Reader,
-        OrderBookDepth10
+        order_book_depth_capnp_roundtrip,
+        sample_order_book_depth(),
+        market_capnp::order_book_depth::Builder,
+        market_capnp::order_book_depth::Reader,
+        OrderBookDepth
     );
     capnp_simple_roundtrip_test!(
         mark_price_update_capnp_roundtrip,
@@ -5534,7 +5534,7 @@ mod tests {
             .build()
     }
 
-    fn sample_order_book_depth10() -> OrderBookDepth10 {
+    fn sample_order_book_depth() -> OrderBookDepth {
         const LEVELS: usize = 10;
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let mut bids = [BookOrder::default(); LEVELS];
@@ -5555,7 +5555,7 @@ mod tests {
         }
         let bid_counts = [1_u32; LEVELS];
         let ask_counts = [1_u32; LEVELS];
-        OrderBookDepth10::new(
+        OrderBookDepth::new(
             instrument_id,
             bids,
             asks,

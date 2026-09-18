@@ -124,7 +124,10 @@ impl Harness {
         clippy::await_holding_refcell_ref,
         reason = "only mock venue tasks run while the test borrows the registered client"
     )]
-    pub(crate) async fn reconcile_snapshot_from_venue(&self) -> ExecutionMassStatus {
+    pub(crate) async fn reconcile_snapshot_from_venue(
+        &self,
+        use_execution_engine: bool,
+    ) -> ExecutionMassStatus {
         let mass_status = self
             .exec_engine()
             .borrow_mut()
@@ -132,9 +135,17 @@ impl Harness {
             .await
             .unwrap()
             .unwrap();
-        self.manager
-            .borrow_mut()
-            .reconcile_execution_mass_status(&mass_status, self.exec_engine());
+
+        if use_execution_engine {
+            self.exec_engine()
+                .borrow_mut()
+                .reconcile_execution_mass_status(&mass_status);
+        } else {
+            self.manager
+                .borrow_mut()
+                .reconcile_execution_mass_status(&mass_status, self.exec_engine());
+        }
+
         mass_status
     }
 

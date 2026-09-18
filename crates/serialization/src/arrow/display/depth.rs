@@ -32,10 +32,8 @@ use crate::arrow::{
 };
 
 /// Returns the nested depth display schema.
-///
-/// The compatibility name does not limit the number of levels.
 #[must_use]
-pub fn depth10_schema() -> Schema {
+pub fn depths_schema() -> Schema {
     schema()
 }
 
@@ -44,13 +42,12 @@ pub fn depth10_schema() -> Schema {
 /// Each level contains a display price and size, count, and exact integer order ID.
 /// Empty sides remain empty lists. Mixed instruments and depths share one schema.
 /// Prices and sizes use `Float64`, with nulls for undefined values; use raw catalog
-/// output when exact decimal values are required. The compatibility name does not
-/// impose a ten-level limit.
+/// output when exact decimal values are required.
 ///
 /// # Errors
 ///
 /// Returns an error if Arrow cannot construct the batch or list offsets overflow.
-pub fn encode_depth10(data: &[OrderBookDepth]) -> Result<RecordBatch, ArrowError> {
+pub fn encode_depths(data: &[OrderBookDepth]) -> Result<RecordBatch, ArrowError> {
     let mut instruments = StringBuilder::new();
     let mut bids = DepthSideBuilder::new();
     let mut asks = DepthSideBuilder::new();
@@ -92,7 +89,7 @@ pub fn encode_depth10(data: &[OrderBookDepth]) -> Result<RecordBatch, ArrowError
     }
 
     RecordBatch::try_new(
-        Arc::new(depth10_schema()),
+        Arc::new(depths_schema()),
         vec![
             Arc::new(instruments.finish()),
             Arc::new(bids.finish()?),
@@ -126,7 +123,7 @@ mod tests {
 
     #[rstest]
     fn test_depth_display_schema_and_empty_batch() {
-        let batch = encode_depth10(&[]).unwrap();
+        let batch = encode_depths(&[]).unwrap();
         let levels: Fields = vec![
             Field::new("price", DataType::Float64, true),
             Field::new("size", DataType::Float64, true),
@@ -159,7 +156,7 @@ mod tests {
 
         assert_eq!(batch.num_rows(), 0);
         assert_eq!(batch.schema().as_ref(), &expected);
-        assert_eq!(depth10_schema(), expected);
+        assert_eq!(depths_schema(), expected);
     }
 
     #[rstest]
@@ -169,7 +166,7 @@ mod tests {
             depth("MSFT.XNAS", 5, 0, 2),
             depth("NVDA.XNAS", 25, 27, 3),
         ];
-        let batch = encode_depth10(&data).unwrap();
+        let batch = encode_depths(&data).unwrap();
         let ids = batch
             .column_by_name("instrument_id")
             .unwrap()
@@ -202,7 +199,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(batch.num_rows(), 3);
-        assert_eq!(batch.schema().as_ref(), &depth10_schema());
+        assert_eq!(batch.schema().as_ref(), &depths_schema());
 
         for (row, (instrument, bid_len, ask_len, seed)) in [
             ("AAPL.XNAS", 0, 3, 1_u32),
@@ -271,7 +268,7 @@ mod tests {
         let mut data = depth("AAPL.XNAS", 1, 1, 1);
         data.bids[0].price = Price::from_raw(PRICE_UNDEF, 0);
         data.asks[0].size = Quantity::from_raw(QUANTITY_UNDEF, 0);
-        let batch = encode_depth10(&[data]).unwrap();
+        let batch = encode_depths(&[data]).unwrap();
         for (name, field) in [("bids", "price"), ("asks", "size")] {
             let list = batch
                 .column_by_name(name)

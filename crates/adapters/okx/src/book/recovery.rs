@@ -13,12 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Bounded retries, snapshot waits, and cancellation for OKX book recovery.
+//! Recovery tasks and replacement subscriptions for OKX books.
 //!
-//! [`BookRecovery`] carries the cancellation token, snapshot outcome, and gate for one recovery
-//! episode. The tasks here monitor snapshot deadlines, replace subscriptions, and retry transient
-//! failures within attempt and elapsed-time limits. A successful send alone does not complete
-//! recovery: the tracker must accept a snapshot.
+//! The tasks here monitor snapshot deadlines and supply OKX replacement operations and error
+//! classification to the shared [`BookRecovery`] runner. The runner owns snapshot waits, backoff,
+//! and attempt and elapsed-time limits. A successful send alone does not complete recovery:
+//! the tracker must accept a snapshot.
 //!
 //! Tasks claim ownership and report failure through [`BookSyncTracker`], which keeps shared state
 //! transitions under its lock. Cancellation stops obsolete work after unsubscribe, replacement,
@@ -28,10 +28,8 @@ use std::sync::Arc;
 
 use nautilus_common::live::dst::time::{self, Duration, Instant};
 use nautilus_core::AtomicMap;
-use nautilus_live::task::TaskSpawner;
+use nautilus_live::{book::recovery::BookRecovery as Recovery, task::TaskSpawner};
 use nautilus_model::identifiers::InstrumentId;
-use nautilus_network::retry::{RetryConfig, RetryManager};
-use tokio_util::sync::CancellationToken;
 
 use super::{
     BookChannelScope, BookRecoveryOutcome,
@@ -39,33 +37,10 @@ use super::{
 };
 use crate::{
     common::{consts::should_retry_error_code, enums::OKXBookChannel, task::spawn_task},
-    websocket::{client::OKXWebSocketClient, error::OKXWsError, handler::SnapshotGate},
+    websocket::{client::OKXWebSocketClient, error::OKXWsError},
 };
 
-// Includes the initial attempt
-const BOOK_RECOVERY_MAX_ATTEMPTS: u32 = 8;
-
-#[derive(Debug)]
-pub(crate) struct BookRecovery {
-    pub(crate) cancellation: CancellationToken,
-    pub(crate) outcome: tokio::sync::watch::Sender<BookRecoveryOutcome>,
-    pub(crate) gate: SnapshotGate,
-}
-
-impl BookRecovery {
-    pub(crate) fn begin_replacement(&self) -> bool {
-        let mut gate = self.gate.lock();
-
-        if self.cancellation.is_cancelled()
-            || matches!(*self.outcome.borrow(), BookRecoveryOutcome::Accepted)
-        {
-            return false;
-        }
-
-        gate.close();
-        true
-    }
-}
+pub(crate) type BookRecovery = Recovery<OKXWsError>;
 
 /// Spawns a one-shot monitor that retries recovery for every book instrument
 /// whose armed snapshot deadline expires on this socket's channels.
@@ -155,70 +130,23 @@ pub(crate) fn spawn_recovery_task(
     spawn_task(tasks, async move {
         let _recovery_guard = recovery_guard;
 
-        let manager = RetryManager::<OKXWsError>::new(RetryConfig {
-            max_retries: BOOK_RECOVERY_MAX_ATTEMPTS - 1,
-            initial_delay_ms: 1_000,
-            max_delay_ms: 10_000,
-            backoff_factor: 2.0,
-            jitter_ms: 1_000,
-            immediate_first: true,
-            operation_timeout_ms: None,
-            max_elapsed_ms: Some(180_000),
-        });
-
         let result = tokio::select! {
             biased;
             () = shutdown.cancelled() => {
                 recovery.cancellation.cancel();
                 return;
             }
-            result = manager.invocation(
-                "OKX book recovery",
-                || async {
-                    let mut outcome = recovery.outcome.subscribe();
-                    if !recovery.begin_replacement() {
-                        return Ok(());
-                    }
-                    recovery.outcome.send_if_modified(|outcome| {
-                        if matches!(outcome, BookRecoveryOutcome::Rejected(_)) {
-                            *outcome = BookRecoveryOutcome::Pending;
-                            true
-                        } else {
-                            false
-                        }
-                    });
-                    let attempt_cancel = recovery.cancellation.child_token();
-                    let _attempt_guard = attempt_cancel.clone().drop_guard();
-                    ws.resubscribe_book_channel(
-                        instrument_id,
-                        channel,
-                        attempt_cancel,
-                        recovery.gate.clone(),
-                    ).await?;
-                    let wait = async {
-                        loop {
-                            match outcome.borrow_and_update().clone() {
-                                BookRecoveryOutcome::Accepted => return Ok(()),
-                                BookRecoveryOutcome::Rejected(e) => return Err(e),
-                                BookRecoveryOutcome::Pending => {}
-                            }
-                            outcome.changed().await.map_err(|e| OKXWsError::ClientError(e.to_string()))?;
-                        }
-                    };
-
-                    if snapshot_timeout.is_zero() {
-                        wait.await
-                    } else {
-                        time::timeout(snapshot_timeout, wait).await.unwrap_or_else(|_| {
-                            Err(OKXWsError::OperationTimeout {
-                                timeout_ms: snapshot_timeout.as_millis().min(u128::from(u64::MAX)) as u64,
-                            })
-                        })
-                    }
-                },
+            result = recovery.run(
+                snapshot_timeout,
+                |attempt_cancel, gate| ws.resubscribe_book_channel(
+                    instrument_id, channel, attempt_cancel, gate,
+                ),
                 is_retryable_error,
-                |e| OKXWsError::ClientError(e.to_string()),
-            ).cancellation_token(&recovery.cancellation).execute() => result,
+                OKXWsError::ClientError,
+                || OKXWsError::OperationTimeout {
+                    timeout_ms: snapshot_timeout.as_millis().min(u128::from(u64::MAX)) as u64,
+                },
+            ) => result,
         };
 
         if let Err(e) = result {

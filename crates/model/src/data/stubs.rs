@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     Bar, BarSpecification, BarType, CustomData, CustomDataTrait, DEPTH10_LEN, DataType, HasTsInit,
-    InstrumentStatus, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+    InstrumentStatus, OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
     close::InstrumentClose, register_custom_data_json,
 };
 use crate::{
@@ -207,13 +207,13 @@ pub fn stub_deltas() -> OrderBookDeltas {
 }
 
 #[fixture]
-pub fn stub_depth10() -> OrderBookDepth10 {
+pub fn stub_depth10() -> OrderBookDepth {
     stub_depth(DEPTH10_LEN)
 }
 
 /// Creates a depth snapshot with the requested number of levels per side.
 #[must_use]
-pub fn stub_depth(levels: usize) -> OrderBookDepth10 {
+pub fn stub_depth(levels: usize) -> OrderBookDepth {
     let instrument_id = InstrumentId::from("AAPL.XNAS");
     let flags = 0;
     let sequence = 0;
@@ -256,7 +256,7 @@ pub fn stub_depth(levels: usize) -> OrderBookDepth10 {
     let bid_counts = vec![1; levels];
     let ask_counts = vec![1; levels];
 
-    OrderBookDepth10::new(
+    OrderBookDepth::new(
         instrument_id,
         bids,
         asks,

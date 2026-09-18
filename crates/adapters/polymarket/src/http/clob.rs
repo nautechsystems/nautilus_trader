@@ -185,6 +185,11 @@ impl PolymarketClobHttpClient {
         format!("{}{path}", self.base_url)
     }
 
+    pub(crate) async fn list_session_keys(&self) -> Result<crate::session::SessionKeysResponse> {
+        self.send_get::<(), _>("/v1/user/session-signers", None, true)
+            .await
+    }
+
     fn timestamp(&self) -> String {
         (self.clock.get_time_ns().as_u64() / 1_000_000_000).to_string()
     }

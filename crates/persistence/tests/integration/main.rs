@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-mod fixtures;
 mod test_catalog;
 mod test_feather;
+
+#[cfg(feature = "high-precision")]
+mod fixtures;
+#[cfg(feature = "high-precision")]
 mod test_pinned_data_direct_session;

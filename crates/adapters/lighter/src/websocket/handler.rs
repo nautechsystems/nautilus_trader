@@ -26,13 +26,18 @@ use std::{
     },
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
 use futures_util::{StreamExt, stream::FuturesUnordered};
 use nautilus_core::{
     AtomicTime,
     nanos::UnixNanos,
     string::secret::{REDACTED, SecretString},
     time::get_atomic_clock_realtime,
+};
+use nautilus_live::book::{
+    BookSequenceOutcome,
+    recovery::{BookRecoveryOutcome, BookRecoveryState},
+    snapshot::{PendingSnapshot, SnapshotGate},
 };
 use nautilus_model::{identifiers::AccountId, instruments::InstrumentAny, types::Currency};
 use nautilus_network::{
@@ -41,8 +46,8 @@ use nautilus_network::{
     retry::{RetryManager, create_websocket_retry_manager},
     websocket::{SubscriptionState, WebSocketClient},
 };
-use rust_decimal::Decimal;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 use zeroize::Zeroize;
 
@@ -56,12 +61,15 @@ use super::{
     },
     parse::{
         parse_ws_bar, parse_ws_funding_rate_update, parse_ws_index_price_update,
-        parse_ws_mark_price_update, parse_ws_order_book_deltas, parse_ws_order_book_depth10,
-        parse_ws_position_status_report, parse_ws_quote_tick, parse_ws_spot_index_price_update,
-        parse_ws_trade_tick,
+        parse_ws_mark_price_update, parse_ws_position_status_report, parse_ws_quote_tick,
+        parse_ws_spot_index_price_update, parse_ws_trade_tick,
     },
 };
 use crate::{
+    book::{
+        recovery::{self, BookWorkResult, BookWrite},
+        sync::BookSync,
+    },
     common::{
         consts::{
             LIGHTER_ERROR_CODE_ALREADY_SUBSCRIBED, LIGHTER_ERROR_CODE_INTEGRATOR_NOT_APPROVED,
@@ -72,7 +80,7 @@ use crate::{
         enums::LighterCandleResolution,
         rate_limit::LIGHTER_WS_MESSAGE_RATE_LIMIT_KEY,
     },
-    http::models::{LighterOrder, LighterPriceLevel, LighterTrade},
+    http::models::{LighterOrder, LighterTrade},
 };
 
 // Lighter control-frame `type` field values that fall outside the typed
@@ -114,8 +122,13 @@ pub enum HandlerCommand {
     },
     /// Unsubscribe from a channel.
     Unsubscribe { channel: LighterWsChannel },
-    /// Resubscribe to the venue `order_book` stream after a continuity gap.
-    ResubscribeOrderBook { market_index: i16 },
+    /// Replace a book subscription for the current recovery owner.
+    RecoverBook {
+        market_index: i16,
+        cancel: CancellationToken,
+        gate: SnapshotGate,
+        completion: tokio::sync::oneshot::Sender<Result<(), LighterWsError>>,
+    },
     /// Replace the handler's instrument cache (used on initial connect).
     InitializeInstruments(Vec<(i16, InstrumentAny)>),
     /// Insert or replace a single instrument by `market_index`.
@@ -127,8 +140,8 @@ pub enum HandlerCommand {
     /// be emitted as [`NautilusWsMessage::Deltas`].
     SetBookDeltasSub { market_index: i16, subscribed: bool },
     /// Toggle whether `update/order_book` frames for `market_index` should
-    /// also be emitted as a [`NautilusWsMessage::Depth10`] snapshot.
-    SetDepth10Sub { market_index: i16, subscribed: bool },
+    /// also be emitted as a [`NautilusWsMessage::Depth`] snapshot.
+    SetDepthSub { market_index: i16, subscribed: bool },
     /// Provide the execution context (`AccountId` and venue `account_index`)
     /// the handler stamps onto reports parsed from `account_*` frames.
     /// Without this context the handler cannot construct typed reports and
@@ -168,8 +181,8 @@ impl Debug for HandlerCommand {
                 .debug_struct(stringify!(Unsubscribe))
                 .field("channel", channel)
                 .finish(),
-            Self::ResubscribeOrderBook { market_index } => f
-                .debug_struct(stringify!(ResubscribeOrderBook))
+            Self::RecoverBook { market_index, .. } => f
+                .debug_struct(stringify!(RecoverBook))
                 .field("market_index", market_index)
                 .finish(),
             Self::InitializeInstruments(instruments) => f
@@ -188,11 +201,11 @@ impl Debug for HandlerCommand {
                 .field("market_index", market_index)
                 .field("subscribed", subscribed)
                 .finish(),
-            Self::SetDepth10Sub {
+            Self::SetDepthSub {
                 market_index,
                 subscribed,
             } => f
-                .debug_struct(stringify!(SetDepth10Sub))
+                .debug_struct(stringify!(SetDepthSub))
                 .field("market_index", market_index)
                 .field("subscribed", subscribed)
                 .finish(),
@@ -222,7 +235,7 @@ impl Debug for HandlerCommand {
 pub(super) struct FeedHandler {
     clock: &'static AtomicTime,
     signal: Arc<AtomicBool>,
-    inner: Option<WebSocketClient>,
+    inner: Option<Arc<WebSocketClient>>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
     cmd_tx: Option<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>,
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<(u64, Message)>,
@@ -237,22 +250,13 @@ pub(super) struct FeedHandler {
     ignored_completions: AHashMap<Ustr, CompletionKind>,
     next_subscription_generation: u64,
     instruments: AHashMap<i16, InstrumentAny>,
-    book_delta_subs: AHashSet<i16>,
-    book_depth_10_subs: AHashSet<i16>,
-    book_snapshots_seen: AHashSet<i16>,
-    book_states: AHashMap<i16, CachedOrderBook>,
+    book: BookSync,
     last_candles: AHashMap<(i16, LighterCandleResolution), LighterWsCandle>,
     exec_account: Option<(AccountId, i64)>,
     account_state_reconciler: LighterAccountStateReconciler,
 }
 
 type SubscriptionRetry = Pin<Box<dyn Future<Output = (Ustr, u64)> + Send + Sync + 'static>>;
-
-#[derive(Debug, Clone)]
-struct CachedOrderBook {
-    book: LighterWsOrderBook,
-    timestamp: u64,
-}
 
 struct SubscriptionAttempt {
     channel: LighterWsChannel,
@@ -334,10 +338,7 @@ impl FeedHandler {
             ignored_completions: AHashMap::new(),
             next_subscription_generation: 1,
             instruments: AHashMap::new(),
-            book_delta_subs: AHashSet::new(),
-            book_depth_10_subs: AHashSet::new(),
-            book_snapshots_seen: AHashSet::new(),
-            book_states: AHashMap::new(),
+            book: BookSync::default(),
             last_candles: AHashMap::new(),
             exec_account: None,
             account_state_reconciler: LighterAccountStateReconciler::new_with_settlement_currency(
@@ -528,11 +529,37 @@ impl FeedHandler {
             self.pump_pending_subscribes().await;
 
             tokio::select! {
+                biased;
+                Some(work) = self.book.work.next(), if !self.book.work.is_empty() => {
+                    match work {
+                        BookWorkResult::Sent { market_index, generation, cancel, write, result } => {
+                            self.complete_book_send(market_index, generation, cancel, write, result);
+                        }
+                        BookWorkResult::Initial { market_index, cancel } => {
+                            if !cancel.is_cancelled() {
+                                self.start_book_recovery(market_index);
+                            }
+                        }
+                        BookWorkResult::Recovery { market_index, recovery, result } => {
+                            if let Err(e) = result
+                                && !recovery.cancellation.is_cancelled()
+                                && let Some(state) = self.book.recovery.get_mut(&market_index)
+                                && state.fail(Some(&recovery))
+                            {
+                                self.book.clear_cached_order_book(market_index);
+                                self.book.writes.remove(&market_index);
+                                let topic = LighterWsChannel::OrderBook(market_index).topic_key();
+                                self.cancel_subscription_attempt(&topic, &e.to_string());
+                                log::error!("Lighter book recovery failed for market_index={market_index}; output suppressed until reconnect or resubscribe: {e}");
+                            }
+                        }
+                    }
+                }
                 Some(cmd) = self.cmd_rx.recv() => {
                     match cmd {
                         HandlerCommand::SetClient(client) => {
                             log::debug!("Setting WebSocket client in Lighter handler");
-                            self.inner = Some(client);
+                            self.inner = Some(Arc::new(client));
                         }
                         HandlerCommand::Disconnect => {
                             log::debug!("Lighter handler received disconnect");
@@ -559,13 +586,13 @@ impl FeedHandler {
                             );
 
                             if let LighterWsChannel::OrderBook(market_index) = &channel {
-                                self.book_snapshots_seen.remove(market_index);
-                                self.book_states.remove(market_index);
+                                self.book.cancel(*market_index);
+                                self.book.clear_cached_order_book(*market_index);
                             }
                             self.dispatch_unsubscribe(channel).await;
                         }
-                        HandlerCommand::ResubscribeOrderBook { market_index } => {
-                            self.resubscribe_order_book_stream(market_index).await;
+                        HandlerCommand::RecoverBook { market_index, cancel, gate, completion } => {
+                            self.queue_book_replacement(market_index, BookWrite { cancel, gate, completion });
                         }
                         HandlerCommand::InitializeInstruments(instruments) => {
                             self.instruments.clear();
@@ -578,28 +605,27 @@ impl FeedHandler {
                         }
                         HandlerCommand::SetBookDeltasSub { market_index, subscribed } => {
                             if subscribed {
-                                let inserted = self.book_delta_subs.insert(market_index);
+                                let inserted = self.book.delta_subs.insert(market_index);
                                 if inserted
-                                    && let Some(first) = self
-                                        .emit_cached_order_book_deltas_snapshot(market_index)
+                                    && let Some(first) = self.instruments.get(&market_index).and_then(|instrument| self.book.emit_cached_order_book_deltas_snapshot(market_index, instrument, self.clock.get_time_ns()))
                                 {
                                     return Some(first);
                                 }
                             } else {
-                                self.book_delta_subs.remove(&market_index);
+                                self.book.delta_subs.remove(&market_index);
                             }
                         }
-                        HandlerCommand::SetDepth10Sub { market_index, subscribed } => {
+                        HandlerCommand::SetDepthSub { market_index, subscribed } => {
                             if subscribed {
-                                let inserted = self.book_depth_10_subs.insert(market_index);
+                                let inserted = self.book.depth_subs.insert(market_index);
                                 if inserted
                                     && let Some(first) =
-                                        self.emit_cached_order_book_depth10_snapshot(market_index)
+                                        self.instruments.get(&market_index).and_then(|instrument| self.book.emit_cached_order_book_depth_snapshot(market_index, instrument, self.clock.get_time_ns()))
                                 {
                                     return Some(first);
                                 }
                             } else {
-                                self.book_depth_10_subs.remove(&market_index);
+                                self.book.depth_subs.remove(&market_index);
                             }
                         }
                         HandlerCommand::SetExecutionContext { account_id, account_index } => {
@@ -631,8 +657,7 @@ impl FeedHandler {
                         Message::Text(text) => {
                             if text == RECONNECTED {
                                 log::debug!("Received Lighter WebSocket RECONNECTED sentinel");
-                                self.book_snapshots_seen.clear();
-                                self.book_states.clear();
+                                self.book.reset_on_reconnect();
                                 // Resubscribe replays a fresh `subscribed/candle`; pre-disconnect cache is stale.
                                 self.last_candles.clear();
                                 // The new socket starts with zero inflight and restore_subscriptions
@@ -648,8 +673,10 @@ impl FeedHandler {
                             let ts_init = self.clock.get_time_ns();
 
                             if let Ok(frame) = serde_json::from_str::<LighterWsFrame>(&text) {
-                                if let Some(topic) = typed_subscribe_topic(&text) {
-                                    self.complete_subscription(topic, CompletionKind::Typed);
+                                if let Some(topic) = typed_subscribe_topic(&text)
+                                    && !self.complete_typed_subscription(topic, connection_epoch)
+                                {
+                                    continue;
                                 }
                                 let messages = self
                                     .handle_frame(frame, ts_init)
@@ -734,7 +761,9 @@ impl FeedHandler {
             let channel = attempt.channel.clone();
             let auth = attempt.auth.clone();
             self.inflight_subs.insert(topic, generation);
-            if let Err(message) = self.dispatch_subscribe(channel, auth).await {
+            if let LighterWsChannel::OrderBook(market_index) = channel {
+                self.send_book_subscribe(market_index, generation);
+            } else if let Err(message) = self.dispatch_subscribe(channel, auth).await {
                 self.schedule_subscription_retry(topic, generation, &message);
             }
         }
@@ -747,8 +776,38 @@ impl FeedHandler {
         response_tx: Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
     ) {
         let topic = Ustr::from(channel.topic_key().as_str());
+        if let LighterWsChannel::OrderBook(market_index) = channel
+            && response_tx.is_some()
+            && let Some(state) = self.book.recovery.get_mut(&market_index)
+            && state.is_failed()
+        {
+            state.reset();
+        }
+
+        if let LighterWsChannel::OrderBook(market_index) = channel
+            && !self.book.writes.contains_key(&market_index)
+            && self
+                .book
+                .recovery
+                .get(&market_index)
+                .and_then(BookRecoveryState::current)
+                .is_some_and(|recovery| !recovery.is_accepted())
+        {
+            return;
+        }
+
         if let Some(attempt) = self.subscription_attempts.get_mut(&topic) {
             attempt.channel = channel;
+            if matches!(attempt.channel, LighterWsChannel::OrderBook(_))
+                && !self.inflight_subs.contains_key(&topic)
+                && !self
+                    .pending_subs
+                    .iter()
+                    .any(|(pending, _)| *pending == topic)
+            {
+                self.pending_subs.push_back((topic, attempt.generation));
+            }
+
             let effective_auth = attempt
                 .pending_auth
                 .as_ref()
@@ -854,6 +913,16 @@ impl FeedHandler {
             return false;
         }
 
+        if let Some(market_index) = order_book_market_index_from_topic(topic.as_str())
+            && !self
+                .book
+                .expected
+                .get(&market_index)
+                .is_some_and(|expected| expected.0 == generation)
+        {
+            return false;
+        }
+
         self.inflight_subs.remove(&topic);
         self.subscriptions.confirm_subscribe(topic.as_str());
 
@@ -861,6 +930,13 @@ impl FeedHandler {
         // control-ack completion owes one trailing typed frame. Typed and
         // already-subscribed completions have no established trailing frame.
         if kind == CompletionKind::ControlAck {
+            if let Some(market_index) = order_book_market_index_from_topic(topic.as_str())
+                && let Some(expected) = self.book.expected.get(&market_index)
+                && expected.0 == generation
+            {
+                self.book.trailing.entry(market_index).or_insert(*expected);
+            }
+
             self.ignored_completions
                 .insert(topic, CompletionKind::Typed);
         }
@@ -900,11 +976,23 @@ impl FeedHandler {
     }
 
     fn fail_inflight_subscriptions(&mut self, message: &str) {
-        let mut topics: Vec<Ustr> = self.inflight_subs.keys().copied().collect();
+        let mut topics: Vec<(Ustr, u64)> = self
+            .inflight_subs
+            .iter()
+            .map(|(topic, generation)| (*topic, *generation))
+            .collect();
         topics.sort_unstable();
 
-        for topic in topics {
-            self.fail_subscription_attempt(topic, message);
+        for (topic, generation) in topics {
+            if let Some(market_index) = order_book_market_index_from_topic(topic.as_str()) {
+                self.reject_book_subscription(
+                    market_index,
+                    generation,
+                    LighterWsError::Client(message.into()),
+                );
+            } else {
+                self.fail_subscription_attempt(topic, message);
+            }
         }
     }
 
@@ -912,6 +1000,16 @@ impl FeedHandler {
         if self.inflight_subs.get(&topic) != Some(&generation) {
             return;
         }
+
+        if let Some(market_index) = order_book_market_index_from_topic(topic.as_str()) {
+            self.reject_book_subscription(
+                market_index,
+                generation,
+                LighterWsError::Network(message.into()),
+            );
+            return;
+        }
+
         self.inflight_subs.remove(&topic);
         self.subscriptions.mark_failure(topic.as_str());
 
@@ -1001,7 +1099,10 @@ impl FeedHandler {
             attempt.fold_pending_auth();
             attempt.generation = generation;
             attempt.retries = 0;
-            self.pending_subs.push_back((topic, generation));
+
+            if order_book_market_index_from_topic(topic.as_str()).is_none() {
+                self.pending_subs.push_back((topic, generation));
+            }
         }
     }
 
@@ -1111,7 +1212,7 @@ impl FeedHandler {
                         if was_pending_unsubscribe {
                             // Only matched unsubscribe ACKs should reset stream state
                             if let Some(market_index) = order_book_market_index_from_topic(topic) {
-                                self.clear_cached_order_book(market_index);
+                                self.book.clear_cached_order_book(market_index);
                             }
 
                             if let Some(key) = candle_market_and_resolution_from_topic(topic) {
@@ -1336,143 +1437,256 @@ impl FeedHandler {
     fn handle_order_book(
         &mut self,
         channel: Ustr,
-        book: &super::messages::LighterWsOrderBook,
+        book: &LighterWsOrderBook,
         timestamp: u64,
         is_snapshot: bool,
         ts_init: UnixNanos,
     ) -> Vec<NautilusWsMessage> {
-        let market_index = match market_index_from_topic(channel.as_str()) {
-            Some(index) => index,
-            None => {
-                log::debug!("Lighter order_book frame missing market index in channel '{channel}'");
-                return Vec::new();
-            }
+        let Some(market_index) = market_index_from_topic(channel.as_str()) else {
+            log::debug!("Lighter order_book frame missing market index in channel '{channel}'");
+            return Vec::new();
         };
 
-        if !self.instruments.contains_key(&market_index) {
+        let Some(instrument) = self.instruments.get(&market_index) else {
             log::debug!("No instrument cached for Lighter market_index={market_index}");
             return Vec::new();
-        }
+        };
 
-        if !self.book_delta_subs.contains(&market_index)
-            && !self.book_depth_10_subs.contains(&market_index)
-        {
-            return Vec::new();
-        }
-
-        // The venue tags the initial book as `subscribed/order_book` and follows
-        // up with `update/order_book` for incrementals. An incremental cannot
-        // seed the book because it only carries changed levels.
-        if !is_snapshot && !self.book_snapshots_seen.contains(&market_index) {
-            log::warn!(
-                "Dropping Lighter order_book update before snapshot for market_index={market_index}",
-            );
-            return Vec::new();
-        }
-
-        if is_snapshot {
-            self.book_snapshots_seen.insert(market_index);
-            self.book_states.insert(
+        match self.book.validate_sequence(market_index, book, is_snapshot) {
+            BookSequenceOutcome::Accept => self.book.apply(
                 market_index,
-                CachedOrderBook {
-                    book: book.clone(),
-                    timestamp,
-                },
-            );
-        } else if let Some(cached_nonce) = self
-            .book_states
-            .get(&market_index)
-            .map(|state| state.book.nonce)
-        {
-            if book.begin_nonce != cached_nonce {
-                log::warn!(
-                    "Dropping Lighter order_book update with nonce gap for \
-                     market_index={market_index}: begin_nonce={}, cached_nonce={cached_nonce}",
-                    book.begin_nonce,
-                );
-                self.clear_cached_order_book(market_index);
-                self.queue_order_book_resync(market_index);
-                return Vec::new();
+                instrument,
+                book,
+                timestamp,
+                is_snapshot,
+                ts_init,
+            ),
+            BookSequenceOutcome::Suppress => Vec::new(),
+            BookSequenceOutcome::Recover => {
+                self.start_book_recovery(market_index);
+                Vec::new()
             }
-
-            if let Some(state) = self.book_states.get_mut(&market_index) {
-                apply_order_book_update(&mut state.book, book);
-                state.timestamp = timestamp;
-            }
-        } else {
-            log::warn!(
-                "Dropping Lighter order_book update without cached state for \
-                 market_index={market_index}",
-            );
-            self.clear_cached_order_book(market_index);
-            self.queue_order_book_resync(market_index);
-            return Vec::new();
         }
-
-        self.order_book_messages(market_index, book, timestamp, is_snapshot, ts_init)
     }
 
-    fn clear_cached_order_book(&mut self, market_index: i16) {
-        self.book_snapshots_seen.remove(&market_index);
-        self.book_states.remove(&market_index);
-    }
-
-    fn queue_order_book_resync(&self, market_index: i16) {
-        if !self.order_book_stream_is_referenced(market_index) {
-            log::debug!(
-                "Skipping Lighter order_book resync: subscription cancelled, \
-                 market_index={market_index}",
-            );
+    fn queue_book_replacement(&mut self, market_index: i16, write: BookWrite) {
+        if write.cancel.is_cancelled() || !self.order_book_stream_is_referenced(market_index) {
             return;
         }
 
-        let Some(cmd_tx) = &self.cmd_tx else {
+        self.book.clear_cached_order_book(market_index);
+        self.book.expected.remove(&market_index);
+        let topic = LighterWsChannel::OrderBook(market_index).topic_key();
+        self.retire_book_attempt(&topic);
+        self.subscriptions.mark_failure(&topic);
+        self.book.writes.insert(market_index, write);
+        self.queue_subscribe(LighterWsChannel::OrderBook(market_index), None, None);
+    }
+
+    fn retire_book_attempt(&mut self, topic: &str) {
+        let topic = Ustr::from(topic);
+        self.inflight_subs.remove(&topic);
+        self.pending_subs.retain(|(pending, _)| *pending != topic);
+        if let Some(attempt) = self.subscription_attempts.get_mut(&topic) {
+            // Keep callers waiting for the eventual replacement acknowledgement.
+            attempt.generation = self.next_subscription_generation;
+            self.next_subscription_generation =
+                self.next_subscription_generation.wrapping_add(1).max(1);
+            self.pending_subs.push_back((topic, attempt.generation));
+        }
+    }
+
+    fn reject_book_subscription(
+        &mut self,
+        market_index: i16,
+        generation: u64,
+        error: LighterWsError,
+    ) {
+        if !self
+            .book
+            .expected
+            .get(&market_index)
+            .is_some_and(|expected| expected.0 == generation)
+            || self
+                .book
+                .recovery
+                .get(&market_index)
+                .and_then(BookRecoveryState::current)
+                .is_some_and(|recovery| recovery.gate.lock().is_closed())
+        {
+            return;
+        }
+
+        self.reject_book(market_index, error);
+    }
+
+    fn reject_book(&mut self, market_index: i16, error: LighterWsError) {
+        self.book.expected.remove(&market_index);
+        self.book.clear_cached_order_book(market_index);
+
+        if let Some(recovery) = self
+            .book
+            .recovery
+            .get(&market_index)
+            .and_then(BookRecoveryState::current)
+            && !recovery.is_accepted()
+        {
+            recovery.gate.lock().close();
+            recovery
+                .outcome
+                .send_replace(BookRecoveryOutcome::Rejected(error));
+        } else if matches!(error, LighterWsError::Client(_)) {
+            self.book
+                .recovery
+                .entry(market_index)
+                .or_default()
+                .fail(None);
+            let topic = LighterWsChannel::OrderBook(market_index).topic_key();
+            self.cancel_subscription_attempt(&topic, &error.to_string());
             log::error!(
-                "Cannot resync Lighter order_book stream without command sender: \
-                 market_index={market_index}",
+                "Lighter book subscription rejected for market_index={market_index}: {error}"
             );
+        } else {
+            self.start_book_recovery(market_index);
+        }
+    }
+
+    fn start_book_recovery(&mut self, market_index: i16) {
+        if !self.order_book_stream_is_referenced(market_index) {
+            return;
+        }
+
+        let Some(cmd_tx) = self.cmd_tx.clone() else {
             return;
         };
 
-        if let Err(e) = cmd_tx.send(HandlerCommand::ResubscribeOrderBook { market_index }) {
-            log::error!("Failed to queue Lighter order_book resync: {e}");
-        }
+        let Some(recovery) = self.book.recovery.entry(market_index).or_default().claim() else {
+            return;
+        };
+
+        recovery.gate.lock().close();
+        self.book.initial.remove(&market_index);
+        self.book.expected.remove(&market_index);
+        self.book.clear_cached_order_book(market_index);
+        let topic = LighterWsChannel::OrderBook(market_index).topic_key();
+        self.inflight_subs.remove(&Ustr::from(topic.as_str()));
+        self.pending_subs
+            .retain(|(pending, _)| pending.as_str() != topic);
+        self.book
+            .work
+            .push(recovery::recover(market_index, recovery, cmd_tx));
     }
 
-    async fn resubscribe_order_book_stream(&mut self, market_index: i16) {
-        if !self.order_book_stream_is_referenced(market_index) {
-            log::debug!(
-                "Skipping Lighter order_book resync: subscription cancelled before venue \
-                 unsubscribe, market_index={market_index}",
+    fn complete_typed_subscription(&mut self, topic: &str, epoch: u64) -> bool {
+        if let Some(market_index) = order_book_market_index_from_topic(topic)
+            && self
+                .book
+                .expected
+                .get(&market_index)
+                .is_some_and(|expected| expected.1 != epoch)
+        {
+            return false;
+        }
+
+        if !self.book_snapshot_matches(topic, epoch) {
+            if self.ignored_completions.get(&Ustr::from(topic)) == Some(&CompletionKind::Typed) {
+                self.ignored_completions.remove(&Ustr::from(topic));
+            }
+
+            return false;
+        }
+
+        self.complete_subscription(topic, CompletionKind::Typed);
+        true
+    }
+
+    fn book_snapshot_matches(&mut self, topic: &str, epoch: u64) -> bool {
+        let Some(market_index) = order_book_market_index_from_topic(topic) else {
+            return true;
+        };
+
+        let source =
+            if self.ignored_completions.get(&Ustr::from(topic)) == Some(&CompletionKind::Typed) {
+                self.book.trailing.remove(&market_index)
+            } else {
+                self.inflight_subs
+                    .get(&Ustr::from(topic))
+                    .map(|generation| (*generation, epoch))
+            };
+
+        source.is_some_and(|source| {
+            source.1 == epoch && Some(source) == self.book.expected.get(&market_index).copied()
+        })
+    }
+
+    fn send_book_subscribe(&mut self, market_index: i16, generation: u64) {
+        let write = self.book.writes.remove(&market_index);
+        let cancel = write
+            .as_ref()
+            .map_or_else(CancellationToken::new, |write| write.cancel.clone());
+        if write.is_none() {
+            self.book.initial.insert(
+                market_index,
+                PendingSnapshot {
+                    deadline: None,
+                    cancel: cancel.clone(),
+                    gate: SnapshotGate::default(),
+                },
             );
+        }
+
+        let client = self.inner.clone();
+        let subscriptions = self.subscriptions.clone();
+        self.book.work.push(recovery::subscribe(
+            market_index,
+            generation,
+            cancel,
+            write,
+            client,
+            subscriptions,
+        ));
+    }
+
+    fn complete_book_send(
+        &mut self,
+        market_index: i16,
+        generation: u64,
+        cancel: CancellationToken,
+        write: Option<BookWrite>,
+        result: Result<u64, LighterWsError>,
+    ) {
+        let topic = Ustr::from(
+            LighterWsChannel::OrderBook(market_index)
+                .topic_key()
+                .as_str(),
+        );
+
+        if cancel.is_cancelled()
+            || self.inflight_subs.get(&topic) != Some(&generation)
+            || !self.order_book_stream_is_referenced(market_index)
+        {
             return;
         }
 
-        let channel = LighterWsChannel::OrderBook(market_index);
-        self.dispatch_unsubscribe(channel.clone()).await;
+        match result {
+            Ok(epoch) => {
+                self.book.expected.insert(market_index, (generation, epoch));
 
-        if !self.order_book_stream_is_referenced(market_index) {
-            log::debug!(
-                "Skipping Lighter order_book resubscribe: subscription cancelled after venue \
-                 unsubscribe, market_index={market_index}",
-            );
-            return;
-        }
-
-        let topic = Ustr::from(channel.topic_key().as_str());
-        self.queue_subscribe(channel.clone(), None, None);
-        self.pump_pending_subscribes().await;
-
-        if !self.order_book_stream_is_referenced(market_index) {
-            log::debug!(
-                "Cancelling Lighter order_book resync subscribe after user unsubscribe: \
-                 market_index={market_index}",
-            );
-            let attempted = self.inflight_subs.contains_key(&topic);
-            self.cancel_subscription_attempt(topic.as_str(), "order book resubscription cancelled");
-
-            if attempted {
-                self.dispatch_unsubscribe(channel).await;
+                if let Some(write) = write {
+                    write.gate.open();
+                    let _ = write.completion.send(Ok(()));
+                } else {
+                    self.book
+                        .work
+                        .push(recovery::wait_for_snapshot(market_index, cancel));
+                }
+            }
+            Err(e) => {
+                if let Some(write) = write {
+                    let _ = write.completion.send(Err(e));
+                } else {
+                    self.reject_book(market_index, e);
+                }
             }
         }
     }
@@ -1480,75 +1694,8 @@ impl FeedHandler {
     fn order_book_stream_is_referenced(&self, market_index: i16) -> bool {
         let channel = LighterWsChannel::OrderBook(market_index);
         self.subscriptions.get_reference_count(&channel.topic_key()) > 0
-            && (self.book_delta_subs.contains(&market_index)
-                || self.book_depth_10_subs.contains(&market_index))
-    }
-
-    fn emit_cached_order_book_deltas_snapshot(
-        &self,
-        market_index: i16,
-    ) -> Option<NautilusWsMessage> {
-        let cached = self.book_states.get(&market_index)?.clone();
-        let instrument = self.instruments.get(&market_index)?;
-        let ts_init = self.clock.get_time_ns();
-        match parse_ws_order_book_deltas(&cached.book, instrument, cached.timestamp, true, ts_init)
-        {
-            Ok(deltas) => Some(NautilusWsMessage::Deltas(deltas)),
-            Err(e) => {
-                log::error!("Error parsing cached Lighter order_book deltas: {e}");
-                None
-            }
-        }
-    }
-
-    fn emit_cached_order_book_depth10_snapshot(
-        &self,
-        market_index: i16,
-    ) -> Option<NautilusWsMessage> {
-        let cached = self.book_states.get(&market_index)?.clone();
-        let instrument = self.instruments.get(&market_index)?;
-        let ts_init = self.clock.get_time_ns();
-        match parse_ws_order_book_depth10(&cached.book, instrument, cached.timestamp, ts_init) {
-            Ok(depth) => Some(NautilusWsMessage::Depth10(Box::new(depth))),
-            Err(e) => {
-                log::error!("Error parsing cached Lighter order_book depth10: {e}");
-                None
-            }
-        }
-    }
-
-    fn order_book_messages(
-        &self,
-        market_index: i16,
-        book: &LighterWsOrderBook,
-        timestamp: u64,
-        is_snapshot: bool,
-        ts_init: UnixNanos,
-    ) -> Vec<NautilusWsMessage> {
-        let Some(instrument) = self.instruments.get(&market_index) else {
-            log::debug!("No instrument cached for Lighter market_index={market_index}");
-            return Vec::new();
-        };
-
-        let mut messages = Vec::new();
-
-        if self.book_delta_subs.contains(&market_index) {
-            match parse_ws_order_book_deltas(book, instrument, timestamp, is_snapshot, ts_init) {
-                Ok(deltas) => messages.push(NautilusWsMessage::Deltas(deltas)),
-                Err(e) => log::error!("Error parsing Lighter order_book deltas: {e}"),
-            }
-        }
-
-        if self.book_depth_10_subs.contains(&market_index)
-            && let Some(cached) = self.book_states.get(&market_index)
-        {
-            match parse_ws_order_book_depth10(&cached.book, instrument, cached.timestamp, ts_init) {
-                Ok(depth) => messages.push(NautilusWsMessage::Depth10(Box::new(depth))),
-                Err(e) => log::error!("Error parsing Lighter order_book depth10: {e}"),
-            }
-        }
-
-        messages
+            && (self.book.delta_subs.contains(&market_index)
+                || self.book.depth_subs.contains(&market_index))
     }
 
     fn handle_ticker(
@@ -1974,56 +2121,6 @@ fn raw_message(frame: &LighterWsFrame) -> Vec<NautilusWsMessage> {
     vec![NautilusWsMessage::Raw(value)]
 }
 
-fn apply_order_book_update(state: &mut LighterWsOrderBook, update: &LighterWsOrderBook) {
-    apply_book_side_update(&mut state.bids, &update.bids, true);
-    apply_book_side_update(&mut state.asks, &update.asks, false);
-
-    state.code = update.code;
-    state.offset = update.offset;
-    state.nonce = update.nonce;
-    state.last_updated_at = update.last_updated_at;
-    state.begin_nonce = update.begin_nonce;
-}
-
-fn apply_book_side_update(
-    levels: &mut Vec<LighterPriceLevel>,
-    updates: &[LighterPriceLevel],
-    bids: bool,
-) {
-    for update in updates {
-        if update.price == Decimal::ZERO {
-            continue;
-        }
-
-        match find_book_level(levels, update.price, bids) {
-            Ok(index) if update.size == Decimal::ZERO => {
-                levels.remove(index);
-            }
-            Ok(index) => {
-                levels[index] = update.clone();
-            }
-            Err(_) if update.size == Decimal::ZERO => {}
-            Err(index) => {
-                levels.insert(index, update.clone());
-            }
-        }
-    }
-}
-
-fn find_book_level(
-    levels: &[LighterPriceLevel],
-    price: Decimal,
-    bids: bool,
-) -> Result<usize, usize> {
-    levels.binary_search_by(|level| {
-        if bids {
-            price.cmp(&level.price)
-        } else {
-            level.price.cmp(&price)
-        }
-    })
-}
-
 // Codes outside the transaction range (e.g. 30003 "Already Subscribed")
 // would falsely reject a live order; see `LIGHTER_ERROR_CODE_TX_RANGE`.
 fn is_sendtx_error_code(code: Option<u64>) -> bool {
@@ -2176,7 +2273,7 @@ mod tests {
 
     use log::{Level, LevelFilter, Log, Metadata, Record};
     use nautilus_model::{
-        enums::AccountType,
+        enums::{AccountType, BookAction, RecordFlag},
         identifiers::{InstrumentId, Symbol, Venue},
         instruments::{CryptoPerpetual, CurrencyPair},
         types::{Currency, Money, Price, Quantity},
@@ -2316,6 +2413,393 @@ mod tests {
     }
 
     #[rstest]
+    #[case::cached_book(false)]
+    #[case::queued_replacement(true)]
+    #[tokio::test]
+    async fn book_terminal_recovery_failure_clears_cache_and_suppresses_late_snapshot(
+        #[case] queued: bool,
+    ) {
+        let mut handler = make_handler_with_account();
+        handler.book.delta_subs.insert(0);
+        let frame: LighterWsFrame = serde_json::from_str(include_str!(
+            "../../test_data/ws_order_book_subscribed.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            handler
+                .handle_frame(frame.clone(), UnixNanos::from(1))
+                .len(),
+            1
+        );
+        let recovery = handler.book.recovery.entry(0).or_default().claim().unwrap();
+        handler.subscriptions.add_reference("order_book:0");
+        let (completion, mut completed) = tokio::sync::oneshot::channel();
+
+        if queued {
+            saturate_subscription_gate(&mut handler);
+            handler.queue_book_replacement(
+                0,
+                BookWrite {
+                    cancel: recovery.cancellation.child_token(),
+                    gate: recovery.gate.clone(),
+                    completion,
+                },
+            );
+        } else {
+            drop(completion);
+        }
+
+        handler
+            .book
+            .work
+            .push(Box::pin(std::future::ready(BookWorkResult::Recovery {
+                market_index: 0,
+                recovery: recovery.clone(),
+                result: Err(LighterWsError::Client("retry budget exhausted".into())),
+            })));
+
+        assert!(handler.next().await.is_none());
+        let messages = handler.handle_frame(frame, UnixNanos::from(2));
+
+        assert!(handler.book.recovery[&0].is_failed());
+        assert!(recovery.cancellation.is_cancelled());
+        assert!(!handler.book.states.contains_key(&0));
+        assert!(!handler.book.snapshots_seen.contains(&0));
+        assert!(messages.is_empty());
+        assert!(!handler.book.writes.contains_key(&0));
+        assert_eq!(
+            completed.try_recv().unwrap_err(),
+            tokio::sync::oneshot::error::TryRecvError::Closed
+        );
+
+        handler.inflight_subs.clear();
+        let (response, _result) = tokio::sync::oneshot::channel();
+        handler.queue_subscribe(LighterWsChannel::OrderBook(0), None, Some(response));
+        handler.pump_pending_subscribes().await;
+
+        assert!(!handler.book.recovery[&0].is_failed());
+        assert!(handler.book.initial.contains_key(&0));
+        assert!(!handler.book.initial[&0].cancel.is_cancelled());
+    }
+
+    #[rstest]
+    #[case::unconfirmed_permanent(false, false, false)]
+    #[case::closed_gate_permanent(true, false, false)]
+    #[case::confirmed_permanent(true, true, false)]
+    #[case::unconfirmed_retry(false, false, true)]
+    #[case::closed_gate_retry(true, false, true)]
+    #[case::confirmed_retry(true, true, true)]
+    fn book_venue_rejection_requires_confirmed_write(
+        #[case] confirmed: bool,
+        #[case] gate_open: bool,
+        #[case] retry: bool,
+    ) {
+        let mut handler = make_handler_with_account();
+        let (topic, generation) =
+            mark_subscription_inflight(&mut handler, LighterWsChannel::OrderBook(0), None);
+        let recovery = handler.book.recovery.entry(0).or_default().claim().unwrap();
+        assert!(recovery.begin_replacement());
+
+        if gate_open {
+            recovery.gate.open();
+        }
+
+        if !confirmed {
+            handler.book.expected.remove(&0);
+        }
+
+        if retry {
+            handler.retry_inflight_subscriptions("venue rejection");
+        } else {
+            handler.fail_inflight_subscriptions("venue rejection");
+        }
+
+        assert_eq!(handler.inflight_subs.get(&topic), Some(&generation));
+        assert!(!handler.book.recovery[&0].is_failed());
+        assert!(!recovery.cancellation.is_cancelled());
+        assert!(recovery.gate.lock().is_closed());
+
+        match &*recovery.outcome.borrow() {
+            BookRecoveryOutcome::Pending => assert!(!confirmed || !gate_open),
+            BookRecoveryOutcome::Rejected(LighterWsError::Network(message)) => {
+                assert!(confirmed && gate_open && retry);
+                assert_eq!(message, "venue rejection");
+            }
+            BookRecoveryOutcome::Rejected(LighterWsError::Client(message)) => {
+                assert!(confirmed && gate_open && !retry);
+                assert_eq!(message, "venue rejection");
+            }
+            outcome => panic!("unexpected recovery outcome: {outcome:?}"),
+        }
+    }
+
+    #[rstest]
+    fn book_explicit_subscribe_restarts_after_failed_initial_subscription() {
+        let mut handler = make_handler_with_account();
+        handler.book.delta_subs.insert(0);
+        handler.book.recovery.entry(0).or_default().fail(None);
+        let (response, mut result) = tokio::sync::oneshot::channel();
+        let (topic, generation) = mark_subscription_inflight(
+            &mut handler,
+            LighterWsChannel::OrderBook(0),
+            Some(response),
+        );
+        assert!(handler.complete_typed_subscription(topic.as_str(), 0));
+        let frame: LighterWsFrame = serde_json::from_str(include_str!(
+            "../../test_data/ws_order_book_subscribed.json"
+        ))
+        .unwrap();
+        let messages = handler.handle_frame(frame, UnixNanos::from(1));
+
+        assert_eq!(result.try_recv(), Ok(Ok(())));
+        assert!(!handler.book.recovery[&0].is_failed());
+        assert_eq!(handler.book.expected[&0], (generation, 0));
+        assert_eq!(messages.len(), 1);
+        assert!(handler.book.snapshots_seen.contains(&0));
+    }
+
+    #[tokio::test]
+    async fn book_queued_write_skips_after_last_reference_disappears() {
+        let mut handler = make_handler_with_account();
+        handler.book.delta_subs.insert(0);
+        let channel = LighterWsChannel::OrderBook(0);
+        handler.subscriptions.add_reference(&channel.topic_key());
+        let (_, generation) = mark_subscription_inflight(&mut handler, channel.clone(), None);
+        handler.send_book_subscribe(0, generation);
+        assert!(handler.subscriptions.remove_reference(&channel.topic_key()));
+
+        let BookWorkResult::Sent { result, .. } = handler.book.work.next().await.unwrap() else {
+            panic!("expected send completion");
+        };
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "client error: book subscription cancelled"
+        );
+        assert!(handler.inner.is_none());
+    }
+
+    #[rstest]
+    fn book_wrong_epoch_snapshot_preserves_current_completion() {
+        let mut handler = make_handler_with_account();
+        let (tx, mut rx) = tokio::sync::oneshot::channel();
+        let (topic, generation) =
+            mark_subscription_inflight(&mut handler, LighterWsChannel::OrderBook(0), Some(tx));
+        handler.book.expected.insert(0, (generation, 12));
+
+        assert!(!handler.complete_typed_subscription(topic.as_str(), 11));
+        assert_eq!(handler.inflight_subs.get(&topic), Some(&generation));
+        assert_eq!(
+            rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        );
+        assert!(handler.complete_typed_subscription(topic.as_str(), 12));
+        assert_eq!(rx.try_recv(), Ok(Ok(())));
+        assert!(!handler.inflight_subs.contains_key(&topic));
+    }
+
+    #[rstest]
+    fn book_control_ack_preserves_snapshot_but_not_successor_completion() {
+        let mut handler = make_handler_with_account();
+        let (topic, old_generation) =
+            mark_subscription_inflight(&mut handler, LighterWsChannel::OrderBook(0), None);
+        assert!(handler.complete_subscription(topic.as_str(), CompletionKind::ControlAck));
+        assert!(handler.complete_typed_subscription(topic.as_str(), 0));
+        assert_eq!(handler.book.expected[&0], (old_generation, 0));
+
+        handler.subscriptions.mark_failure(topic.as_str());
+        let (_, generation) =
+            mark_subscription_inflight(&mut handler, LighterWsChannel::OrderBook(0), None);
+        assert!(handler.complete_subscription(topic.as_str(), CompletionKind::ControlAck));
+        handler.subscriptions.mark_failure(topic.as_str());
+        let (tx, mut rx) = tokio::sync::oneshot::channel();
+        let (_, successor) =
+            mark_subscription_inflight(&mut handler, LighterWsChannel::OrderBook(0), Some(tx));
+
+        assert_ne!(generation, successor);
+        assert!(!handler.complete_typed_subscription(topic.as_str(), 0));
+        assert_eq!(handler.inflight_subs.get(&topic), Some(&successor));
+        assert_eq!(
+            rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        );
+        assert!(handler.complete_typed_subscription(topic.as_str(), 0));
+        assert_eq!(rx.try_recv(), Ok(Ok(())));
+    }
+
+    #[rstest]
+    fn book_old_epoch_does_not_consume_current_trailing_snapshot() {
+        let mut handler = make_handler_with_account();
+        let (topic, generation) =
+            mark_subscription_inflight(&mut handler, LighterWsChannel::OrderBook(0), None);
+        handler.book.expected.insert(0, (generation, 12));
+        assert!(handler.complete_subscription(topic.as_str(), CompletionKind::ControlAck));
+
+        assert!(!handler.complete_typed_subscription(topic.as_str(), 11));
+        assert_eq!(handler.book.trailing.get(&0), Some(&(generation, 12)));
+        assert_eq!(
+            handler.ignored_completions.get(&topic),
+            Some(&CompletionKind::Typed)
+        );
+        assert!(handler.complete_typed_subscription(topic.as_str(), 12));
+        assert!(!handler.book.trailing.contains_key(&0));
+        assert!(!handler.ignored_completions.contains_key(&topic));
+    }
+
+    #[rstest]
+    fn book_ack_before_write_cannot_complete_subscription() {
+        let mut handler = make_handler_with_account();
+        let (topic, generation) =
+            mark_subscription_inflight(&mut handler, LighterWsChannel::OrderBook(0), None);
+        handler.book.expected.clear();
+
+        assert!(!handler.complete_subscription(topic.as_str(), CompletionKind::ControlAck));
+        assert!(!handler.complete_typed_subscription(topic.as_str(), 0));
+        assert_eq!(handler.inflight_subs.get(&topic), Some(&generation));
+    }
+
+    #[rstest]
+    fn book_empty_snapshot_replaces_cached_levels_for_both_consumers() {
+        let mut handler = make_handler_with_account();
+        handler.book.delta_subs.insert(0);
+        handler.book.depth_subs.insert(0);
+        let frame: LighterWsFrame = serde_json::from_str(include_str!(
+            "../../test_data/ws_order_book_subscribed.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            handler
+                .handle_frame(frame.clone(), UnixNanos::from(1))
+                .len(),
+            2
+        );
+
+        let LighterWsFrame::OrderBookSnapshot { order_book, .. } = &frame else {
+            panic!("expected book snapshot");
+        };
+
+        let mut empty = order_book.clone();
+        empty.bids.clear();
+        empty.asks.clear();
+        empty.nonce += 1;
+        let messages = handler.handle_order_book(
+            Ustr::from("order_book:0"),
+            &empty,
+            123,
+            true,
+            UnixNanos::from(2),
+        );
+
+        assert_eq!(messages.len(), 2);
+
+        let NautilusWsMessage::Deltas(deltas) = &messages[0] else {
+            panic!("expected deltas");
+        };
+
+        assert_eq!(deltas.deltas.len(), 1);
+        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert_eq!(deltas.deltas[0].sequence, empty.nonce as u64);
+        assert_eq!(
+            deltas.deltas[0].flags,
+            RecordFlag::F_LAST as u8 | RecordFlag::F_SNAPSHOT as u8
+        );
+
+        let NautilusWsMessage::Depth(depth) = &messages[1] else {
+            panic!("expected depth");
+        };
+
+        assert!(depth.bids.is_empty());
+        assert!(depth.asks.is_empty());
+        assert!(depth.bid_counts.is_empty());
+        assert!(depth.ask_counts.is_empty());
+        assert!(handler.book.states[&0].book.bids.is_empty());
+        assert!(handler.book.states[&0].book.asks.is_empty());
+    }
+
+    #[tokio::test]
+    async fn book_initial_deadline_is_cancelled_by_replacement_or_unsubscribe() {
+        let mut handler = make_handler_with_account();
+        handler.book.delta_subs.insert(0);
+        let channel = LighterWsChannel::OrderBook(0);
+        handler.subscriptions.add_reference(&channel.topic_key());
+        let (_, generation) = mark_subscription_inflight(&mut handler, channel, None);
+        let cancel = CancellationToken::new();
+        handler.book.initial.insert(
+            0,
+            PendingSnapshot {
+                deadline: None,
+                cancel: cancel.clone(),
+                gate: SnapshotGate::default(),
+            },
+        );
+
+        handler.complete_book_send(0, generation, cancel.clone(), None, Ok(7));
+        handler.book.cancel(0);
+
+        let BookWorkResult::Initial {
+            cancel: completed,
+            market_index,
+        } = handler.book.work.next().await.unwrap()
+        else {
+            panic!("expected deadline completion");
+        };
+
+        assert_eq!(market_index, 0);
+        assert!(completed.is_cancelled());
+        assert!(cancel.is_cancelled());
+        assert!(handler.book.recovery.is_empty());
+        assert!(handler.book.expected.is_empty());
+    }
+
+    #[tokio::test]
+    async fn book_reconnect_retains_recovery_owner_and_retires_old_writes() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut handler =
+            FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));
+        let recovery = handler.book.recovery.entry(0).or_default().claim().unwrap();
+        handler.book.expected.insert(0, (3, 9));
+        raw_tx
+            .send((10, Message::Text(RECONNECTED.into())))
+            .unwrap();
+        assert!(matches!(
+            handler.next().await,
+            Some(NautilusWsMessage::Reconnected {
+                connection_epoch: 10
+            })
+        ));
+
+        assert!(Arc::ptr_eq(
+            handler.book.recovery[&0].current().unwrap(),
+            &recovery
+        ));
+        assert!(!recovery.cancellation.is_cancelled());
+        assert!(recovery.gate.lock().is_closed());
+        assert!(matches!(
+            *recovery.outcome.borrow(),
+            BookRecoveryOutcome::Rejected(LighterWsError::Network(_))
+        ));
+        assert!(handler.book.expected.is_empty());
+        assert!(handler.book.writes.is_empty());
+    }
+
+    #[rstest]
+    fn book_recovery_is_scoped_to_handler_and_market() {
+        let mut first = make_handler_with_account();
+        let mut second = make_handler_with_account();
+        let recovery = first.book.recovery.entry(0).or_default().claim().unwrap();
+        let other_market = first.book.recovery.entry(1).or_default().claim().unwrap();
+        let other_socket = second.book.recovery.entry(0).or_default().claim().unwrap();
+        first.book.cancel(0);
+
+        assert!(recovery.cancellation.is_cancelled());
+        assert!(!other_market.cancellation.is_cancelled());
+        assert!(!other_socket.cancellation.is_cancelled());
+    }
+
+    #[rstest]
     #[tokio::test]
     async fn test_outbound_unsubscribe_log_omits_payload_body() {
         log::set_logger(&OUTBOUND_LOG_CAPTURE).expect("test logger already installed");
@@ -2360,6 +2844,10 @@ mod tests {
             .pop_front()
             .expect("subscription was not queued");
         handler.inflight_subs.insert(topic, generation);
+        if let Some(market_index) = order_book_market_index_from_topic(topic.as_str()) {
+            handler.book.expected.insert(market_index, (generation, 0));
+        }
+
         (topic, generation)
     }
 
@@ -3486,10 +3974,16 @@ mod tests {
         assert!(subscriptions.remove_reference(&topic));
 
         let mut handler = FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, subscriptions.clone());
-        handler.book_delta_subs.insert(0);
+        handler.book.delta_subs.insert(0);
 
+        let (completion, result) = tokio::sync::oneshot::channel();
         cmd_tx
-            .send(HandlerCommand::ResubscribeOrderBook { market_index: 0 })
+            .send(HandlerCommand::RecoverBook {
+                market_index: 0,
+                cancel: CancellationToken::new(),
+                gate: SnapshotGate::default(),
+                completion,
+            })
             .expect("queue resync");
         drop(cmd_tx);
         drop(raw_tx);
@@ -3501,6 +3995,7 @@ mod tests {
         assert!(next.is_none());
         assert!(subscriptions.pending_subscribe_topics().is_empty());
         assert!(subscriptions.pending_unsubscribe_topics().is_empty());
+        assert!(result.await.is_err());
     }
 
     #[tokio::test]
@@ -3514,10 +4009,20 @@ mod tests {
         assert!(subscriptions.add_reference(&topic));
 
         let mut handler = FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, subscriptions);
-        handler.book_delta_subs.insert(0);
+        handler.book.delta_subs.insert(0);
         saturate_subscription_gate(&mut handler);
 
-        handler.resubscribe_order_book_stream(0).await;
+        let (completion, _rx) = tokio::sync::oneshot::channel();
+        handler.queue_book_replacement(
+            0,
+            BookWrite {
+                cancel: CancellationToken::new(),
+                gate: SnapshotGate::default(),
+                completion,
+            },
+        );
+
+        handler.pump_pending_subscribes().await;
 
         assert_eq!(handler.inflight_subs.len(), SUBSCRIBE_INFLIGHT_MAX);
         assert!(

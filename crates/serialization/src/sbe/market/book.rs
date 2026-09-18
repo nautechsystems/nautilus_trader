@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_model::{
-    data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth10},
+    data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth},
     enums::OrderSide,
 };
 
@@ -174,8 +174,8 @@ fn decode_order_book_deltas_body(
     })
 }
 
-impl MarketSbeMessage for OrderBookDepth10 {
-    const TEMPLATE_ID: u16 = template_id::ORDER_BOOK_DEPTH10;
+impl MarketSbeMessage for OrderBookDepth {
+    const TEMPLATE_ID: u16 = template_id::ORDER_BOOK_DEPTH;
     const BLOCK_LENGTH: u16 =
         (DEPTH10_LEVEL_BLOCK_LENGTH * 20) + (DEPTH10_COUNTS_BLOCK_LENGTH as u16 * 2) + 25;
 

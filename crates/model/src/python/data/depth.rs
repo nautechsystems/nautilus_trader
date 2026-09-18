@@ -32,14 +32,15 @@ use nautilus_core::{
 use pyo3::{IntoPyObjectExt, prelude::*, pyclass::CompareOp, types::PyDict};
 
 use crate::{
-    data::{depth::OrderBookDepth, order::BookOrder},
+    data::{
+        depth::{DEPTH10_LEN, OrderBookDepth},
+        order::BookOrder,
+    },
     enums::OrderSide,
     identifiers::InstrumentId,
     python::common::PY_MODULE_MODEL,
     types::{Price, Quantity},
 };
-
-const DEPTH10_LEN: usize = 10;
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]

@@ -28,8 +28,9 @@ pub enum BookSnapshotOutput {
     /// Convert book snapshots to `OrderBookDeltas` and write to `order_book_deltas/`.
     #[default]
     Deltas,
-    /// Convert book snapshots to `OrderBookDepth10` and write to `order_book_depths/`.
-    Depth10,
+    /// Convert book snapshots to `OrderBookDepth` and write to `order_book_depths/`.
+    #[serde(alias = "depth10")]
+    Depth,
 }
 
 /// Determines the compression codec for Parquet files written by Tardis replay.
@@ -86,7 +87,7 @@ pub struct TardisReplayConfig {
     /// The output format for `book_snapshot_*` messages.
     ///
     /// - `deltas`: Convert to `OrderBookDeltas` and write to `order_book_deltas/` (default).
-    /// - `depth10`: Convert to `OrderBookDepth10` and write to `order_book_depths/`.
+    /// - `depth`: Convert to `OrderBookDepth` and write to `order_book_depths/`.
     pub book_snapshot_output: Option<BookSnapshotOutput>,
     /// If best bid/offer fields from Tardis `option_summary` messages should emit `QuoteTick`.
     pub extract_bbo_as_quotes: Option<bool>,
@@ -215,12 +216,18 @@ mod tests {
     }
 
     #[rstest]
-    fn test_book_snapshot_output_serde_roundtrip_depth10() {
-        let json = serde_json::to_string(&BookSnapshotOutput::Depth10).unwrap();
-        assert_eq!(json, "\"depth10\"");
+    fn test_book_snapshot_output_serde_roundtrip_depth() {
+        let json = serde_json::to_string(&BookSnapshotOutput::Depth).unwrap();
+        assert_eq!(json, "\"depth\"");
 
         let deserialized: BookSnapshotOutput = serde_json::from_str(&json).unwrap();
-        assert!(matches!(deserialized, BookSnapshotOutput::Depth10));
+        assert!(matches!(deserialized, BookSnapshotOutput::Depth));
+    }
+
+    #[rstest]
+    fn test_book_snapshot_output_accepts_legacy_depth10_spelling() {
+        let deserialized: BookSnapshotOutput = serde_json::from_str("\"depth10\"").unwrap();
+        assert!(matches!(deserialized, BookSnapshotOutput::Depth));
     }
 
     #[rstest]
@@ -260,7 +267,7 @@ mod tests {
         let config: TardisDataClientConfig = toml::from_str(
             r#"
 normalize_symbols = false
-book_snapshot_output = "depth10"
+book_snapshot_output = "depth"
 "#,
         )
         .unwrap();
@@ -268,7 +275,7 @@ book_snapshot_output = "depth10"
         assert!(!config.normalize_symbols);
         assert!(matches!(
             config.book_snapshot_output,
-            BookSnapshotOutput::Depth10
+            BookSnapshotOutput::Depth
         ));
         assert!(!config.extract_bbo_as_quotes);
         assert!(config.options.is_empty());
@@ -304,7 +311,7 @@ normalize_symbols = false
             "output_path": null,
             "options": [],
             "proxy_url": null,
-            "book_snapshot_output": "depth10",
+            "book_snapshot_output": "depth",
             "extract_bbo_as_quotes": true,
             "compression": "zstd"
         }"#;
@@ -313,7 +320,7 @@ normalize_symbols = false
 
         assert!(matches!(
             config.book_snapshot_output,
-            Some(BookSnapshotOutput::Depth10)
+            Some(BookSnapshotOutput::Depth)
         ));
         assert_eq!(config.extract_bbo_as_quotes, Some(true));
         assert!(matches!(config.compression, Some(ParquetCompression::Zstd)));

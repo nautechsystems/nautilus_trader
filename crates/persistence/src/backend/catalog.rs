@@ -20,7 +20,8 @@ pub use super::parquet::{
     paths::{
         extract_path_components, extract_sql_safe_filename, local_to_object_store_path,
         make_local_path, make_object_store_path as make_object_store_path_owned,
-        make_object_store_path, make_sql_safe_identifier, safe_directory_identifier,
+        make_object_store_path, make_sql_safe_identifier, parse_filename_timestamps,
+        safe_directory_identifier, timestamps_to_filename,
     },
 };
 
@@ -31,5 +32,3 @@ pub fn extract_identifier_from_path(file_path: &str) -> String {
         .unwrap_or("unknown")
         .to_string()
 }
-
-pub use super::parquet::paths::timestamps_to_filename;

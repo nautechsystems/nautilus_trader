@@ -4,34 +4,50 @@ Released on TBD (UTC).
 
 ### Enhancements
 
-- Migrated Polymarket trade and position history to Data API v2 with cursor pagination
 - Added `historical_base_url` and `live_gateway_addr` overrides to `DatabentoDataClientConfig`
 - Added `tardis_http_url` override to `TardisDataClientConfig` and `TardisReplayConfig`
+- Added Polymarket session signing and owner-operated session key authorization, listing, and revocation
+- Migrated Polymarket trade and position history to Data API v2 with cursor pagination
 
 ### Breaking Changes
 
 - Changed Rust `OrderCore.events` to read-only `events()`; construct cores with `OrderCore::new`
 - Changed Python Hyperliquid data and execution client config parameter order to `base_url_http` before `base_url_ws`
 - Changed Polymarket `polymarket_trade_sort_key` inputs to v2 `transaction_hash` and `token_id` fields
+- Changed Tardis `book_snapshot_output` value `"depth10"` to `"depth"` (the legacy value remains accepted)
+- Renamed `OrderBookDepth10` to `OrderBookDepth` throughout Rust and Python, removing the compatibility alias and the deprecated `book_depth10_to_arrow_record_batch_bytes` API
+- Renamed actor and strategy `subscribe_book_depth10`/`unsubscribe_book_depth10` to `subscribe_book_depth`/`unsubscribe_book_depth`
+- Renamed `OrderBookDepth10DataWrangler` to `OrderBookDepthDataWrangler`
+- Renamed live `SubscribeBookDepth10`/`UnsubscribeBookDepth10` commands to `SubscribeBookDepth`/`UnsubscribeBookDepth`, with matching `_subscribe_book_depth`/`_unsubscribe_book_depth` data client hooks
+- Renamed Python persistence `NautilusDataType.OrderBookDepth10` to `NautilusDataType.OrderBookDepth`
+- Renamed Databento `load_order_book_depth10` to `load_order_book_depth` and `get_order_book_depth10` to `get_order_book_depth`
+- Renamed Polymarket `SignatureType` to `PolymarketSignatureType`
+- Renamed Tardis `load_tardis_depth10_from_snapshot5`/`25` and `stream_tardis_depth10_from_snapshot5`/`25` to their `depth` spellings, and `TardisDepth10StreamIterator` to `TardisDepthStreamIterator`
 
 ### Security
 
 ### Fixes
 
 - Fixed backtest rejection of lower-precision order fields within the same fixed-point scale
+- Fixed execution mass-status reconciliation ignoring filled-quantity decreases without companion fills
+- Fixed overlapping mass-status snapshots reversing newer cached fills or fill voids
 - Fixed trailing-stop orders already in the market being accepted despite `reject_stop_orders`
 - Fixed Betfair false fill voids and missing fills during reconciliation after price replacements
+- Fixed Betfair false fill voids from inconsistent order and fill snapshots during reconciliation
 - Fixed Betfair order quantities in replacement queries and quantity reduction recovery
+- Fixed Lighter book recovery after missing snapshots, sequence gaps, and reconnects
 - Fixed OKX order book snapshots retaining stale price levels after resubscription
 
 ### Internal Improvements
 
 - Standardized network config field layouts across adapters: URL override block, then `proxy_url`
+- Renamed the variable-depth Cap'n Proto `OrderBookDepth10` schema declarations to `OrderBookDepth` while pinning node IDs and field ordinals for wire continuity
 - Improved cache order query benchmark coverage
 - Optimized cache order queries and exchange rate lookups from bars
 - Optimized average-price calculation for orders with many fills
 - Optimized allocation overhead in Rust cache `orders` and `orders_refs` queries
 - Optimized allocation overhead in Rust exchange rate calculations
+- Standardized book recovery ownership and retry handling across Lighter and OKX
 - Improved OKX public and spread book recovery with bounded retries and cancellation-safe resubscription
 - Upgraded `datafusion` crate to v55.1.0
 - Upgraded `jiff` crate to v0.2.37
@@ -41,6 +57,7 @@ Released on TBD (UTC).
 ### Documentation Updates
 
 - Documented the adapter config field layout convention in the developer guide
+- Documented shared order book recovery ownership and Lighter recovery limits
 - Documented OKX order book recovery and retry limits
 - Updated Databento and Tardis integration guides with new URL overrides
 

@@ -50,7 +50,7 @@ use nautilus_model::{
     accounts::{Account, AccountAny, margin_model::MarginModelHandle},
     data::{
         Bar, Data, FundingRateUpdate, InstrumentClose, InstrumentStatus, OrderBookDelta,
-        OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
     },
     enums::{AccountType, AggressorSide, BookType, OmsType, OrderStatus, PositionAdjustmentType},
     events::{FundingSettlement, OrderEventAny, OrderUpdated, PositionAdjusted, PositionEvent},
@@ -951,7 +951,7 @@ impl SimulatedExchange {
     /// # Errors
     ///
     /// Returns an error if module pre-processing or matching engine processing fails.
-    pub fn process_order_book_depth10(&mut self, depth: &OrderBookDepth10) -> anyhow::Result<()> {
+    pub fn process_order_book_depth(&mut self, depth: &OrderBookDepth) -> anyhow::Result<()> {
         self.pre_process_modules(&Data::BookDepth(Box::new(depth.clone())))?;
 
         if !self.matching_engines.contains_key(&depth.instrument_id) {
@@ -971,7 +971,7 @@ impl SimulatedExchange {
         }
 
         if let Some(matching_engine) = self.matching_engines.get_mut(&depth.instrument_id) {
-            matching_engine.process_order_book_depth10(depth)?;
+            matching_engine.process_order_book_depth(depth)?;
         } else {
             anyhow::bail!("Matching engine should be initialized");
         }

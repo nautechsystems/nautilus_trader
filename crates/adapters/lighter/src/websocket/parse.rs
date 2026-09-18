@@ -20,8 +20,7 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
-        OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
-        depth::DEPTH10_LEN,
+        OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick, depth::DEPTH10_LEN,
     },
     enums::{
         AccountType, AggregationSource, BookAction, LiquiditySide, OrderSide, OrderStatus,
@@ -162,7 +161,7 @@ pub fn parse_ws_order_book_deltas(
         .context("failed to construct OrderBookDeltas from Lighter WebSocket book")
 }
 
-/// Parses a full Lighter order book payload into a Nautilus [`OrderBookDepth10`].
+/// Parses a full Lighter order book payload into a Nautilus [`OrderBookDepth`].
 ///
 /// Call this only for snapshot or depth payloads that contain the full visible
 /// book. Incremental updates should be parsed as deltas.
@@ -170,12 +169,12 @@ pub fn parse_ws_order_book_deltas(
 /// # Errors
 ///
 /// Returns an error if any price or size cannot be converted.
-pub fn parse_ws_order_book_depth10(
+pub fn parse_ws_order_book_depth(
     book: &LighterWsOrderBook,
     instrument: &InstrumentAny,
     timestamp_ms: u64,
     ts_init: UnixNanos,
-) -> anyhow::Result<OrderBookDepth10> {
+) -> anyhow::Result<OrderBookDepth> {
     let ts_event = parse_millis_to_nanos(timestamp_ms)?;
     let sequence = u64::try_from(book.nonce).context("negative Lighter book nonce")?;
     let mut bids = [BookOrder::default(); DEPTH10_LEN];
@@ -221,7 +220,7 @@ pub fn parse_ws_order_book_depth10(
         );
     }
 
-    Ok(OrderBookDepth10::new(
+    Ok(OrderBookDepth::new(
         instrument.id(),
         bids,
         asks,
@@ -1716,15 +1715,11 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_ws_order_book_depth10_preserves_sparse_levels() {
+    fn test_parse_ws_order_book_depth_preserves_sparse_levels() {
         let instrument = create_test_instrument();
-        let depth = parse_ws_order_book_depth10(
-            &stub_book(),
-            &instrument,
-            1774884082326,
-            UnixNanos::from(1),
-        )
-        .unwrap();
+        let depth =
+            parse_ws_order_book_depth(&stub_book(), &instrument, 1774884082326, UnixNanos::from(1))
+                .unwrap();
 
         assert_eq!(depth.instrument_id, instrument.id());
         assert_eq!(depth.bids.len(), 1);

@@ -409,7 +409,7 @@ Upstream references:
 ## Market data
 
 - Order book deltas: `L2_MBP` only; `depth` 0 (full book) or 25.
-- Order book depth10 snapshots: fixed 10 levels via `orderBook10` channel.
+- Order book depth snapshots: fixed 10 levels via `orderBook10` channel.
 - Quotes, trades, and instrument updates are supported via WebSocket.
 - Funding rates, mark prices, and index prices are supported where applicable.
 - REST requests:

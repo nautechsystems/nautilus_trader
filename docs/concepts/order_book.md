@@ -46,7 +46,7 @@ from nautilus_trader.model import OrderBookDepth
 self.subscribe_book_deltas(instrument_id, BookType.L2_MBP)
 
 # Aggregated depth snapshots (up to 10 levels)
-self.subscribe_book_depth10(instrument_id, BookType.L2_MBP)
+self.subscribe_book_depth(instrument_id, BookType.L2_MBP)
 
 # Full book snapshots at a timed interval
 self.subscribe_book_at_interval(instrument_id, BookType.L2_MBP, interval_ms=1000)

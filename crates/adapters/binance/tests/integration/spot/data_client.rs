@@ -72,7 +72,9 @@ use nautilus_common::{
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
-    data::{BarType, BookOrder, Data, DataType, OrderBookDelta, OrderBookDeltas, QuoteTick},
+    data::{
+        BarType, BookOrder, CustomData, Data, DataType, OrderBookDelta, OrderBookDeltas, QuoteTick,
+    },
     enums::{BookAction, BookType, OrderSide, RecordFlag},
     identifiers::InstrumentId,
 };
@@ -105,6 +107,7 @@ struct DataTestServerConfig {
     unsubscriptions: Arc<Mutex<Vec<Vec<String>>>>,
     agg_trade_queries: Arc<Mutex<Vec<HashMap<String, String>>>>,
     kline_queries: Arc<Mutex<Vec<HashMap<String, String>>>>,
+    empty_klines: bool,
 }
 
 impl Default for DataTestServerConfig {
@@ -122,6 +125,7 @@ impl Default for DataTestServerConfig {
             unsubscriptions: Arc::new(Mutex::new(Vec::new())),
             agg_trade_queries: Arc::new(Mutex::new(Vec::new())),
             kline_queries: Arc::new(Mutex::new(Vec::new())),
+            empty_klines: false,
         }
     }
 }
@@ -192,6 +196,14 @@ fn build_agg_trades_response(time_ms: i64) -> Vec<u8> {
     buf.extend_from_slice(&(time_ms * 1_000).to_le_bytes());
     buf.push(0);
     buf.push(1);
+    buf
+}
+
+fn build_empty_klines_response() -> Vec<u8> {
+    let mut buf = create_sbe_header(2, KLINES_TEMPLATE_ID).to_vec();
+    buf.push((-2_i8) as u8);
+    buf.push((-5_i8) as u8);
+    buf.extend_from_slice(&create_group_header(120, 0));
     buf
 }
 
@@ -765,6 +777,11 @@ async fn handle_klines(
         _ => 59_999_000,
     };
     config.kline_queries.lock().push(query);
+
+    if config.empty_klines {
+        return sbe_response(build_empty_klines_response()).into_response();
+    }
+
     sbe_response(build_klines_response(close_time_us, span_us)).into_response()
 }
 
@@ -895,6 +912,19 @@ fn binance_bar_data_type(bar_type: BarType) -> DataType {
     metadata.insert(
         "bar_type".to_string(),
         serde_json::Value::String(bar_type.to_string()),
+    );
+    DataType::new("BinanceBar", Some(metadata), Some(bar_type.to_string()))
+}
+
+fn binance_bar_item_data_type(bar_type: BarType) -> DataType {
+    let mut metadata = Params::new();
+    metadata.insert(
+        "bar_type".to_string(),
+        serde_json::Value::String(bar_type.to_string()),
+    );
+    metadata.insert(
+        "instrument_id".to_string(),
+        serde_json::Value::String(bar_type.instrument_id().to_string()),
     );
     DataType::new("BinanceBar", Some(metadata), Some(bar_type.to_string()))
 }
@@ -1306,6 +1336,7 @@ async fn test_request_historical_one_second_binance_bars_preserves_fields() {
     let data_type = binance_bar_data_type(bar_type);
     let start = jiff::Timestamp::from_millisecond(1_700_000_000_000).unwrap();
     let end = jiff::Timestamp::from_millisecond(1_700_000_000_999).unwrap();
+    let request_id = UUID4::new();
 
     client
         .request_data(RequestCustomData::new(
@@ -1314,7 +1345,7 @@ async fn test_request_historical_one_second_binance_bars_preserves_fields() {
             Some(start),
             Some(end),
             Some(NonZeroUsize::new(321).unwrap()),
-            UUID4::new(),
+            request_id,
             UnixNanos::default(),
             None,
         ))
@@ -1327,11 +1358,21 @@ async fn test_request_historical_one_second_binance_bars_preserves_fields() {
     let DataEvent::Response(DataResponse::Data(response)) = event else {
         panic!("expected custom data response");
     };
-    let bars = response
+    let data = response
         .data
         .as_ref()
-        .downcast_ref::<Vec<BinanceBar>>()
-        .expect("expected BinanceBar vector");
+        .downcast_ref::<Vec<CustomData>>()
+        .expect("expected BinanceBar custom data batch");
+    let bars: Vec<&BinanceBar> = data
+        .iter()
+        .map(|custom| {
+            custom
+                .data
+                .as_any()
+                .downcast_ref::<BinanceBar>()
+                .expect("expected BinanceBar payload")
+        })
+        .collect();
     let query = state.kline_queries.lock()[0].clone();
     assert_eq!(query.get("symbol").map(String::as_str), Some("BTCUSDT"));
     assert_eq!(query.get("interval").map(String::as_str), Some("1s"));
@@ -1344,8 +1385,18 @@ async fn test_request_historical_one_second_binance_bars_preserves_fields() {
         Some("1700000000999")
     );
     assert_eq!(query.get("limit").map(String::as_str), Some("321"));
+    assert_eq!(response.correlation_id, request_id);
     assert_eq!(response.data_type, data_type);
-    assert_eq!(bars.len(), 1);
+    assert_eq!(
+        response.start,
+        Some(UnixNanos::from_millis(1_700_000_000_000))
+    );
+    assert_eq!(
+        response.end,
+        Some(UnixNanos::from_millis(1_700_000_000_999))
+    );
+    assert_eq!(data.len(), 1);
+    assert_eq!(data[0].data_type, binance_bar_item_data_type(bar_type));
     assert_eq!(bars[0].bar_type, bar_type);
     assert_eq!(bars[0].open.as_decimal(), dec!(42000.00));
     assert_eq!(bars[0].high.as_decimal(), dec!(42003.00));
@@ -1385,6 +1436,55 @@ async fn test_request_historical_one_second_binance_bars_preserves_fields() {
     assert_eq!(response.bar_type, bar_type);
     assert_eq!(response.data.len(), 1);
     assert_eq!(response.data[0], expected_bar.bar());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_historical_binance_bars_empty_response_emits_empty_batch() {
+    let config = DataTestServerConfig {
+        empty_klines: true,
+        ..Default::default()
+    };
+    let addr = start_data_test_server_with_config(config).await;
+    let (mut client, mut rx) =
+        create_test_data_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let bar_type = BarType::from("BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL");
+    let data_type = binance_bar_data_type(bar_type);
+    let request_id = UUID4::new();
+
+    client
+        .request_data(RequestCustomData::new(
+            *BINANCE_CLIENT_ID,
+            data_type.clone(),
+            None,
+            None,
+            None,
+            request_id,
+            UnixNanos::default(),
+            None,
+        ))
+        .unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for BinanceBar history")
+        .expect("data channel closed");
+    let DataEvent::Response(DataResponse::Data(response)) = event else {
+        panic!("expected custom data response");
+    };
+    let data = response
+        .data
+        .as_ref()
+        .downcast_ref::<Vec<CustomData>>()
+        .expect("expected BinanceBar custom data batch");
+    assert!(data.is_empty());
+    assert_eq!(response.correlation_id, request_id);
+    assert_eq!(response.data_type, data_type);
+    assert_eq!(response.start, None);
+    assert_eq!(response.end, None);
 }
 
 #[rstest]

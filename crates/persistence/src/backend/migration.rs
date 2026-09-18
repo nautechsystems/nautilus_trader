@@ -52,7 +52,10 @@ use crate::{
         INSTRUMENT_PATH_PREFIXES, data_path_prefix, data_type_from_data_path_prefix,
         record_path_prefix,
     },
-    common::{arrow::catalog_record_schema, storage::normalize_storage_location},
+    common::{
+        arrow::catalog_record_schema, paths::normalize_path_separators,
+        storage::normalize_storage_location,
+    },
 };
 
 const SCHEMA_READ_CONCURRENCY: usize = 16;
@@ -72,7 +75,7 @@ pub trait ParquetCatalogSource: Sync {
     ///
     /// Returns an error if the combined object-store path is invalid.
     fn to_object_path_parsed(&self, path: &str) -> anyhow::Result<ObjectPath> {
-        let normalized = path.replace('\\', "/");
+        let normalized = normalize_path_separators(path);
         let base = self.base_path().trim_matches('/');
         let full = if base.is_empty() {
             normalized
@@ -1078,7 +1081,7 @@ mod tests {
             "64-bit"
         };
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../test_data/nautilus")
+            .join("../../test_data/nautilus/legacy")
             .join(precision_dir)
             .join(file_name);
         let file = std::fs::File::open(path).unwrap();
@@ -1102,7 +1105,7 @@ mod tests {
             "64-bit"
         };
         let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../test_data/nautilus")
+            .join("../../test_data/nautilus/legacy")
             .join(precision_dir)
             .join("bars.parquet");
         fs::copy(fixture, bar_dir.join("bars.parquet")).unwrap();
