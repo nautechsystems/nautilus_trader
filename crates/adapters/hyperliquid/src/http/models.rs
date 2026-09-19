@@ -633,6 +633,9 @@ pub struct HyperliquidFill {
         deserialize_with = "deserialize_optional_decimal_from_str"
     )]
     pub builder_fee: Option<Decimal>,
+    /// Client order ID as a hex string with `0x` prefix, when the order carried one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cloid: Option<String>,
 }
 
 /// Represents order status response from `POST /info` with `type: "orderStatus"`.

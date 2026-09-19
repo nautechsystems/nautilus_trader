@@ -1392,6 +1392,22 @@ impl HyperliquidWebSocketClient {
         self.subscriptions.len()
     }
 
+    pub(crate) fn execution_subscriptions_confirmed(&self, user: &str) -> bool {
+        let confirmed = self.subscriptions.confirmed();
+        let user = Ustr::from(user);
+
+        [
+            HyperliquidWsChannel::OrderUpdates,
+            HyperliquidWsChannel::UserEvents,
+        ]
+        .iter()
+        .all(|channel| {
+            confirmed
+                .get(&Ustr::from(channel.as_str()))
+                .is_some_and(|users| users.contains(&user))
+        })
+    }
+
     /// Gets a bar type from the cache by coin and interval.
     ///
     /// This looks up the subscription key created when subscribing to bars.
@@ -2658,6 +2674,31 @@ mod tests {
         let cloned = client.clone();
         assert!(client.socket_sink.is_some());
         assert!(cloned.socket_sink.is_some());
+    }
+
+    #[rstest]
+    fn execution_subscriptions_require_both_acknowledgements_for_the_same_user() {
+        let client = HyperliquidWebSocketClient::new(
+            None,
+            HyperliquidEnvironment::Testnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        let user = "0xabc";
+        let order_updates = format!("orderUpdates:{user}");
+        let user_events = format!("userEvents:{user}");
+
+        assert!(client.subscriptions.try_mark_subscribe(&order_updates));
+        assert!(client.subscriptions.try_mark_subscribe(&user_events));
+        assert!(!client.execution_subscriptions_confirmed(user));
+
+        client.subscriptions.confirm_subscribe(&order_updates);
+        assert!(!client.execution_subscriptions_confirmed(user));
+
+        client.subscriptions.confirm_subscribe(&user_events);
+        assert!(client.execution_subscriptions_confirmed(user));
+        assert!(!client.execution_subscriptions_confirmed("0xdef"));
     }
 
     #[rstest]
