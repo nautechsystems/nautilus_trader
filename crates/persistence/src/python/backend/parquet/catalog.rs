@@ -901,10 +901,13 @@ impl PyParquetDataCatalog {
             .map_err(|e| PyIOError::new_err(format!("Failed to delete data range: {e}")))
     }
 
-    /// Write custom data to Parquet files.
+    /// Writes custom data to Parquet files.
     ///
     /// Requires `CustomData` wrappers. Callers must wrap raw custom objects in
     /// `CustomData(data_type=DataType(cls, metadata=...), data=...)` before writing.
+    ///
+    /// The registered Arrow schema must contain `ts_init`. Any `ts_event` or `ts_init` fields
+    /// must use `timestamp("ns", tz="UTC")`; incompatible schemas fail before writing.
     #[pyo3(signature = (data, start=None, end=None, skip_disjoint_check=false))]
     pub fn write_custom_data(
         &self,

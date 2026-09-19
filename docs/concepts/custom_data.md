@@ -185,6 +185,10 @@ When Python code calls `register_custom_data_class(MyType)`:
    it accepts the object. Otherwise, it wraps the object in
    `PythonCustomDataWrapper`.
 
+For catalog use, provide the Arrow schema through `_schema` or `arrow_schema_py()` before
+registration, or use `@customdataclass`. Registration accepts classes without a schema for JSON
+and message-bus use; catalog writes enforce the [catalog schema requirements](#catalog-write-flow).
+
 JSON and Arrow callbacks on this path run under the Python GIL.
 
 ### Same-binary Rust registration
@@ -210,8 +214,9 @@ This path stays fully native in Rust for encode/decode.
    registered.
 1. Otherwise, use the Python wrapper and callback handlers.
 
-The idempotent `ensure_*` registrations do not overwrite existing native
-handlers.
+The idempotent `ensure_*` registrations do not overwrite existing handlers. For each type name,
+the first Arrow registration retains its schema, encoder, and decoder. After correcting an
+already-registered Python class's Arrow schema, restart the process before registering it again.
 
 ## Wrapper backends
 
@@ -255,6 +260,8 @@ The custom-data write path:
 
 1. Takes `type_name` from the inner payload and `metadata` and `identifier` from
    the first value's `DataType`.
+1. Validates that the registered Arrow schema contains `ts_init` and that any `ts_event` or
+   `ts_init` fields use `timestamp("ns", tz="UTC")`.
 1. Looks up the Arrow encoder in the process-wide registry.
 1. Encodes the values to a `RecordBatch`.
 1. Appends a `data_type` column containing the persisted `DataType`.

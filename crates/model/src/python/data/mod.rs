@@ -619,8 +619,15 @@ fn py_decode_record_batch_to_custom_data(
 /// Use this when you prefer to pass the class instead of a sample instance.
 /// The class must have:
 /// - `type_name_static()` class method or `__name__` (used as type name in storage)
-/// - `decode_record_batch_py(metadata, ipc_bytes)` class method
+/// - `decode_record_batch_py(metadata, batch)` class method
 /// - Instances must have `ts_event`, `ts_init`, and `encode_record_batch_py(items)`.
+///
+/// To write the type to a catalog and query it back, the class must also supply the Arrow
+/// schema its batches use, through a `_schema` class attribute or an `arrow_schema_py()`
+/// class method. That schema must contain `ts_init`. Any `ts_event` or `ts_init` fields must use
+/// `timestamp("ns", tz="UTC")`. The `@customdataclass` decorator generates both the schema
+/// and the Arrow methods. Without a usable schema the class still registers for JSON use, and
+/// `write_custom_data` raises rather than writing a file that cannot be queried.
 ///
 /// # Arguments
 ///

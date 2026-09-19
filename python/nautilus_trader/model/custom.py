@@ -140,19 +140,20 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
             @classmethod
             def decode_record_batch_py(cls_inner, metadata: dict, batch) -> list:
                 fields = {*_get_annotations(cls_inner), "type", "ts_event", "ts_init"}
-                values = [
-                    {name: value for name, value in row.items() if name in fields}
-                    for row in batch.to_pylist()
-                ]
 
+                # `to_pylist` needs pandas for timestamps with sub-microsecond precision
                 for name in ("ts_event", "ts_init"):
                     index = batch.schema.get_field_index(name)
                     if index < 0:
                         continue
-                    timestamps = batch.column(index).cast("int64").to_pylist()
-                    for row, timestamp in zip(values, timestamps, strict=True):
-                        row[name] = timestamp
-                return [cls_inner.from_dict(row) for row in values]
+                    batch = batch.set_column(index, name, batch.column(index).cast("int64"))
+
+                return [
+                    cls_inner.from_dict(
+                        {name: value for name, value in row.items() if name in fields},
+                    )
+                    for row in batch.to_pylist()
+                ]
 
             cls.decode_record_batch_py = decode_record_batch_py
 

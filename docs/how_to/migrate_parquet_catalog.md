@@ -103,6 +103,9 @@ including `quote_tick`, `order_book_depth10`, per-class instrument directories, 
 | Final-format custom data with `type_name`      | Pass through; rename `custom_<type>` to `custom/<type>`                |
 | Empty coverage files                           | Copy as empty files under the renamed layout                           |
 
+Custom-data `ts_event` and `ts_init` columns stored as `uint64` nanoseconds convert to
+`timestamp("ns", tz="UTC")`. Other supported custom-data columns pass through unchanged.
+
 Fixed-depth source formats omit order IDs, and the migration retains the zero IDs their reader returns. The
 destination format preserves order IDs for subsequent writes.
 

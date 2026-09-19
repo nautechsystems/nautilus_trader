@@ -73,7 +73,10 @@ use object_store::{ObjectStore, ObjectStoreExt, path::Path};
 
 use crate::{
     common::{
-        custom::{augment_batch_with_data_type_column, schema_with_data_type_column},
+        custom::{
+            augment_batch_with_data_type_column, schema_with_data_type_column,
+            validate_custom_catalog_schema,
+        },
         paths::{CatalogPathPrefix, urisafe_instrument_id},
     },
     writer::{
@@ -1135,7 +1138,7 @@ impl FeatherWriter {
         &mut self,
         type_name: &str,
         identifier: Option<&str>,
-    ) -> FileWriterPath {
+    ) -> Result<FileWriterPath, Box<dyn std::error::Error>> {
         let type_str = format!("data/custom/{type_name}");
 
         if let Some(existing) = self
@@ -1143,9 +1146,14 @@ impl FeatherWriter {
             .keys()
             .find(|path| path.type_str == type_str && path.instrument_id.as_deref() == identifier)
         {
-            return existing.clone();
+            return Ok(existing.clone());
         }
-        self.reserve_writer_path(&type_str, identifier.map(String::from))
+
+        if let Some(schema) = get_arrow_schema(type_name) {
+            validate_custom_catalog_schema(type_name, &schema)?;
+        }
+
+        Ok(self.reserve_writer_path(&type_str, identifier.map(String::from)))
     }
 
     /// Generates a key for a `FileWriter` based on type T and optional instrument ID.
@@ -1390,7 +1398,7 @@ impl FeatherWriter {
             return Ok(());
         }
 
-        let path = self.get_writer_path_custom(type_name, identifier.as_deref());
+        let path = self.get_writer_path_custom(type_name, identifier.as_deref())?;
         if !self.writers.contains_key(&path) {
             self.create_custom_writer(path.clone(), type_name)?;
         }
@@ -2270,6 +2278,49 @@ mod tests {
         }
 
         assert_eq!(object_count, 1);
+    }
+
+    #[rstest]
+    #[case(
+        "FeatherMissingTimestamp",
+        Schema::empty(),
+        "registered without an Arrow schema containing ts_init"
+    )]
+    #[case(
+        "FeatherLegacyTimestamp",
+        Schema::new(vec![Field::new("ts_init", DataType::UInt64, false)]),
+        "registered with ts_init as UInt64",
+    )]
+    fn test_custom_writer_path_rejects_unqueryable_schema(
+        #[case] type_name: &str,
+        #[case] schema: Schema,
+        #[case] expected_error: &str,
+    ) {
+        nautilus_model::data::registry::ensure_arrow_registered(
+            type_name,
+            Arc::new(schema),
+            Box::new(|_| unreachable!("writer creation does not encode data")),
+            Box::new(|_, _| unreachable!("writer creation does not decode data")),
+        )
+        .unwrap();
+
+        let mut writer = FeatherWriter::new(
+            "run".to_string(),
+            Arc::new(object_store::memory::InMemory::new()),
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
+            RotationConfig::NoRotation,
+            None,
+            None,
+            None,
+        );
+
+        for _ in 0..2 {
+            let error = writer.get_writer_path_custom(type_name, None).unwrap_err();
+
+            assert!(error.to_string().contains(expected_error));
+            assert!(writer.writers.is_empty());
+            assert!(writer.reserved_paths.is_empty());
+        }
     }
 
     #[tokio::test]

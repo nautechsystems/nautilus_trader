@@ -695,64 +695,23 @@ See [Custom data](../custom_data.md) for the registry, wrapper, and persistence 
 ### Pure Python catalog example
 
 A Python class used with the catalog supplies timestamps, JSON callbacks, an Arrow schema, and
-Arrow batch callbacks. Register it once during startup:
+Arrow batch callbacks. The `@customdataclass` decorator generates the serialization methods and
+schema from the class annotations. It also supplies `ts_event` and `ts_init`; pass them to the
+constructor without declaring them as dataclass fields. Register the class once during startup:
 
 ```python
-import json
-from dataclasses import asdict
-from dataclasses import dataclass
-from typing import ClassVar
-
-import pyarrow as pa
-
 from nautilus_trader.model import CustomData
 from nautilus_trader.model import DataType
 from nautilus_trader.model import register_custom_data_class
+from nautilus_trader.model.custom import customdataclass
 from nautilus_trader.persistence import ParquetDataCatalog
 
 
-@dataclass
+@customdataclass()
 class MarketTickPython:
-    _schema: ClassVar[pa.Schema] = pa.schema(
-        {
-            "symbol": pa.string(),
-            "price": pa.float64(),
-            "volume": pa.int64(),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
-    )
-
     symbol: str = ""
     price: float = 0.0
     volume: int = 0
-    ts_event: int = 0
-    ts_init: int = 0
-
-    @classmethod
-    def type_name_static(cls) -> str:
-        return cls.__name__
-
-    def to_json(self) -> str:
-        return json.dumps(asdict(self))
-
-    @classmethod
-    def from_json(cls, data: dict) -> "MarketTickPython":
-        return cls(**data)
-
-    def encode_record_batch_py(self, items: list) -> pa.RecordBatch:
-        return pa.RecordBatch.from_pylist(
-            [asdict(item) for item in items],
-            schema=self._schema,
-        )
-
-    @classmethod
-    def decode_record_batch_py(
-        cls,
-        metadata: dict,
-        batch: pa.RecordBatch,
-    ) -> list["MarketTickPython"]:
-        return [cls(**row) for row in batch.to_pylist()]
 
 
 register_custom_data_class(MarketTickPython)
@@ -771,8 +730,15 @@ result = catalog.query_custom_data("MarketTickPython")
 ticks = [item.data for item in result]
 ```
 
-The registered Arrow schema must contain `ts_init`, which the catalog uses for time filtering.
-Custom writes must be in ascending `ts_init` order.
+A hand-written class can supply the same surface itself: `ts_event` and `ts_init`,
+`type_name_static()`, `to_json()`, `from_json()`, `encode_record_batch_py()`, and
+`decode_record_batch_py()`. Registration reads the Arrow schema from a `_schema` class attribute,
+falling back to an `arrow_schema_py()` class method, and `encode_record_batch_py` must produce
+batches matching it. The schema must contain `ts_init`, which the catalog uses for time filtering.
+Any `ts_event` or `ts_init` fields must use `timestamp("ns", tz="UTC")`. When either condition fails,
+`write_custom_data` raises rather than writing a file that cannot be queried. Convert files written
+earlier with integer timestamps using `nautilus catalog migrate-parquet`. Custom writes must be in
+ascending `ts_init` order.
 
 `BacktestDataConfig` accepts built-in catalog data types, not arbitrary custom types. To replay the
 queried `CustomData` wrappers, add them to a configured `BacktestEngine` directly:

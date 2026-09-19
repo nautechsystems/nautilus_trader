@@ -39,10 +39,11 @@ use nautilus_core::UnixNanos;
 use nautilus_model::data::{
     Bar, CustomData, CustomDataTrait, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
     MarkPriceUpdate, NautilusDataType, OptionGreeks, OrderBookDelta, OrderBookDepth, QuoteTick,
-    TradeTick, close::InstrumentClose, encode_custom_to_arrow,
+    TradeTick, close::InstrumentClose, encode_custom_to_arrow, get_arrow_schema,
 };
 use nautilus_serialization::arrow::{
     DecodeDataFromRecordBatch, custom::CustomDataDecoder, record_batch_with_identifier_column,
+    timestamp_data_type,
 };
 
 use crate::{
@@ -146,7 +147,8 @@ pub fn group_custom_data_by_type<'a>(
 ///
 /// # Errors
 ///
-/// Returns an error if encoding or augmentation fails, or if the type is not registered.
+/// Returns an error if encoding or augmentation fails, if the type is not registered, or if the
+/// registered Arrow schema omits `ts_init` or carries timestamps the catalog cannot query.
 pub fn prepare_custom_data_batch(
     data: &[&CustomData],
 ) -> anyhow::Result<(RecordBatch, String, Option<String>, UnixNanos, UnixNanos)> {
@@ -183,6 +185,10 @@ pub fn prepare_custom_data_batch(
         end_ts = end_ts.max(ts_init);
     }
 
+    if let Some(schema) = get_arrow_schema(type_name) {
+        validate_custom_catalog_schema(type_name, &schema)?;
+    }
+
     let batch = encode_custom_to_arrow(type_name, &items)
         .map_err(|e| anyhow::anyhow!("Failed to encode custom data to Arrow: {e}"))?
         .ok_or_else(|| {
@@ -196,6 +202,34 @@ pub fn prepare_custom_data_batch(
     let batch = record_batch_with_identifier_column(batch, identifier.as_deref())?;
 
     Ok((batch, type_name.to_string(), identifier, start_ts, end_ts))
+}
+
+pub(crate) fn validate_custom_catalog_schema(
+    type_name: &str,
+    schema: &Schema,
+) -> anyhow::Result<()> {
+    if schema.field_with_name("ts_init").is_err() {
+        anyhow::bail!(
+            "Custom data type \"{type_name}\" is registered without an Arrow schema containing \
+             ts_init, so written files cannot be queried back; define an `arrow_schema_py()` \
+             class method, or apply the `@customdataclass` decorator"
+        );
+    }
+
+    for name in ["ts_event", "ts_init"] {
+        if let Ok(field) = schema.field_with_name(name)
+            && field.data_type() != &timestamp_data_type()
+        {
+            anyhow::bail!(
+                "Custom data type \"{type_name}\" is registered with {name} as {}, so written \
+                 files cannot be queried back; declare it as timestamp(\"ns\", tz=\"UTC\"), or \
+                 apply the `@customdataclass` decorator",
+                field.data_type(),
+            );
+        }
+    }
+
+    Ok(())
 }
 
 /// Decodes a `RecordBatch` to Data objects based on metadata.
@@ -310,4 +344,62 @@ pub fn decode_custom_batches_to_data(
         file_data.extend(decoded);
     }
     Ok(file_data)
+}
+
+#[cfg(test)]
+mod tests {
+    use datafusion::arrow::datatypes::{DataType as ArrowDataType, Field, Schema};
+    use nautilus_serialization::arrow::timestamp_data_type;
+    use rstest::rstest;
+
+    use super::validate_custom_catalog_schema;
+
+    #[rstest]
+    fn test_validate_custom_catalog_schema_accepts_catalog_timestamps() {
+        let schema = schema_with_timestamps(timestamp_data_type(), timestamp_data_type());
+
+        assert!(validate_custom_catalog_schema("SensorReading", &schema).is_ok());
+    }
+
+    #[rstest]
+    fn test_validate_custom_catalog_schema_rejects_empty_schema() {
+        let error = validate_custom_catalog_schema("SensorReading", &Schema::empty()).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Custom data type \"SensorReading\" is registered without an Arrow schema containing \
+             ts_init, so written files cannot be queried back; define an `arrow_schema_py()` \
+             class method, or apply the `@customdataclass` decorator"
+        );
+    }
+
+    #[rstest]
+    #[case("ts_event", ArrowDataType::UInt64, timestamp_data_type())]
+    #[case("ts_init", timestamp_data_type(), ArrowDataType::UInt64)]
+    fn test_validate_custom_catalog_schema_rejects_integer_timestamps(
+        #[case] expected_name: &str,
+        #[case] ts_event: ArrowDataType,
+        #[case] ts_init: ArrowDataType,
+    ) {
+        let schema = schema_with_timestamps(ts_event, ts_init);
+
+        let error = validate_custom_catalog_schema("SensorReading", &schema).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Custom data type \"SensorReading\" is registered with {expected_name} as UInt64, \
+                 so written files cannot be queried back; declare it as \
+                 timestamp(\"ns\", tz=\"UTC\"), or apply the `@customdataclass` decorator"
+            )
+        );
+    }
+
+    fn schema_with_timestamps(ts_event: ArrowDataType, ts_init: ArrowDataType) -> Schema {
+        Schema::new(vec![
+            Field::new("value", ArrowDataType::Float64, false),
+            Field::new("ts_event", ts_event, false),
+            Field::new("ts_init", ts_init, false),
+        ])
+    }
 }
