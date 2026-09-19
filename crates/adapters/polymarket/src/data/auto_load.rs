@@ -228,7 +228,7 @@ impl PolymarketDataClient {
         let last_quotes = self.last_quotes.clone();
         let resolve_poll_watchlist = self.resolve_poll_watchlist.clone();
         let resolve_watch_apply_mutex = self.resolve_watch_apply_mutex.clone();
-        let pending_snapshot_after_tick_change = self.pending_snapshot_after_tick_change.clone();
+        let book_sync = self.book_sync.clone();
         let scheduled_guard = AutoLoadScheduledGuard::new(scheduled);
 
         let future = async move {
@@ -574,7 +574,7 @@ impl PolymarketDataClient {
                                 &active_instrument_status_subs,
                                 &active_instrument_close_subs,
                                 &resolve_poll_watchlist,
-                                &pending_snapshot_after_tick_change,
+                                &book_sync,
                                 &pending,
                                 &ws_open_tokens,
                                 &ws_sub_mutex,

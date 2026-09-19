@@ -23,6 +23,7 @@ use std::{
 };
 
 use nautilus_core::string::secret::SecretString;
+use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::identifiers::{AccountId, InstrumentId};
 use nautilus_network::{
     transport::TransportError,
@@ -355,6 +356,21 @@ pub struct PolymarketDataClientConfig {
     /// WebSocket transport backend (defaults to `Sockudo`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
+    /// Maximum time to wait for a post-reconnect or recovery order book snapshot
+    /// in seconds.
+    ///
+    /// Set to 0 to wait indefinitely: reconnected books stay gated until the
+    /// venue replays a snapshot, with no deadline monitor.
+    #[builder(default = DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS)]
+    pub book_snapshot_timeout_secs: u64,
+    /// Interval for checking order book feed staleness in seconds.
+    #[builder(default = 5)]
+    pub book_stale_check_interval_secs: u64,
+    /// Maximum time without order book updates before emitting a stale signal in seconds.
+    ///
+    /// Set to 0 to disable. Prediction markets go quiet for long stretches.
+    #[builder(default)]
+    pub book_stale_threshold_secs: u64,
 }
 
 #[cfg(feature = "python")]
@@ -383,6 +399,9 @@ nautilus_core::impl_pyo3_config_getters!(PolymarketDataClientConfig {
     transport_backend: TransportBackend,
     drop_quotes_missing_side: bool,
     compute_effective_deltas: bool,
+    book_snapshot_timeout_secs: u64,
+    book_stale_check_interval_secs: u64,
+    book_stale_threshold_secs: u64,
 });
 
 impl Default for PolymarketDataClientConfig {
@@ -708,6 +727,18 @@ mod tests {
         assert!(config.has_nonempty_filters());
         assert!(!config.has_explicit_scope());
         assert!(config.should_load_all());
+    }
+
+    #[rstest]
+    fn data_config_book_sync_defaults_match_documented_values() {
+        let config = PolymarketDataClientConfig::default();
+
+        assert_eq!(config.book_snapshot_timeout_secs, 10);
+        assert_eq!(config.book_stale_check_interval_secs, 5);
+        assert_eq!(
+            config.book_stale_threshold_secs, 0,
+            "stale monitor must stay disabled by default"
+        );
     }
 
     #[rstest]

@@ -25,13 +25,16 @@ use std::{
 
 use ahash::AHashMap;
 use nautilus_core::string::secret::SecretString;
+use nautilus_live::book::snapshot::SnapshotGate;
 use nautilus_network::{
     RECONNECTED,
+    error::SendError,
     websocket::{AuthTracker, SubscriptionState, WebSocketClient},
 };
 use serde_json::value::RawValue;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender}; // tokio-import-ok
 use tokio_tungstenite::tungstenite::Message;
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 use zeroize::Zeroize;
 
@@ -56,10 +59,33 @@ pub enum HandlerCommand {
     Disconnect,
     /// Add asset IDs to the market-channel subscription set and send a subscribe message.
     SubscribeMarket(Vec<String>),
-    /// Remove asset IDs from the subscription set (no wire message needed).
+    /// Remove asset IDs from the subscription set and send an unsubscribe message.
     UnsubscribeMarket(Vec<String>),
+    /// Cycle asset IDs (unsubscribe then subscribe) without changing desired
+    /// subscription state, forcing the venue to emit fresh snapshots.
+    CycleMarketSubscription {
+        asset_ids: Vec<String>,
+        cancel: CancellationToken,
+        responder: tokio::sync::oneshot::Sender<CycleMarketOutcome>,
+        gate: SnapshotGate,
+    },
     /// Send the authenticated subscribe message on the user channel.
     SubscribeUser,
+}
+
+/// Outcome of a recovery subscription cycle.
+#[derive(Clone, Debug)]
+pub enum CycleMarketOutcome {
+    /// Both legs wrote on one connection; a fresh snapshot should follow.
+    Completed,
+    /// The connection changed mid-cycle; reconnect replay owns restoration.
+    ConnectionChanged,
+    /// The attempt was abandoned; a written unsubscribe leg was restored.
+    Cancelled,
+    /// A genuine unsubscribe won; nothing was sent or restored.
+    NotDesired,
+    /// A wire write failed; a written unsubscribe leg was restored.
+    SendFailed(SendError),
 }
 
 pub(super) struct FeedHandler {
@@ -136,9 +162,22 @@ impl FeedHandler {
     }
 
     async fn send_subscribe_market(&mut self, asset_ids: &[String], connection_epoch: Option<u64>) {
+        if let Err(e) = self
+            .try_send_subscribe_market(asset_ids, connection_epoch)
+            .await
+        {
+            log::error!("Failed to send market subscribe: {e}");
+        }
+    }
+
+    async fn try_send_subscribe_market(
+        &mut self,
+        asset_ids: &[String],
+        connection_epoch: Option<u64>,
+    ) -> Result<(), SendError> {
         let Some(ref client) = self.client else {
             log::warn!("No client available for market subscribe");
-            return;
+            return Err(SendError::Closed);
         };
 
         let connection_epoch = connection_epoch.unwrap_or_else(|| client.connection_epoch());
@@ -164,46 +203,77 @@ impl FeedHandler {
             })
         };
 
-        match payload {
-            Ok(payload) => {
-                let result = client
-                    .send_text_on_connection(payload, None, connection_epoch)
-                    .await;
+        let payload = match payload {
+            Ok(payload) => payload,
+            Err(e) => {
+                for id in asset_ids {
+                    self.market_subscription_epochs.remove(id);
+                    self.subscriptions.mark_failure(id);
+                }
 
-                if let Err(e) = result {
-                    for id in asset_ids {
-                        self.market_subscription_epochs.remove(id);
-                        self.subscriptions.mark_failure(id);
-                    }
-                    log::error!("Failed to send market subscribe: {e}");
-                } else {
-                    for id in asset_ids {
-                        if self.market_subscription_pending(id) {
-                            self.market_subscription_epochs
-                                .insert(id.clone(), connection_epoch);
-                        }
-                    }
+                return Err(SendError::InvalidInput(e.to_string()));
+            }
+        };
 
-                    if !self.market_subscription_initialized {
-                        self.market_subscription_initialized = true;
-                        self.schedule_market_heartbeat(connection_epoch);
+        match client
+            .send_text_on_connection(payload, None, connection_epoch)
+            .await
+        {
+            Ok(()) => {
+                for id in asset_ids {
+                    if self.market_subscription_pending(id) {
+                        self.market_subscription_epochs
+                            .insert(id.clone(), connection_epoch);
                     }
                 }
+
+                if !self.market_subscription_initialized {
+                    self.market_subscription_initialized = true;
+                    self.schedule_market_heartbeat(connection_epoch);
+                }
+
+                Ok(())
             }
             Err(e) => {
                 for id in asset_ids {
                     self.market_subscription_epochs.remove(id);
                     self.subscriptions.mark_failure(id);
                 }
-                log::error!("Failed to serialize market subscribe request: {e}");
+
+                Err(e)
             }
         }
     }
 
     async fn send_unsubscribe_market(&self, asset_ids: &[String]) {
-        let Some(ref client) = self.client else {
+        let Some(epoch) = self.client.as_ref().map(|client| client.connection_epoch()) else {
             log::warn!("No client available for market unsubscribe");
             return;
+        };
+
+        // Epoch-bound: a reconnect drops the send instead of buffering it onto
+        // the new connection, where the replayed subscription set no longer
+        // includes these assets.
+        match self.try_send_unsubscribe_market(asset_ids, epoch).await {
+            Ok(()) => {}
+            Err(SendError::ConnectionChanged) => {
+                log::debug!(
+                    "Dropped market unsubscribe during reconnect; replay excludes the assets"
+                );
+            }
+            Err(e) => {
+                log::error!("Failed to send market unsubscribe: {e}");
+            }
+        }
+    }
+
+    async fn try_send_unsubscribe_market(
+        &self,
+        asset_ids: &[String],
+        connection_epoch: u64,
+    ) -> Result<(), SendError> {
+        let Some(ref client) = self.client else {
+            return Err(SendError::Closed);
         };
 
         let req = MarketUnsubscribeRequest {
@@ -211,14 +281,92 @@ impl FeedHandler {
             operation: "unsubscribe",
         };
 
-        match serde_json::to_string(&req) {
-            Ok(payload) => {
-                if let Err(e) = client.send_text(payload, None).await {
-                    log::error!("Failed to send market unsubscribe: {e}");
-                }
-            }
-            Err(e) => log::error!("Failed to serialize market unsubscribe request: {e}"),
+        let payload =
+            serde_json::to_string(&req).map_err(|e| SendError::InvalidInput(e.to_string()))?;
+        client
+            .send_text_on_connection(payload, None, connection_epoch)
+            .await
+    }
+
+    async fn cycle_market_subscription(
+        &mut self,
+        asset_ids: &[String],
+        cancel: &CancellationToken,
+        gate: &SnapshotGate,
+    ) -> CycleMarketOutcome {
+        if cancel.is_cancelled() {
+            return CycleMarketOutcome::Cancelled;
         }
+
+        let Some(epoch) = self.client.as_ref().map(|client| client.connection_epoch()) else {
+            return CycleMarketOutcome::SendFailed(SendError::Closed);
+        };
+
+        if asset_ids
+            .iter()
+            .any(|id| !self.market_subscription_desired(id))
+        {
+            return CycleMarketOutcome::NotDesired;
+        }
+
+        // Leg 1: venue-side unsubscribe. Desired state is untouched: the pool
+        // retains ownership throughout the cycle.
+        match self.try_send_unsubscribe_market(asset_ids, epoch).await {
+            Ok(()) | Err(SendError::WriteTimeout) => {}
+            Err(SendError::ConnectionChanged) => {
+                return CycleMarketOutcome::ConnectionChanged;
+            }
+            Err(e) => return CycleMarketOutcome::SendFailed(e),
+        }
+
+        if cancel.is_cancelled() {
+            self.restore_market_subscription(asset_ids, epoch).await;
+            return CycleMarketOutcome::Cancelled;
+        }
+
+        if asset_ids
+            .iter()
+            .any(|id| !self.market_subscription_desired(id))
+        {
+            // A genuine unsubscribe won after the first leg: the venue state
+            // already matches desire, so no restore is needed.
+            return CycleMarketOutcome::NotDesired;
+        }
+
+        let current = self.client.as_ref().map(|client| client.connection_epoch());
+
+        if current != Some(epoch) {
+            // Reconnect replay owns restoration on the new connection.
+            return CycleMarketOutcome::ConnectionChanged;
+        }
+
+        // Leg 2: fresh subscribe on the same connection.
+        match self.try_send_subscribe_market(asset_ids, Some(epoch)).await {
+            Ok(()) => {
+                // Open before returning so the gate precedes every later raw
+                // read on this task; a queued fresh snapshot cannot miss it.
+                gate.open();
+                CycleMarketOutcome::Completed
+            }
+            Err(SendError::ConnectionChanged) => CycleMarketOutcome::ConnectionChanged,
+            Err(e) => {
+                self.restore_market_subscription(asset_ids, epoch).await;
+                CycleMarketOutcome::SendFailed(e)
+            }
+        }
+    }
+
+    async fn restore_market_subscription(&mut self, asset_ids: &[String], epoch: u64) {
+        // Best effort: on failure the next recovery attempt or reconnect
+        // replay owns restoration from the retained desired state.
+        if let Err(e) = self.try_send_subscribe_market(asset_ids, Some(epoch)).await {
+            log::warn!("Failed to restore market subscription after cycle abort: {e}");
+        }
+    }
+
+    fn market_subscription_desired(&self, asset_id: &str) -> bool {
+        self.subscriptions
+            .is_subscribed(&Ustr::from(asset_id), &Ustr::from(""))
     }
 
     async fn send_subscribe_user(&self) {
@@ -400,6 +548,17 @@ impl FeedHandler {
                                 self.subscriptions.confirm_unsubscribe(id);
                             }
                         }
+                        HandlerCommand::CycleMarketSubscription {
+                            asset_ids,
+                            cancel,
+                            responder,
+                            gate,
+                        } => {
+                            let outcome = self
+                                .cycle_market_subscription(&asset_ids, &cancel, &gate)
+                                .await;
+                            let _ = responder.send(outcome);
+                        }
                         HandlerCommand::SubscribeUser => {
                             self.user_subscribed = true;
                             self.send_subscribe_user().await;
@@ -413,7 +572,7 @@ impl FeedHandler {
                                 self.market_subscription_initialized = false;
                                 self.market_heartbeat_next = None;
                                 self.resubscribe_all(connection_epoch).await;
-                                return Some(PolymarketWsMessage::Reconnected);
+                                return Some(PolymarketWsMessage::Reconnected { shard_id: None });
                             }
                             let msgs = self.parse_messages(&text);
                             if msgs.is_empty() {
@@ -517,7 +676,7 @@ impl FeedHandler {
 mod tests {
     use std::time::Duration;
 
-    use futures_util::StreamExt;
+    use futures_util::{SinkExt, StreamExt};
     use nautilus_common::testing::wait_until_async;
     use nautilus_network::websocket::{TransportBackend, WebSocketConfig, channel_message_handler};
     use parking_lot::Mutex;
@@ -633,6 +792,38 @@ mod tests {
         (handler, raw_tx, subscriptions)
     }
 
+    fn market_handler_with_cmd_tx(
+        client: WebSocketClient,
+    ) -> (
+        FeedHandler,
+        tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
+        UnboundedSender<(u64, Message)>,
+        SubscriptionState,
+    ) {
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let subscriptions = SubscriptionState::new(':');
+
+        let handler = FeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            WsChannel::Market,
+            Some(client),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            None,
+            subscriptions.clone(),
+            Arc::new(AtomicBool::new(false)),
+            None,
+            AuthTracker::new(),
+            false,
+            false,
+        );
+
+        (handler, cmd_tx, raw_tx, subscriptions)
+    }
+
     #[rstest]
     #[tokio::test]
     async fn initial_market_replay_recovers_on_current_connection_epoch() {
@@ -663,7 +854,7 @@ mod tests {
 
         assert!(matches!(
             handler.next().await,
-            Some(PolymarketWsMessage::Reconnected),
+            Some(PolymarketWsMessage::Reconnected { .. }),
         ));
         handler
             .client
@@ -747,7 +938,10 @@ mod tests {
             .send((connection_epoch, Message::Text(RECONNECTED.into())))
             .expect("queue reconnect notification");
         let (mut handler, message) = task.await.expect("join handler task");
-        assert!(matches!(message, Some(PolymarketWsMessage::Reconnected)));
+        assert!(matches!(
+            message,
+            Some(PolymarketWsMessage::Reconnected { .. })
+        ));
         wait_for_recorded_messages(&messages, 3).await;
 
         let task = tokio::spawn(async move {
@@ -806,7 +1000,7 @@ mod tests {
 
         assert!(matches!(
             handler.next().await,
-            Some(PolymarketWsMessage::Reconnected),
+            Some(PolymarketWsMessage::Reconnected { .. }),
         ));
         handler
             .client
@@ -1195,5 +1389,414 @@ mod tests {
                 .expect("user batch fixture should deserialize");
 
         assert_eq!(actual, expected);
+    }
+
+    fn cycle_asset_ids() -> Vec<String> {
+        vec![MARKET_ASSET_ID.to_string()]
+    }
+
+    fn assert_desired(handler: &FeedHandler, subscriptions: &SubscriptionState) {
+        assert!(
+            handler.market_subscription_desired(MARKET_ASSET_ID),
+            "cycle must preserve desired ownership"
+        );
+        assert!(
+            subscriptions.pending_unsubscribe_topics().is_empty(),
+            "cycle must never mark desired assets for unsubscribe"
+        );
+    }
+
+    /// Classifies client frames: `subscribe` covers both the initial
+    /// `type: market` frame and later `operation` frames.
+    fn frame_kind(frame: &str) -> &str {
+        let value: Value = serde_json::from_str(frame).expect("client frame should be JSON");
+        if value.get("operation").and_then(Value::as_str) == Some("unsubscribe") {
+            return "unsubscribe";
+        }
+
+        if value.get("operation").and_then(Value::as_str) == Some("subscribe")
+            || value.get("type").and_then(Value::as_str) == Some("market")
+        {
+            return "subscribe";
+        }
+
+        panic!("unexpected client frame: {frame}");
+    }
+
+    fn frame_assets(frame: &str) -> Vec<String> {
+        let value: Value = serde_json::from_str(frame).expect("client frame should be JSON");
+        value
+            .get("assets_ids")
+            .and_then(Value::as_array)
+            .expect("frame should carry assets_ids")
+            .iter()
+            .map(|id| {
+                id.as_str()
+                    .expect("asset id should be a string")
+                    .to_string()
+            })
+            .collect()
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn cycle_market_subscription_resubscribes_without_changing_desired_state() {
+        let (url, messages) = recording_server().await;
+        let client = recording_client(url).await;
+        let (mut handler, _raw_tx, subscriptions) = market_handler_with(client);
+        subscriptions.mark_subscribe(MARKET_ASSET_ID);
+
+        let gate = SnapshotGate::default();
+        gate.lock().close();
+
+        let outcome = handler
+            .cycle_market_subscription(&cycle_asset_ids(), &CancellationToken::new(), &gate)
+            .await;
+        assert!(matches!(outcome, CycleMarketOutcome::Completed));
+        assert!(!gate.lock().is_closed());
+
+        wait_for_recorded_messages(&messages, 2).await;
+        let frames = messages.lock().clone();
+        assert_eq!(frame_kind(&frames[0]), "unsubscribe");
+        assert_eq!(frame_kind(&frames[1]), "subscribe");
+
+        for frame in &frames {
+            assert_eq!(frame_assets(frame), cycle_asset_ids());
+        }
+
+        assert_desired(&handler, &subscriptions);
+
+        handler
+            .client
+            .as_ref()
+            .expect("websocket client")
+            .disconnect()
+            .await;
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn cycle_market_subscription_precancelled_sends_nothing() {
+        let (url, messages) = recording_server().await;
+        let client = recording_client(url).await;
+        let (mut handler, _raw_tx, subscriptions) = market_handler_with(client);
+        subscriptions.mark_subscribe(MARKET_ASSET_ID);
+
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let outcome = handler
+            .cycle_market_subscription(&cycle_asset_ids(), &cancel, &SnapshotGate::default())
+            .await;
+        assert!(matches!(outcome, CycleMarketOutcome::Cancelled));
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(messages.lock().is_empty());
+        assert_desired(&handler, &subscriptions);
+
+        handler
+            .client
+            .as_ref()
+            .expect("websocket client")
+            .disconnect()
+            .await;
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn cycle_market_subscription_without_client_fails_closed(
+        mut market_handler: FeedHandler,
+    ) {
+        let subscriptions = market_handler.subscriptions.clone();
+        subscriptions.mark_subscribe(MARKET_ASSET_ID);
+        let outcome = market_handler
+            .cycle_market_subscription(
+                &cycle_asset_ids(),
+                &CancellationToken::new(),
+                &SnapshotGate::default(),
+            )
+            .await;
+        assert!(matches!(
+            outcome,
+            CycleMarketOutcome::SendFailed(SendError::Closed)
+        ));
+        assert_desired(&market_handler, &subscriptions);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn cycle_market_subscription_rejects_undesired_asset() {
+        let (url, messages) = recording_server().await;
+        let client = recording_client(url).await;
+        let (mut handler, _raw_tx, _subscriptions) = market_handler_with(client);
+
+        let outcome = handler
+            .cycle_market_subscription(
+                &cycle_asset_ids(),
+                &CancellationToken::new(),
+                &SnapshotGate::default(),
+            )
+            .await;
+        assert!(matches!(outcome, CycleMarketOutcome::NotDesired));
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(messages.lock().is_empty());
+
+        handler
+            .client
+            .as_ref()
+            .expect("websocket client")
+            .disconnect()
+            .await;
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn cycle_market_subscription_after_disconnect_fails_send() {
+        let (url, messages) = recording_server().await;
+        let client = recording_client(url).await;
+        let (mut handler, _raw_tx, subscriptions) = market_handler_with(client);
+        subscriptions.mark_subscribe(MARKET_ASSET_ID);
+
+        handler
+            .client
+            .as_ref()
+            .expect("websocket client")
+            .disconnect()
+            .await;
+
+        let outcome = handler
+            .cycle_market_subscription(
+                &cycle_asset_ids(),
+                &CancellationToken::new(),
+                &SnapshotGate::default(),
+            )
+            .await;
+        assert!(matches!(
+            outcome,
+            CycleMarketOutcome::SendFailed(SendError::Closed)
+        ));
+
+        // Leg 1 never wrote, so desired state is retained for retry/replay
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(messages.lock().is_empty());
+        assert_desired(&handler, &subscriptions);
+    }
+
+    /// Scripted venue: a subscribe only yields a snapshot when the venue-side
+    /// state flips from unsubscribed. This reproduces the live finding that a
+    /// duplicate mid-connection subscribe receives no snapshot.
+    async fn snapshot_gated_server(snapshot: &'static str) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind snapshot-gated server");
+        let addr = listener.local_addr().expect("snapshot-gated address");
+
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept websocket client");
+            let mut socket = tokio_tungstenite::accept_async(stream)
+                .await
+                .expect("accept websocket handshake");
+            let mut subscribed = false;
+
+            while let Some(message) = socket.next().await {
+                match message.expect("read websocket message") {
+                    Message::Text(text) => {
+                        let Ok(value) = serde_json::from_str::<Value>(&text) else {
+                            continue;
+                        };
+
+                        let operation = value.get("operation").and_then(Value::as_str);
+                        let is_initial =
+                            value.get("type").and_then(Value::as_str) == Some("market");
+
+                        if operation == Some("unsubscribe") {
+                            subscribed = false;
+                        } else if (operation == Some("subscribe") || is_initial) && !subscribed {
+                            subscribed = true;
+                            socket
+                                .send(Message::Text(snapshot.into()))
+                                .await
+                                .expect("send gated snapshot");
+                        }
+                    }
+                    Message::Close(_) => break,
+                    _ => {}
+                }
+            }
+        });
+
+        format!("ws://{addr}")
+    }
+
+    async fn next_market_message(handler: &mut FeedHandler) -> Option<PolymarketWsMessage> {
+        loop {
+            match handler.next().await {
+                Some(message @ PolymarketWsMessage::Market(_)) => return Some(message),
+                Some(_) => {}
+                None => return None,
+            }
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn cycle_recovers_snapshot_that_duplicate_subscribe_misses() {
+        let snapshot = include_str!("../../test_data/ws_market_book_msg.json");
+        let url = snapshot_gated_server(snapshot).await;
+
+        let config = WebSocketConfig::builder()
+            .url(url)
+            .backend(TransportBackend::Tungstenite)
+            .build()
+            .expect("valid websocket config");
+        let (message_handler, mut message_rx) = channel_message_handler();
+        let client = WebSocketClient::builder()
+            .config(config)
+            .message_handler(message_handler)
+            .connect()
+            .await
+            .expect("connect websocket client");
+        let epoch = client.connection_epoch_atomic();
+        let (mut handler, cmd_tx, raw_tx, subscriptions) = market_handler_with_cmd_tx(client);
+
+        tokio::spawn(async move {
+            while let Some(message) = message_rx.recv().await {
+                let epoch = epoch.load(Ordering::SeqCst);
+                if raw_tx.send((epoch, message)).is_err() {
+                    break;
+                }
+            }
+        });
+
+        cmd_tx
+            .send(HandlerCommand::SubscribeMarket(cycle_asset_ids()))
+            .expect("send initial subscribe");
+        tokio::time::timeout(Duration::from_secs(5), next_market_message(&mut handler))
+            .await
+            .expect("initial subscribe should yield a snapshot")
+            .expect("handler should stay open");
+
+        cmd_tx
+            .send(HandlerCommand::SubscribeMarket(cycle_asset_ids()))
+            .expect("send duplicate subscribe");
+        assert!(
+            tokio::time::timeout(
+                Duration::from_millis(500),
+                next_market_message(&mut handler)
+            )
+            .await
+            .is_err(),
+            "duplicate subscribe must receive no snapshot from the venue"
+        );
+
+        let (responder, response) = tokio::sync::oneshot::channel();
+        cmd_tx
+            .send(HandlerCommand::CycleMarketSubscription {
+                asset_ids: cycle_asset_ids(),
+                cancel: CancellationToken::new(),
+                responder,
+                gate: SnapshotGate::default(),
+            })
+            .expect("send cycle command");
+
+        // The cycle runs inside next(), so pump the loop while awaiting the outcome
+        tokio::pin!(response);
+        let mut outcome = None;
+        let mut snapshot_seen = false;
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while outcome.is_none() || !snapshot_seen {
+                tokio::select! {
+                    result = &mut response, if outcome.is_none() => {
+                        outcome = Some(result.expect("cycle responder should stay open"));
+                    }
+                    message = next_market_message(&mut handler), if !snapshot_seen => {
+                        message.expect("handler should stay open");
+                        snapshot_seen = true;
+                    }
+                }
+            }
+        })
+        .await
+        .expect("cycle should respond and yield a fresh snapshot");
+
+        assert!(matches!(outcome, Some(CycleMarketOutcome::Completed)));
+
+        assert_desired(&handler, &subscriptions);
+
+        handler
+            .client
+            .as_ref()
+            .expect("websocket client")
+            .disconnect()
+            .await;
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn cycle_followed_by_queued_unsubscribe_honors_the_unsubscribe() {
+        let (url, messages) = recording_server().await;
+        let client = recording_client(url).await;
+        let (mut handler, cmd_tx, _raw_tx, subscriptions) = market_handler_with_cmd_tx(client);
+        subscriptions.mark_subscribe(MARKET_ASSET_ID);
+
+        // Commands serialize: the cycle completes first, then the unsubscribe wins
+        let (responder, response) = tokio::sync::oneshot::channel();
+        cmd_tx
+            .send(HandlerCommand::CycleMarketSubscription {
+                asset_ids: cycle_asset_ids(),
+                cancel: CancellationToken::new(),
+                responder,
+                gate: SnapshotGate::default(),
+            })
+            .expect("queue cycle command");
+
+        cmd_tx
+            .send(HandlerCommand::UnsubscribeMarket(cycle_asset_ids()))
+            .expect("queue unsubscribe command");
+
+        tokio::pin!(response);
+
+        let outcome = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                tokio::select! {
+                    biased;
+                    result = &mut response => return result.expect("cycle responder open"),
+                    _ = handler.next() => {}
+                }
+            }
+        })
+        .await
+        .expect("cycle should respond");
+
+        assert!(matches!(outcome, CycleMarketOutcome::Completed));
+
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if messages.lock().len() >= 3 {
+                    break;
+                }
+
+                tokio::select! {
+                    _ = handler.next() => {}
+                    () = tokio::time::sleep(Duration::from_millis(10)) => {}
+                }
+            }
+        })
+        .await
+        .expect("queued unsubscribe should reach the wire");
+
+        let frames = messages.lock().clone();
+        assert_eq!(frame_kind(&frames[0]), "unsubscribe");
+        assert_eq!(frame_kind(&frames[1]), "subscribe");
+        assert_eq!(frame_kind(&frames[2]), "unsubscribe");
+
+        assert!(!handler.market_subscription_desired(MARKET_ASSET_ID));
+
+        handler
+            .client
+            .as_ref()
+            .expect("websocket client")
+            .disconnect()
+            .await;
     }
 }

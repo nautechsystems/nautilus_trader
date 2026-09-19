@@ -379,7 +379,7 @@ impl PolymarketExecutionClient {
                         }
                     }
                     Some(PolymarketWsMessage::Market(_)) => {}
-                    Some(PolymarketWsMessage::Reconnected) => {
+                    Some(PolymarketWsMessage::Reconnected { .. }) => {
                         log::info!("User WebSocket reconnected");
                         if stopping.load(Ordering::Acquire) {
                             log::debug!("Skipping account refresh because execution client is stopping");

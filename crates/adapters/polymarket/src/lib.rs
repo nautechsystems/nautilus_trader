@@ -65,6 +65,7 @@ pub mod session;
 pub mod signing;
 pub mod websocket;
 
+mod book;
 mod resolve;
 mod rtds;
 

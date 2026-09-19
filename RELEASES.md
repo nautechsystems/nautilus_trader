@@ -10,6 +10,8 @@ Released on TBD (UTC).
 - Added `IndexPriceUpdate`, `InstrumentClose`, `FundingRateUpdate`, and `Custom` to `DataBackendSession.add_file`
 - Added Lighter support for 64-bit market IDs at and above 4095
 - Added Tardis full 25-level `OrderBookDepth` for `snapshot25` data
+- Added Lighter `book_snapshot_timeout_secs` override, honoring 0 as disabled
+- Added Polymarket book recovery with snapshot gating and stale-feed detection
 - Migrated Polymarket trade and position history to Data API v2 with cursor pagination
 
 ### Breaking Changes
@@ -58,6 +60,8 @@ Released on TBD (UTC).
 - Optimized allocation overhead in Rust exchange rate calculations
 - Standardized book recovery ownership and retry handling across Lighter and OKX
 - Improved OKX public and spread book recovery with bounded retries and cancellation-safe resubscription
+- Standardized book snapshot timeouts on a shared 10s default across Lighter, OKX, and Polymarket
+- Renamed Lighter `BookSync` to `BookSyncTracker`
 - Upgraded `datafusion` crate to v55.1.0
 - Upgraded `jiff` crate to v0.2.37
 - Upgraded `smallvec` crate to v1.16.1
@@ -68,6 +72,7 @@ Released on TBD (UTC).
 - Documented the adapter config field layout convention in the developer guide
 - Documented shared order book recovery ownership and Lighter recovery limits
 - Documented OKX order book recovery and retry limits
+- Documented shared book snapshot defaults and live validation levels
 - Updated Databento and Tardis integration guides with new URL overrides
 
 ### Deprecations

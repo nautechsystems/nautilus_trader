@@ -1013,8 +1013,8 @@ adapter treats the change as a book epoch transition:
 1. Publish the updated `BinaryOption` with the new `price_increment`, canonical four-decimal
    `price_precision`, and tick-relative `min_price`/`max_price` bounds.
 2. Drop the local order book for the instrument.
-3. Mark the instrument as awaiting a fresh snapshot.
-4. Drop incremental `price_change` book deltas until the snapshot arrives.
+3. Gate incremental `price_change` book deltas on a fresh snapshot and request recovery.
+4. Resubscribe the market with bounded retries until the venue replays a snapshot.
 5. Reseed the book from the snapshot and resume normal processing.
 
 Trade ticks and the instrument update flow through unchanged. Quote handling
@@ -1337,7 +1337,9 @@ The data adapter opens `market` subscriptions dynamically as instruments are req
 those subscriptions across a pool of market WebSocket connections so that no single connection
 carries more than `ws_max_subscriptions` assets. The pool grows lazily (a universe below the cap
 stays on one connection) and closes a secondary connection once it owns no assets. Each connection
-replays only its own assets on reconnect.
+replays only its own assets on reconnect. A shard reconnect also drops that shard's local books and
+gates its book deltas (and book-derived `best_bid_ask` tops) until fresh snapshots arrive; a
+one-shot monitor starts recovery if a snapshot is still missing after `book_snapshot_timeout_secs`.
 
 A single `price_change` payload can contain interleaved updates for several assets. The adapter
 groups updates by instrument and publishes one atomic order book delta batch per instrument, while
@@ -1398,7 +1400,12 @@ the current tick-relative venue bound and its size is zero.
 
 When a `book` snapshot includes a hash and its full preimage, the adapter reproduces it from the
 exact wire values and level order. It logs and rejects a mismatch before the snapshot can update
-local book state, emit snapshot-derived deltas or quotes, or resume gated book deltas.
+local book state, emit snapshot-derived deltas or quotes, or resume gated book deltas. For
+book-delta subscribers, a mismatch also triggers book recovery: the adapter resubscribes the
+market with bounded retries until a valid snapshot arrives, and drops incremental `price_change`
+deltas in the meantime. If recovery
+exhausts its retry budget, the subscription stays open but book output stays suppressed until a
+reconnect or resubscribe clears the failed state.
 
 Polymarket also sends hashed book updates that omit fields included in the server's hash preimage,
 such as `tick_size` and `last_trade_price`. The adapter accepts these updates without hash
@@ -1866,6 +1873,9 @@ Class/struct: `PolymarketDataClientConfig`.
 | `resolve_poll_grace_secs`              | `10`       | Delay after expiry before polling begins.                                                 |
 | `resolve_poll_max_wait_secs`           | `1,800`    | Pause automatic polling after this wait.                                                  |
 | `transport_backend`                    | `Sockudo`  | WebSocket transport implementation.                                                       |
+| `book_snapshot_timeout_secs`           | `10`       | Max wait for a post-reconnect or recovery book snapshot.                                  |
+| `book_stale_check_interval_secs`       | `5`        | Book feed staleness check interval.                                                       |
+| `book_stale_threshold_secs`            | `0`        | Max book feed silence before reporting stale; `0` disables the monitor.                   |
 
 ### Execution client options
 

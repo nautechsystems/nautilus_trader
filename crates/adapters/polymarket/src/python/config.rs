@@ -130,7 +130,7 @@ impl PolymarketDataClientConfig {
     /// and are skipped during serialization; they default to empty/`None` and must be
     /// installed programmatically after deserialization.
     #[new]
-    #[pyo3(signature = (instrument_config=None, base_url_http=None, base_url_ws=None, base_url_gamma=None, base_url_data_api=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=PY_OPTION_U64_MISSING_SENTINEL, subscribe_new_markets=None, auto_load_missing_instruments=None, auto_load_debounce_ms=None, auto_load_max_retries=None, auto_load_retry_delay_initial_secs=None, auto_load_retry_delay_max_secs=None, new_market_fetch_max_concurrency=None, resolve_poll_enabled=None, resolve_poll_interval_secs=None, resolve_poll_grace_secs=None, resolve_poll_max_wait_secs=None, base_url_rtds=None, transport_backend=None, drop_quotes_missing_side=None, proxy_url=None, compute_effective_deltas=None))]
+    #[pyo3(signature = (instrument_config=None, base_url_http=None, base_url_ws=None, base_url_gamma=None, base_url_data_api=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=PY_OPTION_U64_MISSING_SENTINEL, subscribe_new_markets=None, auto_load_missing_instruments=None, auto_load_debounce_ms=None, auto_load_max_retries=None, auto_load_retry_delay_initial_secs=None, auto_load_retry_delay_max_secs=None, new_market_fetch_max_concurrency=None, resolve_poll_enabled=None, resolve_poll_interval_secs=None, resolve_poll_grace_secs=None, resolve_poll_max_wait_secs=None, base_url_rtds=None, transport_backend=None, drop_quotes_missing_side=None, proxy_url=None, compute_effective_deltas=None, book_snapshot_timeout_secs=None, book_stale_check_interval_secs=None, book_stale_threshold_secs=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         instrument_config: Option<PolymarketInstrumentProviderConfig>,
@@ -158,6 +158,9 @@ impl PolymarketDataClientConfig {
         drop_quotes_missing_side: Option<bool>,
         proxy_url: Option<String>,
         compute_effective_deltas: Option<bool>,
+        book_snapshot_timeout_secs: Option<u64>,
+        book_stale_check_interval_secs: Option<u64>,
+        book_stale_threshold_secs: Option<u64>,
     ) -> PyResult<Self> {
         let default = Self::default();
 
@@ -201,6 +204,12 @@ impl PolymarketDataClientConfig {
             transport_backend: transport_backend.unwrap_or(default.transport_backend),
             compute_effective_deltas: compute_effective_deltas
                 .unwrap_or(default.compute_effective_deltas),
+            book_snapshot_timeout_secs: book_snapshot_timeout_secs
+                .unwrap_or(default.book_snapshot_timeout_secs),
+            book_stale_check_interval_secs: book_stale_check_interval_secs
+                .unwrap_or(default.book_stale_check_interval_secs),
+            book_stale_threshold_secs: book_stale_threshold_secs
+                .unwrap_or(default.book_stale_threshold_secs),
         };
         config
             .validated_proxy_url()

@@ -89,8 +89,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .client_id(client_id)
         .instrument_ids(instrument_ids)
         .subscribe_instrument(true)
-        .subscribe_trades(true)
+        .subscribe_book_deltas(true)
         .subscribe_quotes(true)
+        .subscribe_trades(true)
         .manage_book(true)
         .build()?;
     let tester = DataTester::new(tester_config);

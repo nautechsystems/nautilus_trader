@@ -84,6 +84,7 @@ use self::{
     subscriptions::resolve_token_id_from,
 };
 use crate::{
+    book::sync::BookSyncTracker,
     common::consts::POLYMARKET_VENUE,
     config::PolymarketDataClientConfig,
     filters::InstrumentFilter,
@@ -138,7 +139,7 @@ pub struct PolymarketDataClient {
     resolve_watch_apply_mutex: Arc<Mutex<()>>,
     pending_resolutions: Arc<DashMap<String, PendingResolution>>,
     deferred_resolutions: Arc<AtomicMap<InstrumentId, StrictResolvedMarket>>,
-    pending_snapshot_after_tick_change: Arc<AtomicSet<InstrumentId>>,
+    book_sync: BookSyncTracker,
     new_market_inflight_keys: Arc<DashMap<String, ()>>,
     new_market_fetch_semaphore: Arc<tokio::sync::Semaphore>,
     ws_open_tokens: Arc<AtomicSet<Ustr>>,
@@ -239,7 +240,7 @@ impl PolymarketDataClient {
             resolve_watch_apply_mutex: Arc::new(Mutex::new(())),
             pending_resolutions: Arc::new(DashMap::new()),
             deferred_resolutions: Arc::new(AtomicMap::new()),
-            pending_snapshot_after_tick_change: Arc::new(AtomicSet::new()),
+            book_sync: BookSyncTracker::default(),
             new_market_inflight_keys: Arc::new(DashMap::new()),
             new_market_fetch_semaphore: Arc::new(tokio::sync::Semaphore::new(
                 fetch_max_concurrency,
@@ -743,8 +744,7 @@ impl DataClient for PolymarketDataClient {
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         self.active_delta_subs.remove(&instrument_id);
-        self.pending_snapshot_after_tick_change
-            .remove(&instrument_id);
+        self.book_sync.remove(instrument_id);
         self.drop_pending_if_unwanted(instrument_id);
         self.drop_local_data_state_if_unwanted(instrument_id);
         self.sync_ws_subscription(instrument_id);

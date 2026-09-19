@@ -15,6 +15,7 @@
 
 //! WebSocket errors for Polymarket.
 
+use nautilus_network::error::SendError;
 use thiserror::Error;
 
 /// Errors for Polymarket WebSocket operations.
@@ -40,4 +41,22 @@ pub enum PolymarketWsError {
 
     #[error("Tungstenite error: {0}")]
     TungsteniteError(String),
+
+    #[error("Client error: {0}")]
+    Client(String),
+
+    #[error("Network error: {0}")]
+    Network(String),
+
+    #[error("No active WebSocket client")]
+    NoActiveClient,
+
+    #[error("Handler not available: {0}")]
+    HandlerUnavailable(String),
+
+    #[error("WebSocket send error: {0}")]
+    TransportSend(#[from] SendError),
+
+    #[error("Operation timed out after {timeout_ms}ms")]
+    OperationTimeout { timeout_ms: u64 },
 }

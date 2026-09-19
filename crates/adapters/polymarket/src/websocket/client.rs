@@ -22,6 +22,7 @@ use std::sync::{
 
 use nautilus_live::{
     SocketControl,
+    book::snapshot::SnapshotGate,
     task::{TaskJoinOutcome, TaskSlot, finish_task},
 };
 use nautilus_network::{
@@ -86,6 +87,26 @@ impl WsSubscriptionHandle {
             .await
             .send(HandlerCommand::UnsubscribeMarket(asset_ids))
             .map_err(|e| anyhow::anyhow!("Failed to send UnsubscribeMarket: {e}"))
+    }
+
+    /// Sends a recovery subscription-cycle command to the handler.
+    pub async fn cycle_market_subscription(
+        &self,
+        asset_ids: Vec<String>,
+        cancel: tokio_util::sync::CancellationToken,
+        responder: tokio::sync::oneshot::Sender<super::handler::CycleMarketOutcome>,
+        gate: SnapshotGate,
+    ) -> anyhow::Result<()> {
+        self.cmd_tx
+            .read()
+            .await
+            .send(HandlerCommand::CycleMarketSubscription {
+                asset_ids,
+                cancel,
+                responder,
+                gate,
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send CycleMarketSubscription: {e}"))
     }
 
     // Constructs a handle around a raw command sender. Test-only: lets unit
@@ -349,10 +370,13 @@ impl PolymarketWebSocketClient {
 
             loop {
                 match handler.next().await {
-                    Some(PolymarketWsMessage::Reconnected) => {
+                    Some(PolymarketWsMessage::Reconnected { .. }) => {
                         log::info!("Polymarket WebSocket reconnected");
 
-                        if handler.send(PolymarketWsMessage::Reconnected).is_err() {
+                        if handler
+                            .send(PolymarketWsMessage::Reconnected { shard_id: None })
+                            .is_err()
+                        {
                             if handler.is_stopped() {
                                 log::debug!("Output channel closed, stopping handler");
                             } else {
@@ -713,7 +737,7 @@ mod tests {
 
         assert!(matches!(
             message,
-            Some(super::super::messages::PolymarketWsMessage::Reconnected)
+            Some(super::super::messages::PolymarketWsMessage::Reconnected { .. })
         ));
 
         client

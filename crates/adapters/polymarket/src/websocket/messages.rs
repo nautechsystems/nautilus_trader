@@ -634,7 +634,12 @@ pub enum PolymarketWsMessage {
     Market(MarketWsMessage),
     User(UserWsMessage),
     /// Emitted when the underlying WebSocket reconnects.
-    Reconnected,
+    ///
+    /// `shard_id` identifies the market pool shard that reconnected. Direct
+    /// clients without pool routing emit `None`.
+    Reconnected {
+        shard_id: Option<usize>,
+    },
 }
 
 /// Auth payload embedded in user-channel subscribe messages.

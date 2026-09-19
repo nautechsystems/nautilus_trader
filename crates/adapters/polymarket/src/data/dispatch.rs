@@ -21,23 +21,28 @@
 //! current. After an epoch reset, the next snapshot seeds the book unchanged.
 //!
 //! Tick-size changes are handled as book epoch transitions: the local order
-//! book is dropped, incremental `price_change` deltas are gated through
-//! `pending_snapshot_after_tick_change`, and the gate clears once the next
-//! venue snapshot reseeds the book on the new tick grid. The quote arm of
-//! `price_change` stays open through the gap because each payload carries
-//! `best_bid` / `best_ask` on the new grid; `last_quotes` is preserved so the
-//! unchanged side's size carries forward. See
+//! book is dropped, incremental `price_change` deltas are gated through the
+//! book sync tracker, and recovery requests a fresh snapshot to reseed the book
+//! on the new tick grid. The quote arm of `price_change` stays open through the
+//! gap because each payload carries `best_bid` / `best_ask` on the new grid;
+//! `last_quotes` is preserved so the unchanged side's size carries forward. See
 //! `docs/integrations/polymarket.md` for the full description.
 //!
-//! A snapshot hash mismatch reuses the same book-delta gate until a later
-//! valid snapshot arrives. The mismatched snapshot is not parsed, applied, or
-//! emitted as a quote.
+//! A snapshot hash mismatch reuses the same book-delta gate and triggers recovery
+//! until a later valid snapshot arrives. The mismatched snapshot is not parsed,
+//! applied, or emitted as a quote.
 
 use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet};
-use dashmap::{DashMap, mapref::entry::Entry};
-use nautilus_common::{live::sender::EventSender, messages::DataEvent};
+use dashmap::DashMap;
+use nautilus_common::{
+    live::{
+        dst::time::{Duration, Instant},
+        sender::EventSender,
+    },
+    messages::DataEvent,
+};
 use nautilus_core::{AtomicMap, AtomicSet, time::AtomicTime};
 #[cfg(test)]
 use nautilus_live::task::TaskGroup;
@@ -62,6 +67,7 @@ use super::{
     spawn_task,
 };
 use crate::{
+    book::BookSequenceOutcome,
     filters::InstrumentFilter,
     http::{
         gamma::PolymarketGammaHttpClient, parse::rebuild_instrument_with_tick_size,
@@ -122,7 +128,8 @@ pub(super) struct WsMessageContext {
     pub(super) resolve_watch_apply_mutex: Arc<Mutex<()>>,
     pub(super) pending_resolutions: Arc<DashMap<String, PendingResolution>>,
     pub(super) deferred_resolutions: Arc<AtomicMap<InstrumentId, StrictResolvedMarket>>,
-    pub(super) pending_snapshot_after_tick_change: Arc<AtomicSet<InstrumentId>>,
+    pub(super) book_sync: crate::book::sync::BookSyncTracker,
+    pub(super) book_snapshot_timeout: Duration,
     pub(super) new_market_inflight_keys: Arc<DashMap<String, ()>>,
     pub(super) new_market_fetch_semaphore: Arc<tokio::sync::Semaphore>,
     pub(super) tasks: TaskSpawner,
@@ -201,21 +208,115 @@ pub(super) fn handle_ws_message(message: PolymarketWsMessage, ctx: &WsMessageCon
         PolymarketWsMessage::User(_) => {
             log::debug!("Ignoring user message on data client");
         }
-        PolymarketWsMessage::Reconnected => {
+        PolymarketWsMessage::Reconnected { shard_id } => {
             log::info!("Polymarket WS reconnected");
             if ctx.cancellation_token.is_cancelled() {
                 log::debug!("Skipping RTDS recovery because data client is cancelling");
                 return;
             }
 
-            if !ctx.rtds_feed.needs_connection_recovery() {
+            if ctx.rtds_feed.needs_connection_recovery() {
+                ctx.rtds_feed
+                    .request_reconcile(crate::rtds::ReconcileReason::EnsureConnected);
+            } else {
                 log::debug!("Skipping RTDS recovery because RTDS connection is still healthy");
+            }
+
+            handle_book_reconnect(ctx, shard_id);
+        }
+    }
+}
+
+/// Resets book state for instruments on the reconnected shard, reseeds the local books
+/// from the replayed snapshots, and arms a recovery monitor for any that stay missing.
+fn handle_book_reconnect(ctx: &WsMessageContext, shard_id: Option<usize>) {
+    let instrument_ids: Vec<InstrumentId> = match shard_id {
+        Some(id) => {
+            let tokens = ctx.ws.tokens_for_shard(id);
+            if tokens.is_empty() {
                 return;
             }
 
-            ctx.rtds_feed
-                .request_reconcile(crate::rtds::ReconcileReason::EnsureConnected);
+            tokens
+                .iter()
+                .filter_map(|token| ctx.token_meta.get(token).map(|meta| meta.instrument_id))
+                .collect()
         }
+        None => ctx.active_delta_subs.load().iter().copied().collect(),
+    };
+
+    let instrument_ids: Vec<InstrumentId> = instrument_ids
+        .into_iter()
+        .filter(|id| ctx.active_delta_subs.contains(id))
+        .collect();
+
+    if instrument_ids.is_empty() {
+        return;
+    }
+
+    for instrument_id in &instrument_ids {
+        ctx.order_books.remove(instrument_id);
+    }
+
+    ctx.book_sync
+        .reset_for_instruments(&ctx.active_delta_subs, &instrument_ids);
+
+    if ctx.book_snapshot_timeout.is_zero() {
+        return;
+    }
+
+    let now = Instant::now();
+    let seeded = ctx.book_sync.seed_pending_snapshots(
+        &ctx.active_delta_subs,
+        &instrument_ids,
+        ctx.book_snapshot_timeout,
+        now,
+    );
+
+    if seeded > 0 {
+        crate::book::recovery::spawn_recovery_monitor(
+            ctx.book_sync.clone(),
+            ctx.ws.clone(),
+            ctx.active_delta_subs.clone(),
+            ctx.instruments.clone(),
+            instrument_ids,
+            ctx.book_snapshot_timeout,
+            &ctx.tasks,
+        );
+    }
+}
+
+/// Starts a bounded recovery task for `instrument_id` if none is currently owned.
+fn start_book_recovery(ctx: &WsMessageContext, instrument_id: InstrumentId) {
+    let token_id = ctx
+        .instruments
+        .load()
+        .get(&instrument_id)
+        .map(|instrument| instrument.raw_symbol().as_str().to_string());
+
+    crate::book::recovery::start_recovery(
+        instrument_id,
+        token_id,
+        &ctx.active_delta_subs,
+        &ctx.book_sync,
+        &ctx.ws,
+        ctx.book_snapshot_timeout,
+        &ctx.tasks,
+    );
+}
+
+/// Requests a fresh book snapshot for `instrument_id`, starting a bounded
+/// recovery task when this call wins the request.
+fn request_book_recovery(ctx: &WsMessageContext, instrument_id: InstrumentId) {
+    let outcome = ctx.book_sync.request_recovery_if_subscribed(
+        &ctx.active_delta_subs,
+        instrument_id,
+        ctx.book_snapshot_timeout,
+        Instant::now(),
+    );
+
+    if outcome == BookSequenceOutcome::Recover {
+        start_book_recovery(ctx, instrument_id);
     }
 }
 
@@ -258,17 +359,21 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 verify_book_snapshot_hash(&snap, meta.min_order_size.as_deref(), meta.neg_risk)
             {
                 log::error!("Rejected book snapshot for {instrument_id}: {e}");
-                if ctx.active_delta_subs.contains(&instrument_id) {
-                    ctx.pending_snapshot_after_tick_change.insert(instrument_id);
-                }
+                request_book_recovery(ctx, instrument_id);
                 return;
             }
 
             let ts_init = ctx.clock.get_time_ns();
-            let mut snapshot_accepted = false;
 
             if ctx.active_delta_subs.contains(&instrument_id) {
-                match parse_book_snapshot(
+                // Only a usable snapshot may complete recovery: parse and apply
+                // first, then record. Recording an unusable snapshot would let
+                // every replay mint a fresh episode and resubscribe forever.
+                // A successful apply stages the new baseline instead of
+                // committing it: the local book must not move until the
+                // tracker accepts, or a rejected snapshot would desynchronize
+                // later diffs from the consumer.
+                let staged = match parse_book_snapshot(
                     &snap,
                     instrument_id,
                     meta.price_precision,
@@ -276,14 +381,14 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                     ts_init,
                 ) {
                     Ok(deltas) => {
-                        let emit = if ctx.compute_effective_deltas {
-                            match ctx.order_books.entry(instrument_id) {
-                                Entry::Occupied(mut entry) => {
-                                    match apply_snapshot_and_diff(entry.get_mut(), &deltas) {
-                                        Ok(effective) => {
-                                            snapshot_accepted = true;
-                                            effective
-                                        }
+                        if ctx.compute_effective_deltas {
+                            match ctx.order_books.get(&instrument_id) {
+                                Some(book) => {
+                                    let mut scratch = book.clone();
+                                    drop(book);
+
+                                    match apply_snapshot_and_diff(&mut scratch, &deltas) {
+                                        Ok(effective) => Some((effective, Some(scratch))),
                                         Err(e) => {
                                             log::error!(
                                                 "Failed to apply book snapshot for {instrument_id}: {e}"
@@ -292,33 +397,58 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                                         }
                                     }
                                 }
-                                Entry::Vacant(entry) => {
+                                None => {
                                     let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
                                     match book.apply_deltas(&deltas) {
-                                        Ok(()) => {
-                                            entry.insert(book);
-                                            snapshot_accepted = true;
+                                        Ok(()) => Some((Some(deltas), Some(book))),
+                                        Err(e) => {
+                                            log::error!(
+                                                "Failed to apply book snapshot for {instrument_id}: {e}"
+                                            );
+                                            Some((Some(deltas), None))
                                         }
-                                        Err(e) => log::error!(
-                                            "Failed to apply book snapshot for {instrument_id}: {e}"
-                                        ),
                                     }
-                                    Some(deltas)
                                 }
                             }
                         } else {
-                            snapshot_accepted = true;
-                            Some(deltas)
-                        };
+                            Some((Some(deltas), None))
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Failed to parse book snapshot: {e}");
+                        None
+                    }
+                };
 
-                        if let Some(deltas) = emit {
-                            let data: NautilusData = deltas.into();
-                            if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
-                                log::error!("Failed to emit book deltas: {e}");
+                match staged {
+                    Some((emit, baseline)) => {
+                        // An obsolete snapshot (failed recovery or a send
+                        // still in flight) must not seed the book or emit
+                        // deltas, but quote handling below still runs: quotes
+                        // are an independent subscription.
+                        if ctx.book_sync.record_snapshot_if_subscribed(
+                            &ctx.active_delta_subs,
+                            instrument_id,
+                            Instant::now(),
+                        ) {
+                            if let Some(book) = baseline {
+                                ctx.order_books.insert(instrument_id, book);
+                            }
+
+                            if let Some(deltas) = emit {
+                                let data: NautilusData = deltas.into();
+                                if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
+                                    log::error!("Failed to emit book deltas: {e}");
+                                }
                             }
                         }
                     }
-                    Err(e) => log::error!("Failed to parse book snapshot: {e}"),
+                    None => {
+                        // The snapshot could not seed the book; without an
+                        // accepted snapshot the book stays gated inside the
+                        // current episode.
+                        request_book_recovery(ctx, instrument_id);
+                    }
                 }
             }
 
@@ -345,16 +475,6 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                     Ok(None) => {}
                     Err(e) => log::error!("Failed to parse quote from snapshot: {e}"),
                 }
-            }
-
-            if snapshot_accepted
-                && ctx
-                    .pending_snapshot_after_tick_change
-                    .contains(&instrument_id)
-            {
-                ctx.pending_snapshot_after_tick_change
-                    .remove(&instrument_id);
-                log::debug!("Resumed book for {instrument_id} after tick size change");
             }
         }
 
@@ -413,46 +533,61 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 let changes = std::mem::take(&mut groups[group_index].1);
 
                 if !changes.is_empty() && ctx.active_delta_subs.contains(&instrument_id) {
-                    if ctx
-                        .pending_snapshot_after_tick_change
-                        .contains(&instrument_id)
-                    {
-                        log::debug!(
-                            "Dropping book deltas for {instrument_id}: awaiting valid snapshot",
-                        );
-                    } else {
-                        let parsed = parse_book_deltas(
-                            &changes,
-                            instrument_id,
-                            meta.price_precision,
-                            meta.size_precision,
-                            ts_event,
-                            ts_init,
-                        )
-                        .into_iter()
-                        .filter_map(|result| match result {
-                            Ok(delta) => Some(delta),
-                            Err(e) => {
-                                log::error!("Failed to parse book delta for {instrument_id}: {e}");
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>();
+                    match ctx.book_sync.validate_incremental_if_subscribed(
+                        &ctx.active_delta_subs,
+                        instrument_id,
+                        ctx.book_snapshot_timeout,
+                        Instant::now(),
+                    ) {
+                        BookSequenceOutcome::Accept => {
+                            let parsed = parse_book_deltas(
+                                &changes,
+                                instrument_id,
+                                meta.price_precision,
+                                meta.size_precision,
+                                ts_event,
+                                ts_init,
+                            )
+                            .into_iter()
+                            .filter_map(|result| match result {
+                                Ok(delta) => Some(delta),
+                                Err(e) => {
+                                    log::error!(
+                                        "Failed to parse book delta for {instrument_id}: {e}"
+                                    );
+                                    None
+                                }
+                            })
+                            .collect::<Vec<_>>();
 
-                        if !parsed.is_empty() {
-                            let deltas = OrderBookDeltas::new(instrument_id, parsed);
+                            if !parsed.is_empty() {
+                                let deltas = OrderBookDeltas::new(instrument_id, parsed);
 
-                            if ctx.compute_effective_deltas
-                                && let Some(mut book) = ctx.order_books.get_mut(&instrument_id)
-                                && let Err(e) = book.apply_deltas(&deltas)
-                            {
-                                log::error!("Failed to apply book deltas for {instrument_id}: {e}");
-                            }
+                                if ctx.compute_effective_deltas
+                                    && let Some(mut book) = ctx.order_books.get_mut(&instrument_id)
+                                    && let Err(e) = book.apply_deltas(&deltas)
+                                {
+                                    log::error!(
+                                        "Failed to apply book deltas for {instrument_id}: {e}"
+                                    );
+                                }
 
-                            let data: NautilusData = deltas.into();
-                            if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
-                                log::error!("Failed to emit book deltas: {e}");
+                                let data: NautilusData = deltas.into();
+                                if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
+                                    log::error!("Failed to emit book deltas: {e}");
+                                }
                             }
+                        }
+                        BookSequenceOutcome::Suppress => {
+                            log::debug!(
+                                "Dropping book deltas for {instrument_id}: awaiting valid snapshot",
+                            );
+                        }
+                        BookSequenceOutcome::Recover => {
+                            log::debug!(
+                                "Dropping book deltas for {instrument_id}: awaiting valid snapshot",
+                            );
+                            start_book_recovery(ctx, instrument_id);
                         }
                     }
                 }
@@ -639,9 +774,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
             let instrument_id = meta.instrument_id;
             ctx.order_books.remove(&instrument_id);
 
-            if ctx.active_delta_subs.contains(&instrument_id) {
-                ctx.pending_snapshot_after_tick_change.insert(instrument_id);
-            }
+            request_book_recovery(ctx, instrument_id);
         }
 
         MarketWsMessage::NewMarket(nm) => {
@@ -1020,16 +1153,10 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                     log::trace!("Ignoring best bid/ask older than local book for {instrument_id}");
                     return;
                 }
-                Some(book)
-                    if !ctx
-                        .pending_snapshot_after_tick_change
-                        .contains(&instrument_id) =>
-                {
-                    (
-                        book.best_bid_price().zip(book.best_bid_size()),
-                        book.best_ask_price().zip(book.best_ask_size()),
-                    )
-                }
+                Some(book) if !ctx.book_sync.book_gated(instrument_id) => (
+                    book.best_bid_price().zip(book.best_bid_size()),
+                    book.best_ask_price().zip(book.best_ask_size()),
+                ),
                 _ => last_tops,
             };
 
@@ -1109,7 +1236,7 @@ mod tests {
     use jiff::{SignedDuration, Timestamp, tz::Offset};
     use nautilus_common::{
         clients::DataClient,
-        live::runner::replace_data_event_sender,
+        live::{dst::time::Instant, runner::replace_data_event_sender},
         messages::{
             DataResponse,
             data::{
@@ -1146,6 +1273,7 @@ mod tests {
         *,
     };
     use crate::{
+        book::sync::BookSyncTracker,
         common::{
             consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE},
             enums::PolymarketOrderSide,
@@ -1371,7 +1499,8 @@ mod tests {
             resolve_watch_apply_mutex: Arc::new(Mutex::new(())),
             pending_resolutions: Arc::new(DashMap::new()),
             deferred_resolutions: Arc::new(AtomicMap::new()),
-            pending_snapshot_after_tick_change: Arc::new(AtomicSet::new()),
+            book_sync: BookSyncTracker::default(),
+            book_snapshot_timeout: Duration::from_secs(10),
             new_market_inflight_keys: Arc::new(DashMap::new()),
             new_market_fetch_semaphore: Arc::new(tokio::sync::Semaphore::new(
                 default_config.new_market_fetch_max_concurrency,
@@ -1543,7 +1672,8 @@ mod tests {
             resolve_watch_apply_mutex: client.resolve_watch_apply_mutex.clone(),
             pending_resolutions: client.pending_resolutions.clone(),
             deferred_resolutions: client.deferred_resolutions.clone(),
-            pending_snapshot_after_tick_change: client.pending_snapshot_after_tick_change.clone(),
+            book_sync: client.book_sync.clone(),
+            book_snapshot_timeout: Duration::from_secs(client.config.book_snapshot_timeout_secs),
             new_market_inflight_keys: client.new_market_inflight_keys.clone(),
             new_market_fetch_semaphore: client.new_market_fetch_semaphore.clone(),
             tasks: client.tasks.spawner().expect("task spawner"),
@@ -2467,7 +2597,7 @@ mod tests {
         .await;
         state.received_payloads.lock().await.clear();
 
-        handle_ws_message(PolymarketWsMessage::Reconnected, &ctx);
+        handle_ws_message(PolymarketWsMessage::Reconnected { shard_id: None }, &ctx);
         tokio::time::sleep(Duration::from_millis(200)).await;
 
         assert!(
@@ -2504,7 +2634,7 @@ mod tests {
             ))
             .expect("track RTDS subscribe");
 
-        handle_ws_message(PolymarketWsMessage::Reconnected, &ctx);
+        handle_ws_message(PolymarketWsMessage::Reconnected { shard_id: None }, &ctx);
 
         wait_until_async(
             || {
@@ -2549,7 +2679,7 @@ mod tests {
             .expect("track RTDS subscribe");
 
         ctx.cancellation_token.cancel();
-        handle_ws_message(PolymarketWsMessage::Reconnected, &ctx);
+        handle_ws_message(PolymarketWsMessage::Reconnected { shard_id: None }, &ctx);
         tokio::time::sleep(Duration::from_millis(200)).await;
 
         assert!(state.received_payloads.lock().await.is_empty());
@@ -4876,7 +5006,9 @@ mod tests {
         .await;
         client.active_delta_subs.insert(sibling_id);
         client.active_trade_subs.insert(sibling_id);
-        client.pending_snapshot_after_tick_change.insert(sibling_id);
+        client
+            .book_sync
+            .request_recovery(sibling_id, Duration::ZERO, Instant::now());
         client
             .order_books
             .insert(sibling_id, OrderBook::new(sibling_id, BookType::L2_MBP));
@@ -4939,11 +5071,7 @@ mod tests {
         );
         assert!(!client.order_books.contains_key(&sibling_id));
         assert!(!client.last_quotes.contains_key(&sibling_id));
-        assert!(
-            !client
-                .pending_snapshot_after_tick_change
-                .contains(&sibling_id)
-        );
+        assert!(!client.book_sync.book_gated(sibling_id));
         assert!(!client.pending_auto_loads.lock().contains(&sibling_id));
         assert!(
             !client
@@ -4999,7 +5127,7 @@ mod tests {
         let active_status_subs = client.active_instrument_status_subs.clone();
         let active_close_subs = client.active_instrument_close_subs.clone();
         let resolve_poll_watchlist = client.resolve_poll_watchlist.clone();
-        let pending_snapshot_after_tick_change = client.pending_snapshot_after_tick_change.clone();
+        let book_sync = client.book_sync.clone();
         let pending_auto_loads = client.pending_auto_loads.clone();
         let ws_open_tokens = client.ws_open_tokens.clone();
         let ws_sub_mutex = client.ws_sub_mutex.clone();
@@ -5029,7 +5157,7 @@ mod tests {
                     &active_status_subs,
                     &active_close_subs,
                     &resolve_poll_watchlist,
-                    &pending_snapshot_after_tick_change,
+                    &book_sync,
                     &pending_auto_loads,
                     &ws_open_tokens,
                     &ws_sub_mutex,
@@ -6834,7 +6962,7 @@ mod tests {
                     &client.active_instrument_close_subs,
                     &client.closed_condition_ids,
                     &client.resolve_poll_watchlist,
-                    &client.pending_snapshot_after_tick_change,
+                    &client.book_sync,
                     &client.pending_auto_loads,
                     &client.ws_open_tokens,
                     &client.ws_sub_mutex,
@@ -8143,7 +8271,7 @@ mod tests {
             &client.active_instrument_status_subs,
             &client.active_instrument_close_subs,
             &client.resolve_poll_watchlist,
-            &client.pending_snapshot_after_tick_change,
+            &client.book_sync,
             &client.pending_auto_loads,
             &client.ws_open_tokens,
             &client.ws_sub_mutex,
@@ -9309,7 +9437,8 @@ mod tests {
             ),
             &ctx,
         );
-        ctx.pending_snapshot_after_tick_change.insert(instrument_id);
+        ctx.book_sync
+            .request_recovery(instrument_id, Duration::ZERO, Instant::now());
         ctx.last_quotes.insert(
             instrument_id,
             QuoteTick::new(
@@ -9419,8 +9548,7 @@ mod tests {
             "stale snapshot must not emit book or quote data",
         );
         assert!(
-            !ctx.pending_snapshot_after_tick_change
-                .contains(&instrument_id),
+            !ctx.book_sync.book_gated(instrument_id),
             "stale snapshot must not gate later book data",
         );
 
@@ -9702,10 +9830,7 @@ mod tests {
 
         assert!(!ctx.order_books.contains_key(&instrument_id));
         assert!(ctx.last_quotes.contains_key(&instrument_id));
-        assert!(
-            ctx.pending_snapshot_after_tick_change
-                .contains(&instrument_id)
-        );
+        assert!(ctx.book_sync.book_gated(instrument_id));
 
         let meta = ctx.token_meta.get(&token_ustr).expect("token_meta");
         assert_eq!(meta.price_precision, 4);
@@ -9735,7 +9860,8 @@ mod tests {
         );
         let instrument_id = inst.id();
         ctx.active_delta_subs.insert(instrument_id);
-        ctx.pending_snapshot_after_tick_change.insert(instrument_id);
+        ctx.book_sync
+            .request_recovery(instrument_id, Duration::ZERO, Instant::now());
 
         let pc = make_price_change(market, asset_id_str, "0.50", "20");
         handle_market_message(pc, &ctx);
@@ -9754,10 +9880,7 @@ mod tests {
         );
         handle_market_message(snap, &ctx);
 
-        assert!(
-            !ctx.pending_snapshot_after_tick_change
-                .contains(&instrument_id)
-        );
+        assert!(!ctx.book_sync.book_gated(instrument_id));
         assert!(!ctx.order_books.contains_key(&instrument_id));
     }
 
@@ -9801,10 +9924,7 @@ mod tests {
 
         let book_after = ctx.order_books.get(&instrument_id).expect("book entry");
         assert_eq!(book_after.ts_last, book_ts_before);
-        assert!(
-            !ctx.pending_snapshot_after_tick_change
-                .contains(&instrument_id)
-        );
+        assert!(!ctx.book_sync.book_gated(instrument_id));
         let meta = ctx.token_meta.get(&token_ustr).expect("token_meta");
         assert_eq!(meta.price_precision, 4);
         let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
@@ -9845,10 +9965,7 @@ mod tests {
         handle_market_message(change, &ctx);
 
         assert!(!ctx.order_books.contains_key(&instrument_id));
-        assert!(
-            ctx.pending_snapshot_after_tick_change
-                .contains(&instrument_id)
-        );
+        assert!(ctx.book_sync.book_gated(instrument_id));
         let meta = ctx.token_meta.get(&token_ustr).expect("token_meta");
         assert_eq!(meta.price_precision, 4);
 
@@ -10096,10 +10213,7 @@ mod tests {
         let change = make_tick_change(market, asset_id_str, "0.001", "0.01");
         handle_market_message(change, &ctx);
 
-        assert!(
-            !ctx.pending_snapshot_after_tick_change
-                .contains(&instrument_id)
-        );
+        assert!(!ctx.book_sync.book_gated(instrument_id));
         let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
         assert!(
             events.iter().any(|e| matches!(e, DataEvent::Instrument(_))),
@@ -10121,7 +10235,8 @@ mod tests {
         let instrument_id = inst.id();
         ctx.active_delta_subs.insert(instrument_id);
         ctx.active_quote_subs.insert(instrument_id);
-        ctx.pending_snapshot_after_tick_change.insert(instrument_id);
+        ctx.book_sync
+            .request_recovery(instrument_id, Duration::ZERO, Instant::now());
 
         let snap = MarketWsMessage::Book(PolymarketBookSnapshot {
             market: Ustr::from("0xMARKET"),
@@ -10137,10 +10252,7 @@ mod tests {
         });
         handle_market_message(snap, &ctx);
 
-        assert!(
-            ctx.pending_snapshot_after_tick_change
-                .contains(&instrument_id)
-        );
+        assert!(ctx.book_sync.book_gated(instrument_id));
         assert!(!ctx.order_books.contains_key(&instrument_id));
     }
 
@@ -10153,7 +10265,8 @@ mod tests {
         ))
         .expect("captured snapshot should deserialize");
         let asset_id = valid.asset_id.as_str();
-        let (ctx, mut data_rx) = make_ws_ctx();
+        let (mut ctx, mut data_rx) = make_ws_ctx();
+
         let inst = seed_instrument_with_context(
             &ctx,
             asset_id,
@@ -10169,36 +10282,82 @@ mod tests {
         ctx.active_delta_subs.insert(instrument_id);
         ctx.active_quote_subs.insert(instrument_id);
         if already_pending {
-            ctx.pending_snapshot_after_tick_change.insert(instrument_id);
+            ctx.book_sync
+                .request_recovery(instrument_id, Duration::ZERO, Instant::now());
         }
+
+        // The mismatch-triggered recovery resubscribes the token; keep it owned
+        // so the replacement send succeeds like production instead of failing
+        // the episode on the empty test handle.
+        let (ws_tx, ws_rx) = tokio::sync::mpsc::unbounded_channel();
+        ctx.ws = crate::websocket::pool::PolymarketMarketPoolHandle::test_single_shard(
+            ws_tx,
+            &[asset_id],
+        );
+        ctx._ws_rx = Some(ws_rx);
 
         let mut divergent = valid.clone();
         divergent.bids[0].size = "3149725.71".to_string();
         handle_market_message(MarketWsMessage::Book(divergent), &ctx);
 
-        assert!(
-            ctx.pending_snapshot_after_tick_change
-                .contains(&instrument_id)
-        );
+        assert!(ctx.book_sync.book_gated(instrument_id));
         assert!(!ctx.order_books.contains_key(&instrument_id));
         assert!(!ctx.last_quotes.contains_key(&instrument_id));
         assert!(data_rx.try_recv().is_err());
 
-        handle_market_message(MarketWsMessage::Book(valid), &ctx);
+        // The claimed recovery's replacement send races snapshot acceptance: a
+        // snapshot arriving mid-send is dropped without side effects, so
+        // re-feed until the replayed snapshot lands, yielding between feeds
+        // so the in-flight send can complete.
+        let mut events: Vec<DataEvent> = Vec::new();
 
-        assert!(
-            !ctx.pending_snapshot_after_tick_change
-                .contains(&instrument_id)
-        );
+        for _ in 0..50 {
+            // Play the handler role: answer the cycle so the send can complete
+            if let Some(ws_rx) = ctx._ws_rx.as_mut() {
+                while let Ok(cmd) = ws_rx.try_recv() {
+                    if let crate::websocket::handler::HandlerCommand::CycleMarketSubscription {
+                        responder,
+                        gate,
+                        ..
+                    } = cmd
+                    {
+                        // Mirror the handler: the gate opens on leg-2 success.
+                        gate.open();
+                        let _ = responder
+                            .send(crate::websocket::handler::CycleMarketOutcome::Completed);
+                    }
+                }
+            }
+
+            handle_market_message(MarketWsMessage::Book(valid.clone()), &ctx);
+            events.extend(std::iter::from_fn(|| data_rx.try_recv().ok()));
+            if events.len() >= 2 {
+                break;
+            }
+
+            std::thread::sleep(Duration::from_millis(1));
+        }
+
+        assert!(!ctx.book_sync.book_gated(instrument_id));
         assert!(!ctx.order_books.contains_key(&instrument_id));
         assert!(ctx.last_quotes.contains_key(&instrument_id));
-        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
         assert_eq!(events.len(), 2);
-        assert!(matches!(
-            events[0],
-            DataEvent::Data(NautilusData::BookDeltas(_))
-        ));
-        assert!(matches!(events[1], DataEvent::Data(NautilusData::Quote(_))));
+        // Order-insensitive by design: a pre-acceptance replay may emit the Quote,
+        // since quotes also flow for gated snapshots.
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e, DataEvent::Data(NautilusData::BookDeltas(_))))
+                .count(),
+            1,
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e, DataEvent::Data(NautilusData::Quote(_))))
+                .count(),
+            1,
+        );
     }
 
     #[rstest]
@@ -10226,14 +10385,12 @@ mod tests {
         let instrument_id = instrument.id();
         ctx.active_delta_subs.insert(instrument_id);
         ctx.active_quote_subs.insert(instrument_id);
-        ctx.pending_snapshot_after_tick_change.insert(instrument_id);
+        ctx.book_sync
+            .request_recovery(instrument_id, Duration::ZERO, Instant::now());
 
         handle_market_message(MarketWsMessage::Book(snapshot), &ctx);
 
-        assert!(
-            !ctx.pending_snapshot_after_tick_change
-                .contains(&instrument_id)
-        );
+        assert!(!ctx.book_sync.book_gated(instrument_id));
         assert!(!ctx.order_books.contains_key(&instrument_id));
         assert!(ctx.last_quotes.contains_key(&instrument_id));
         let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
@@ -10263,6 +10420,19 @@ mod tests {
             instrument_id,
             OrderBook::new(instrument_id, BookType::L2_MBP),
         );
+
+        // Incremental deltas require an accepted snapshot; seed one so this
+        // test exercises the steady-state path with book maintenance disabled.
+        handle_market_message(
+            make_snapshot(
+                market,
+                asset_id_str,
+                &[("0.50", "10"), ("0.54", "5"), ("0.56", "8"), ("0.59", "12")],
+            ),
+            &ctx,
+        );
+
+        while data_rx.try_recv().is_ok() {}
 
         let pc = make_price_change(market, asset_id_str, "0.50", "20");
         handle_market_message(pc, &ctx);
@@ -10675,10 +10845,7 @@ mod tests {
         assert_eq!(batches[1].deltas[0].flags, RecordFlag::F_LAST as u8);
         assert_eq!(book_a.best_bid_price(), Some(Price::from("0.004")));
         assert_eq!(book_b.best_bid_price(), Some(Price::from("0.994")));
-        assert!(
-            !ctx.pending_snapshot_after_tick_change
-                .contains(&instrument_a)
-        );
+        assert!(!ctx.book_sync.book_gated(instrument_a));
     }
 
     #[rstest]
@@ -10689,6 +10856,19 @@ mod tests {
         let instrument_id =
             seed_instrument(&ctx, asset_id, Price::from("0.001"), Quantity::from("0.01")).id();
         ctx.active_delta_subs.insert(instrument_id);
+
+        // Open the delta gate so malformed levels (not gating) explain the
+        // missing batch.
+        handle_market_message(
+            make_snapshot(
+                market.as_str(),
+                asset_id,
+                &[("0.003", "10"), ("0.005", "10")],
+            ),
+            &ctx,
+        );
+
+        while data_rx.try_recv().is_ok() {}
 
         handle_market_message(
             MarketWsMessage::PriceChange(PolymarketQuotes {
@@ -10738,7 +10918,8 @@ mod tests {
         let instrument_id = inst.id();
         ctx.active_delta_subs.insert(instrument_id);
         ctx.active_quote_subs.insert(instrument_id);
-        ctx.pending_snapshot_after_tick_change.insert(instrument_id);
+        ctx.book_sync
+            .request_recovery(instrument_id, Duration::ZERO, Instant::now());
 
         let prior = QuoteTick::new(
             instrument_id,
@@ -10875,30 +11056,93 @@ mod tests {
         );
         let instrument_id = inst.id();
         ctx.active_delta_subs.insert(instrument_id);
-        ctx.pending_snapshot_after_tick_change.insert(instrument_id);
+        ctx.book_sync
+            .request_recovery(instrument_id, Duration::ZERO, Instant::now());
 
-        let empty = MarketWsMessage::Book(PolymarketBookSnapshot {
-            market: Ustr::from(market),
-            asset_id: Ustr::from(asset_id_str),
-            bids: vec![],
-            asks: vec![],
-            timestamp: "1700000000000".to_string(),
-            hash: None,
-            min_order_size: None,
-            tick_size: None,
-            neg_risk: None,
-            last_trade_price: None,
-        });
-        handle_market_message(empty, &ctx);
+        // An empty book is a usable snapshot; use an unparsable level so the
+        // snapshot still fails to seed.
+        let unusable = make_snapshot(market, asset_id_str, &[("abc", "5")]);
+        handle_market_message(unusable, &ctx);
 
-        assert!(
-            ctx.pending_snapshot_after_tick_change
-                .contains(&instrument_id)
-        );
+        assert!(ctx.book_sync.book_gated(instrument_id));
         let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
         assert!(
             !events.iter().any(|e| matches!(e, DataEvent::Data(_))),
-            "empty snapshot must not emit Data events: {events:?}",
+            "unusable snapshot must not emit Data events: {events:?}",
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn repeated_unusable_snapshot_requests_one_recovery_episode() {
+        let asset_id = "0xTOKEN_EMPTY_LOOP";
+        let market = "0xMARKET";
+
+        let (mut ctx, mut data_rx) = make_ws_ctx();
+        let inst = seed_instrument(&ctx, asset_id, Price::from("0.01"), Quantity::from("0.01"));
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+
+        // Keep the token owned so the replacement send succeeds like
+        // production; every recovery episode then emits one resubscribe.
+        let (ws_tx, mut ws_rx) = tokio::sync::mpsc::unbounded_channel();
+        ctx.ws = crate::websocket::pool::PolymarketMarketPoolHandle::test_single_shard(
+            ws_tx,
+            &[asset_id],
+        );
+
+        // An empty book is a usable snapshot; use an unparsable level so the
+        // snapshot stays unusable.
+        let unusable = || make_snapshot(market, asset_id, &[("abc", "5")]);
+
+        handle_market_message(unusable(), &ctx);
+
+        assert!(ctx.book_sync.book_gated(instrument_id));
+        assert!(
+            ctx.book_sync.claim_recovery(instrument_id).is_none(),
+            "first unusable snapshot must own recovery"
+        );
+
+        // The owned episode resubscribes once; wait for its send.
+        let first = tokio::time::timeout(StdDuration::from_secs(5), async {
+            loop {
+                if let Ok(cmd) = ws_rx.try_recv() {
+                    return cmd;
+                }
+
+                tokio::time::sleep(StdDuration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("recovery should resubscribe");
+
+        assert!(matches!(
+            first,
+            crate::websocket::handler::HandlerCommand::CycleMarketSubscription { .. }
+        ));
+
+        // A repeat of the same unusable snapshot must stay inside that
+        // episode instead of minting a fresh budget and resubscribing again.
+        handle_market_message(unusable(), &ctx);
+        tokio::time::sleep(StdDuration::from_millis(200)).await;
+
+        let mut extra_resubscribes = 0;
+        while ws_rx.try_recv().is_ok() {
+            extra_resubscribes += 1;
+        }
+
+        assert_eq!(
+            extra_resubscribes, 0,
+            "repeat unusable snapshot must not resubscribe again"
+        );
+        assert!(ctx.book_sync.book_gated(instrument_id));
+        assert!(
+            ctx.book_sync.claim_recovery(instrument_id).is_none(),
+            "original episode must still own recovery"
+        );
+        assert!(
+            data_rx.try_recv().is_err(),
+            "unusable snapshots must not emit Data events"
         );
     }
 
@@ -11066,6 +11310,14 @@ mod tests {
             OrderBook::new(instrument_id, BookType::L2_MBP),
         );
 
+        // Open the delta gate without touching the manually seeded book so the
+        // preceding price change still applies to an empty book.
+        assert!(ctx.book_sync.record_snapshot_if_subscribed(
+            &ctx.active_delta_subs,
+            instrument_id,
+            Instant::now(),
+        ));
+
         handle_market_message(make_price_change(market, asset_id_str, "0.45", "20"), &ctx);
 
         while data_rx.try_recv().is_ok() {}
@@ -11170,6 +11422,164 @@ mod tests {
             batches.is_empty(),
             "identical snapshot must not emit deltas: {batches:?}",
         );
+    }
+
+    #[rstest]
+    fn repeat_snapshot_records_acceptance_despite_empty_diff() {
+        let asset_id_str = "0xTOKEN-EFF-NOOP";
+        let market = "0xMARKET";
+
+        let (mut ctx, mut data_rx) = make_ws_ctx();
+        ctx.compute_effective_deltas = true;
+        let inst = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+
+        let levels = [("0.45", "5"), ("0.49", "10"), ("0.51", "8"), ("0.55", "12")];
+        handle_market_message(make_snapshot(market, asset_id_str, &levels), &ctx);
+
+        while data_rx.try_recv().is_ok() {}
+
+        // Simulate a recovery in flight: the replayed snapshot diffs to
+        // nothing, but it is still the current book and must open the gate.
+        ctx.book_sync
+            .request_recovery(instrument_id, Duration::ZERO, Instant::now());
+
+        handle_market_message(make_snapshot(market, asset_id_str, &levels), &ctx);
+
+        let batches = collect_delta_batches(&mut data_rx);
+        assert!(
+            batches.is_empty(),
+            "identical snapshot must not emit deltas: {batches:?}",
+        );
+        assert!(
+            !ctx.book_sync.book_gated(instrument_id),
+            "no-op snapshot must still record acceptance",
+        );
+    }
+
+    #[rstest]
+    fn rejected_snapshot_does_not_move_effective_baseline() {
+        let asset_id_str = "0xTOKEN-EFF-REJ";
+        let market = "0xMARKET";
+
+        let (mut ctx, mut data_rx) = make_ws_ctx();
+        ctx.compute_effective_deltas = true;
+        let inst = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+
+        let first = [("0.45", "5"), ("0.49", "10"), ("0.51", "8"), ("0.55", "12")];
+        handle_market_message(make_snapshot(market, asset_id_str, &first), &ctx);
+
+        while data_rx.try_recv().is_ok() {}
+
+        // Close the send gate, then deliver a different snapshot: it must be
+        // dropped without touching the baseline later diffs use.
+        let recovery = ctx.book_sync.claim_recovery(instrument_id).unwrap();
+        assert!(recovery.begin_replacement());
+
+        let second = [("0.44", "5"), ("0.48", "10"), ("0.52", "8"), ("0.56", "12")];
+        handle_market_message(make_snapshot(market, asset_id_str, &second), &ctx);
+
+        assert!(
+            data_rx.try_recv().is_err(),
+            "rejected snapshot must not emit"
+        );
+        let book = ctx.order_books.get(&instrument_id).expect("seeded book");
+        assert_eq!(book.best_bid_price(), Some(Price::from("0.49")));
+        assert_eq!(book.best_ask_price(), Some(Price::from("0.51")));
+    }
+
+    #[rstest]
+    fn empty_snapshot_records_acceptance_without_recovery() {
+        let asset_id_str = "0xTOKEN-EMPTY";
+        let market = "0xMARKET";
+
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let inst = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+
+        let empty: [(&str, &str); 0] = [];
+        handle_market_message(make_snapshot(market, asset_id_str, &empty), &ctx);
+
+        let batches = collect_delta_batches(&mut data_rx);
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].deltas.len(), 1);
+        assert_eq!(batches[0].deltas[0].action, BookAction::Clear);
+        assert!(
+            !ctx.book_sync.book_gated(instrument_id),
+            "empty snapshot must record acceptance",
+        );
+
+        // Deltas flow against the accepted empty baseline.
+        handle_market_message(make_price_change(market, asset_id_str, "0.50", "7"), &ctx);
+
+        assert_eq!(collect_delta_batches(&mut data_rx).len(), 1);
+        assert!(
+            ctx.book_sync.claim_recovery(instrument_id).is_some(),
+            "empty snapshot must not own recovery",
+        );
+    }
+
+    #[rstest]
+    fn rejected_snapshot_still_emits_quote() {
+        let asset_id_str = "0xTOKEN-REJ-Q";
+        let market = "0xMARKET";
+
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let inst = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+        ctx.active_quote_subs.insert(instrument_id);
+
+        // Fail recovery so every later snapshot is rejected for deltas.
+        let recovery = ctx.book_sync.claim_recovery(instrument_id).unwrap();
+        ctx.book_sync.fail_recovery(instrument_id, Some(&recovery));
+
+        let levels = [("0.45", "5"), ("0.49", "10"), ("0.51", "8"), ("0.55", "12")];
+        handle_market_message(make_snapshot(market, asset_id_str, &levels), &ctx);
+
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, DataEvent::Data(NautilusData::BookDeltas(_)))),
+            "rejected snapshot must not emit deltas: {events:?}",
+        );
+
+        let quotes: Vec<QuoteTick> = events
+            .into_iter()
+            .filter_map(|event| match event {
+                DataEvent::Data(NautilusData::Quote(quote)) => Some(quote),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(quotes.len(), 1);
+        assert_eq!(quotes[0].bid_price, Price::from("0.49"));
+        assert_eq!(quotes[0].ask_price, Price::from("0.55"));
     }
 
     #[rstest]
@@ -11591,6 +12001,15 @@ mod tests {
 
         while data_rx.try_recv().is_ok() {}
 
+        // Pre-claim recovery so the tick below cannot spawn its async task: the
+        // task runs on the shared runtime and would race this synchronous reseed
+        // (the default test handle owns no tokens, so a scheduled task fails the
+        // book terminally and drops the reseed). The tick still gates through the
+        // owned claim, and the reseed below completes that same episode.
+        ctx.book_sync
+            .claim_recovery(instrument_id)
+            .expect("pre-claim recovery");
+
         handle_market_message(
             make_tick_change(market, asset_id_str, "0.001", "0.01"),
             &ctx,
@@ -11706,5 +12125,319 @@ mod tests {
                 .all(|d| d.flags & RecordFlag::F_SNAPSHOT as u8 != 0),
             "wire-faithful emission must keep F_SNAPSHOT on every record: {deltas:?}",
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn price_change_before_snapshot_requests_recovery_and_suppresses_deltas() {
+        let (mut ctx, mut data_rx) = make_ws_ctx();
+        let asset_id = "0xTOKEN_RECOVER";
+        let market = "0xMARKET";
+        let inst = seed_instrument(&ctx, asset_id, Price::from("0.01"), Quantity::from("1"));
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+
+        // Keep the recovery-owned replacement send routable like production.
+        let (ws_tx, mut ws_rx) = tokio::sync::mpsc::unbounded_channel();
+        ctx.ws = crate::websocket::pool::PolymarketMarketPoolHandle::test_single_shard(
+            ws_tx,
+            &[asset_id],
+        );
+
+        handle_market_message(make_price_change(market, asset_id, "0.50", "20"), &ctx);
+
+        assert!(
+            data_rx.try_recv().is_err(),
+            "deltas before snapshot must be suppressed"
+        );
+        assert!(ctx.book_sync.book_gated(instrument_id));
+        assert!(
+            ctx.book_sync.claim_recovery(instrument_id).is_none(),
+            "first delta must own recovery"
+        );
+
+        // The owned recovery resubscribes the token to trigger a fresh snapshot.
+        let cmd = tokio::time::timeout(StdDuration::from_secs(5), async {
+            loop {
+                if let Ok(cmd) = ws_rx.try_recv() {
+                    return cmd;
+                }
+
+                tokio::time::sleep(StdDuration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("recovery should resubscribe");
+
+        assert!(matches!(
+            cmd,
+            crate::websocket::handler::HandlerCommand::CycleMarketSubscription { asset_ids: ids, .. }
+            if ids == vec![asset_id.to_string()]
+        ));
+    }
+
+    #[rstest]
+    fn snapshot_during_replacement_send_is_dropped_without_side_effects() {
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let asset_id = "0xTOKEN_SEND";
+        let market = "0xMARKET";
+        let inst = seed_instrument(&ctx, asset_id, Price::from("0.01"), Quantity::from("1"));
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+        let recovery = ctx.book_sync.claim_recovery(instrument_id).unwrap();
+        assert!(recovery.begin_replacement());
+
+        handle_market_message(
+            make_snapshot(
+                market,
+                asset_id,
+                &[("0.50", "10"), ("0.54", "5"), ("0.56", "8"), ("0.59", "12")],
+            ),
+            &ctx,
+        );
+
+        assert!(
+            data_rx.try_recv().is_err(),
+            "obsolete snapshot must not emit"
+        );
+        assert!(
+            !ctx.order_books.contains_key(&instrument_id),
+            "obsolete snapshot must not seed the book"
+        );
+        assert!(ctx.book_sync.book_gated(instrument_id));
+        assert!(matches!(
+            *recovery.outcome.borrow(),
+            crate::book::BookRecoveryOutcome::Pending
+        ));
+    }
+
+    #[rstest]
+    fn book_reconnect_resets_shard_books_and_arms_snapshot_deadlines() {
+        let (mut ctx, _data_rx) = make_ws_ctx();
+        let token_a = "0xTOKEN_SHARD_A";
+        let token_b = "0xTOKEN_SHARD_B";
+        let token_c = "0xTOKEN_SHARD_C";
+        let id_a = seed_instrument(&ctx, token_a, Price::from("0.01"), Quantity::from("1")).id();
+        let id_b = seed_instrument(&ctx, token_b, Price::from("0.01"), Quantity::from("1")).id();
+        let id_c = seed_instrument(&ctx, token_c, Price::from("0.01"), Quantity::from("1")).id();
+        ctx.active_delta_subs.insert(id_a);
+        ctx.active_delta_subs.insert(id_c);
+        ctx.order_books
+            .insert(id_a, OrderBook::new(id_a, BookType::L2_MBP));
+        ctx.order_books
+            .insert(id_b, OrderBook::new(id_b, BookType::L2_MBP));
+        ctx.order_books
+            .insert(id_c, OrderBook::new(id_c, BookType::L2_MBP));
+
+        let (ws_tx, _ws_rx) = tokio::sync::mpsc::unbounded_channel();
+        ctx.ws = crate::websocket::pool::PolymarketMarketPoolHandle::test_single_shard(
+            ws_tx,
+            &[token_a, token_b],
+        );
+
+        // PRIMARY_SHARD_ID (0): `test_single_shard` owns its tokens on the primary shard.
+        handle_ws_message(PolymarketWsMessage::Reconnected { shard_id: Some(0) }, &ctx);
+
+        // Assigned + subscribed: book dropped, gated, deadline armed.
+        assert!(!ctx.order_books.contains_key(&id_a));
+        assert!(ctx.book_sync.book_gated(id_a));
+        // Assigned but unsubscribed: untouched.
+        assert!(ctx.order_books.contains_key(&id_b));
+        assert!(!ctx.book_sync.book_gated(id_b));
+        // Subscribed but owned by another shard: untouched.
+        assert!(ctx.order_books.contains_key(&id_c));
+        assert!(!ctx.book_sync.book_gated(id_c));
+
+        let filter = AHashSet::from_iter([id_a, id_b, id_c]);
+        let expired = ctx
+            .book_sync
+            .take_expired_snapshots(&filter, Instant::now() + Duration::from_secs(11));
+
+        assert_eq!(expired.len(), 1);
+        assert_eq!(expired[0].instrument_id, id_a);
+    }
+
+    #[rstest]
+    fn book_reconnect_without_shard_resets_all_active_delta_subs() {
+        let (mut ctx, _data_rx) = make_ws_ctx();
+        let token_a = "0xTOKEN_ALL_A";
+        let token_b = "0xTOKEN_ALL_B";
+        let token_c = "0xTOKEN_ALL_C";
+        let id_a = seed_instrument(&ctx, token_a, Price::from("0.01"), Quantity::from("1")).id();
+        let id_b = seed_instrument(&ctx, token_b, Price::from("0.01"), Quantity::from("1")).id();
+        let id_c = seed_instrument(&ctx, token_c, Price::from("0.01"), Quantity::from("1")).id();
+        ctx.active_delta_subs.insert(id_a);
+        ctx.active_delta_subs.insert(id_c);
+        ctx.order_books
+            .insert(id_a, OrderBook::new(id_a, BookType::L2_MBP));
+        ctx.order_books
+            .insert(id_b, OrderBook::new(id_b, BookType::L2_MBP));
+        ctx.order_books
+            .insert(id_c, OrderBook::new(id_c, BookType::L2_MBP));
+
+        let (ws_tx, _ws_rx) = tokio::sync::mpsc::unbounded_channel();
+        ctx.ws = crate::websocket::pool::PolymarketMarketPoolHandle::test_single_shard(
+            ws_tx,
+            &[token_a, token_b],
+        );
+
+        handle_ws_message(PolymarketWsMessage::Reconnected { shard_id: None }, &ctx);
+
+        assert!(!ctx.order_books.contains_key(&id_a));
+        assert!(ctx.book_sync.book_gated(id_a));
+        assert!(!ctx.order_books.contains_key(&id_c));
+        assert!(ctx.book_sync.book_gated(id_c));
+        assert!(ctx.order_books.contains_key(&id_b));
+        assert!(!ctx.book_sync.book_gated(id_b));
+
+        let filter = AHashSet::from_iter([id_a, id_b, id_c]);
+        let expired = ctx
+            .book_sync
+            .take_expired_snapshots(&filter, Instant::now() + Duration::from_secs(11));
+
+        assert_eq!(expired.len(), 2);
+        assert!(expired.iter().any(|s| s.instrument_id == id_a));
+        assert!(expired.iter().any(|s| s.instrument_id == id_c));
+    }
+
+    #[rstest]
+    fn book_reconnect_without_snapshot_timeout_gates_without_arming() {
+        let (mut ctx, _data_rx) = make_ws_ctx();
+        let asset_id = "0xTOKEN_NO_TIMEOUT";
+        let inst = seed_instrument(&ctx, asset_id, Price::from("0.01"), Quantity::from("1"));
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+        ctx.order_books.insert(
+            instrument_id,
+            OrderBook::new(instrument_id, BookType::L2_MBP),
+        );
+        ctx.book_snapshot_timeout = Duration::ZERO;
+
+        handle_ws_message(PolymarketWsMessage::Reconnected { shard_id: None }, &ctx);
+
+        assert!(!ctx.order_books.contains_key(&instrument_id));
+        assert!(ctx.book_sync.book_gated(instrument_id));
+
+        let filter = AHashSet::from_iter([instrument_id]);
+        assert!(
+            ctx.book_sync
+                .take_expired_snapshots(&filter, Instant::now() + Duration::from_secs(60))
+                .is_empty(),
+            "zero timeout must not arm a snapshot deadline"
+        );
+    }
+
+    #[rstest]
+    fn book_reconnect_unknown_shard_is_noop() {
+        let (ctx, _data_rx) = make_ws_ctx();
+        let asset_id = "0xTOKEN_UNKNOWN_SHARD";
+        let inst = seed_instrument(&ctx, asset_id, Price::from("0.01"), Quantity::from("1"));
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+        ctx.order_books.insert(
+            instrument_id,
+            OrderBook::new(instrument_id, BookType::L2_MBP),
+        );
+
+        handle_ws_message(
+            PolymarketWsMessage::Reconnected {
+                shard_id: Some(usize::MAX),
+            },
+            &ctx,
+        );
+
+        assert!(ctx.order_books.contains_key(&instrument_id));
+        assert!(!ctx.book_sync.book_gated(instrument_id));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn book_reconnect_monitor_recovers_missing_snapshot() {
+        let (mut ctx, _data_rx) = make_ws_ctx();
+        ctx.book_snapshot_timeout = Duration::from_millis(50);
+        let asset_id = "0xTOKEN_MONITOR";
+        let inst = seed_instrument(&ctx, asset_id, Price::from("0.01"), Quantity::from("1"));
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+        ctx.order_books.insert(
+            instrument_id,
+            OrderBook::new(instrument_id, BookType::L2_MBP),
+        );
+
+        let (ws_tx, mut ws_rx) = tokio::sync::mpsc::unbounded_channel();
+        ctx.ws = crate::websocket::pool::PolymarketMarketPoolHandle::test_single_shard(
+            ws_tx,
+            &[asset_id],
+        );
+
+        handle_ws_message(PolymarketWsMessage::Reconnected { shard_id: None }, &ctx);
+
+        assert!(!ctx.order_books.contains_key(&instrument_id));
+        assert!(ctx.book_sync.book_gated(instrument_id));
+
+        // No snapshot arrives, so the monitor must start recovery for the instrument.
+        let cmd = tokio::time::timeout(StdDuration::from_secs(5), async {
+            loop {
+                if let Ok(cmd) = ws_rx.try_recv() {
+                    return cmd;
+                }
+
+                tokio::time::sleep(StdDuration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("monitor should recover missing snapshot");
+
+        assert!(matches!(
+            cmd,
+            crate::websocket::handler::HandlerCommand::CycleMarketSubscription { asset_ids: ids, .. }
+            if ids == vec![asset_id.to_string()]
+        ));
+        assert!(ctx.book_sync.claim_recovery(instrument_id).is_none());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn tick_size_change_requests_recovery_and_resubscribes() {
+        let (mut ctx, _data_rx) = make_ws_ctx();
+        let asset_id = "0xTOKEN_TICK_RECOVER";
+        let market = "0xMARKET";
+        let inst = seed_instrument(&ctx, asset_id, Price::from("0.001"), Quantity::from("0.01"));
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+
+        // Keep the recovery-owned replacement send routable like production.
+        let (ws_tx, mut ws_rx) = tokio::sync::mpsc::unbounded_channel();
+        ctx.ws = crate::websocket::pool::PolymarketMarketPoolHandle::test_single_shard(
+            ws_tx,
+            &[asset_id],
+        );
+
+        handle_market_message(make_tick_change(market, asset_id, "0.001", "0.01"), &ctx);
+
+        assert!(ctx.book_sync.book_gated(instrument_id));
+        assert!(
+            ctx.book_sync.claim_recovery(instrument_id).is_none(),
+            "tick size change must own recovery"
+        );
+
+        // The owned recovery resubscribes the token to trigger a fresh snapshot.
+        let cmd = tokio::time::timeout(StdDuration::from_secs(5), async {
+            loop {
+                if let Ok(cmd) = ws_rx.try_recv() {
+                    return cmd;
+                }
+
+                tokio::time::sleep(StdDuration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("recovery should resubscribe");
+
+        assert!(matches!(
+            cmd,
+            crate::websocket::handler::HandlerCommand::CycleMarketSubscription { asset_ids: ids, .. }
+            if ids == vec![asset_id.to_string()]
+        ));
     }
 }

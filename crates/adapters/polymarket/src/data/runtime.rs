@@ -37,6 +37,7 @@ use super::{
     },
 };
 use crate::{
+    book::sync::BookSyncTracker,
     providers::extract_condition_id,
     resolve::{ResolveWatchEntry, StrictResolvedMarket},
 };
@@ -145,14 +146,14 @@ fn has_live_runtime_state(
     active_trade_subs: &Arc<AtomicSet<InstrumentId>>,
     active_status_subs: &Arc<AtomicSet<InstrumentId>>,
     active_close_subs: &Arc<AtomicSet<InstrumentId>>,
-    pending_snapshot_after_tick_change: &Arc<AtomicSet<InstrumentId>>,
+    book_sync: &BookSyncTracker,
     pending_auto_loads: &Arc<Mutex<AHashSet<InstrumentId>>>,
     ws_open_tokens: &Arc<AtomicSet<Ustr>>,
 ) -> bool {
     if active_quote_subs.contains(&instrument_id)
         || active_delta_subs.contains(&instrument_id)
         || active_trade_subs.contains(&instrument_id)
-        || pending_snapshot_after_tick_change.contains(&instrument_id)
+        || book_sync.book_gated(instrument_id)
         || last_quotes.contains_key(&instrument_id)
     {
         return true;
@@ -188,7 +189,7 @@ pub(crate) async fn retire_local_instrument_state(
     active_close_subs: &Arc<AtomicSet<InstrumentId>>,
     closed_condition_ids: &Arc<Mutex<AHashSet<String>>>,
     resolve_poll_watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
-    pending_snapshot_after_tick_change: &Arc<AtomicSet<InstrumentId>>,
+    book_sync: &BookSyncTracker,
     pending_auto_loads: &Arc<Mutex<AHashSet<InstrumentId>>>,
     ws_open_tokens: &Arc<AtomicSet<Ustr>>,
     ws_sub_mutex: &Arc<tokio::sync::Mutex<()>>,
@@ -222,7 +223,7 @@ pub(crate) async fn retire_local_instrument_state(
         .await;
     }
 
-    pending_snapshot_after_tick_change.remove(&instrument_id);
+    book_sync.remove(instrument_id);
     if is_watchlisted_instrument(resolve_poll_watchlist, instrument_id)
         || (!active_status_subs.contains(&instrument_id)
             && !active_close_subs.contains(&instrument_id))
@@ -265,7 +266,7 @@ pub(crate) async fn retire_closed_condition_state(
     active_status_subs: &Arc<AtomicSet<InstrumentId>>,
     active_close_subs: &Arc<AtomicSet<InstrumentId>>,
     resolve_poll_watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
-    pending_snapshot_after_tick_change: &Arc<AtomicSet<InstrumentId>>,
+    book_sync: &BookSyncTracker,
     pending_auto_loads: &Arc<Mutex<AHashSet<InstrumentId>>>,
     ws_open_tokens: &Arc<AtomicSet<Ustr>>,
     ws_sub_mutex: &Arc<tokio::sync::Mutex<()>>,
@@ -315,13 +316,6 @@ pub(crate) async fn retire_closed_condition_state(
         }
 
         ids.extend(
-            pending_snapshot_after_tick_change
-                .load()
-                .iter()
-                .filter(|id| matches_condition(id))
-                .copied(),
-        );
-        ids.extend(
             pending_auto_loads
                 .lock()
                 .iter()
@@ -370,7 +364,7 @@ pub(crate) async fn retire_closed_condition_state(
             active_close_subs,
             closed_condition_ids,
             resolve_poll_watchlist,
-            pending_snapshot_after_tick_change,
+            book_sync,
             pending_auto_loads,
             ws_open_tokens,
             ws_sub_mutex,
@@ -409,7 +403,7 @@ pub(crate) async fn retire_expired_local_instruments(
     active_close_subs: &Arc<AtomicSet<InstrumentId>>,
     closed_condition_ids: &Arc<Mutex<AHashSet<String>>>,
     resolve_poll_watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
-    pending_snapshot_after_tick_change: &Arc<AtomicSet<InstrumentId>>,
+    book_sync: &BookSyncTracker,
     pending_auto_loads: &Arc<Mutex<AHashSet<InstrumentId>>>,
     ws_open_tokens: &Arc<AtomicSet<Ustr>>,
     ws_sub_mutex: &Arc<tokio::sync::Mutex<()>>,
@@ -444,7 +438,7 @@ pub(crate) async fn retire_expired_local_instruments(
                 active_trade_subs,
                 active_status_subs,
                 active_close_subs,
-                pending_snapshot_after_tick_change,
+                book_sync,
                 pending_auto_loads,
                 ws_open_tokens,
             )
@@ -487,7 +481,7 @@ pub(crate) async fn retire_expired_local_instruments(
             active_close_subs,
             closed_condition_ids,
             resolve_poll_watchlist,
-            pending_snapshot_after_tick_change,
+            book_sync,
             pending_auto_loads,
             ws_open_tokens,
             ws_sub_mutex,
@@ -505,6 +499,7 @@ mod tests {
     use ahash::AHashSet;
     use dashmap::DashMap;
     use log::{Level, LevelFilter, Log, Metadata, Record};
+    use nautilus_common::live::dst::time::{Duration, Instant};
     use nautilus_core::{AtomicMap, AtomicSet, UnixNanos, time::get_atomic_clock_realtime};
     use nautilus_model::{
         data::QuoteTick,
@@ -627,7 +622,7 @@ mod tests {
         active_quote_subs: &Arc<AtomicSet<InstrumentId>>,
         active_delta_subs: &Arc<AtomicSet<InstrumentId>>,
         active_trade_subs: &Arc<AtomicSet<InstrumentId>>,
-        pending_snapshot_after_tick_change: &Arc<AtomicSet<InstrumentId>>,
+        book_sync: &BookSyncTracker,
         pending_auto_loads: &Arc<Mutex<AHashSet<InstrumentId>>>,
         ws_open_tokens: &Arc<AtomicSet<Ustr>>,
     ) {
@@ -636,7 +631,7 @@ mod tests {
         active_quote_subs.insert(instrument_id);
         active_delta_subs.insert(instrument_id);
         active_trade_subs.insert(instrument_id);
-        pending_snapshot_after_tick_change.insert(instrument_id);
+        book_sync.request_recovery(instrument_id, Duration::ZERO, Instant::now());
         pending_auto_loads.lock().insert(instrument_id);
         ws_open_tokens.insert(Ustr::from(instrument.raw_symbol().as_str()));
         order_books.insert(
@@ -667,7 +662,7 @@ mod tests {
         let active_trade_subs = Arc::new(AtomicSet::new());
         let active_status_subs = Arc::new(AtomicSet::new());
         let active_close_subs = Arc::new(AtomicSet::new());
-        let pending_snapshot_after_tick_change = Arc::new(AtomicSet::new());
+        let book_sync = BookSyncTracker::default();
         let pending_auto_loads = Arc::new(Mutex::new(AHashSet::new()));
         let ws_open_tokens = Arc::new(AtomicSet::new());
 
@@ -683,7 +678,7 @@ mod tests {
             &active_trade_subs,
             &active_status_subs,
             &active_close_subs,
-            &pending_snapshot_after_tick_change,
+            &book_sync,
             &pending_auto_loads,
             &ws_open_tokens,
         ));
@@ -700,7 +695,7 @@ mod tests {
             &active_trade_subs,
             &active_status_subs,
             &active_close_subs,
-            &pending_snapshot_after_tick_change,
+            &book_sync,
             &pending_auto_loads,
             &ws_open_tokens,
         ));
@@ -720,7 +715,7 @@ mod tests {
         let active_close_subs = Arc::new(AtomicSet::new());
         let closed_condition_ids = Arc::new(Mutex::new(AHashSet::new()));
         let resolve_poll_watchlist = Arc::new(AtomicMap::new());
-        let pending_snapshot_after_tick_change = Arc::new(AtomicSet::new());
+        let book_sync = BookSyncTracker::default();
         let pending_auto_loads = Arc::new(Mutex::new(AHashSet::new()));
         let ws_open_tokens = Arc::new(AtomicSet::new());
         let ws_sub_mutex = Arc::new(tokio::sync::Mutex::new(()));
@@ -748,7 +743,7 @@ mod tests {
             &active_close_subs,
             &closed_condition_ids,
             &resolve_poll_watchlist,
-            &pending_snapshot_after_tick_change,
+            &book_sync,
             &pending_auto_loads,
             &ws_open_tokens,
             &ws_sub_mutex,
@@ -775,7 +770,7 @@ mod tests {
         let active_close_subs = Arc::new(AtomicSet::new());
         let closed_condition_ids = Arc::new(Mutex::new(AHashSet::new()));
         let resolve_poll_watchlist = Arc::new(AtomicMap::new());
-        let pending_snapshot_after_tick_change = Arc::new(AtomicSet::new());
+        let book_sync = BookSyncTracker::default();
         let pending_auto_loads = Arc::new(Mutex::new(AHashSet::new()));
         let ws_open_tokens = Arc::new(AtomicSet::new());
         let ws_sub_mutex = Arc::new(tokio::sync::Mutex::new(()));
@@ -798,7 +793,7 @@ mod tests {
             &active_quote_subs,
             &active_delta_subs,
             &active_trade_subs,
-            &pending_snapshot_after_tick_change,
+            &book_sync,
             &pending_auto_loads,
             &ws_open_tokens,
         );
@@ -817,7 +812,7 @@ mod tests {
             &active_close_subs,
             &closed_condition_ids,
             &resolve_poll_watchlist,
-            &pending_snapshot_after_tick_change,
+            &book_sync,
             &pending_auto_loads,
             &ws_open_tokens,
             &ws_sub_mutex,
@@ -854,7 +849,7 @@ mod tests {
             &active_close_subs,
             &closed_condition_ids,
             &resolve_poll_watchlist,
-            &pending_snapshot_after_tick_change,
+            &book_sync,
             &pending_auto_loads,
             &ws_open_tokens,
             &ws_sub_mutex,
@@ -876,7 +871,7 @@ mod tests {
         assert!(!active_quote_subs.contains(&instrument_id));
         assert!(!active_delta_subs.contains(&instrument_id));
         assert!(!active_trade_subs.contains(&instrument_id));
-        assert!(!pending_snapshot_after_tick_change.contains(&instrument_id));
+        assert!(!book_sync.book_gated(instrument_id));
         assert!(pending_auto_loads.lock().is_empty());
         assert!(!ws_open_tokens.contains(&token_id));
     }
@@ -895,7 +890,7 @@ mod tests {
         let active_close_subs = Arc::new(AtomicSet::new());
         let closed_condition_ids = Arc::new(Mutex::new(AHashSet::new()));
         let resolve_poll_watchlist = Arc::new(AtomicMap::new());
-        let pending_snapshot_after_tick_change = Arc::new(AtomicSet::new());
+        let book_sync = BookSyncTracker::default();
         let pending_auto_loads = Arc::new(Mutex::new(AHashSet::new()));
         let ws_open_tokens = Arc::new(AtomicSet::new());
         let ws_sub_mutex = Arc::new(tokio::sync::Mutex::new(()));
@@ -925,7 +920,7 @@ mod tests {
             &active_close_subs,
             &closed_condition_ids,
             &resolve_poll_watchlist,
-            &pending_snapshot_after_tick_change,
+            &book_sync,
             &pending_auto_loads,
             &ws_open_tokens,
             &ws_sub_mutex,
@@ -950,7 +945,7 @@ mod tests {
                 &active_trade_subs,
                 &active_status_subs,
                 &active_close_subs,
-                &pending_snapshot_after_tick_change,
+                &book_sync,
                 &pending_auto_loads,
                 &ws_open_tokens,
             ),
