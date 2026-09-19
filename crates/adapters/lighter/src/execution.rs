@@ -60,6 +60,7 @@ use nautilus_core::{
 };
 use nautilus_live::{
     ExecutionClientCore, ExecutionEventEmitter, SocketControlFactory,
+    book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS,
     execution::failure::CommandFailure,
     task::{TaskGroup, TaskGroupGuard, TaskJoinOutcome, TaskSlot, TaskSpawner, finish_task},
 };
@@ -365,6 +366,8 @@ impl LighterExecutionClient {
             registry,
             config.transport_backend,
             config.ws_timeout_secs,
+            // The execution socket carries no book channels; the shared default stays inert.
+            Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
             config
                 .proxy_url
                 .as_ref()

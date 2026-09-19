@@ -24,6 +24,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::Duration,
 };
 
 use ahash::AHashMap;
@@ -34,6 +35,8 @@ use nautilus_core::{
     string::secret::{REDACTED, SecretString},
     time::get_atomic_clock_realtime,
 };
+#[cfg(test)]
+use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_live::book::{
     BookSequenceOutcome,
     recovery::{BookRecoveryOutcome, BookRecoveryState},
@@ -68,7 +71,7 @@ use super::{
 use crate::{
     book::{
         recovery::{self, BookWorkResult, BookWrite},
-        sync::BookSync,
+        sync::BookSyncTracker,
     },
     common::{
         consts::{
@@ -250,7 +253,8 @@ pub(super) struct FeedHandler {
     ignored_completions: AHashMap<Ustr, CompletionKind>,
     next_subscription_generation: u64,
     instruments: AHashMap<i64, InstrumentAny>,
-    book: BookSync,
+    book: BookSyncTracker,
+    book_snapshot_timeout: Duration,
     last_candles: AHashMap<(i64, LighterCandleResolution), LighterWsCandle>,
     exec_account: Option<(AccountId, i64)>,
     account_state_reconciler: LighterAccountStateReconciler,
@@ -309,6 +313,7 @@ impl FeedHandler {
             out_tx,
             subscriptions,
             Currency::get_or_create_crypto("USDC"),
+            Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
         )
     }
 
@@ -319,6 +324,7 @@ impl FeedHandler {
         out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
         subscriptions: SubscriptionState,
         settlement_currency: Currency,
+        book_snapshot_timeout: Duration,
     ) -> Self {
         Self {
             clock: get_atomic_clock_realtime(),
@@ -338,7 +344,8 @@ impl FeedHandler {
             ignored_completions: AHashMap::new(),
             next_subscription_generation: 1,
             instruments: AHashMap::new(),
-            book: BookSync::default(),
+            book: BookSyncTracker::default(),
+            book_snapshot_timeout,
             last_candles: AHashMap::new(),
             exec_account: None,
             account_state_reconciler: LighterAccountStateReconciler::new_with_settlement_currency(
@@ -1581,9 +1588,12 @@ impl FeedHandler {
         self.inflight_subs.remove(&Ustr::from(topic.as_str()));
         self.pending_subs
             .retain(|(pending, _)| pending.as_str() != topic);
-        self.book
-            .work
-            .push(recovery::recover(market_index, recovery, cmd_tx));
+        self.book.work.push(recovery::recover(
+            market_index,
+            recovery,
+            cmd_tx,
+            self.book_snapshot_timeout,
+        ));
     }
 
     fn complete_typed_subscription(&mut self, topic: &str, epoch: u64) -> bool {
@@ -1646,6 +1656,7 @@ impl FeedHandler {
 
         let client = self.inner.clone();
         let subscriptions = self.subscriptions.clone();
+        let book_snapshot_timeout = self.book_snapshot_timeout;
         self.book.work.push(recovery::subscribe(
             market_index,
             generation,
@@ -1653,6 +1664,7 @@ impl FeedHandler {
             write,
             client,
             subscriptions,
+            book_snapshot_timeout,
         ));
     }
 
@@ -1685,9 +1697,11 @@ impl FeedHandler {
                     write.gate.open();
                     let _ = write.completion.send(Ok(()));
                 } else {
-                    self.book
-                        .work
-                        .push(recovery::wait_for_snapshot(market_index, cancel));
+                    self.book.work.push(recovery::wait_for_snapshot(
+                        market_index,
+                        cancel,
+                        self.book_snapshot_timeout,
+                    ));
                 }
             }
             Err(e) => {
@@ -2763,6 +2777,39 @@ mod tests {
         assert!(cancel.is_cancelled());
         assert!(handler.book.recovery.is_empty());
         assert!(handler.book.expected.is_empty());
+    }
+
+    #[tokio::test]
+    async fn book_initial_deadline_expires_without_cancellation() {
+        let mut handler = make_handler_with_account();
+        handler.book_snapshot_timeout = Duration::from_millis(50);
+        handler.book.delta_subs.insert(0);
+        let channel = LighterWsChannel::OrderBook(0);
+        handler.subscriptions.add_reference(&channel.topic_key());
+        let (_, generation) = mark_subscription_inflight(&mut handler, channel, None);
+        let cancel = CancellationToken::new();
+        handler.book.initial.insert(
+            0,
+            PendingSnapshot {
+                deadline: None,
+                cancel: cancel.clone(),
+                gate: SnapshotGate::default(),
+            },
+        );
+
+        handler.complete_book_send(0, generation, cancel.clone(), None, Ok(7));
+
+        let BookWorkResult::Initial {
+            market_index,
+            cancel: completed,
+        } = handler.book.work.next().await.unwrap()
+        else {
+            panic!("expected deadline completion");
+        };
+
+        assert_eq!(market_index, 0);
+        assert!(!completed.is_cancelled());
+        assert!(!cancel.is_cancelled());
     }
 
     #[tokio::test]

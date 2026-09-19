@@ -56,6 +56,7 @@ use nautilus_lighter::{
         messages::{LighterMarketSelection, LighterWsChannel},
     },
 };
+use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::{
     data::OrderBookDepth,
     enums::{BookAction, RecordFlag},
@@ -353,6 +354,7 @@ impl ClientHarness {
             Arc::clone(&registry),
             TransportBackend::default(),
             5,
+            Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
             None,
         );
         let mut client = match state_sink {
@@ -532,6 +534,7 @@ async fn test_initial_connect_retries_transient_upgrade_rejection() {
         Arc::new(MarketRegistry::new()),
         TransportBackend::default(),
         5,
+        Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
         None,
     );
 
@@ -554,6 +557,7 @@ async fn test_initial_connect_does_not_retry_permanent_upgrade_rejection() {
         Arc::new(MarketRegistry::new()),
         TransportBackend::default(),
         5,
+        Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
         None,
     );
 
@@ -580,6 +584,7 @@ async fn test_initial_connect_retries_share_configured_timeout_budget() {
         Arc::new(MarketRegistry::new()),
         TransportBackend::default(),
         1,
+        Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
         None,
     );
 
@@ -606,6 +611,7 @@ async fn test_disconnect_cancels_initial_connect_and_allows_retry() {
         Arc::new(MarketRegistry::new()),
         TransportBackend::default(),
         5,
+        Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
         None,
     );
     let mut connecting_client = client.clone();
@@ -851,6 +857,7 @@ async fn test_send_tx_errors_when_handler_unavailable() {
         registry,
         TransportBackend::default(),
         5,
+        Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
         None,
     );
 

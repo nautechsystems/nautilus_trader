@@ -25,6 +25,7 @@
 //! - Operational behavior
 
 use nautilus_core::string::secret::SecretString;
+use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::{
     identifiers::{AccountId, Venue},
     types::Currency,
@@ -87,6 +88,12 @@ pub struct LighterDataClientConfig {
     /// Refresh interval for instrument metadata in minutes.
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
+    /// Maximum time to wait for an initial, post-reconnect, or recovery order book
+    /// snapshot in seconds.
+    ///
+    /// Set to 0 to disable snapshot deadlines.
+    #[builder(default = DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS)]
+    pub book_snapshot_timeout_secs: u64,
     /// Optional REST read-bucket quota override in requests per minute; unset keeps
     /// the conservative 60 req/min default (raising it requires venue IP registration).
     pub rest_quota_per_min: Option<u32>,
@@ -107,6 +114,7 @@ nautilus_core::impl_pyo3_config_getters!(LighterDataClientConfig {
     http_timeout_secs: u64,
     ws_timeout_secs: u64,
     update_instruments_interval_mins: u64,
+    book_snapshot_timeout_secs: u64,
     rest_quota_per_min: Option<u32>,
     transport_backend: TransportBackend,
 });
@@ -432,6 +440,13 @@ mod tests {
             config.ws_url(),
             "wss://mainnet.zklighter.elliot.ai/stream?foo=bar&readonly=true",
         );
+    }
+
+    #[rstest]
+    fn data_config_book_snapshot_timeout_default_is_ten_seconds() {
+        let config = LighterDataClientConfig::default();
+
+        assert_eq!(config.book_snapshot_timeout_secs, 10);
     }
 
     #[derive(Debug)]

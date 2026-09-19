@@ -211,7 +211,7 @@ From the repository root, run:
 
 ```bash
 CARGO_BUILD_JOBS=16 bash scripts/strip-adapter-env.bash \
-  cargo run -p nautilus-okx --features examples --example okx-book-sync-stress -- 3 18
+  cargo run -p nautilus-okx --features examples --example okx-book-sync-stress -- 10 18
 ```
 
 The arguments set the snapshot timeout in seconds and the number of stress rounds. Use `0 18` to
@@ -1319,7 +1319,7 @@ The OKX data client provides the following Python configuration options.
 | `update_instruments_interval_mins` | `60`                       | REST instrument cache reconciliation interval in minutes; `0` disables.        |
 | `book_stale_check_interval_secs`   | `5`                        | Stale book check interval.                                                     |
 | `book_stale_threshold_secs`        | `30`                       | Idle time before a stale book warning.                                         |
-| `book_snapshot_timeout_secs`       | `3`                        | Initial, reconnect, and recovery snapshot wait.                                |
+| `book_snapshot_timeout_secs`       | `10`                       | Initial, reconnect, and recovery snapshot wait.                                |
 | `vip_level`                        | `None`                     | Enables higher-depth books by VIP tier.                                        |
 | `proxy_url`                        | `None`                     | Optional HTTP and WebSocket proxy URL.                                         |
 | `transport_backend`                | `Sockudo`                  | WebSocket transport backend.                                                   |

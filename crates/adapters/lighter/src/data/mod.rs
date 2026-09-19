@@ -226,6 +226,7 @@ impl LighterDataClient {
             registry,
             config.transport_backend,
             config.ws_timeout_secs,
+            Duration::from_secs(config.book_snapshot_timeout_secs),
             config
                 .proxy_url
                 .as_ref()

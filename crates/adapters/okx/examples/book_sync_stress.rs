@@ -16,7 +16,7 @@
 //! Mainnet market-data fault injection with an independent decimal order book oracle.
 //!
 //! Run with adapter credentials unset:
-//! `cargo run -p nautilus-okx --features examples --example okx-book-sync-stress -- 3 18`
+//! `cargo run -p nautilus-okx --features examples --example okx-book-sync-stress -- 10 18`
 //!
 //! Arguments are snapshot timeout seconds and number of stress rounds. Add `boundaries` as the
 //! third argument to run exhaustion and replacement-boundary probes instead, or `turnover` for
@@ -99,7 +99,7 @@ async fn main() {
     .unwrap();
 
     let args = std::env::args().collect::<Vec<_>>();
-    let timeout = args.get(1).map_or(3, |v| v.parse::<u64>().unwrap());
+    let timeout = args.get(1).map_or(10, |v| v.parse::<u64>().unwrap());
     let rounds = args.get(2).map_or(18, |v| v.parse::<usize>().unwrap());
     let ids = SYMBOLS.map(|s| InstrumentId::from(format!("{s}.OKX")));
     if args.get(3).is_some_and(|arg| arg == "initial") {

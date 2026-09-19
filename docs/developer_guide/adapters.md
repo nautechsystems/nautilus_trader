@@ -909,6 +909,19 @@ Run asynchronous work inside the client's task scope or handler-owned futures. T
 continue draining commands and frames while writes wait, allowing unsubscribe, shutdown, and
 recovery deadlines to cancel obsolete operations.
 
+#### Naming and configuration
+
+Adapters implementing this machinery share names and tuning so operators move between venues
+without relearning behavior:
+
+- Keep book sync state in `src/book/sync.rs` behind `BookSyncTracker`.
+- Wait for snapshots with `book_snapshot_timeout_secs`, defaulting to the shared
+  `DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS` (10 seconds) in `nautilus_live::book`; the value stays
+  tunable per deployment.
+- Honor a zero timeout as disabled deadlines on every wait path, including adapter-owned sends
+  and snapshot waits outside the shared runner: with no deadline, waits resolve only on
+  cancellation.
+
 ### Execution client
 
 Execution clients translate commands, preserve order identity, publish account state, and generate

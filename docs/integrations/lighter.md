@@ -349,9 +349,10 @@ reconnect. See the [Lighter order book contract](https://apidocs.lighter.xyz/doc
 
 ### Snapshot requirements
 
-Initial and replacement subscriptions wait up to **10 seconds** for a typed `subscribed/order_book`
-snapshot after the subscription write completes. A missing snapshot starts or retries recovery,
-including when a control acknowledgement or `Already Subscribed` response arrives without a book.
+Initial and replacement subscriptions wait up to `book_snapshot_timeout_secs` (default **10 seconds**)
+for a typed `subscribed/order_book` snapshot after the subscription write completes. Set it to `0`
+to disable snapshot deadlines. A missing snapshot starts or retries recovery, including when a
+control acknowledgement or `Already Subscribed` response arrives without a book.
 Control acknowledgements release subscription slots but do not complete book recovery.
 
 Book output resumes only after a matching snapshot replaces the cached levels. An empty snapshot
@@ -855,6 +856,7 @@ endpoints.
 | `http_timeout_secs`                | `60`      | HTTP request timeout in seconds.                              |
 | `ws_timeout_secs`                  | `30`      | WebSocket connection and reconnection timeout.                |
 | `update_instruments_interval_mins` | `60`      | Instrument metadata refresh interval in minutes.              |
+| `book_snapshot_timeout_secs`       | `10`      | Initial, reconnect, and recovery snapshot wait.               |
 | `rest_quota_per_min`               | `None`    | REST quota override; unset keeps 60 req/min.                  |
 | `transport_backend`                | Default   | WebSocket transport backend.                                  |
 

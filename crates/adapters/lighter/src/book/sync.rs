@@ -37,7 +37,7 @@ use crate::{
 };
 
 #[derive(Default)]
-pub(crate) struct BookSync {
+pub(crate) struct BookSyncTracker {
     pub(crate) delta_subs: AHashSet<i64>,
     pub(crate) depth_subs: AHashSet<i64>,
     pub(crate) snapshots_seen: AHashSet<i64>,
@@ -50,7 +50,7 @@ pub(crate) struct BookSync {
     pub(crate) trailing: AHashMap<i64, (u64, u64)>,
 }
 
-impl BookSync {
+impl BookSyncTracker {
     pub(crate) fn validate_sequence(
         &mut self,
         market_index: i64,

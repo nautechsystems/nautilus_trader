@@ -59,6 +59,7 @@ use nautilus_lighter::{
     },
     websocket::{LighterWebSocketClient, LighterWsChannel, NautilusWsMessage},
 };
+use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::{
     enums::PositionSide,
     identifiers::{AccountId, InstrumentId, TraderId},
@@ -122,6 +123,7 @@ async fn main() -> anyhow::Result<()> {
         Arc::clone(&registry),
         TransportBackend::Tungstenite,
         30,
+        Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
         None,
     );
 

@@ -16,6 +16,7 @@
 //! Configuration structures for the OKX adapter.
 
 use nautilus_core::string::secret::SecretString;
+use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
@@ -102,7 +103,7 @@ pub struct OKXDataClientConfig {
     pub book_stale_threshold_secs: u64,
     /// Maximum time to wait for an initial, post-reconnect, or recovery order book
     /// snapshot in seconds.
-    #[builder(default = 3)]
+    #[builder(default = DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS)]
     pub book_snapshot_timeout_secs: u64,
     /// Optional VIP level that unlocks additional subscriptions.
     pub vip_level: Option<OKXVipLevel>,
@@ -440,7 +441,7 @@ http_timeout_secs = 90
         assert!(!config.load_spreads);
         assert_eq!(config.book_stale_check_interval_secs, 5);
         assert_eq!(config.book_stale_threshold_secs, 30);
-        assert_eq!(config.book_snapshot_timeout_secs, 3);
+        assert_eq!(config.book_snapshot_timeout_secs, 10);
     }
 
     #[rstest]

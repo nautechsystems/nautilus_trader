@@ -34,19 +34,19 @@ use crate::{
     },
 };
 
-const BOOK_SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(10);
-
 pub(crate) fn recover(
     market_index: i64,
     recovery: Arc<BookRecovery<LighterWsError>>,
     cmd_tx: tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
+    snapshot_timeout: Duration,
 ) -> BookWork {
     Box::pin(async move {
         let result = recovery
             .run(
-                BOOK_SNAPSHOT_TIMEOUT,
+                snapshot_timeout,
                 |cancel, gate| {
                     let cmd_tx = cmd_tx.clone();
+
                     async move {
                         let (completion, rx) = tokio::sync::oneshot::channel();
                         cmd_tx
@@ -83,6 +83,7 @@ pub(crate) fn subscribe(
     write: Option<BookWrite>,
     client: Option<Arc<WebSocketClient>>,
     subscriptions: SubscriptionState,
+    snapshot_timeout: Duration,
 ) -> BookWork {
     Box::pin(async move {
         let send = async {
@@ -125,10 +126,11 @@ pub(crate) fn subscribe(
             Ok::<_, LighterWsError>(epoch)
         };
 
+        let send = send_with_deadline(send, snapshot_timeout);
         let result = tokio::select! {
             biased;
             () = cancel.cancelled() => Err(LighterWsError::Client("book send cancelled".into())),
-            result = time::timeout(BOOK_SNAPSHOT_TIMEOUT, send) => result.unwrap_or_else(|_| Err(LighterWsError::Network("book write deadline expired".into()))),
+            result = send => result,
         };
 
         BookWorkResult::Sent {
@@ -141,9 +143,35 @@ pub(crate) fn subscribe(
     })
 }
 
-pub(crate) fn wait_for_snapshot(market_index: i64, cancel: CancellationToken) -> BookWork {
+async fn send_with_deadline(
+    send: impl Future<Output = Result<u64, LighterWsError>>,
+    snapshot_timeout: Duration,
+) -> Result<u64, LighterWsError> {
+    if snapshot_timeout.is_zero() {
+        send.await
+    } else {
+        time::timeout(snapshot_timeout, send)
+            .await
+            .unwrap_or_else(|_| {
+                Err(LighterWsError::Network(
+                    "book write deadline expired".into(),
+                ))
+            })
+    }
+}
+
+pub(crate) fn wait_for_snapshot(
+    market_index: i64,
+    cancel: CancellationToken,
+    snapshot_timeout: Duration,
+) -> BookWork {
     Box::pin(async move {
-        snapshot_expired(&cancel, BOOK_SNAPSHOT_TIMEOUT).await;
+        if snapshot_timeout.is_zero() {
+            // No deadline: resolve only when cancelled, which the handler ignores.
+            cancel.cancelled().await;
+        } else {
+            snapshot_expired(&cancel, snapshot_timeout).await;
+        }
 
         BookWorkResult::Initial {
             market_index,
@@ -177,4 +205,74 @@ pub(crate) struct BookWrite {
     pub(crate) cancel: CancellationToken,
     pub(crate) gate: SnapshotGate,
     pub(crate) completion: tokio::sync::oneshot::Sender<Result<(), LighterWsError>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn wait_for_snapshot_zero_disables_deadline() {
+        let cancel = CancellationToken::new();
+        let mut work = wait_for_snapshot(0, cancel.clone(), Duration::ZERO);
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), &mut work)
+                .await
+                .is_err()
+        );
+
+        cancel.cancel();
+        let result = work.await;
+
+        let BookWorkResult::Initial {
+            market_index,
+            cancel: completed,
+        } = result
+        else {
+            panic!("expected deadline completion");
+        };
+
+        assert_eq!(market_index, 0);
+        assert!(completed.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn wait_for_snapshot_short_timeout_expires_without_cancellation() {
+        let result =
+            wait_for_snapshot(0, CancellationToken::new(), Duration::from_millis(20)).await;
+
+        let BookWorkResult::Initial {
+            market_index,
+            cancel,
+        } = result
+        else {
+            panic!("expected deadline completion");
+        };
+
+        assert_eq!(market_index, 0);
+        assert!(!cancel.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn send_with_deadline_zero_waits_for_slow_send() {
+        let send = async {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            Ok::<_, LighterWsError>(7)
+        };
+
+        assert_eq!(send_with_deadline(send, Duration::ZERO).await.unwrap(), 7);
+    }
+
+    #[tokio::test]
+    async fn send_with_deadline_short_timeout_expires_pending_send() {
+        let send = std::future::pending::<Result<u64, LighterWsError>>();
+        let result = send_with_deadline(send, Duration::from_millis(20)).await;
+
+        let Err(LighterWsError::Network(message)) = result else {
+            panic!("expected deadline expiry");
+        };
+
+        assert_eq!(message, "book write deadline expired");
+    }
 }

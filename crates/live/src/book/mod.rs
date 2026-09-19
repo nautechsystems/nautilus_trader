@@ -41,6 +41,12 @@ pub mod snapshot;
 
 use nautilus_common::live::dst::time::Duration;
 
+/// Default wait for an initial, post-reconnect, or recovery order book snapshot, in seconds.
+///
+/// Adapters use this as their `book_snapshot_timeout_secs` default; the config
+/// value remains tunable per deployment.
+pub const DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS: u64 = 10;
+
 /// Decision from an adapter's book sequence validation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BookSequenceOutcome {
@@ -59,4 +65,16 @@ pub enum BookSyncSignalKind {
     Stale { elapsed: Duration },
     /// The expected book snapshot did not arrive before its deadline.
     SnapshotMissing,
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn default_book_snapshot_timeout_is_ten_seconds() {
+        assert_eq!(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS, 10);
+    }
 }
