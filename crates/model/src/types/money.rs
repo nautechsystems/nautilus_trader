@@ -1088,6 +1088,8 @@ mod tests {
 
     #[rstest]
     #[case(42.0, 0, "JPY", "Money(42, JPY)", "42 JPY")]
+    #[case(0.0, 2, "USD", "Money(0.00, USD)", "0.00 USD")]
+    #[case(-1010.12, 2, "USD", "Money(-1010.12, USD)", "-1010.12 USD")]
     #[case(1010.12, 2, "USD", "Money(1010.12, USD)", "1010.12 USD")] // Normal precision
     #[case(123.456_789, 8, "BTC", "Money(123.45678900, BTC)", "123.45678900 BTC")] // At max normal precision
     fn test_formatting_normal_precision(
@@ -1314,6 +1316,36 @@ mod tests {
         let near_min = Money::from_raw(MONEY_RAW_MIN, usd);
         let one = Money::new(1.0, usd);
         assert_eq!(near_min.checked_sub(one), None);
+    }
+
+    #[rstest]
+    fn test_money_checked_add_below_min_returns_none() {
+        let usd = Currency::USD();
+        let minus_one_unit = Money::from_raw(-1, usd);
+
+        assert_eq!(
+            Money::from_raw(MONEY_RAW_MIN, usd).checked_add(minus_one_unit),
+            None
+        );
+        assert_eq!(
+            Money::from_raw(MONEY_RAW_MIN + 1, usd).checked_add(minus_one_unit),
+            Some(Money::from_raw(MONEY_RAW_MIN, usd))
+        );
+    }
+
+    #[rstest]
+    fn test_money_checked_sub_above_max_returns_none() {
+        let usd = Currency::USD();
+        let minus_one_unit = Money::from_raw(-1, usd);
+
+        assert_eq!(
+            Money::from_raw(MONEY_RAW_MAX, usd).checked_sub(minus_one_unit),
+            None
+        );
+        assert_eq!(
+            Money::from_raw(MONEY_RAW_MAX - 1, usd).checked_sub(minus_one_unit),
+            Some(Money::from_raw(MONEY_RAW_MAX, usd))
+        );
     }
 
     #[rstest]
@@ -1659,6 +1691,24 @@ mod tests {
         let huge = Decimal::from_str("99999999999999999999.99").unwrap();
         let result = Money::from_decimal(huge, Currency::USD());
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_from_decimal_rejects_raw_between_money_and_raw_bounds() {
+        let usd = Currency::USD();
+        let at_max = Decimal::try_from(MONEY_MAX).unwrap();
+        let above_max = at_max + dec!(0.5);
+        let expected_raw = MONEY_RAW_MAX + 5 * MoneyRaw::pow(10, u32::from(FIXED_PRECISION - 1));
+
+        let error = Money::from_decimal(above_max, usd).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Raw value {expected_raw} exceeded bounds [{MONEY_RAW_MIN}, {MONEY_RAW_MAX}] for Money"
+            )
+        );
+        assert_eq!(Money::from_decimal(at_max, usd).unwrap().raw, MONEY_RAW_MAX);
     }
 
     #[rstest]

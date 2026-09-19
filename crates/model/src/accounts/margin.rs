@@ -1055,6 +1055,61 @@ mod tests {
     }
 
     #[rstest]
+    fn test_account_type_predicates(margin_account: MarginAccount) {
+        assert!(!margin_account.is_cash_account());
+        assert!(margin_account.is_margin_account());
+        assert!(!Account::is_cash_account(&margin_account));
+        assert!(Account::is_margin_account(&margin_account));
+    }
+
+    #[rstest]
+    fn test_equality_compares_account_ids(margin_account_state: AccountState) {
+        let account = MarginAccount::new(margin_account_state.clone(), true);
+        let same = MarginAccount::new(margin_account_state.clone(), true);
+        let mut other_state = margin_account_state;
+        other_state.account_id = AccountId::from("OTHER-001");
+        let other = MarginAccount::new(other_state, true);
+
+        assert_eq!(account, same);
+        assert_ne!(account, other);
+    }
+
+    #[rstest]
+    fn test_apply_routes_account_margins_when_event_has_no_balances(
+        mut margin_account: MarginAccount,
+        margin_account_state: AccountState,
+    ) {
+        let usd = Currency::USD();
+
+        let event = AccountState::new(
+            margin_account_state.account_id,
+            AccountType::Margin,
+            vec![],
+            vec![MarginBalance::new(
+                Money::from("12500 USD"),
+                Money::from("25000 USD"),
+                None,
+            )],
+            true,
+            uuid4(),
+            1.into(),
+            1.into(),
+            margin_account_state.base_currency,
+        );
+
+        margin_account.apply(event).unwrap();
+
+        assert_eq!(
+            margin_account.account_initial_margins(),
+            IndexMap::from([(usd, Money::from("12500 USD"))])
+        );
+        assert_eq!(
+            margin_account.account_maintenance_margins(),
+            IndexMap::from([(usd, Money::from("25000 USD"))])
+        );
+    }
+
+    #[rstest]
     fn test_apply_routes_account_margins_by_currency(
         mut margin_account: MarginAccount,
         margin_account_state: AccountState,

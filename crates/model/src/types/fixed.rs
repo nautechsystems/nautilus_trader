@@ -1050,6 +1050,86 @@ mod tests {
     use super::*;
 
     #[rstest]
+    fn test_correct_raw_rounds_half_away_from_zero() {
+        let precision = FIXED_PRECISION - 1;
+
+        assert_eq!(correct_raw_u128(20, precision), 20);
+        assert_eq!(correct_raw_u128(14, precision), 10);
+        assert_eq!(correct_raw_u128(15, precision), 20);
+        assert_eq!(correct_raw_u64(14, precision), 10);
+        assert_eq!(correct_raw_u64(15, precision), 20);
+        assert_eq!(correct_raw_i128(15, precision), 20);
+        assert_eq!(correct_raw_i128(-14, precision), -10);
+        assert_eq!(correct_raw_i128(-15, precision), -20);
+        assert_eq!(correct_raw_i64(15, precision), 20);
+        assert_eq!(correct_raw_i64(-14, precision), -10);
+        assert_eq!(correct_raw_i64(-15, precision), -20);
+    }
+
+    #[rstest]
+    fn test_f64_fixed_u128_round_trip() {
+        let raw = f64_to_fixed_u128(1.5, 1);
+
+        assert_eq!(raw, 15 * 10_u128.pow(u32::from(FIXED_PRECISION - 1)));
+        assert_eq!(fixed_u128_to_f64(raw), 1.5);
+    }
+
+    #[rstest]
+    fn test_mantissa_exponent_to_fixed_i128_allows_max_scale_factor() {
+        let exponent = i8::try_from(38 - FIXED_PRECISION).unwrap();
+
+        assert_eq!(
+            mantissa_exponent_to_fixed_i128(1, exponent, 0).unwrap(),
+            10_i128.pow(38)
+        );
+        assert_eq!(
+            mantissa_exponent_to_fixed_i128(1, exponent + 1, 0)
+                .unwrap_err()
+                .to_string(),
+            format!(
+                "Exponent {} produces scale factor 10^39 which exceeds i128 range",
+                exponent + 1
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_raw_scales_match_requires_equal_effective_scale() {
+        assert!(raw_scales_match(0, FIXED_PRECISION));
+        assert!(raw_scales_match(FIXED_PRECISION + 1, FIXED_PRECISION + 1));
+        assert!(!raw_scales_match(FIXED_PRECISION, FIXED_PRECISION + 1));
+    }
+
+    #[rstest]
+    fn test_canonical_raw_trims_native_scale_trailing_zeros() {
+        assert_eq!(
+            canonical_raw(0_u128, FIXED_PRECISION + 2),
+            (0, FIXED_PRECISION)
+        );
+        assert_eq!(
+            canonical_raw(1_200_u128, FIXED_PRECISION + 2),
+            (12, FIXED_PRECISION)
+        );
+        assert_eq!(
+            canonical_raw(12_000_u128, FIXED_PRECISION + 2),
+            (120, FIXED_PRECISION)
+        );
+        assert_eq!(
+            canonical_raw(1_205_u128, FIXED_PRECISION + 2),
+            (1_205, FIXED_PRECISION + 2)
+        );
+        assert_eq!(
+            canonical_raw(5_u128, FIXED_PRECISION - 1),
+            (5, FIXED_PRECISION)
+        );
+    }
+
+    #[rstest]
+    fn test_compare_raw_zero_operands_are_equal_across_scales() {
+        assert_eq!(compare_raw(0_u128, u8::MAX, 0_u128, 2), Ordering::Equal);
+    }
+
+    #[rstest]
     #[case("1.00", 100, 2)]
     #[case("+1.00", 100, 2)]
     #[case("-1.00", -100, 2)]
@@ -1637,6 +1717,86 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_correct_raw_rounds_half_away_from_zero() {
+        let precision = FIXED_PRECISION - 1;
+
+        assert_eq!(correct_raw_u128(20, precision), 20);
+        assert_eq!(correct_raw_u128(14, precision), 10);
+        assert_eq!(correct_raw_u128(15, precision), 20);
+        assert_eq!(correct_raw_u64(14, precision), 10);
+        assert_eq!(correct_raw_u64(15, precision), 20);
+        assert_eq!(correct_raw_i128(15, precision), 20);
+        assert_eq!(correct_raw_i128(-14, precision), -10);
+        assert_eq!(correct_raw_i128(-15, precision), -20);
+        assert_eq!(correct_raw_i64(15, precision), 20);
+        assert_eq!(correct_raw_i64(-14, precision), -10);
+        assert_eq!(correct_raw_i64(-15, precision), -20);
+    }
+
+    #[rstest]
+    fn test_f64_fixed_u128_round_trip() {
+        let raw = f64_to_fixed_u128(1.5, 1);
+
+        assert_eq!(raw, 15 * 10_u128.pow(u32::from(FIXED_PRECISION - 1)));
+        assert_eq!(fixed_u128_to_f64(raw), 1.5);
+    }
+
+    #[rstest]
+    fn test_mantissa_exponent_to_fixed_i128_allows_max_scale_factor() {
+        let exponent = i8::try_from(38 - FIXED_PRECISION).unwrap();
+
+        assert_eq!(
+            mantissa_exponent_to_fixed_i128(1, exponent, 0).unwrap(),
+            10_i128.pow(38)
+        );
+        assert_eq!(
+            mantissa_exponent_to_fixed_i128(1, exponent + 1, 0)
+                .unwrap_err()
+                .to_string(),
+            format!(
+                "Exponent {} produces scale factor 10^39 which exceeds i128 range",
+                exponent + 1
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_raw_scales_match_requires_equal_effective_scale() {
+        assert!(raw_scales_match(0, FIXED_PRECISION));
+        assert!(raw_scales_match(FIXED_PRECISION + 1, FIXED_PRECISION + 1));
+        assert!(!raw_scales_match(FIXED_PRECISION, FIXED_PRECISION + 1));
+    }
+
+    #[rstest]
+    fn test_canonical_raw_trims_native_scale_trailing_zeros() {
+        assert_eq!(
+            canonical_raw(0_u128, FIXED_PRECISION + 2),
+            (0, FIXED_PRECISION)
+        );
+        assert_eq!(
+            canonical_raw(1_200_u128, FIXED_PRECISION + 2),
+            (12, FIXED_PRECISION)
+        );
+        assert_eq!(
+            canonical_raw(12_000_u128, FIXED_PRECISION + 2),
+            (120, FIXED_PRECISION)
+        );
+        assert_eq!(
+            canonical_raw(1_205_u128, FIXED_PRECISION + 2),
+            (1_205, FIXED_PRECISION + 2)
+        );
+        assert_eq!(
+            canonical_raw(5_u128, FIXED_PRECISION - 1),
+            (5, FIXED_PRECISION)
+        );
+    }
+
+    #[rstest]
+    fn test_compare_raw_zero_operands_are_equal_across_scales() {
+        assert_eq!(compare_raw(0_u128, u8::MAX, 0_u128, 2), Ordering::Equal);
+    }
 
     #[rstest]
     fn test_precision_boundaries() {

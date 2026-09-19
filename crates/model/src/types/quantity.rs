@@ -1656,6 +1656,34 @@ mod tests {
     }
 
     #[rstest]
+    fn test_quantity_from_raw_checked_allows_undef_and_rejects_above_max() {
+        assert_eq!(
+            Quantity::from_raw_checked(QUANTITY_UNDEF, 0).unwrap().raw,
+            QUANTITY_UNDEF
+        );
+        assert_eq!(
+            Quantity::from_raw_checked(QUANTITY_RAW_MAX + 1, 0)
+                .unwrap_err()
+                .to_string(),
+            format!(
+                "raw value {} exceeds QUANTITY_RAW_MAX={QUANTITY_RAW_MAX}",
+                QUANTITY_RAW_MAX + 1
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_quantity_as_f64() {
+        assert_eq!(Quantity::new(2.5, 1).as_f64(), 2.5);
+        assert_eq!(Quantity::new(0.0, 1).as_f64(), 0.0);
+    }
+
+    #[rstest]
+    fn test_quantity_deref_yields_raw() {
+        assert_eq!(*Quantity::from_raw(2_500, 1), 2_500);
+    }
+
+    #[rstest]
     fn test_quantity_checked_arith_rejects_undef() {
         let undef = Quantity::from_raw(QUANTITY_UNDEF, 0);
         let one = Quantity::new(1.0, 0);

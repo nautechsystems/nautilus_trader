@@ -287,6 +287,27 @@ mod tests {
     };
 
     #[rstest]
+    fn test_account_type_predicates(cash_account: CashAccount) {
+        assert!(cash_account.is_cash_account());
+        assert!(!cash_account.is_margin_account());
+        assert!(cash_account.is_unleveraged());
+        assert!(Account::is_cash_account(&cash_account));
+        assert!(!Account::is_margin_account(&cash_account));
+    }
+
+    #[rstest]
+    fn test_equality_compares_account_ids(cash_account_state: AccountState) {
+        let account = CashAccount::new(cash_account_state.clone(), true, false);
+        let same = CashAccount::new(cash_account_state.clone(), true, false);
+        let mut other_state = cash_account_state;
+        other_state.account_id = AccountId::from("OTHER-001");
+        let other = CashAccount::new(other_state, true, false);
+
+        assert_eq!(account, same);
+        assert_ne!(account, other);
+    }
+
+    #[rstest]
     fn test_display(cash_account: CashAccount) {
         assert_eq!(
             format!("{cash_account}"),

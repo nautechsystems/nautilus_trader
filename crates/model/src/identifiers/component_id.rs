@@ -110,6 +110,7 @@ mod tests {
     #[rstest]
     fn test_string_reprs(component_risk_engine: ComponentId) {
         assert_eq!(component_risk_engine.as_str(), "RiskEngine");
+        assert_eq!(component_risk_engine.inner().as_str(), "RiskEngine");
         assert_eq!(format!("{component_risk_engine}"), "RiskEngine");
     }
 

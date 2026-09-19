@@ -1585,7 +1585,7 @@ mod tests {
     use std::str::FromStr;
 
     use ahash::AHashSet;
-    use nautilus_core::{DurationNanos, UnixNanos, correctness::CorrectnessError};
+    use nautilus_core::{DurationNanos, UUID4, UnixNanos, correctness::CorrectnessError};
     use proptest::prelude::*;
     use rstest::rstest;
     use rust_decimal::{Decimal, prelude::ToPrimitive};
@@ -1985,6 +1985,47 @@ mod tests {
         assert_eq!(position.quantity, Quantity::from(15));
         assert_eq!(position.events, vec![fill_open, fill_reopen]);
         assert_eq!(position.replay_events.len(), 3);
+    }
+
+    #[rstest]
+    fn test_replay_fill_with_foreign_causation_stays_duplicate(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let position_id = PositionId::from("P-CAUSATION");
+        let fill_open = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-1"))
+            .trade_id(TradeId::from("T-1"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(10))
+            .last_px(Price::from("1.00000"))
+            .currency(Currency::USD())
+            .position_id(position_id)
+            .ts_event(UnixNanos::from(1))
+            .build();
+        let fill_close = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-2"))
+            .trade_id(TradeId::from("T-2"))
+            .order_side(OrderSide::Sell)
+            .last_qty(Quantity::from(10))
+            .last_px(Price::from("1.00000"))
+            .currency(Currency::USD())
+            .position_id(position_id)
+            .ts_event(UnixNanos::from(2))
+            .build();
+        let mut position = Position::new(&instrument, fill_open.clone());
+        position.apply(&fill_close);
+
+        let mut replayed = fill_open.clone();
+        replayed.event_id = uuid4();
+        replayed.ts_event = UnixNanos::from(3);
+        replayed.causation_id = Some(fill_close.event_id);
+
+        position.apply(&replayed);
+
+        assert_eq!(position.side, PositionSide::Flat);
+        assert_eq!(position.quantity, Quantity::from(0));
+        assert_eq!(position.events, vec![fill_open, fill_close.clone()]);
     }
 
     #[rstest]
@@ -3885,6 +3926,64 @@ mod tests {
     }
 
     #[rstest]
+    fn test_calculate_pnl_scales_by_contract_multiplier(
+        mut xbtusd_bitmex: CryptoPerpetual,
+        mut crypto_perpetual_ethusdt: CryptoPerpetual,
+    ) {
+        xbtusd_bitmex.multiplier = Quantity::from(10);
+        let xbtusd_bitmex = InstrumentAny::CryptoPerpetual(xbtusd_bitmex);
+        let inverse_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(xbtusd_bitmex.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("100000"))
+            .build();
+        let inverse_fill = TestOrderEventStubs::filled(
+            &inverse_order,
+            &xbtusd_bitmex,
+            None,
+            Some(PositionId::from("P-MULTIPLIER-INVERSE")),
+            Some(Price::from("10000.0")),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        let inverse_position = Position::new(&xbtusd_bitmex, inverse_fill.into());
+
+        assert_eq!(
+            inverse_position.calculate_pnl(10000.0, 11000.0, Quantity::from("100000.0")),
+            Money::from("-9.09090909 BTC")
+        );
+
+        crypto_perpetual_ethusdt.multiplier = Quantity::from(10);
+        let ethusdt = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        let linear_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(ethusdt.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("2.000"))
+            .build();
+        let linear_fill = TestOrderEventStubs::filled(
+            &linear_order,
+            &ethusdt,
+            None,
+            Some(PositionId::from("P-MULTIPLIER-LINEAR")),
+            Some(Price::from("1000.00")),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        let linear_position = Position::new(&ethusdt, linear_fill.into());
+
+        assert_eq!(
+            linear_position.calculate_pnl(1000.0, 1100.0, Quantity::from("2.000")),
+            Money::new(2000.0, linear_position.settlement_currency)
+        );
+    }
+
+    #[rstest]
     fn test_try_notional_value_for_inverse_zero_price_returns_error(
         xbtusd_bitmex: CryptoPerpetual,
     ) {
@@ -3943,6 +4042,84 @@ mod tests {
             "inverse position BTCUSDT.BITMEX has no base currency"
         );
         assert!(position.try_unrealized_pnl(Price::from("10000.0")).is_err());
+    }
+
+    #[rstest]
+    fn test_calculate_avg_px_zero_quantity_paths(stub_position_long: Position) {
+        assert_eq!(
+            stub_position_long
+                .calculate_avg_px(0.0, 1.0, 2.0, 5.0)
+                .unwrap(),
+            2.0
+        );
+        assert_eq!(
+            stub_position_long
+                .calculate_avg_px(0.0, 1.0, 2.0, 0.0)
+                .unwrap_err()
+                .to_string(),
+            "Cannot calculate average price: both quantities are zero"
+        );
+        assert_eq!(
+            stub_position_long
+                .calculate_avg_px(5.0, 1.0, 2.0, 0.0)
+                .unwrap_err()
+                .to_string(),
+            "Cannot calculate average price: fill quantity is zero"
+        );
+    }
+
+    #[rstest]
+    fn test_calculate_return_rejects_zero_open_price(stub_position_long: Position) {
+        assert_eq!(
+            stub_position_long
+                .calculate_return(0.0, 1.5)
+                .unwrap_err()
+                .to_string(),
+            "Cannot calculate return: open price is zero (close price: 1.5)"
+        );
+        assert_eq!(stub_position_long.calculate_return(2.0, 3.0).unwrap(), 0.5);
+    }
+
+    #[rstest]
+    fn test_calculate_points_inverse_rejects_non_positive_prices(xbtusd_bitmex: CryptoPerpetual) {
+        let xbtusd_bitmex = InstrumentAny::CryptoPerpetual(xbtusd_bitmex);
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(xbtusd_bitmex.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("100000"))
+            .build();
+        let fill = TestOrderEventStubs::filled(
+            &order,
+            &xbtusd_bitmex,
+            None,
+            Some(PositionId::from("P-INVERSE-GUARD")),
+            Some(Price::from("10000.0")),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        let position = Position::new(&xbtusd_bitmex, fill.into());
+
+        assert_eq!(
+            position
+                .calculate_points_inverse(-1.0, 10_000.0)
+                .unwrap_err()
+                .to_string(),
+            "Cannot calculate inverse points: open price is not positive or is too small (-1)"
+        );
+        assert_eq!(
+            position
+                .calculate_points_inverse(10_000.0, -1.0)
+                .unwrap_err()
+                .to_string(),
+            "Cannot calculate inverse points: close price is not positive or is too small (-1)"
+        );
+        assert!(position.calculate_points_inverse(1e-16, 10_000.0).is_err());
+        assert!(position.calculate_points_inverse(10_000.0, 1e-16).is_err());
+        assert!(position.calculate_points_inverse(1e-15, 10_000.0).is_ok());
+        assert!(position.calculate_points_inverse(10_000.0, 1e-15).is_ok());
     }
 
     #[rstest]
@@ -4866,6 +5043,33 @@ mod tests {
     }
 
     #[rstest]
+    fn test_base_commission_adjustment_id_flips_low_bit_of_fill_id(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let base_currency = instrument.base_currency().unwrap();
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-1"))
+            .trade_id(TradeId::from("T-1"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(10))
+            .last_px(Price::from("1.00000"))
+            .currency(Currency::USD())
+            .commission(Money::new(2.0, base_currency))
+            .position_id(PositionId::from("P-COMMISSION"))
+            .event_id(UUID4::from_str("a1b2c3d4-e5f6-4789-8abc-def012345679").unwrap())
+            .ts_event(UnixNanos::from(1))
+            .build();
+
+        let position = Position::new(&instrument, fill);
+
+        assert_eq!(position.adjustments.len(), 1);
+        assert_eq!(
+            position.adjustments[0].event_id,
+            UUID4::from_str("a1b2c3d4-e5f6-4789-8abc-def012345678").unwrap()
+        );
+    }
+
+    #[rstest]
     fn test_position_commission_in_base_currency_sell() {
         // Test that commission in base currency increases short position on sell
         let btc_usdt = currency_pair_btcusdt();
@@ -5061,6 +5265,414 @@ mod tests {
             "New adjustment should be for the new fill"
         );
         assert_eq!(position.events.len(), 1, "Events should also be reset");
+    }
+
+    #[rstest]
+    fn test_id_accessors_deduplicate_and_sort(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let position_id = PositionId::from("P-IDS");
+        let fill1 = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-2"))
+            .venue_order_id(VenueOrderId::from("V-2"))
+            .trade_id(TradeId::from("T-3"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(10))
+            .last_px(Price::from("1.00000"))
+            .currency(Currency::USD())
+            .position_id(position_id)
+            .ts_event(UnixNanos::from(1))
+            .build();
+        let fill2 = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-1"))
+            .venue_order_id(VenueOrderId::from("V-1"))
+            .trade_id(TradeId::from("T-1"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(10))
+            .last_px(Price::from("1.00000"))
+            .currency(Currency::USD())
+            .position_id(position_id)
+            .ts_event(UnixNanos::from(2))
+            .build();
+        let fill3 = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-1"))
+            .venue_order_id(VenueOrderId::from("V-1"))
+            .trade_id(TradeId::from("T-2"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(10))
+            .last_px(Price::from("1.00000"))
+            .currency(Currency::USD())
+            .position_id(position_id)
+            .ts_event(UnixNanos::from(3))
+            .build();
+        let mut position = Position::new(&instrument, fill1);
+        position.apply(&fill2);
+        position.apply(&fill3);
+
+        assert_eq!(
+            position.client_order_ids(),
+            vec![ClientOrderId::from("O-1"), ClientOrderId::from("O-2")]
+        );
+        assert_eq!(
+            position.venue_order_ids(),
+            vec![VenueOrderId::from("V-1"), VenueOrderId::from("V-2")]
+        );
+        assert_eq!(
+            position.trade_ids(),
+            vec![
+                TradeId::from("T-1"),
+                TradeId::from("T-2"),
+                TradeId::from("T-3")
+            ]
+        );
+    }
+
+    #[rstest]
+    fn test_is_open_and_is_closed_require_both_conditions(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let position_id = PositionId::from("P-PREDICATES");
+        let fill_open = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-1"))
+            .trade_id(TradeId::from("T-1"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(10))
+            .last_px(Price::from("1.00000"))
+            .currency(Currency::USD())
+            .position_id(position_id)
+            .ts_event(UnixNanos::from(1))
+            .build();
+        let fill_close = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-2"))
+            .trade_id(TradeId::from("T-2"))
+            .order_side(OrderSide::Sell)
+            .last_qty(Quantity::from(10))
+            .last_px(Price::from("1.00000"))
+            .currency(Currency::USD())
+            .position_id(position_id)
+            .ts_event(UnixNanos::from(2))
+            .build();
+        let mut position = Position::new(&instrument, fill_open);
+        position.apply(&fill_close);
+
+        assert!(position.is_closed());
+        assert!(!position.is_open());
+
+        position.apply_adjustment(PositionAdjusted::new(
+            position.trader_id,
+            position.strategy_id,
+            position.instrument_id,
+            position.id,
+            position.account_id,
+            PositionAdjustmentType::Funding,
+            Some(dec!(5)),
+            None,
+            None,
+            uuid4(),
+            UnixNanos::from(3),
+            UnixNanos::from(3),
+        ));
+
+        assert_eq!(position.side, PositionSide::Long);
+        assert_eq!(position.ts_closed, Some(UnixNanos::from(2)));
+        assert!(!position.is_open());
+        assert!(!position.is_closed());
+    }
+
+    #[rstest]
+    fn test_voided_fill_rebate_leaves_no_residual_commission(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let position_id = PositionId::from("P-VOID-REBATE");
+        let fill1 = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-1"))
+            .trade_id(TradeId::from("T-1"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(10))
+            .last_px(Price::from("1.00000"))
+            .currency(Currency::USD())
+            .position_id(position_id)
+            .ts_event(UnixNanos::from(1))
+            .build();
+        let rebate = Money::from("-2.00 USD");
+        let fill2 = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-2"))
+            .trade_id(TradeId::from("T-2"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(10))
+            .last_px(Price::from("1.00000"))
+            .currency(Currency::USD())
+            .commission(rebate)
+            .position_id(position_id)
+            .ts_event(UnixNanos::from(2))
+            .build();
+        let void2 = matching_fill_void(&fill2, Quantity::from(10), Some(rebate));
+        let mut position = Position::new(&instrument, fill1);
+        position.apply(&fill2);
+
+        position
+            .apply_fill_void(void2, Quantity::from(10), Some(rebate))
+            .unwrap();
+
+        assert_eq!(position.quantity, Quantity::from(10));
+        assert!(position.commissions().is_empty());
+        assert_eq!(position.realized_pnl, Some(Money::from("0.00 USD")));
+    }
+
+    #[rstest]
+    fn test_voided_fill_commission_accumulates_into_realized_pnl(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let position_id = PositionId::from("P-SURVIVING-QUOTE");
+        let fill1 = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-1"))
+            .trade_id(TradeId::from("T-1"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(10))
+            .last_px(Price::from("1.00000"))
+            .currency(Currency::USD())
+            .commission(Money::from("2.00 USD"))
+            .position_id(position_id)
+            .ts_event(UnixNanos::from(1))
+            .build();
+        let fill2 = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-2"))
+            .trade_id(TradeId::from("T-2"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(10))
+            .last_px(Price::from("2.00000"))
+            .currency(Currency::USD())
+            .commission(Money::from("1.00 USD"))
+            .position_id(position_id)
+            .ts_event(UnixNanos::from(2))
+            .build();
+        let void2 = matching_fill_void(&fill2, Quantity::from(10), None);
+        let mut position = Position::new(&instrument, fill1);
+        position.apply(&fill2);
+
+        position
+            .apply_fill_void(void2, Quantity::from(10), None)
+            .unwrap();
+
+        assert_eq!(position.quantity, Quantity::from(10));
+        assert_eq!(position.commissions(), vec![Money::from("3.00 USD")]);
+        assert_eq!(position.realized_pnl, Some(Money::from("-3.00 USD")));
+    }
+
+    #[rstest]
+    fn test_voided_fill_base_commission_preserves_avg_px_open(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let base_currency = instrument.base_currency().unwrap();
+        let position_id = PositionId::from("P-SURVIVING-BASE");
+        let fill1 = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-1"))
+            .trade_id(TradeId::from("T-1"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(10))
+            .last_px(Price::from("1.00000"))
+            .currency(Currency::USD())
+            .commission(Money::new(2.0, base_currency))
+            .position_id(position_id)
+            .ts_event(UnixNanos::from(1))
+            .build();
+        let fill2 = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-2"))
+            .trade_id(TradeId::from("T-2"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(10))
+            .last_px(Price::from("2.00000"))
+            .currency(Currency::USD())
+            .commission(Money::new(1.0, base_currency))
+            .position_id(position_id)
+            .ts_event(UnixNanos::from(2))
+            .build();
+        let void2 = matching_fill_void(&fill2, Quantity::from(10), None);
+        let mut position = Position::new(&instrument, fill1);
+        position.apply(&fill2);
+
+        position
+            .apply_fill_void(void2, Quantity::from(10), None)
+            .unwrap();
+
+        assert_eq!(position.quantity, Quantity::from(7));
+        assert_eq!(position.avg_px_open, 1.0);
+        assert_eq!(position.commissions(), vec![Money::new(3.0, base_currency)]);
+    }
+
+    #[rstest]
+    fn test_fill_fragments_requires_matching_order_and_trade(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let position_id = PositionId::from("P-FRAGMENTS");
+        let fill1 = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-1"))
+            .trade_id(TradeId::from("T-1"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(10))
+            .last_px(Price::from("1.00000"))
+            .currency(Currency::USD())
+            .position_id(position_id)
+            .ts_event(UnixNanos::from(1))
+            .build();
+        let fill2 = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-1"))
+            .trade_id(TradeId::from("T-2"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(10))
+            .last_px(Price::from("1.00000"))
+            .currency(Currency::USD())
+            .position_id(position_id)
+            .ts_event(UnixNanos::from(2))
+            .build();
+        let mut position = Position::new(&instrument, fill1);
+        position.apply(&fill2);
+
+        let fragments = position.fill_fragments(ClientOrderId::from("O-1"), TradeId::from("T-1"));
+
+        assert_eq!(fragments.len(), 1);
+        assert_eq!(fragments[0].trade_id, TradeId::from("T-1"));
+        assert!(
+            position
+                .fill_fragments(ClientOrderId::from("O-2"), TradeId::from("T-1"))
+                .is_empty()
+        );
+    }
+
+    #[rstest]
+    fn test_apply_fill_void_scopes_staleness_check_to_same_trade(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let position_id = PositionId::from("P-VOID-TRADES");
+        let fill1 = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-1"))
+            .trade_id(TradeId::from("T-1"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(10))
+            .last_px(Price::from("1.00000"))
+            .currency(Currency::USD())
+            .position_id(position_id)
+            .ts_event(UnixNanos::from(1))
+            .build();
+        let fill2 = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-1"))
+            .trade_id(TradeId::from("T-2"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(10))
+            .last_px(Price::from("1.00000"))
+            .currency(Currency::USD())
+            .position_id(position_id)
+            .ts_event(UnixNanos::from(2))
+            .build();
+        let void1 = matching_fill_void(&fill1, Quantity::from(6), None);
+        let void2 = matching_fill_void(&fill2, Quantity::from(2), None);
+        let mut position = Position::new(&instrument, fill1);
+        position.apply(&fill2);
+        position
+            .apply_fill_void(void1, Quantity::from(6), None)
+            .unwrap();
+
+        position
+            .apply_fill_void(void2, Quantity::from(2), None)
+            .unwrap();
+
+        assert_eq!(position.quantity, Quantity::from(12));
+        assert_eq!(position.fill_voids.len(), 2);
+    }
+
+    #[rstest]
+    fn test_apply_fill_void_removes_quantity_from_voided_trade_only(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let position_id = PositionId::from("P-VOID-ATTRIBUTION");
+        let fill1 = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-1"))
+            .trade_id(TradeId::from("T-1"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(10))
+            .last_px(Price::from("1.00000"))
+            .currency(Currency::USD())
+            .position_id(position_id)
+            .ts_event(UnixNanos::from(1))
+            .build();
+        let fill2 = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-1"))
+            .trade_id(TradeId::from("T-2"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(10))
+            .last_px(Price::from("2.00000"))
+            .currency(Currency::USD())
+            .position_id(position_id)
+            .ts_event(UnixNanos::from(2))
+            .build();
+        let void1 = matching_fill_void(&fill1, Quantity::from(4), None);
+        let mut position = Position::new(&instrument, fill1);
+        position.apply(&fill2);
+
+        position
+            .apply_fill_void(void1, Quantity::from(4), None)
+            .unwrap();
+
+        assert_eq!(position.quantity, Quantity::from(16));
+        assert_eq!(position.avg_px_open, 1.625);
+    }
+
+    #[rstest]
+    fn test_purge_events_for_order_retains_other_order_fill_voids(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let position_id = PositionId::from("P-PURGE-VOID");
+        let fill1 = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-1"))
+            .trade_id(TradeId::from("T-1"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(10))
+            .last_px(Price::from("1.00000"))
+            .currency(Currency::USD())
+            .position_id(position_id)
+            .ts_event(UnixNanos::from(1))
+            .build();
+        let fill2 = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-2"))
+            .trade_id(TradeId::from("T-2"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(10))
+            .last_px(Price::from("1.00000"))
+            .currency(Currency::USD())
+            .position_id(position_id)
+            .ts_event(UnixNanos::from(2))
+            .build();
+        let void1 = matching_fill_void(&fill1, Quantity::from(2), None);
+        let void2 = matching_fill_void(&fill2, Quantity::from(3), None);
+        let mut position = Position::new(&instrument, fill1);
+        position.apply(&fill2);
+        position
+            .apply_fill_void(void1, Quantity::from(2), None)
+            .unwrap();
+        position
+            .apply_fill_void(void2, Quantity::from(3), None)
+            .unwrap();
+
+        assert_eq!(position.fill_voids.len(), 2);
+
+        position.purge_events_for_order(ClientOrderId::from("O-1"));
+
+        assert_eq!(position.fill_voids.len(), 1);
+        assert_eq!(
+            position.fill_voids[0].event.client_order_id,
+            ClientOrderId::from("O-2")
+        );
+        assert_eq!(position.fill_voids[0].voided_qty, Quantity::from(3));
     }
 
     #[rstest]

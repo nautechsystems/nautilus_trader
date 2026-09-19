@@ -397,6 +397,24 @@ mod tests {
     };
 
     #[rstest]
+    #[should_panic(expected = "Order invariant violated: first event must be OrderInitialized")]
+    fn test_init_event_panics_when_first_event_is_not_initialized() {
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
+            .quantity(Quantity::from(10))
+            .build();
+
+        let OrderAny::Market(inner) = &mut order else {
+            panic!("expected a market order");
+        };
+
+        inner.events[0] =
+            OrderEventAny::Denied(crate::events::order::spec::OrderDeniedSpec::builder().build());
+
+        let _ = order.init_event();
+    }
+
+    #[rstest]
     fn test_order_any_equality() {
         // Create two orders with different types but same client_order_id
         let client_order_id = ClientOrderId::from("ORDER-001");

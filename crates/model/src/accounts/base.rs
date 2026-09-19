@@ -668,6 +668,22 @@ mod tests {
     }
 
     #[rstest]
+    fn test_base_purge_account_events_drops_event_exactly_at_cutoff() {
+        let mut account = BaseAccount::new(cash_account_state(), true);
+        let mut at_cutoff = cash_account_state();
+        at_cutoff.ts_event = UnixNanos::from(200_000_000_000);
+        account.base_apply(at_cutoff);
+        let mut after_cutoff = cash_account_state();
+        after_cutoff.ts_event = UnixNanos::from(200_000_000_001);
+        account.base_apply(after_cutoff);
+
+        account.base_purge_account_events(UnixNanos::from(300_000_000_000), 100);
+
+        assert_eq!(account.events.len(), 1);
+        assert_eq!(account.events[0].ts_event, UnixNanos::from(200_000_000_001));
+    }
+
+    #[rstest]
     fn test_base_purge_account_events_retains_future_event_without_overflow() {
         let mut event = cash_account_state();
         event.ts_event = UnixNanos::from(u64::MAX - 1);
@@ -763,6 +779,28 @@ mod tests {
     }
 
     #[rstest]
+    fn test_balance_from_locks_clamps_reservations_to_total() {
+        let usd = Currency::USD();
+        let total = Money::from("100 USD");
+        let current = AccountBalance::new(total, Money::zero(usd), total);
+        let mut balances_locked = AHashMap::new();
+        balances_locked.insert(
+            (InstrumentId::from("AUD/USD.SIM"), usd),
+            Money::from("60 USD"),
+        );
+        balances_locked.insert(
+            (InstrumentId::from("EUR/USD.SIM"), usd),
+            Money::from("60 USD"),
+        );
+
+        let balance = balance_from_locks(current, &balances_locked).unwrap();
+
+        assert_eq!(balance.total, total);
+        assert_eq!(balance.locked, total);
+        assert_eq!(balance.free, Money::zero(usd));
+    }
+
+    #[rstest]
     #[case::positive_total("1000 USD", "1000 USD", "0 USD")]
     #[case::negative_total("-1000 USD", "0 USD", "-1000 USD")]
     fn test_recalculate_balance_degrades_to_non_spendable_for_invalid_reservation(
@@ -812,6 +850,25 @@ mod tests {
         account.update_commissions(Money::from_raw(1, usd));
 
         assert!(account.commission(&usd).is_none());
+    }
+
+    #[rstest]
+    fn test_commissions_returns_every_currency() {
+        let mut account = BaseAccount::new(cash_account_state(), true);
+        account.update_commissions(Money::from("2.50 USD"));
+        account.update_commissions(Money::from("1.25 AUD"));
+
+        let commissions = account.commissions();
+
+        assert_eq!(commissions.len(), 2);
+        assert_eq!(
+            commissions.get(&Currency::USD()),
+            Some(&Money::from("2.50 USD"))
+        );
+        assert_eq!(
+            commissions.get(&Currency::AUD()),
+            Some(&Money::from("1.25 AUD"))
+        );
     }
 
     #[rstest]

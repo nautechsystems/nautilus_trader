@@ -326,6 +326,25 @@ mod tests {
     };
 
     #[rstest]
+    fn test_account_type_predicates(betting_account: BettingAccount) {
+        assert!(betting_account.is_unleveraged());
+        assert!(Account::is_cash_account(&betting_account));
+        assert!(!Account::is_margin_account(&betting_account));
+    }
+
+    #[rstest]
+    fn test_equality_compares_account_ids(betting_account_state: AccountState) {
+        let account = BettingAccount::new(betting_account_state.clone(), true);
+        let same = BettingAccount::new(betting_account_state.clone(), true);
+        let mut other_state = betting_account_state;
+        other_state.account_id = AccountId::from("OTHER-001");
+        let other = BettingAccount::new(other_state, true);
+
+        assert_eq!(account, same);
+        assert_ne!(account, other);
+    }
+
+    #[rstest]
     fn test_display(betting_account: BettingAccount) {
         assert_eq!(
             format!("{betting_account}"),
@@ -456,6 +475,57 @@ mod tests {
             .unwrap();
 
         assert_eq!(result, vec![Money::from("-80 GBP")]);
+    }
+
+    #[rstest]
+    fn test_calculate_pnls_does_not_clamp_when_fill_extends_position(
+        betting_account: BettingAccount,
+        betting: crate::instruments::BettingInstrument,
+    ) {
+        let order1 = crate::orders::builder::OrderTestBuilder::new(crate::enums::OrderType::Market)
+            .instrument_id(betting.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("100"))
+            .build();
+        let betting_any = betting.clone().into_any();
+        let fill1 = TestOrderEventStubs::filled(
+            &order1,
+            &betting_any,
+            None,
+            None,
+            Some(Price::from("0.5")),
+            None,
+            None,
+            None,
+            None,
+            Some(AccountId::from("SIM-001")),
+        );
+
+        let order2 = crate::orders::builder::OrderTestBuilder::new(crate::enums::OrderType::Market)
+            .instrument_id(betting.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("200"))
+            .build();
+        let fill2 = TestOrderEventStubs::filled(
+            &order2,
+            &betting_any,
+            None,
+            None,
+            Some(Price::from("0.8")),
+            None,
+            None,
+            None,
+            None,
+            Some(AccountId::from("SIM-001")),
+        );
+
+        let position = Position::new(&betting_any, fill1.into());
+        let fill2_owned: crate::events::OrderFilled = fill2.into();
+        let result = betting_account
+            .calculate_pnls(&betting_any, &fill2_owned, Some(position))
+            .unwrap();
+
+        assert_eq!(result, vec![Money::from("-160 GBP")]);
     }
 
     #[rstest]

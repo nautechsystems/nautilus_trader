@@ -104,6 +104,7 @@ mod tests {
     #[rstest]
     fn test_string_reprs(order_list_id_test: OrderListId) {
         assert_eq!(order_list_id_test.as_str(), "001");
+        assert_eq!(order_list_id_test.inner().as_str(), "001");
         assert_eq!(format!("{order_list_id_test}"), "001");
     }
 

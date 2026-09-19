@@ -276,6 +276,33 @@ mod tests {
     }
 
     #[rstest]
+    fn test_delegated_state_accessors(cash_account_state: AccountState) {
+        let balance = cash_account_state.balances[0];
+        let account = AccountAny::try_from_state(cash_account_state.clone()).unwrap();
+
+        assert_eq!(account.last_event(), Some(cash_account_state.clone()));
+        assert_eq!(account.events(), vec![cash_account_state.clone()]);
+        assert_eq!(account.base_currency(), cash_account_state.base_currency);
+        assert_eq!(
+            account.balances_locked().get(&balance.currency),
+            Some(&balance.locked)
+        );
+        assert_eq!(account.balances().get(&balance.currency), Some(&balance));
+    }
+
+    #[rstest]
+    fn test_equality_compares_account_ids(cash_account_state: AccountState) {
+        let account = AccountAny::try_from_state(cash_account_state.clone()).unwrap();
+        let same = AccountAny::try_from_state(cash_account_state.clone()).unwrap();
+        let mut other_state = cash_account_state;
+        other_state.account_id = AccountId::from("OTHER-001");
+        let other = AccountAny::try_from_state(other_state).unwrap();
+
+        assert_eq!(account, same);
+        assert_ne!(account, other);
+    }
+
+    #[rstest]
     fn test_from_events_single_margin_event(margin_account_state: AccountState) {
         let result = AccountAny::from_events(&[margin_account_state]);
         assert!(result.is_ok());

@@ -821,6 +821,44 @@ mod tests {
         types::{ERROR_PRICE, Money, PRICE_ERROR, PRICE_UNDEF, QUANTITY_UNDEF},
     };
 
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_try_normalize_price_rejects_wei_scale_against_standard_instrument(
+        audusd_sim: CurrencyPair,
+    ) {
+        let wei_price =
+            Price::from_wei(alloy_primitives::U256::from(1_000_000_000_000_000_000_u64));
+
+        let error = audusd_sim.try_normalize_price(wei_price).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "`price` raw scale does not match instrument price precision, price precision was 18, instrument price precision was {}",
+                audusd_sim.price_precision()
+            )
+        );
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_try_normalize_qty_rejects_wei_scale_against_standard_instrument(
+        audusd_sim: CurrencyPair,
+    ) {
+        let wei_qty =
+            Quantity::from_wei(alloy_primitives::U256::from(1_000_000_000_000_000_000_u64));
+
+        let error = audusd_sim.try_normalize_qty(wei_qty).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "`quantity` raw scale does not match instrument size precision, quantity precision was 18, instrument size precision was {}",
+                audusd_sim.size_precision()
+            )
+        );
+    }
+
     pub(super) fn default_price_increment(precision: u8) -> Price {
         let step = 10f64.powi(-i32::from(precision));
         Price::new(step, precision)

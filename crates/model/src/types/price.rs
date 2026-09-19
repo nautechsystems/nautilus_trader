@@ -1371,6 +1371,26 @@ mod tests {
     }
 
     #[rstest]
+    fn test_from_decimal_dp_rejects_raw_between_price_and_raw_bounds() {
+        let at_max = Decimal::try_from(PRICE_MAX).unwrap();
+        let above_max = at_max + dec!(0.5);
+        let expected_raw = PRICE_RAW_MAX + 5 * PriceRaw::pow(10, u32::from(FIXED_PRECISION - 1));
+
+        let error = Price::from_decimal_dp(above_max, 1).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Raw value {expected_raw} outside valid range [{PRICE_RAW_MIN}, {PRICE_RAW_MAX}] for Price"
+            )
+        );
+        assert_eq!(
+            Price::from_decimal_dp(at_max, 1).unwrap().raw,
+            PRICE_RAW_MAX
+        );
+    }
+
+    #[rstest]
     fn test_from_decimal_dp_out_of_range_returns_typed_error_with_stable_display() {
         let huge = Decimal::from_str("99999999999999999999.99").unwrap();
         let error = Price::from_decimal_dp(huge, 2).unwrap_err();
@@ -1529,6 +1549,40 @@ mod tests {
         let undef = Price::from_raw(PRICE_UNDEF, 0);
         let neg_one = Price::new(-1.0, 0);
         assert_eq!(undef.checked_sub(neg_one), None);
+    }
+
+    #[rstest]
+    fn test_price_is_zero() {
+        assert!(!Price::new(1.5, 2).is_zero());
+        assert!(Price::new(0.0, 2).is_zero());
+    }
+
+    #[rstest]
+    fn test_price_as_f64() {
+        assert_eq!(Price::new(1.5, 2).as_f64(), 1.5);
+        assert_eq!(Price::new(0.0, 2).as_f64(), 0.0);
+    }
+
+    #[rstest]
+    fn test_price_checked_arith_rejects_out_of_bounds_without_integer_overflow() {
+        let one_unit = Price::from_raw(1, 0);
+
+        assert_eq!(
+            Price::from_raw(PRICE_RAW_MAX, 0).checked_add(one_unit),
+            None
+        );
+        assert_eq!(
+            Price::from_raw(PRICE_RAW_MIN, 0).checked_sub(one_unit),
+            None
+        );
+    }
+
+    #[rstest]
+    fn test_price_checked_sub_rejects_sentinel_before_bounds_check() {
+        let undef = Price::from_raw(PRICE_UNDEF, 0);
+        let max = Price::from_raw(PRICE_RAW_MAX, 0);
+
+        assert_eq!(undef.checked_sub(max), None);
     }
 
     #[rstest]

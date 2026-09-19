@@ -806,6 +806,35 @@ mod tests {
     }
 
     #[rstest]
+    fn test_compile_rejects_unknown_function() {
+        let error = compile("nosuchfn(x)", &bindings()).unwrap_err();
+
+        assert_eq!(
+            error,
+            ExpressionError::UnknownFunction {
+                name: "nosuchfn".to_string()
+            }
+        );
+    }
+
+    #[rstest]
+    fn test_compile_rejects_equality_between_mismatched_types() {
+        let error = compile("x == (x > 1)", &bindings()).unwrap_err();
+
+        assert!(
+            matches!(
+                error,
+                ExpressionError::BinaryTypeMismatch {
+                    left: ValueType::Number,
+                    right: ValueType::Bool,
+                    ..
+                }
+            ),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    #[rstest]
     fn test_eval_numeric_expression_with_assignments_and_special_bindings() {
         let compiled =
             compile_numeric("spread = AUD/USD.SIM - x; spread / 2", &bindings()).unwrap();

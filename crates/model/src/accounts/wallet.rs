@@ -656,6 +656,7 @@ impl Display for WalletAccount {
 
 #[cfg(test)]
 mod tests {
+    use ahash::AHashMap;
     use indexmap::IndexMap;
     use rstest::rstest;
 
@@ -664,7 +665,7 @@ mod tests {
         enums::{AccountType, LiquiditySide, OrderSide},
         events::{AccountState, account::stubs::*},
         identifiers::{AccountId, InstrumentId, stubs::uuid4},
-        instruments::{CurrencyPair, Instrument, stubs::*},
+        instruments::{CryptoPerpetual, CurrencyPair, Instrument, stubs::*},
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         types::{
             AccountBalance, Currency, MarginBalance, Money, Price, Quantity,
@@ -1517,6 +1518,73 @@ mod tests {
             .unwrap();
 
         assert_eq!(balance_locked, Money::from("0.01 USD"));
+    }
+
+    #[rstest]
+    fn test_validate_observed_balance_rejects_currency_mismatch() {
+        let balance = AccountBalance {
+            currency: Currency::AUD(),
+            total: Money::from("10 USD"),
+            locked: Money::from("0 USD"),
+            free: Money::from("10 USD"),
+        };
+
+        let error = WalletAccount::validate_observed_balance(balance).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Wallet account balance currency AUD precision 2 differed from total currency USD precision 2"
+        );
+    }
+
+    #[rstest]
+    fn test_balance_from_locks_checked_rejects_reservation_currency_mismatch() {
+        let usd = Currency::USD();
+        let total = Money::from("100 USD");
+        let balance = AccountBalance::new(total, Money::zero(usd), total);
+        let mut balances_locked = AHashMap::new();
+        balances_locked.insert(
+            (InstrumentId::from("AUD/USD.SIM"), Currency::AUD()),
+            Money::from("10 USD"),
+        );
+
+        let error =
+            WalletAccount::balance_from_locks_checked(balance, &balances_locked).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "wallet reservation key currency AUD precision 2 differed from value currency USD precision 2"
+        );
+    }
+
+    #[rstest]
+    fn test_calculate_balance_locked_buy_inverse_locks_base_currency(
+        xbtusd_bitmex: CryptoPerpetual,
+    ) {
+        let wallet_account = wallet_with_total(Currency::BTC(), Money::from("100 BTC").raw());
+        let balance_locked = wallet_account
+            .calculate_balance_locked(
+                &xbtusd_bitmex.into_any(),
+                OrderSide::Buy,
+                Quantity::from("100000"),
+                Price::from("10000.0"),
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(balance_locked, Money::from("10 BTC"));
+    }
+
+    #[rstest]
+    fn test_equality_compares_account_ids(wallet_account_state: AccountState) {
+        let account = WalletAccount::new(wallet_account_state.clone(), true);
+        let same = WalletAccount::new(wallet_account_state.clone(), true);
+        let mut other_state = wallet_account_state;
+        other_state.account_id = AccountId::from("OTHER-001");
+        let other = WalletAccount::new(other_state, true);
+
+        assert_eq!(account, same);
+        assert_ne!(account, other);
     }
 
     #[rstest]

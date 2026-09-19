@@ -518,14 +518,119 @@ mod tests {
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
-    use super::money_from_minor_units;
+    use super::{has_same_currency_identity, money_from_minor_units};
     use crate::{
+        enums::CurrencyType,
         identifiers::InstrumentId,
         types::{
             AccountBalance, Currency, MarginBalance, Money,
             stubs::{stub_account_balance, stub_margin_balance},
         },
     };
+
+    #[rstest]
+    fn test_has_same_currency_identity_requires_every_field() {
+        let usd = Currency::USD();
+
+        assert!(has_same_currency_identity(
+            usd,
+            Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat)
+        ));
+        assert!(!has_same_currency_identity(
+            usd,
+            Currency::new("XXX", 2, 840, "United States dollar", CurrencyType::Fiat)
+        ));
+        assert!(!has_same_currency_identity(
+            usd,
+            Currency::new("USD", 8, 840, "United States dollar", CurrencyType::Fiat)
+        ));
+        assert!(!has_same_currency_identity(
+            usd,
+            Currency::new("USD", 2, 0, "United States dollar", CurrencyType::Fiat)
+        ));
+        assert!(!has_same_currency_identity(
+            usd,
+            Currency::new("USD", 2, 840, "US dollar", CurrencyType::Fiat)
+        ));
+        assert!(!has_same_currency_identity(
+            usd,
+            Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Crypto)
+        ));
+    }
+
+    #[rstest]
+    fn test_margin_balance_equality_compares_every_field() {
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+
+        let balance = MarginBalance::new(
+            Money::from("100 USD"),
+            Money::from("50 USD"),
+            Some(instrument_id),
+        );
+
+        assert_eq!(
+            balance,
+            MarginBalance::new(
+                Money::from("100 USD"),
+                Money::from("50 USD"),
+                Some(instrument_id),
+            )
+        );
+        assert_ne!(
+            balance,
+            MarginBalance::new(
+                Money::from("100 USD"),
+                Money::from("60 USD"),
+                Some(instrument_id),
+            )
+        );
+        assert_ne!(
+            balance,
+            MarginBalance::new(
+                Money::from("200 USD"),
+                Money::from("50 USD"),
+                Some(instrument_id),
+            )
+        );
+        assert_ne!(
+            balance,
+            MarginBalance::new(Money::from("100 USD"), Money::from("50 USD"), None)
+        );
+    }
+
+    #[rstest]
+    fn test_account_balance_equality_compares_every_amount() {
+        let balance = AccountBalance::new(
+            Money::from("100 USD"),
+            Money::from("25 USD"),
+            Money::from("75 USD"),
+        );
+
+        assert_eq!(
+            balance,
+            AccountBalance::new(
+                Money::from("100 USD"),
+                Money::from("25 USD"),
+                Money::from("75 USD"),
+            )
+        );
+        assert_ne!(
+            balance,
+            AccountBalance::new(
+                Money::from("100 USD"),
+                Money::from("50 USD"),
+                Money::from("50 USD"),
+            )
+        );
+        assert_ne!(
+            balance,
+            AccountBalance::new(
+                Money::from("200 USD"),
+                Money::from("125 USD"),
+                Money::from("75 USD"),
+            )
+        );
+    }
 
     #[rstest]
     fn test_account_balance_equality() {
