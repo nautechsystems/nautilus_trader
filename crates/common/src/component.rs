@@ -770,6 +770,8 @@ mod tests {
         id: ComponentId,
         state: ComponentState,
         should_panic: &'static AtomicBool,
+        hooks_fail: bool,
+        releases: usize,
     }
 
     impl TestComponent {
@@ -778,7 +780,16 @@ mod tests {
                 id: ComponentId::new(name),
                 state: ComponentState::Ready,
                 should_panic,
+                hooks_fail: false,
+                releases: 0,
             }
+        }
+
+        fn register_in_global_registry(self) -> Ustr {
+            let id = self.id.inner();
+            let component_ref: Rc<UnsafeCell<dyn Component>> = Rc::new(UnsafeCell::new(self));
+            with_component_registry(|registry| registry.insert(id, component_ref));
+            id
         }
     }
 
@@ -823,7 +834,64 @@ mod tests {
                 !self.should_panic.load(Ordering::SeqCst),
                 "Intentional panic for testing"
             );
+
+            if self.hooks_fail {
+                anyhow::bail!("on_start failed");
+            }
+
             Ok(())
+        }
+
+        fn on_stop(&mut self) -> anyhow::Result<()> {
+            if self.hooks_fail {
+                anyhow::bail!("on_stop failed");
+            }
+
+            Ok(())
+        }
+
+        fn on_resume(&mut self) -> anyhow::Result<()> {
+            if self.hooks_fail {
+                anyhow::bail!("on_resume failed");
+            }
+
+            Ok(())
+        }
+
+        fn on_reset(&mut self) -> anyhow::Result<()> {
+            if self.hooks_fail {
+                anyhow::bail!("on_reset failed");
+            }
+
+            Ok(())
+        }
+
+        fn on_dispose(&mut self) -> anyhow::Result<()> {
+            if self.hooks_fail {
+                anyhow::bail!("on_dispose failed");
+            }
+
+            Ok(())
+        }
+
+        fn on_fault(&mut self) -> anyhow::Result<()> {
+            if self.hooks_fail {
+                anyhow::bail!("on_fault failed");
+            }
+
+            Ok(())
+        }
+
+        fn on_degrade(&mut self) -> anyhow::Result<()> {
+            if self.hooks_fail {
+                anyhow::bail!("on_degrade failed");
+            }
+
+            Ok(())
+        }
+
+        fn release_subscriptions(&mut self) {
+            self.releases += 1;
         }
     }
 
@@ -842,12 +910,12 @@ mod tests {
         with_component_registry(|registry| registry.insert(component_id, component_ref));
 
         // First borrow via start_component should succeed
-        let result1 = start_component(&id);
-        assert!(result1.is_ok());
+        start_component(&id).unwrap();
+        assert_eq!(component_state(&id).unwrap(), ComponentState::Running);
 
         // Component should now be borrowable again (guard released)
-        let result2 = stop_component(&id);
-        assert!(result2.is_ok());
+        stop_component(&id).unwrap();
+        assert_eq!(component_state(&id).unwrap(), ComponentState::Stopped);
     }
 
     #[rstest]
@@ -892,5 +960,495 @@ mod tests {
             !with_component_registry(|registry| registry.is_borrowed(&id)),
             "Borrow was not released after panic"
         );
+    }
+
+    #[rstest]
+    #[case(ComponentState::PreInitialized, ComponentTrigger::Start)]
+    #[case(ComponentState::Ready, ComponentTrigger::Resume)]
+    #[case(ComponentState::Running, ComponentTrigger::Start)]
+    #[case(ComponentState::Stopped, ComponentTrigger::Stop)]
+    #[case(ComponentState::Disposed, ComponentTrigger::Dispose)]
+    #[case(ComponentState::Faulted, ComponentTrigger::Fault)]
+    fn test_transition_rejects_invalid_trigger(
+        #[case] state: ComponentState,
+        #[case] trigger: ComponentTrigger,
+    ) {
+        let mut current = state;
+
+        let error = current.transition(&trigger).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("Invalid state trigger {state} -> {trigger}")
+        );
+        assert_eq!(current, state, "Rejected trigger must not mutate the state");
+    }
+
+    /// Covers every arm of the transition table, so deleting one is a failing test.
+    #[rstest]
+    #[case(
+        ComponentState::PreInitialized,
+        ComponentTrigger::Initialize,
+        ComponentState::Ready
+    )]
+    #[case(
+        ComponentState::Ready,
+        ComponentTrigger::Reset,
+        ComponentState::Resetting
+    )]
+    #[case(
+        ComponentState::Ready,
+        ComponentTrigger::Start,
+        ComponentState::Starting
+    )]
+    #[case(
+        ComponentState::Ready,
+        ComponentTrigger::Dispose,
+        ComponentState::Disposing
+    )]
+    #[case(
+        ComponentState::Resetting,
+        ComponentTrigger::ResetCompleted,
+        ComponentState::Ready
+    )]
+    #[case(
+        ComponentState::Starting,
+        ComponentTrigger::StartCompleted,
+        ComponentState::Running
+    )]
+    #[case(
+        ComponentState::Starting,
+        ComponentTrigger::Stop,
+        ComponentState::Stopping
+    )]
+    #[case(
+        ComponentState::Starting,
+        ComponentTrigger::Fault,
+        ComponentState::Faulting
+    )]
+    #[case(
+        ComponentState::Running,
+        ComponentTrigger::Stop,
+        ComponentState::Stopping
+    )]
+    #[case(
+        ComponentState::Running,
+        ComponentTrigger::Degrade,
+        ComponentState::Degrading
+    )]
+    #[case(
+        ComponentState::Running,
+        ComponentTrigger::Fault,
+        ComponentState::Faulting
+    )]
+    #[case(
+        ComponentState::Resuming,
+        ComponentTrigger::Stop,
+        ComponentState::Stopping
+    )]
+    #[case(
+        ComponentState::Resuming,
+        ComponentTrigger::ResumeCompleted,
+        ComponentState::Running
+    )]
+    #[case(
+        ComponentState::Resuming,
+        ComponentTrigger::Fault,
+        ComponentState::Faulting
+    )]
+    #[case(
+        ComponentState::Stopping,
+        ComponentTrigger::StopCompleted,
+        ComponentState::Stopped
+    )]
+    #[case(
+        ComponentState::Stopping,
+        ComponentTrigger::Dispose,
+        ComponentState::Disposing
+    )]
+    #[case(
+        ComponentState::Stopping,
+        ComponentTrigger::Fault,
+        ComponentState::Faulting
+    )]
+    #[case(
+        ComponentState::Stopped,
+        ComponentTrigger::Reset,
+        ComponentState::Resetting
+    )]
+    #[case(
+        ComponentState::Stopped,
+        ComponentTrigger::Resume,
+        ComponentState::Resuming
+    )]
+    #[case(
+        ComponentState::Stopped,
+        ComponentTrigger::Dispose,
+        ComponentState::Disposing
+    )]
+    #[case(
+        ComponentState::Stopped,
+        ComponentTrigger::Fault,
+        ComponentState::Faulting
+    )]
+    #[case(
+        ComponentState::Degrading,
+        ComponentTrigger::DegradeCompleted,
+        ComponentState::Degraded
+    )]
+    #[case(
+        ComponentState::Degraded,
+        ComponentTrigger::Resume,
+        ComponentState::Resuming
+    )]
+    #[case(
+        ComponentState::Degraded,
+        ComponentTrigger::Stop,
+        ComponentState::Stopping
+    )]
+    #[case(
+        ComponentState::Degraded,
+        ComponentTrigger::Fault,
+        ComponentState::Faulting
+    )]
+    #[case(
+        ComponentState::Disposing,
+        ComponentTrigger::DisposeCompleted,
+        ComponentState::Disposed
+    )]
+    #[case(
+        ComponentState::Disposing,
+        ComponentTrigger::Fault,
+        ComponentState::Faulting
+    )]
+    #[case(
+        ComponentState::Faulting,
+        ComponentTrigger::Dispose,
+        ComponentState::Disposing
+    )]
+    #[case(
+        ComponentState::Faulting,
+        ComponentTrigger::FaultCompleted,
+        ComponentState::Faulted
+    )]
+    fn test_transition_accepts_valid_trigger(
+        #[case] state: ComponentState,
+        #[case] trigger: ComponentTrigger,
+        #[case] expected: ComponentState,
+    ) {
+        let mut current = state;
+
+        assert_eq!(current.transition(&trigger).unwrap(), expected);
+    }
+
+    #[rstest]
+    fn test_state_predicates_match_the_current_state() {
+        let mut component = TestComponent::new("predicates", &NO_PANIC);
+
+        assert!(component.is_ready());
+        assert!(component.not_running());
+
+        component.start().unwrap();
+        assert!(component.is_running());
+        assert!(!component.not_running());
+        assert!(!component.is_ready());
+
+        component.stop().unwrap();
+        assert!(component.is_stopped());
+        assert!(!component.is_running());
+
+        component.resume().unwrap();
+        component.degrade().unwrap();
+        assert!(component.is_degraded());
+        assert!(!component.is_stopped());
+
+        component.fault().unwrap();
+        assert!(component.is_faulted());
+        assert!(!component.is_degraded());
+        assert!(!component.is_disposed());
+    }
+
+    #[rstest]
+    fn test_is_disposed_only_after_disposal() {
+        let mut component = TestComponent::new("disposable", &NO_PANIC);
+
+        assert!(!component.is_disposed());
+
+        component.dispose().unwrap();
+
+        assert!(component.is_disposed());
+        assert!(!component.is_ready());
+        assert!(!component.is_faulted());
+    }
+
+    #[rstest]
+    fn test_degrade_halts_transition_when_on_degrade_fails() {
+        let mut component = TestComponent::new("failing-degrade", &NO_PANIC);
+        component.start().unwrap();
+        component.hooks_fail = true;
+
+        let error = component.degrade().unwrap_err();
+
+        assert_eq!(error.to_string(), "on_degrade failed");
+        assert_eq!(component.state(), ComponentState::Degrading);
+    }
+
+    #[rstest]
+    fn test_initialize_advances_from_pre_initialized() {
+        let mut component = TestComponent::new("initializing", &NO_PANIC);
+        component.state = ComponentState::PreInitialized;
+
+        component.initialize().unwrap();
+
+        assert_eq!(component.state(), ComponentState::Ready);
+    }
+
+    #[rstest]
+    fn test_start_halts_transition_when_on_start_fails() {
+        let mut component = TestComponent::new("failing-start", &NO_PANIC);
+        component.hooks_fail = true;
+
+        let error = component.start().unwrap_err();
+
+        assert_eq!(error.to_string(), "on_start failed");
+        assert_eq!(component.state(), ComponentState::Starting);
+    }
+
+    #[rstest]
+    fn test_stop_halts_transition_when_on_stop_fails() {
+        let mut component = TestComponent::new("failing-stop", &NO_PANIC);
+        component.start().unwrap();
+        component.hooks_fail = true;
+
+        let error = component.stop().unwrap_err();
+
+        assert_eq!(error.to_string(), "on_stop failed");
+        assert_eq!(component.state(), ComponentState::Stopping);
+    }
+
+    #[rstest]
+    fn test_resume_halts_transition_when_on_resume_fails() {
+        let mut component = TestComponent::new("failing-resume", &NO_PANIC);
+        component.start().unwrap();
+        component.stop().unwrap();
+        component.hooks_fail = true;
+
+        let error = component.resume().unwrap_err();
+
+        assert_eq!(error.to_string(), "on_resume failed");
+        assert_eq!(component.state(), ComponentState::Resuming);
+    }
+
+    #[rstest]
+    fn test_reset_retains_subscriptions_when_on_reset_fails() {
+        let mut component = TestComponent::new("failing-reset", &NO_PANIC);
+        component.hooks_fail = true;
+
+        let error = component.reset().unwrap_err();
+
+        assert_eq!(error.to_string(), "on_reset failed");
+        assert_eq!(component.state(), ComponentState::Resetting);
+        assert_eq!(component.releases, 0);
+    }
+
+    #[rstest]
+    fn test_reset_releases_subscriptions_on_success() {
+        let mut component = TestComponent::new("resetting", &NO_PANIC);
+
+        component.reset().unwrap();
+
+        assert_eq!(component.state(), ComponentState::Ready);
+        assert_eq!(component.releases, 1);
+    }
+
+    #[rstest]
+    fn test_dispose_faults_and_retains_subscriptions_when_on_dispose_fails() {
+        let mut component = TestComponent::new("failing-dispose", &NO_PANIC);
+        component.hooks_fail = true;
+
+        let error = component.dispose().unwrap_err();
+
+        assert_eq!(error.to_string(), "on_dispose failed");
+        assert_eq!(component.state(), ComponentState::Faulted);
+        assert_eq!(component.releases, 0);
+    }
+
+    #[rstest]
+    fn test_dispose_releases_subscriptions_on_success() {
+        let mut component = TestComponent::new("disposing", &NO_PANIC);
+
+        component.dispose().unwrap();
+
+        assert_eq!(component.state(), ComponentState::Disposed);
+        assert_eq!(component.releases, 1);
+    }
+
+    #[rstest]
+    fn test_fault_releases_subscriptions_even_when_on_fault_fails() {
+        let mut component = TestComponent::new("failing-fault", &NO_PANIC);
+        component.start().unwrap();
+        component.hooks_fail = true;
+
+        let error = component.fault().unwrap_err();
+
+        assert_eq!(error.to_string(), "on_fault failed");
+        assert_eq!(component.state(), ComponentState::Faulting);
+        assert_eq!(component.releases, 1);
+    }
+
+    #[rstest]
+    fn test_fault_releases_subscriptions_on_success() {
+        let mut component = TestComponent::new("faulting", &NO_PANIC);
+        component.start().unwrap();
+
+        component.fault().unwrap();
+
+        assert_eq!(component.state(), ComponentState::Faulted);
+        assert_eq!(component.releases, 1);
+    }
+
+    #[rstest]
+    fn test_registry_entry_points_reject_unknown_component() {
+        clear_component_registry();
+
+        let id = Ustr::from("absent-component");
+
+        for (name, entry_point) in registry_entry_points() {
+            let error = entry_point(&id).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "Component 'absent-component' not found in global registry",
+                "unexpected error from {name}"
+            );
+        }
+
+        let error = component_state(&id).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Component 'absent-component' not found in global registry"
+        );
+    }
+
+    #[rstest]
+    fn test_registry_entry_points_reject_borrowed_component() {
+        clear_component_registry();
+
+        let id = TestComponent::new("borrowed-component", &NO_PANIC).register_in_global_registry();
+        assert!(with_component_registry(|registry| registry.try_borrow(id)));
+
+        for (name, entry_point) in registry_entry_points() {
+            let error = entry_point(&id).unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .starts_with("Component 'borrowed-component' is already mutably borrowed."),
+                "unexpected error from {name}: {error}"
+            );
+        }
+
+        let error = component_state(&id).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .starts_with("Component 'borrowed-component' is already mutably borrowed.")
+        );
+
+        // The rejected calls must leave the original borrow in place
+        assert!(with_component_registry(|registry| registry.is_borrowed(&id)));
+    }
+
+    type RegistryEntryPoint = (&'static str, fn(&Ustr) -> anyhow::Result<()>);
+
+    /// Lifecycle entry points that resolve a component from the global registry.
+    fn registry_entry_points() -> [RegistryEntryPoint; 5] {
+        [
+            ("start", start_component),
+            ("stop", stop_component),
+            ("reset", reset_component),
+            ("dispose", dispose_component),
+            ("release", release_component_subscriptions),
+        ]
+    }
+
+    #[rstest]
+    fn test_registry_entry_points_drive_the_full_lifecycle() {
+        clear_component_registry();
+
+        let id = TestComponent::new("lifecycle-component", &NO_PANIC).register_in_global_registry();
+
+        assert_eq!(component_state(&id).unwrap(), ComponentState::Ready);
+
+        start_component(&id).unwrap();
+        assert_eq!(component_state(&id).unwrap(), ComponentState::Running);
+
+        stop_component(&id).unwrap();
+        assert_eq!(component_state(&id).unwrap(), ComponentState::Stopped);
+
+        reset_component(&id).unwrap();
+        assert_eq!(component_state(&id).unwrap(), ComponentState::Ready);
+
+        dispose_component(&id).unwrap();
+        assert_eq!(component_state(&id).unwrap(), ComponentState::Disposed);
+
+        assert!(!with_component_registry(
+            |registry| registry.is_borrowed(&id)
+        ));
+    }
+
+    #[rstest]
+    fn test_release_component_subscriptions_invokes_the_component_hook() {
+        clear_component_registry();
+
+        let component = TestComponent::new("releasing-component", &NO_PANIC);
+        let id = component.id.inner();
+        let component_ref = Rc::new(UnsafeCell::new(component));
+        let observed = component_ref.clone();
+        with_component_registry(|registry| {
+            registry.insert(id, component_ref as Rc<UnsafeCell<dyn Component>>);
+        });
+
+        release_component_subscriptions(&id).unwrap();
+        release_component_subscriptions(&id).unwrap();
+
+        // SAFETY: no lifecycle call is in flight, so no other reference exists
+        assert_eq!(unsafe { (*observed.get()).releases }, 2);
+    }
+
+    #[rstest]
+    fn test_deregister_component_removes_only_the_named_component() {
+        clear_component_registry();
+
+        let kept = TestComponent::new("kept-component", &NO_PANIC).register_in_global_registry();
+        let removed =
+            TestComponent::new("removed-component", &NO_PANIC).register_in_global_registry();
+
+        deregister_component(&removed);
+
+        assert!(get_component(&removed).is_none());
+        assert!(get_component(&kept).is_some());
+        assert_eq!(component_state(&kept).unwrap(), ComponentState::Ready);
+    }
+
+    #[rstest]
+    fn test_component_registry_debug_reports_components_and_borrows() {
+        clear_component_registry();
+
+        let id = TestComponent::new("debug-component", &NO_PANIC).register_in_global_registry();
+        assert!(with_component_registry(|registry| registry.try_borrow(id)));
+
+        let debug = with_component_registry(|registry| format!("{registry:?}"));
+
+        assert!(debug.contains("debug-component"), "{debug}");
+        assert!(debug.contains("active_borrows: 1"), "{debug}");
+    }
+
+    #[rstest]
+    fn test_registry_remove_returns_the_registered_component() {
+        clear_component_registry();
+
+        let id = TestComponent::new("removable", &NO_PANIC).register_in_global_registry();
+
+        assert!(with_component_registry(|registry| registry.remove(&id)).is_some());
+        assert!(with_component_registry(|registry| registry.remove(&id)).is_none());
     }
 }

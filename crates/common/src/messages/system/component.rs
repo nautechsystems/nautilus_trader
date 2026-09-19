@@ -98,3 +98,75 @@ impl Display for ComponentStateChanged {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    fn component_state_changed() -> ComponentStateChanged {
+        let mut config = IndexMap::new();
+        config.insert("timeout_secs".to_string(), "30".to_string());
+
+        ComponentStateChanged::new(
+            TraderId::from("TESTER-001"),
+            Ustr::from("DataEngine"),
+            Ustr::from("DataEngine"),
+            ComponentState::Running,
+            config,
+            UUID4::from("00000000-0000-4000-8000-000000000001"),
+            UnixNanos::from(3),
+            UnixNanos::from(5),
+        )
+    }
+
+    #[rstest]
+    fn test_new_assigns_every_field() {
+        let event = component_state_changed();
+
+        assert_eq!(event.trader_id, TraderId::from("TESTER-001"));
+        assert_eq!(event.component_id, Ustr::from("DataEngine"));
+        assert_eq!(event.component_type, Ustr::from("DataEngine"));
+        assert_eq!(event.state, ComponentState::Running);
+        assert_eq!(event.config.get("timeout_secs").unwrap(), "30");
+        assert_eq!(
+            event.event_id,
+            UUID4::from("00000000-0000-4000-8000-000000000001")
+        );
+        assert_eq!(event.ts_event, UnixNanos::from(3));
+        assert_eq!(event.ts_init, UnixNanos::from(5));
+    }
+
+    #[rstest]
+    fn test_display_reports_identity_state_and_event_id() {
+        assert_eq!(
+            component_state_changed().to_string(),
+            "ComponentStateChanged(trader_id=TESTER-001, component_id=DataEngine, \
+             component_type=DataEngine, state=RUNNING, \
+             event_id=00000000-0000-4000-8000-000000000001)"
+        );
+    }
+
+    #[rstest]
+    fn test_as_any_downcasts_to_self() {
+        let event = component_state_changed();
+
+        assert_eq!(
+            event.as_any().downcast_ref::<ComponentStateChanged>(),
+            Some(&event)
+        );
+    }
+
+    #[rstest]
+    fn test_serde_round_trips() {
+        let event = component_state_changed();
+
+        let json = serde_json::to_string(&event).unwrap();
+
+        assert_eq!(
+            serde_json::from_str::<ComponentStateChanged>(&json).unwrap(),
+            event
+        );
+    }
+}

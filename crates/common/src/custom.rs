@@ -54,3 +54,51 @@ impl CustomData {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use nautilus_model::data::DataType;
+    use rstest::rstest;
+
+    use super::*;
+
+    fn custom_data() -> CustomData {
+        CustomData::new(
+            DataType::new("MyData", None, None),
+            Bytes::from_static(b"payload"),
+            UnixNanos::from(3),
+            UnixNanos::from(5),
+        )
+    }
+
+    #[rstest]
+    fn test_new_assigns_every_field() {
+        let data = custom_data();
+
+        assert_eq!(data.data_type, DataType::new("MyData", None, None));
+        assert_eq!(data.value, Bytes::from_static(b"payload"));
+        assert_eq!(data.ts_event, UnixNanos::from(3));
+        assert_eq!(data.ts_init, UnixNanos::from(5));
+    }
+
+    #[rstest]
+    #[case::data_type(CustomData { data_type: DataType::new("OtherData", None, None), ..custom_data() })]
+    #[case::value(CustomData { value: Bytes::from_static(b"other"), ..custom_data() })]
+    #[case::ts_event(CustomData { ts_event: UnixNanos::from(4), ..custom_data() })]
+    #[case::ts_init(CustomData { ts_init: UnixNanos::from(6), ..custom_data() })]
+    fn test_equality_discriminates_each_field(#[case] other: CustomData) {
+        let data = custom_data();
+
+        assert_eq!(data, custom_data());
+        assert_ne!(data, other);
+    }
+
+    #[rstest]
+    fn test_serde_round_trips() {
+        let data = custom_data();
+
+        let json = serde_json::to_string(&data).unwrap();
+
+        assert_eq!(serde_json::from_str::<CustomData>(&json).unwrap(), data);
+    }
+}

@@ -499,4 +499,56 @@ mod tests {
              `CancelAllOrders`, `QueryOrder`, `QueryAccount`",
         );
     }
+
+    #[rstest]
+    fn trading_command_accessors_report_the_inner_identity() {
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let strategy_id = StrategyId::from("STRATEGY-001");
+        let ts_init = UnixNanos::from(1_000_000_000);
+
+        for command in trading_commands() {
+            assert_eq!(command.client_id(), Some(ClientId::from("EXTERNAL")));
+            assert_eq!(command.ts_init(), ts_init);
+            assert_eq!(command.params(), None);
+
+            if matches!(command, TradingCommand::QueryAccount(_)) {
+                assert_eq!(command.strategy_id(), None);
+            } else {
+                assert_eq!(command.strategy_id(), Some(strategy_id));
+                assert_eq!(command.instrument_id(), instrument_id);
+            }
+        }
+    }
+
+    #[rstest]
+    fn trading_command_params_expose_the_inner_params() {
+        let mut params = Params::new();
+        params.insert("reduce_only".into(), "true".into());
+
+        let command = TradingCommand::QueryOrder(QueryOrder::new(
+            TraderId::from("TRADER-001"),
+            Some(ClientId::from("EXTERNAL")),
+            StrategyId::from("STRATEGY-001"),
+            InstrumentId::from("AUD/USD.SIM"),
+            OrderInitialized::default().client_order_id,
+            None,
+            UUID4::from("00000000-0000-4000-8000-000000000012"),
+            UnixNanos::from(1),
+            Some(params.clone()),
+            None,
+        ));
+
+        assert_eq!(command.params(), Some(&params));
+    }
+
+    #[rstest]
+    #[should_panic(expected = "No instrument ID for command")]
+    fn trading_command_instrument_id_panics_for_query_account() {
+        let command = trading_commands()
+            .into_iter()
+            .find(|command| matches!(command, TradingCommand::QueryAccount(_)))
+            .expect("query account command must be present");
+
+        let _ = command.instrument_id();
+    }
 }

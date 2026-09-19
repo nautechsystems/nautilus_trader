@@ -84,3 +84,76 @@ impl Display for TradingStateChanged {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    fn trading_state_changed() -> TradingStateChanged {
+        let mut config = IndexMap::new();
+        config.insert(
+            "max_order_submit_rate".to_string(),
+            "100/00:00:01".to_string(),
+        );
+
+        TradingStateChanged::new(
+            TraderId::from("TESTER-001"),
+            TradingState::Halted,
+            config,
+            UUID4::from("00000000-0000-4000-8000-000000000002"),
+            UnixNanos::from(7),
+            UnixNanos::from(11),
+        )
+    }
+
+    #[rstest]
+    fn test_new_assigns_every_field() {
+        let event = trading_state_changed();
+
+        assert_eq!(event.trader_id, TraderId::from("TESTER-001"));
+        assert_eq!(event.state, TradingState::Halted);
+        assert_eq!(
+            event.config.get("max_order_submit_rate").unwrap(),
+            "100/00:00:01"
+        );
+        assert_eq!(
+            event.event_id,
+            UUID4::from("00000000-0000-4000-8000-000000000002")
+        );
+        assert_eq!(event.ts_event, UnixNanos::from(7));
+        assert_eq!(event.ts_init, UnixNanos::from(11));
+    }
+
+    #[rstest]
+    fn test_display_reports_identity_state_and_event_id() {
+        assert_eq!(
+            trading_state_changed().to_string(),
+            "TradingStateChanged(trader_id=TESTER-001, state=HALTED, \
+             event_id=00000000-0000-4000-8000-000000000002)"
+        );
+    }
+
+    #[rstest]
+    fn test_as_any_downcasts_to_self() {
+        let event = trading_state_changed();
+
+        assert_eq!(
+            event.as_any().downcast_ref::<TradingStateChanged>(),
+            Some(&event)
+        );
+    }
+
+    #[rstest]
+    fn test_serde_round_trips() {
+        let event = trading_state_changed();
+
+        let json = serde_json::to_string(&event).unwrap();
+
+        assert_eq!(
+            serde_json::from_str::<TradingStateChanged>(&json).unwrap(),
+            event
+        );
+    }
+}

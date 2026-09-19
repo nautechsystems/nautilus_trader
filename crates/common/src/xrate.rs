@@ -439,7 +439,10 @@ mod tests {
             quotes_bid,
             quotes_ask,
         );
-        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Quote maps must not be empty"
+        );
     }
 
     #[rstest]
@@ -459,7 +462,10 @@ mod tests {
             quotes_bid,
             quotes_ask,
         );
-        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Quote maps must have equal lengths"
+        );
     }
 
     #[rstest]
@@ -477,7 +483,10 @@ mod tests {
             quotes_ask,
         );
 
-        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Missing ask quote for pair EUR/USD"
+        );
     }
 
     #[rstest]
@@ -491,7 +500,10 @@ mod tests {
             quotes_bid,
             quotes_ask,
         );
-        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Invalid `price_type`, was 'LAST'"
+        );
     }
 
     #[rstest]

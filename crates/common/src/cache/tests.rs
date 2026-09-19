@@ -439,6 +439,24 @@ fn test_register_external_order_claims_is_additive_strict_and_atomic(mut cache: 
 }
 
 #[rstest]
+fn test_register_external_order_claims_rejects_a_repeated_instrument(mut cache: Cache) {
+    let strategy_id = StrategyId::from("CLAIMS-001");
+    let audusd = InstrumentId::from("AUD/USD.SIM");
+    let gbpusd = InstrumentId::from("GBP/USD.SIM");
+
+    let error = cache
+        .register_external_order_claims(strategy_id, &[gbpusd, audusd, audusd])
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "External order claim for AUD/USD.SIM appears more than once for CLAIMS-001"
+    );
+    assert_eq!(cache.external_order_claim(&audusd), None);
+    assert_eq!(cache.external_order_claim(&gbpusd), None);
+}
+
+#[rstest]
 fn test_reset_preserves_external_order_claims(mut cache: Cache) {
     let strategy_id = StrategyId::from("CLAIMS-001");
     let instrument_id = InstrumentId::from("AUDUSD.SIM");

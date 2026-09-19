@@ -1255,7 +1255,7 @@ mod tests {
 
     use jiff::{Timestamp, civil::Date, tz::Offset};
     use nautilus_model::{
-        data::{IndexPriceUpdate, QuoteTick},
+        data::{IndexPriceUpdate, QuoteTick, YieldCurveData},
         enums::{AssetClass, OmsType, OptionKind, OrderSide, PositionSide},
         events::order::spec::OrderFilledSpec,
         identifiers::{
@@ -1287,28 +1287,18 @@ mod tests {
     }
 
     #[rstest]
-    fn test_greeks_calculator_creation() {
-        let calculator = create_test_calculator();
-        // Test that the calculator can be created
-        assert!(format!("{calculator:?}").contains("GreeksCalculator"));
-    }
-
-    #[rstest]
     fn test_greeks_calculator_debug() {
         let calculator = create_test_calculator();
-        // Test the debug representation
-        let debug_str = format!("{calculator:?}");
-        assert!(debug_str.contains("GreeksCalculator"));
-    }
 
-    #[rstest]
-    fn test_greeks_calculator_has_python_bindings() {
-        // This test just verifies that the GreeksCalculator struct
-        // can be compiled with Python bindings enabled
-        let calculator = create_test_calculator();
-        // The Python methods are only accessible from Python,
-        // but we can verify the struct compiles correctly
-        assert!(format!("{calculator:?}").contains("GreeksCalculator"));
+        let debug_str = format!("{calculator:?}");
+
+        assert!(debug_str.starts_with("GreeksCalculator {"), "{debug_str}");
+        assert!(debug_str.contains("cache:"), "{debug_str}");
+        assert!(debug_str.contains("clock:"), "{debug_str}");
+        assert!(
+            debug_str.contains("cached_futures_spreads: RefCell { value: {} }"),
+            "{debug_str}"
+        );
     }
 
     #[rstest]
@@ -2957,5 +2947,988 @@ mod tests {
 
         // Should use the MID quote (159.00), not the index price (157.25)
         assert_eq!(greeks.underlying_price, 159.0);
+    }
+
+    /// Builds a calculator over the standard option/underlying quote pair used by the
+    /// `instrument_greeks` tests, plus the option id to price.
+    fn option_calculator() -> (GreeksCalculator, InstrumentId, UnixNanos) {
+        let now = utc_timestamp(2025, 3, 8, 12, 0, 0);
+        let expiry = now + jiff::SignedDuration::from_hours(24 * 30);
+        let now_ns = UnixNanos::from(now);
+        let option = option_with_expiration("AAPL250417C00150000.OPRA", UnixNanos::from(expiry));
+        let option_id = option.id();
+        let cache =
+            setup_cache_with_option_and_quotes(option, InstrumentId::from("AAPL.OPRA"), now_ns);
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+
+        (GreeksCalculator::new(cache, clock), option_id, now_ns)
+    }
+
+    fn option_greeks_with_shocks(
+        calculator: &GreeksCalculator,
+        option_id: InstrumentId,
+        ts_event: UnixNanos,
+        spot_shock: Option<f64>,
+        vol_shock: Option<f64>,
+        time_to_expiry_shock: Option<f64>,
+    ) -> GreeksData {
+        calculator
+            .instrument_greeks(
+                option_id,
+                None,
+                None,
+                spot_shock,
+                vol_shock,
+                time_to_expiry_shock,
+                None,
+                None,
+                None,
+                None,
+                Some(ts_event),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap()
+    }
+
+    #[rstest]
+    #[case::spot(Some(5.0), None, None)]
+    #[case::vol(None, Some(0.05), None)]
+    #[case::time_to_expiry(None, None, Some(0.01))]
+    fn test_instrument_greeks_applies_each_shock_dimension_on_its_own(
+        #[case] spot_shock: Option<f64>,
+        #[case] vol_shock: Option<f64>,
+        #[case] time_to_expiry_shock: Option<f64>,
+    ) {
+        let (calculator, option_id, now_ns) = option_calculator();
+
+        let unshocked = option_greeks_with_shocks(&calculator, option_id, now_ns, None, None, None);
+        let shocked = option_greeks_with_shocks(
+            &calculator,
+            option_id,
+            now_ns,
+            spot_shock,
+            vol_shock,
+            time_to_expiry_shock,
+        );
+
+        assert_ne!(
+            scaled(shocked.price),
+            scaled(unshocked.price),
+            "a single non-zero shock must still reprice the option"
+        );
+    }
+
+    #[rstest]
+    fn test_instrument_greeks_leaves_the_price_unshocked_when_every_shock_is_zero() {
+        let (calculator, option_id, now_ns) = option_calculator();
+
+        let unshocked = option_greeks_with_shocks(&calculator, option_id, now_ns, None, None, None);
+        let zero_shocks = option_greeks_with_shocks(
+            &calculator,
+            option_id,
+            now_ns,
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+        );
+
+        assert_eq!(scaled(zero_shocks.price), scaled(unshocked.price));
+    }
+
+    #[rstest]
+    fn test_instrument_greeks_pnl_is_price_less_the_position_open_price() {
+        let (calculator, option_id, now_ns) = option_calculator();
+        let instrument = calculator
+            .cache
+            .borrow()
+            .instrument(&option_id)
+            .cloned()
+            .unwrap();
+        let position = position_from_fill(
+            &instrument,
+            "P-GREEKS-1",
+            "O-GREEKS-1",
+            "T-GREEKS-1",
+            OrderSide::Buy,
+            1,
+            "9.00",
+        );
+
+        let unshocked = option_greeks_with_shocks(&calculator, option_id, now_ns, None, None, None);
+        let with_position = calculator
+            .instrument_greeks(
+                option_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(now_ns),
+                Some(position),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(scaled(with_position.price), scaled(unshocked.price));
+        assert_eq!(
+            scaled(with_position.pnl),
+            scaled(unshocked.price - 9.0),
+            "pnl must subtract the position open price from the option price"
+        );
+        assert_eq!(scaled(unshocked.pnl), 0.0);
+    }
+
+    #[rstest]
+    fn test_instrument_greeks_records_the_shocked_market_state() {
+        let (calculator, option_id, now_ns) = option_calculator();
+
+        let unshocked = option_greeks_with_shocks(&calculator, option_id, now_ns, None, None, None);
+        let shocked = option_greeks_with_shocks(
+            &calculator,
+            option_id,
+            now_ns,
+            Some(5.0),
+            Some(0.05),
+            Some(0.01),
+        );
+
+        // The underlying mid of the 150.00 / 150.10 quote plus the spot shock.
+        assert_eq!(scaled(unshocked.underlying_price), 150_050_000_000_000.0);
+        assert_eq!(scaled(shocked.underlying_price), 155_050_000_000_000.0);
+        assert_eq!(scaled(shocked.vol), scaled(unshocked.vol + 0.05));
+        assert_eq!(
+            scaled(shocked.expiry_in_years),
+            scaled(unshocked.expiry_in_years - 0.01)
+        );
+        assert_eq!(unshocked.expiry_in_days, 30);
+        assert_eq!(shocked.expiry_in_days, 26);
+    }
+
+    #[rstest]
+    fn test_instrument_greeks_cost_of_carry_subtracts_the_flat_dividend_yield() {
+        let (calculator, option_id, now_ns) = option_calculator();
+
+        let greeks = calculator
+            .instrument_greeks(
+                option_id,
+                Some(0.05),
+                Some(0.02),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(now_ns),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(scaled(greeks.interest_rate), 50_000_000_000.0);
+        assert_eq!(scaled(greeks.cost_of_carry), 30_000_000_000.0);
+    }
+
+    #[rstest]
+    fn test_instrument_greeks_cost_of_carry_is_zero_without_a_dividend_yield() {
+        let (calculator, option_id, now_ns) = option_calculator();
+
+        let greeks = calculator
+            .instrument_greeks(
+                option_id,
+                Some(0.05),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(now_ns),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(scaled(greeks.cost_of_carry), 0.0);
+    }
+
+    #[rstest]
+    fn test_instrument_greeks_reports_the_option_kind() {
+        let now = utc_timestamp(2025, 3, 8, 12, 0, 0);
+        let expiry = now + jiff::SignedDuration::from_hours(24 * 30);
+        let now_ns = UnixNanos::from(now);
+        let underlying_id = InstrumentId::from("AAPL.OPRA");
+        let mut put = option_with_expiration("AAPL250417P00150000.OPRA", UnixNanos::from(expiry));
+        put.option_kind = OptionKind::Put;
+        let put_id = put.id();
+        let cache = setup_cache_with_option_and_quotes(put, underlying_id, now_ns);
+        cache
+            .borrow_mut()
+            .add_quote(QuoteTick::new(
+                put_id,
+                Price::from("10.50"),
+                Price::from("10.60"),
+                Quantity::from(100),
+                Quantity::from(100),
+                now_ns,
+                now_ns,
+            ))
+            .unwrap();
+        let calculator = GreeksCalculator::new(cache, Rc::new(RefCell::new(VirtualClock::new())));
+
+        let greeks = option_greeks_with_shocks(&calculator, put_id, now_ns, None, None, None);
+
+        assert!(!greeks.is_call);
+    }
+
+    /// Builds a calculator over a single equity quote, for the `instrument_greeks` paths that
+    /// price a non-option instrument.
+    fn equity_calculator() -> (GreeksCalculator, InstrumentId, UnixNanos) {
+        let now_ns = UnixNanos::from(utc_timestamp(2025, 3, 8, 12, 0, 0));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let equity = equity_aapl_opra();
+        let equity_id = equity.id();
+        cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::Equity(equity))
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_quote(QuoteTick::new(
+                equity_id,
+                Price::from("150.00"),
+                Price::from("150.10"),
+                Quantity::from(100),
+                Quantity::from(100),
+                now_ns,
+                now_ns,
+            ))
+            .unwrap();
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+
+        (GreeksCalculator::new(cache, clock), equity_id, now_ns)
+    }
+
+    #[rstest]
+    fn test_instrument_greeks_for_a_non_option_shocks_the_spot_and_prices_the_position() {
+        let (calculator, equity_id, now_ns) = equity_calculator();
+        let instrument = calculator
+            .cache
+            .borrow()
+            .instrument(&equity_id)
+            .cloned()
+            .unwrap();
+        let position = position_from_fill(
+            &instrument,
+            "P-EQUITY-1",
+            "O-EQUITY-1",
+            "T-EQUITY-1",
+            OrderSide::Buy,
+            10,
+            "140.00",
+        );
+
+        let greeks = calculator
+            .instrument_greeks(
+                equity_id,
+                None,
+                None,
+                Some(5.0),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(now_ns),
+                Some(position),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        // Underlying mid 150.05 plus the 5.00 spot shock, less the 140.00 open price.
+        assert_eq!(scaled(greeks.pnl), 15_050_000_000_000.0);
+        assert_eq!(scaled(greeks.price), 15_050_000_000_000.0);
+    }
+
+    #[rstest]
+    fn test_instrument_greeks_for_a_non_option_scales_percent_delta_by_the_shocked_spot() {
+        let (calculator, equity_id, now_ns) = equity_calculator();
+
+        let greeks = calculator
+            .instrument_greeks(
+                equity_id,
+                None,
+                None,
+                Some(5.0),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(now_ns),
+                None,
+                Some(true),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        // Percent delta scales the unit delta by the shocked spot of 150.05 + 5.00.
+        assert_eq!(scaled(greeks.delta), 1_550_500_000_000.0);
+    }
+
+    #[rstest]
+    fn test_instrument_greeks_cost_of_carry_prefers_the_dividend_curve_over_the_flat_yield() {
+        let (calculator, option_id, now_ns) = option_calculator();
+        calculator
+            .cache
+            .borrow_mut()
+            .add_yield_curve(YieldCurveData::new(
+                now_ns,
+                now_ns,
+                "AAPL.OPRA".to_string(),
+                vec![0.0, 5.0, 10.0],
+                vec![0.02, 0.02, 0.02],
+            ))
+            .unwrap();
+
+        let greeks = calculator
+            .instrument_greeks(
+                option_id,
+                Some(0.05),
+                Some(0.04),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(now_ns),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(scaled(greeks.interest_rate), 50_000_000_000.0);
+        assert_eq!(
+            scaled(greeks.cost_of_carry),
+            30_000_000_000.0,
+            "the dividend curve must take precedence over the flat dividend yield"
+        );
+    }
+
+    /// Scales a Greek to picounits so exact expectations avoid raw float equality.
+    fn scaled(value: f64) -> f64 {
+        (value * 1e12).round()
+    }
+
+    #[rstest]
+    fn test_modify_greeks_reprices_the_index_when_the_underlying_is_shocked() {
+        let calculator = create_test_calculator();
+        let underlying_id = InstrumentId::from("AAPL.OPRA");
+        let mut beta_weights = HashMap::new();
+        beta_weights.insert(underlying_id, 0.5);
+
+        let (delta, gamma, vega) = calculator
+            .modify_greeks(
+                1.0,
+                2.0,
+                underlying_id,
+                165.0,
+                150.0,
+                false,
+                None,
+                Some(&beta_weights),
+                3.0,
+                0.30,
+                0,
+                None,
+                0.0,
+                None,
+                None,
+                Some(200.0),
+                None,
+            )
+            .unwrap();
+
+        // Index moves to 200 + (1 / 0.5) * (200 / 150) * (165 - 150) = 240, so the delta
+        // multiplier is 0.5 * 165 / 240.
+        assert_eq!(scaled(delta), 343_750_000_000.0);
+        assert_eq!(scaled(gamma), 236_328_125_000.0);
+        assert_eq!(scaled(vega), 3_000_000_000_000.0);
+    }
+
+    #[rstest]
+    fn test_modify_greeks_reprices_the_vol_index_when_the_vol_is_shocked() {
+        let calculator = create_test_calculator();
+        let underlying_id = InstrumentId::from("AAPL.OPRA");
+        let mut vol_beta_weights = HashMap::new();
+        vol_beta_weights.insert(underlying_id, 0.75);
+
+        let (delta, gamma, vega) = calculator
+            .modify_greeks(
+                1.0,
+                2.0,
+                underlying_id,
+                150.0,
+                150.0,
+                false,
+                None,
+                None,
+                2.0,
+                0.35,
+                0,
+                None,
+                0.30,
+                None,
+                Some(&vol_beta_weights),
+                None,
+                Some(25.0),
+            )
+            .unwrap();
+
+        assert_eq!(scaled(delta), 1_000_000_000_000.0);
+        assert_eq!(scaled(gamma), 2_000_000_000_000.0);
+        assert_eq!(scaled(vega), 1_718_181_818_182.0);
+    }
+
+    #[rstest]
+    fn test_modify_greeks_uses_the_shocked_vol_as_the_baseline_when_unshocked_vol_is_zero() {
+        let calculator = create_test_calculator();
+
+        let (_, _, vega) = calculator
+            .modify_greeks(
+                1.0,
+                2.0,
+                InstrumentId::from("AAPL.OPRA"),
+                150.0,
+                150.0,
+                false,
+                None,
+                None,
+                2.0,
+                0.40,
+                0,
+                None,
+                0.0,
+                None,
+                None,
+                None,
+                Some(25.0),
+            )
+            .unwrap();
+
+        // A zero unshocked vol means no vol shock, so vega only rescales by 0.40 / 0.25.
+        assert_eq!(scaled(vega), 3_200_000_000_000.0);
+    }
+
+    #[rstest]
+    fn test_modify_greeks_leaves_vega_untouched_for_a_zero_vol_index() {
+        let calculator = create_test_calculator();
+
+        let (_, _, vega) = calculator
+            .modify_greeks(
+                1.0,
+                2.0,
+                InstrumentId::from("AAPL.OPRA"),
+                150.0,
+                150.0,
+                false,
+                None,
+                None,
+                2.0,
+                0.40,
+                0,
+                None,
+                0.0,
+                None,
+                None,
+                None,
+                Some(0.0),
+            )
+            .unwrap();
+
+        assert_eq!(scaled(vega), 2_000_000_000_000.0);
+    }
+
+    #[rstest]
+    fn test_modify_greeks_percent_scaling_falls_back_to_the_underlying_and_vol() {
+        let calculator = create_test_calculator();
+
+        let (delta, gamma, vega) = calculator
+            .modify_greeks(
+                1.0,
+                2.0,
+                InstrumentId::from("AAPL.OPRA"),
+                150.0,
+                150.0,
+                true,
+                None,
+                None,
+                2.0,
+                0.30,
+                0,
+                None,
+                0.0,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(scaled(delta), 1_500_000_000_000.0);
+        assert_eq!(scaled(gamma), 4_500_000_000_000.0);
+        assert_eq!(scaled(vega), 6_000_000_000.0);
+    }
+
+    #[rstest]
+    fn test_modify_greeks_applies_vega_time_weighting() {
+        let calculator = create_test_calculator();
+
+        let (_, _, vega) = calculator
+            .modify_greeks(
+                1.0,
+                2.0,
+                InstrumentId::from("AAPL.OPRA"),
+                150.0,
+                150.0,
+                false,
+                None,
+                None,
+                2.0,
+                0.30,
+                120,
+                Some(30),
+                0.0,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        // sqrt(30 / 120) = 0.5
+        assert_eq!(scaled(vega), 1_000_000_000_000.0);
+    }
+
+    #[rstest]
+    fn test_modify_greeks_skips_vega_time_weighting_without_days_to_expiry() {
+        let calculator = create_test_calculator();
+
+        let (_, _, vega) = calculator
+            .modify_greeks(
+                1.0,
+                2.0,
+                InstrumentId::from("AAPL.OPRA"),
+                150.0,
+                150.0,
+                false,
+                None,
+                None,
+                2.0,
+                0.30,
+                0,
+                Some(30),
+                0.0,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(scaled(vega), 2_000_000_000_000.0);
+    }
+
+    const SPREAD_CALL_ID: &str = "ESH4C150.GLBX";
+    const SPREAD_PUT_ID: &str = "ESH4P150.GLBX";
+    const SPREAD_REFERENCE_ID: &str = "ESM4.GLBX";
+    const SPREAD_UNDERLYING_ID: &str = "ESH4.GLBX";
+
+    fn spread_now_ns() -> UnixNanos {
+        UnixNanos::from(utc_timestamp(2024, 2, 14, 16, 0, 0))
+    }
+
+    fn spread_expiry_ns() -> UnixNanos {
+        UnixNanos::from(utc_timestamp(2024, 3, 15, 16, 0, 0))
+    }
+
+    fn spread_call() -> OptionContract {
+        future_option_with_expiration(
+            SPREAD_CALL_ID,
+            "ESH4C150",
+            "ESH4",
+            OptionKind::Call,
+            "150.00",
+            spread_expiry_ns(),
+        )
+    }
+
+    fn spread_put() -> OptionContract {
+        future_option_with_expiration(
+            SPREAD_PUT_ID,
+            "ESH4P150",
+            "ESH4",
+            OptionKind::Put,
+            "150.00",
+            spread_expiry_ns(),
+        )
+    }
+
+    fn spread_reference_future() -> FuturesContract {
+        future_with_expiration(SPREAD_REFERENCE_ID, "ESM4", spread_expiry_ns())
+    }
+
+    fn spread_quote(instrument_id: InstrumentId, price: &str) -> QuoteTick {
+        let price = Price::from(price);
+
+        QuoteTick::new(
+            instrument_id,
+            price,
+            price,
+            Quantity::from(100),
+            Quantity::from(100),
+            spread_now_ns(),
+            spread_now_ns(),
+        )
+    }
+
+    /// Builds a calculator over exactly the supplied instruments and quotes.
+    ///
+    /// Each `cache_futures_spread` error test drops or replaces one entry relative to
+    /// [`spread_instruments`] and [`spread_quotes`], so the resulting failure isolates a
+    /// single validation branch.
+    fn spread_calculator(
+        instruments: Vec<InstrumentAny>,
+        quotes: Vec<QuoteTick>,
+    ) -> GreeksCalculator {
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+
+        for instrument in instruments {
+            cache.borrow_mut().add_instrument(instrument).unwrap();
+        }
+
+        for quote in quotes {
+            cache.borrow_mut().add_quote(quote).unwrap();
+        }
+
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        clock.borrow_mut().set_time(spread_now_ns());
+
+        GreeksCalculator::new(cache, clock)
+    }
+
+    fn spread_instruments() -> Vec<InstrumentAny> {
+        vec![
+            InstrumentAny::OptionContract(spread_call()),
+            InstrumentAny::OptionContract(spread_put()),
+            InstrumentAny::FuturesContract(spread_reference_future()),
+        ]
+    }
+
+    fn spread_quotes() -> Vec<QuoteTick> {
+        vec![
+            spread_quote(InstrumentId::from(SPREAD_CALL_ID), "8.50"),
+            spread_quote(InstrumentId::from(SPREAD_PUT_ID), "3.33"),
+            spread_quote(InstrumentId::from(SPREAD_REFERENCE_ID), "155.00"),
+        ]
+    }
+
+    fn cache_spread_error(instruments: Vec<InstrumentAny>, quotes: Vec<QuoteTick>) -> String {
+        spread_calculator(instruments, quotes)
+            .cache_futures_spread(
+                InstrumentId::from(SPREAD_CALL_ID),
+                InstrumentId::from(SPREAD_PUT_ID),
+                InstrumentId::from(SPREAD_REFERENCE_ID),
+            )
+            .unwrap_err()
+            .to_string()
+    }
+
+    #[rstest]
+    fn test_cache_futures_spread_errors_when_call_instrument_missing() {
+        let instruments = vec![
+            InstrumentAny::OptionContract(spread_put()),
+            InstrumentAny::FuturesContract(spread_reference_future()),
+        ];
+
+        assert_eq!(
+            cache_spread_error(instruments, spread_quotes()),
+            "Cannot cache futures spread: missing option instrument ESH4C150.GLBX"
+        );
+    }
+
+    #[rstest]
+    fn test_cache_futures_spread_errors_when_put_instrument_missing() {
+        let instruments = vec![
+            InstrumentAny::OptionContract(spread_call()),
+            InstrumentAny::FuturesContract(spread_reference_future()),
+        ];
+
+        assert_eq!(
+            cache_spread_error(instruments, spread_quotes()),
+            "Cannot cache futures spread: missing option instrument ESH4P150.GLBX"
+        );
+    }
+
+    #[rstest]
+    fn test_cache_futures_spread_errors_when_reference_future_instrument_missing() {
+        let instruments = vec![
+            InstrumentAny::OptionContract(spread_call()),
+            InstrumentAny::OptionContract(spread_put()),
+        ];
+
+        assert_eq!(
+            cache_spread_error(instruments, spread_quotes()),
+            "Cannot cache futures spread: no reference futures instrument for ESM4.GLBX"
+        );
+    }
+
+    #[rstest]
+    fn test_cache_futures_spread_errors_when_call_leg_is_not_an_option() {
+        let non_option = future_with_expiration(SPREAD_CALL_ID, "ESH4", spread_expiry_ns());
+        let instruments = vec![
+            InstrumentAny::FuturesContract(non_option),
+            InstrumentAny::OptionContract(spread_put()),
+            InstrumentAny::FuturesContract(spread_reference_future()),
+        ];
+
+        assert_eq!(
+            cache_spread_error(instruments, spread_quotes()),
+            "Cannot cache futures spread: non-option instruments provided \
+             call_instrument_id=ESH4C150.GLBX put_instrument_id=ESH4P150.GLBX"
+        );
+    }
+
+    #[rstest]
+    fn test_cache_futures_spread_errors_when_legs_are_not_a_call_put_pair() {
+        let second_put = future_option_with_expiration(
+            SPREAD_CALL_ID,
+            "ESH4P150",
+            "ESH4",
+            OptionKind::Put,
+            "150.00",
+            spread_expiry_ns(),
+        );
+        let instruments = vec![
+            InstrumentAny::OptionContract(second_put),
+            InstrumentAny::OptionContract(spread_put()),
+            InstrumentAny::FuturesContract(spread_reference_future()),
+        ];
+
+        assert_eq!(
+            cache_spread_error(instruments, spread_quotes()),
+            "Cannot cache futures spread: expected call/put pair \
+             call_instrument_id=ESH4C150.GLBX put_instrument_id=ESH4P150.GLBX"
+        );
+    }
+
+    #[rstest]
+    fn test_cache_futures_spread_errors_when_underlyings_differ() {
+        let mismatched_put = future_option_with_expiration(
+            SPREAD_PUT_ID,
+            "ESM4P150",
+            "ESM4",
+            OptionKind::Put,
+            "150.00",
+            spread_expiry_ns(),
+        );
+        let instruments = vec![
+            InstrumentAny::OptionContract(spread_call()),
+            InstrumentAny::OptionContract(mismatched_put),
+            InstrumentAny::FuturesContract(spread_reference_future()),
+        ];
+
+        assert_eq!(
+            cache_spread_error(instruments, spread_quotes()),
+            "Cannot cache futures spread: option underlyings differ \
+             call_instrument_id=ESH4C150.GLBX put_instrument_id=ESH4P150.GLBX"
+        );
+    }
+
+    #[rstest]
+    fn test_cache_futures_spread_errors_when_strike_prices_differ() {
+        let mismatched_put = future_option_with_expiration(
+            SPREAD_PUT_ID,
+            "ESH4P155",
+            "ESH4",
+            OptionKind::Put,
+            "155.00",
+            spread_expiry_ns(),
+        );
+        let instruments = vec![
+            InstrumentAny::OptionContract(spread_call()),
+            InstrumentAny::OptionContract(mismatched_put),
+            InstrumentAny::FuturesContract(spread_reference_future()),
+        ];
+
+        assert_eq!(
+            cache_spread_error(instruments, spread_quotes()),
+            "Cannot cache futures spread: strike prices differ \
+             call_instrument_id=ESH4C150.GLBX put_instrument_id=ESH4P150.GLBX"
+        );
+    }
+
+    #[rstest]
+    fn test_cache_futures_spread_errors_when_expirations_differ() {
+        let mismatched_put = future_option_with_expiration(
+            SPREAD_PUT_ID,
+            "ESH4P150",
+            "ESH4",
+            OptionKind::Put,
+            "150.00",
+            UnixNanos::from(utc_timestamp(2024, 6, 21, 16, 0, 0)),
+        );
+        let instruments = vec![
+            InstrumentAny::OptionContract(spread_call()),
+            InstrumentAny::OptionContract(mismatched_put),
+            InstrumentAny::FuturesContract(spread_reference_future()),
+        ];
+
+        assert_eq!(
+            cache_spread_error(instruments, spread_quotes()),
+            "Cannot cache futures spread: expiration dates differ \
+             call_instrument_id=ESH4C150.GLBX put_instrument_id=ESH4P150.GLBX"
+        );
+    }
+
+    #[rstest]
+    fn test_cache_futures_spread_errors_when_reference_future_price_missing() {
+        let quotes = vec![
+            spread_quote(InstrumentId::from(SPREAD_CALL_ID), "8.50"),
+            spread_quote(InstrumentId::from(SPREAD_PUT_ID), "3.33"),
+        ];
+
+        assert_eq!(
+            cache_spread_error(spread_instruments(), quotes),
+            "Cannot cache futures spread: no reference futures price for ESM4.GLBX"
+        );
+    }
+
+    #[rstest]
+    fn test_cache_futures_spread_errors_when_call_price_missing() {
+        let quotes = vec![
+            spread_quote(InstrumentId::from(SPREAD_PUT_ID), "3.33"),
+            spread_quote(InstrumentId::from(SPREAD_REFERENCE_ID), "155.00"),
+        ];
+
+        assert_eq!(
+            cache_spread_error(spread_instruments(), quotes),
+            "Cannot cache futures spread: missing option price for ESH4C150.GLBX"
+        );
+    }
+
+    #[rstest]
+    fn test_cache_futures_spread_errors_when_put_price_missing() {
+        let quotes = vec![
+            spread_quote(InstrumentId::from(SPREAD_CALL_ID), "8.50"),
+            spread_quote(InstrumentId::from(SPREAD_REFERENCE_ID), "155.00"),
+        ];
+
+        assert_eq!(
+            cache_spread_error(spread_instruments(), quotes),
+            "Cannot cache futures spread: missing option price for ESH4P150.GLBX"
+        );
+    }
+
+    #[rstest]
+    fn test_cache_futures_spread_errors_when_cached_underlying_is_not_a_future() {
+        let underlying_equity = Equity::builder()
+            .instrument_id(InstrumentId::from(SPREAD_UNDERLYING_ID))
+            .raw_symbol(Symbol::from("ESH4"))
+            .currency(Currency::from("USD"))
+            .price_precision(2)
+            .price_increment(Price::from("0.01"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
+
+        let mut instruments = spread_instruments();
+        instruments.push(InstrumentAny::Equity(underlying_equity));
+
+        assert_eq!(
+            cache_spread_error(instruments, spread_quotes()),
+            "Cannot cache futures spread: underlying ESH4.GLBX is not a futures contract"
+        );
+    }
+
+    #[rstest]
+    fn test_cache_futures_spread_leaves_no_entry_when_validation_fails() {
+        let calculator = spread_calculator(
+            vec![
+                InstrumentAny::OptionContract(spread_call()),
+                InstrumentAny::OptionContract(spread_put()),
+            ],
+            spread_quotes(),
+        );
+
+        calculator
+            .cache_futures_spread(
+                InstrumentId::from(SPREAD_CALL_ID),
+                InstrumentId::from(SPREAD_PUT_ID),
+                InstrumentId::from(SPREAD_REFERENCE_ID),
+            )
+            .unwrap_err();
+
+        assert_eq!(
+            calculator.get_cached_futures_spread_price(InstrumentId::from(SPREAD_UNDERLYING_ID)),
+            None
+        );
+    }
+
+    #[rstest]
+    fn test_get_cached_futures_spread_price_returns_none_for_unknown_underlying() {
+        let calculator = spread_calculator(spread_instruments(), spread_quotes());
+
+        assert_eq!(
+            calculator.get_cached_futures_spread_price(InstrumentId::from("CLZ4.NYMEX")),
+            None
+        );
     }
 }
