@@ -1264,7 +1264,7 @@ mod tests {
 
     #[rstest]
     #[case(NautilusDataType::Instrument)]
-    #[case(NautilusDataType::Custom { type_name: "".to_string() })]
+    #[case(NautilusDataType::Custom { type_name: String::new() })]
     fn test_data_config_rejects_unsupported_family(#[case] data_type: NautilusDataType) {
         let error = BacktestDataConfig::builder()
             .data_type(data_type.clone())
