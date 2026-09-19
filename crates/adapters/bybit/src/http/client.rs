@@ -4423,6 +4423,7 @@ impl BybitHttpClient {
 
                             cursor = cursor_walk
                                 .advance(BYBIT_ORDER_REALTIME, response.result.next_page_cursor)?;
+
                             if cursor.is_none() {
                                 break;
                             }
@@ -4505,6 +4506,7 @@ impl BybitHttpClient {
 
                         cursor = cursor_walk
                             .advance(BYBIT_ORDER_REALTIME, open_response.result.next_page_cursor)?;
+
                         if cursor.is_none() {
                             break;
                         }
@@ -4588,6 +4590,7 @@ impl BybitHttpClient {
                             BYBIT_ORDER_HISTORY,
                             history_response.result.next_page_cursor,
                         )?;
+
                         if cursor.is_none() {
                             break;
                         }
@@ -4863,6 +4866,7 @@ impl BybitHttpClient {
 
                     cursor = cursor_walk
                         .advance(BYBIT_POSITION_LIST, response.result.next_page_cursor)?;
+
                     if cursor.is_none() {
                         break;
                     }
@@ -4916,6 +4920,7 @@ impl BybitHttpClient {
 
                 cursor =
                     cursor_walk.advance(BYBIT_POSITION_LIST, response.result.next_page_cursor)?;
+
                 if cursor.is_none() {
                     break;
                 }
