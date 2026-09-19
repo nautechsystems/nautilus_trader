@@ -1482,9 +1482,6 @@ fn create_local_store(
         uri.to_string()
     };
 
-    // Create the base directory so LocalFileSystem::new_with_prefix has an existing root to
-    // canonicalize; the catalog already creates per-type and per-instrument subdirectories on
-    // write, so the base directory is treated the same way.
     std::fs::create_dir_all(&path)
         .map_err(|err| anyhow::anyhow!("Failed to create local catalog directory {path}: {err}"))?;
 
