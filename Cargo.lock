@@ -5469,6 +5469,7 @@ dependencies = [
  "nautilus-persistence",
  "nautilus-portfolio",
  "nautilus-risk",
+ "nautilus-serialization",
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",

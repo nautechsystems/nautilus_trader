@@ -20,7 +20,7 @@
 //! Tests that arm shutdown-on-error use global logging state. Run with cargo-nextest for process
 //! isolation, or use --test-threads=1.
 
-use std::{cell::RefCell, fmt::Debug, rc::Rc, str::FromStr};
+use std::{cell::RefCell, fmt::Debug, rc::Rc, str::FromStr, sync::Arc};
 
 use nautilus_backtest::{
     config::{BacktestDataConfig, BacktestEngineConfig, BacktestRunConfig, BacktestVenueConfig},
@@ -30,8 +30,8 @@ use nautilus_common::actor::DataActor;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
-        BarSpecification, BookOrder, FundingRateUpdate, NautilusDataType, OrderBookDelta,
-        QuoteTick, TradeTick,
+        BarSpecification, BookOrder, CustomData, DataType, FundingRateUpdate, NautilusDataType,
+        OrderBookDelta, QuoteTick, TradeTick,
     },
     enums::{
         AccountType, AggressorSide, BarAggregation, BookAction, BookType, OmsType, OrderSide,
@@ -43,7 +43,9 @@ use nautilus_model::{
 };
 use nautilus_persistence::{
     backend::catalog::ParquetDataCatalog, catalog::types::CatalogInstrumentQuery,
+    test_data::RustTestCustomData,
 };
+use nautilus_serialization::ensure_custom_data_registered;
 use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, nautilus_strategy};
 use rstest::*;
 use rust_decimal::Decimal;
@@ -169,6 +171,42 @@ fn create_catalog_with_funding_rates(
     (temp_dir, catalog_path, funding_rates)
 }
 
+fn create_catalog_with_custom_data(
+    instrument: &InstrumentAny,
+    count: usize,
+    base_ts: u64,
+) -> (TempDir, String, Vec<UnixNanos>) {
+    ensure_custom_data_registered::<RustTestCustomData>();
+
+    let temp_dir = TempDir::new().unwrap();
+    let catalog_path = temp_dir.path().to_str().unwrap().to_string();
+    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+
+    catalog.write_instruments(vec![instrument.clone()]).unwrap();
+
+    let custom_ts: Vec<UnixNanos> = (0..count)
+        .map(|i| UnixNanos::from(base_ts + i as u64 * 1_000_000_000))
+        .collect();
+    let batch: Vec<CustomData> = custom_ts
+        .iter()
+        .map(|ts| {
+            CustomData::from_arc(Arc::new(RustTestCustomData {
+                instrument_id: instrument.id(),
+                value: ts.as_u64() as f64,
+                flag: true,
+                ts_event: *ts,
+                ts_init: *ts,
+            }))
+        })
+        .collect();
+
+    catalog
+        .write_custom_data_batch(&batch, None, None, Some(true))
+        .unwrap();
+
+    (temp_dir, catalog_path, custom_ts)
+}
+
 fn binance_venue_config() -> BacktestVenueConfig {
     BacktestVenueConfig::builder()
         .name(Ustr::from("BINANCE"))
@@ -185,6 +223,16 @@ fn data_config(catalog_path: &str, instrument_id: InstrumentId) -> BacktestDataC
         .data_type(NautilusDataType::QuoteTick)
         .catalog_path(catalog_path.to_string())
         .instrument_id(instrument_id)
+        .build()
+        .unwrap()
+}
+
+fn custom_data_config(catalog_path: &str) -> BacktestDataConfig {
+    BacktestDataConfig::builder()
+        .data_type(NautilusDataType::Custom {
+            type_name: "RustTestCustomData".to_string(),
+        })
+        .catalog_path(catalog_path.to_string())
         .build()
         .unwrap()
 }
@@ -423,6 +471,68 @@ impl DataActor for RecordingStrategy {
 
     fn on_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
         self.timestamps.borrow_mut().push(trade.ts_init);
+        Ok(())
+    }
+}
+
+/// One event delivered to [`CustomDataRecordingStrategy`], tagged so the tests
+/// can assert the merged replay order across data types.
+#[derive(Debug, PartialEq, Eq)]
+enum DeliveredEvent {
+    Quote(UnixNanos),
+    CustomData(UnixNanos),
+}
+
+struct CustomDataRecordingStrategy {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    received: Rc<RefCell<Vec<DeliveredEvent>>>,
+}
+
+impl CustomDataRecordingStrategy {
+    fn new(instrument_id: InstrumentId, received: Rc<RefCell<Vec<DeliveredEvent>>>) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("CUSTOM-DATA-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            received,
+        }
+    }
+}
+
+nautilus_strategy!(CustomDataRecordingStrategy);
+
+impl Debug for CustomDataRecordingStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(CustomDataRecordingStrategy))
+            .finish()
+    }
+}
+
+impl DataActor for CustomDataRecordingStrategy {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        self.subscribe_data(DataType::new("RustTestCustomData", None, None), None, None);
+        Ok(())
+    }
+
+    fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        self.received
+            .borrow_mut()
+            .push(DeliveredEvent::Quote(quote.ts_init));
+        Ok(())
+    }
+
+    fn on_data(&mut self, data: &CustomData) -> anyhow::Result<()> {
+        if let Some(custom) = data.data.as_any().downcast_ref::<RustTestCustomData>() {
+            self.received
+                .borrow_mut()
+                .push(DeliveredEvent::CustomData(custom.ts_init));
+        }
         Ok(())
     }
 }
@@ -1570,4 +1680,182 @@ fn test_streaming_same_timestamp_events(crypto_perpetual_ethusdt: CryptoPerpetua
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].iterations, 12);
+}
+
+#[rstest]
+fn test_run_streams_custom_data_oneshot_without_chunk_size(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let base_ts = 1_000_000_000u64;
+    let (_temp_dir, catalog_path, custom_ts) =
+        create_catalog_with_custom_data(&instrument, 5, base_ts);
+
+    let config = BacktestRunConfig::builder()
+        .venues(vec![binance_venue_config()])
+        .data(vec![custom_data_config(&catalog_path)])
+        .build()
+        .unwrap();
+    let config_id = config.id().to_string();
+
+    let received = Rc::new(RefCell::new(Vec::new()));
+    let mut node = BacktestNode::new(vec![config]).unwrap();
+    node.build().unwrap();
+    node.get_engine_mut(&config_id)
+        .unwrap()
+        .add_strategy(CustomDataRecordingStrategy::new(
+            instrument.id(),
+            Rc::clone(&received),
+        ))
+        .unwrap();
+
+    let results = node.run().unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].iterations, 5);
+
+    let expected: Vec<DeliveredEvent> = custom_ts
+        .iter()
+        .map(|ts| DeliveredEvent::CustomData(*ts))
+        .collect();
+    assert_eq!(*received.borrow(), expected);
+}
+
+#[rstest]
+fn test_run_streams_custom_data_with_chunk_size(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let base_ts = 1_000_000_000u64;
+    let (_temp_dir, catalog_path, custom_ts) =
+        create_catalog_with_custom_data(&instrument, 5, base_ts);
+
+    // chunk_size=2 spans the 5 events over three chunks (2, 2, 1)
+    let config = BacktestRunConfig::builder()
+        .venues(vec![binance_venue_config()])
+        .data(vec![custom_data_config(&catalog_path)])
+        .chunk_size(2)
+        .build()
+        .unwrap();
+    let config_id = config.id().to_string();
+
+    let received = Rc::new(RefCell::new(Vec::new()));
+    let mut node = BacktestNode::new(vec![config]).unwrap();
+    node.build().unwrap();
+    node.get_engine_mut(&config_id)
+        .unwrap()
+        .add_strategy(CustomDataRecordingStrategy::new(
+            instrument.id(),
+            Rc::clone(&received),
+        ))
+        .unwrap();
+
+    let results = node.run().unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].iterations, 5);
+
+    let expected: Vec<DeliveredEvent> = custom_ts
+        .iter()
+        .map(|ts| DeliveredEvent::CustomData(*ts))
+        .collect();
+    assert_eq!(*received.borrow(), expected);
+}
+
+#[rstest]
+#[case::oneshot(None)]
+#[case::streaming(Some(3))]
+fn test_run_streams_custom_data_interleaved_with_quotes(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] chunk_size: Option<usize>,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let base_ts = 1_000_000_000u64;
+    ensure_custom_data_registered::<RustTestCustomData>();
+
+    let temp_dir = TempDir::new().unwrap();
+    let catalog_path = temp_dir.path().to_str().unwrap().to_string();
+    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+
+    catalog.write_instruments(vec![instrument.clone()]).unwrap();
+
+    let instrument_id = instrument.id();
+    // Quotes and custom data interleave on alternating seconds and share one
+    // timestamp so the merge must order the tie by config order.
+    let quote_ts = [base_ts, base_ts + 2_000_000_000, base_ts + 3_000_000_000];
+    let custom_ts = [
+        base_ts + 1_000_000_000,
+        base_ts + 2_000_000_000,
+        base_ts + 4_000_000_000,
+    ];
+    let quotes: Vec<QuoteTick> = quote_ts
+        .iter()
+        .map(|ts| {
+            QuoteTick::new(
+                instrument_id,
+                Price::new(1_000.0, 2),
+                Price::new(1_000.0, 2),
+                Quantity::from("1.000"),
+                Quantity::from("1.000"),
+                UnixNanos::from(*ts),
+                UnixNanos::from(*ts),
+            )
+        })
+        .collect();
+    catalog.write_to_parquet(&quotes, None, None, None).unwrap();
+
+    let batch: Vec<CustomData> = custom_ts
+        .iter()
+        .map(|ts| {
+            CustomData::from_arc(Arc::new(RustTestCustomData {
+                instrument_id,
+                value: *ts as f64,
+                flag: true,
+                ts_event: UnixNanos::from(*ts),
+                ts_init: UnixNanos::from(*ts),
+            }))
+        })
+        .collect();
+    catalog
+        .write_custom_data_batch(&batch, None, None, Some(true))
+        .unwrap();
+
+    let quote_data = BacktestDataConfig::builder()
+        .data_type(NautilusDataType::QuoteTick)
+        .catalog_path(catalog_path.clone())
+        .instrument_id(instrument_id)
+        .build()
+        .unwrap();
+
+    let config = BacktestRunConfig::builder()
+        .venues(vec![binance_venue_config()])
+        .data(vec![quote_data, custom_data_config(&catalog_path)])
+        .maybe_chunk_size(chunk_size)
+        .build()
+        .unwrap();
+    let config_id = config.id().to_string();
+
+    let received = Rc::new(RefCell::new(Vec::new()));
+    let mut node = BacktestNode::new(vec![config]).unwrap();
+    node.build().unwrap();
+    node.get_engine_mut(&config_id)
+        .unwrap()
+        .add_strategy(CustomDataRecordingStrategy::new(
+            instrument_id,
+            Rc::clone(&received),
+        ))
+        .unwrap();
+
+    let results = node.run().unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].iterations, 6);
+
+    let expected = vec![
+        DeliveredEvent::Quote(UnixNanos::from(quote_ts[0])),
+        DeliveredEvent::CustomData(UnixNanos::from(custom_ts[0])),
+        DeliveredEvent::Quote(UnixNanos::from(quote_ts[1])),
+        DeliveredEvent::CustomData(UnixNanos::from(custom_ts[1])),
+        DeliveredEvent::Quote(UnixNanos::from(quote_ts[2])),
+        DeliveredEvent::CustomData(UnixNanos::from(custom_ts[2])),
+    ];
+    assert_eq!(*received.borrow(), expected);
 }
