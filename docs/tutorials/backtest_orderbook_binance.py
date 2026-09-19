@@ -95,6 +95,7 @@ from nautilus_trader.model import (
     Currency,
     CurrencyPair,
     InstrumentId,
+    NautilusDataType,
     OmsType,
     Price,
     Quantity,
@@ -213,7 +214,7 @@ book_type = BookType.L2_MBP
 data_configs = [
     BacktestDataConfig(
         catalog_path=str(CATALOG_PATH),
-        data_type="OrderBookDelta",
+        data_type=NautilusDataType.OrderBookDelta,
         instrument_id=instrument.id,
     ),
 ]

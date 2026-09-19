@@ -107,6 +107,7 @@ from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
+from nautilus_trader.model import NautilusDataType
 from nautilus_trader.model import OmsType
 
 venue = BacktestVenueConfig(
@@ -117,7 +118,7 @@ venue = BacktestVenueConfig(
     starting_balances=["1_000_000 USD"],
 )
 data = BacktestDataConfig(
-    data_type="QuoteTick",
+    data_type=NautilusDataType.QuoteTick,
     catalog_path="/data/catalog",
     instrument_id=instrument_id,
 )

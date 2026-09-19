@@ -40,7 +40,7 @@ use nautilus_model::{
     },
     enums::BookType,
     identifiers::{ActorId, ClientId, ComponentId, InstrumentId, OptionSeriesId, TraderId, Venue},
-    instruments::{InstrumentAny, SyntheticInstrument},
+    instruments::{InstrumentAny, NautilusInstrumentType, SyntheticInstrument},
     orderbook::OrderBook,
 };
 use serde::{Deserialize, Serialize};
@@ -2622,6 +2622,7 @@ pub trait DataActor {
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         client_id: Option<ClientId>,
+        instrument_type: Option<NautilusInstrumentType>,
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
     where
@@ -2643,6 +2644,7 @@ pub trait DataActor {
             start,
             end,
             client_id,
+            instrument_type,
             params,
             handler,
         )
@@ -2659,6 +2661,7 @@ pub trait DataActor {
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         client_id: Option<ClientId>,
+        instrument_type: Option<NautilusInstrumentType>,
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
     where
@@ -2680,6 +2683,7 @@ pub trait DataActor {
             start,
             end,
             client_id,
+            instrument_type,
             params,
             handler,
         )
@@ -5438,12 +5442,14 @@ impl DataActorCore {
     /// # Errors
     ///
     /// Returns an error if input parameters are invalid.
+    #[expect(clippy::too_many_arguments)]
     pub fn request_instrument(
         &self,
         instrument_id: InstrumentId,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         client_id: Option<ClientId>,
+        instrument_type: Option<NautilusInstrumentType>,
         params: Option<Params>,
         handler: ShareableMessageHandler,
     ) -> anyhow::Result<UUID4> {
@@ -5461,6 +5467,7 @@ impl DataActorCore {
             request_id,
             ts_init: now.into(),
             params,
+            instrument_type,
         });
 
         get_message_bus()
@@ -5477,12 +5484,14 @@ impl DataActorCore {
     /// # Errors
     ///
     /// Returns an error if input parameters are invalid.
+    #[expect(clippy::too_many_arguments)]
     pub fn request_instruments(
         &self,
         venue: Option<Venue>,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         client_id: Option<ClientId>,
+        instrument_type: Option<NautilusInstrumentType>,
         params: Option<Params>,
         handler: ShareableMessageHandler,
     ) -> anyhow::Result<UUID4> {
@@ -5500,6 +5509,7 @@ impl DataActorCore {
             request_id,
             ts_init: now.into(),
             params,
+            instrument_type,
         });
 
         get_message_bus()

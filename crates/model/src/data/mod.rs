@@ -848,7 +848,7 @@ impl FromDataBatch for DefiData {
 
 /// Catalog record selector used to query Arrow-backed persisted records.
 #[derive(
-    Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, strum::Display, strum::EnumIter,
+    Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, strum::Display, strum::EnumIter,
 )]
 pub enum NautilusRecordType {
     AccountState,

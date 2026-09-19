@@ -20,6 +20,7 @@ use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     data::{BarType, DataType},
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Venue},
+    instruments::NautilusInstrumentType,
 };
 use serde::{Deserialize, Serialize};
 
@@ -72,6 +73,9 @@ pub struct RequestInstrument {
     pub request_id: UUID4,
     pub ts_init: UnixNanos,
     pub params: Option<Params>,
+    /// Instrument class to read from a catalog, or every class when `None`.
+    #[serde(default)]
+    pub instrument_type: Option<NautilusInstrumentType>,
 }
 
 impl RequestInstrument {
@@ -93,7 +97,18 @@ impl RequestInstrument {
             request_id,
             ts_init,
             params,
+            instrument_type: None,
         }
+    }
+
+    /// Returns the request restricted to one instrument class.
+    ///
+    /// Catalog reads target that class alone; venue clients that cannot filter by class
+    /// return their usual definitions.
+    #[must_use]
+    pub const fn with_instrument_type(mut self, instrument_type: NautilusInstrumentType) -> Self {
+        self.instrument_type = Some(instrument_type);
+        self
     }
 }
 
@@ -106,6 +121,9 @@ pub struct RequestInstruments {
     pub request_id: UUID4,
     pub ts_init: UnixNanos,
     pub params: Option<Params>,
+    /// Instrument class to read from a catalog, or every class when `None`.
+    #[serde(default)]
+    pub instrument_type: Option<NautilusInstrumentType>,
 }
 
 impl RequestInstruments {
@@ -128,7 +146,18 @@ impl RequestInstruments {
             request_id,
             ts_init,
             params,
+            instrument_type: None,
         }
+    }
+
+    /// Returns the request restricted to one instrument class.
+    ///
+    /// Catalog reads target that class alone; venue clients that cannot filter by class
+    /// return their usual definitions.
+    #[must_use]
+    pub const fn with_instrument_type(mut self, instrument_type: NautilusInstrumentType) -> Self {
+        self.instrument_type = Some(instrument_type);
+        self
     }
 }
 

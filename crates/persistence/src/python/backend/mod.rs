@@ -20,9 +20,11 @@ pub(crate) use arrow::{
     arrow_ipc_batches, arrow_ipc_data_schema, arrow_ipc_record_schema,
     arrow_record_batches_from_pybytes,
 };
+pub use conversion::PyCatalogType;
 pub(crate) use conversion::{
-    catalog_data_type_from_py, catalog_metadata_to_pydict, catalog_record_type_from_py,
-    to_pyio_err, write_record_params_from_py, writer_record_filter_from_py,
+    catalog_data_type_from_py, catalog_metadata_to_pydict, catalog_query_data_type_from_py,
+    catalog_record_type_from_py, to_pyio_err, write_record_params_from_py,
+    writer_record_filter_from_py,
 };
 
 pub mod feather;

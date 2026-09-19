@@ -265,7 +265,7 @@ where
     clippy::unnecessary_wraps,
     reason = "DeFi builds reject the non-fixed record selector"
 )]
-pub(crate) fn catalog_record_schema(record_type: &NautilusRecordType) -> anyhow::Result<Schema> {
+pub(crate) fn catalog_record_schema(record_type: NautilusRecordType) -> anyhow::Result<Schema> {
     macro_rules! schema {
         ($type:ty) => {
             <$type>::get_schema(None)

@@ -81,8 +81,10 @@ use nautilus_model::{
     orders::{Order, OrderAny},
     position::Position,
     python::{
-        data::option_chain::PyStrikeRange, events::order::order_event_to_pyobject,
-        instruments::instrument_any_to_pyobject, orders::pyobject_to_order_any,
+        data::option_chain::PyStrikeRange,
+        events::order::order_event_to_pyobject,
+        instruments::{PyNautilusInstrumentType, instrument_any_to_pyobject},
+        orders::pyobject_to_order_any,
     },
     types::{Price, Quantity},
 };
@@ -3203,13 +3205,14 @@ impl PyStrategy {
     }
 
     #[pyo3(name = "request_instrument")]
-    #[pyo3(signature = (instrument_id, start=None, end=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, start=None, end=None, client_id=None, instrument_type=None, params=None))]
     fn py_request_instrument(
         &mut self,
         instrument_id: InstrumentId,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         client_id: Option<ClientId>,
+        instrument_type: Option<PyRef<'_, PyNautilusInstrumentType>>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
         self.ensure_registered_for_data()?;
@@ -3225,6 +3228,7 @@ impl PyStrategy {
             start,
             end,
             client_id,
+            instrument_type.map(|instrument_type| instrument_type.inner()),
             params_map,
         )
         .map_err(to_pyvalue_err)?;
@@ -3232,13 +3236,14 @@ impl PyStrategy {
     }
 
     #[pyo3(name = "request_instruments")]
-    #[pyo3(signature = (venue=None, start=None, end=None, client_id=None, params=None))]
+    #[pyo3(signature = (venue=None, start=None, end=None, client_id=None, instrument_type=None, params=None))]
     fn py_request_instruments(
         &mut self,
         venue: Option<Venue>,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         client_id: Option<ClientId>,
+        instrument_type: Option<PyRef<'_, PyNautilusInstrumentType>>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
         self.ensure_registered_for_data()?;
@@ -3254,6 +3259,7 @@ impl PyStrategy {
             start,
             end,
             client_id,
+            instrument_type.map(|instrument_type| instrument_type.inner()),
             params_map,
         )
         .map_err(to_pyvalue_err)?;
