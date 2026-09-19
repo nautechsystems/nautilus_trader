@@ -110,6 +110,11 @@ impl TransportError {
     }
 }
 
+// Keep initial-connect retry policy and handshake log severity consistent
+pub(crate) const fn retryable_status(status: u16) -> bool {
+    matches!(status, 408 | 425 | 429 | 500..=599)
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;

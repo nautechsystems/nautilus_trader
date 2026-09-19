@@ -33,7 +33,6 @@ use std::{
 
 use bytes::{BufMut, Bytes, BytesMut};
 use futures_util::{Sink, Stream};
-use nautilus_core::string::secret::REDACTED;
 use sockudo_ws::{
     HandshakeResult,
     error::{CloseReason as SockudoCloseReason, Error as SockudoError},
@@ -44,7 +43,7 @@ use sockudo_ws::{
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 use super::{
-    error::TransportError,
+    error::{TransportError, retryable_status},
     message::{CloseFrame, Message},
     stream::WsTransport,
 };
@@ -108,22 +107,24 @@ where
         let parsed = match handshake::parse_response(&buf) {
             Ok(parsed) => parsed,
             Err(e) => {
-                log_handshake_response(&e, &buf);
-                return Err(rejected_upgrade_status(&e, &buf)
-                    .map_or_else(|| TransportError::from(e), TransportError::UpgradeRejected));
+                let status = rejected_upgrade_status(&e, &buf);
+                log_handshake_response(host, &e, &buf, status);
+                return Err(
+                    status.map_or_else(|| TransportError::from(e), TransportError::UpgradeRejected)
+                );
             }
         };
 
         if let Some((res, consumed)) = parsed {
             let accept = res.accept.ok_or_else(|| {
                 let e = SockudoError::HandshakeFailed("missing Sec-WebSocket-Accept");
-                log_handshake_response(&e, &buf);
+                log_handshake_response(host, &e, &buf, None);
                 TransportError::from(e)
             })?;
 
             if !handshake::validate_accept_key(&key, accept) {
                 let e = SockudoError::HandshakeFailed("invalid Sec-WebSocket-Accept");
-                log_handshake_response(&e, &buf);
+                log_handshake_response(host, &e, &buf, None);
                 return Err(e.into());
             }
 
@@ -168,11 +169,27 @@ fn rejected_upgrade_status(err: &SockudoError, buf: &[u8]) -> Option<u16> {
     status.parse().ok().filter(|status| *status != 101)
 }
 
-fn log_handshake_response(err: &SockudoError, buf: &BytesMut) {
-    log::error!(
-        "Sockudo handshake failed for {REDACTED}: {err}; response bytes={}",
-        buf.len()
-    );
+// A rejection the client goes on to retry is reported at WARN: an ERROR arms the
+// `shutdown_on_error` trigger, which stops the node while the reconnect loop is still recovering.
+// Permanent rejections, malformed responses, and failed accept-key checks retain ERROR handling.
+//
+// `host` names the endpoint so a node running several connections shows which one failed. It is
+// the `Host` header built from the URL authority, so it carries no userinfo, path, or signed
+// query; the request path stays out of the message for that reason.
+fn log_handshake_response(host: &str, err: &SockudoError, buf: &BytesMut, status: Option<u16>) {
+    let response_bytes = buf.len();
+
+    match status {
+        Some(status) if retryable_status(status) => log::warn!(
+            "Sockudo handshake rejected by {host} with retryable status {status}; response bytes={response_bytes}"
+        ),
+        Some(status) => log::error!(
+            "Sockudo handshake rejected by {host} with permanent status {status}; response bytes={response_bytes}"
+        ),
+        None => log::error!(
+            "Sockudo handshake failed for {host}: {err}; response bytes={response_bytes}"
+        ),
+    }
 }
 
 // Mirror of `sockudo_ws::handshake::build_request` (2.0.1) with `extra_headers`
@@ -754,5 +771,113 @@ mod tests {
     fn error_translation_handshake() {
         let err: TransportError = SockudoError::HandshakeFailed("bad").into();
         assert!(matches!(err, TransportError::Handshake(_)));
+    }
+
+    // The log-capture harness is Linux-only for CI stability.
+    #[cfg(not(feature = "turmoil"))]
+    #[cfg(target_os = "linux")]
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    mod handshake_logging {
+        use log::Level;
+        use rstest::rstest;
+        use tokio::io::{AsyncWriteExt, duplex};
+
+        use super::read_http_request;
+        use crate::{
+            logging::tests::capture_logs_for,
+            transport::{error::TransportError, sockudo::client_handshake_with_headers},
+        };
+
+        const LOG_TARGETS: &[&str] = &["nautilus_network::transport::sockudo"];
+        const HOST: &str = "ws.example.com:8443";
+        const PATH_SECRET: &str = "handshake-path-secret";
+
+        #[rstest]
+        #[case::retryable_bad_gateway("HTTP/1.1 502 Bad Gateway\r\n\r\n", Level::Warn, Some(502))]
+        #[case::retryable_rate_limited(
+            "HTTP/1.1 429 Too Many Requests\r\n\r\n",
+            Level::Warn,
+            Some(429)
+        )]
+        #[case::permanent_unauthorized(
+            "HTTP/1.1 401 Unauthorized\r\n\r\n",
+            Level::Error,
+            Some(401)
+        )]
+        #[case::permanent_not_found("HTTP/1.1 404 Not Found\r\n\r\n", Level::Error, Some(404))]
+        #[case::malformed_status_line("NOT-HTTP 502 Bad Gateway\r\n\r\n", Level::Error, None)]
+        #[case::missing_accept_key(
+            "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n",
+            Level::Error,
+            None
+        )]
+        #[case::invalid_accept_key(
+            "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\
+             Sec-WebSocket-Accept: AAAAAAAAAAAAAAAAAAAAAAAAAAA=\r\n\r\n",
+            Level::Error,
+            None
+        )]
+        #[tokio::test]
+        async fn handshake_failure_log_level_follows_retry_policy(
+            #[case] response: &'static str,
+            #[case] expected_level: Level,
+            #[case] expected_status: Option<u16>,
+        ) {
+            let capture = capture_logs_for(LOG_TARGETS).await;
+            let (mut client, mut server) = duplex(4096);
+
+            let server_task = tokio::spawn(async move {
+                let _request = read_http_request(&mut server).await;
+                server.write_all(response.as_bytes()).await.unwrap();
+                server.flush().await.unwrap();
+            });
+
+            let err = client_handshake_with_headers(
+                &mut client,
+                HOST,
+                &format!("/ws?token={PATH_SECRET}"),
+                &[],
+            )
+            .await
+            .expect_err("handshake should fail");
+            server_task.await.unwrap();
+
+            match expected_status {
+                Some(status) => assert!(
+                    matches!(err, TransportError::UpgradeRejected(actual) if actual == status),
+                    "expected upgrade rejection {status}, was: {err:?}"
+                ),
+                None => assert!(
+                    matches!(err, TransportError::Handshake(_)),
+                    "expected a permanent handshake failure, was: {err:?}"
+                ),
+            }
+
+            let messages = capture.messages();
+            assert_eq!(
+                messages.len(),
+                1,
+                "expected exactly one handshake log, was: {messages:?}"
+            );
+
+            let (level, message) = &messages[0];
+            assert_eq!(*level, expected_level, "unexpected level for: {message}");
+            assert!(
+                message.contains(HOST),
+                "log should name the endpoint, was: {message}"
+            );
+
+            if let Some(status) = expected_status {
+                assert!(
+                    message.contains(&status.to_string()),
+                    "log should name the rejection status, was: {message}"
+                );
+            }
+
+            assert!(
+                !message.contains(PATH_SECRET),
+                "log must not carry the request path, was: {message}"
+            );
+        }
     }
 }
