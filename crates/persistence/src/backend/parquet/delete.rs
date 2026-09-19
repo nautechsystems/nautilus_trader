@@ -17,7 +17,6 @@
 
 #![expect(
     clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
     reason = "delete operations forward catalog/storage errors and operate on validated batches"
 )]
 
@@ -35,7 +34,9 @@ use crate::{
         catalog::ParquetDataCatalog,
         paths::{make_object_store_path, timestamps_to_filename},
     },
-    catalog::types::{CatalogDataType, parquet_data_path_prefix},
+    catalog::types::{
+        CatalogDataType, CatalogType, data_type_from_data_path_prefix, parquet_data_path_prefix,
+    },
     common::custom::group_custom_data_by_type,
 };
 
@@ -90,12 +91,13 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<()> {
-        let path_prefix = parquet_data_path_prefix(&NautilusDataType::Custom {
+        let data_type = NautilusDataType::Custom {
             type_name: type_name.to_string(),
-        });
+        };
+        let path_prefix = parquet_data_path_prefix(&data_type);
 
         // Get intervals for the custom data type
-        let intervals = self.get_intervals(path_prefix.as_ref(), identifier)?;
+        let intervals = self.get_intervals(&CatalogType::Data(data_type), identifier)?;
 
         if intervals.is_empty() {
             return Ok(()); // No files to process
@@ -186,7 +188,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `type_name`: The data type directory name (e.g., "quotes", "trades", "bars").
+    /// - `data_type`: The data type to delete from.
     /// - `identifier`: Optional identifier to delete data for. Can be an `instrument_id` (e.g., "EUR/USD.SIM") or a `bar_type` (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL"). If None, deletes data across all identifiers.
     /// - `start`: Optional start timestamp for the deletion range. If None, deletes from the beginning.
     /// - `end`: Optional end timestamp for the deletion range. If None, deletes to the end.
@@ -213,6 +215,7 @@ impl ParquetDataCatalog {
     ///
     /// ```rust,no_run
     /// use nautilus_core::UnixNanos;
+    /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
     /// let mut catalog = ParquetDataCatalog::new(
@@ -224,11 +227,11 @@ impl ParquetDataCatalog {
     /// );
     ///
     /// // Delete all quote data for a specific instrument
-    /// catalog.delete_data_range("quotes", Some("BTCUSD"), None, None)?;
+    /// catalog.delete_data_range(&NautilusDataType::QuoteTick, Some("BTCUSD"), None, None)?;
     ///
     /// // Delete trade data within a specific time range
     /// catalog.delete_data_range(
-    ///     "trades",
+    ///     &NautilusDataType::TradeTick,
     ///     None,
     ///     Some(UnixNanos::from(1609459200000000000)),
     ///     Some(UnixNanos::from(1609545600000000000)),
@@ -237,48 +240,47 @@ impl ParquetDataCatalog {
     /// ```
     pub fn delete_data_range(
         &mut self,
-        type_name: &str,
+        data_type: &NautilusDataType,
         identifier: Option<&str>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> anyhow::Result<()> {
-        // Use match statement to call the generic delete_data_range for various types
-        match type_name {
-            "quotes" => self.delete_data_range_generic::<QuoteTick>(identifier, start, end),
-            "trades" => self.delete_data_range_generic::<TradeTick>(identifier, start, end),
-            "bars" => self.delete_data_range_generic::<Bar>(identifier, start, end),
-            "order_book_deltas" => {
+        match data_type {
+            NautilusDataType::QuoteTick => {
+                self.delete_data_range_generic::<QuoteTick>(identifier, start, end)
+            }
+            NautilusDataType::TradeTick => {
+                self.delete_data_range_generic::<TradeTick>(identifier, start, end)
+            }
+            NautilusDataType::Bar => self.delete_data_range_generic::<Bar>(identifier, start, end),
+            NautilusDataType::OrderBookDelta => {
                 self.delete_data_range_generic::<OrderBookDelta>(identifier, start, end)
             }
-            "order_book_depths" => {
+            NautilusDataType::OrderBookDepth => {
                 self.delete_data_range_generic::<OrderBookDepth>(identifier, start, end)
             }
-            "mark_prices" => {
+            NautilusDataType::MarkPriceUpdate => {
                 self.delete_data_range_generic::<MarkPriceUpdate>(identifier, start, end)
             }
-            "index_prices" => {
+            NautilusDataType::IndexPriceUpdate => {
                 self.delete_data_range_generic::<IndexPriceUpdate>(identifier, start, end)
             }
-            "instrument_closes" => {
+            NautilusDataType::InstrumentClose => {
                 self.delete_data_range_generic::<InstrumentClose>(identifier, start, end)
             }
-            "funding_rates" => {
+            NautilusDataType::FundingRateUpdate => {
                 self.delete_data_range_generic::<FundingRateUpdate>(identifier, start, end)
             }
-            "option_greeks" => {
+            NautilusDataType::OptionGreeks => {
                 self.delete_data_range_generic::<OptionGreeks>(identifier, start, end)
             }
-            "instrument_status" => {
+            NautilusDataType::InstrumentStatus => {
                 self.delete_data_range_generic::<InstrumentStatus>(identifier, start, end)
             }
-            _ => {
-                if type_name.starts_with("custom/") {
-                    let custom_type_name = type_name.strip_prefix("custom/").unwrap();
-                    self.delete_custom_data_range(custom_type_name, identifier, start, end)
-                } else {
-                    anyhow::bail!("Unsupported data type: {type_name}");
-                }
+            NautilusDataType::Custom { type_name } => {
+                self.delete_custom_data_range(type_name, identifier, start, end)
             }
+            other => anyhow::bail!("Unsupported data type: {other}"),
         }
     }
 
@@ -350,10 +352,14 @@ impl ParquetDataCatalog {
         let leaf_directories = self.find_leaf_data_directories()?;
 
         for directory in leaf_directories {
-            if let Ok((Some(data_type), identifier)) =
+            if let Ok((Some(data_cls), identifier)) =
                 self.extract_data_cls_and_identifier_from_path(&directory)
             {
-                // Call the existing delete_data_range method
+                let Ok(data_type) = data_type_from_data_path_prefix(&data_cls) else {
+                    log::warn!("Skipping directory {directory}: unknown data class {data_cls}");
+                    continue;
+                };
+
                 if let Err(e) =
                     self.delete_data_range(&data_type, identifier.as_deref(), start, end)
                 {
@@ -402,7 +408,7 @@ impl ParquetDataCatalog {
         // Get intervals for cleaner implementation
         let data_type = T::catalog_data_type();
         let path_prefix = parquet_data_path_prefix(&data_type);
-        let intervals = self.get_intervals(path_prefix.as_ref(), identifier)?;
+        let intervals = self.get_intervals(&CatalogType::Data(data_type.clone()), identifier)?;
 
         if intervals.is_empty() {
             return Ok(()); // No files to process

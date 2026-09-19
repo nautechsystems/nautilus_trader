@@ -49,6 +49,7 @@ from nautilus_trader.model import Currency
 from nautilus_trader.model import ExecAlgorithmId
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Money
+from nautilus_trader.model import NautilusDataType
 from nautilus_trader.model import OmsType
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
@@ -76,7 +77,7 @@ def test_node_construction() -> None:
         starting_balances=["1_000_000 USD"],
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="/data/catalog",
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
@@ -171,7 +172,7 @@ def test_node_applies_configured_latency_model(tmp_path: Path) -> None:
         latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path=str(catalog_path),
         instrument_id=instrument.id,
     )
@@ -509,7 +510,7 @@ def test_node_venue_mismatch_raises() -> None:
         starting_balances=["1_000_000 USD"],
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="/data/catalog",
         instrument_id=InstrumentId.from_str("BTC/USDT.BINANCE"),
     )
@@ -530,7 +531,7 @@ def test_node_repr() -> None:
         starting_balances=["1_000_000 USD"],
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="/data/catalog",
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
@@ -551,7 +552,7 @@ def test_node_dispose() -> None:
         starting_balances=["1_000_000 USD"],
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="/data/catalog",
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
@@ -616,7 +617,7 @@ def test_node_missing_engine_explains_build_requirement(
         starting_balances=["1_000_000 USD"],
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path=str(tmp_path),
         instrument_id=InstrumentId.from_str("AAA.SIM"),
     )
@@ -812,7 +813,7 @@ def _build_component_node(
         book_type="L1_MBP",
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path=str(catalog_path),
         instrument_id=instrument.id,
     )
@@ -842,7 +843,7 @@ def _build_ema_cross_node(
         starting_balances=["1_000_000 USDT"],
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path=catalog_path,
         instrument_id=instrument.id,
     )

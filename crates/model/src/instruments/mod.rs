@@ -84,7 +84,7 @@ pub use crate::instruments::{
 };
 /// Instrument family selector used by streaming persistence filters.
 #[derive(
-    Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, strum::Display, strum::EnumIter,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, strum::Display, strum::EnumIter,
 )]
 pub enum NautilusInstrumentType {
     BettingInstrument,

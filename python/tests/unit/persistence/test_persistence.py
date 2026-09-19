@@ -390,7 +390,7 @@ def test_catalog_write_and_read_bars(tmp_path: Path) -> None:
     catalog.write_bars([_make_bar(1), _make_bar(2)])
 
     bar_type_str = str(AUDUSD_1_MIN_BID)
-    intervals = catalog.get_intervals("bars", bar_type_str)
+    intervals = catalog.get_intervals(NautilusDataType.Bar, bar_type_str)
     loaded = catalog.query_bars(["AUD/USD.SIM"])
 
     assert intervals == [(1, 2)]
@@ -411,7 +411,7 @@ def test_catalog_write_and_read_quotes(tmp_path: Path) -> None:
     ]
     catalog.write_quote_ticks(quotes)
 
-    intervals = catalog.get_intervals("quotes", "AUD/USD.SIM")
+    intervals = catalog.get_intervals(NautilusDataType.QuoteTick, "AUD/USD.SIM")
     loaded = catalog.query_quote_ticks(["AUD/USD.SIM"])
 
     assert intervals == [(1, 2)]
@@ -432,7 +432,7 @@ def test_catalog_write_and_read_trades(tmp_path: Path) -> None:
     ]
     catalog.write_trade_ticks(trades)
 
-    intervals = catalog.get_intervals("trades", "AUD/USD.SIM")
+    intervals = catalog.get_intervals(NautilusDataType.TradeTick, "AUD/USD.SIM")
     loaded = catalog.query_trade_ticks(["AUD/USD.SIM"])
 
     assert intervals == [(1, 2)]
@@ -572,7 +572,7 @@ def test_catalog_append_data(tmp_path: Path) -> None:
     catalog.write_bars([_make_bar(3)])
 
     bar_type_str = str(AUDUSD_1_MIN_BID)
-    intervals = catalog.get_intervals("bars", bar_type_str)
+    intervals = catalog.get_intervals(NautilusDataType.Bar, bar_type_str)
     assert intervals == [(1, 2), (3, 3)]
 
 
@@ -589,7 +589,7 @@ def test_catalog_consolidate(tmp_path: Path) -> None:
     catalog.consolidate_catalog()
 
     bar_type_str = str(AUDUSD_1_MIN_BID)
-    intervals = catalog.get_intervals("bars", bar_type_str)
+    intervals = catalog.get_intervals(NautilusDataType.Bar, bar_type_str)
     assert intervals == [(1, 3)]
 
 
@@ -630,9 +630,9 @@ def test_catalog_query_filters_and_timestamp_metadata(tmp_path: Path) -> None:
     )
 
     assert loaded == [_make_bar(5), _make_bar(6)]
-    assert catalog.query_first_timestamp("bars", bar_type) == 1
-    assert catalog.query_last_timestamp("bars", bar_type) == 6
-    assert catalog.get_missing_intervals_for_request(0, 10, "bars", bar_type) == [
+    assert catalog.query_first_timestamp(NautilusDataType.Bar, bar_type) == 1
+    assert catalog.query_last_timestamp(NautilusDataType.Bar, bar_type) == 6
+    assert catalog.get_missing_intervals_for_request(0, 10, NautilusDataType.Bar, bar_type) == [
         (0, 0),
         (3, 4),
         (7, 10),
@@ -651,7 +651,7 @@ def test_catalog_delete_data_range_uses_nanosecond_boundaries(tmp_path: Path) ->
     catalog.write_bars([_make_bar(ts) for ts in timestamps])
 
     catalog.delete_data_range(
-        "bars",
+        NautilusDataType.Bar,
         str(AUDUSD_1_MIN_BID),
         1_000_000_001,
         1_000_000_002,

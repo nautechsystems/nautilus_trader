@@ -978,6 +978,7 @@ class DataActor:
         start: datetime.datetime | None = None,
         end: datetime.datetime | None = None,
         client_id: model.ClientId | None = None,
+        instrument_type: model.NautilusInstrumentType | None = None,
         params: dict | None = None,
     ) -> str: ...
     def request_instruments(
@@ -986,6 +987,7 @@ class DataActor:
         start: datetime.datetime | None = None,
         end: datetime.datetime | None = None,
         client_id: model.ClientId | None = None,
+        instrument_type: model.NautilusInstrumentType | None = None,
         params: dict | None = None,
     ) -> str: ...
     def request_book_snapshot(
