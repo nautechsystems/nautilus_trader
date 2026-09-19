@@ -56,6 +56,9 @@ const DEFAULT_ORDER_RATE_LIMIT: &str = "100/00:00:01";
 const RUST_RUNTIME_UNSUPPORTED: &str = "not supported by the Rust live runtime yet";
 const RATE_LIMIT_FORMAT: &str = "expected 'limit/HH:MM:SS'";
 
+// Bound delays to keep both Duration conversion and Instant addition within range
+const DELAY_MAX_SECS: f64 = 86_400.0;
+
 pub(crate) fn validate_live_environment(environment: Environment) -> anyhow::Result<()> {
     match environment {
         Environment::Sandbox | Environment::Live => Ok(()),
@@ -351,11 +354,11 @@ pub(crate) fn validate_client_order_id_strings(field: &str, values: &[String]) -
     collector.into_result()
 }
 
-pub(crate) fn validate_non_negative_finite_f64(field: &str, value: f64) -> ConfigResult<()> {
+pub(crate) fn validate_delay_secs(field: &str, value: f64) -> ConfigResult<()> {
     check_range(
         field,
-        value.is_finite() && value >= 0.0,
-        format!("{value} (must be a non-negative finite number)"),
+        value.is_finite() && (0.0..=DELAY_MAX_SECS).contains(&value),
+        format!("{value} (must be finite, non-negative, and <= {DELAY_MAX_SECS})"),
     )
 }
 
@@ -375,11 +378,7 @@ pub(crate) fn validate_positive_interval_secs(field: &str, value: f64) -> Config
 
 #[cfg(feature = "python")]
 pub(crate) fn duration_from_secs_f64(field: &str, value: f64) -> ConfigResult<Duration> {
-    check_range(
-        field,
-        value.is_finite() && (0.0..=86_400.0).contains(&value),
-        format!("{value} (must be finite, non-negative, and <= 86400)"),
-    )?;
+    validate_delay_secs(field, value)?;
 
     Ok(Duration::from_secs_f64(value))
 }
@@ -975,10 +974,10 @@ impl LiveExecutionEngineConfig {
     pub(crate) fn validate_runtime_support(&self) -> ConfigResult<()> {
         let mut collector = ConfigErrorCollector::new();
 
-        // `Duration::from_secs_f64` panics on negative, NaN, or infinite input, and the
-        // `run()` path feeds this value straight in when reconciliation is enabled. Match
-        // the legacy Python `PositiveFloat` semantics and reject hostile values at build.
-        collector.collect(validate_non_negative_finite_f64(
+        // `run()` feeds this value straight into the first reconciliation tick when
+        // reconciliation is enabled, so reject it at build rather than panicking once
+        // clients are connected.
+        collector.collect(validate_delay_secs(
             "LiveExecutionEngineConfig.reconciliation_startup_delay_secs",
             self.reconciliation_startup_delay_secs,
         ));
@@ -1769,6 +1768,9 @@ mean_dispatch_ns_clear = 700
     #[case(f64::NAN)]
     #[case(f64::INFINITY)]
     #[case(f64::NEG_INFINITY)]
+    #[case::above_max(DELAY_MAX_SECS + 1.0)]
+    #[case::overflows_instant(1e19)]
+    #[case::overflows_duration(1e20)]
     fn test_validate_runtime_support_rejects_hostile_startup_delay(#[case] value: f64) {
         let config = LiveNodeConfig {
             exec_engine: LiveExecutionEngineConfig {
@@ -1780,6 +1782,26 @@ mean_dispatch_ns_clear = 700
 
         let error = config.validate_runtime_support().unwrap_err().to_string();
         assert!(error.contains("reconciliation_startup_delay_secs"));
+    }
+
+    #[rstest]
+    #[case(0.0)]
+    #[case(10.0)]
+    #[case::at_max(DELAY_MAX_SECS)]
+    fn test_validate_runtime_support_accepts_bounded_startup_delay(#[case] value: f64) {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecutionEngineConfig {
+                reconciliation_startup_delay_secs: value,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        assert_eq!(config.validate_runtime_support(), Ok(()));
+
+        // An accepted delay must survive the schedule arithmetic in `LiveNode::run_with_mode`
+        let delay = Duration::from_secs_f64(value);
+        assert!(std::time::Instant::now().checked_add(delay).is_some());
     }
 
     #[rstest]

@@ -383,7 +383,10 @@ def test_live_exec_engine_config_rejects_invalid_reconciliation_instrument_ids()
     assert str(exc_info.value) == expected_err
 
 
-@pytest.mark.parametrize("value", [-1.0, float("nan"), float("inf"), float("-inf")])
+@pytest.mark.parametrize(
+    "value",
+    [-1.0, float("nan"), float("inf"), float("-inf"), 86_400.1, 1e19, 1e20],
+)
 def test_live_exec_engine_config_rejects_hostile_startup_delay(value: object) -> None:
     """
     Test live exec engine config rejects hostile startup delay.

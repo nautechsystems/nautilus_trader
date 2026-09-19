@@ -4200,7 +4200,7 @@ async fn test_incomplete_bounded_reports_project_fills_order_only(#[case] has_fi
     assert_eq!(fill.last_qty, Quantity::from("1.000"));
     assert_eq!(fill.last_px, Price::from("3000.00"));
     assert_eq!(fill.trade_id == trade_id, has_fill_report);
-    assert_eq!(fill.reconciliation, !has_fill_report);
+    assert!(fill.reconciliation);
     assert_eq!(result.external_orders.len(), 1);
 
     let cache = ctx.cache.borrow();
@@ -6184,10 +6184,9 @@ async fn test_mass_status_retries_missing_fill_data(
     assert_eq!(fill.last_qty, filled_qty);
     assert_eq!(fill.last_px, Price::from("3001.50"));
     assert_eq!(fill.commission, Some(commission));
+    assert!(fill.reconciliation);
 
-    if status == OrderStatus::Filled {
-        assert!(fill.reconciliation);
-    } else {
+    if status != OrderStatus::Filled {
         assert_eq!(fill.trade_id, trade_id);
     }
 

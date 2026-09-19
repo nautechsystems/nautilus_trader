@@ -20,6 +20,7 @@ Released on TBD (UTC).
 - Removed `NautilusDataType.OrderBook` variant and `"OrderBook"`/`"order_book"` spellings
 - Changed `DataBackendSession.add_file` to accept `model.NautilusDataType`, rejecting `Instrument` and `Defi`
 - Changed Rust `OrderCore.events` to read-only `events()`; construct cores with `OrderCore::new`
+- Changed `reconciliation_startup_delay_secs` to reject values above 86,400 seconds (one day)
 - Changed Python Hyperliquid data and execution client config parameter order to `base_url_http` before `base_url_ws`
 - Changed Polymarket `polymarket_trade_sort_key` inputs to v2 `transaction_hash` and `token_id` fields
 - Changed Tardis `book_snapshot_output` value `"depth10"` to `"depth"` (the legacy value remains accepted)
@@ -41,6 +42,8 @@ Released on TBD (UTC).
 - Fixed overlapping mass-status snapshots reversing newer cached fills or fill voids
 - Fixed trailing-stop orders already in the market being accepted despite `reject_stop_orders`
 - Fixed `convert_stream_to_data` silently skipping staged custom data (#4607), thanks for reporting @mystic-io
+- Fixed reconciliation fills from venue fill reports not carrying the `reconciliation` event flag
+- Fixed live node startup panic on an excessively large `reconciliation_startup_delay_secs`
 - Fixed Betfair false fill voids and missing fills during reconciliation after price replacements
 - Fixed Betfair false fill voids from inconsistent order and fill snapshots during reconciliation
 - Fixed Betfair order quantities in replacement queries and quantity reduction recovery

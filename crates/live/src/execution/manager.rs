@@ -4866,7 +4866,7 @@ impl ExecutionManager {
             fill.report_id,
             fill.ts_event,
             ts_now,
-            false,
+            true, // reconciliation
             fill.venue_position_id,
             Some(fill.commission),
             None,
