@@ -109,7 +109,7 @@ use nautilus_core::{
 use nautilus_model::reports::OrderStatusReport;
 use nautilus_model::{
     events::OrderEventAny,
-    identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId},
+    identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     orders::Order,
 };
 use nautilus_network::mode::ReconnectRequestOutcome;
@@ -129,6 +129,7 @@ use crate::{
         manager::{
             ExecutionManager, ExecutionManagerConfig, TargetedOrderQuery, TargetedOrderReportResult,
         },
+        submission::SubmittedOrderExhaustionPolicy,
     },
     runner::{AsyncRunner, AsyncRunnerChannels, PendingRunnerEvent},
     socket::{SocketReconnectLookup, SocketReconnectRegistry},
@@ -404,7 +405,12 @@ impl LiveNode {
             );
         }
 
-        self.prepare_cache().await?;
+        let cache_result = self.prepare_cache().await;
+        self.exec_manager.register_cached_submissions();
+
+        if let Err(e) = cache_result {
+            return self.check_submission_recovery(Err(e));
+        }
 
         if let Some(runner) = self.runner.as_ref() {
             runner.bind_senders_for_node(self.handle.clone());
@@ -555,6 +561,7 @@ impl LiveNode {
             log::info!("Drained {drained_events} remaining events during shutdown");
         }
 
+        let stop_result = self.check_submission_recovery(stop_result);
         match (controller_stop_result, stop_result) {
             (Ok(()), Ok(())) => Ok(()),
             (Err(controller_err), Ok(())) => Err(controller_err),
@@ -643,6 +650,23 @@ impl LiveNode {
             PendingRunnerEvent::ExecCommand(command) => self.process_exec_command(command),
             PendingRunnerEvent::DataEvent(event) => AsyncRunner::dispatch_data_event(event),
             PendingRunnerEvent::DataCommand(command) => AsyncRunner::handle_data_command(command),
+        }
+    }
+
+    fn process_recovery_drain_event(&mut self, event: PendingRunnerEvent) {
+        if self.config.exec_engine.submitted_order_exhaustion_policy
+            == SubmittedOrderExhaustionPolicy::RetainUnresolved
+        {
+            self.process_runner_event(event);
+            return;
+        }
+
+        match event {
+            PendingRunnerEvent::ExecEvent(event) => AsyncRunner::dispatch_exec_event(event),
+            PendingRunnerEvent::ExecCommand(command) => {
+                AsyncRunner::handle_trading_command(command);
+            }
+            _ => unreachable!("recovery drain contains only execution events and commands"),
         }
     }
 
@@ -1050,7 +1074,12 @@ impl LiveNode {
             anyhow::bail!("Runner already consumed - run() called twice");
         }
 
-        self.prepare_cache().await?;
+        let cache_result = self.prepare_cache().await;
+        self.exec_manager.register_cached_submissions();
+
+        if let Err(e) = cache_result {
+            return self.check_submission_recovery(Err(e));
+        }
 
         let Some(runner) = self.runner.take() else {
             anyhow::bail!("Runner already consumed - run() called twice");
@@ -1098,7 +1127,7 @@ impl LiveNode {
                 let result = self
                     .abort_startup("External message bus ingress failed to start")
                     .await;
-                Self::drain_channels(
+                self.drain_channels(
                     &mut time_evt_rx,
                     &mut system_evt_rx,
                     &mut system_cmd_rx,
@@ -1109,7 +1138,7 @@ impl LiveNode {
                 );
                 log::info!("Event loop stopped");
 
-                if let Err(finalize_err) = result {
+                if let Err(finalize_err) = self.check_submission_recovery(result) {
                     anyhow::bail!(
                         "failed to start external message bus ingress: {e}; failed to finalize startup abort: {finalize_err}"
                     );
@@ -1150,11 +1179,12 @@ impl LiveNode {
                 &mut exec_cmd_rx,
                 &mut data_evt_rx,
                 &mut data_cmd_rx,
+                |event| self.process_recovery_drain_event(event),
             );
             let result = self
                 .abort_startup_with_error("Data client connection timed out", e)
                 .await;
-            Self::drain_channels(
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1164,7 +1194,7 @@ impl LiveNode {
                 &mut data_cmd_rx,
             );
             log::info!("Event loop stopped");
-            return result;
+            return self.check_submission_recovery(result);
         }
 
         // Flush any data events still queued in the channel receivers that the
@@ -1202,6 +1232,7 @@ impl LiveNode {
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
+            |event| self.process_recovery_drain_event(event),
         );
         startup_system_events.extend(pending.take_system_events());
         startup_system_commands.extend(pending.take_system_commands());
@@ -1216,7 +1247,7 @@ impl LiveNode {
                 let result = self
                     .abort_startup_with_error("Execution client connection timed out", e)
                     .await;
-                Self::drain_channels(
+                self.drain_channels(
                     &mut time_evt_rx,
                     &mut system_evt_rx,
                     &mut system_cmd_rx,
@@ -1226,7 +1257,7 @@ impl LiveNode {
                     &mut data_cmd_rx,
                 );
                 log::info!("Event loop stopped");
-                return result;
+                return self.check_submission_recovery(result);
             }
         };
 
@@ -1237,7 +1268,7 @@ impl LiveNode {
                     anyhow::anyhow!("readiness timeout while waiting for engine connections"),
                 )
                 .await;
-            Self::drain_channels(
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1247,15 +1278,22 @@ impl LiveNode {
                 &mut data_cmd_rx,
             );
             log::info!("Event loop stopped");
-            return result;
+            return self.check_submission_recovery(result);
         }
 
         if let Some(reason) = engine_connection_status
             .abort_reason()
             .or_else(|| self.startup_abort_reason())
         {
-            self.abort_startup(reason).await?;
-            Self::drain_channels(
+            let result = self.abort_startup(reason).await;
+
+            if self.config.exec_engine.submitted_order_exhaustion_policy
+                == SubmittedOrderExhaustionPolicy::ResolveLocally
+                && result.is_err()
+            {
+                return result;
+            }
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1265,7 +1303,7 @@ impl LiveNode {
                 &mut data_cmd_rx,
             );
             log::info!("Event loop stopped");
-            return Ok(());
+            return self.check_submission_recovery(result);
         }
 
         debug_assert_eq!(engine_connection_status, EngineConnectionStatus::Connected);
@@ -1273,7 +1311,7 @@ impl LiveNode {
         // Run reconciliation now that instruments are in cache and start trader
         if let Err(e) = self.perform_startup_reconciliation().await {
             let result = self.abort_startup("Startup reconciliation failed").await;
-            Self::drain_channels(
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1284,7 +1322,7 @@ impl LiveNode {
             );
             log::info!("Event loop stopped");
 
-            if let Err(finalize_err) = result {
+            if let Err(finalize_err) = self.check_submission_recovery(result) {
                 anyhow::bail!(
                     "startup reconciliation failed: {e}; failed to finalize startup abort: {finalize_err}"
                 );
@@ -1295,7 +1333,7 @@ impl LiveNode {
 
         if let Some(reason) = self.startup_abort_reason() {
             let result = self.abort_startup(reason).await;
-            Self::drain_channels(
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1305,12 +1343,12 @@ impl LiveNode {
                 &mut data_cmd_rx,
             );
             log::info!("Event loop stopped");
-            return result;
+            return self.check_submission_recovery(result);
         }
 
         if let Err(e) = self.kernel.start_trader() {
             let result = self.abort_after_trader_start_failure(e).await;
-            Self::drain_channels(
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1320,13 +1358,13 @@ impl LiveNode {
                 &mut data_cmd_rx,
             );
             log::info!("Event loop stopped");
-            return result;
+            return self.check_submission_recovery(result);
         }
 
         #[cfg(feature = "plugin")]
         if let Err(e) = self.plugins.start_controllers() {
             let result = self.abort_after_trader_start_failure(e).await;
-            Self::drain_channels(
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1336,7 +1374,7 @@ impl LiveNode {
                 &mut data_cmd_rx,
             );
             log::info!("Event loop stopped");
-            return result;
+            return self.check_submission_recovery(result);
         }
 
         self.process_system_events(startup_system_events);
@@ -1663,6 +1701,7 @@ impl LiveNode {
                                 .exec_manager
                                 .reconcile_targeted_order_reports(result, &client_refs);
                             self.process_reconciliation_events(&events);
+                            self.exec_manager.check_completed_submission_queries();
                         }
                         ReportTaskOutcome::TimedOut => {
                             self.cleanup_cancelled_report_tasks(&planned_client_order_ids);
@@ -1933,11 +1972,11 @@ impl LiveNode {
                 log::error!("Failed to finalize node after callback failure: {stop_err}");
             }
 
-            return Err(e.into());
+            return self.check_submission_recovery(Err(e.into()));
         }
 
         // Handle events that arrived during finalize_stop
-        Self::drain_channels(
+        self.drain_channels(
             &mut time_evt_rx,
             &mut system_evt_rx,
             &mut system_cmd_rx,
@@ -1949,7 +1988,7 @@ impl LiveNode {
 
         log::info!("Event loop stopped");
 
-        stop_result
+        self.check_submission_recovery(stop_result)
     }
 
     fn publish_queue_state_transitions(&self, transitions: &[QueueStateTransition]) {
@@ -2111,6 +2150,13 @@ impl LiveNode {
                 self.exec_manager.commit_recent_fill_if_applied(fill);
             }
         }
+
+        // Recovery may apply acceptance followed by restoration of a pending command.
+        // Confirm the final native state so that command keeps its own recovery budget.
+        for event in events {
+            self.exec_manager
+                .confirm_submission_outcome(&event.client_order_id());
+        }
     }
 
     fn process_exec_event(&mut self, event: ExecutionEvent) {
@@ -2121,6 +2167,10 @@ impl LiveNode {
         self.dispatch_exec_event_and_commit_fill(event);
 
         for client_order_id in &close_ids {
+            self.exec_manager
+                .register_applied_submission(*client_order_id);
+            self.exec_manager
+                .confirm_submission_outcome(client_order_id);
             let is_closed = self
                 .kernel
                 .cache()
@@ -2135,11 +2185,31 @@ impl LiveNode {
     }
 
     fn process_exec_command(&mut self, message: DispatchMessage<TradingCommandMessage>) {
+        let mut submissions = Vec::new();
         message.dispatch_trading(|message| {
             if message.endpoint() == MessagingSwitchboard::exec_engine_execute() {
+                if self.config.exec_engine.submitted_order_exhaustion_policy
+                    == SubmittedOrderExhaustionPolicy::RetainUnresolved
+                {
+                    match message.command() {
+                        TradingCommand::SubmitOrder(command) => {
+                            submissions.push(command.client_order_id);
+                        }
+                        TradingCommand::SubmitOrderList(command) => {
+                            submissions.extend(command.order_list.client_order_ids.iter().copied());
+                        }
+                        _ => {}
+                    }
+                }
+
                 self.observe_exec_command_before_dispatch(message.command());
             }
         });
+
+        for id in submissions {
+            // Engine denials apply synchronously without another node event dispatch
+            self.exec_manager.confirm_submission_outcome(&id);
+        }
     }
 
     /// Dispatches a normal-ingress execution event, then commits a direct
@@ -2259,7 +2329,18 @@ impl LiveNode {
     async fn abort_startup(&mut self, reason: &str) -> anyhow::Result<()> {
         log::info!("{reason}, aborting startup");
         self.handle.set_shutting_down();
-        self.finalize_stop().await
+        let result = self.finalize_stop().await;
+
+        if self.runner.is_some()
+            && self.config.exec_engine.submitted_order_exhaustion_policy
+                == SubmittedOrderExhaustionPolicy::RetainUnresolved
+        {
+            self.drain_runner_pending();
+            self.check_submission_recovery(result)
+        } else {
+            // The running loop owns its receivers and checks after its final drain
+            result
+        }
     }
 
     async fn abort_startup_with_error(
@@ -2304,7 +2385,7 @@ impl LiveNode {
         let finalize_result = self.finalize_stop().await;
 
         if let Some(receivers) = receivers {
-            Self::drain_channels(
+            self.drain_channels(
                 receivers.time_evt,
                 receivers.system_evt,
                 receivers.system_cmd,
@@ -2320,6 +2401,7 @@ impl LiveNode {
             }
         }
 
+        let finalize_result = self.check_submission_recovery(finalize_result);
         let mut errors = Vec::new();
 
         if let Err(e) = controller_stop_result {
@@ -2392,10 +2474,11 @@ impl LiveNode {
         &mut self,
         start_err: anyhow::Error,
     ) -> anyhow::Result<()> {
-        log::info!("Trader startup failed, aborting startup");
         self.handle.set_shutting_down();
         let stop_result = self.kernel.stop_trader_after_start_failure();
-        let finalize_result = self.finalize_stop().await;
+        let finalize_result = self
+            .abort_startup("Trader startup failed, aborting startup")
+            .await;
 
         match (stop_result, finalize_result) {
             (Ok(()), Ok(())) => Err(start_err),
@@ -2471,7 +2554,26 @@ impl LiveNode {
         }
     }
 
+    fn check_submission_recovery(&self, stop_result: anyhow::Result<()>) -> anyhow::Result<()> {
+        let unresolved = self.exec_manager.unresolved_submission_ids();
+        if unresolved.is_empty() {
+            return stop_result;
+        }
+
+        match stop_result {
+            Ok(()) => anyhow::bail!("Incomplete submission recovery at shutdown: {unresolved:?}"),
+            Err(e) => {
+                anyhow::bail!("{e:#}; Incomplete submission recovery at shutdown: {unresolved:?}")
+            }
+        }
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "drains the seven native runner channels through node observers"
+    )]
     fn drain_channels(
+        &mut self,
         time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<TimeEventMessage>>,
         system_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<SystemEvent>>,
         system_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<SystemCommand>>,
@@ -2508,12 +2610,12 @@ impl LiveNode {
         }
 
         while let Ok(evt) = exec_evt_rx.try_recv() {
-            AsyncRunner::dispatch_exec_event(evt);
+            self.process_recovery_drain_event(PendingRunnerEvent::ExecEvent(evt));
             drained += 1;
         }
 
         while let Ok(cmd) = exec_cmd_rx.try_recv() {
-            AsyncRunner::handle_trading_command(cmd);
+            self.process_recovery_drain_event(PendingRunnerEvent::ExecCommand(cmd));
             drained += 1;
         }
 
@@ -2531,29 +2633,47 @@ impl LiveNode {
         match evt {
             ExecutionEvent::Order(order_evt) => {
                 self.exec_manager.observe_order_event(order_evt);
-                close_ids.push(order_evt.client_order_id());
+                close_ids.push(
+                    self.canonical_cached_order_id(
+                        Some(order_evt.client_order_id()),
+                        order_evt.venue_order_id(),
+                    )
+                    .unwrap_or(order_evt.client_order_id()),
+                );
             }
             ExecutionEvent::OrderSubmittedBatch(batch) => {
                 for submitted in &batch.events {
+                    close_ids.push(submitted.client_order_id);
                     self.exec_manager
                         .record_local_activity(submitted.client_order_id);
                 }
             }
             ExecutionEvent::OrderAcceptedBatch(batch) => {
                 for accepted in &batch.events {
-                    self.exec_manager
-                        .clear_recon_tracking(&accepted.client_order_id, true);
-                    self.exec_manager
-                        .record_local_activity(accepted.client_order_id);
+                    let client_order_id = self
+                        .canonical_cached_order_id(
+                            Some(accepted.client_order_id),
+                            Some(accepted.venue_order_id),
+                        )
+                        .unwrap_or(accepted.client_order_id);
+                    close_ids.push(client_order_id);
+                    self.exec_manager.observe_order_event(
+                        &OrderEventAny::Accepted(*accepted).with_client_order_id(client_order_id),
+                    );
                 }
             }
             ExecutionEvent::OrderCanceledBatch(batch) => {
                 for canceled in &batch.events {
+                    let client_order_id = self
+                        .canonical_cached_order_id(
+                            Some(canceled.client_order_id),
+                            canceled.venue_order_id,
+                        )
+                        .unwrap_or(canceled.client_order_id);
                     self.exec_manager
-                        .clear_recon_tracking(&canceled.client_order_id, true);
-                    self.exec_manager
-                        .record_local_activity(canceled.client_order_id);
-                    close_ids.push(canceled.client_order_id);
+                        .clear_recon_tracking(&client_order_id, true);
+                    self.exec_manager.record_local_activity(client_order_id);
+                    close_ids.push(client_order_id);
                 }
             }
             ExecutionEvent::Report(report) => {
@@ -2573,7 +2693,10 @@ impl LiveNode {
 
                 self.exec_manager.observe_execution_report(report);
 
-                if let Some(client_order_id) = Self::closed_order_report_client_order_id(report) {
+                if matches!(report, ExecutionReport::MassStatus(_)) {
+                    // A reconnect snapshot can apply outcomes for several retained submissions
+                    close_ids.extend(self.exec_manager.unresolved_submission_ids());
+                } else if let Some(client_order_id) = self.order_report_client_order_id(report) {
                     close_ids.push(client_order_id);
                 }
             }
@@ -2583,27 +2706,57 @@ impl LiveNode {
         Some(close_ids)
     }
 
-    fn closed_order_report_client_order_id(report: &ExecutionReport) -> Option<ClientOrderId> {
-        match report {
-            ExecutionReport::Order(order_report)
-            | ExecutionReport::OrderWithFills(order_report, _)
-                if order_report.order_status.is_closed() =>
-            {
-                order_report.client_order_id
-            }
-            _ => None,
+    fn order_report_client_order_id(&self, report: &ExecutionReport) -> Option<ClientOrderId> {
+        if self.config.exec_engine.submitted_order_exhaustion_policy
+            == SubmittedOrderExhaustionPolicy::ResolveLocally
+        {
+            return match report {
+                ExecutionReport::Order(report) | ExecutionReport::OrderWithFills(report, _)
+                    if report.order_status.is_closed() =>
+                {
+                    report.client_order_id
+                }
+                _ => None,
+            };
         }
+        let (client_order_id, venue_order_id) = match report {
+            ExecutionReport::Order(report) | ExecutionReport::OrderWithFills(report, _) => {
+                (report.client_order_id, report.venue_order_id)
+            }
+            ExecutionReport::Fill(report) => (report.client_order_id, report.venue_order_id),
+            _ => return None,
+        };
+        self.canonical_cached_order_id(client_order_id, Some(venue_order_id))
+    }
+
+    fn canonical_cached_order_id(
+        &self,
+        client_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
+    ) -> Option<ClientOrderId> {
+        if self.config.exec_engine.submitted_order_exhaustion_policy
+            == SubmittedOrderExhaustionPolicy::ResolveLocally
+        {
+            return client_order_id;
+        }
+        let cache = self.kernel.cache();
+        let cache = cache.borrow();
+        client_order_id
+            .filter(|id| cache.order_exists(id))
+            .or_else(|| venue_order_id.and_then(|id| cache.client_order_id(&id).copied()))
+            .or(client_order_id)
     }
 
     fn observe_exec_command_before_dispatch(&mut self, cmd: &TradingCommand) {
         match cmd {
             TradingCommand::SubmitOrder(submit) => {
-                self.exec_manager.register_inflight(submit.client_order_id);
+                self.exec_manager
+                    .register_submission(submit.client_order_id);
             }
             TradingCommand::SubmitOrderList(submit) => {
                 for order_init in &submit.order_inits {
                     self.exec_manager
-                        .register_inflight(order_init.client_order_id);
+                        .register_submission(order_init.client_order_id);
                 }
             }
             TradingCommand::ModifyOrder(modify) => {
@@ -3056,6 +3209,7 @@ fn flush_all_pending(
     exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<TradingCommandMessage>>,
     data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<DataEvent>>,
     data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<DataCommand>>,
+    dispatch: impl FnMut(PendingRunnerEvent),
 ) {
     // Flush channel receivers into pending
     while let Ok(handler) = time_evt_rx.try_recv() {
@@ -3086,7 +3240,7 @@ fn flush_all_pending(
         pending.exec_cmds.push(cmd);
     }
 
-    pending.drain();
+    pending.drain(dispatch);
 }
 
 /// Drives a future to completion while buffering channel events.
@@ -3191,7 +3345,7 @@ impl PendingEvents {
     }
 
     /// Drains all remaining pending events.
-    fn drain(&mut self) {
+    fn drain(&mut self, mut dispatch: impl FnMut(PendingRunnerEvent)) {
         let total = self.data_evts.len()
             + self.data_cmds.len()
             + self.exec_reports.len()
@@ -3219,16 +3373,25 @@ impl PendingEvents {
         }
 
         for report in self.exec_reports.drain(..) {
-            report
-                .dispatch(|report| AsyncRunner::handle_exec_event(ExecutionEvent::Report(report)));
+            report.dispatch(|report| {
+                dispatch(PendingRunnerEvent::ExecEvent(DispatchMessage::new(
+                    ExecutionEvent::Report(report),
+                    std::thread::current().id(),
+                )));
+            });
         }
 
         for evt in self.order_evts.drain(..) {
-            evt.dispatch(|evt| AsyncRunner::handle_exec_event(ExecutionEvent::Order(evt)));
+            evt.dispatch(|evt| {
+                dispatch(PendingRunnerEvent::ExecEvent(DispatchMessage::new(
+                    ExecutionEvent::Order(evt),
+                    std::thread::current().id(),
+                )));
+            });
         }
 
         for cmd in self.exec_cmds.drain(..) {
-            AsyncRunner::handle_trading_command(cmd);
+            dispatch(PendingRunnerEvent::ExecCommand(cmd));
         }
     }
 
@@ -3379,7 +3542,7 @@ mod tests {
     };
     use nautilus_system::{KernelEventStore, RegisteredComponents, event_store::EventStoreConfig};
     use nautilus_testkit::{
-        cache::TestCacheDatabaseControl,
+        cache::{TestCacheDatabaseControl, TestCacheIndexLoadFailure},
         components::{StateActor, StateStrategy},
     };
     use nautilus_trading::{
@@ -3566,13 +3729,22 @@ mod tests {
         }
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_callback_failure_stops_later_live_events() {
+    async fn test_callback_failure_stops_later_live_events(
+        #[values(false, true)] retain: bool,
+        #[values(false, true)] restored_submission: bool,
+    ) {
         actor::clear_callbacks().unwrap();
 
         let config = LiveNodeConfig {
             exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
+                submitted_order_exhaustion_policy: if retain {
+                    SubmittedOrderExhaustionPolicy::RetainUnresolved
+                } else {
+                    SubmittedOrderExhaustionPolicy::ResolveLocally
+                },
                 ..Default::default()
             },
             timeout_connection: Duration::ZERO,
@@ -3585,6 +3757,26 @@ mod tests {
         };
 
         let mut node = LiveNode::build("CallbackFailureNode".to_string(), Some(config)).unwrap();
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(node.trader_id())
+            .instrument_id(InstrumentId::from("EUR/USD.SIM"))
+            .quantity(Quantity::from("1"))
+            .build();
+        let id = order.client_order_id();
+        if restored_submission {
+            order
+                .apply(TestOrderEventStubs::submitted(
+                    &order,
+                    AccountId::from("SIM-001"),
+                ))
+                .unwrap();
+            node.kernel
+                .cache()
+                .borrow_mut()
+                .add_order(order, None, None, false)
+                .unwrap();
+        }
+
         let received = Rc::new(RefCell::new(Vec::new()));
         node.add_actor(FailingTimerActor {
             core: DataActorCore::new(DataActorConfig {
@@ -3603,10 +3795,24 @@ mod tests {
         let failure = actor::callback_failure();
         node.dispose();
 
-        assert_eq!(
-            error.downcast_ref::<CallbackDispatchError>(),
-            Some(&CallbackDispatchError::DeliveryUnwound)
+        assert!(
+            error
+                .to_string()
+                .contains(&CallbackDispatchError::DeliveryUnwound.to_string())
         );
+        assert_eq!(
+            error.to_string().contains("Incomplete submission recovery"),
+            retain && restored_submission
+        );
+
+        if retain && restored_submission {
+            assert!(error.to_string().contains(id.as_str()));
+        } else {
+            assert_eq!(
+                error.downcast_ref::<CallbackDispatchError>(),
+                Some(&CallbackDispatchError::DeliveryUnwound)
+            );
+        }
         assert_eq!(*received.borrow(), [17]);
         assert_eq!(state, NodeState::Stopped);
         assert!(trader_stopped);
@@ -5172,7 +5378,7 @@ mod tests {
 
         let close_ids = node.observe_exec_event_before_dispatch(&event);
 
-        assert_eq!(close_ids, Some(Vec::new()));
+        assert_eq!(close_ids, Some(vec![client_order_id]));
         assert!(node.exec_manager.check_open_order_queries().is_empty());
     }
 
@@ -6557,6 +6763,94 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
+    async fn test_partial_cache_load_preserves_submission_uncertainty(
+        #[values(false, true)] standalone_start: bool,
+        #[values(false, true)] retain: bool,
+        #[values(
+            TestCacheIndexLoadFailure::OrderPosition,
+            TestCacheIndexLoadFailure::OrderClient
+        )]
+        failure: TestCacheIndexLoadFailure,
+    ) {
+        let (database, control) = TestCacheDatabaseControl::create();
+        let config = LiveNodeConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
+                submitted_order_exhaustion_policy: if retain {
+                    SubmittedOrderExhaustionPolicy::RetainUnresolved
+                } else {
+                    SubmittedOrderExhaustionPolicy::ResolveLocally
+                },
+                reconciliation: false,
+                load_cache: true,
+                ..Default::default()
+            },
+            timeout_connection: Duration::ZERO,
+            timeout_reconciliation: Duration::ZERO,
+            timeout_portfolio: Duration::ZERO,
+            timeout_disconnection: Duration::ZERO,
+            timeout_shutdown: Duration::ZERO,
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("PartialCacheLoad".to_string(), Some(config)).unwrap();
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(node.trader_id())
+            .instrument_id(InstrumentId::from("ETHUSDT.BINANCE"))
+            .client_order_id(ClientOrderId::from("O-PARTIAL-CACHE-LOAD"))
+            .quantity(Quantity::from("1.000"))
+            .price(Price::from("100.00"))
+            .build();
+        order
+            .apply(TestOrderEventStubs::submitted(
+                &order,
+                AccountId::from("BINANCE-001"),
+            ))
+            .unwrap();
+        let id = order.client_order_id();
+        control.set_orders(vec![order.clone()]);
+        control.set_index_load_failure(Some(failure));
+        node.set_cache_database(Box::new(database)).unwrap();
+        let error = if standalone_start {
+            node.start().await
+        } else {
+            node.run().await
+        }
+        .unwrap_err();
+        let message = format!("{error:#}");
+        assert!(
+            message.contains("Failed to load persistent cache"),
+            "{message}"
+        );
+        assert!(message.contains("index load failure"), "{message}");
+        assert_eq!(message.contains(id.as_str()), retain, "{message}");
+        assert_eq!(
+            node.exec_manager.unresolved_submission_ids(),
+            if retain { vec![id] } else { Vec::new() }
+        );
+        assert_eq!(
+            node.kernel.cache().borrow().order(&id).unwrap().status(),
+            OrderStatus::Submitted
+        );
+        assert!(!node.state().is_running());
+
+        // Retrying with authoritative restored evidence retires the earlier uncertainty.
+        control.set_index_load_failure(None);
+        order
+            .apply(TestOrderEventStubs::accepted(
+                &order,
+                AccountId::from("BINANCE-001"),
+                VenueOrderId::from("V-PARTIAL-CACHE-LOAD"),
+            ))
+            .unwrap();
+        control.set_orders(vec![order]);
+        node.start().await.unwrap();
+        assert!(node.exec_manager.unresolved_submission_ids().is_empty());
+        node.stop().await.unwrap();
+        node.dispose();
+    }
+
+    #[rstest]
+    #[tokio::test]
     async fn test_live_state_persistence_loads_before_start_and_saves_after_stop() {
         let actor_id = ActorId::from("LIVE-STATE-ACTOR");
         let strategy_id = StrategyId::from("LIVE-STATE-STRATEGY-001");
@@ -7720,7 +8014,10 @@ mod tests {
 
     #[rstest]
     #[tokio::test(flavor = "current_thread")]
-    async fn test_run_aborts_startup_when_external_ingress_receiver_unavailable() {
+    async fn test_run_aborts_startup_when_external_ingress_receiver_unavailable(
+        #[values(false, true)] retain: bool,
+        #[values(false, true)] restored_submission: bool,
+    ) {
         let closed = Rc::new(Cell::new(false));
         let ingress = FailingExternalIngress::new(closed.clone());
 
@@ -7728,6 +8025,11 @@ mod tests {
             environment: Environment::Sandbox,
             exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
+                submitted_order_exhaustion_policy: if retain {
+                    SubmittedOrderExhaustionPolicy::RetainUnresolved
+                } else {
+                    SubmittedOrderExhaustionPolicy::ResolveLocally
+                },
                 ..Default::default()
             },
             delay_post_stop: Duration::ZERO,
@@ -7743,7 +8045,34 @@ mod tests {
             .expect("node builds with external message bus ingress");
         let handle = node.handle();
 
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(node.trader_id())
+            .instrument_id(InstrumentId::from("EUR/USD.SIM"))
+            .quantity(Quantity::from("1"))
+            .build();
+        let id = order.client_order_id();
+        if restored_submission {
+            order
+                .apply(TestOrderEventStubs::submitted(
+                    &order,
+                    AccountId::from("SIM-001"),
+                ))
+                .unwrap();
+            node.kernel
+                .cache()
+                .borrow_mut()
+                .add_order(order, None, None, false)
+                .unwrap();
+        }
         let err = node.run().await.expect_err("run should fail");
+        assert_eq!(
+            err.to_string().contains("Incomplete submission recovery"),
+            retain && restored_submission
+        );
+
+        if retain && restored_submission {
+            assert!(err.to_string().contains(id.as_str()));
+        }
 
         assert!(
             err.to_string()
@@ -8016,6 +8345,16 @@ mod tests {
         ))))
     }
 
+    fn dispatch_pending_execution(event: PendingRunnerEvent) {
+        match event {
+            PendingRunnerEvent::ExecEvent(event) => AsyncRunner::dispatch_exec_event(event),
+            PendingRunnerEvent::ExecCommand(command) => {
+                AsyncRunner::handle_trading_command(command);
+            }
+            _ => unreachable!("startup drain dispatches only execution events and commands"),
+        }
+    }
+
     #[rstest]
     fn test_flush_all_pending_drains_buffered_channels() {
         let (time_tx, mut time_rx) =
@@ -8068,6 +8407,7 @@ mod tests {
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
+            dispatch_pending_execution,
         );
 
         let system_events = pending
@@ -8154,6 +8494,7 @@ mod tests {
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
+            dispatch_pending_execution,
         );
 
         // Both order and report events are drained by pending.drain()
@@ -8192,6 +8533,7 @@ mod tests {
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
+            dispatch_pending_execution,
         );
 
         // Account events are forwarded immediately, never buffered in pending
@@ -8274,7 +8616,7 @@ mod tests {
                 .into(),
             );
 
-            pending.drain();
+            pending.drain(dispatch_pending_execution);
 
             assert!(pending.is_empty());
             assert_eq!(risk_commands.borrow().len(), 1);
@@ -8378,6 +8720,7 @@ mod tests {
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
+            dispatch_pending_execution,
         );
 
         // Batch should be unpacked into individual Submitted events then drained
@@ -8417,6 +8760,7 @@ mod tests {
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
+            dispatch_pending_execution,
         );
 
         // Batch should be unpacked into individual Canceled events then drained

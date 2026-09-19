@@ -50,6 +50,7 @@ use serde::{Deserialize, Serialize};
 
 pub use super::queue::QueueMonitorConfig;
 use crate::execution::manager::ExecutionManagerConfig;
+pub use crate::execution::submission::SubmittedOrderExhaustionPolicy;
 
 /// The default rate limit string used for order submission and modification.
 const DEFAULT_ORDER_RATE_LIMIT: &str = "100/00:00:01";
@@ -456,6 +457,9 @@ pub struct LiveExecutionEngineConfig {
     /// The number of retry attempts for verifying in-flight order status.
     #[builder(default = 5)]
     pub inflight_check_retries: u32,
+    /// Policy for submissions still unresolved after inflight or missing-order query exhaustion.
+    #[builder(default)]
+    pub submitted_order_exhaustion_policy: SubmittedOrderExhaustionPolicy,
     /// The interval (seconds) between checks for open orders at the venue.
     pub open_check_interval_secs: Option<f64>,
     /// The lookback minutes for open order checks.
@@ -537,6 +541,8 @@ impl From<LiveExecutionEngineConfig> for ExecutionEngineConfig {
             carry_replay_events_on_reopen: true,
             allow_overfills: config.allow_overfills,
             filter_unclaimed_external_orders: config.filter_unclaimed_external_orders,
+            preserve_unresolved_submissions: config.submitted_order_exhaustion_policy
+                == SubmittedOrderExhaustionPolicy::RetainUnresolved,
             external_clients: config.external_clients,
             // Keep purge intervals on the ExecutionEngine clock-timer path.
             // LiveNode also dispatches purge checks from its maintenance loop,
@@ -587,6 +593,7 @@ impl From<&LiveExecutionEngineConfig> for ExecutionManagerConfig {
             generate_missing_orders: config.generate_missing_orders,
             inflight_threshold_ms: u64::from(config.inflight_check_threshold_ms),
             inflight_max_retries: config.inflight_check_retries,
+            submitted_order_exhaustion_policy: config.submitted_order_exhaustion_policy,
             open_check_lookback_mins: config.open_check_lookback_mins.map(u64::from),
             open_check_threshold_ns,
             open_check_missing_retries: config.open_check_missing_retries,
@@ -2140,6 +2147,37 @@ mean_dispatch_ns_clear = 700
         assert!(config.instrument_provider.filter_callable.is_none());
         assert!(config.instrument_provider.log_warnings);
         assert!(!config.routing.default);
+    }
+
+    #[rstest]
+    #[case("{}", SubmittedOrderExhaustionPolicy::ResolveLocally)]
+    #[case(
+        r#"{"submitted_order_exhaustion_policy":"retain_unresolved"}"#,
+        SubmittedOrderExhaustionPolicy::RetainUnresolved
+    )]
+    fn test_submission_exhaustion_config_roundtrip(
+        #[case] json: &str,
+        #[case] expected: SubmittedOrderExhaustionPolicy,
+    ) {
+        let config: LiveExecutionEngineConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.submitted_order_exhaustion_policy, expected);
+        assert_eq!(
+            ExecutionEngineConfig::from(config.clone()).preserve_unresolved_submissions,
+            expected == SubmittedOrderExhaustionPolicy::RetainUnresolved
+        );
+        assert_eq!(
+            ExecutionManagerConfig::from(&config).submitted_order_exhaustion_policy,
+            expected
+        );
+        let roundtrip: LiveExecutionEngineConfig =
+            serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
+        assert_eq!(roundtrip.submitted_order_exhaustion_policy, expected);
+        assert!(
+            serde_json::from_str::<LiveExecutionEngineConfig>(
+                r#"{"submitted_order_exhaustion_policy":"retry_forever"}"#
+            )
+            .is_err()
+        );
     }
 
     #[rstest]

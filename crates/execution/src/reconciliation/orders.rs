@@ -18,15 +18,15 @@
 //! Event construction, order state reconciliation, and fill reconciliation. Venue-sourced
 //! reports become zero or more `OrderEventAny`s that are safe to apply to the local order model.
 
-use nautilus_common::enums::LogColor;
+use nautilus_common::{cache::Cache, enums::LogColor};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     enums::{LiquiditySide, OrderStatus, OrderType},
     events::{
         OrderAccepted, OrderCanceled, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled,
-        OrderRejected, OrderTriggered, OrderUpdated,
+        OrderRejected, OrderSubmitted, OrderTriggered, OrderUpdated,
     },
-    identifiers::{AccountId, PositionId, TradeId},
+    identifiers::{AccountId, PositionId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny, TRIGGERABLE_ORDER_TYPES},
     reports::{FillReport, OrderStatusReport},
@@ -57,13 +57,15 @@ pub fn generate_reconciliation_order_events(
     instrument: Option<&InstrumentAny>,
     ts_now: UnixNanos,
 ) -> Vec<OrderEventAny> {
-    generate_reconciliation_order_events_inner(
+    generate_reconciliation_order_events_with_options(
         order,
         report,
         instrument,
         ts_now,
-        report.order_status == OrderStatus::Voided,
-        None,
+        OrderReconciliationOptions {
+            allow_fill_decrease: report.order_status == OrderStatus::Voided,
+            ..Default::default()
+        },
     )
 }
 
@@ -80,7 +82,16 @@ pub fn generate_reconciliation_order_snapshot_events(
     instrument: Option<&InstrumentAny>,
     ts_now: UnixNanos,
 ) -> Vec<OrderEventAny> {
-    generate_reconciliation_order_events_inner(order, report, instrument, ts_now, true, None)
+    generate_reconciliation_order_events_with_options(
+        order,
+        report,
+        instrument,
+        ts_now,
+        OrderReconciliationOptions {
+            allow_fill_decrease: true,
+            ..Default::default()
+        },
+    )
 }
 
 /// Generates reconciliation events for an authoritative venue snapshot with an inferred-fill
@@ -93,24 +104,78 @@ pub fn generate_reconciliation_order_snapshot_events_with_commission(
     ts_now: UnixNanos,
     commission: Option<Money>,
 ) -> Vec<OrderEventAny> {
-    generate_reconciliation_order_events_inner(order, report, instrument, ts_now, true, commission)
+    generate_reconciliation_order_events_with_options(
+        order,
+        report,
+        instrument,
+        ts_now,
+        OrderReconciliationOptions {
+            allow_fill_decrease: true,
+            commission,
+            ..Default::default()
+        },
+    )
 }
 
-fn generate_reconciliation_order_events_inner(
+/// Options for native reconciliation event construction.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct OrderReconciliationOptions {
+    /// Whether the snapshot can authoritatively decrease previously filled quantity.
+    pub allow_fill_decrease: bool,
+    /// Commission for any inferred fill, supplied by the responsible execution client.
+    pub commission: Option<Money>,
+    /// Whether pending reports must preserve submission uncertainty instead of inferring acceptance.
+    pub preserve_unresolved_submissions: bool,
+}
+
+/// Generates reconciliation events with explicit snapshot and submission-evidence policies.
+#[must_use]
+pub fn generate_reconciliation_order_events_with_options(
     order: &OrderAny,
     report: &OrderStatusReport,
     instrument: Option<&InstrumentAny>,
     ts_now: UnixNanos,
-    allow_fill_decrease: bool,
-    commission: Option<Money>,
+    options: OrderReconciliationOptions,
 ) -> Vec<OrderEventAny> {
+    let OrderReconciliationOptions {
+        allow_fill_decrease,
+        commission,
+        preserve_unresolved_submissions,
+    } = options;
+
+    if preserve_unresolved_submissions
+        && (is_unchanged_triggered_report_during_pending_command(order, report)
+            || is_stale_submission_fill_snapshot(order, report))
+    {
+        return Vec::new();
+    }
+
+    if preserve_unresolved_submissions
+        && order.status() == OrderStatus::Released
+        && report.instrument_id != order.instrument_id()
+    {
+        return Vec::new();
+    }
+
     if is_superseded_cancel_report(order, report) {
         let _ = reconcile_order_report(order, report, instrument, ts_now);
         return Vec::new();
     }
 
     if has_material_fill_decrease(order, report) {
-        if !allow_fill_decrease {
+        // A pending snapshot is not authoritative evidence for reversing a real fill.
+        if !allow_fill_decrease
+            || preserve_unresolved_submissions
+                && matches!(
+                    report.order_status,
+                    OrderStatus::Submitted
+                        | OrderStatus::PendingCancel
+                        | OrderStatus::PendingUpdate
+                        | OrderStatus::Released
+                        | OrderStatus::Emulated
+                        | OrderStatus::Initialized
+                )
+        {
             log::warn!(
                 "Ignoring fill decrease without explicit void evidence for {}: cached={}, venue={}",
                 order.client_order_id(),
@@ -148,13 +213,17 @@ fn generate_reconciliation_order_events_inner(
             }
         }
 
-        if let Some(terminal) = reconcile_order_report(&working, report, instrument, ts_now) {
+        if !(preserve_unresolved_submissions
+            && is_stale_submission_acceptance_report(&working, report))
+            && let Some(terminal) = reconcile_order_report(&working, report, instrument, ts_now)
+        {
             events.push(terminal);
         }
         return events;
     }
 
-    let (mut working, mut events) = prepare_reconciliation_order(order, report, ts_now);
+    let (mut working, mut events) =
+        prepare_reconciliation_order(order, report, ts_now, preserve_unresolved_submissions);
 
     if matches!(
         report.order_status,
@@ -189,10 +258,32 @@ fn generate_reconciliation_order_events_inner(
         return events;
     }
 
-    if let Some(event) =
-        reconcile_order_report_with_commission(&working, report, instrument, ts_now, commission)
+    if preserve_unresolved_submissions
+        && report.order_status == OrderStatus::Accepted
+        && report.filled_qty == working.filled_qty()
+        && (has_recovered_submission_command(order)
+            && events
+                .iter()
+                .any(|event| matches!(event, OrderEventAny::Updated(_)))
+            || is_stale_submission_acceptance_report(&working, report))
+    {
+        // Submission acknowledgement cannot undo a known trigger or partial fill after recovery.
+        return events;
+    }
+
+    if !(preserve_unresolved_submissions
+        && is_triggered_report_after_partial_fill(&working, report))
+        && let Some(event) =
+            reconcile_order_report_with_commission(&working, report, instrument, ts_now, commission)
     {
         events.push(event);
+    }
+
+    if preserve_unresolved_submissions
+        && let Some(pending) =
+            create_triggered_submission_command_recovery(order, report, &events, ts_now)
+    {
+        events.push(pending);
     }
 
     events
@@ -243,37 +334,563 @@ pub fn generate_reconciliation_order_pre_fill_events(
     report: &OrderStatusReport,
     ts_now: UnixNanos,
 ) -> Vec<OrderEventAny> {
+    generate_reconciliation_order_pre_fill_events_with_options(
+        order,
+        report,
+        ts_now,
+        OrderReconciliationOptions::default(),
+    )
+}
+
+/// Generates events preceding real fills with an explicit submission-evidence policy.
+#[must_use]
+pub fn generate_reconciliation_order_pre_fill_events_with_options(
+    order: &OrderAny,
+    report: &OrderStatusReport,
+    ts_now: UnixNanos,
+    options: OrderReconciliationOptions,
+) -> Vec<OrderEventAny> {
+    if options.preserve_unresolved_submissions
+        && (is_unchanged_triggered_report_during_pending_command(order, report)
+            || is_stale_submission_fill_snapshot(order, report))
+    {
+        return Vec::new();
+    }
+
+    if options.preserve_unresolved_submissions
+        && order.status() == OrderStatus::Released
+        && report.instrument_id != order.instrument_id()
+    {
+        return Vec::new();
+    }
+
     if is_superseded_cancel_report(order, report) {
         return Vec::new();
     }
 
-    let (working, mut events) = prepare_reconciliation_order(order, report, ts_now);
+    let (working, mut events) = prepare_reconciliation_order(
+        order,
+        report,
+        ts_now,
+        options.preserve_unresolved_submissions,
+    );
 
     if report.order_status == OrderStatus::Triggered
+        && !(options.preserve_unresolved_submissions
+            && is_triggered_report_after_partial_fill(&working, report))
         && let Some(triggered) = reconcile_order_report(&working, report, None, ts_now)
     {
         events.push(triggered);
     }
 
+    if options.preserve_unresolved_submissions
+        && let Some(pending) =
+            create_triggered_submission_command_recovery(order, report, &events, ts_now)
+    {
+        events.push(pending);
+    }
+
     events
+}
+
+fn is_triggered_report_after_partial_fill(order: &OrderAny, report: &OrderStatusReport) -> bool {
+    report.order_status == OrderStatus::Triggered
+        && (order.status() == OrderStatus::PartiallyFilled
+            || matches!(
+                order.status(),
+                OrderStatus::PendingCancel | OrderStatus::PendingUpdate
+            ) && order.previous_status() == Some(OrderStatus::PartiallyFilled)
+                && has_recovered_submission_command(order))
+}
+
+fn create_triggered_submission_command_recovery(
+    order: &OrderAny,
+    report: &OrderStatusReport,
+    events: &[OrderEventAny],
+    ts_now: UnixNanos,
+) -> Option<OrderEventAny> {
+    let updated = events
+        .iter()
+        .any(|event| matches!(event, OrderEventAny::Updated(_)));
+    let triggered = events
+        .iter()
+        .any(|event| matches!(event, OrderEventAny::Triggered(_)));
+
+    if report.order_status != OrderStatus::Triggered
+        || !(triggered || order.status() == OrderStatus::PendingCancel && updated)
+        || order.status() == OrderStatus::PendingUpdate && updated
+    {
+        return None;
+    }
+
+    // A confirmed amendment resolves the modification; cancellation remains outstanding
+    create_submission_command_recovery(
+        order,
+        Some(report.venue_order_id),
+        events
+            .iter()
+            .map(OrderEventAny::ts_event)
+            .max()
+            .unwrap_or(report.ts_last)
+            .max(report.ts_last),
+        ts_now,
+    )
+}
+
+/// Returns whether native submission history has no applied outcome yet.
+#[must_use]
+pub fn has_unresolved_submission(order: &OrderAny) -> bool {
+    has_unresolved_submission_events(&order.events())
+}
+
+fn has_unresolved_submission_events(events: &[&OrderEventAny]) -> bool {
+    events.iter().any(|event| {
+        matches!(
+            event,
+            OrderEventAny::Submitted(_) | OrderEventAny::Released(_)
+        )
+    }) && !events.iter().any(|event| {
+        matches!(
+            event,
+            OrderEventAny::Accepted(_)
+                | OrderEventAny::Rejected(_)
+                | OrderEventAny::Denied(_)
+                | OrderEventAny::Canceled(_)
+                | OrderEventAny::Expired(_)
+                | OrderEventAny::Triggered(_)
+                | OrderEventAny::Filled(_)
+                | OrderEventAny::FillVoided(_)
+        )
+    })
+}
+
+fn is_unchanged_triggered_report_during_pending_command(
+    order: &OrderAny,
+    report: &OrderStatusReport,
+) -> bool {
+    has_recovered_submission_command(order)
+        && order.venue_order_id() == Some(report.venue_order_id)
+        && order.previous_status() == Some(OrderStatus::Triggered)
+        && report.order_status == OrderStatus::Triggered
+        && order.filled_qty() == report.filled_qty
+        && !should_reconciliation_update(order, report)
+}
+
+/// Returns whether a command sent before acknowledgement remains pending after submission recovery.
+#[must_use]
+pub fn has_recovered_submission_command(order: &OrderAny) -> bool {
+    matches!(
+        order.status(),
+        OrderStatus::PendingCancel | OrderStatus::PendingUpdate
+    ) && has_recovered_submission_command_history(order)
+}
+
+/// Returns whether the latest pending command originated before submission acknowledgement.
+///
+/// The provenance survives command completion and subsequent fills or amendments. A later
+/// ordinary pending command replaces it, leaving acknowledged-command behavior unchanged.
+#[must_use]
+pub fn has_recovered_submission_command_history(order: &OrderAny) -> bool {
+    let events = order.events();
+    let Some(pending_index) = events.iter().rposition(|event| {
+        matches!(
+            event,
+            OrderEventAny::PendingCancel(_) | OrderEventAny::PendingUpdate(_)
+        )
+    }) else {
+        return false;
+    };
+    let restored = match events[pending_index] {
+        OrderEventAny::PendingCancel(event) => event.reconciliation && event.causation_id.is_some(),
+        OrderEventAny::PendingUpdate(event) => event.reconciliation && event.causation_id.is_some(),
+        _ => unreachable!(),
+    };
+
+    // A native partial fill preserves the original pending event without reconstructing it.
+    restored
+        || has_unresolved_submission_events(&events[..pending_index])
+            && events[pending_index + 1..]
+                .iter()
+                .any(|event| matches!(event, OrderEventAny::Filled(_)))
+}
+
+/// Returns whether the first fill resolved submission uncertainty before an ordinary command.
+///
+/// A later pending cancel or modify starts ordinary acknowledged-command handling.
+#[must_use]
+pub fn has_recovered_submission_fill_history(order: &OrderAny) -> bool {
+    let events = order.events();
+    let Some(fill_index) = events
+        .iter()
+        .position(|event| matches!(event, OrderEventAny::Filled(_)))
+    else {
+        return false;
+    };
+
+    has_unresolved_submission_events(&events[..fill_index])
+        && !events[fill_index + 1..].iter().any(|event| {
+            matches!(
+                event,
+                OrderEventAny::PendingCancel(_) | OrderEventAny::PendingUpdate(_)
+            )
+        })
+}
+
+/// Restores a pending cancel or modify tracked by submission recovery.
+#[must_use]
+pub fn create_submission_command_recovery(
+    order: &OrderAny,
+    venue_order_id: Option<VenueOrderId>,
+    ts_event: UnixNanos,
+    ts_now: UnixNanos,
+) -> Option<OrderEventAny> {
+    if !has_unresolved_submission(order) && !has_recovered_submission_command(order) {
+        return None;
+    }
+    let mut pending =
+        order
+            .events()
+            .into_iter()
+            .rev()
+            .find_map(|event| match (order.status(), event) {
+                (OrderStatus::PendingCancel, OrderEventAny::PendingCancel(event)) => {
+                    Some(OrderEventAny::PendingCancel(*event))
+                }
+                (OrderStatus::PendingUpdate, OrderEventAny::PendingUpdate(event)) => {
+                    Some(OrderEventAny::PendingUpdate(*event))
+                }
+                _ => None,
+            })?;
+
+    match &mut pending {
+        OrderEventAny::PendingCancel(event) => {
+            event.causation_id = Some(event.event_id);
+            event.event_id = UUID4::new();
+            event.ts_event = ts_event;
+            event.ts_init = ts_now;
+            event.reconciliation = true;
+            event.venue_order_id = venue_order_id;
+        }
+        OrderEventAny::PendingUpdate(event) => {
+            event.causation_id = Some(event.event_id);
+            event.event_id = UUID4::new();
+            event.ts_event = ts_event;
+            event.ts_init = ts_now;
+            event.reconciliation = true;
+            event.venue_order_id = venue_order_id;
+        }
+        _ => unreachable!(),
+    }
+    Some(pending)
+}
+
+fn is_stale_submission_fill_snapshot(order: &OrderAny, report: &OrderStatusReport) -> bool {
+    // A snapshot cannot reverse newer applied evidence. Equal venue timestamps do not
+    // establish correction chronology either; explicit fill-void events remain authoritative.
+    if !matches!(
+        report.order_status,
+        OrderStatus::Accepted | OrderStatus::Triggered
+    ) || !has_material_fill_decrease(order, report)
+    {
+        return false;
+    }
+    let events = order.events();
+    // Compare fills, since local pending/update events can advance the order timestamp.
+    (has_recovered_submission_command_history(order)
+        || has_recovered_submission_fill_history(order))
+        && events.iter().any(
+            |event| matches!(event, OrderEventAny::Filled(fill) if report.ts_last <= fill.ts_event),
+        )
+}
+
+fn is_stale_submission_acceptance_report(order: &OrderAny, report: &OrderStatusReport) -> bool {
+    report.order_status == OrderStatus::Accepted
+        && report.instrument_id == order.instrument_id()
+        && order.account_id() == Some(report.account_id)
+        && report
+            .client_order_id
+            .is_none_or(|id| id == order.client_order_id())
+        && report
+            .order_side
+            .is_none_or(|side| side == order.order_side())
+        && order.venue_order_id() == Some(report.venue_order_id)
+        && order.filled_qty() == report.filled_qty
+        && (has_recovered_submission_command_history(order)
+            || has_recovered_submission_fill_history(order))
+        && (matches!(
+            order.status(),
+            OrderStatus::Triggered | OrderStatus::PartiallyFilled
+        ) || matches!(
+            order.status(),
+            OrderStatus::PendingCancel | OrderStatus::PendingUpdate
+        ) && matches!(
+            order.previous_status(),
+            Some(OrderStatus::Triggered | OrderStatus::PartiallyFilled)
+        ))
+}
+
+fn is_submission_replacement_report(order: &OrderAny, report: &OrderStatusReport) -> bool {
+    order.status() == OrderStatus::PendingUpdate
+        && has_recovered_submission_command(order)
+        && (report.order_status == OrderStatus::Accepted
+            || report.order_status == OrderStatus::Triggered
+                && TRIGGERABLE_ORDER_TYPES.contains(&order.order_type()))
+        && report.client_order_id == Some(order.client_order_id())
+        && report.instrument_id == order.instrument_id()
+        && order.account_id() == Some(report.account_id)
+        && report
+            .order_side
+            .is_none_or(|side| side == order.order_side())
+        && report.quantity >= order.filled_qty()
+        && order
+            .venue_order_id()
+            .is_some_and(|known| known != report.venue_order_id)
+        && !order.venue_order_ids().contains(&&report.venue_order_id)
+}
+
+/// Checks report identity and native venue-ID ownership before recovering submission history.
+#[must_use]
+pub fn is_valid_submission_recovery_report(
+    cache: &Cache,
+    order: &OrderAny,
+    report: &OrderStatusReport,
+) -> bool {
+    if !(has_unresolved_submission(order) || has_recovered_submission_command_history(order)) {
+        return true;
+    }
+    let valid = report.instrument_id == order.instrument_id()
+        && (report.order_status != OrderStatus::Triggered
+            || TRIGGERABLE_ORDER_TYPES.contains(&order.order_type()))
+        && (order
+            .venue_order_id()
+            .or_else(|| cache.venue_order_id(&order.client_order_id()).copied())
+            .is_none_or(|known| known == report.venue_order_id)
+            || is_submission_replacement_report(order, report))
+        && order
+            .account_id()
+            .is_none_or(|account_id| account_id == report.account_id)
+        && report
+            .order_side
+            .is_none_or(|side| side == order.order_side())
+        && cache
+            .client_order_id(&report.venue_order_id)
+            .is_none_or(|owner| *owner == order.client_order_id());
+
+    if !valid {
+        log::warn!(
+            "Ignoring mismatched report for unresolved order {}",
+            order.client_order_id()
+        );
+    }
+    valid
+}
+
+/// Identifies a stale report whose native historical identity can still carry valid fills.
+#[must_use]
+pub fn is_historical_submission_recovery_report(
+    cache: &Cache,
+    order: &OrderAny,
+    report: &OrderStatusReport,
+) -> bool {
+    (has_unresolved_submission(order) || has_recovered_submission_command_history(order))
+        && order
+            .venue_order_id()
+            .is_some_and(|id| id != report.venue_order_id)
+        && order.venue_order_ids().contains(&&report.venue_order_id)
+        && report.instrument_id == order.instrument_id()
+        && report
+            .client_order_id
+            .is_none_or(|id| id == order.client_order_id())
+        && order.account_id() == Some(report.account_id)
+        && report
+            .order_side
+            .is_none_or(|side| side == order.order_side())
+        && cache
+            .client_order_id(&report.venue_order_id)
+            .is_none_or(|id| *id == order.client_order_id())
+}
+
+/// Checks original fill identity, native venue aliases, and reverse ownership during recovery.
+#[must_use]
+pub fn is_valid_submission_recovery_fill(
+    cache: &Cache,
+    order: &OrderAny,
+    report: &FillReport,
+) -> bool {
+    report.instrument_id == order.instrument_id()
+        && report.order_side == order.order_side()
+        && report
+            .client_order_id
+            .is_none_or(|id| id == order.client_order_id())
+        && order.account_id().is_none_or(|id| id == report.account_id)
+        && (order
+            .venue_order_id()
+            .or_else(|| cache.venue_order_id(&order.client_order_id()).copied())
+            .is_none_or(|id| id == report.venue_order_id)
+            || order.venue_order_ids().contains(&&report.venue_order_id))
+        && cache
+            .client_order_id(&report.venue_order_id)
+            .is_none_or(|owner| *owner == order.client_order_id())
+}
+
+/// Reconstructs the missing native submission step when venue evidence proves a released order was submitted.
+/// Callers must supply a matched authoritative report or order outcome, never a timeout or pending state.
+#[must_use]
+pub fn create_released_submission_recovery(
+    order: &OrderAny,
+    account_id: AccountId,
+    ts_event: UnixNanos,
+    ts_now: UnixNanos,
+    causation_id: UUID4,
+) -> Option<OrderEventAny> {
+    if order.status() != OrderStatus::Released {
+        return None;
+    }
+    let mut submitted = OrderSubmitted::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        account_id,
+        UUID4::new(),
+        ts_event,
+        ts_now,
+    );
+    submitted.causation_id = Some(causation_id);
+    Some(OrderEventAny::Submitted(submitted))
 }
 
 fn prepare_reconciliation_order(
     order: &OrderAny,
     report: &OrderStatusReport,
     ts_now: UnixNanos,
+    preserve_unresolved_submissions: bool,
 ) -> (OrderAny, Vec<OrderEventAny>) {
     let mut working = order.clone();
     let mut events: Vec<OrderEventAny> = Vec::new();
 
-    if should_accept_before_reconciliation(&working, report) {
-        let Some(accepted) = create_reconciliation_accepted(&working, report, ts_now) else {
+    if preserve_unresolved_submissions
+        && (matches!(
+            report.order_status,
+            OrderStatus::Accepted
+                | OrderStatus::Rejected
+                | OrderStatus::Triggered
+                | OrderStatus::PartiallyFilled
+                | OrderStatus::Filled
+                | OrderStatus::Canceled
+                | OrderStatus::Expired
+                | OrderStatus::Voided
+        ) || report.filled_qty.is_positive())
+        && let Some(submitted) = create_released_submission_recovery(
+            &working,
+            report.account_id,
+            report.ts_accepted,
+            ts_now,
+            report.report_id,
+        )
+    {
+        if let Err(e) = working.apply(submitted.clone()) {
+            log::warn!(
+                "Cannot recover released submission {}: {e}",
+                working.client_order_id()
+            );
+            return (working, events);
+        }
+        events.push(submitted);
+    }
+
+    if preserve_unresolved_submissions && is_submission_replacement_report(&working, report) {
+        let OrderEventAny::Updated(mut updated) =
+            create_reconciliation_updated(&working, report, ts_now)
+        else {
+            unreachable!();
+        };
+        updated.venue_order_id = Some(report.venue_order_id);
+        updated.causation_id = Some(report.report_id);
+
+        if matches!(
+            working.order_type(),
+            OrderType::Market
+                | OrderType::StopMarket
+                | OrderType::MarketIfTouched
+                | OrderType::TrailingStopMarket
+        ) {
+            updated.price = None;
+        }
+        let updated = OrderEventAny::Updated(updated);
+
+        if let Err(e) = working.apply(updated.clone()) {
+            log::warn!(
+                "Cannot project replacement report for {}: {e}",
+                order.client_order_id()
+            );
+            return (order.clone(), Vec::new());
+        }
+        events.push(updated);
+    }
+
+    let pending_command = if preserve_unresolved_submissions
+        && matches!(
+            working.status(),
+            OrderStatus::PendingCancel | OrderStatus::PendingUpdate
+        )
+        && working.previous_status() == Some(OrderStatus::Submitted)
+        && report.order_status == OrderStatus::Accepted
+        && working.filled_qty() == report.filled_qty
+        && (!should_reconciliation_update(&working, report)
+            || working.status() == OrderStatus::PendingCancel)
+    {
+        create_submission_command_recovery(
+            order,
+            Some(report.venue_order_id),
+            report.ts_last,
+            ts_now,
+        )
+    } else {
+        None
+    };
+
+    if (should_accept_before_reconciliation(&working, report)
+        || pending_command.is_some()
+        || preserve_unresolved_submissions
+            && matches!(
+                working.status(),
+                OrderStatus::PendingCancel | OrderStatus::PendingUpdate
+            )
+            && (working.previous_status() == Some(OrderStatus::Submitted)
+                || working.status() == OrderStatus::PendingCancel
+                    && has_recovered_submission_command(order)
+                    && working.previous_status() == Some(OrderStatus::Accepted)
+                    && !should_reconciliation_update(&working, report))
+            && report.order_status == OrderStatus::Triggered)
+        && (!preserve_unresolved_submissions
+            || matches!(
+                report.order_status,
+                OrderStatus::Accepted
+                    | OrderStatus::Triggered
+                    | OrderStatus::PartiallyFilled
+                    | OrderStatus::Filled
+                    | OrderStatus::Canceled
+                    | OrderStatus::Expired
+                    | OrderStatus::Voided
+            ))
+    {
+        let Some(mut accepted) = create_reconciliation_accepted(&working, report, ts_now) else {
             log::warn!(
                 "Cannot create reconciliation acceptance for {}: missing account_id",
                 order.client_order_id(),
             );
             return (working, events);
         };
+
+        if report.order_status == OrderStatus::Triggered
+            && working.status() == OrderStatus::PendingCancel
+            && has_recovered_submission_command(order)
+            && let OrderEventAny::Accepted(accepted) = &mut accepted
+        {
+            // This acceptance is a required native transition prefix for the triggering report
+            accepted.causation_id = Some(report.report_id);
+        }
 
         if let Err(e) = working.apply(accepted.clone()) {
             log::warn!(
@@ -283,6 +900,19 @@ fn prepare_reconciliation_order(
             return (working, events);
         }
         events.push(accepted);
+
+        // The submission is known; the previously sent cancel/modify is still outstanding.
+        // Restore that native command state with distinct reconciliation provenance.
+        if let Some(pending) = pending_command {
+            if let Err(e) = working.apply(pending.clone()) {
+                log::warn!(
+                    "Cannot restore pending command for {}: {e}",
+                    order.client_order_id()
+                );
+                return (working, events);
+            }
+            events.push(pending);
+        }
     }
 
     if report_is_confirmed_state(report)
@@ -290,10 +920,15 @@ fn prepare_reconciliation_order(
             || (matches!(
                 working.status(),
                 OrderStatus::PendingUpdate | OrderStatus::PendingCancel,
-            ) && matches!(
+            ) && (matches!(
                 report.order_status,
                 OrderStatus::Canceled | OrderStatus::Expired,
-            )))
+            ) || preserve_unresolved_submissions
+                && matches!(
+                    report.order_status,
+                    OrderStatus::Accepted | OrderStatus::Triggered
+                )
+                && (has_unresolved_submission(order) || has_recovered_submission_command(order)))))
         && should_reconciliation_update(&working, report)
     {
         let updated = create_reconciliation_updated(&working, report, ts_now);
@@ -304,6 +939,27 @@ fn prepare_reconciliation_order(
             );
         } else {
             events.push(updated);
+
+            if preserve_unresolved_submissions
+                && order.status() == OrderStatus::PendingCancel
+                && report.order_status != OrderStatus::Triggered
+                && !working.is_closed()
+                && let Some(pending) = create_submission_command_recovery(
+                    order,
+                    Some(report.venue_order_id),
+                    report.ts_last,
+                    ts_now,
+                )
+            {
+                if let Err(e) = working.apply(pending.clone()) {
+                    log::warn!(
+                        "Cannot retain pending cancellation {} after amendment: {e}",
+                        order.client_order_id()
+                    );
+                } else {
+                    events.push(pending);
+                }
+            }
         }
     }
 

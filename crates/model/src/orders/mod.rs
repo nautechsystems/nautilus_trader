@@ -1274,6 +1274,11 @@ impl OrderCore {
             && (self.venue_order_id.is_none()
                 || venue_order_id != self.venue_order_id.as_ref().unwrap())
         {
+            if let Some(previous) = self.venue_order_id
+                && !self.venue_order_ids.contains(&previous)
+            {
+                self.venue_order_ids.push(previous);
+            }
             self.venue_order_id = Some(*venue_order_id);
             self.venue_order_ids.push(*venue_order_id);
         }
@@ -3844,7 +3849,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_late_fill_for_historical_venue_order_keeps_current_venue_order_id() {
+    fn test_late_fill_for_historical_venue_order_keeps_current_venue_order_id(
+        #[values(false, true)] fill_before_acceptance: bool,
+    ) {
         let old_venue_order_id = VenueOrderId::from("V-OLD");
         let new_venue_order_id = VenueOrderId::from("V-NEW");
         let init = OrderInitializedSpec::builder()
@@ -3864,14 +3871,39 @@ mod tests {
             .build();
 
         let mut order: MarketOrder = init.try_into().unwrap();
-        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+
+        if fill_before_acceptance {
+            order
+                .apply(OrderEventAny::Submitted(
+                    OrderSubmittedSpec::builder().build(),
+                ))
+                .unwrap();
+            order
+                .apply(OrderEventAny::Filled(
+                    OrderFilledSpec::builder()
+                        .venue_order_id(old_venue_order_id)
+                        .last_qty(Quantity::from(1))
+                        .trade_id(TradeId::from("T-FIRST"))
+                        .build(),
+                ))
+                .unwrap();
+            assert!(order.venue_order_ids().is_empty());
+        } else {
+            order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+        }
         order.apply(OrderEventAny::Updated(updated)).unwrap();
         order.apply(OrderEventAny::Filled(late_fill)).unwrap();
 
         assert_eq!(order.status(), OrderStatus::PartiallyFilled);
         assert_eq!(order.quantity(), Quantity::from(10));
-        assert_eq!(order.filled_qty(), Quantity::from(2));
-        assert_eq!(order.leaves_qty(), Quantity::from(8));
+        assert_eq!(
+            order.filled_qty(),
+            Quantity::from(if fill_before_acceptance { 3 } else { 2 })
+        );
+        assert_eq!(
+            order.leaves_qty(),
+            Quantity::from(if fill_before_acceptance { 7 } else { 8 })
+        );
         assert_eq!(order.venue_order_id(), Some(new_venue_order_id));
         assert_eq!(
             order
@@ -3885,6 +3917,11 @@ mod tests {
             panic!("last event was not the late fill");
         };
         assert_eq!(event.venue_order_id, old_venue_order_id);
+        let replayed =
+            OrderAny::from_events(order.events().into_iter().cloned().collect()).unwrap();
+        assert_eq!(replayed.venue_order_id(), Some(new_venue_order_id));
+        assert_eq!(replayed.venue_order_ids(), order.venue_order_ids());
+        assert_eq!(replayed.filled_qty(), order.filled_qty());
     }
 
     #[rstest]
