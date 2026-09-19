@@ -24,6 +24,7 @@ use nautilus_model::{
 use crate::indicator::Indicator;
 
 pub const MAX_PERIOD: usize = 1_024;
+const MAX_CAPACITY: usize = MAX_PERIOD + 1;
 
 const ROUND_DP: f64 = 1_000_000_000_000.0;
 
@@ -48,8 +49,8 @@ pub struct AroonOscillator {
     pub initialized: bool,
     has_inputs: bool,
     total_count: usize,
-    high_inputs: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
-    low_inputs: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
+    high_inputs: ArrayDeque<f64, MAX_CAPACITY, Wrapping>,
+    low_inputs: ArrayDeque<f64, MAX_CAPACITY, Wrapping>,
 }
 
 impl Display for AroonOscillator {
@@ -376,6 +377,52 @@ mod tests {
         // occurrence (index 1, three periods back) determines the counts
         assert_eq!(aroon.aroon_up, 25.0);
         assert_eq!(aroon.aroon_down, 25.0);
+        assert_eq!(aroon.value, 0.0);
+    }
+
+    #[rstest]
+    fn test_max_period_window_and_values() {
+        let mut aroon = AroonOscillator::new(MAX_PERIOD);
+        aroon.update_raw(1000.0, 5.0);
+        for _ in 0..MAX_PERIOD {
+            aroon.update_raw(10.0, 1.0);
+        }
+        assert!(aroon.initialized());
+        assert_eq!(aroon.high_inputs.len(), MAX_PERIOD + 1);
+        assert_eq!(aroon.low_inputs.len(), MAX_PERIOD + 1);
+        assert_eq!(aroon.aroon_up, 0.0);
+        assert_eq!(aroon.aroon_down, 100.0);
+        assert_eq!(aroon.value, -100.0);
+
+        // Next update rolls over the oldest unique highest high
+        aroon.update_raw(10.0, 1.0);
+        assert_eq!(aroon.high_inputs.len(), MAX_PERIOD + 1);
+        assert_eq!(aroon.low_inputs.len(), MAX_PERIOD + 1);
+        assert_eq!(aroon.aroon_up, 100.0);
+        assert_eq!(aroon.aroon_down, 100.0);
+        assert_eq!(aroon.value, 0.0);
+    }
+
+    #[rstest]
+    fn test_max_period_window_and_values_lowest_low() {
+        let mut aroon = AroonOscillator::new(MAX_PERIOD);
+        aroon.update_raw(10.0, 1.0);
+        for _ in 0..MAX_PERIOD {
+            aroon.update_raw(10.0, 5.0);
+        }
+        assert!(aroon.initialized());
+        assert_eq!(aroon.high_inputs.len(), MAX_PERIOD + 1);
+        assert_eq!(aroon.low_inputs.len(), MAX_PERIOD + 1);
+        assert_eq!(aroon.aroon_up, 100.0);
+        assert_eq!(aroon.aroon_down, 0.0);
+        assert_eq!(aroon.value, 100.0);
+
+        // Next update rolls over the oldest unique lowest low
+        aroon.update_raw(10.0, 5.0);
+        assert_eq!(aroon.high_inputs.len(), MAX_PERIOD + 1);
+        assert_eq!(aroon.low_inputs.len(), MAX_PERIOD + 1);
+        assert_eq!(aroon.aroon_up, 100.0);
+        assert_eq!(aroon.aroon_down, 100.0);
         assert_eq!(aroon.value, 0.0);
     }
 }
