@@ -673,7 +673,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         let session_result = async {
 
         log::debug!("Preloading cached spread instruments for execution client");
-        self.preload_cached_spread_instruments(client.as_ref())
+        self.preload_cached_instruments(client.as_ref())
             .await?;
 
         // Get initial next order ID (uses self.ib_client internally)
