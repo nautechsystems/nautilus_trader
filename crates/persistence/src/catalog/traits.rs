@@ -359,6 +359,8 @@ pub trait CatalogWriter: Debug + Send {
 
     /// Records request coverage for a known-empty interval.
     ///
+    /// Backends may do nothing when the interval is not adjacent to an existing file.
+    ///
     /// # Errors
     ///
     /// Returns an error if the backend cannot record empty coverage.

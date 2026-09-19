@@ -37,6 +37,11 @@ impl ParquetDataCatalog {
     /// This method finds an existing file that is adjacent to the specified time range
     /// and renames it to include the new range. This is useful when appending data
     /// that extends the time coverage of existing files.
+    /// The proposed extension is validated against the other files before renaming,
+    /// so a rejected extension leaves existing files unchanged.
+    ///
+    /// If no file is adjacent to the specified range, this method does nothing and
+    /// returns `Ok(())` after confirming the existing intervals are disjoint.
     ///
     /// # Parameters
     ///
@@ -52,10 +57,11 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// Returns an error if:
+    /// - The range is reversed (`start` is after `end`).
     /// - The directory path cannot be constructed.
-    /// - No adjacent file is found to extend.
+    /// - The proposed extension would overlap another file.
+    /// - The existing intervals are already overlapping.
     /// - File rename operations fail.
-    /// - Interval validation fails after extension.
     ///
     /// # Examples
     ///
@@ -98,30 +104,48 @@ impl ParquetDataCatalog {
         start: UnixNanos,
         end: UnixNanos,
     ) -> anyhow::Result<()> {
-        let intervals = self.get_directory_intervals(directory)?;
-
         let start = start.as_u64();
         let end = end.as_u64();
 
-        for interval in intervals {
-            if interval.0 == end + 1 {
-                // Extend backwards: new file covers [start, interval.1]
-                self.rename_parquet_file(directory, interval.0, interval.1, start, interval.1)?;
-                break;
-            } else if interval.1 == start - 1 {
-                // Extend forwards: new file covers [interval.0, end]
-                self.rename_parquet_file(directory, interval.0, interval.1, interval.0, end)?;
-                break;
-            }
-        }
+        anyhow::ensure!(
+            start <= end,
+            "Cannot extend file in directory '{directory}': reversed range ({start}, {end})",
+        );
 
         let intervals = self.get_directory_intervals(directory)?;
 
-        if !are_intervals_disjoint(&intervals) {
-            anyhow::bail!("Intervals are not disjoint after extending a file");
-        }
+        anyhow::ensure!(
+            are_intervals_disjoint(&intervals),
+            "Intervals are not disjoint in directory '{directory}': {intervals:?}",
+        );
 
-        Ok(())
+        let adjacent = intervals.iter().enumerate().find_map(|(index, interval)| {
+            if end.checked_add(1) == Some(interval.0) {
+                // Extend backwards: new file covers [start, interval.1]
+                Some((index, *interval, (start, interval.1)))
+            } else if start.checked_sub(1) == Some(interval.1) {
+                // Extend forwards: new file covers [interval.0, end]
+                Some((index, *interval, (interval.0, end)))
+            } else {
+                None
+            }
+        });
+
+        let Some((index, original, proposed)) = adjacent else {
+            return Ok(());
+        };
+
+        let mut extended = intervals.clone();
+        extended[index] = proposed;
+
+        anyhow::ensure!(
+            are_intervals_disjoint(&extended),
+            "Extending file interval {original:?} to {proposed:?} in directory '{directory}' \
+            with range ({start}, {end}) would create non-disjoint intervals. \
+            Existing intervals: {intervals:?}",
+        );
+
+        self.rename_parquet_file(directory, original.0, original.1, proposed.0, proposed.1)
     }
 
     /// Lists all Parquet files in a specified directory.

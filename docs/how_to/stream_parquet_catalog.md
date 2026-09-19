@@ -94,5 +94,5 @@ attempt remain in the catalog, the staged Feather source is retained, and no pro
 recorded, so retrying reproduces the error. The same rejection and retention applies to automatic
 promotion and to manual conversion through `ParquetDataCatalog.convert_stream_to_data()`.
 
-See the [catalog guide](../concepts/data/index.md#data-catalog) for query and storage behavior and
+See the [catalog guide](../concepts/data/catalog.md) for query and storage behavior and
 [Parquet migration](migrate_parquet_catalog.md) for importing older catalogs.

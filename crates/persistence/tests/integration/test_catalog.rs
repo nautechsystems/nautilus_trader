@@ -20,9 +20,9 @@ use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, CustomData, Data, DataType, FundingRateUpdate,
-        HasTsInit, IndexPriceUpdate, MarkPriceUpdate, NautilusRecordType, OptionGreekValues,
-        OptionGreeks, OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick, depth::DEPTH10_LEN,
-        is_monotonically_increasing_by_init, to_variant,
+        HasTsInit, IndexPriceUpdate, MarkPriceUpdate, NautilusDataType, NautilusRecordType,
+        OptionGreekValues, OptionGreeks, OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick,
+        depth::DEPTH10_LEN, is_monotonically_increasing_by_init, to_variant,
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, BarAggregation, BookAction, CurrencyType,
@@ -38,10 +38,11 @@ use nautilus_model::{
 };
 use nautilus_persistence::{
     backend::{
-        catalog::ParquetDataCatalog,
+        catalog::{ParquetDataCatalog, timestamps_to_filename},
         parquet::delete::DeleteOperationKind,
         session::{DataBackendSession, QueryResult},
     },
+    catalog::traits::CatalogWriter,
     test_data::{
         MacroYieldCurveData, RustTestBytesCustomData, RustTestCustomData,
         RustTestHashMapCustomData, RustTestParamsCustomData, RustTestPriceMapCustomData,
@@ -75,6 +76,34 @@ fn ensure_test_custom_data_registered() {
         ensure_custom_data_registered::<RustTestParamsCustomData>();
         ensure_custom_data_registered::<RustTestPriceMapCustomData>();
     });
+}
+
+/// Snapshots every file under a catalog directory as sorted (relative path, bytes) pairs.
+fn snapshot_catalog_files(temp_dir: &TempDir) -> Vec<(String, Vec<u8>)> {
+    fn visit(dir: &std::path::Path, root: &std::path::Path, out: &mut Vec<(String, Vec<u8>)>) {
+        let mut entries: Vec<_> = fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap())
+            .collect();
+        entries.sort_by_key(|entry| entry.path());
+        for entry in entries {
+            let path = entry.path();
+            if path.is_dir() {
+                visit(&path, root, out);
+            } else {
+                let relative = path
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                out.push((relative, fs::read(&path).unwrap()));
+            }
+        }
+    }
+
+    let mut snapshot = Vec::new();
+    visit(temp_dir.path(), temp_dir.path(), &mut snapshot);
+    snapshot
 }
 
 fn audusd_sim_id() -> InstrumentId {
@@ -854,6 +883,377 @@ fn test_rust_extend_file_name() {
         .get_intervals("bars", Some(bar_type.as_str()))
         .unwrap();
     assert_eq!(intervals, vec![(1, 3), (4, 4)]);
+}
+
+#[rstest]
+fn test_rust_extend_file_name_rejects_forward_overlap() {
+    let (temp_dir, catalog) = create_temp_catalog();
+
+    let bars1 = vec![create_bar(1)];
+    catalog.write_to_parquet(&bars1, None, None, None).unwrap();
+
+    let bars2 = vec![create_bar(10)];
+    catalog.write_to_parquet(&bars2, None, None, None).unwrap();
+
+    let bar_type = bars1[0].bar_type.to_string();
+    let before = snapshot_catalog_files(&temp_dir);
+
+    // Adjacent to the first file but overlapping the second: must fail before renaming
+    let result = catalog.extend_file_name(
+        "bars",
+        Some(bar_type.as_str()),
+        UnixNanos::from(2),
+        UnixNanos::from(15),
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("(1, 1)"), "missing original interval: {err}");
+    assert!(err.contains("(1, 15)"), "missing proposed interval: {err}");
+    assert!(err.contains("bars"), "missing directory: {err}");
+
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+    assert_eq!(
+        catalog
+            .get_intervals("bars", Some(bar_type.as_str()))
+            .unwrap(),
+        vec![(1, 1), (10, 10)],
+    );
+
+    // A failed extension must not poison later writes: reopen and append disjoint data
+    let reopened = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let bars3 = vec![create_bar(20)];
+    reopened.write_to_parquet(&bars3, None, None, None).unwrap();
+    assert_eq!(
+        reopened
+            .get_intervals("bars", Some(bar_type.as_str()))
+            .unwrap(),
+        vec![(1, 1), (10, 10), (20, 20)],
+    );
+}
+
+#[rstest]
+fn test_rust_extend_file_name_rejects_backward_overlap() {
+    let (temp_dir, catalog) = create_temp_catalog();
+
+    let bars1 = vec![create_bar(5)];
+    catalog.write_to_parquet(&bars1, None, None, None).unwrap();
+
+    let bars2 = vec![create_bar(10)];
+    catalog.write_to_parquet(&bars2, None, None, None).unwrap();
+
+    let bar_type = bars1[0].bar_type.to_string();
+    let before = snapshot_catalog_files(&temp_dir);
+
+    // Adjacent to the second file but overlapping the first: must fail before renaming
+    let result = catalog.extend_file_name(
+        "bars",
+        Some(bar_type.as_str()),
+        UnixNanos::from(5),
+        UnixNanos::from(9),
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("(10, 10)"), "missing original interval: {err}");
+    assert!(err.contains("(5, 10)"), "missing proposed interval: {err}");
+
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+    assert_eq!(
+        catalog
+            .get_intervals("bars", Some(bar_type.as_str()))
+            .unwrap(),
+        vec![(5, 5), (10, 10)],
+    );
+}
+
+#[rstest]
+fn test_rust_extend_file_name_rejects_shared_endpoint() {
+    let (temp_dir, catalog) = create_temp_catalog();
+
+    let bars1 = vec![create_bar(1)];
+    catalog.write_to_parquet(&bars1, None, None, None).unwrap();
+
+    let bars2 = vec![create_bar(10)];
+    catalog.write_to_parquet(&bars2, None, None, None).unwrap();
+
+    let bar_type = bars1[0].bar_type.to_string();
+    let before = snapshot_catalog_files(&temp_dir);
+
+    // Closed intervals sharing an endpoint overlap: (1, 10) touches (10, 10)
+    let result = catalog.extend_file_name(
+        "bars",
+        Some(bar_type.as_str()),
+        UnixNanos::from(2),
+        UnixNanos::from(10),
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("(1, 1)"), "missing original interval: {err}");
+    assert!(err.contains("(1, 10)"), "missing proposed interval: {err}");
+
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+    assert_eq!(
+        catalog
+            .get_intervals("bars", Some(bar_type.as_str()))
+            .unwrap(),
+        vec![(1, 1), (10, 10)],
+    );
+}
+
+#[rstest]
+fn test_rust_extend_file_name_valid_backward_extension() {
+    let (_temp_dir, catalog) = create_temp_catalog();
+
+    let bars = vec![create_bar(10)];
+    catalog.write_to_parquet(&bars, None, None, None).unwrap();
+
+    let bar_type = bars[0].bar_type.to_string();
+    catalog
+        .extend_file_name(
+            "bars",
+            Some(bar_type.as_str()),
+            UnixNanos::from(8),
+            UnixNanos::from(9),
+        )
+        .unwrap();
+
+    assert_eq!(
+        catalog
+            .get_intervals("bars", Some(bar_type.as_str()))
+            .unwrap(),
+        vec![(8, 10)],
+    );
+}
+
+#[rstest]
+fn test_rust_extend_file_name_rejects_reversed_bounds() {
+    let (temp_dir, catalog) = create_temp_catalog();
+
+    let bars = vec![create_bar(1)];
+    catalog.write_to_parquet(&bars, None, None, None).unwrap();
+
+    let bar_type = bars[0].bar_type.to_string();
+    let before = snapshot_catalog_files(&temp_dir);
+
+    let result = catalog.extend_file_name(
+        "bars",
+        Some(bar_type.as_str()),
+        UnixNanos::from(10),
+        UnixNanos::from(5),
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("reversed"), "unexpected error: {err}");
+
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+}
+
+#[rstest]
+fn test_rust_extend_file_name_rejects_overlapping_directory() {
+    let (temp_dir, catalog) = create_temp_catalog();
+
+    let bars1 = vec![create_bar(1)];
+    catalog.write_to_parquet(&bars1, None, None, None).unwrap();
+
+    let bars2 = vec![create_bar(10)];
+    catalog.write_to_parquet(&bars2, None, None, None).unwrap();
+
+    let bar_type = bars1[0].bar_type.to_string();
+
+    // Simulate pre-existing filename damage: the first file claims (1, 15)
+    let before_damage = snapshot_catalog_files(&temp_dir);
+    let damaged_name = timestamps_to_filename(UnixNanos::from(1), UnixNanos::from(15));
+    let old_path = temp_dir.path().join(&before_damage[0].0);
+    let damaged_path = old_path.parent().unwrap().join(damaged_name);
+    fs::rename(&old_path, &damaged_path).unwrap();
+
+    let before = snapshot_catalog_files(&temp_dir);
+
+    // No adjacent file, but the directory already overlaps: must fail without changes
+    let result = catalog.extend_file_name(
+        "bars",
+        Some(bar_type.as_str()),
+        UnixNanos::from(30),
+        UnixNanos::from(40),
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("not disjoint"), "unexpected error: {err}");
+
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+
+    // An adjacent range reports the pre-existing overlap, not a would-create one
+    let result = catalog.extend_file_name(
+        "bars",
+        Some(bar_type.as_str()),
+        UnixNanos::from(11),
+        UnixNanos::from(15),
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("not disjoint"), "unexpected error: {err}");
+    assert!(
+        !err.contains("would create"),
+        "misleading message for pre-existing overlap: {err}"
+    );
+
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+}
+
+#[rstest]
+fn test_rust_extend_file_name_timestamp_boundaries_are_noop() {
+    let (temp_dir, catalog) = create_temp_catalog();
+
+    let bars = vec![create_bar(100)];
+    catalog.write_to_parquet(&bars, None, None, None).unwrap();
+
+    let bar_type = bars[0].bar_type.to_string();
+    let before = snapshot_catalog_files(&temp_dir);
+
+    // Neither bound can be adjacent past the u64 edges: no match, no arithmetic panic
+    catalog
+        .extend_file_name(
+            "bars",
+            Some(bar_type.as_str()),
+            UnixNanos::from(0),
+            UnixNanos::from(50),
+        )
+        .unwrap();
+    catalog
+        .extend_file_name(
+            "bars",
+            Some(bar_type.as_str()),
+            UnixNanos::from(150),
+            UnixNanos::from(u64::MAX),
+        )
+        .unwrap();
+
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+    assert_eq!(
+        catalog
+            .get_intervals("bars", Some(bar_type.as_str()))
+            .unwrap(),
+        vec![(100, 100)],
+    );
+}
+
+#[rstest]
+fn test_rust_extend_file_name_no_adjacent_file_is_noop() {
+    let (temp_dir, catalog) = create_temp_catalog();
+
+    let bars = vec![create_bar(1)];
+    catalog.write_to_parquet(&bars, None, None, None).unwrap();
+
+    let bar_type = bars[0].bar_type.to_string();
+    let before = snapshot_catalog_files(&temp_dir);
+
+    catalog
+        .extend_file_name(
+            "bars",
+            Some(bar_type.as_str()),
+            UnixNanos::from(10),
+            UnixNanos::from(20),
+        )
+        .unwrap();
+
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+    assert_eq!(
+        catalog
+            .get_intervals("bars", Some(bar_type.as_str()))
+            .unwrap(),
+        vec![(1, 1)],
+    );
+}
+
+#[rstest]
+fn test_rust_record_empty_coverage_validates_before_extending() {
+    let (temp_dir, mut catalog) = create_temp_catalog();
+
+    let bars1 = vec![create_bar(1)];
+    catalog.write_to_parquet(&bars1, None, None, None).unwrap();
+
+    let bars2 = vec![create_bar(10)];
+    catalog.write_to_parquet(&bars2, None, None, None).unwrap();
+
+    let bar_type = bars1[0].bar_type.to_string();
+
+    CatalogWriter::record_empty_coverage(
+        &mut catalog,
+        NautilusDataType::Bar,
+        Some(bar_type.as_str()),
+        UnixNanos::from(2),
+        UnixNanos::from(5),
+    )
+    .unwrap();
+    assert_eq!(
+        catalog
+            .get_intervals("bars", Some(bar_type.as_str()))
+            .unwrap(),
+        vec![(1, 5), (10, 10)],
+    );
+
+    let before = snapshot_catalog_files(&temp_dir);
+    let result = CatalogWriter::record_empty_coverage(
+        &mut catalog,
+        NautilusDataType::Bar,
+        Some(bar_type.as_str()),
+        UnixNanos::from(6),
+        UnixNanos::from(15),
+    );
+    assert!(result.is_err());
+
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+    assert_eq!(
+        catalog
+            .get_intervals("bars", Some(bar_type.as_str()))
+            .unwrap(),
+        vec![(1, 5), (10, 10)],
+    );
+}
+
+#[rstest]
+fn test_rust_extend_overlap_recovery_via_reset_file_names() {
+    let (temp_dir, catalog) = create_temp_catalog();
+
+    let bars1 = vec![create_bar(1)];
+    catalog.write_to_parquet(&bars1, None, None, None).unwrap();
+
+    let bars2 = vec![create_bar(10)];
+    catalog.write_to_parquet(&bars2, None, None, None).unwrap();
+
+    let bar_type = bars1[0].bar_type.to_string();
+    let before = snapshot_catalog_files(&temp_dir);
+    assert_eq!(before.len(), 2);
+
+    // Simulate filename-only damage: the first file claims (1, 15) while holding ts_init 1
+    let damaged_name = timestamps_to_filename(UnixNanos::from(1), UnixNanos::from(15));
+    let old_path = temp_dir.path().join(&before[0].0);
+    let damaged_path = old_path.parent().unwrap().join(damaged_name);
+    fs::rename(&old_path, &damaged_path).unwrap();
+    assert_eq!(
+        catalog
+            .get_intervals("bars", Some(bar_type.as_str()))
+            .unwrap(),
+        vec![(1, 15), (10, 10)],
+    );
+
+    // Overlapping names block later writes
+    let blocked = catalog.write_to_parquet(&[create_bar(20)], None, None, None);
+    assert!(blocked.is_err());
+
+    // Content ranges are disjoint, so resetting names repairs the directory
+    catalog
+        .reset_data_file_names("bars", Some(&bar_type))
+        .unwrap();
+    assert_eq!(
+        catalog
+            .get_intervals("bars", Some(bar_type.as_str()))
+            .unwrap(),
+        vec![(1, 1), (10, 10)],
+    );
+
+    catalog
+        .write_to_parquet(&[create_bar(20)], None, None, None)
+        .unwrap();
+    assert_eq!(
+        catalog
+            .get_intervals("bars", Some(bar_type.as_str()))
+            .unwrap(),
+        vec![(1, 1), (10, 10), (20, 20)],
+    );
 }
 
 #[rstest]
