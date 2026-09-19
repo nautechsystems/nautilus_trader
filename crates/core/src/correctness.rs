@@ -1225,6 +1225,26 @@ mod tests {
     }
 
     #[rstest]
+    fn test_check_in_range_inclusive_u8_returns_out_of_range_error_with_stable_display() {
+        let error = check_in_range_inclusive_u8(3, 1, 2, "value").unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::OutOfRange {
+                param: "value".to_string(),
+                min: "1".to_string(),
+                max: "2".to_string(),
+                value: "3".to_string(),
+                type_name: "u8",
+            }
+        );
+        assert_eq!(
+            error.to_string(),
+            "invalid u8 for 'value' not in range [1, 2], was 3"
+        );
+    }
+
+    #[rstest]
     #[case(0, 0, 0, "value")]
     #[case(0, 0, 1, "value")]
     #[case(1, 0, 1, "value")]
@@ -1247,6 +1267,26 @@ mod tests {
         #[case] param: &str,
     ) {
         assert!(check_in_range_inclusive_u64(value, l, r, param).is_err());
+    }
+
+    #[rstest]
+    fn test_check_in_range_inclusive_u64_returns_out_of_range_error_with_stable_display() {
+        let error = check_in_range_inclusive_u64(3, 1, 2, "value").unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::OutOfRange {
+                param: "value".to_string(),
+                min: "1".to_string(),
+                max: "2".to_string(),
+                value: "3".to_string(),
+                type_name: "u64",
+            }
+        );
+        assert_eq!(
+            error.to_string(),
+            "invalid u64 for 'value' not in range [1, 2], was 3"
+        );
     }
 
     #[rstest]
@@ -1288,6 +1328,64 @@ mod tests {
     }
 
     #[rstest]
+    #[case(f64::NAN, "invalid f64 for 'value', was NaN")]
+    #[case(f64::INFINITY, "invalid f64 for 'value', was inf")]
+    #[case(f64::NEG_INFINITY, "invalid f64 for 'value', was -inf")]
+    fn test_check_in_range_inclusive_f64_rejects_non_finite(
+        #[case] value: f64,
+        #[case] expected: &str,
+    ) {
+        let error = check_in_range_inclusive_f64(value, 0.0, 1.0, "value").unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::InvalidValue {
+                param: "value".to_string(),
+                value: value.to_string(),
+                type_name: "f64",
+            }
+        );
+        assert_eq!(error.to_string(), expected);
+    }
+
+    #[rstest]
+    #[case(5e-16, true)]
+    #[case(-5e-16, true)]
+    #[case(1e-15, true)]
+    #[case(-1e-15, true)]
+    #[case(2e-15, false)]
+    #[case(-2e-15, false)]
+    fn test_check_in_range_inclusive_f64_epsilon_boundary(
+        #[case] value: f64,
+        #[case] expected_ok: bool,
+    ) {
+        assert_eq!(
+            check_in_range_inclusive_f64(value, 0.0, 0.0, "value").is_ok(),
+            expected_ok
+        );
+    }
+
+    #[rstest]
+    fn test_check_in_range_inclusive_f64_returns_out_of_range_error_with_stable_display() {
+        let error = check_in_range_inclusive_f64(-1e16, 0.0, 0.0, "value").unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::OutOfRange {
+                param: "value".to_string(),
+                min: "0".to_string(),
+                max: "0".to_string(),
+                value: "-10000000000000000".to_string(),
+                type_name: "f64",
+            }
+        );
+        assert_eq!(
+            error.to_string(),
+            "invalid f64 for 'value' not in range [0, 0], was -10000000000000000"
+        );
+    }
+
+    #[rstest]
     #[case(0, 1, 2, "value")]
     #[case(3, 1, 2, "value")]
     fn test_check_in_range_inclusive_i64_when_out_of_range(
@@ -1297,6 +1395,26 @@ mod tests {
         #[case] param: &str,
     ) {
         assert!(check_in_range_inclusive_i64(value, l, r, param).is_err());
+    }
+
+    #[rstest]
+    fn test_check_in_range_inclusive_i64_returns_out_of_range_error_with_stable_display() {
+        let error = check_in_range_inclusive_i64(3, 1, 2, "value").unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::OutOfRange {
+                param: "value".to_string(),
+                min: "1".to_string(),
+                max: "2".to_string(),
+                value: "3".to_string(),
+                type_name: "i64",
+            }
+        );
+        assert_eq!(
+            error.to_string(),
+            "invalid i64 for 'value' not in range [1, 2], was 3"
+        );
     }
 
     #[rstest]
@@ -1469,6 +1587,25 @@ mod tests {
     ) {
         let result = check_member_in_set(&member, set, member_name, set_name).is_ok();
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_check_member_in_set_returns_member_missing_error_with_stable_display() {
+        let set = HashSet::from([1_u32]);
+        let error = check_member_in_set(&2_u32, &set, "member", "test_set").unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::MemberMissing {
+                member_name: "member".to_string(),
+                set_name: "test_set".to_string(),
+                set_type_repr: "&<u32>".to_string(),
+            }
+        );
+        assert_eq!(
+            error.to_string(),
+            "the 'member' member was not in the 'test_set' set `&<u32>`"
+        );
     }
 
     #[rstest]

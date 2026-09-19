@@ -812,17 +812,20 @@ mod tests {
     use rstest::*;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
-    use serde::{Deserialize, Serialize};
+    use serde::{
+        Deserialize, Serialize,
+        de::{Visitor, value::Error as ValueError},
+    };
     use serde_json::json;
     use ustr::Ustr;
 
     use super::{
-        Serializable, deserialize_decimal, deserialize_decimal_from_str,
-        deserialize_decimal_or_zero, deserialize_empty_string_as_none,
-        deserialize_empty_ustr_as_none, deserialize_optional_decimal,
-        deserialize_optional_decimal_or_zero, deserialize_optional_decimal_str,
-        deserialize_optional_string_to_u64, deserialize_string_to_u8, deserialize_string_to_u64,
-        deserialize_vec_decimal_from_str,
+        DecimalVisitor, OptionalDecimalVisitor, Serializable, default_false, default_true,
+        deserialize_decimal, deserialize_decimal_from_str, deserialize_decimal_or_zero,
+        deserialize_empty_string_as_none, deserialize_empty_ustr_as_none,
+        deserialize_optional_decimal, deserialize_optional_decimal_or_zero,
+        deserialize_optional_decimal_str, deserialize_optional_string_to_u64,
+        deserialize_string_to_u8, deserialize_string_to_u64, deserialize_vec_decimal_from_str,
         msgpack::{FromMsgPack, ToMsgPack},
         parse_decimal, parse_optional_decimal, serialize_decimal, serialize_decimal_as_str,
         serialize_optional_decimal, serialize_optional_decimal_as_str,
@@ -973,6 +976,13 @@ mod tests {
     }
 
     #[rstest]
+    fn test_deserialize_optional_decimal_from_str_empty_is_none() {
+        let json = r#"{"value": "1.5", "optional_value": ""}"#;
+        let result: TestDecimalRoundtrip = serde_json::from_str(json).unwrap();
+        assert_eq!(result.optional_value, None);
+    }
+
+    #[rstest]
     #[case(r#"{"value":"123.45"}"#, dec!(123.45))]
     #[case(r#"{"value":"0"}"#, Decimal::ZERO)]
     #[case(r#"{"value":""}"#, Decimal::ZERO)]
@@ -985,6 +995,7 @@ mod tests {
     #[case(r#"{"value":"123.45"}"#, dec!(123.45))]
     #[case(r#"{"value":"0"}"#, Decimal::ZERO)]
     #[case(r#"{"value":null}"#, Decimal::ZERO)]
+    #[case(r#"{"value":""}"#, Decimal::ZERO)]
     fn test_deserialize_optional_decimal_or_zero(#[case] json: &str, #[case] expected: Decimal) {
         let result: TestOptionalDecimalOrZero = serde_json::from_str(json).unwrap();
         assert_eq!(result.value, expected);
@@ -1311,9 +1322,28 @@ mod tests {
     }
 
     #[rstest]
+    #[rstest]
+    fn test_deserialize_decimal_negative_rounding_to_zero_loses_sign() {
+        let json = r#"{"value": "-1.5e-999999"}"#;
+        let result: TestDecimalOnly = serde_json::from_str(json).unwrap();
+        assert_eq!(result.value.to_string(), "0.0000000000000000000000000000");
+    }
+
+    #[rstest]
+    #[case(r#"{"value": "899999999999999999999999999995e-29"}"#)]
+    #[case(r#"{"value": "+899999999999999999999999999995e-29"}"#)]
+    fn test_deserialize_decimal_rounding_carries_into_integer(#[case] json: &str) {
+        // Thirty-digit mantissas fail scientific parsing and round up into a non-nine digit
+        let result: TestDecimalOnly = serde_json::from_str(json).unwrap();
+        assert_eq!(result.value.to_string(), "9.000000000000000000000000000");
+    }
+
+    #[rstest]
     #[case(r#"{"value": "8e28"}"#)] // above Decimal::MAX
     #[case(r#"{"value": "1e1000000000"}"#)] // absurd exponent must fail without expansion
     #[case(r#"{"value": "not-a-number"}"#)]
+    #[case(r#"{"value": "1.2.3e1"}"#)] // multiple decimal points
+    #[case(r#"{"value": ".e1"}"#)] // empty coefficient
     fn test_deserialize_decimal_rejects_unrepresentable_values(#[case] json: &str) {
         // The fallback rounds fractional digits only; oversized magnitudes
         // keep their original parse error.
@@ -1349,6 +1379,87 @@ mod tests {
     ) {
         let result: TestOptionalDecimalOnly = serde_json::from_str(json).unwrap();
         assert_eq!(result.value, expected);
+    }
+
+    #[rstest]
+    fn test_decimal_visitor_direct_owned_and_wide_integer_paths() {
+        assert_eq!(
+            DecimalVisitor
+                .visit_string::<ValueError>("1.5".to_string())
+                .unwrap(),
+            dec!(1.5)
+        );
+        assert_eq!(
+            DecimalVisitor.visit_i128::<ValueError>(5).unwrap(),
+            Decimal::from(5i128)
+        );
+        assert_eq!(
+            DecimalVisitor.visit_u128::<ValueError>(5).unwrap(),
+            Decimal::from(5u128)
+        );
+        assert_eq!(
+            DecimalVisitor.visit_none::<ValueError>().unwrap(),
+            Decimal::ZERO
+        );
+    }
+
+    #[rstest]
+    fn test_decimal_visitor_rejects_non_finite_float() {
+        assert!(
+            DecimalVisitor
+                .visit_f64::<ValueError>(f64::INFINITY)
+                .is_err()
+        );
+        assert!(
+            DecimalVisitor
+                .visit_f64::<ValueError>(f64::NEG_INFINITY)
+                .is_err()
+        );
+        assert!(DecimalVisitor.visit_f64::<ValueError>(f64::NAN).is_err());
+    }
+
+    #[rstest]
+    fn test_optional_decimal_visitor_direct_paths() {
+        assert_eq!(
+            OptionalDecimalVisitor
+                .visit_string::<ValueError>("1.5".to_string())
+                .unwrap(),
+            Some(dec!(1.5))
+        );
+        assert_eq!(
+            OptionalDecimalVisitor.visit_i64::<ValueError>(42).unwrap(),
+            Some(dec!(42))
+        );
+        assert_eq!(
+            OptionalDecimalVisitor.visit_i128::<ValueError>(5).unwrap(),
+            Some(Decimal::from(5i128))
+        );
+        assert_eq!(
+            OptionalDecimalVisitor.visit_u128::<ValueError>(5).unwrap(),
+            Some(Decimal::from(5u128))
+        );
+        assert_eq!(
+            OptionalDecimalVisitor.visit_none::<ValueError>().unwrap(),
+            None
+        );
+    }
+
+    #[rstest]
+    fn test_serialize_optional_decimal_none_serializes_null() {
+        let original = TestFlexibleDecimal {
+            value: dec!(1),
+            optional_value: None,
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["optional_value"], json!(null));
+    }
+
+    #[rstest]
+    fn test_serde_bool_defaults() {
+        assert!(default_true());
+        assert!(!default_false());
     }
 
     use proptest::prelude::*;

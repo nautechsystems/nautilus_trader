@@ -490,12 +490,44 @@ mod tests {
     }
 
     #[rstest]
+    fn test_from_c_ptr_valid() {
+        let cstring = std::ffi::CString::new("hello").unwrap();
+        let s = unsafe { StackStr::from_c_ptr(cstring.as_ptr()) };
+        assert_eq!(s.as_str(), "hello");
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Invalid UTF-8 in C string")]
+    fn test_from_c_ptr_invalid_utf8_panics() {
+        let bytes = vec![0xFF];
+        let cstring = unsafe { std::ffi::CString::from_vec_unchecked(bytes) };
+        let _ = unsafe { StackStr::from_c_ptr(cstring.as_ptr()) };
+    }
+
+    #[rstest]
+    #[should_panic(
+        expected = "Condition failed: String exceeds maximum length of 36 characters, was 37"
+    )]
+    fn test_from_c_ptr_too_long_panics() {
+        let long = "x".repeat(37);
+        let cstring = std::ffi::CString::new(long).unwrap();
+        let _ = unsafe { StackStr::from_c_ptr(cstring.as_ptr()) };
+    }
+
+    #[rstest]
     fn test_equality() {
         let a = StackStr::new("test");
         let b = StackStr::new("test");
         let c = StackStr::new("other");
         assert_eq!(a, b);
         assert_ne!(a, c);
+    }
+
+    #[rstest]
+    fn test_inequality_same_length() {
+        let a = StackStr::new("test");
+        let b = StackStr::new("tent");
+        assert_ne!(a, b);
     }
 
     #[rstest]
@@ -869,6 +901,13 @@ mod tests {
         let s = StackStr::new("hello");
         assert_eq!(s, "hello");
         assert!(s != "world");
+    }
+
+    #[rstest]
+    fn test_partial_eq_str_unsized() {
+        let s = StackStr::new("hello");
+        assert_eq!(s, *"hello");
+        assert!(s != *"world");
     }
 
     #[rstest]

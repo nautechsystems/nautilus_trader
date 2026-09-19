@@ -360,6 +360,7 @@ mod tests {
     #[case("%%25", "%%")]
     #[case("%2%26", "%2&")]
     #[case("a%2Zb%20c", "a%2Zb c")]
+    #[case("%:0", "%:0")]
     fn test_decode_malformed_then_valid(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(decode(input).unwrap(), expected);
     }

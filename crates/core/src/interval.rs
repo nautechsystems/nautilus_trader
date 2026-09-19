@@ -41,3 +41,31 @@ impl From<ClosedInterval> for (u64, u64) {
         (interval.start, interval.end)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(0, 0, true)]
+    #[case(0, 1, true)]
+    #[case(2, 1, false)]
+    fn test_new_validates_order(#[case] start: u64, #[case] end: u64, #[case] expected: bool) {
+        assert_eq!(ClosedInterval::new(start, end).is_some(), expected);
+    }
+
+    #[rstest]
+    fn test_new_stores_bounds() {
+        let interval = ClosedInterval::new(3, 7).unwrap();
+        assert_eq!((interval.start, interval.end), (3, 7));
+    }
+
+    #[rstest]
+    fn test_into_tuple() {
+        let interval = ClosedInterval::new(3, 7).unwrap();
+        let pair: (u64, u64) = interval.into();
+        assert_eq!(pair, (3, 7));
+    }
+}

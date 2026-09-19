@@ -922,6 +922,8 @@ mod tests {
     #[case(951_782_400_123_456_789)]
     #[case(1_609_459_199_999_999_999)]
     #[case(i64::MAX as u64)]
+    #[case(5_097_600_000_000_000)] // 1970-03-01, civil leap-cycle boundary
+    #[case(5_356_800_000_000_000)] // 1970-03-04, civil leap-cycle boundary
     fn test_unix_nanos_to_iso8601_matches_jiff_oracle(#[case] nanos: u64) {
         let expected = format!(
             "{:.9}",
@@ -1190,14 +1192,20 @@ mod tests {
     }
 
     #[rstest]
-    fn test_add_n_years_nanos_prevents_negative_timestamp() {
-        // Edge case: ensure we catch if somehow a negative timestamp would be produced
-        // This is a defensive check - in practice, adding years shouldn't produce negative
-        // timestamps from valid UnixNanos, but we verify the check is in place
-        let start = UnixNanos::from(0); // Epoch
-        // Adding years to epoch should never produce negative, but the check is there
-        let result = add_n_years_nanos(start, 1);
-        assert!(result.is_ok());
+    fn test_add_n_months_nanos_normal_case() {
+        // Test adding 1 month from 2020-01-15
+        let start = UnixNanos::from(timestamp("2020-01-15T00:00:00Z"));
+        let result = add_n_months_nanos(start, 1).unwrap();
+        let expected = UnixNanos::from(timestamp("2020-02-15T00:00:00Z"));
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_add_n_years_nanos_from_epoch() {
+        // Adding a year to the epoch can never go negative, this pins the exact value
+        let start = UnixNanos::from(0);
+        let result = add_n_years_nanos(start, 1).unwrap();
+        assert_eq!(result.as_u64(), 31_536_000_000_000_000);
     }
 
     #[rstest]
@@ -1253,6 +1261,14 @@ mod tests {
     }
 
     #[rstest]
+    fn test_try_datetime_to_unix_nanos_at_epoch() {
+        assert_eq!(
+            try_datetime_to_unix_nanos(Timestamp::UNIX_EPOCH).unwrap(),
+            UnixNanos::from(0)
+        );
+    }
+
+    #[rstest]
     fn test_try_datetime_to_unix_nanos_before_epoch_errors() {
         let before_epoch = timestamp("1969-12-31T23:59:59Z");
         let err = try_datetime_to_unix_nanos(before_epoch).unwrap_err();
@@ -1298,5 +1314,26 @@ mod tests {
     fn test_subtract_n_months_nanos_at_epoch_boundary() {
         let epoch = UnixNanos::from(0);
         assert_eq!(subtract_n_months_nanos(epoch, 0).unwrap(), epoch);
+    }
+
+    #[rstest]
+    fn test_get_timezone_with_valid_name() {
+        let tz = get_timezone("UTC").unwrap();
+        assert_eq!(tz.iana_name(), Some("UTC"));
+    }
+
+    #[rstest]
+    fn test_get_timezone_with_unknown_name_errors() {
+        assert!(get_timezone("Not/A_Zone").is_err());
+    }
+
+    #[rstest]
+    #[case(0, 0)]
+    #[case(999, 0)]
+    #[case(1_000, 1_000)]
+    #[case(1_000_001, 1_000_000)]
+    #[case(u64::MAX, 18_446_744_073_709_551_000)]
+    fn test_floor_to_nearest_microsecond(#[case] input: u64, #[case] expected: u64) {
+        assert_eq!(floor_to_nearest_microsecond(input), expected);
     }
 }

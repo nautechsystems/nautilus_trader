@@ -1250,6 +1250,19 @@ mod tests {
     }
 
     #[rstest]
+    fn test_duration_nanos_assign_operators() {
+        let mut value = DurationNanos::new(100);
+        value += DurationNanos::new(23);
+        assert_eq!(value, DurationNanos::new(123));
+        value -= DurationNanos::new(23);
+        assert_eq!(value, DurationNanos::new(100));
+        value *= 3;
+        assert_eq!(value, DurationNanos::new(300));
+        value /= 4;
+        assert_eq!(value, DurationNanos::new(75));
+    }
+
+    #[rstest]
     #[should_panic(expected = "DurationNanos overflow in addition")]
     fn test_duration_nanos_addition_panics_on_overflow() {
         let _ = DurationNanos::MAX + DurationNanos::new(1);
@@ -1271,6 +1284,42 @@ mod tests {
     #[should_panic(expected = "DurationNanos division by zero")]
     fn test_duration_nanos_division_panics_on_zero() {
         let _ = DurationNanos::new(1) / 0;
+    }
+
+    #[rstest]
+    #[should_panic(expected = "DurationNanos overflow in from_micros")]
+    fn test_duration_nanos_from_micros_panics_on_overflow() {
+        let _ = DurationNanos::from_micros(u64::MAX);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "DurationNanos overflow in from_millis")]
+    fn test_duration_nanos_from_millis_panics_on_overflow() {
+        let _ = DurationNanos::from_millis(u64::MAX);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "DurationNanos overflow in from_secs")]
+    fn test_duration_nanos_from_secs_panics_on_overflow() {
+        let _ = DurationNanos::from_secs(u64::MAX);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "DurationNanos overflow in from_mins")]
+    fn test_duration_nanos_from_mins_panics_on_overflow() {
+        let _ = DurationNanos::from_mins(u64::MAX);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "DurationNanos overflow in from_hours")]
+    fn test_duration_nanos_from_hours_panics_on_overflow() {
+        let _ = DurationNanos::from_hours(u64::MAX);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "DurationNanos overflow in from_days")]
+    fn test_duration_nanos_from_days_panics_on_overflow() {
+        let _ = DurationNanos::from_days(u64::MAX);
     }
 
     #[rstest]
@@ -1373,6 +1422,32 @@ mod tests {
     }
 
     #[rstest]
+    fn test_from_borrowed_str_and_string() {
+        assert_eq!(UnixNanos::from("123").as_u64(), 123);
+        assert_eq!(UnixNanos::from("123".to_string()).as_u64(), 123);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Failed to parse string")]
+    fn test_from_borrowed_str_panics_on_invalid() {
+        let _ = UnixNanos::from("abc");
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Failed to parse string")]
+    fn test_from_string_trait_panics_on_invalid() {
+        let _ = UnixNanos::from("abc".to_string());
+    }
+
+    #[rstest]
+    fn test_into_timestamp() {
+        let nanos = UnixNanos::from(1_000_000_000);
+        let datetime = Timestamp::from(nanos);
+        assert_eq!(datetime, timestamp("1970-01-01T00:00:01Z"));
+        assert_eq!(UnixNanos::from(datetime), nanos);
+    }
+
+    #[rstest]
     fn test_try_from_datetime_valid() {
         let datetime = Timestamp::from_second(1_000_000_000).unwrap();
         let nanos = UnixNanos::from(datetime);
@@ -1419,6 +1494,15 @@ mod tests {
         assert_eq!(nanos.partial_cmp(&200), Some(Ordering::Less));
         assert_eq!(nanos.partial_cmp(&50), Some(Ordering::Greater));
         assert_eq!(nanos.partial_cmp(&None), Some(Ordering::Greater));
+    }
+
+    #[rstest]
+    fn test_u64_comparison_and_deref() {
+        let nanos = UnixNanos::from(100);
+        assert_eq!(100u64, nanos);
+        assert_eq!(99u64.partial_cmp(&nanos), Some(Ordering::Less));
+        assert_eq!(nanos.partial_cmp(&Some(100u64)), Some(Ordering::Equal));
+        assert_eq!(*nanos, 100u64);
     }
 
     #[rstest]
@@ -2178,6 +2262,7 @@ mod tests {
     #[case::valid(1_700_000_000_123, Some(1_700_000_000_123_000_000))]
     #[case::negative(-1, None)]
     #[case::overflow(i64::MAX, None)]
+    #[case::zero(0, Some(0))]
     fn test_from_millis_checked(#[case] millis: i64, #[case] expected: Option<u64>) {
         assert_eq!(
             UnixNanos::from_millis_checked(millis).map(|value| value.as_u64()),
@@ -2262,6 +2347,7 @@ mod tests {
     #[case::valid(1_700_000_000_123_456, Some(1_700_000_000_123_456_000))]
     #[case::negative(-1, None)]
     #[case::overflow(i64::MAX, None)]
+    #[case::zero(0, Some(0))]
     fn test_from_micros_checked(#[case] micros: i64, #[case] expected: Option<u64>) {
         assert_eq!(
             UnixNanos::from_micros_checked(micros).map(|value| value.as_u64()),
