@@ -1482,9 +1482,6 @@ fn create_local_store(
         uri.to_string()
     };
 
-    std::fs::create_dir_all(&path)
-        .map_err(|err| anyhow::anyhow!("Failed to create local catalog directory {path}: {err}"))?;
-
     let local_store = object_store::local::LocalFileSystem::new_with_prefix(&path)?;
     Ok((Arc::new(local_store), String::new(), uri.to_string()))
 }
@@ -2912,17 +2909,6 @@ mod tests {
 
         // Clean up
         std::fs::remove_dir_all(&temp_dir).ok();
-    }
-
-    #[rstest]
-    fn test_create_object_store_from_path_local_creates_missing_directory() {
-        let parent = tempfile::tempdir().unwrap();
-        let missing = parent.path().join("does-not-exist").join("catalog");
-        assert!(!missing.exists());
-
-        let result = create_object_store_from_path(missing.to_str().unwrap(), None);
-        assert!(result.is_ok(), "expected success, got {result:?}");
-        assert!(missing.is_dir(), "expected base directory to be created");
     }
 
     #[rstest]

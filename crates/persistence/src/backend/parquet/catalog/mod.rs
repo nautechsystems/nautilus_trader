@@ -126,6 +126,7 @@ use crate::{
     common::{
         custom::prepare_custom_data_batch,
         datafusion::{self as datafusion, DataBackendSession, build_query},
+        paths::{file_uri_to_native_path, normalize_path_to_uri},
     },
 };
 
@@ -389,6 +390,12 @@ impl ParquetDataCatalog {
         ));
         let max_row_group_size =
             max_row_group_size.unwrap_or(crate::backend::parquet::DEFAULT_ROW_GROUP_SIZE);
+
+        let normalized_uri = normalize_path_to_uri(uri)?;
+        if normalized_uri.starts_with("file://") {
+            std::fs::create_dir_all(file_uri_to_native_path(&normalized_uri))
+                .map_err(|e| anyhow::anyhow!("Failed to create catalog base directory: {e}"))?;
+        }
 
         let location = crate::backend::parquet::io::create_object_store_location_from_path(
             uri,
