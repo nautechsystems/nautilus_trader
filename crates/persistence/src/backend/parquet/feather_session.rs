@@ -491,7 +491,8 @@ impl ParquetDataCatalog {
     /// # Parameters
     ///
     /// - `instance_id`: The ID of the backtest or live run instance.
-    /// - `data_cls`: The data class name (e.g., "quotes", "trades", "bars").
+    /// - `data_cls`: The data class name (e.g., "quotes", "trades", "bars"), or
+    ///   `custom/{TypeName}` with the registered type name verbatim for custom data.
     /// - `subdirectory`: The subdirectory containing the feather files. Either "backtest" or "live" (default: "backtest").
     /// - `identifiers`: Optional list of identifiers to filter by (instrument IDs or bar types).
     /// - `use_ts_event_for_ts_init`: If true, replaces the `ts_init` column with `ts_event` column values before deserializing.
@@ -544,9 +545,14 @@ impl ParquetDataCatalog {
     ) -> anyhow::Result<()> {
         let subdirectory = subdirectory.unwrap_or("backtest");
 
-        // Convert data class name to filename (e.g., "quotes" -> "quotes")
-        // The data_cls should already be in the correct format (snake_case)
-        let stream_data_name = to_snake_case(data_cls);
+        // Custom data stages under `data/custom/{TypeName}` with the registered type name verbatim,
+        // so snake-casing would rewrite both the marker and the type name and match no directory.
+        let stream_data_name = if data_cls.starts_with("custom/") {
+            data_cls.to_string()
+        } else {
+            to_snake_case(data_cls)
+        };
+
         let catalog_data_name = Self::canonical_stream_data_name(&stream_data_name);
 
         // List all feather files for this data class

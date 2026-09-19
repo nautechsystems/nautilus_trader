@@ -40,6 +40,7 @@ Released on TBD (UTC).
 - Fixed execution mass-status reconciliation ignoring filled-quantity decreases without companion fills
 - Fixed overlapping mass-status snapshots reversing newer cached fills or fill voids
 - Fixed trailing-stop orders already in the market being accepted despite `reject_stop_orders`
+- Fixed `convert_stream_to_data` silently skipping staged custom data (#4607), thanks for reporting @mystic-io
 - Fixed Betfair false fill voids and missing fills during reconciliation after price replacements
 - Fixed Betfair false fill voids from inconsistent order and fill snapshots during reconciliation
 - Fixed Betfair order quantities in replacement queries and quantity reduction recovery

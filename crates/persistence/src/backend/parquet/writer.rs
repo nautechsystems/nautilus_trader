@@ -564,7 +564,10 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::catalog::traits::{CatalogQuery, CatalogReader};
+    use crate::{
+        catalog::traits::{CatalogQuery, CatalogReader},
+        test_data::RustTestHashMapCustomData,
+    };
 
     #[rstest]
     fn parquet_default_close_promotes_and_honors_source_retention(
@@ -883,6 +886,218 @@ mod tests {
         let staged = block_on_nautilus_with(|| storage.list_files("", Some(".feather"))).unwrap();
         assert!(error.contains("non-disjoint intervals"), "{error}");
         assert_eq!(staged.len(), 1);
+    }
+
+    #[rstest]
+    fn parquet_manual_conversion_promotes_custom_data() {
+        use nautilus_model::data::{CustomData, DataType};
+        use nautilus_serialization::ensure_custom_data_registered;
+
+        ensure_custom_data_registered::<RustTestHashMapCustomData>();
+
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("backtest").join("run-custom");
+        let mut config = WriterConnectConfig::new(staging.to_string_lossy(), None);
+        config.params = Some(serde_json::from_value(json!({"promote_on_close": false})).unwrap());
+        let mut sink =
+            parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
+                .unwrap();
+
+        let data_type = DataType::new("RustTestHashMapCustomData", None, None);
+        let records = [
+            sample_custom_data("first", "AUD/USD.SIM", "1.23456", 11),
+            sample_custom_data("second", "BTCUSDT.BINANCE", "65432.10", 21),
+        ];
+
+        for record in &records {
+            sink.write_data(Data::Custom(CustomData::new(
+                Arc::new(record.clone()),
+                data_type.clone(),
+            )))
+            .unwrap();
+        }
+
+        sink.close().unwrap();
+
+        let mut catalog = ParquetDataCatalog::from_uri(
+            directory.path().to_str().unwrap(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        for _ in 0..2 {
+            catalog
+                .convert_stream_to_data(
+                    "run-custom",
+                    "custom/RustTestHashMapCustomData",
+                    Some("backtest"),
+                    None,
+                    false,
+                )
+                .unwrap();
+        }
+
+        let expected: Vec<(Option<String>, RustTestHashMapCustomData)> = records
+            .iter()
+            .map(|record| (None, record.clone()))
+            .collect();
+        assert_eq!(query_custom_records(&mut catalog, None), expected);
+    }
+
+    #[rstest]
+    fn parquet_manual_conversion_filters_custom_data_identifiers() {
+        use nautilus_model::data::{CustomData, DataType};
+        use nautilus_serialization::ensure_custom_data_registered;
+
+        ensure_custom_data_registered::<RustTestHashMapCustomData>();
+
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("backtest").join("run-custom-ids");
+        let mut config = WriterConnectConfig::new(staging.to_string_lossy(), None);
+        config.params = Some(serde_json::from_value(json!({"promote_on_close": false})).unwrap());
+        let mut sink =
+            parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
+                .unwrap();
+
+        let audusd = "AUD/USD.SIM";
+        let btcusdt = "BTCUSDT.BINANCE";
+        let records = [
+            (audusd, sample_custom_data("first", audusd, "1.23456", 11)),
+            (audusd, sample_custom_data("second", audusd, "1.23457", 21)),
+            (
+                btcusdt,
+                sample_custom_data("third", btcusdt, "65432.10", 31),
+            ),
+        ];
+
+        for (identifier, record) in &records {
+            let data_type = DataType::new(
+                "RustTestHashMapCustomData",
+                None,
+                Some((*identifier).to_string()),
+            );
+            sink.write_data(Data::Custom(CustomData::new(
+                Arc::new(record.clone()),
+                data_type,
+            )))
+            .unwrap();
+        }
+
+        sink.close().unwrap();
+
+        let mut catalog = ParquetDataCatalog::from_uri(
+            directory.path().to_str().unwrap(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        catalog
+            .convert_stream_to_data(
+                "run-custom-ids",
+                "custom/RustTestHashMapCustomData",
+                Some("backtest"),
+                Some(&[audusd.to_string()]),
+                false,
+            )
+            .unwrap();
+
+        let expected_audusd: Vec<(Option<String>, RustTestHashMapCustomData)> = records
+            .iter()
+            .filter(|(identifier, _)| *identifier == audusd)
+            .map(|(identifier, record)| (Some((*identifier).to_string()), record.clone()))
+            .collect();
+        assert_eq!(query_custom_records(&mut catalog, None), expected_audusd);
+
+        // Catalog identifier directories are urisafe, so a scoped query pins that spelling and
+        // proves the converted records landed under their own identifier rather than together.
+        assert_eq!(
+            query_custom_records(&mut catalog, Some(&["AUDUSD.SIM".to_string()])),
+            expected_audusd,
+        );
+
+        catalog
+            .convert_stream_to_data(
+                "run-custom-ids",
+                "custom/RustTestHashMapCustomData",
+                Some("backtest"),
+                None,
+                false,
+            )
+            .unwrap();
+
+        let expected_all: Vec<(Option<String>, RustTestHashMapCustomData)> = records
+            .iter()
+            .map(|(identifier, record)| (Some((*identifier).to_string()), record.clone()))
+            .collect();
+        assert_eq!(query_custom_records(&mut catalog, None), expected_all);
+        let expected_btcusdt: Vec<(Option<String>, RustTestHashMapCustomData)> = records
+            .iter()
+            .filter(|(identifier, _)| *identifier == btcusdt)
+            .map(|(identifier, record)| (Some((*identifier).to_string()), record.clone()))
+            .collect();
+        assert_eq!(
+            query_custom_records(&mut catalog, Some(&[btcusdt.to_string()])),
+            expected_btcusdt,
+        );
+    }
+
+    fn sample_custom_data(
+        name: &str,
+        instrument_id: &str,
+        price: &str,
+        ts: u64,
+    ) -> RustTestHashMapCustomData {
+        RustTestHashMapCustomData {
+            name: name.to_string(),
+            prices: [(instrument_id.to_string(), Price::from(price))]
+                .into_iter()
+                .collect(),
+            ts_event: UnixNanos::from(ts - 1),
+            ts_init: UnixNanos::from(ts),
+        }
+    }
+
+    fn query_custom_records(
+        catalog: &mut ParquetDataCatalog,
+        identifiers: Option<&[String]>,
+    ) -> Vec<(Option<String>, RustTestHashMapCustomData)> {
+        let loaded = catalog
+            .query_custom_data_dynamic(
+                "RustTestHashMapCustomData",
+                identifiers,
+                None,
+                None,
+                None,
+                None,
+                true,
+            )
+            .unwrap();
+        let mut decoded = Vec::new();
+
+        for data in &loaded {
+            let Data::Custom(custom) = data else {
+                panic!("expected custom data, found {data:?}")
+            };
+
+            assert_eq!(custom.data_type.type_name(), "RustTestHashMapCustomData");
+            decoded.push((
+                custom.data_type.identifier().map(ToString::to_string),
+                custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<RustTestHashMapCustomData>()
+                    .expect("expected RustTestHashMapCustomData")
+                    .clone(),
+            ));
+        }
+
+        decoded.sort_by_key(|(_, record)| record.ts_init);
+        decoded
     }
 
     fn sample_quote() -> QuoteTick {

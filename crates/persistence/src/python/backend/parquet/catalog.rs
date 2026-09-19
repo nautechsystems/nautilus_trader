@@ -1837,7 +1837,8 @@ impl PyParquetDataCatalog {
     /// # Parameters
     ///
     /// - `instance_id`: The ID of the backtest or live run instance
-    /// - `data_cls`: The data class name (e.g., "quotes", "trades", "bars")
+    /// - `data_cls`: The data class name (e.g., "quotes", "trades", "bars"), or
+    ///   `custom/{TypeName}` with the registered type name verbatim for custom data
     /// - `subdirectory`: Optional subdirectory containing the feather files. Either "backtest" or "live" (default: "backtest")
     /// - `identifiers`: Optional list of identifiers to filter by (instrument IDs or bar types)
     /// - `use_ts_event_for_ts_init`: If true, replaces the `ts_init` column with `ts_event` column values before deserializing

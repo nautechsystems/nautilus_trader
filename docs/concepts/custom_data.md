@@ -277,14 +277,19 @@ On query:
 
 This makes custom-data query resolution symmetric with write-time registration.
 When converting a Feather stream to Parquet, such as after a backtest, the
-custom-data branch is designed to transform the Arrow batches and write the
-result directly to the matching custom-data path.
+custom-data branch transforms the Arrow batches and writes the result directly
+to the matching custom-data path. Pass the data class as `custom/{TypeName}`
+with the registered type name verbatim, because a Feather session stores custom
+data under `data/custom/{TypeName}` rather than under a snake_case directory. Set
+`promote_on_close=False` when you intend to convert manually, because promotion on close is the
+default and converting an already promoted session rewrites the same `ts_init` interval under a
+different filename, which the catalog rejects as non-disjoint.
 
 :::info
 The direct Python `StreamingFeatherWriter.write()` method rejects `CustomData` with an `OSError`.
 Write custom data directly to the catalog with `ParquetDataCatalog.write_custom_data` from Python.
-The Rust Feather writer supports custom data, but `convert_stream_to_data` does not currently
-convert custom-data Feather streams to Parquet.
+The Rust Feather writer supports custom data, and `convert_stream_to_data` converts those staged
+Feather streams to Parquet.
 :::
 
 ## The Arrow C FFI bridge
