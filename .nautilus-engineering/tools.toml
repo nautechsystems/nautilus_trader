@@ -5,7 +5,7 @@
 # names its upstream release source in `releases` so `make outdated` can report newer releases.
 
 [prek]
-version = "0.5.2"
+version = "0.5.3"
 ci = true
 releases = "pypi:prek"
 
@@ -16,7 +16,7 @@ pre-commit-repository = "https://github.com/pre-commit/pre-commit-hooks"
 pre-commit-revision = "v{version}"
 
 [ruff]
-version = "0.16.7"
+version = "0.16.8"
 ci = true
 releases = "pypi:ruff"
 pre-commit-repository = "https://github.com/astral-sh/ruff-pre-commit"
@@ -85,7 +85,7 @@ version = "0.9.1"
 releases = "crates:cargo-llvm-cov"
 
 [cargo-nextest]
-version = "0.9.144"
+version = "0.9.145"
 releases = "crates:cargo-nextest"
 
 [cargo-vet]
@@ -93,7 +93,7 @@ version = "0.10.2"
 releases = "crates:cargo-vet"
 
 [uv]
-version = "0.12.13"
+version = "0.12.15"
 releases = "pypi:uv"
 
 [pip-audit]
@@ -101,7 +101,7 @@ version = "2.10.1"
 releases = "pypi:pip-audit"
 
 [osv-scanner]
-version = "2.5.1"
+version = "2.6.0"
 releases = "github:google/osv-scanner"
 
 [capnp]

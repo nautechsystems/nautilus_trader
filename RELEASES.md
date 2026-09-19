@@ -4,15 +4,17 @@ Released on TBD (UTC).
 
 ### Enhancements
 
-- Added `historical_base_url` and `live_gateway_addr` overrides to `DatabentoDataClientConfig`
-- Added `tardis_http_url` override to `TardisDataClientConfig` and `TardisReplayConfig`
-- Added Polymarket session signing and owner-operated session key authorization, listing, and revocation
+- Added Python `Cache.top_of_book()` without cloning the resident book (#5011), thanks @youayouly
 - Added `IndexPriceUpdate`, `InstrumentClose`, `FundingRateUpdate`, and `Custom` to `DataBackendSession.add_file`
+- Added `historical_base_url` and `live_gateway_addr` overrides to `DatabentoDataClientConfig`
 - Added Lighter support for 64-bit market IDs at and above 4095
-- Added Tardis full 25-level `OrderBookDepth` for `snapshot25` data
 - Added Lighter `book_snapshot_timeout_secs` override, honoring 0 as disabled
+- Added Lighter `use_gtd` to choose venue or local GTD expiry (#4997), thanks @graceyangfan
+- Added Polymarket session signing and owner-operated session key authorization, listing, and revocation
 - Added Polymarket book recovery with snapshot gating and stale-feed detection
 - Migrated Polymarket trade and position history to Data API v2 with cursor pagination
+- Added `tardis_http_url` override to `TardisDataClientConfig` and `TardisReplayConfig`
+- Added Tardis full 25-level `OrderBookDepth` for `snapshot25` data
 
 ### Breaking Changes
 
@@ -32,6 +34,7 @@ Released on TBD (UTC).
 - Renamed Databento `load_order_book_depth10` to `load_order_book_depth` and `get_order_book_depth10` to `get_order_book_depth`
 - Renamed Polymarket `SignatureType` to `PolymarketSignatureType`
 - Renamed Tardis `load_tardis_depth10_from_snapshot5`/`25` and `stream_tardis_depth10_from_snapshot5`/`25` to their `depth` spellings, and `TardisDepth10StreamIterator` to `TardisDepthStreamIterator`
+- Renamed Rust `TestClock`/`TestTimer` to `VirtualClock`/`VirtualTimer` without compatibility aliases
 - Changed custom-data writes to require valid schemas; migrate legacy files with `nautilus catalog migrate-parquet`
 
 ### Security
@@ -47,9 +50,19 @@ Released on TBD (UTC).
 - Fixed live node startup panic on an excessively large `reconciliation_startup_delay_secs`
 - Fixed unqueryable Python custom-data writes (#4984), thanks for reporting @shanezilla
 - Fixed `customdataclass` nanosecond decoding without pandas (#4984), thanks for reporting @shanezilla
+- Fixed catalog interval-filename validation renaming files before rejecting them (#4647)
+- Fixed TLS client config panicking on first use when ring is also enabled
+- Fixed Sockudo handshake retries logged as errors, hiding reconnect recovery
+- Fixed dropping unfilled working orders when replacing a reconciliation lifecycle (#5003), thanks @abhijeetvichare76
+- Fixed live reconciliation applying report-task results after shutdown (#4982), thanks @folknor
+- Fixed backtest data-type and missing-engine errors to name the valid case (#4977), thanks @abhijeetvichare76
 - Fixed Betfair false fill voids and missing fills during reconciliation after price replacements
 - Fixed Betfair false fill voids from inconsistent order and fill snapshots during reconciliation
 - Fixed Betfair order quantities in replacement queries and quantity reduction recovery
+- Fixed Betfair resting SP bets treated as closed before BSP reconciliation
+- Fixed Binance WebSocket subscribe bursts that closed sockets with 1008 (#5014), thanks @costajohnt
+- Fixed historical `BinanceBar` responses never reaching Python (#5002), thanks @abhijeetvichare76
+- Fixed Kraken spot connect aborting when TradeVolume fails (#5005), thanks @zhaow-de
 - Fixed Lighter book recovery after missing snapshots, sequence gaps, and reconnects
 - Fixed Lighter websocket subscription hangs on unparsable confirmations
 - Fixed Lighter spot stats parsing for empty mid prices
@@ -61,22 +74,34 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 
-- Standardized network config field layouts across adapters: URL override block, then `proxy_url`
 - Standardized `Data` and `NautilusDataType` ordering with `Custom` first
-- Renamed the variable-depth Cap'n Proto `OrderBookDepth10` schema declarations to `OrderBookDepth` while pinning node IDs and field ordinals for wire continuity
+- Standardized the variable-depth Cap'n Proto `OrderBookDepth10` schema declarations to `OrderBookDepth` while pinning node IDs and field ordinals for wire continuity
+- Standardized network config field layouts across adapters: URL override block, then `proxy_url`
+- Standardized book recovery ownership and retry handling across Lighter and OKX
+- Standardized book snapshot timeouts on a shared 10s default across Lighter, OKX, and Polymarket
 - Improved cache order query benchmark coverage
+- Improved live and backtest callback drains at runtime-owned loop boundaries
+- Improved OKX public and spread book recovery with bounded retries and cancellation-safe resubscription
+- Extracted `CacheApi` and `CacheView` from the cache module
+- Normalized persistence path separators for Windows
 - Optimized cache order queries and exchange rate lookups from bars
 - Optimized average-price calculation for orders with many fills
 - Optimized allocation overhead in Rust cache `orders` and `orders_refs` queries
 - Optimized allocation overhead in Rust exchange rate calculations
-- Standardized book recovery ownership and retry handling across Lighter and OKX
-- Improved OKX public and spread book recovery with bounded retries and cancellation-safe resubscription
-- Standardized book snapshot timeouts on a shared 10s default across Lighter, OKX, and Polymarket
-- Renamed Lighter `BookSync` to `BookSyncTracker`
+- Optimized NETTING reopen and duplicate-fill checks to ignore replay-history length (#4999), thanks @folknor
+- Upgraded `cargo-nextest` tool to v0.9.145
+- Upgraded `osv-scanner` tool to v2.6.0
+- Upgraded `prek` tool to v0.5.3
+- Upgraded `uv` tool to v0.12.15
+- Upgraded `clap` crate to v4.6.7
 - Upgraded `datafusion` crate to v55.1.0
 - Upgraded `jiff` crate to v0.2.37
+- Upgraded `redb` crate to v4.3.0
+- Upgraded `ruint` crate to v1.20.1
 - Upgraded `smallvec` crate to v1.16.1
-- Upgraded `ty` package (dev) to v0.0.79
+- Upgraded `polars` package (test) to v1.44.2
+- Upgraded `ruff` package (dev) and pre-commit hook to v0.16.8
+- Upgraded `ty` package (dev) to v0.0.80
 
 ### Documentation Updates
 
@@ -84,6 +109,7 @@ Released on TBD (UTC).
 - Documented shared order book recovery ownership and Lighter recovery limits
 - Documented OKX order book recovery and retry limits
 - Documented shared book snapshot defaults and live validation levels
+- Documented Hyperliquid inferred-fill commissions as unset
 - Updated Databento and Tardis integration guides with new URL overrides
 
 ### Deprecations
