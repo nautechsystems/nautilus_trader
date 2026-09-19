@@ -32,6 +32,7 @@ from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Money
+from nautilus_trader.model import NautilusDataType
 from nautilus_trader.model import OmsType
 from nautilus_trader.model import TraderId
 
@@ -117,7 +118,7 @@ if __name__ == "__main__":
 
     # Create data config (this is just a placeholder - you would need actual data)
     data_config = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="./data",
         instrument_id=InstrumentId.from_str("AAPL.NASDAQ"),
     )

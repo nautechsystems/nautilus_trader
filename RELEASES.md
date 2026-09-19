@@ -13,12 +13,16 @@ Released on TBD (UTC).
 - Added Lighter `book_snapshot_timeout_secs` override, honoring 0 as disabled
 - Added Polymarket book recovery with snapshot gating and stale-feed detection
 - Migrated Polymarket trade and position history to Data API v2 with cursor pagination
+- Added optional `instrument_type` selector to actor and strategy `request_instrument` and `request_instruments`, reading one instrument class
 
 ### Breaking Changes
 
 - Removed `nautilus_trader.persistence.NautilusDataType` - import from `nautilus_trader.model`
 - Removed `NautilusDataType.OrderBook` variant and `"OrderBook"`/`"order_book"` spellings
 - Changed `DataBackendSession.add_file` to accept `model.NautilusDataType`, rejecting `Instrument` and `Defi`
+- Changed `ParquetDataCatalog` file operations to take a `catalog_type` selector (`NautilusDataType`, `NautilusRecordType`, or `NautilusInstrumentType`) in place of the `data_cls` and `type_name` strings
+- Changed `ParquetDataCatalog.delete_data_range` to take a `NautilusDataType`, which excludes record and instrument families
+- Changed `BacktestDataConfig.data_type` to take and return a `NautilusDataType` rather than a string
 - Changed Rust `OrderCore.events` to read-only `events()`; construct cores with `OrderCore::new`
 - Changed Python Hyperliquid data and execution client config parameter order to `base_url_http` before `base_url_ws`
 - Changed Polymarket `polymarket_trade_sort_key` inputs to v2 `transaction_hash` and `token_id` fields

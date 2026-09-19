@@ -555,7 +555,7 @@ mod tests {
 
     use nautilus_core::UnixNanos;
     use nautilus_model::{
-        data::{Data, DataBatch, NautilusDataType, QuoteTick},
+        data::{Data, DataBatch, NautilusDataType, NautilusRecordType, QuoteTick},
         identifiers::InstrumentId,
         types::{ERROR_PRICE, Price, Quantity},
     };
@@ -800,7 +800,14 @@ mod tests {
         )
         .unwrap();
         let batches = catalog
-            .query_record_batches("order_fill_voided", None, None, None, None, true)
+            .query_record_batches(
+                &NautilusRecordType::OrderFillVoided.into(),
+                None,
+                None,
+                None,
+                None,
+                true,
+            )
             .unwrap();
         let mut rows = Vec::new();
         for batch in batches {

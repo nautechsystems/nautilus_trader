@@ -200,8 +200,8 @@ impl PyNautilusRecordType {
     }
 
     #[must_use]
-    pub fn inner(&self) -> NautilusRecordType {
-        self.inner.clone()
+    pub const fn inner(&self) -> NautilusRecordType {
+        self.inner
     }
 }
 

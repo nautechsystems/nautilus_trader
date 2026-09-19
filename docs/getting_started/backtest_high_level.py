@@ -37,6 +37,7 @@ from nautilus_trader.model import BookType
 from nautilus_trader.model import Currency
 from nautilus_trader.model import OmsType
 from nautilus_trader.model import Quantity
+from nautilus_trader.model import NautilusDataType
 from nautilus_trader.persistence import ParquetDataCatalog
 from nautilus_trader.testkit.providers import TestDataProvider
 from nautilus_trader.testkit.providers import TestInstrumentProvider
@@ -190,7 +191,7 @@ str(CATALOG_PATH)
 # %%
 data_configs = [
     BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path=str(CATALOG_PATH),
         instrument_id=instrument.id,
         start_time=start_ns,

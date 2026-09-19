@@ -177,7 +177,7 @@ fn normalize_legacy_record_schema(schema: &Schema) -> Option<Schema> {
         .get("type")?
         .parse::<NautilusRecordType>()
         .ok()?;
-    let current = catalog_record_schema(&record_type).ok()?;
+    let current = catalog_record_schema(record_type).ok()?;
     let fields = schema
         .fields()
         .iter()
