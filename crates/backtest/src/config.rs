@@ -867,26 +867,24 @@ impl BacktestDataConfig {
     pub fn validate(&self) -> ConfigResult<()> {
         let mut errors = ConfigErrorCollector::new();
 
-        errors.check(
-            matches!(
-                self.data_type,
-                NautilusDataType::OrderBookDelta
-                    | NautilusDataType::OrderBookDepth
-                    | NautilusDataType::QuoteTick
-                    | NautilusDataType::TradeTick
-                    | NautilusDataType::Bar
-                    | NautilusDataType::MarkPriceUpdate
-                    | NautilusDataType::IndexPriceUpdate
-                    | NautilusDataType::FundingRateUpdate
-                    | NautilusDataType::OptionGreeks
-                    | NautilusDataType::InstrumentStatus
-                    | NautilusDataType::InstrumentClose
-            ),
-            ConfigError::unsupported_value(
+        match &self.data_type {
+            NautilusDataType::OrderBookDelta
+            | NautilusDataType::OrderBookDepth
+            | NautilusDataType::QuoteTick
+            | NautilusDataType::TradeTick
+            | NautilusDataType::Bar
+            | NautilusDataType::MarkPriceUpdate
+            | NautilusDataType::IndexPriceUpdate
+            | NautilusDataType::FundingRateUpdate
+            | NautilusDataType::OptionGreeks
+            | NautilusDataType::InstrumentStatus
+            | NautilusDataType::InstrumentClose => {}
+            NautilusDataType::Custom { type_name } if !type_name.trim().is_empty() => {}
+            _ => errors.push(ConfigError::unsupported_value(
                 "data_type",
                 format!("{} is not supported by BacktestDataConfig", self.data_type),
-            ),
-        );
+            )),
+        }
 
         if self.catalog_path.trim().is_empty() {
             errors.push(ConfigError::empty_field("catalog_path"));
@@ -902,16 +900,20 @@ impl BacktestDataConfig {
             );
         }
 
-        let has_identifier = self.instrument_id.is_some()
-            || self
-                .instrument_ids
-                .as_ref()
-                .is_some_and(|ids| !ids.is_empty())
-            || self.bar_types.as_ref().is_some_and(|bars| !bars.is_empty());
-        errors.check(
-            has_identifier,
-            ConfigError::required_one_of(["instrument_id", "instrument_ids", "bar_types"]),
-        );
+        // Custom data is not keyed by an instrument, so it may omit the instrument identifier
+        // entirely and query the whole custom-data family directory.
+        if !matches!(self.data_type, NautilusDataType::Custom { .. }) {
+            let has_identifier = self.instrument_id.is_some()
+                || self
+                    .instrument_ids
+                    .as_ref()
+                    .is_some_and(|ids| !ids.is_empty())
+                || self.bar_types.as_ref().is_some_and(|bars| !bars.is_empty());
+            errors.check(
+                has_identifier,
+                ConfigError::required_one_of(["instrument_id", "instrument_ids", "bar_types"]),
+            );
+        }
 
         errors.into_result()
     }
@@ -1235,6 +1237,7 @@ mod tests {
     #[case(NautilusDataType::OptionGreeks)]
     #[case(NautilusDataType::InstrumentStatus)]
     #[case(NautilusDataType::InstrumentClose)]
+    #[case(NautilusDataType::Custom { type_name: "Signal".to_string() })]
     fn test_data_config_accepts_supported_family(#[case] data_type: NautilusDataType) {
         let config = BacktestDataConfig::builder()
             .data_type(data_type.clone())
@@ -1247,8 +1250,21 @@ mod tests {
     }
 
     #[rstest]
+    fn test_custom_data_config_accepts_missing_instrument_identifier() {
+        let config = BacktestDataConfig::builder()
+            .data_type(NautilusDataType::Custom {
+                type_name: "Signal".to_string(),
+            })
+            .catalog_path("/tmp/catalog".to_string())
+            .build()
+            .unwrap();
+
+        assert_eq!(config.query_identifiers(), None);
+    }
+
+    #[rstest]
     #[case(NautilusDataType::Instrument)]
-    #[case(NautilusDataType::Custom { type_name: "Signal".to_string() })]
+    #[case(NautilusDataType::Custom { type_name: "".to_string() })]
     fn test_data_config_rejects_unsupported_family(#[case] data_type: NautilusDataType) {
         let error = BacktestDataConfig::builder()
             .data_type(data_type.clone())
