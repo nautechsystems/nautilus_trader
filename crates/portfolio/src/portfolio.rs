@@ -31,7 +31,7 @@ use nautilus_analysis::{
     snapshot::PortfolioStatistics,
 };
 use nautilus_common::{
-    cache::{AccountLookupError, AccountRef, Cache},
+    cache::{AccountLookupError, Cache},
     clock::Clock,
     enums::LogColor,
     msgbus::{self, MessagingSwitchboard, TypedHandler, TypedIntoHandler},
@@ -1666,11 +1666,7 @@ impl Portfolio {
             for (account_id, orders) in by_account {
                 let account = {
                     let cache = self.cache.borrow();
-                    match resolve_account_for_instrument(
-                        &cache,
-                        &instrument.id(),
-                        account_id.as_ref(),
-                    ) {
+                    match cache.account_for_instrument(&instrument.id(), account_id.as_ref()) {
                         Some(account) => account.cloned(),
                         None => {
                             log::error!(
@@ -1744,11 +1740,9 @@ impl Portfolio {
                     continue;
                 }
 
-                let Some(account) = resolve_account_for_instrument(
-                    &cache,
-                    &order.instrument_id(),
-                    order.account_id().as_ref(),
-                ) else {
+                let Some(account) = cache
+                    .account_for_instrument(&order.instrument_id(), order.account_id().as_ref())
+                else {
                     continue;
                 };
 
@@ -2265,7 +2259,7 @@ impl Portfolio {
         target_currency: Option<Currency>,
     ) -> Result<Money, UnrealizedPnlError> {
         let cache = self.cache.borrow();
-        let account = resolve_account_for_instrument(&cache, instrument_id, account_id);
+        let account = cache.account_for_instrument(instrument_id, account_id);
         let account = if let Some(account) = account {
             account
         } else {
@@ -2631,7 +2625,7 @@ impl Portfolio {
         self.ensure_snapshot_pnls_cached_for(instrument_id);
 
         let cache = self.cache.borrow();
-        let account = resolve_account_for_instrument(&cache, instrument_id, account_id);
+        let account = cache.account_for_instrument(instrument_id, account_id);
         let account = if let Some(account) = account {
             account
         } else {
@@ -3202,26 +3196,6 @@ fn update_bar(
     update_instrument_id(cache, clock, inner, config, &instrument_id);
 }
 
-/// Account for an instrument. For broker-routed instruments the account lives
-/// under the broker venue (e.g. `IB`) while the instrument carries the exchange
-/// MIC (e.g. `IBIS`); on venue miss, fall back to the position-owning account.
-fn resolve_account_for_instrument<'a>(
-    cache: &'a Cache,
-    instrument_id: &InstrumentId,
-    account_id: Option<&AccountId>,
-) -> Option<AccountRef<'a>> {
-    match account_id {
-        Some(id) => cache.account(id),
-        None => cache.account_for_venue(&instrument_id.venue).or_else(|| {
-            cache
-                .positions(None, Some(instrument_id), None, None, None)
-                .into_iter()
-                .next()
-                .and_then(|p| cache.account(&p.account_id))
-        }),
-    }
-}
-
 fn wallet_order_reserves_balance(order: &OrderAny) -> bool {
     order.is_open() || order.is_inflight()
 }
@@ -3303,8 +3277,9 @@ fn update_instrument_id(
         }
 
         if by_account.is_empty()
-            && let Some(account) =
-                resolve_account_for_instrument(&cache_ref, instrument_id, None).map(|a| a.cloned())
+            && let Some(account) = cache_ref
+                .account_for_instrument(instrument_id, None)
+                .map(|a| a.cloned())
         {
             by_account.entry(account.id()).or_default();
         }
