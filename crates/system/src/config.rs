@@ -241,7 +241,6 @@ impl Default for KernelConfig {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::config::ConfigError;
     use rstest::rstest;
 
     use super::*;
@@ -252,6 +251,14 @@ mod tests {
 
         assert_eq!(config.timeout_connection, Duration::from_mins(1));
     }
+}
+
+#[cfg(all(test, feature = "streaming"))]
+mod streaming_tests {
+    use nautilus_common::config::ConfigError;
+    use rstest::rstest;
+
+    use super::*;
 
     #[rstest]
     fn test_streaming_config_builder_valid() {
