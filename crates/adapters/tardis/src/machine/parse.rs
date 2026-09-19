@@ -20,9 +20,9 @@ use jiff::Timestamp;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
-        Bar, BarType, BookOrder, DEPTH10_LEN, Data, FundingRateUpdate, IndexPriceUpdate,
-        MarkPriceUpdate, NULL_ORDER, OptionGreekValues, OptionGreeks, OrderBookDelta,
-        OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
+        Bar, BarType, BookOrder, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
+        OptionGreekValues, OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth,
+        QuoteTick, TradeTick,
     },
     enums::{AggregationSource, BookAction, GreeksConvention, OrderSide, RecordFlag},
     identifiers::{InstrumentId, TradeId},
@@ -358,29 +358,29 @@ pub fn parse_book_snapshot_msg_as_depth(
     let ts_event = timestamp_to_unix_nanos(msg.timestamp, "event timestamp")?;
     let ts_init = timestamp_to_unix_nanos(msg.local_timestamp, "init timestamp")?;
 
-    let mut bids = [NULL_ORDER; DEPTH10_LEN];
-    let mut asks = [NULL_ORDER; DEPTH10_LEN];
-    let mut bid_counts = [0u32; DEPTH10_LEN];
-    let mut ask_counts = [0u32; DEPTH10_LEN];
+    let mut bids = Vec::with_capacity(msg.bids.len());
+    let mut asks = Vec::with_capacity(msg.asks.len());
+    let mut bid_counts = Vec::with_capacity(msg.bids.len());
+    let mut ask_counts = Vec::with_capacity(msg.asks.len());
 
-    for (i, level) in msg.bids.iter().take(DEPTH10_LEN).enumerate() {
-        bids[i] = BookOrder::new(
+    for level in &msg.bids {
+        bids.push(BookOrder::new(
             OrderSide::Buy,
             Price::new(level.price, price_precision),
             Quantity::new(level.amount, size_precision),
             0,
-        );
-        bid_counts[i] = 1;
+        ));
+        bid_counts.push(1);
     }
 
-    for (i, level) in msg.asks.iter().take(DEPTH10_LEN).enumerate() {
-        asks[i] = BookOrder::new(
+    for level in &msg.asks {
+        asks.push(BookOrder::new(
             OrderSide::Sell,
             Price::new(level.price, price_precision),
             Quantity::new(level.amount, size_precision),
             0,
-        );
-        ask_counts[i] = 1;
+        ));
+        ask_counts.push(1);
     }
 
     Ok(OrderBookDepth::new(
@@ -879,6 +879,48 @@ mod tests {
         assert_eq!(depth.ask_counts.as_slice(), &[1; 2]);
         assert_eq!(depth.bids[1].order_id, 0);
         assert_eq!(depth.asks[1].order_id, 0);
+    }
+
+    #[rstest]
+    fn test_parse_book_snapshot_message_as_depth_keeps_all_levels() {
+        let bids: Vec<BookLevel> = (0..25)
+            .map(|i| BookLevel {
+                price: 7633.5 - f64::from(i) * 0.5,
+                amount: f64::from(1000 + i),
+            })
+            .collect();
+        let asks: Vec<BookLevel> = (0..25)
+            .map(|i| BookLevel {
+                price: 7634.0 + f64::from(i) * 0.5,
+                amount: f64::from(2000 + i),
+            })
+            .collect();
+        let msg = BookSnapshotMsg {
+            symbol: ustr::Ustr::from("XBTUSD"),
+            exchange: TardisExchange::Bitmex,
+            name: "book_snapshot_25_100ms".to_string(),
+            depth: 25,
+            interval: 100,
+            bids,
+            asks,
+            timestamp: "2019-10-25T13:39:46.950Z".parse::<Timestamp>().unwrap(),
+            local_timestamp: "2019-10-25T13:39:46.961Z".parse::<Timestamp>().unwrap(),
+        };
+
+        let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
+        let depth = parse_book_snapshot_msg_as_depth(&msg, 1, 0, instrument_id).unwrap();
+
+        assert_eq!(depth.instrument_id, instrument_id);
+        assert_eq!(depth.bids.len(), 25);
+        assert_eq!(depth.asks.len(), 25);
+        assert_eq!(depth.bid_counts.as_slice(), &[1; 25]);
+        assert_eq!(depth.ask_counts.as_slice(), &[1; 25]);
+        assert_eq!(depth.bids[0].price, Price::from("7633.5"));
+        assert_eq!(depth.bids[24].price, Price::from("7621.5"));
+        assert_eq!(depth.asks[0].price, Price::from("7634.0"));
+        assert_eq!(depth.asks[24].price, Price::from("7646.0"));
+        assert_eq!(depth.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(depth.sequence, 0);
     }
 
     #[rstest]

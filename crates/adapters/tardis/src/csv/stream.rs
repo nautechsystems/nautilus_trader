@@ -1353,40 +1353,15 @@ impl DepthStreamIterator {
             .instrument_id
             .unwrap_or_else(|| parse_instrument_id(&data.exchange, data.symbol));
 
-        let mut bids = [NULL_ORDER; DEPTH10_LEN];
-        let mut asks = [NULL_ORDER; DEPTH10_LEN];
-        let mut bid_counts = [0_u32; DEPTH10_LEN];
-        let mut ask_counts = [0_u32; DEPTH10_LEN];
+        let mut bids = [NULL_ORDER; TardisOrderBookSnapshot25Record::LEVELS];
+        let mut asks = [NULL_ORDER; TardisOrderBookSnapshot25Record::LEVELS];
+        let mut bid_counts = [0_u32; TardisOrderBookSnapshot25Record::LEVELS];
+        let mut ask_counts = [0_u32; TardisOrderBookSnapshot25Record::LEVELS];
 
-        // Process first 10 levels from snapshot25 data
-        for i in 0..DEPTH10_LEN {
-            let (bid_price, bid_amount) = match i {
-                0 => (data.bids_0_price, data.bids_0_amount),
-                1 => (data.bids_1_price, data.bids_1_amount),
-                2 => (data.bids_2_price, data.bids_2_amount),
-                3 => (data.bids_3_price, data.bids_3_amount),
-                4 => (data.bids_4_price, data.bids_4_amount),
-                5 => (data.bids_5_price, data.bids_5_amount),
-                6 => (data.bids_6_price, data.bids_6_amount),
-                7 => (data.bids_7_price, data.bids_7_amount),
-                8 => (data.bids_8_price, data.bids_8_amount),
-                9 => (data.bids_9_price, data.bids_9_amount),
-                _ => unreachable!(),
-            };
-
-            let (ask_price, ask_amount) = match i {
-                0 => (data.asks_0_price, data.asks_0_amount),
-                1 => (data.asks_1_price, data.asks_1_amount),
-                2 => (data.asks_2_price, data.asks_2_amount),
-                3 => (data.asks_3_price, data.asks_3_amount),
-                4 => (data.asks_4_price, data.asks_4_amount),
-                5 => (data.asks_5_price, data.asks_5_amount),
-                6 => (data.asks_6_price, data.asks_6_amount),
-                7 => (data.asks_7_price, data.asks_7_amount),
-                8 => (data.asks_8_price, data.asks_8_amount),
-                9 => (data.asks_9_price, data.asks_9_amount),
-                _ => unreachable!(),
-            };
+        // Process all 25 levels from snapshot25 data
+        for i in 0..TardisOrderBookSnapshot25Record::LEVELS {
+            let (bid_price, bid_amount) = data.bid_level(i);
+            let (ask_price, ask_amount) = data.ask_level(i);
 
             let (bid_order, bid_count) = create_book_order(
                 OrderSide::Buy,
@@ -2567,6 +2542,98 @@ binance,BTCUSDT,1640995202000000,1640995202100000,50001.12,1.12,49999.12,1.62,50
         assert_eq!(depth.sequence, 0);
         assert_eq!(depth.ts_event, UnixNanos::from(1_640_995_200_000_000_000));
         assert_eq!(depth.ts_init, UnixNanos::from(1_640_995_200_100_000_000));
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
+    pub fn test_stream_depth_from_snapshot25_fills_all_levels() {
+        // Generate 25 distinct levels per side with integer-cent prices
+        let expected_bids: Vec<(String, String)> = (0..25)
+            .map(|i: i32| {
+                let cents = 4_999_900 - i;
+                (
+                    format!("{}.{:02}", cents / 100, cents % 100),
+                    format!("{}.5", i + 1),
+                )
+            })
+            .collect();
+        let expected_asks: Vec<(String, String)> = (0..25)
+            .map(|i: i32| {
+                let cents = 5_000_000 + i;
+                (
+                    format!("{}.{:02}", cents / 100, cents % 100),
+                    format!("{}.0", i + 1),
+                )
+            })
+            .collect();
+
+        let mut headers = vec![
+            "exchange".to_string(),
+            "symbol".to_string(),
+            "timestamp".to_string(),
+            "local_timestamp".to_string(),
+        ];
+        let mut row = vec![
+            "binance".to_string(),
+            "BTCUSDT".to_string(),
+            "1640995200000000".to_string(),
+            "1640995200100000".to_string(),
+        ];
+
+        // CSV records are decoded positionally in ask/bid order for each level
+        for i in 0..25 {
+            headers.extend([
+                format!("asks[{i}].price"),
+                format!("asks[{i}].amount"),
+                format!("bids[{i}].price"),
+                format!("bids[{i}].amount"),
+            ]);
+            let (ask_price, ask_size) = &expected_asks[i];
+            let (bid_price, bid_size) = &expected_bids[i];
+            row.extend([
+                ask_price.clone(),
+                ask_size.clone(),
+                bid_price.clone(),
+                bid_size.clone(),
+            ]);
+        }
+        let csv_data = format!("{}\n{}", headers.join(","), row.join(","));
+        let temp_file = std::env::temp_dir().join("test_stream_depth_snapshot25_full.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        let stream = stream_depth_from_snapshot25(&temp_file, 1, None, None, None, None).unwrap();
+        let chunks: Vec<_> = stream.collect();
+
+        assert_eq!(chunks.len(), 1);
+        let chunk = chunks[0].as_ref().unwrap();
+        assert_eq!(chunk.len(), 1);
+        let depth = &chunk[0];
+        assert_eq!(depth.instrument_id, InstrumentId::from("BTCUSDT.BINANCE"));
+        assert_eq!(depth.bids.len(), 25);
+        assert_eq!(depth.asks.len(), 25);
+        assert_eq!(depth.bid_counts.as_slice(), &[1; 25]);
+        assert_eq!(depth.ask_counts.as_slice(), &[1; 25]);
+
+        for (order, (price, size)) in depth.bids.iter().zip(&expected_bids) {
+            assert_eq!(order.side, Some(OrderSide::Buy));
+            assert_eq!(order.price, Price::from(price.as_str()));
+            assert_eq!(order.size, Quantity::from(size.as_str()));
+            assert_eq!(order.order_id, 0);
+        }
+
+        for (order, (price, size)) in depth.asks.iter().zip(&expected_asks) {
+            assert_eq!(order.side, Some(OrderSide::Sell));
+            assert_eq!(order.price, Price::from(price.as_str()));
+            assert_eq!(order.size, Quantity::from(size.as_str()));
+            assert_eq!(order.order_id, 0);
+        }
+
+        // Deepest levels prove levels beyond the first 10 are retained
+        assert_eq!(depth.bids[24].price, Price::from("49998.76"));
+        assert_eq!(depth.asks[24].price, Price::from("50000.24"));
+        assert_eq!(depth.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(depth.sequence, 0);
 
         std::fs::remove_file(&temp_file).ok();
     }

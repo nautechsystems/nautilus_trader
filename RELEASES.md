@@ -9,6 +9,7 @@ Released on TBD (UTC).
 - Added Polymarket session signing and owner-operated session key authorization, listing, and revocation
 - Added `IndexPriceUpdate`, `InstrumentClose`, `FundingRateUpdate`, and `Custom` to `DataBackendSession.add_file`
 - Added Lighter support for 64-bit market IDs at and above 4095
+- Added Tardis full 25-level `OrderBookDepth` for `snapshot25` data
 - Migrated Polymarket trade and position history to Data API v2 with cursor pagination
 
 ### Breaking Changes

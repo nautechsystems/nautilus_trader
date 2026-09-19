@@ -296,14 +296,14 @@ converted and stored.
 | Value    | Nautilus type     | Output directory     | Description                             |
 | :------- | :---------------- | :------------------- | :-------------------------------------- |
 | `deltas` | `OrderBookDeltas` | `order_book_deltas/` | Clear and add deltas for each snapshot. |
-| `depth`  | `OrderBookDepth`  | `order_book_depths/` | Snapshots with up to 10 price levels.   |
+| `depth`  | `OrderBookDepth`  | `order_book_depths/` | Snapshots with all price levels.        |
 
 **When to use each format:**
 
 - **`deltas` (default)**: use when you need to reconstruct book state or combine snapshots with
   `book_change` data. Each snapshot becomes a clear delta followed by an add delta for each level.
 - **`depth`**: use when a strategy needs periodic depth snapshots. Each snapshot is a single
-  record, and snapshots with more than 10 levels keep only the first 10.
+  record with all price levels from the venue message.
 
 **Avoiding file overwrites:**
 
