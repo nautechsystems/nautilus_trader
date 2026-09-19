@@ -35,6 +35,7 @@ from nautilus_trader.live import PluginConfig
 from nautilus_trader.live import PortfolioConfig
 from nautilus_trader.live import QueueMonitorConfig
 from nautilus_trader.live import RoutingConfig
+from nautilus_trader.live import SubmittedOrderExhaustionPolicy
 from nautilus_trader.model import BarIntervalType
 from nautilus_trader.model import ClientId
 from nautilus_trader.model import Venue
@@ -268,8 +269,68 @@ def test_live_exec_engine_config_defaults() -> None:
     config = LiveExecutionEngineConfig()
 
     assert isinstance(config, LiveExecutionEngineConfig)
+    assert (
+        config.submitted_order_exhaustion_policy == SubmittedOrderExhaustionPolicy.RESOLVE_LOCALLY
+    )
     assert config.snapshot_orders is False
     assert config.snapshot_positions is False
+
+
+@pytest.mark.parametrize(
+    ("policy", "expected"),
+    [
+        (None, SubmittedOrderExhaustionPolicy.RESOLVE_LOCALLY),
+        (
+            SubmittedOrderExhaustionPolicy.RESOLVE_LOCALLY,
+            SubmittedOrderExhaustionPolicy.RESOLVE_LOCALLY,
+        ),
+        (
+            SubmittedOrderExhaustionPolicy.RETAIN_UNRESOLVED,
+            SubmittedOrderExhaustionPolicy.RETAIN_UNRESOLVED,
+        ),
+    ],
+)
+def test_submitted_order_exhaustion_policy_readback(
+    policy: SubmittedOrderExhaustionPolicy | None,
+    expected: SubmittedOrderExhaustionPolicy,
+) -> None:
+    """
+    Test typed policy selection and nested configuration readback.
+    """
+    config = LiveExecutionEngineConfig(submitted_order_exhaustion_policy=policy)
+    node_config = LiveNodeConfig(exec_engine=config)
+
+    assert config.submitted_order_exhaustion_policy == expected
+    assert node_config.exec_engine.submitted_order_exhaustion_policy == expected
+
+
+@pytest.mark.parametrize("policy", ["retain_unresolved", 1, True])
+def test_submitted_order_exhaustion_policy_rejects_untyped_values(policy: object) -> None:
+    """
+    Test policy validation rejects strings and integer-like values.
+    """
+    with pytest.raises(TypeError, match="submitted_order_exhaustion_policy"):
+        LiveExecutionEngineConfig(submitted_order_exhaustion_policy=policy)
+
+
+def test_live_exec_engine_config_preserves_positional_arguments() -> None:
+    """
+    Test existing positional slots before and after the policy's Rust field position.
+    """
+    args = [None] * 37
+    args[16] = 2.5  # open_check_interval_secs
+    args[34] = True  # debug
+    args[35] = True  # snapshot_orders
+    args[36] = True  # snapshot_positions
+    config = LiveExecutionEngineConfig(*args)
+
+    assert config.open_check_interval_secs == 2.5
+    assert config.debug is True
+    assert config.snapshot_orders is True
+    assert config.snapshot_positions is True
+    assert (
+        config.submitted_order_exhaustion_policy == SubmittedOrderExhaustionPolicy.RESOLVE_LOCALLY
+    )
 
 
 def test_live_exec_engine_config_readback() -> None:
