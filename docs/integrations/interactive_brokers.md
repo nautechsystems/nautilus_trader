@@ -290,6 +290,7 @@ for the supported order attributes.
 | `request_timeout`                | `60` seconds  | Set the IB API request timeout.                       |
 | `handle_revised_bars`            | `False`       | Process revised real-time bars.                       |
 | `batch_quotes`                   | `True`        | Use `reqMktData` instead of tick-by-tick quotes.      |
+| `all_last_trades`                | `True`        | Use `AllLast` instead of `Last` for trades.           |
 | `instrument_provider`            | Default       | Configure contract and instrument loading.            |
 
 ### Execution client
