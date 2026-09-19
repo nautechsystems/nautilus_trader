@@ -9343,6 +9343,52 @@ async fn recv_execution_event(
         .unwrap()
 }
 
+const DEFERRED_CANCEL_GATE_REASON: &str = "Polymarket cancellation is in flight";
+
+/// Modifies until the request reaches the venue, returning the venue-driven rejection reason.
+///
+/// The pending-cancel tracker has no accessor, so this polls the observable outcome instead: a
+/// modification gated by a retained deferral is rejected locally without reaching the venue, so
+/// retrying costs nothing and the loop ends as soon as one gets through. A retained deferral never
+/// clears, so the deadline still fails the test.
+async fn modify_when_deferral_clears(
+    client: &PolymarketExecutionClient,
+    cache: &Rc<RefCell<Cache>>,
+    order: &mut OrderAny,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    client_order_id: &str,
+    instrument_id: InstrumentId,
+    quantity: Quantity,
+) -> String {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+
+    loop {
+        mark_order_pending_update(cache, order);
+        client
+            .modify_order(make_modify_cmd(
+                client_order_id,
+                instrument_id,
+                Some(quantity),
+                None,
+            ))
+            .unwrap();
+
+        let rejected = assert_order_event(recv_execution_event(rx).await, "ModifyRejected");
+        let reason = order_event_reason(&rejected);
+        *order = cache.borrow_mut().update_order(&rejected).unwrap();
+
+        if reason != DEFERRED_CANCEL_GATE_REASON {
+            return reason;
+        }
+
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "modification stayed gated by a deferral that was never released"
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+
 async fn assert_no_execution_event(rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>) {
     match tokio::time::timeout(Duration::from_millis(100), rx.recv()).await {
         Err(_) => {}
@@ -14748,6 +14794,182 @@ async fn test_cancel_order_deferred_ambiguous_http_failure_does_not_emit_cancel_
         Duration::from_secs(5),
     )
     .await;
+    assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
+#[case::ambiguous_http_failure(
+    StatusCode::INTERNAL_SERVER_ERROR,
+    json!({"error": "cancel uncertain"}),
+    "Cancel outcome is unknown; replacement not submitted: cancel uncertain"
+)]
+#[case::response_omits_order(
+    StatusCode::OK,
+    json!({"canceled": [], "not_canceled": {}}),
+    "Cancel not confirmed; replacement not submitted: cancel response omitted the order result"
+)]
+#[tokio::test]
+async fn test_cancel_order_deferred_unresolved_outcome_releases_pending_cancel(
+    #[case] cancel_status: StatusCode,
+    #[case] cancel_body: Value,
+    #[case] expected_reason: &str,
+) {
+    let venue_order_id = "0xvenue-deferred-unresolved";
+    let state = TestServerState::default();
+    *state.order_response.lock().await = Some(json!({
+        "success": true,
+        "orderID": venue_order_id,
+        "errorMsg": null
+    }));
+    *state.cancel_response_status.lock().await = cancel_status;
+    *state.cancel_response.lock().await = Some(cancel_body);
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let mut order = make_limit_order_at_price_and_quantity(
+        "O-DEFERRED-UNRESOLVED",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+        Price::from("0.5000"),
+        Quantity::from("10.0000"),
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    submit_and_pending_cancel(&cache, &mut order);
+
+    client
+        .cancel_order(make_cancel_cmd("O-DEFERRED-UNRESOLVED", instrument_id))
+        .unwrap();
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    let accepted = assert_order_event(recv_execution_event(&mut rx).await, "Accepted");
+    order = cache.borrow_mut().update_order(&accepted).unwrap();
+    assert_eq!(order.status(), OrderStatus::Accepted);
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { *state.cancel_delete_count.lock().await == 1 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    // An unresolved deferred cancel emits nothing, so there is no event to synchronize on.
+    assert_no_execution_event(&mut rx).await;
+
+    // The deferred cancel left no outcome to act on, so a later modification must still reach
+    // the venue rather than being rejected by a cancellation that is no longer in flight.
+    let reason = modify_when_deferral_clears(
+        &client,
+        &cache,
+        &mut order,
+        &mut rx,
+        "O-DEFERRED-UNRESOLVED",
+        instrument_id,
+        Quantity::from("12.0000"),
+    )
+    .await;
+    assert_eq!(reason, expected_reason);
+
+    assert_eq!(order.status(), OrderStatus::Accepted);
+    assert_eq!(order.quantity(), Quantity::from("10.0000"));
+    assert_eq!(
+        order.venue_order_id(),
+        Some(VenueOrderId::from(venue_order_id))
+    );
+    assert_eq!(*state.cancel_delete_count.lock().await, 2);
+    assert_eq!(*state.order_post_count.lock().await, 1);
+    assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_order_deferred_definitive_failure_releases_pending_cancel() {
+    let venue_order_id = "0xvenue-deferred-definitive";
+    let state = TestServerState::default();
+    *state.order_response.lock().await = Some(json!({
+        "success": true,
+        "orderID": venue_order_id,
+        "errorMsg": null
+    }));
+    *state.cancel_response_status.lock().await = StatusCode::BAD_REQUEST;
+    *state.cancel_response.lock().await = Some(json!({"error": "order does not exist"}));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let mut order = make_limit_order_at_price_and_quantity(
+        "O-DEFERRED-DEFINITIVE",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+        Price::from("0.5000"),
+        Quantity::from("10.0000"),
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    submit_and_pending_cancel(&cache, &mut order);
+
+    client
+        .cancel_order(make_cancel_cmd("O-DEFERRED-DEFINITIVE", instrument_id))
+        .unwrap();
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    let accepted = assert_order_event(recv_execution_event(&mut rx).await, "Accepted");
+    cache.borrow_mut().update_order(&accepted).unwrap();
+
+    let cancel_rejected = assert_order_event(recv_execution_event(&mut rx).await, "CancelRejected");
+    assert_eq!(order_event_reason(&cancel_rejected), "order does not exist");
+    order = cache.borrow_mut().update_order(&cancel_rejected).unwrap();
+    assert_eq!(order.status(), OrderStatus::Accepted);
+
+    // A definitive rejection also ends the deferral, so a later modification still reaches the venue.
+    let reason = modify_when_deferral_clears(
+        &client,
+        &cache,
+        &mut order,
+        &mut rx,
+        "O-DEFERRED-DEFINITIVE",
+        instrument_id,
+        Quantity::from("12.0000"),
+    )
+    .await;
+    assert_eq!(
+        reason,
+        "Cancel failed; replacement not submitted: order does not exist"
+    );
+
+    assert_eq!(order.status(), OrderStatus::Accepted);
+    assert_eq!(order.quantity(), Quantity::from("10.0000"));
+    assert_eq!(
+        order.venue_order_id(),
+        Some(VenueOrderId::from(venue_order_id))
+    );
+    assert_eq!(*state.cancel_delete_count.lock().await, 2);
+    assert_eq!(*state.order_post_count.lock().await, 1);
     assert_no_execution_event(&mut rx).await;
 }
 

@@ -48,6 +48,7 @@ Released on TBD (UTC).
 - Fixed Lighter websocket subscription hangs on unparsable confirmations
 - Fixed Lighter spot stats parsing for empty mid prices
 - Fixed OKX order book snapshots retaining stale price levels after resubscription
+- Fixed Polymarket order modifications blocked after a deferred cancel with an unresolved venue outcome
 
 ### Internal Improvements
 

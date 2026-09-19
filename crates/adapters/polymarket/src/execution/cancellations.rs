@@ -555,7 +555,7 @@ pub(super) fn process_cancel_result(
     venue_order_id: VenueOrderId,
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
-) -> CancelResponseStatus {
+) {
     if let Some(reason_opt) = response.not_canceled.get(venue_order_id_str) {
         let reason = sanitize_error_text(reason_opt.as_deref().unwrap_or("unknown reason"));
 
@@ -572,7 +572,7 @@ pub(super) fn process_cancel_result(
             }
         }
 
-        return CancelResponseStatus::PerOrderResult;
+        return;
     }
 
     if response
@@ -580,7 +580,7 @@ pub(super) fn process_cancel_result(
         .iter()
         .any(|order_id| order_id == venue_order_id_str)
     {
-        return CancelResponseStatus::PerOrderResult;
+        return;
     }
 
     log::warn!(
@@ -588,13 +588,6 @@ pub(super) fn process_cancel_result(
         order.client_order_id(),
         venue_order_id
     );
-    CancelResponseStatus::MissingPerOrderResult
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum CancelResponseStatus {
-    PerOrderResult,
-    MissingPerOrderResult,
 }
 
 pub(super) async fn execute_deferred_cancel(
@@ -608,7 +601,7 @@ pub(super) async fn execute_deferred_cancel(
 ) {
     match submitter.cancel_order(order_id_str).await {
         Ok(response) => {
-            let status = process_cancel_result(
+            process_cancel_result(
                 &response,
                 order_id_str,
                 order,
@@ -616,16 +609,11 @@ pub(super) async fn execute_deferred_cancel(
                 emitter,
                 clock,
             );
-
-            if status == CancelResponseStatus::PerOrderResult {
-                pending_cancels.remove(&order.client_order_id());
-            }
         }
         Err(e) => match classify_http_command_failure(&e) {
             CommandFailure::VenueRejected(reason) | CommandFailure::NotSent(reason) => {
                 let ts_now = clock.get_time_ns();
                 emitter.emit_order_cancel_rejected(order, Some(venue_order_id), &reason, ts_now);
-                pending_cancels.remove(&order.client_order_id());
             }
             CommandFailure::Ambiguous(reason) => {
                 log::warn!(
@@ -636,6 +624,10 @@ pub(super) async fn execute_deferred_cancel(
             }
         },
     }
+
+    // The deferral ends once the request is sent: reconciliation resolves an unknown or unreported
+    // venue outcome, and keeping the entry would block every later modification of this order.
+    pending_cancels.remove(&order.client_order_id());
 }
 
 #[cfg(test)]
