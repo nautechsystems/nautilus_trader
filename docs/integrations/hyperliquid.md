@@ -384,6 +384,12 @@ cached perpetual instruments:
   an error instead of reporting the order as missing, and the `GenerateOrderStatusReport` command
   does the same once no venue order ID fallback remains.
 
+#### Inferred-fill commissions
+
+Fills inferred during reconciliation carry no commission: the adapter does not calculate fees for
+inferred fills, so the generated `OrderFilled` event has `commission` set to `None`. Quantity and
+price still reconcile; only realized PnL for those fills excludes trading fees.
+
 ### Differences from standard perpetuals
 
 HIP-3 markets trade on the same HyperCore matching engine and use the same order API.
