@@ -245,6 +245,24 @@ impl Position {
         }
     }
 
+    /// Returns a snapshot copy without durable replay or fill-void history.
+    #[must_use]
+    pub fn clone_for_snapshot(&self) -> Self {
+        let mut snapshot = self.clone_without_events();
+        snapshot.events.clone_from(&self.events);
+        snapshot.adjustments.clone_from(&self.adjustments);
+        snapshot.trade_ids.clone_from(&self.trade_ids);
+        snapshot
+    }
+
+    /// Moves durable replay state from `prior` and keeps this position's current replay events.
+    pub fn transfer_replay_state_from(&mut self, prior: &mut Self) {
+        let current_replay = std::mem::take(&mut self.replay_events);
+        self.replay_events = std::mem::take(&mut prior.replay_events);
+        self.fill_voids = std::mem::take(&mut prior.fill_voids);
+        self.replay_events.extend(current_replay);
+    }
+
     /// Purges all order fill events for the given client order ID and recalculates derived state.
     ///
     /// # Warning
@@ -497,6 +515,14 @@ impl Position {
         self.realized_pnl = None;
     }
 
+    /// Returns whether durable replay history contains `trade_id`.
+    #[must_use]
+    pub fn has_replay_trade_id(&self, trade_id: TradeId) -> bool {
+        self.replay_events.iter().any(
+            |event| matches!(event, PositionReplayEvent::Filled(fill) if fill.trade_id == trade_id),
+        )
+    }
+
     fn is_duplicate_replay_fill(&self, fill: &OrderFilled) -> bool {
         let continues_latest_fill = fill.causation_id.is_some_and(|source_id| {
             self.events.last().is_some_and(|latest| {
@@ -533,12 +559,7 @@ impl Position {
             return false;
         }
 
-        self.replay_events.iter().any(|event| {
-            matches!(
-                event,
-                PositionReplayEvent::Filled(replayed) if replayed.trade_id == fill.trade_id
-            )
-        })
+        self.has_replay_trade_id(fill.trade_id)
     }
 
     fn handle_buy_order_fill(&mut self, fill: &OrderFilled) {
@@ -1674,6 +1695,28 @@ mod tests {
         assert_eq!(
             serde_json::to_value(cloned).unwrap(),
             serde_json::to_value(expected).unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_clone_for_snapshot_matches_clone_then_clear(mut stub_position_long: Position) {
+        let source_fill = stub_position_long.events[0].clone();
+        stub_position_long.fill_voids.push(PositionFillVoid {
+            event: matching_fill_void(&source_fill, source_fill.last_qty, None),
+            voided_qty: source_fill.last_qty,
+            commission_voided: source_fill.commission,
+        });
+        let mut expected = stub_position_long.clone();
+        expected.replay_events.clear();
+        expected.fill_voids.clear();
+
+        let snapshot = stub_position_long.clone_for_snapshot();
+
+        assert!(snapshot.replay_events.is_empty());
+        assert!(snapshot.fill_voids.is_empty());
+        assert_eq!(
+            serde_json::to_vec(&snapshot).unwrap(),
+            serde_json::to_vec(&expected).unwrap(),
         );
     }
 

@@ -4056,6 +4056,7 @@ fn test_position_records_account_currency_realized_pnl(
         position_id,
     );
     let position = Position::new(&instrument_audusd, fill);
+
     let closed_position = Position {
         side: PositionSide::Flat,
         signed_qty: 0.0,
@@ -4108,6 +4109,7 @@ fn test_position_records_account_currency_realized_pnl(
         realized_pnl: Some(Money::from("20.00 USD")),
         ..position
     };
+
     portfolio
         .cache()
         .borrow_mut()
@@ -8036,6 +8038,7 @@ fn test_build_snapshot_clears_stale_flag_after_stale_side_closes(
         ts_closed: Some(UnixNanos::from(1)),
         ..long_position
     };
+
     portfolio
         .cache()
         .borrow_mut()
@@ -9036,6 +9039,7 @@ fn test_account_scoped_query_preserves_other_account_missing_price(
         ts_closed: Some(UnixNanos::from(1)),
         ..account_a_position.unwrap()
     };
+
     portfolio
         .cache()
         .borrow_mut()
@@ -9533,6 +9537,7 @@ fn test_flat_venue_clears_missing_price_tracker(
         ts_closed: Some(UnixNanos::from(1)),
         ..position
     };
+
     portfolio
         .cache()
         .borrow_mut()
