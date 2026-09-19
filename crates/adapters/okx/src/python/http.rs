@@ -21,7 +21,7 @@ use nautilus_core::python::{
 };
 use nautilus_model::{
     data::BarType,
-    enums::{OrderSide, OrderType, PositionSide, TimeInForce, TriggerType},
+    enums::{AccountType, OrderSide, OrderType, PositionSide, TimeInForce, TriggerType},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     types::{Price, Quantity},
@@ -522,20 +522,25 @@ impl OKXHttpClient {
 
     /// Requests the account state for the `account_id` from OKX.
     ///
+    /// Pass the execution client's configured account type; the OKX balance payload carries
+    /// no account-mode field.
+    ///
     /// # Errors
     ///
     /// Returns an error if the HTTP request fails or no account state is returned.
     #[pyo3(name = "request_account_state")]
+    #[pyo3(signature = (account_id, account_type=AccountType::Margin))]
     fn py_request_account_state<'py>(
         &self,
         py: Python<'py>,
         account_id: AccountId,
+        account_type: AccountType,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let account_state = client
-                .request_account_state(account_id)
+                .request_account_state(account_id, account_type)
                 .await
                 .map_err(to_pyvalue_err)?;
 

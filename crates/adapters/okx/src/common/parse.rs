@@ -2766,12 +2766,19 @@ fn parse_balance_field(value_str: &str, field_name: &str, ccy_str: &str) -> Opti
     }
 }
 
+/// Parses an OKX balance snapshot into a Nautilus [`AccountState`].
+///
+/// Pass the execution client's configured account type: the OKX balance payload carries no
+/// account-mode field, and the emitted type decides which account the engine materializes for
+/// this venue.
+///
 /// # Errors
 ///
 /// Returns an error if the data cannot be parsed.
 pub fn parse_account_state(
     okx_account: &OKXAccount,
     account_id: AccountId,
+    account_type: AccountType,
     ts_init: UnixNanos,
 ) -> anyhow::Result<AccountState> {
     let mut balances = Vec::new();
@@ -2857,7 +2864,6 @@ pub fn parse_account_state(
         }
     }
 
-    let account_type = AccountType::Margin;
     let is_reported = true;
     let event_id = UUID4::new();
     let ts_event = parse_millisecond_timestamp(okx_account.u_time);
@@ -4123,7 +4129,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_account_state() {
+    #[case::margin(AccountType::Margin)]
+    #[case::cash(AccountType::Cash)]
+    fn test_parse_account_state(#[case] account_type: AccountType) {
         let json_data = load_test_json("http_get_account_balance.json");
         let response: OKXResponse<OKXAccount> = serde_json::from_str(&json_data).unwrap();
         let okx_account = response
@@ -4133,10 +4141,11 @@ mod tests {
 
         let account_id = AccountId::new("OKX-001");
         let account_state =
-            parse_account_state(okx_account, account_id, UnixNanos::default()).unwrap();
+            parse_account_state(okx_account, account_id, account_type, UnixNanos::default())
+                .unwrap();
 
         assert_eq!(account_state.account_id, account_id);
-        assert_eq!(account_state.account_type, AccountType::Margin);
+        assert_eq!(account_state.account_type, account_type);
         assert_eq!(account_state.balances.len(), 1);
         assert_eq!(account_state.margins.len(), 0); // No margins in this test data (spot account)
         assert!(account_state.is_reported);
@@ -4224,8 +4233,13 @@ mod tests {
 
         let okx_account: OKXAccount = serde_json::from_str(account_json).unwrap();
         let account_id = AccountId::new("OKX-001");
-        let account_state =
-            parse_account_state(&okx_account, account_id, UnixNanos::default()).unwrap();
+        let account_state = parse_account_state(
+            &okx_account,
+            account_id,
+            AccountType::Margin,
+            UnixNanos::default(),
+        )
+        .unwrap();
 
         // Verify account details
         assert_eq!(account_state.account_id, account_id);
@@ -4319,8 +4333,13 @@ mod tests {
 
         let okx_account: OKXAccount = serde_json::from_str(account_json).unwrap();
         let account_id = AccountId::new("OKX-SPOT");
-        let account_state =
-            parse_account_state(&okx_account, account_id, UnixNanos::default()).unwrap();
+        let account_state = parse_account_state(
+            &okx_account,
+            account_id,
+            AccountType::Margin,
+            UnixNanos::default(),
+        )
+        .unwrap();
 
         // Verify no margins are created when fields are empty
         assert_eq!(account_state.margins.len(), 0);
@@ -4356,8 +4375,13 @@ mod tests {
 
         let okx_account: OKXAccount = serde_json::from_str(account_json).unwrap();
         let account_id = AccountId::new("OKX-001");
-        let account_state =
-            parse_account_state(&okx_account, account_id, UnixNanos::default()).unwrap();
+        let account_state = parse_account_state(
+            &okx_account,
+            account_id,
+            AccountType::Margin,
+            UnixNanos::default(),
+        )
+        .unwrap();
 
         assert_eq!(account_state.account_id, account_id);
         assert_eq!(account_state.account_type, AccountType::Margin);

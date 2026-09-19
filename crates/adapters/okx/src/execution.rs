@@ -61,10 +61,9 @@ use nautilus_model::{
     instruments::InstrumentAny,
     orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, MarginBalance, Money, Quantity},
+    types::{AccountBalance, MarginBalance, Quantity},
 };
 use rust_decimal::Decimal;
-use ustr::Ustr;
 
 use crate::{
     common::{
@@ -96,7 +95,7 @@ use crate::{
             AlgoCancelContext, WsDispatchState, dispatch_ws_message, emit_algo_cancel_rejections,
         },
         messages::OKXWsMessage,
-        parse::OrderStateSnapshot,
+        parse::{FeeCache, FilledQtyCache, OrderStateSnapshot},
     },
 };
 
@@ -621,11 +620,12 @@ impl OKXExecutionClient {
     fn update_account_state(&self) {
         let http_client = self.http_client.clone();
         let account_id = self.core.account_id;
+        let account_type = self.core.account_type;
         let emitter = self.emitter.clone();
 
         self.spawn_task("query_account", async move {
             let account_state = http_client
-                .request_account_state(account_id)
+                .request_account_state(account_id, account_type)
                 .await
                 .context("failed to request OKX account state")?;
             emitter.send_account_state(account_state);
@@ -1433,6 +1433,7 @@ impl OKXExecutionClient {
             let emitter = self.emitter.clone();
             let state = Arc::clone(&self.ws_dispatch_state);
             let account_id = self.core.account_id;
+            let account_type = self.core.account_type;
             let instruments = self.ws_private.instruments_cache_arc();
             let tasks = self
                 .session_tasks
@@ -1442,8 +1443,8 @@ impl OKXExecutionClient {
             let clock = self.clock;
 
             spawn_task(&tasks, async move {
-                let mut fee_cache: AHashMap<Ustr, Money> = AHashMap::new();
-                let mut filled_qty_cache: AHashMap<Ustr, Quantity> = AHashMap::new();
+                let mut fee_cache = FeeCache::new();
+                let mut filled_qty_cache = FilledQtyCache::new();
                 let mut order_state_cache: AHashMap<ClientOrderId, OrderStateSnapshot> =
                     AHashMap::new();
 
@@ -1462,6 +1463,7 @@ impl OKXExecutionClient {
                                 &emitter,
                                 &state,
                                 account_id,
+                                account_type,
                                 &instruments,
                                 &mut fee_cache,
                                 &mut filled_qty_cache,
@@ -1475,6 +1477,7 @@ impl OKXExecutionClient {
                                 &emitter,
                                 &state,
                                 account_id,
+                                account_type,
                                 &instruments,
                                 &mut fee_cache,
                                 &mut filled_qty_cache,
@@ -1496,6 +1499,7 @@ impl OKXExecutionClient {
             let emitter = self.emitter.clone();
             let state = Arc::clone(&self.ws_dispatch_state);
             let account_id = self.core.account_id;
+            let account_type = self.core.account_type;
             let instruments = self.ws_business.instruments_cache_arc();
             let tasks = self
                 .session_tasks
@@ -1505,8 +1509,8 @@ impl OKXExecutionClient {
             let clock = self.clock;
 
             spawn_task(&tasks, async move {
-                let mut fee_cache: AHashMap<Ustr, Money> = AHashMap::new();
-                let mut filled_qty_cache: AHashMap<Ustr, Quantity> = AHashMap::new();
+                let mut fee_cache = FeeCache::new();
+                let mut filled_qty_cache = FilledQtyCache::new();
                 let mut order_state_cache: AHashMap<ClientOrderId, OrderStateSnapshot> =
                     AHashMap::new();
 
@@ -1525,6 +1529,7 @@ impl OKXExecutionClient {
                                 &emitter,
                                 &state,
                                 account_id,
+                                account_type,
                                 &instruments,
                                 &mut fee_cache,
                                 &mut filled_qty_cache,
@@ -1577,7 +1582,7 @@ impl OKXExecutionClient {
 
         let account_state = self
             .http_client
-            .request_account_state(self.core.account_id)
+            .request_account_state(self.core.account_id, self.core.account_type)
             .await
             .context("failed to request OKX account state")?;
 

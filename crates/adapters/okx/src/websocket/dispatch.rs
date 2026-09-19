@@ -34,7 +34,7 @@ use nautilus_live::{
     },
 };
 use nautilus_model::{
-    enums::OrderStatus,
+    enums::{AccountType, OrderStatus},
     events::{
         OrderAccepted, OrderCanceled, OrderEventAny, OrderFilled, OrderRejected, OrderTriggered,
         OrderUpdated,
@@ -45,7 +45,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orders::TRIGGERABLE_ORDER_TYPES,
     reports::FillReport,
-    types::{Currency, Money, Quantity},
+    types::Currency,
 };
 use parking_lot::Mutex;
 use ustr::Ustr;
@@ -70,9 +70,10 @@ use crate::{
         handler::{is_post_only_auto_cancel, is_unfilled_rpi_cancel},
         messages::{ExecutionReport, OKXAlgoOrderMsg, OKXOrderMsg, OKXWsMessage},
         parse::{
-            OrderStateSnapshot, ParsedOrderEvent, parse_algo_order_msg,
-            parse_algo_order_status_report, parse_order_event, parse_order_msg,
-            parse_spread_order_event, parse_spread_order_msg, update_fee_fill_caches,
+            FeeCache, FilledQtyCache, OrderStateSnapshot, ParsedOrderEvent,
+            is_terminal_order_state, parse_algo_order_msg, parse_algo_order_status_report,
+            parse_order_event, parse_order_msg, parse_spread_order_event, parse_spread_order_msg,
+            update_fee_fill_caches,
         },
     },
 };
@@ -488,9 +489,10 @@ pub fn dispatch_ws_message(
     emitter: &ExecutionEventEmitter,
     state: &WsDispatchState,
     account_id: AccountId,
+    account_type: AccountType,
     instruments: &AtomicMap<Ustr, InstrumentAny>,
-    fee_cache: &mut AHashMap<Ustr, Money>,
-    filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
+    fee_cache: &mut FeeCache,
+    filled_qty_cache: &mut FilledQtyCache,
     order_state_cache: &mut AHashMap<ClientOrderId, OrderStateSnapshot>,
     clock: &AtomicTime,
 ) {
@@ -552,7 +554,10 @@ pub fn dispatch_ws_message(
                 Ok(accounts) => {
                     for account in &accounts {
                         match crate::common::parse::parse_account_state(
-                            account, account_id, ts_init,
+                            account,
+                            account_id,
+                            account_type,
+                            ts_init,
                         ) {
                             Ok(account_state) => emitter.send_account_state(account_state),
                             Err(e) => log::error!("Failed to parse account state: {e}"),
@@ -1354,8 +1359,8 @@ fn dispatch_order_messages(
     state: &WsDispatchState,
     account_id: AccountId,
     instruments: &AHashMap<Ustr, InstrumentAny>,
-    fee_cache: &mut AHashMap<Ustr, Money>,
-    filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
+    fee_cache: &mut FeeCache,
+    filled_qty_cache: &mut FilledQtyCache,
     order_state_cache: &mut AHashMap<ClientOrderId, OrderStateSnapshot>,
     ts_init: UnixNanos,
 ) {
@@ -1646,7 +1651,7 @@ fn dispatch_spread_order_messages(
     state: &WsDispatchState,
     account_id: AccountId,
     instruments: &AHashMap<Ustr, InstrumentAny>,
-    filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
+    filled_qty_cache: &mut FilledQtyCache,
     order_state_cache: &mut AHashMap<ClientOrderId, OrderStateSnapshot>,
     ts_init: UnixNanos,
 ) {
@@ -2075,8 +2080,8 @@ fn dispatch_order_msg_as_report(
     msg: &OKXOrderMsg,
     account_id: AccountId,
     instruments: &AHashMap<Ustr, InstrumentAny>,
-    fee_cache: &mut AHashMap<Ustr, Money>,
-    filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
+    fee_cache: &mut FeeCache,
+    filled_qty_cache: &mut FilledQtyCache,
     emitter: &ExecutionEventEmitter,
     state: &WsDispatchState,
     ts_init: UnixNanos,
@@ -2106,8 +2111,8 @@ fn dispatch_terminal_order_fill_as_report(
     client_order_id: ClientOrderId,
     account_id: AccountId,
     instruments: &AHashMap<Ustr, InstrumentAny>,
-    fee_cache: &mut AHashMap<Ustr, Money>,
-    filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
+    fee_cache: &mut FeeCache,
+    filled_qty_cache: &mut FilledQtyCache,
     emitter: &ExecutionEventEmitter,
     state: &WsDispatchState,
     ts_init: UnixNanos,
@@ -2142,7 +2147,7 @@ fn dispatch_spread_order_msg_as_report(
     msg: &OKXSpreadOrder,
     account_id: AccountId,
     instruments: &AHashMap<Ustr, InstrumentAny>,
-    filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
+    filled_qty_cache: &mut FilledQtyCache,
     emitter: &ExecutionEventEmitter,
     state: &WsDispatchState,
     ts_init: UnixNanos,
@@ -2211,13 +2216,13 @@ fn update_spread_order_state_cache(
 fn update_spread_fill_cache(
     msg: &OKXSpreadOrder,
     instrument: &InstrumentAny,
-    filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
+    filled_qty_cache: &mut FilledQtyCache,
 ) {
     if !msg.acc_fill_sz.is_empty()
         && msg.acc_fill_sz != "0"
         && let Ok(qty) = parse_quantity(&msg.acc_fill_sz, instrument.size_precision())
     {
-        filled_qty_cache.insert(msg.ord_id, qty);
+        filled_qty_cache.record(msg.ord_id, qty, is_terminal_order_state(msg.state));
     }
 }
 
@@ -2449,7 +2454,7 @@ mod tests {
         enums::{AccountType, OrderSide, OrderType, TimeInForce, TriggerType},
         identifiers::Symbol,
         instruments::CryptoPerpetual,
-        types::Price,
+        types::{Price, Quantity},
     };
     use rstest::rstest;
 
@@ -2552,9 +2557,10 @@ mod tests {
             emitter,
             state,
             AccountId::from("OKX-001"),
+            AccountType::Margin,
             instruments,
-            &mut AHashMap::new(),
-            &mut AHashMap::new(),
+            &mut FeeCache::new(),
+            &mut FilledQtyCache::new(),
             &mut AHashMap::new(),
             get_atomic_clock_realtime(),
         );
@@ -2568,6 +2574,42 @@ mod tests {
             events.push(event);
         }
         events
+    }
+
+    #[rstest]
+    #[case::margin(AccountType::Margin)]
+    #[case::cash(AccountType::Cash)]
+    fn account_updates_report_the_configured_account_type(#[case] account_type: AccountType) {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("test_data")
+            .join("http_get_account_balance.json");
+        let content = std::fs::read_to_string(path).unwrap();
+        let payload: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let instruments = AtomicMap::new();
+        let (emitter, mut receiver) = test_execution_emitter();
+
+        dispatch_ws_message(
+            OKXWsMessage::Account(payload["data"].clone()),
+            &emitter,
+            &WsDispatchState::default(),
+            AccountId::from("OKX-001"),
+            account_type,
+            &instruments,
+            &mut FeeCache::new(),
+            &mut FilledQtyCache::new(),
+            &mut AHashMap::new(),
+            get_atomic_clock_realtime(),
+        );
+
+        let events = drain_execution_events(&mut receiver);
+        assert_eq!(events.len(), 1);
+
+        let ExecutionEvent::Account(state) = &events[0] else {
+            panic!("expected an account state event");
+        };
+
+        assert_eq!(state.account_type, account_type);
+        assert_eq!(state.account_id, AccountId::from("OKX-001"));
     }
 
     #[rstest]
@@ -3531,8 +3573,8 @@ mod tests {
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
         let instruments = AtomicMap::new();
-        let mut fee_cache = AHashMap::new();
-        let mut filled_qty_cache = AHashMap::new();
+        let mut fee_cache = FeeCache::new();
+        let mut filled_qty_cache = FilledQtyCache::new();
         let mut order_state_cache = AHashMap::new();
 
         dispatch_ws_message(
@@ -3545,6 +3587,7 @@ mod tests {
             &emitter,
             &state,
             AccountId::from("OKX-001"),
+            AccountType::Margin,
             &instruments,
             &mut fee_cache,
             &mut filled_qty_cache,

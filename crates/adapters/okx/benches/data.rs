@@ -33,9 +33,9 @@ use nautilus_model::{
 use nautilus_okx::websocket::{
     messages::{OKXOrderMsg, OKXWsFrame},
     parse::{
-        parse_book_msg_vec, parse_book10_msg_vec, parse_candle_msg_vec, parse_funding_rate_msg_vec,
-        parse_index_price_msg_vec, parse_mark_price_msg_vec, parse_order_msg_vec,
-        parse_quote_msg_vec, parse_trade_msg_vec,
+        FeeCache, FilledQtyCache, parse_book_msg_vec, parse_book10_msg_vec, parse_candle_msg_vec,
+        parse_funding_rate_msg_vec, parse_index_price_msg_vec, parse_mark_price_msg_vec,
+        parse_order_msg_vec, parse_quote_msg_vec, parse_trade_msg_vec,
     },
 };
 use ustr::Ustr;
@@ -279,10 +279,11 @@ fn bench_order_event(c: &mut Criterion) {
     let mut group = c.benchmark_group("inbound_pipeline");
     group.throughput(Throughput::Elements(1));
     group.bench_function("order_event", |b| {
+        let mut fee_cache = FeeCache::new();
+        let mut filled_qty_cache = FilledQtyCache::new();
         b.iter(|| {
-            let mut fee_cache = AHashMap::new();
-            let mut filled_qty_cache = AHashMap::new();
             let frame: OKXWsFrame = serde_json::from_str(black_box(fixtures::ORDER_LIVE)).unwrap();
+
             let OKXWsFrame::Data { data, .. } = frame else {
                 unreachable!()
             };
@@ -310,10 +311,11 @@ fn bench_order_fill(c: &mut Criterion) {
     let mut group = c.benchmark_group("inbound_pipeline");
     group.throughput(Throughput::Elements(1));
     group.bench_function("order_fill", |b| {
+        let mut fee_cache = FeeCache::new();
+        let mut filled_qty_cache = FilledQtyCache::new();
         b.iter(|| {
-            let mut fee_cache = AHashMap::new();
-            let mut filled_qty_cache = AHashMap::new();
             let frame: OKXWsFrame = serde_json::from_str(black_box(fixtures::ORDERS)).unwrap();
+
             let OKXWsFrame::Data { data, .. } = frame else {
                 unreachable!()
             };

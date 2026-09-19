@@ -19,6 +19,7 @@ use std::{str::FromStr, sync::LazyLock};
 
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
+use nautilus_common::cache::fifo::FifoCacheMap;
 use nautilus_core::{UUID4, nanos::UnixNanos};
 use nautilus_model::{
     data::{
@@ -69,6 +70,84 @@ use crate::{
     http::models::OKXSpreadOrder,
     websocket::messages::{ExecutionReport, NautilusWsMessage, OKXFundingRateMsg},
 };
+
+/// Maximum terminal-order baselines retained for reconnect replay before the oldest is evicted.
+const TERMINAL_BASELINE_CAPACITY: usize = 10_000;
+
+/// Cumulative fee per venue order ID (`ordId`).
+pub type FeeCache = FillBaselineCache<Money>;
+
+/// Cumulative filled quantity per venue order ID (`ordId`).
+pub type FilledQtyCache = FillBaselineCache<Quantity>;
+
+/// Cumulative per-order baseline used to derive incremental fill values.
+///
+/// OKX reports `fee` and `accFillSz` cumulatively, so a fill's incremental commission derives
+/// from the previous message for the same `ordId`, as does its quantity whenever `fillSz` is
+/// absent. Losing an open order's baseline would charge its whole cumulative fee, and its whole
+/// accumulated quantity, to the next fill.
+///
+/// Baselines are therefore split by order lifecycle. An order that can still fill keeps its
+/// baseline in full. A terminal order keeps one only to absorb reconnect replays, so those are
+/// held in a bounded cache that evicts oldest-first and cannot grow with session length.
+#[derive(Debug)]
+pub struct FillBaselineCache<T> {
+    open: AHashMap<Ustr, T>,
+    terminal: FifoCacheMap<Ustr, T, TERMINAL_BASELINE_CAPACITY>,
+}
+
+impl<T> Default for FillBaselineCache<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> FillBaselineCache<T> {
+    /// Creates a new empty [`FillBaselineCache`].
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            open: AHashMap::new(),
+            terminal: FifoCacheMap::new(),
+        }
+    }
+
+    /// Returns the cumulative baseline recorded for `ord_id`.
+    #[must_use]
+    pub fn get(&self, ord_id: &Ustr) -> Option<&T> {
+        self.open.get(ord_id).or_else(|| self.terminal.get(ord_id))
+    }
+
+    /// Records the cumulative baseline for `ord_id`.
+    ///
+    /// Pass `is_terminal` for an order state the venue cannot follow with a new fill; its
+    /// baseline then becomes evictable. An open order's baseline is retained in full.
+    pub fn record(&mut self, ord_id: Ustr, value: T, is_terminal: bool) {
+        if is_terminal {
+            self.open.remove(&ord_id);
+            self.terminal.insert(ord_id, value);
+        } else if self.terminal.contains_key(&ord_id) {
+            self.terminal.insert(ord_id, value);
+        } else {
+            self.open.insert(ord_id, value);
+        }
+    }
+
+    /// Drops any baseline recorded for `ord_id`.
+    pub fn remove(&mut self, ord_id: &Ustr) {
+        self.open.remove(ord_id);
+        self.terminal.remove(ord_id);
+    }
+}
+
+/// Returns whether the venue order state admits no further fills.
+#[must_use]
+pub const fn is_terminal_order_state(state: OKXOrderStatus) -> bool {
+    matches!(
+        state,
+        OKXOrderStatus::Filled | OKXOrderStatus::Canceled | OKXOrderStatus::MmpCanceled
+    )
+}
 
 /// Extracts fee rates from a cached instrument.
 ///
@@ -860,14 +939,14 @@ pub fn parse_book_msg(
     action: &OKXBookAction,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderBookDeltas> {
-    let flags = if action == &OKXBookAction::Snapshot {
+    let is_snapshot = action == &OKXBookAction::Snapshot;
+
+    let flags = if is_snapshot {
         RecordFlag::F_SNAPSHOT as u8
     } else {
         0
     };
     let ts_event = parse_millisecond_timestamp(msg.ts);
-
-    let is_snapshot = action == &OKXBookAction::Snapshot;
     let mut deltas = Vec::with_capacity(msg.asks.len() + msg.bids.len() + usize::from(is_snapshot));
 
     if is_snapshot {
@@ -927,6 +1006,11 @@ pub fn parse_book_msg(
         deltas.push(delta);
     }
 
+    // The data engine only publishes a buffered batch once a delta closes the event
+    if let Some(last) = deltas.last_mut() {
+        last.flags |= RecordFlag::F_LAST as u8;
+    }
+
     OrderBookDeltas::new_checked(instrument_id, deltas)
 }
 
@@ -943,13 +1027,14 @@ pub fn parse_rpi_book_msg(
     action: &OKXBookAction,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderBookDeltas> {
-    let flags = if action == &OKXBookAction::Snapshot {
+    let is_snapshot = action == &OKXBookAction::Snapshot;
+
+    let flags = if is_snapshot {
         RecordFlag::F_SNAPSHOT as u8
     } else {
         0
     };
     let ts_event = parse_millisecond_timestamp(msg.ts);
-    let is_snapshot = action == &OKXBookAction::Snapshot;
     let mut deltas = Vec::with_capacity(msg.asks.len() + msg.bids.len() + usize::from(is_snapshot));
 
     if is_snapshot {
@@ -1003,6 +1088,11 @@ pub fn parse_rpi_book_msg(
             ts_event,
             ts_init,
         ));
+    }
+
+    // The data engine only publishes a buffered batch once a delta closes the event
+    if let Some(last) = deltas.last_mut() {
+        last.flags |= RecordFlag::F_LAST as u8;
     }
 
     OrderBookDeltas::new_checked(instrument_id, deltas)
@@ -1236,8 +1326,8 @@ pub fn parse_order_msg_vec(
     data: &[OKXOrderMsg],
     account_id: AccountId,
     instruments: &AHashMap<Ustr, InstrumentAny>,
-    fee_cache: &mut AHashMap<Ustr, Money>,
-    filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
+    fee_cache: &mut FeeCache,
+    filled_qty_cache: &mut FilledQtyCache,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Vec<ExecutionReport>> {
     let mut order_reports = Vec::with_capacity(data.len());
@@ -1272,9 +1362,11 @@ pub fn parse_order_msg_vec(
 pub fn update_fee_fill_caches(
     msg: &OKXOrderMsg,
     instrument: &InstrumentAny,
-    fee_cache: &mut AHashMap<Ustr, Money>,
-    filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
+    fee_cache: &mut FeeCache,
+    filled_qty_cache: &mut FilledQtyCache,
 ) {
+    let is_terminal = is_terminal_order_state(msg.state);
+
     if let Some(ref fee_str) = msg.fee
         && !fee_str.is_empty()
     {
@@ -1284,7 +1376,7 @@ pub fn update_fee_fill_caches(
         });
 
         if let Ok(total_fee) = crate::common::parse::parse_fee(Some(fee_str.as_str()), fee_ccy) {
-            fee_cache.insert(msg.ord_id, total_fee);
+            fee_cache.record(msg.ord_id, total_fee, is_terminal);
         }
     }
 
@@ -1293,7 +1385,7 @@ pub fn update_fee_fill_caches(
         && acc_fill_sz != "0"
         && let Ok(qty) = parse_quantity(acc_fill_sz, instrument.size_precision())
     {
-        filled_qty_cache.insert(msg.ord_id, qty);
+        filled_qty_cache.record(msg.ord_id, qty, is_terminal);
     }
 }
 
@@ -1328,8 +1420,8 @@ pub fn parse_order_msg(
     msg: &OKXOrderMsg,
     account_id: AccountId,
     instruments: &AHashMap<Ustr, InstrumentAny>,
-    fee_cache: &AHashMap<Ustr, Money>,
-    filled_qty_cache: &AHashMap<Ustr, Quantity>,
+    fee_cache: &FeeCache,
+    filled_qty_cache: &FilledQtyCache,
     ts_init: UnixNanos,
 ) -> anyhow::Result<ExecutionReport> {
     let instrument = instruments
@@ -1394,7 +1486,7 @@ pub fn parse_spread_order_msg(
     msg: &OKXSpreadOrder,
     account_id: AccountId,
     instruments: &AHashMap<Ustr, InstrumentAny>,
-    filled_qty_cache: &AHashMap<Ustr, Quantity>,
+    filled_qty_cache: &FilledQtyCache,
     ts_init: UnixNanos,
 ) -> anyhow::Result<ExecutionReport> {
     let instrument = instruments
@@ -2477,7 +2569,7 @@ mod tests {
     use nautilus_core::nanos::UnixNanos;
     use nautilus_model::{
         data::bar::BAR_SPEC_1_DAY_LAST,
-        enums::{BookType, GreeksConvention},
+        enums::{AccountType, BookType, GreeksConvention},
         identifiers::{ClientOrderId, Symbol, VenueOrderId},
         instruments::CryptoPerpetual,
         orderbook::OrderBook,
@@ -2554,6 +2646,108 @@ mod tests {
             .ts_init(UnixNanos::default())
             .build()
             .unwrap()
+    }
+
+    #[rstest]
+    fn open_order_baselines_survive_unrelated_order_churn() {
+        let instrument = InstrumentAny::CryptoPerpetual(create_stub_instrument());
+        let mut fee_cache = FeeCache::new();
+        let mut filled_qty_cache = FilledQtyCache::new();
+
+        let mut resting = create_stub_order_msg("1.0", Some("1.0".to_string()), "ord-resting", "");
+        resting.state = OKXOrderStatus::PartiallyFilled;
+        update_fee_fill_caches(&resting, &instrument, &mut fee_cache, &mut filled_qty_cache);
+
+        for i in 0..=TERMINAL_BASELINE_CAPACITY {
+            let mut msg =
+                create_stub_order_msg("1.0", Some("1.0".to_string()), &format!("ord-{i}"), "");
+            msg.state = OKXOrderStatus::Filled;
+            update_fee_fill_caches(&msg, &instrument, &mut fee_cache, &mut filled_qty_cache);
+        }
+
+        let resting_key = Ustr::from("ord-resting");
+
+        assert_eq!(fee_cache.get(&resting_key).unwrap().as_decimal(), dec!(1.0));
+        assert_eq!(
+            filled_qty_cache.get(&resting_key).unwrap().as_decimal(),
+            dec!(1.0)
+        );
+        assert_eq!(fee_cache.open.len(), 1);
+        assert_eq!(filled_qty_cache.open.len(), 1);
+
+        // Demotion is what bounds the open map, so prove the migration and not just the
+        // classification: a settled order must leave `open` and expose its newer baseline.
+        let mut settled = resting.clone();
+        settled.state = OKXOrderStatus::Filled;
+        settled.fee = Some("-2.5".to_string());
+        settled.acc_fill_sz = Some("2.0".to_string());
+        update_fee_fill_caches(&settled, &instrument, &mut fee_cache, &mut filled_qty_cache);
+
+        assert_eq!(fee_cache.open.len(), 0);
+        assert_eq!(filled_qty_cache.open.len(), 0);
+        assert_eq!(fee_cache.get(&resting_key).unwrap().as_decimal(), dec!(2.5));
+        assert_eq!(
+            filled_qty_cache.get(&resting_key).unwrap().as_decimal(),
+            dec!(2.0)
+        );
+    }
+
+    #[rstest]
+    #[case(OKXOrderStatus::Filled)]
+    #[case(OKXOrderStatus::Canceled)]
+    #[case(OKXOrderStatus::MmpCanceled)]
+    fn terminal_order_baselines_stay_terminal_after_late_updates(
+        #[case] terminal_state: OKXOrderStatus,
+        #[values(OKXOrderStatus::Live, OKXOrderStatus::PartiallyFilled)] late_state: OKXOrderStatus,
+    ) {
+        let instrument = InstrumentAny::CryptoPerpetual(create_stub_instrument());
+        let mut fee_cache = FeeCache::new();
+        let mut filled_qty_cache = FilledQtyCache::new();
+        let mut msg = create_stub_order_msg("1.0", Some("2.0".to_string()), "ord-late", "");
+        msg.state = terminal_state;
+        update_fee_fill_caches(&msg, &instrument, &mut fee_cache, &mut filled_qty_cache);
+
+        msg.state = late_state;
+        msg.fee = Some("-0.5".to_string());
+        msg.acc_fill_sz = Some("1.0".to_string());
+        update_fee_fill_caches(&msg, &instrument, &mut fee_cache, &mut filled_qty_cache);
+
+        let key = msg.ord_id;
+        let fee = Money::from_decimal(dec!(0.5), Currency::USDT()).unwrap();
+        let quantity = Quantity::from("1.00000000");
+
+        assert_eq!(fee_cache.open.len(), 0);
+        assert_eq!(filled_qty_cache.open.len(), 0);
+        assert_eq!(fee_cache.terminal.get(&key), Some(&fee));
+        assert_eq!(filled_qty_cache.terminal.get(&key), Some(&quantity));
+        assert_eq!(fee_cache.get(&key), Some(&fee));
+        assert_eq!(filled_qty_cache.get(&key), Some(&quantity));
+    }
+
+    #[rstest]
+    fn terminal_order_baselines_evict_oldest_first() {
+        let instrument = InstrumentAny::CryptoPerpetual(create_stub_instrument());
+        let mut fee_cache = FeeCache::new();
+        let mut filled_qty_cache = FilledQtyCache::new();
+
+        for i in 0..=TERMINAL_BASELINE_CAPACITY {
+            let mut msg =
+                create_stub_order_msg("1.0", Some("1.0".to_string()), &format!("ord-{i}"), "");
+            msg.state = OKXOrderStatus::Filled;
+            update_fee_fill_caches(&msg, &instrument, &mut fee_cache, &mut filled_qty_cache);
+        }
+
+        let oldest = Ustr::from("ord-0");
+        let newest = Ustr::from(&format!("ord-{TERMINAL_BASELINE_CAPACITY}"));
+
+        assert_eq!(fee_cache.get(&oldest), None);
+        assert_eq!(filled_qty_cache.get(&oldest), None);
+        assert_eq!(fee_cache.get(&newest).unwrap().as_decimal(), dec!(1.0));
+        assert_eq!(
+            filled_qty_cache.get(&newest).unwrap().as_decimal(),
+            dec!(1.0)
+        );
+        assert_eq!(fee_cache.open.len(), 0);
     }
 
     fn create_stub_order_msg(
@@ -2688,11 +2882,83 @@ mod tests {
 
         assert_eq!(actual.bids_as_map(None), expected.bids_as_map(None));
         assert_eq!(actual.asks_as_map(None), expected.asks_as_map(None));
+
+        let expected_clear_flags = if empty {
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+        } else {
+            RecordFlag::F_SNAPSHOT as u8
+        };
+
         assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
-        assert_eq!(snapshot.deltas[0].flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(snapshot.deltas[0].flags, expected_clear_flags);
         assert_eq!(snapshot.deltas[0].sequence, snapshot.sequence);
         assert_eq!(snapshot.deltas[0].ts_event, snapshot.ts_event);
         assert_eq!(snapshot.deltas[0].ts_init, UnixNanos::from(123));
+    }
+
+    #[rstest]
+    #[case::snapshot("ws_books_snapshot.json", OKXBookAction::Snapshot)]
+    #[case::update("ws_books_update.json", OKXBookAction::Update)]
+    #[case::rpi_snapshot("ws_books_rpi_snapshot.json", OKXBookAction::Snapshot)]
+    #[case::rpi_update("ws_books_rpi_update.json", OKXBookAction::Update)]
+    fn book_deltas_flag_only_the_final_delta_last(
+        #[case] fixture: &str,
+        #[case] action: OKXBookAction,
+    ) {
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        let frame: OKXWsFrame = serde_json::from_str(&load_test_json(fixture)).unwrap();
+
+        let deltas = match frame {
+            OKXWsFrame::BookData { data, .. } => {
+                parse_book_msg(&data[0], instrument_id, 2, 1, &action, UnixNanos::default())
+            }
+            OKXWsFrame::RpiBookData { data, .. } => {
+                parse_rpi_book_msg(&data[0], instrument_id, 7, 3, &action, UnixNanos::default())
+            }
+            _ => panic!("Expected a book frame"),
+        }
+        .unwrap();
+
+        let last_count = deltas
+            .deltas
+            .iter()
+            .filter(|delta| RecordFlag::F_LAST.matches(delta.flags))
+            .count();
+
+        assert_eq!(last_count, 1, "exactly one delta must close the event");
+        assert!(RecordFlag::F_LAST.matches(deltas.deltas.last().unwrap().flags));
+        assert!(RecordFlag::F_LAST.matches(deltas.flags));
+    }
+
+    #[rstest]
+    fn empty_book_snapshot_flags_the_clear_delta_last() {
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+
+        let msg = OKXBookMsg {
+            bids: Vec::new(),
+            asks: Vec::new(),
+            ts: 1_597_026_383_085,
+            checksum: None,
+            prev_seq_id: None,
+            seq_id: 123_456,
+        };
+
+        let deltas = parse_book_msg(
+            &msg,
+            instrument_id,
+            2,
+            1,
+            &OKXBookAction::Snapshot,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(deltas.deltas.len(), 1);
+        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert_eq!(
+            deltas.flags,
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+        );
     }
 
     #[rstest]
@@ -2717,7 +2983,10 @@ mod tests {
 
         assert_eq!(deltas.instrument_id, instrument_id);
         assert_eq!(deltas.deltas.len(), 17);
-        assert_eq!(deltas.flags, 32);
+        assert_eq!(
+            deltas.flags,
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+        );
         assert_eq!(deltas.sequence, 123_456);
         assert_eq!(deltas.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
         assert_eq!(deltas.ts_init, UnixNanos::default());
@@ -2763,7 +3032,7 @@ mod tests {
 
         assert_eq!(deltas.instrument_id, instrument_id);
         assert_eq!(deltas.deltas.len(), 16);
-        assert_eq!(deltas.flags, 0);
+        assert_eq!(deltas.flags, RecordFlag::F_LAST as u8);
         assert_eq!(deltas.sequence, 123_457);
         assert_eq!(deltas.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
         assert_eq!(deltas.ts_init, UnixNanos::default());
@@ -2803,7 +3072,7 @@ mod tests {
 
         assert_eq!(deltas.instrument_id, instrument_id);
         assert_eq!(deltas.deltas.len(), 2);
-        assert_eq!(deltas.flags, 0);
+        assert_eq!(deltas.flags, RecordFlag::F_LAST as u8);
         assert_eq!(deltas.sequence, 1_082_831_230);
         assert_eq!(deltas.ts_event, UnixNanos::from(1_785_406_443_903_000_000));
         assert_eq!(deltas.ts_init, UnixNanos::from(123));
@@ -3104,7 +3373,7 @@ mod tests {
 
         let account_id = AccountId::new("OKX-001");
         let ts_init = UnixNanos::default();
-        let account_state = parse_account_state(account, account_id, ts_init);
+        let account_state = parse_account_state(account, account_id, AccountType::Margin, ts_init);
 
         assert!(account_state.is_ok());
         let state = account_state.unwrap();
@@ -3130,7 +3399,13 @@ mod tests {
         assert_eq!(account.total_eq, "0");
 
         let account_id = AccountId::new("OKX-001");
-        let account_state = parse_account_state(account, account_id, UnixNanos::default()).unwrap();
+        let account_state = parse_account_state(
+            account,
+            account_id,
+            AccountType::Margin,
+            UnixNanos::default(),
+        )
+        .unwrap();
 
         assert_eq!(account_state.account_id, account_id);
         assert_eq!(account_state.margins.len(), 0);
@@ -3176,8 +3451,8 @@ mod tests {
         );
 
         let ts_init = UnixNanos::default();
-        let mut fee_cache = AHashMap::new();
-        let mut filled_qty_cache = AHashMap::new();
+        let mut fee_cache = FeeCache::new();
+        let mut filled_qty_cache = FilledQtyCache::new();
 
         let result = parse_order_msg_vec(
             &data,
@@ -4376,8 +4651,8 @@ mod tests {
             InstrumentAny::CryptoPerpetual(instrument),
         );
 
-        let fee_cache = AHashMap::new();
-        let mut filled_qty_cache = AHashMap::new();
+        let fee_cache = FeeCache::new();
+        let mut filled_qty_cache = FilledQtyCache::new();
 
         // First update: acc_fill_sz = 0.01, no fill_sz, no trade_id
         let msg_1 = create_stub_order_msg("", Some("0.01".to_string()), "1234567890", "");
@@ -4399,7 +4674,7 @@ mod tests {
         }
 
         // Update cache
-        filled_qty_cache.insert(Ustr::from("1234567890"), Quantity::from("0.01"));
+        filled_qty_cache.record(Ustr::from("1234567890"), Quantity::from("0.01"), false);
 
         // Second update: acc_fill_sz increased to 0.03, still no fill_sz or trade_id
         let msg_2 = create_stub_order_msg("", Some("0.03".to_string()), "1234567890", "");
@@ -4693,8 +4968,8 @@ mod tests {
             InstrumentAny::CryptoPerpetual(instrument),
         );
 
-        let mut fee_cache = AHashMap::new();
-        let mut filled_qty_cache = AHashMap::new();
+        let mut fee_cache = FeeCache::new();
+        let mut filled_qty_cache = FilledQtyCache::new();
 
         let result = parse_order_msg_vec(
             std::slice::from_ref(msg),
@@ -4754,8 +5029,8 @@ mod tests {
             Ustr::from("BTC-USDT-SWAP"),
             InstrumentAny::CryptoPerpetual(instrument),
         );
-        let mut fee_cache = AHashMap::new();
-        let mut filled_qty_cache = AHashMap::new();
+        let mut fee_cache = FeeCache::new();
+        let mut filled_qty_cache = FilledQtyCache::new();
 
         let result = parse_order_msg_vec(
             std::slice::from_ref(msg),
@@ -4818,8 +5093,8 @@ mod tests {
             InstrumentAny::CryptoPerpetual(instrument),
         );
 
-        let mut fee_cache = AHashMap::new();
-        let mut filled_qty_cache = AHashMap::new();
+        let mut fee_cache = FeeCache::new();
+        let mut filled_qty_cache = FilledQtyCache::new();
 
         let result = parse_order_msg_vec(
             std::slice::from_ref(msg),
@@ -4966,8 +5241,8 @@ mod tests {
             msg: None,
         };
 
-        let fee_cache = AHashMap::new();
-        let filled_qty_cache = AHashMap::new();
+        let fee_cache = FeeCache::new();
+        let filled_qty_cache = FilledQtyCache::new();
         let result = parse_order_msg(
             &partial_liq_msg,
             account_id,
@@ -5014,8 +5289,8 @@ mod tests {
             InstrumentAny::CryptoOption(option),
         );
 
-        let fee_cache = AHashMap::new();
-        let filled_qty_cache = AHashMap::new();
+        let fee_cache = FeeCache::new();
+        let filled_qty_cache = FilledQtyCache::new();
         let report = parse_order_msg(
             msg,
             account_id,
@@ -5059,8 +5334,8 @@ mod tests {
             InstrumentAny::CryptoPerpetual(create_stub_instrument()),
         );
 
-        let fee_cache = AHashMap::new();
-        let filled_qty_cache = AHashMap::new();
+        let fee_cache = FeeCache::new();
+        let filled_qty_cache = FilledQtyCache::new();
         let report = parse_order_msg(
             msg,
             account_id,
@@ -5101,8 +5376,8 @@ mod tests {
             InstrumentAny::CryptoPerpetual(create_stub_instrument()),
         );
 
-        let fee_cache = AHashMap::new();
-        let filled_qty_cache = AHashMap::new();
+        let fee_cache = FeeCache::new();
+        let filled_qty_cache = FilledQtyCache::new();
         let result = parse_order_msg(
             &msg,
             account_id,
@@ -5133,8 +5408,8 @@ mod tests {
             InstrumentAny::CryptoPerpetual(create_stub_instrument()),
         );
 
-        let fee_cache = AHashMap::new();
-        let filled_qty_cache = AHashMap::new();
+        let fee_cache = FeeCache::new();
+        let filled_qty_cache = FilledQtyCache::new();
         let report = parse_order_msg(
             msg,
             account_id,
@@ -7967,7 +8242,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(deltas.instrument_id, instrument_id);
-        assert_eq!(deltas.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(
+            deltas.flags,
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+        );
         let bid = deltas
             .deltas
             .iter()

@@ -119,7 +119,7 @@ use nautilus_okx::{
             ExecutionReport, OKXLiquidationWarningMsg, OKXOrderMsg, OKXWebSocketArg, OKXWsFrame,
             OKXWsMessage,
         },
-        parse::OrderStateSnapshot,
+        parse::{FeeCache, FilledQtyCache, OrderStateSnapshot},
     },
 };
 use rstest::rstest;
@@ -271,15 +271,16 @@ fn dispatch_spread_message(
     emitter: &ExecutionEventEmitter,
     state: &WsDispatchState,
     instruments: &AtomicMap<Ustr, InstrumentAny>,
-    filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
+    filled_qty_cache: &mut FilledQtyCache,
     order_state_cache: &mut AHashMap<ClientOrderId, OrderStateSnapshot>,
 ) {
-    let mut fee_cache: AHashMap<Ustr, Money> = AHashMap::new();
+    let mut fee_cache = FeeCache::new();
     dispatch_ws_message(
         OKXWsMessage::SpreadOrders(vec![message]),
         emitter,
         state,
         AccountId::from("OKX-001"),
+        AccountType::Margin,
         instruments,
         &mut fee_cache,
         filled_qty_cache,
@@ -738,8 +739,8 @@ fn dispatch_command_response(
     state: &WsDispatchState,
 ) {
     let instruments = AtomicMap::new();
-    let mut fee_cache: AHashMap<Ustr, Money> = AHashMap::new();
-    let mut filled_qty_cache: AHashMap<Ustr, Quantity> = AHashMap::new();
+    let mut fee_cache = FeeCache::new();
+    let mut filled_qty_cache = FilledQtyCache::new();
     let mut order_state_cache: AHashMap<ClientOrderId, OrderStateSnapshot> = AHashMap::new();
 
     dispatch_ws_message(
@@ -747,6 +748,7 @@ fn dispatch_command_response(
         emitter,
         state,
         AccountId::from("OKX-001"),
+        AccountType::Margin,
         &instruments,
         &mut fee_cache,
         &mut filled_qty_cache,
@@ -1216,7 +1218,7 @@ fn test_dispatch_spread_order_accept_then_cancel() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();
     let instruments = spread_instruments_cache();
-    let mut filled_qty_cache = AHashMap::new();
+    let mut filled_qty_cache = FilledQtyCache::new();
     let mut order_state_cache = AHashMap::new();
     let cid = ClientOrderId::new("OSPRD001");
     let venue_order_id = "3386544889978159104";
@@ -1286,7 +1288,7 @@ fn test_dispatch_spread_order_cancel_synthesizes_accepted() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();
     let instruments = spread_instruments_cache();
-    let mut filled_qty_cache = AHashMap::new();
+    let mut filled_qty_cache = FilledQtyCache::new();
     let mut order_state_cache = AHashMap::new();
     let cid = ClientOrderId::new("OSPRD002");
     let venue_order_id = "3386544889978159105";
@@ -1327,7 +1329,7 @@ fn test_dispatch_spread_order_live_update_emits_updated() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();
     let instruments = spread_instruments_cache();
-    let mut filled_qty_cache = AHashMap::new();
+    let mut filled_qty_cache = FilledQtyCache::new();
     let mut order_state_cache = AHashMap::new();
     let cid = ClientOrderId::new("OSPRD003");
     let venue_order_id = "3386544889978159106";
@@ -1385,7 +1387,7 @@ fn test_dispatch_spread_order_fill_fails_closed_without_fee() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();
     let instruments = spread_instruments_cache();
-    let mut filled_qty_cache = AHashMap::new();
+    let mut filled_qty_cache = FilledQtyCache::new();
     let mut order_state_cache = AHashMap::new();
     let cid = ClientOrderId::new("OSPRD004");
     let venue_order_id = "3386544889978159107";
@@ -1482,8 +1484,8 @@ fn test_dispatch_tracked_algo_child_fill_with_empty_client_order_id(#[case] send
         Ustr::from("ETH-USDT"),
         InstrumentAny::CurrencyPair(instrument),
     );
-    let mut fee_cache = AHashMap::new();
-    let mut filled_qty_cache = AHashMap::new();
+    let mut fee_cache = FeeCache::new();
+    let mut filled_qty_cache = FilledQtyCache::new();
     let mut order_state_cache = AHashMap::new();
 
     let assert_venue_order_id_update = |event: &ExecutionEvent| match event {
@@ -1513,6 +1515,7 @@ fn test_dispatch_tracked_algo_child_fill_with_empty_client_order_id(#[case] send
             &emitter,
             &state,
             AccountId::from("OKX-001"),
+            AccountType::Margin,
             &instruments,
             &mut fee_cache,
             &mut filled_qty_cache,
@@ -1530,6 +1533,7 @@ fn test_dispatch_tracked_algo_child_fill_with_empty_client_order_id(#[case] send
         &emitter,
         &state,
         AccountId::from("OKX-001"),
+        AccountType::Margin,
         &instruments,
         &mut fee_cache,
         &mut filled_qty_cache,
@@ -1574,6 +1578,7 @@ fn test_dispatch_tracked_algo_child_fill_with_empty_client_order_id(#[case] send
         &emitter,
         &state,
         AccountId::from("OKX-001"),
+        AccountType::Margin,
         &instruments,
         &mut fee_cache,
         &mut filled_qty_cache,
@@ -1600,8 +1605,8 @@ fn test_dispatch_untracked_algo_child_fill_with_empty_client_order_id_as_report(
         Ustr::from("ETH-USDT"),
         InstrumentAny::CurrencyPair(instrument),
     );
-    let mut fee_cache = AHashMap::new();
-    let mut filled_qty_cache = AHashMap::new();
+    let mut fee_cache = FeeCache::new();
+    let mut filled_qty_cache = FilledQtyCache::new();
     let mut order_state_cache = AHashMap::new();
 
     dispatch_ws_message(
@@ -1609,6 +1614,7 @@ fn test_dispatch_untracked_algo_child_fill_with_empty_client_order_id_as_report(
         &emitter,
         &state,
         AccountId::from("OKX-001"),
+        AccountType::Margin,
         &instruments,
         &mut fee_cache,
         &mut filled_qty_cache,
@@ -1707,8 +1713,8 @@ fn test_dispatch_venue_initiated_order_fill_as_report(#[case] case: VenueFillCas
         Ustr::from(case.raw_symbol),
         order_instrument(OKXInstrumentType::Swap, case.instrument_id, case.raw_symbol),
     );
-    let mut fee_cache = AHashMap::new();
-    let mut filled_qty_cache = AHashMap::new();
+    let mut fee_cache = FeeCache::new();
+    let mut filled_qty_cache = FilledQtyCache::new();
     let mut order_state_cache = AHashMap::new();
 
     dispatch_ws_message(
@@ -1716,6 +1722,7 @@ fn test_dispatch_venue_initiated_order_fill_as_report(#[case] case: VenueFillCas
         &emitter,
         &state,
         AccountId::from("OKX-001"),
+        AccountType::Margin,
         &instruments,
         &mut fee_cache,
         &mut filled_qty_cache,
@@ -1769,8 +1776,8 @@ fn test_dispatch_positions_channel_emits_position_report() {
         Ustr::from("BTC-USDT-SWAP"),
         order_instrument(OKXInstrumentType::Swap, instrument_id, "BTC-USDT-SWAP"),
     );
-    let mut fee_cache = AHashMap::new();
-    let mut filled_qty_cache = AHashMap::new();
+    let mut fee_cache = FeeCache::new();
+    let mut filled_qty_cache = FilledQtyCache::new();
     let mut order_state_cache = AHashMap::new();
 
     dispatch_ws_message(
@@ -1778,6 +1785,7 @@ fn test_dispatch_positions_channel_emits_position_report() {
         &emitter,
         &state,
         AccountId::from("OKX-001"),
+        AccountType::Margin,
         &instruments,
         &mut fee_cache,
         &mut filled_qty_cache,
@@ -1823,8 +1831,8 @@ fn test_dispatch_liquidation_warning_logs_only() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();
     let instruments = AtomicMap::new();
-    let mut fee_cache = AHashMap::new();
-    let mut filled_qty_cache = AHashMap::new();
+    let mut fee_cache = FeeCache::new();
+    let mut filled_qty_cache = FilledQtyCache::new();
     let mut order_state_cache = AHashMap::new();
 
     dispatch_ws_message(
@@ -1832,6 +1840,7 @@ fn test_dispatch_liquidation_warning_logs_only() {
         &emitter,
         &state,
         AccountId::from("OKX-001"),
+        AccountType::Margin,
         &instruments,
         &mut fee_cache,
         &mut filled_qty_cache,
@@ -1912,8 +1921,8 @@ fn test_dispatch_tracked_post_only_cancel_from_fixture(
 
     let (untracked_emitter, mut untracked_rx) = test_emitter();
     let untracked_state = WsDispatchState::default();
-    let mut untracked_fee_cache = AHashMap::new();
-    let mut untracked_filled_qty_cache = AHashMap::new();
+    let mut untracked_fee_cache = FeeCache::new();
+    let mut untracked_filled_qty_cache = FilledQtyCache::new();
     let mut untracked_order_state_cache = AHashMap::new();
 
     dispatch_ws_message(
@@ -1921,6 +1930,7 @@ fn test_dispatch_tracked_post_only_cancel_from_fixture(
         &untracked_emitter,
         &untracked_state,
         AccountId::from("OKX-001"),
+        AccountType::Margin,
         &instruments,
         &mut untracked_fee_cache,
         &mut untracked_filled_qty_cache,
@@ -1950,10 +1960,14 @@ fn test_dispatch_tracked_post_only_cancel_from_fixture(
     }
 
     let venue_order_id_key = Ustr::from(venue_order_id);
-    let mut fee_cache = AHashMap::new();
-    fee_cache.insert(venue_order_id_key, Money::new(1.25, Currency::from("USDT")));
-    let mut filled_qty_cache = AHashMap::new();
-    filled_qty_cache.insert(venue_order_id_key, Quantity::from("0.5"));
+    let mut fee_cache = FeeCache::new();
+    fee_cache.record(
+        venue_order_id_key,
+        Money::new(1.25, Currency::from("USDT")),
+        false,
+    );
+    let mut filled_qty_cache = FilledQtyCache::new();
+    filled_qty_cache.record(venue_order_id_key, Quantity::from("0.5"), false);
     let mut order_state_cache = AHashMap::new();
     order_state_cache.insert(
         client_order_id,
@@ -1969,6 +1983,7 @@ fn test_dispatch_tracked_post_only_cancel_from_fixture(
         &emitter,
         &state,
         AccountId::from("OKX-001"),
+        AccountType::Margin,
         &instruments,
         &mut fee_cache,
         &mut filled_qty_cache,
@@ -1997,14 +2012,15 @@ fn test_dispatch_tracked_post_only_cancel_from_fixture(
 
     assert!(!state.order_identities.contains_key(&client_order_id));
     assert!(!order_state_cache.contains_key(&client_order_id));
-    assert!(!fee_cache.contains_key(&venue_order_id_key));
-    assert!(!filled_qty_cache.contains_key(&venue_order_id_key));
+    assert!(fee_cache.get(&venue_order_id_key).is_none());
+    assert!(filled_qty_cache.get(&venue_order_id_key).is_none());
 
     dispatch_ws_message(
         OKXWsMessage::Orders(vec![message]),
         &emitter,
         &state,
         AccountId::from("OKX-001"),
+        AccountType::Margin,
         &instruments,
         &mut fee_cache,
         &mut filled_qty_cache,
@@ -2056,8 +2072,8 @@ fn test_dispatch_rpi_canceled_first_emits_rejection_without_acceptance() {
         Ustr::from("OMI-USD"),
         order_instrument(OKXInstrumentType::Spot, instrument_id, "OMI-USD"),
     );
-    let mut fee_cache = AHashMap::new();
-    let mut filled_qty_cache = AHashMap::new();
+    let mut fee_cache = FeeCache::new();
+    let mut filled_qty_cache = FilledQtyCache::new();
     let mut order_state_cache = AHashMap::new();
 
     dispatch_ws_message(
@@ -2065,6 +2081,7 @@ fn test_dispatch_rpi_canceled_first_emits_rejection_without_acceptance() {
         &emitter,
         &state,
         AccountId::from("OKX-001"),
+        AccountType::Margin,
         &instruments,
         &mut fee_cache,
         &mut filled_qty_cache,
@@ -2132,7 +2149,7 @@ fn test_dispatch_spread_post_only_cancel_emits_rejected() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();
     let instruments = spread_instruments_cache();
-    let mut filled_qty_cache = AHashMap::new();
+    let mut filled_qty_cache = FilledQtyCache::new();
     let mut order_state_cache = AHashMap::new();
     let cid = ClientOrderId::new("OSPRD005");
     let venue_order_id = "3386544889978159108";
@@ -2168,7 +2185,7 @@ fn test_dispatch_untracked_spread_order_emits_status_report() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();
     let instruments = spread_instruments_cache();
-    let mut filled_qty_cache = AHashMap::new();
+    let mut filled_qty_cache = FilledQtyCache::new();
     let mut order_state_cache = AHashMap::new();
     let cid = ClientOrderId::new("OSPRD006");
     let venue_order_id = "3386544889978159109";

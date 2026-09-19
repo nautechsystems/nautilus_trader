@@ -230,7 +230,11 @@ class OKXHttpClient:
         before: str | None = None,
         after: str | None = None,
     ) -> typing.Any: ...
-    def request_account_state(self, account_id: model.AccountId) -> typing.Any: ...
+    def request_account_state(
+        self,
+        account_id: model.AccountId,
+        account_type: model.AccountType = model.AccountType.MARGIN,
+    ) -> typing.Any: ...
     def request_trades(
         self,
         instrument_id: model.InstrumentId,

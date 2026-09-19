@@ -48,6 +48,9 @@ Released on TBD (UTC).
 - Fixed Lighter websocket subscription hangs on unparsable confirmations
 - Fixed Lighter spot stats parsing for empty mid prices
 - Fixed OKX order book snapshots retaining stale price levels after resubscription
+- Fixed OKX book deltas missing the `F_LAST` flag, stalling consumers with `buffer_deltas` enabled
+- Fixed OKX account state always reporting `MARGIN`, ignoring the configured account type
+- Fixed OKX fee and filled-quantity caches growing unbounded over long-running sessions
 - Fixed Polymarket order modifications blocked after a deferred cancel with an unresolved venue outcome
 
 ### Internal Improvements
