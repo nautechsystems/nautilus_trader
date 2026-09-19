@@ -522,6 +522,15 @@ the exchange state at startup or during operation.
 - Time-bounded queries: Supports filtering by start/end timestamps.
 - All fill types: Market, limit, and conditional order fills.
 
+**Pair spelling:**
+
+- Kraken spells a pair two ways: the `AssetPairs` key (`XXBTZEUR`), used as the instrument
+  `raw_symbol`, and the altname (`XBTEUR`). `OpenPositions` returns the key, while `OpenOrders`
+  and `TradesHistory` return the altname.
+- The adapter resolves both spellings, so an order or fill on a legacy-named pair is reported.
+- A report whose pair cannot be resolved to a cached instrument fails the read, rather than being
+  omitted from an otherwise successful one.
+
 **Account balances:**
 
 - Wallet balances: Fetched from `POST /0/private/BalanceEx`, which reports both the

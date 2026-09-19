@@ -412,18 +412,31 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
         "/0/public/AssetPairs" => {
             let query =
                 Query::<HashMap<String, String>>::try_from_uri(req.uri()).unwrap_or_default();
-            let filename = match query.get("aclass_base").map(String::as_str) {
-                Some("tokenized_asset") => "http_asset_pairs_tokenized.json",
-                _ => "http_asset_pairs.json",
-            };
-            json_response(load_test_data(filename))
+            match query.get("aclass_base").map(String::as_str) {
+                Some("tokenized_asset") => {
+                    json_response(load_test_data("http_asset_pairs_tokenized.json"))
+                }
+                _ => {
+                    // The order and trade fixtures also reference ETHUSDT, so the listing has to
+                    // carry it for every report to resolve to an instrument.
+                    let mut data: serde_json::Value =
+                        serde_json::from_str(&load_test_data("http_asset_pairs.json")).unwrap();
+                    let mut eth = data["result"]["XBTUSDT"].clone();
+                    eth["altname"] = serde_json::json!("ETHUSDT");
+                    eth["wsname"] = serde_json::json!("ETH/USDT");
+                    eth["base"] = serde_json::json!("ETH");
+                    eth["quote"] = serde_json::json!("USDT");
+                    data["result"]["ETHUSDT"] = eth;
+                    json_response(data.to_string())
+                }
+            }
         }
         "/0/private/TradeVolume" => {
             if state.trade_volume_api_error.load(Ordering::Relaxed) {
                 json_response(r#"{"error":["EGeneral:Permission denied"]}"#.to_string())
             } else {
                 json_response(
-                    r#"{"error":[],"result":{"fees":{"XBTUSDT":{"fee":"0.2900"},"AAPLZUSD.EQ":{"fee":"0.1900"}},"fees_maker":{"XBTUSDT":{"fee":"0.1700"},"AAPLZUSD.EQ":{"fee":"0.0300"}}}}"#
+                    r#"{"error":[],"result":{"fees":{"XBTUSDT":{"fee":"0.2900"},"ETHUSDT":{"fee":"0.2900"},"AAPLZUSD.EQ":{"fee":"0.1900"}},"fees_maker":{"XBTUSDT":{"fee":"0.1700"},"ETHUSDT":{"fee":"0.1700"},"AAPLZUSD.EQ":{"fee":"0.0300"}}}}"#
                         .to_string(),
                 )
             }
@@ -1491,7 +1504,11 @@ async fn test_mass_status_captures_collection_start(#[case] spot: bool) {
     let before = get_atomic_clock_realtime().get_time_ns();
 
     let snapshot = if spot {
-        let (client, _rx, _cache) = create_test_spot_execution_client(addr);
+        // Connect first so instruments are cached, as they are on the production path: an
+        // unresolvable pair now fails the read rather than being dropped from it.
+        let (mut client, _rx, cache) = create_test_spot_execution_client(addr);
+        add_test_spot_account_to_cache(&cache);
+        client.connect().await.unwrap();
         client.generate_mass_status(None).await.unwrap().unwrap()
     } else {
         let (client, _rx, _cache) = create_test_execution_client(addr);
