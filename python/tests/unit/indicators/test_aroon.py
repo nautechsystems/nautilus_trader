@@ -236,6 +236,33 @@ def test_max_period_window_and_values() -> None:
     assert aroon.value == 0.0
 
 
+def test_max_period_window_and_values_lowest_low() -> None:
+    """
+    Test AroonOscillator at MAX_PERIOD (1024) initializes and calculates correctly with oldest unique low.
+    """
+    # Arrange
+    period = 1024
+    aroon = AroonOscillator(period)
+
+    # Act: Feed unique lowest low at first bar, then fill remaining 1024 bars
+    aroon.update_raw(10.0, 1.0)
+    for _ in range(period):
+        aroon.update_raw(10.0, 5.0)
+
+    # Assert
+    assert aroon.initialized
+    assert aroon.count == period + 1
+    assert aroon.aroon_up == 100.0
+    assert aroon.aroon_down == 0.0
+    assert aroon.value == 100.0
+
+    # Next update rolls over the oldest unique lowest low
+    aroon.update_raw(10.0, 5.0)
+    assert aroon.aroon_up == 100.0
+    assert aroon.aroon_down == 100.0
+    assert aroon.value == 0.0
+
+
 def _bar(high: float, low: float, close: float) -> Bar:
     bar_type = BarType(
         InstrumentId.from_str("ETHUSDT.BINANCE"),

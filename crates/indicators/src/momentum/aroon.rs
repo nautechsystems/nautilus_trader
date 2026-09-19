@@ -402,4 +402,27 @@ mod tests {
         assert_eq!(aroon.aroon_down, 100.0);
         assert_eq!(aroon.value, 0.0);
     }
+
+    #[rstest]
+    fn test_max_period_window_and_values_lowest_low() {
+        let mut aroon = AroonOscillator::new(MAX_PERIOD);
+        aroon.update_raw(10.0, 1.0);
+        for _ in 0..MAX_PERIOD {
+            aroon.update_raw(10.0, 5.0);
+        }
+        assert!(aroon.initialized());
+        assert_eq!(aroon.high_inputs.len(), MAX_PERIOD + 1);
+        assert_eq!(aroon.low_inputs.len(), MAX_PERIOD + 1);
+        assert_eq!(aroon.aroon_up, 100.0);
+        assert_eq!(aroon.aroon_down, 0.0);
+        assert_eq!(aroon.value, 100.0);
+
+        // Next update rolls over the oldest unique lowest low
+        aroon.update_raw(10.0, 5.0);
+        assert_eq!(aroon.high_inputs.len(), MAX_PERIOD + 1);
+        assert_eq!(aroon.low_inputs.len(), MAX_PERIOD + 1);
+        assert_eq!(aroon.aroon_up, 100.0);
+        assert_eq!(aroon.aroon_down, 100.0);
+        assert_eq!(aroon.value, 0.0);
+    }
 }
