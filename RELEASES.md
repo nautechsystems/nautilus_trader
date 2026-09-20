@@ -73,6 +73,7 @@ Released on TBD (UTC).
 - Fixed OKX book deltas missing the `F_LAST` flag, stalling consumers with `buffer_deltas` enabled
 - Fixed OKX account state always reporting `MARGIN`, ignoring the configured account type
 - Fixed OKX fee and filled-quantity caches growing unbounded over long-running sessions
+- Fixed OKX cancel-all requests ignoring `order_side` (#4470), thanks for reporting @zurpet
 - Fixed Polymarket order modifications blocked after a deferred cancel with an unresolved venue outcome
 
 ### Internal Improvements

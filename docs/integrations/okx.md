@@ -671,6 +671,20 @@ order expiration by canceling the order at the specified expiry time.
 | Batch Modify | ✓                     | Modify multiple orders in single request. |
 | Batch Cancel | ✓                     | Cancel multiple orders in single request. |
 
+### Cancel-all orders
+
+`Strategy.cancel_all_orders` supports `order_side` in both strategy-only and cross-strategy mode.
+See [Cancel-all routing](../concepts/execution/index.md#cancel-all-routing) for strategy scope.
+
+With `strategy_only=False` and an `order_side`, the adapter selects matching open orders from the cache
+across strategies. It sends regular orders through batch cancellation and conditional and spread orders
+through their individual-order cancellation APIs. This bypasses venue mass cancellation, including when
+the Rust configuration option `use_mm_mass_cancel` is `true`.
+
+Side-filtered cancellation excludes orders absent from the cache and orders still in `SUBMITTED` state.
+Without a side filter, ordinary non-spread cancellation also uses cached open orders by default;
+spread instruments and the Rust mass-cancel option use venue bulk endpoints.
+
 ### Position management
 
 | Feature          | Linear perpetual swap | Notes                                |
