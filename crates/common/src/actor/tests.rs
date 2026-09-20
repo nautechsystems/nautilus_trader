@@ -86,7 +86,7 @@ use crate::{
         system::{QueueCondition, QueueState, QueueStateChanged, SocketState, SocketStateChanged},
     },
     msgbus::{
-        self, MessageBus, get_message_bus,
+        self, MessageBus, ShareableMessageHandler, get_message_bus,
         stubs::get_typed_into_message_saving_handler,
         switchboard::{
             MessagingSwitchboard, get_bars_topic, get_book_deltas_topic, get_book_depth_topic,
@@ -7004,6 +7004,76 @@ fn test_update_synthetic_replaces_existing(
     let guard = cache.borrow();
     let stored = guard.synthetic(&synthetic_id).unwrap();
     assert_eq!(stored.formula, new_formula);
+}
+
+#[rstest]
+fn test_signal_publication_orders_reserved_deliveries_after_raw_republication(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    super::clear_callbacks().unwrap();
+    *get_message_bus().borrow_mut() = MessageBus::default();
+    let mut publisher = DataActorCore::new(DataActorConfig::default());
+    publisher.register(trader_id, clock, cache.clone()).unwrap();
+    let publisher = Rc::new(publisher);
+    let nested = publisher.clone();
+    msgbus::subscribe_any(
+        "data.SignalReentry".into(),
+        ShareableMessageHandler::from_typed(move |data: &CustomData| {
+            let signal = data.data.as_any().downcast_ref::<Signal>().unwrap();
+            if signal.value == "outer" {
+                nested.publish_signal("reentry", "inner".to_string(), UnixNanos::from(2));
+            }
+        }),
+        Some(100),
+    );
+
+    let received = Rc::new(RefCell::new(Vec::new()));
+    let captured = received.clone();
+    let callback_cache = cache.clone();
+    msgbus::subscribe_any(
+        "data.SignalReentry".into(),
+        ShareableMessageHandler::from_typed(move |data: &CustomData| {
+            let signal = data.data.as_any().downcast_ref::<Signal>().unwrap();
+            super::dispatch::reserve(signal.value.capacity())
+                .unwrap()
+                .commit(
+                    (captured.clone(), signal.clone(), callback_cache.clone()),
+                    |capture| {
+                        let _cache = capture.2.borrow_mut();
+                        capture.0.borrow_mut().push(capture.1.clone());
+                        true
+                    },
+                );
+        }),
+        None,
+    );
+
+    let cache_guard = cache.borrow_mut();
+    publisher.publish_signal("reentry", "outer".to_string(), UnixNanos::from(1));
+    assert!(received.borrow().is_empty());
+    drop(cache_guard);
+    assert_eq!(super::drain_callbacks(1), Ok(true));
+    assert_eq!(super::drain_callbacks(1), Ok(false));
+    assert_eq!(
+        *received.borrow(),
+        [
+            Signal::new(
+                "reentry".into(),
+                "outer".to_string(),
+                UnixNanos::from(1),
+                UnixNanos::default()
+            ),
+            Signal::new(
+                "reentry".into(),
+                "inner".to_string(),
+                UnixNanos::from(2),
+                UnixNanos::default()
+            ),
+        ]
+    );
+    super::clear_callbacks().unwrap();
 }
 
 #[rstest]

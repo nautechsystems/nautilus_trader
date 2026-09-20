@@ -76,7 +76,7 @@ pub(super) enum DrainStatus {
     Busy,
 }
 
-pub(super) struct PublicationScope {
+pub(crate) struct PublicationScope {
     active: bool,
     previous: Option<u64>,
     previous_chain: Option<Rc<Chain>>,
@@ -84,7 +84,7 @@ pub(super) struct PublicationScope {
 }
 
 impl PublicationScope {
-    pub(super) fn enter() -> Self {
+    pub(crate) fn enter() -> Self {
         let previous = DISPATCH.try_with(|state| {
             let mut state = state.borrow_mut();
             let ordinal = state.sequence();
@@ -810,6 +810,456 @@ mod tests {
     }
 
     #[rstest]
+    #[case::publish(false)]
+    #[case::try_publish(true)]
+    fn any_publication_orders_admissions_before_nested_raw_delivery(#[case] try_publish: bool) {
+        clear().unwrap();
+        *msgbus::get_message_bus().borrow_mut() = msgbus::MessageBus::default();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let synchronous = Rc::new(RefCell::new(Vec::new()));
+
+        let publish = move |value: u32| {
+            if try_publish {
+                assert!(msgbus::try_publish_any("dispatch.outer".into(), &value));
+            } else {
+                msgbus::publish_any("dispatch.outer".into(), &value);
+            }
+        };
+
+        let observed = synchronous.clone();
+        msgbus::subscribe_any(
+            "dispatch.*".into(),
+            msgbus::ShareableMessageHandler::from_typed(move |value: &u32| {
+                observed.borrow_mut().push(*value);
+                if *value == 1 {
+                    publish(2);
+                    observed.borrow_mut().push(3);
+                }
+
+                assert_eq!(drain_callbacks(1), Err(DispatchError::Active));
+            }),
+            Some(100),
+        );
+
+        for recipient in [10, 20] {
+            let received = received.clone();
+            msgbus::subscribe_any(
+                "dispatch.*".into(),
+                msgbus::ShareableMessageHandler::from_typed(move |value: &u32| {
+                    reserve(0)
+                        .unwrap()
+                        .commit((received.clone(), recipient + value), record);
+                }),
+                Some(30 - recipient),
+            );
+        }
+
+        publish(1);
+
+        assert_eq!(*synchronous.borrow(), [1, 2, 3]);
+        assert!(received.borrow().is_empty());
+        assert_eq!(drain_callbacks(1), Ok(true));
+        assert_eq!(*received.borrow(), [11]);
+        assert_eq!(drain_callbacks(2), Ok(true));
+        assert_eq!(*received.borrow(), [11, 21, 12]);
+        assert_eq!(drain_callbacks(1), Ok(false));
+        assert_eq!(*received.borrow(), [11, 21, 12, 22]);
+        assert_eq!(failure(), None);
+        clear().unwrap();
+    }
+
+    #[rstest]
+    #[case::publish(false)]
+    #[case::try_publish(true)]
+    fn any_publication_roots_cover_tap_and_generated_commands(
+        #[case] try_publish: bool,
+        #[values(false, true)] with_tap: bool,
+    ) {
+        use std::any::Any;
+
+        use crate::msgbus::{BusTap, Endpoint, MStr, Topic};
+
+        struct RootTap(Rc<RefCell<Vec<ChainContext>>>);
+
+        impl BusTap for RootTap {
+            fn on_publish(&self, _: MStr<Topic>, _: &dyn Any) {
+                self.0.borrow_mut().push(ChainContext::capture());
+            }
+
+            fn on_send(&self, _: MStr<Endpoint>, _: &dyn Any) {}
+        }
+
+        clear().unwrap();
+        clear_command_queues();
+        *msgbus::get_message_bus().borrow_mut() = msgbus::MessageBus::default();
+        let tapped = Rc::new(RefCell::new(Vec::new()));
+        if with_tap {
+            msgbus::set_bus_tap(Rc::new(RootTap(tapped.clone())));
+        }
+
+        let publish = move |value: u8| {
+            if try_publish {
+                assert!(msgbus::try_publish_any("dispatch.roots".into(), &value));
+            } else {
+                msgbus::publish_any("dispatch.roots".into(), &value);
+            }
+        };
+
+        msgbus::subscribe_any(
+            "dispatch.roots".into(),
+            msgbus::ShareableMessageHandler::from_typed(move |value: &u8| {
+                SyncDataCommandSender.execute(data_command(*value));
+                if *value == 1 {
+                    publish(2);
+                }
+            }),
+            None,
+        );
+
+        let commands = Rc::new(RefCell::new(Vec::new()));
+        let received = commands.clone();
+        msgbus::register_data_command_endpoint(
+            MessagingSwitchboard::data_engine_execute(),
+            TypedIntoHandler::from(move |command| {
+                received
+                    .borrow_mut()
+                    .push((command, ChainContext::capture()));
+            }),
+        );
+
+        publish(1);
+        publish(3);
+        assert!(commands.borrow().is_empty());
+        assert!(ChainContext::capture().chain.is_none());
+        drain_data_cmd_queue();
+        msgbus::clear_bus_tap();
+
+        {
+            let tapped = tapped.borrow();
+            let commands = commands.borrow();
+            assert_eq!(tapped.len(), if with_tap { 3 } else { 0 });
+            assert_eq!(commands.len(), 3);
+            let outer = commands[0]
+                .1
+                .chain
+                .as_ref()
+                .expect("command has a publication root");
+            let nested = commands[1].1.chain.as_ref().unwrap();
+            let independent = commands[2].1.chain.as_ref().unwrap();
+            assert!(Rc::ptr_eq(outer, nested));
+            assert!(!Rc::ptr_eq(outer, independent));
+
+            for (index, (command, context)) in commands.iter().enumerate() {
+                assert_eq!(*command, data_command((index + 1) as u8));
+
+                if with_tap {
+                    assert!(Rc::ptr_eq(
+                        context.chain.as_ref().unwrap(),
+                        tapped[index].chain.as_ref().unwrap(),
+                    ));
+                }
+            }
+        }
+
+        assert!(data_cmd_queue_is_empty());
+        assert_eq!(clear(), Err(DispatchError::Active));
+        tapped.borrow_mut().clear();
+        commands.borrow_mut().clear();
+        assert_eq!(clear(), Ok(()));
+    }
+
+    #[rstest]
+    #[case::publish(false)]
+    #[case::try_publish(true)]
+    fn any_publication_unwind_retains_work_until_safe_cleanup(
+        #[case] try_publish: bool,
+        #[values(false, true)] queued: bool,
+    ) {
+        clear().unwrap();
+        *msgbus::get_message_bus().borrow_mut() = msgbus::MessageBus::default();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let captured = received.clone();
+        msgbus::subscribe_any(
+            "dispatch.unwind".into(),
+            msgbus::ShareableMessageHandler::from_typed(move |value: &u32| {
+                if queued {
+                    reserve(0)
+                        .unwrap()
+                        .commit((captured.clone(), *value), record);
+                }
+
+                panic!("subscriber failed");
+            }),
+            None,
+        );
+
+        let result = std::panic::catch_unwind(|| {
+            if try_publish {
+                msgbus::try_publish_any("dispatch.unwind".into(), &17_u32);
+            } else {
+                msgbus::publish_any("dispatch.unwind".into(), &17_u32);
+            }
+        });
+
+        assert!(result.is_err());
+        assert_eq!(failure(), Some(DispatchError::PublicationUnwound));
+        assert_eq!(drain_callbacks(1), Err(DispatchError::PublicationUnwound));
+        assert!(received.borrow().is_empty());
+        assert!(has_pending());
+        DISPATCH.with_borrow(|state| assert_eq!(state.pending.len(), usize::from(queued)));
+        clear().unwrap();
+        assert!(!has_pending());
+        assert_eq!(failure(), None);
+    }
+
+    #[rstest]
+    #[case::missing(false)]
+    #[case::borrowed(true)]
+    fn rejected_any_publication_preserves_dispatch_state(#[case] borrowed: bool) {
+        std::thread::spawn(move || {
+            let bus = borrowed.then(msgbus::get_message_bus);
+            let _borrow = bus.as_ref().map(|bus| bus.borrow_mut());
+            let _publication = PublicationScope::enter();
+            let root = ChainContext::capture();
+            let before =
+                DISPATCH.with_borrow(|state| (state.sequence, state.publication, state.depth));
+
+            assert!(!msgbus::try_publish_any(
+                "dispatch.rejected".into(),
+                &17_u32
+            ));
+
+            DISPATCH.with_borrow(|state| {
+                assert_eq!((state.sequence, state.publication, state.depth), before);
+                assert!(Rc::ptr_eq(
+                    state.current.as_ref().unwrap(),
+                    root.chain.as_ref().unwrap()
+                ));
+                assert_eq!(state.error, None);
+                assert!(state.pending.is_empty());
+            });
+        })
+        .join()
+        .unwrap();
+    }
+
+    #[rstest]
+    #[case::typed_outer(true)]
+    #[case::any_outer(false)]
+    fn mixed_publications_preserve_outer_recipient_order(#[case] typed_outer: bool) {
+        use std::any::Any;
+
+        use nautilus_model::data::QuoteTick;
+
+        use crate::msgbus::{BusTap, Endpoint, MStr, Topic, TypedHandler};
+
+        struct PublicationTap(Rc<RefCell<Vec<u64>>>);
+
+        impl BusTap for PublicationTap {
+            fn on_publish(&self, _: MStr<Topic>, _: &dyn Any) {
+                self.0.borrow_mut().push(DISPATCH.with_borrow(|state| {
+                    state
+                        .publication
+                        .expect("tap runs within publication scope")
+                }));
+
+                assert_eq!(drain_callbacks(1), Err(DispatchError::Active));
+            }
+
+            fn on_send(&self, _: MStr<Endpoint>, _: &dyn Any) {}
+        }
+
+        clear().unwrap();
+        *msgbus::get_message_bus().borrow_mut() = msgbus::MessageBus::default();
+        let publications = Rc::new(RefCell::new(Vec::new()));
+        msgbus::set_bus_tap(Rc::new(PublicationTap(publications.clone())));
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let synchronous = Rc::new(RefCell::new(Vec::new()));
+        let observed = synchronous.clone();
+        msgbus::subscribe_quotes(
+            "dispatch.typed".into(),
+            TypedHandler::from(move |_: &QuoteTick| {
+                observed.borrow_mut().push(1);
+
+                if typed_outer {
+                    msgbus::publish_any("dispatch.any".into(), &2_u32);
+                    observed.borrow_mut().push(3);
+                }
+            }),
+            Some(100),
+        );
+
+        let observed = synchronous.clone();
+        msgbus::subscribe_any(
+            "dispatch.any".into(),
+            msgbus::ShareableMessageHandler::from_typed(move |_: &u32| {
+                observed.borrow_mut().push(2);
+
+                if !typed_outer {
+                    msgbus::publish_quote("dispatch.typed".into(), &QuoteTick::default());
+                    observed.borrow_mut().push(3);
+                }
+            }),
+            Some(100),
+        );
+
+        for recipient in [10, 20] {
+            let captured = received.clone();
+            msgbus::subscribe_quotes(
+                "dispatch.typed".into(),
+                TypedHandler::from(move |_: &QuoteTick| {
+                    reserve(0)
+                        .unwrap()
+                        .commit((captured.clone(), recipient + 1), record);
+                }),
+                Some(30 - recipient),
+            );
+
+            let captured = received.clone();
+            msgbus::subscribe_any(
+                "dispatch.any".into(),
+                msgbus::ShareableMessageHandler::from_typed(move |value: &u32| {
+                    reserve(0)
+                        .unwrap()
+                        .commit((captured.clone(), recipient + value), record);
+                }),
+                Some(30 - recipient),
+            );
+        }
+
+        let sequence = DISPATCH.with_borrow(|state| state.sequence);
+
+        if typed_outer {
+            msgbus::publish_quote("dispatch.typed".into(), &QuoteTick::default());
+        } else {
+            msgbus::publish_any("dispatch.any".into(), &2_u32);
+        }
+
+        msgbus::clear_bus_tap();
+
+        assert!(received.borrow().is_empty());
+        assert_eq!(*publications.borrow(), [sequence + 1, sequence + 2]);
+        assert_eq!(
+            *synchronous.borrow(),
+            if typed_outer { [1, 2, 3] } else { [2, 1, 3] }
+        );
+        assert_eq!(drain_callbacks(4), Ok(false));
+        assert_eq!(
+            *received.borrow(),
+            if typed_outer {
+                [11, 21, 12, 22]
+            } else {
+                [12, 22, 11, 21]
+            }
+        );
+        assert_eq!(failure(), None);
+        clear().unwrap();
+    }
+
+    #[rstest]
+    fn any_publication_failure_preserves_synchronous_fanout() {
+        clear().unwrap();
+        *msgbus::get_message_bus().borrow_mut() = msgbus::MessageBus::default();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let captured = received.clone();
+        msgbus::subscribe_any(
+            "dispatch.failure".into(),
+            msgbus::ShareableMessageHandler::from_typed(|_: &u32| {
+                assert!(reserve::<u32>(usize::MAX).is_none());
+            }),
+            Some(100),
+        );
+
+        msgbus::subscribe_any(
+            "dispatch.failure".into(),
+            msgbus::ShareableMessageHandler::from_typed(move |value: &u32| {
+                captured.borrow_mut().push(*value);
+            }),
+            None,
+        );
+
+        msgbus::publish_any("dispatch.failure".into(), &17_u32);
+        msgbus::publish_any("dispatch.failure".into(), &23_u32);
+
+        assert_eq!(*received.borrow(), [17, 23]);
+        assert_eq!(failure(), Some(DispatchError::Overflow));
+        assert_eq!(drain_callbacks(1), Err(DispatchError::Overflow));
+        clear().unwrap();
+    }
+
+    #[cfg(feature = "python")]
+    #[rstest]
+    fn python_publication_orders_admissions_after_raw_republication() {
+        use nautilus_model::identifiers::TraderId;
+        use pyo3::{ffi::c_str, prelude::*, types::PyDict};
+
+        use crate::python::msgbus::{PyMessage, PyMessageBus};
+
+        clear().unwrap();
+        Python::initialize();
+        Python::attach(|py| {
+            let bus = py
+                .get_type::<PyMessageBus>()
+                .call1((TraderId::from("TRADER-001"),))
+                .unwrap();
+            let globals = PyDict::new(py);
+            globals.set_item("bus", &bus).unwrap();
+            py.run(
+                c_str!(
+                    r#"
+trace = []
+def raw(value):
+    trace.append(value)
+    if value == 1:
+        bus.publish('dispatch.inner', 2, external_pub=False)
+        trace.append(3)
+bus.subscribe('dispatch.*', raw, priority=100)
+"#
+                ),
+                Some(&globals),
+                None,
+            )
+            .unwrap();
+            let received = Rc::new(RefCell::new(Vec::new()));
+            let captured = received.clone();
+            msgbus::subscribe_any(
+                "dispatch.*".into(),
+                msgbus::ShareableMessageHandler::from_typed(move |message: &PyMessage| {
+                    let value = Python::attach(|py| message.0.extract::<u32>(py).unwrap());
+                    reserve(0)
+                        .unwrap()
+                        .commit((captured.clone(), value), record);
+                }),
+                None,
+            );
+
+            py.run(
+                c_str!("bus.publish('dispatch.outer', 1, external_pub=False)"),
+                Some(&globals),
+                None,
+            )
+            .unwrap();
+
+            assert_eq!(
+                globals
+                    .get_item("trace")
+                    .unwrap()
+                    .unwrap()
+                    .extract::<Vec<u32>>()
+                    .unwrap(),
+                [1, 2, 3]
+            );
+            assert!(received.borrow().is_empty());
+            assert_eq!(drain_callbacks(1), Ok(true));
+            assert_eq!(*received.borrow(), [1]);
+            assert_eq!(drain_callbacks(1), Ok(false));
+            assert_eq!(*received.borrow(), [1, 2]);
+        });
+
+        clear().unwrap();
+    }
+
+    #[rstest]
     fn runtime_drain_reports_queued_slots_without_counting_retained_roots() {
         clear_callbacks().unwrap();
         let retained = retain(17).unwrap();
@@ -1001,7 +1451,6 @@ mod tests {
                         .unwrap()
                         .commit((received.clone(), value * 10 + recipient), record);
                     if *value == 1 && recipient == 1 {
-                        let _nested = PublicationScope::enter();
                         msgbus::publish_any(nested_topic.into(), &2_u32);
                     }
                 }),
@@ -1009,10 +1458,7 @@ mod tests {
             );
         }
 
-        {
-            let _publication = PublicationScope::enter();
-            msgbus::publish_any("outer".into(), &1_u32);
-        }
+        msgbus::publish_any("outer".into(), &1_u32);
 
         assert_eq!(
             drain(10),

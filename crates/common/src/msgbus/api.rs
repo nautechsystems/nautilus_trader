@@ -66,9 +66,12 @@ use super::{
     DEFI_BLOCK_HANDLERS, DEFI_COLLECT_HANDLERS, DEFI_FLASH_HANDLERS, DEFI_LIQUIDITY_HANDLERS,
     DEFI_POOL_HANDLERS, DEFI_SWAP_HANDLERS,
 };
-use crate::messages::{
-    data::{DataCommand, DataResponse},
-    execution::{ExecutionReport, TradingCommand},
+use crate::{
+    actor::PublicationScope,
+    messages::{
+        data::{DataCommand, DataResponse},
+        execution::{ExecutionReport, TradingCommand},
+    },
 };
 
 /// Registers a handler for an endpoint using runtime type dispatch (Any).
@@ -935,6 +938,7 @@ pub fn exact_subscriber_count_bars(topic: MStr<Topic>) -> usize {
 
 /// Publishes a message to the topic using runtime type dispatch (Any).
 pub fn publish_any(topic: MStr<Topic>, message: &dyn Any) {
+    let _publication = PublicationScope::enter();
     dispatch_tap_publish(topic, message);
 
     // Take buffer (re-entrancy safe)
@@ -969,6 +973,7 @@ pub fn try_publish_any(topic: MStr<Topic>, message: &dyn Any) -> bool {
         return false;
     }
 
+    let _publication = PublicationScope::enter();
     dispatch_tap_publish(topic, message);
 
     let Ok(mut bus) = bus_rc.try_borrow_mut() else {
@@ -1287,6 +1292,7 @@ fn publish_typed<T: 'static>(
     fill_fn: impl FnOnce(&mut MessageBus, &mut SmallVec<[TypedHandler<T>; HANDLER_BUFFER_CAP]>),
     message: &T,
 ) {
+    let _publication = PublicationScope::enter();
     dispatch_tap_publish(topic, message);
 
     // Take buffer (re-entrancy safe)

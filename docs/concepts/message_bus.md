@@ -260,6 +260,12 @@ The Signal messaging approach works well when you need:
   always receive `signal.value` as a `str`; complex data structures are not preserved.
 - Differentiate between signals in the `on_signal` handler with `signal.name`.
 
+:::warning Signal callback reentry
+Signal publication can synchronously reenter an active actor, directly or through another subscriber,
+causing undefined behavior in Rust and Python-authored actors. **Releasing cache borrows does not make
+actor reentry safe.** Avoid publication cycles that invoke an actor before its current callback returns.
+:::
+
 #### Quick overview code
 
 ```python

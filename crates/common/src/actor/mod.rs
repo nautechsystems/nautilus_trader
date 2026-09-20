@@ -41,9 +41,9 @@ pub(crate) mod tests;
 
 // Re-exports
 pub use data_actor::{DataActor, DataActorConfig, DataActorCore, DataActorNative};
-pub(crate) use dispatch::ChainContext;
 #[doc(hidden)]
 pub use dispatch::DispatchError as CallbackDispatchError;
+pub(crate) use dispatch::{ChainContext, PublicationScope};
 #[cfg(feature = "live")]
 pub(crate) use dispatch::{SendChainContext, collect_command_contexts};
 

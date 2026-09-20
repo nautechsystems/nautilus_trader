@@ -336,7 +336,11 @@ recipient of their enclosing publication.
 
 Scopes nest and drop in stack order. Dropping a scope
 restores publication state without delivering callbacks. A publication unwind latches a fatal error.
-The message bus does not install these scopes automatically.
+`publish_any` and the shared typed publication path enter a scope before the bus tap and synchronous
+subscribers run. `try_publish_any` does the same after its initial bus-access check. Scopes preserve
+reservation order across nested typed and `Any` publications. Unwinding through these paths latches
+a fatal dispatch error even when no callbacks are queued or the caller subsequently catches the panic.
+Publication scopes order reservations but do not admit canonical callbacks or drain them.
 
 Admission reserves count, known storage, and a queue slot **before the caller constructs owned
 captures**:
