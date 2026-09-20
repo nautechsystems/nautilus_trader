@@ -21,8 +21,9 @@ use serde::{Deserialize, Serialize};
 
 /// Policy when recovery queries cannot establish a submission's venue outcome.
 ///
-/// This configuration is reserved for submission recovery. The runtime currently
-/// uses local resolution for both variants; retention is not implemented yet.
+/// Both variants currently use local resolution. Selecting retention enables
+/// submission tracking and exhaustion diagnostics only; retention protection
+/// is not implemented yet.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(
@@ -44,7 +45,7 @@ pub enum SubmissionRecoveryPolicy {
     /// Selects local resolution using the existing timeout and missing-order policies.
     #[default]
     ResolveLocally,
-    /// Selects retention without further automatic per-order queries (not implemented yet).
+    /// Enables recovery diagnostics; retention without further queries is not implemented yet.
     RetainUnresolved,
 }
 
@@ -60,7 +61,8 @@ pub enum SubmissionRecoverySource {
 /// A submission's recovery budget expired without establishing its venue outcome.
 ///
 /// This diagnostic is not an order event and does not change order status.
-/// It defines the payload only; the runtime does not emit it yet.
+/// The live node publishes it after applying the existing local resolution.
+/// It does not imply that the order is retained or establish a venue outcome.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SubmissionRecoveryExhausted {
     /// Trader which submitted the order.

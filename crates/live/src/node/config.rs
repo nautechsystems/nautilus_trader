@@ -457,7 +457,7 @@ pub struct LiveExecutionEngineConfig {
     #[builder(default = 5)]
     pub inflight_check_retries: u32,
     /// Policy when a submitted order exhausts automatic recovery.
-    /// Reserved for future use; the runtime currently resolves locally for both variants.
+    /// Retention currently enables tracking and diagnostics only; both variants resolve locally.
     #[builder(default)]
     pub submission_recovery_policy: SubmissionRecoveryPolicy,
     /// The interval (seconds) between checks for open orders at the venue.

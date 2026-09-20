@@ -328,6 +328,24 @@ fills still follow the [bounded history safety](#bounded-history-safety) rules w
 For all live trading options, see the `LiveExecutionEngineConfig`
 [API reference](/docs/python-api-latest/config.html#nautilus_trader.live.LiveExecutionEngineConfig).
 
+### Submission recovery diagnostics
+
+`submission_recovery_policy` defaults to `ResolveLocally`. Selecting `RetainUnresolved` currently
+enables submission identity tracking and exhaustion diagnostics only. Both policies still use the
+existing local timeout and missing-order resolution; retention protection is not implemented yet.
+
+With tracking enabled, a native `LiveNode` publishes `SubmissionRecoveryExhausted` on
+`reconciliation.SubmissionRecoveryExhausted` when an unacknowledged submission reaches an existing
+recovery limit. The diagnostic carries the original submission identity, recovery source, check
+count, and event timestamp. It is published after processing the local resolution events, once per
+tracked submission. It is not an order event and does not establish a venue outcome.
+
+The existing limits and coverage checks still apply. `inflight_check_retries` counts checks: a limit
+of `N` permits `N - 1` intermediate order queries before local resolution. Missing-order checks use
+`open_check_missing_retries` and require completed, matching client coverage plus a successful
+targeted query with no order found before reporting exhaustion. Failed or deferred targeted queries
+do not produce that diagnostic.
+
 ### Instrument availability
 
 Adapters parse reconciliation reports using the instrument, so every instrument a report references
@@ -594,7 +612,9 @@ When the open-order loop exhausts retries, the engine issues one targeted
 `GenerateOrderStatusReport` probe before applying a terminal state or leaving an ambiguous
 pending cancel/update unresolved. If the venue returns the order, reconciliation proceeds and
 missing-order tracking clears. If a pending state remains unresolved, the engine also resets the
-in-flight count before checking again after the configured threshold.
+in-flight count before checking again after the configured threshold. With `RetainUnresolved`
+selected, a tracked submission that has not been acknowledged keeps its original in-flight
+budget instead. Repeated missing-order checks therefore cannot postpone its timeout indefinitely.
 
 Position checks use separate retry counters per instrument and account. A successful position
 match clears the counter, while repeated unresolved discrepancies stop active reconciliation for

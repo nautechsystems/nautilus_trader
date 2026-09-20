@@ -51,7 +51,7 @@ pub struct ExecutionManagerConfig {
     /// Maximum number of retries for inflight checks.
     pub inflight_max_retries: u32,
     /// Policy when a submitted order exhausts automatic recovery.
-    /// Reserved for future use; the runtime currently resolves locally for both variants.
+    /// Retention currently enables tracking and diagnostics only; both variants resolve locally.
     pub submission_recovery_policy: SubmissionRecoveryPolicy,
     /// The lookback minutes for open order checks.
     pub open_check_lookback_mins: Option<u64>,
