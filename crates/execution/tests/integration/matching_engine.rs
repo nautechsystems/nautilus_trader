@@ -10586,6 +10586,260 @@ fn test_l1_queue_position_deep_order_deferred_snapshot(
 }
 
 #[rstest]
+#[case(OrderSide::Buy, AggressorSide::Sell, "54.59")]
+#[case(OrderSide::Sell, AggressorSide::Buy, "54.62")]
+fn test_l1_identical_trade_ticks_have_independent_fill_budgets(
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+    #[case] side: OrderSide,
+    #[case] aggressor: AggressorSide,
+    #[case] price: &str,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let handler = order_event_handler_with_cache(Rc::clone(&cache));
+
+    let config = OrderMatchingEngineConfig {
+        trade_execution: true,
+        queue_position: true,
+        liquidity_consumption: true,
+        ..Default::default()
+    };
+
+    let mut engine = get_order_matching_engine(
+        instrument_eth_usdt.clone(),
+        None,
+        Some(cache),
+        Some(AccountType::Margin),
+        Some(config),
+    );
+
+    for cycle in 0..3_u64 {
+        let timestamp = cycle * 3;
+        engine.process_quote_tick(&QuoteTick::new(
+            instrument_eth_usdt.id(),
+            Price::from("54.59"),
+            Price::from("54.62"),
+            Quantity::from("1.000"),
+            Quantity::from("1.000"),
+            UnixNanos::from(timestamp),
+            UnixNanos::from(timestamp),
+        ));
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_eth_usdt.id())
+            .side(side)
+            .price(Price::from(price))
+            .quantity(Quantity::from("3.000"))
+            .client_order_id(ClientOrderId::new(format!("O-REPEAT-{cycle}")))
+            .submit(true)
+            .build();
+        engine.process_order(&mut order, account_id);
+        clear_order_event_handler_messages(&handler);
+
+        for step in 1..=2_u64 {
+            engine.process_trade_tick(&TradeTick::new(
+                instrument_eth_usdt.id(),
+                Price::from(price),
+                Quantity::from("2.000"),
+                aggressor,
+                TradeId::new(format!("T-{}", timestamp + step)),
+                UnixNanos::from(timestamp + step),
+                UnixNanos::from(timestamp + step),
+            ));
+        }
+
+        let quantities: Vec<Quantity> = get_order_event_handler_messages(&handler)
+            .iter()
+            .filter_map(|event| match event {
+                OrderEventAny::Filled(fill) => Some(fill.last_qty),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(
+            quantities,
+            vec![Quantity::from("1.000"), Quantity::from("2.000")]
+        );
+    }
+}
+
+#[rstest]
+#[case(OrderSide::Buy, AggressorSide::Sell, "54.59")]
+#[case(OrderSide::Sell, AggressorSide::Buy, "54.62")]
+#[case(OrderSide::Buy, AggressorSide::NoAggressor, "54.59")]
+#[case(OrderSide::Sell, AggressorSide::NoAggressor, "54.62")]
+fn test_l1_trade_budget_shared_between_orders(
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+    #[case] side: OrderSide,
+    #[case] aggressor: AggressorSide,
+    #[case] price: &str,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let handler = order_event_handler_with_cache(Rc::clone(&cache));
+
+    let config = OrderMatchingEngineConfig {
+        trade_execution: true,
+        liquidity_consumption: true,
+        ..Default::default()
+    };
+
+    let mut engine = get_order_matching_engine(
+        instrument_eth_usdt.clone(),
+        None,
+        Some(cache),
+        Some(AccountType::Margin),
+        Some(config),
+    );
+    engine.process_quote_tick(&QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("54.59"),
+        Price::from("54.62"),
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    ));
+
+    let first_id = ClientOrderId::new("O-FIRST");
+    let second_id = ClientOrderId::new("O-SECOND");
+    let third_id = ClientOrderId::new("O-THIRD");
+
+    for (id, quantity) in [
+        (first_id, "1.000"),
+        (second_id, "3.000"),
+        (third_id, "4.000"),
+    ] {
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_eth_usdt.id())
+            .side(side)
+            .price(Price::from(price))
+            .quantity(Quantity::from(quantity))
+            .client_order_id(id)
+            .submit(true)
+            .build();
+        engine.process_order(&mut order, account_id);
+    }
+
+    for step in 1..=2_u64 {
+        clear_order_event_handler_messages(&handler);
+        engine.process_trade_tick(&TradeTick::new(
+            instrument_eth_usdt.id(),
+            Price::from(price),
+            Quantity::from("2.000"),
+            aggressor,
+            TradeId::new(format!("T-{step}")),
+            UnixNanos::from(step),
+            UnixNanos::from(step),
+        ));
+
+        let fills: Vec<_> = get_order_event_handler_messages(&handler)
+            .iter()
+            .filter_map(|event| match event {
+                OrderEventAny::Filled(fill) => {
+                    Some((fill.client_order_id, fill.last_px, fill.last_qty))
+                }
+                _ => None,
+            })
+            .collect();
+
+        let expected = if step == 1 {
+            vec![
+                (first_id, Price::from(price), Quantity::from("1.000")),
+                (second_id, Price::from(price), Quantity::from("1.000")),
+            ]
+        } else {
+            vec![(second_id, Price::from(price), Quantity::from("2.000"))]
+        };
+
+        assert_eq!(fills, expected);
+    }
+}
+
+#[rstest]
+#[case(OrderSide::Buy, AggressorSide::Buy, ("54.64", "54.70", "54.65", "54.65"))]
+#[case(OrderSide::Sell, AggressorSide::Sell, ("54.57", "54.50", "54.55", "54.55"))]
+#[case(OrderSide::Buy, AggressorSide::Sell, ("54.64", "54.70", "54.75", "54.70"))]
+#[case(OrderSide::Sell, AggressorSide::Buy, ("54.57", "54.50", "54.45", "54.50"))]
+fn test_l1_trade_triggered_stop_limit_preserves_taker_price(
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+    #[case] side: OrderSide,
+    #[case] aggressor: AggressorSide,
+    #[case] prices: (&str, &str, &str, &str),
+    #[values(false, true)] liquidity_consumption: bool,
+) {
+    let (trigger, limit, trade_price, expected_price) = prices;
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let handler = order_event_handler_with_cache(Rc::clone(&cache));
+
+    let config = OrderMatchingEngineConfig {
+        trade_execution: true,
+        liquidity_consumption,
+        ..Default::default()
+    };
+
+    let mut engine = get_order_matching_engine(
+        instrument_eth_usdt.clone(),
+        None,
+        Some(cache),
+        Some(AccountType::Margin),
+        Some(config),
+    );
+    engine.process_quote_tick(&QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("54.59"),
+        Price::from("54.62"),
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    ));
+    let mut order = OrderTestBuilder::new(OrderType::StopLimit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(side)
+        .trigger_type(TriggerType::LastPrice)
+        .trigger_price(Price::from(trigger))
+        .price(Price::from(limit))
+        .quantity(Quantity::from("1.000"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut order, account_id);
+    clear_order_event_handler_messages(&handler);
+    engine.process_trade_tick(&TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from(trade_price),
+        Quantity::from("2.000"),
+        aggressor,
+        TradeId::new("T-TRIGGER"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    ));
+
+    let fills: Vec<_> = get_order_event_handler_messages(&handler)
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some((
+                fill.client_order_id,
+                fill.last_px,
+                fill.last_qty,
+                fill.liquidity_side,
+            )),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        fills,
+        vec![(
+            order.client_order_id(),
+            Price::from(expected_price),
+            Quantity::from("1.000"),
+            LiquiditySide::Taker
+        )]
+    );
+}
+
+#[rstest]
 fn test_l1_queue_position_at_bbo_trades_decrement_queue(
     account_id: AccountId,
     instrument_eth_usdt: InstrumentAny,

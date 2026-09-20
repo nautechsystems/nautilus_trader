@@ -4315,13 +4315,13 @@ impl OrderMatchingEngine {
                     self.book.simulate_fills(&book_order)
                 };
 
-                // Trade execution: use trade-driven fill when book doesn't reflect trade price
+                // L1 trade updates replace book levels, so use the per-trade budget
                 if let Some(trade_size) = self.last_trade_size
                     && let Some(trade_price) = self.core.last
                 {
                     let fills_at_trade_price = fills.iter().any(|(px, _)| *px == trade_price);
 
-                    if !fills_at_trade_price
+                    if (self.book_type == BookType::L1_MBP || !fills_at_trade_price)
                         && self.core.is_limit_matched(order.order_side(), order_price)
                     {
                         // Fill model check for MAKER at limit is already handled in fill_limit_order,
@@ -4337,10 +4337,19 @@ impl OrderMatchingEngine {
                         let fill_qty = min(leaves_qty, available_qty);
 
                         if fill_qty.non_zero() {
+                            let fill_price = if self.book_type == BookType::L1_MBP
+                                && fills_at_trade_price
+                                && order.liquidity_side() == Some(LiquiditySide::Taker)
+                            {
+                                trade_price
+                            } else {
+                                order_price
+                            };
+
                             log::debug!(
                                 "Trade execution fill: {} @ {} (trade_price={}, available: {}, book had {} fills)",
                                 fill_qty,
-                                order_price,
+                                fill_price,
                                 trade_price,
                                 available_qty,
                                 fills.len()
@@ -4350,11 +4359,13 @@ impl OrderMatchingEngine {
                                 self.trade_consumption += fill_qty.raw();
                             }
 
-                            // Fill at the limit price (conservative) rather than the trade price.
-                            // Trade execution fills already account for consumption via trade_consumption,
-                            // return early to bypass apply_liquidity_consumption which would incorrectly
-                            // discard these fills when the trade price isn't in the order book.
-                            return vec![(order_price, fill_qty)];
+                            // The trade budget already accounts for consumption, so bypass
+                            // persistent book consumption for this event's liquidity.
+                            return vec![(fill_price, fill_qty)];
+                        }
+
+                        if self.book_type == BookType::L1_MBP {
+                            return Vec::new();
                         }
                     }
                 }
