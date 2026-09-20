@@ -100,9 +100,10 @@ The current adapter scope is deliberately narrower than the venue's full transac
   not implemented. Batch submit does not use `CreateGroupedOrders`.
 - Order-list submit and batch cancel fan out independent transactions sequentially over WebSocket.
   Both operations are capped at 15 transactions per command.
-- The execution client implements `CancelAllOrders` from cached open orders for the requested
-  instrument. It does not use the native account-wide transaction because that can affect unrelated
-  markets.
+- The execution client implements `CancelAllOrders` from cached open orders filtered by the requested
+  instrument and optional `order_side`, across strategies. Each cancellation retains the order's
+  owning strategy. The execution client uses individual cancellations because its local cancel-all signing
+  schema has no market restriction or side filter.
 - Spot trading supports market and limit orders. Conditional stop-loss and take-profit orders are
   limited to perpetual markets.
 - Account state and position reports come from private WebSocket streams. `query_account` and
@@ -531,7 +532,7 @@ them as `INFLIGHT_TIMEOUT` rather than a venue-supplied rejection reason.
 | Submit order list   | ✓          | ✓    | Sequential fanout of up to 15 independent create transactions. |
 | Modify order        | ✓          | ✓    | Sends a signed `ModifyOrder`; reports may restate accepts.     |
 | Cancel order        | ✓          | ✓    | Sends a signed `L2CancelOrder` transaction.                    |
-| Cancel all orders   | ✓          | ✓    | Iterates cached open orders for the requested instrument.      |
+| Cancel all orders   | ✓          | ✓    | Cancels cached orders by instrument and optional side.         |
 | Set leverage        | ✓          | -    | Perp only; submits a signed `UpdateLeverage` tx.               |
 | Batch cancel orders | ✓          | ✓    | Sequential fanout of up to 15 independent cancel transactions. |
 | Query order         | ✓          | ✓    | Requires credentials and REST lookup.                          |

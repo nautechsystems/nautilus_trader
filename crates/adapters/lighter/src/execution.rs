@@ -4377,19 +4377,20 @@ impl ExecutionClient for LighterExecutionClient {
     }
 
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
-        // Iterate over open orders for the instrument and cancel each. The
-        // venue offers a `CancelAllOrders` tx but it spans the whole account
-        // rather than a single market; doing per-order cancels keeps scope
-        // tight and avoids cancelling positions in unrelated markets.
-        let cache = self.core.cache();
-        let open_orders: Vec<ClientOrderId> = cache
-            .orders_open(None, Some(&cmd.instrument_id), None, None, None)
+        // Native cancel-all has no side filter, and the local signing schema
+        // carries no market restriction, so retain per-order cancellation.
+        let cancels: Vec<_> = self
+            .core
+            .cache()
+            .orders_open(None, Some(&cmd.instrument_id), None, None, cmd.order_side)
             .into_iter()
-            .map(|o| o.client_order_id())
+            .map(|order| {
+                cancel_order_from_cancel_all(&cmd, order.client_order_id(), order.strategy_id())
+            })
             .collect();
 
-        for client_order_id in open_orders {
-            let order_cmd = cancel_order_from_cancel_all(&cmd, client_order_id);
+        for order_cmd in cancels {
+            let client_order_id = order_cmd.client_order_id;
 
             if let Err(e) = self.cancel_order(order_cmd) {
                 log::warn!("cancel_all_orders: cancel for {client_order_id} failed: {e}");
@@ -5613,11 +5614,12 @@ async fn seed_active_markets_from_inactive_orders(
 fn cancel_order_from_cancel_all(
     cmd: &CancelAllOrders,
     client_order_id: ClientOrderId,
+    strategy_id: StrategyId,
 ) -> CancelOrder {
     CancelOrder {
         trader_id: cmd.trader_id,
         client_id: cmd.client_id,
-        strategy_id: cmd.strategy_id,
+        strategy_id,
         instrument_id: cmd.instrument_id,
         client_order_id,
         venue_order_id: None,
@@ -6185,7 +6187,7 @@ mod tests {
             InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId, VenueOrderId,
         },
         instruments::CryptoPerpetual,
-        orders::{LimitOrder, OrderList},
+        orders::{LimitOrder, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
         types::{Currency, Money, Price},
     };
     use rstest::rstest;
@@ -8170,6 +8172,162 @@ mod tests {
         );
     }
 
+    #[rstest]
+    #[case::buy(Some(OrderSide::Buy), false, vec![0, 2])]
+    #[case::sell(Some(OrderSide::Sell), false, vec![1, 3])]
+    #[case::unsided(None, false, vec![0, 1, 2, 3])]
+    #[case::empty_buy(Some(OrderSide::Buy), true, vec![])]
+    #[case::empty_sell(Some(OrderSide::Sell), true, vec![])]
+    #[case::empty_unsided(None, true, vec![])]
+    #[tokio::test]
+    async fn cancel_all_orders_filters_orders_and_preserves_owners(
+        #[case] order_side: Option<OrderSide>,
+        #[case] empty: bool,
+        #[case] expected_indices: Vec<usize>,
+    ) {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let other_instrument_id = InstrumentId::from("BTC-PERP.LIGHTER");
+        let mut orders = Vec::new();
+
+        for (index, (instrument, owner, side, open)) in [
+            (instrument_id, "S-001", OrderSide::Buy, true),
+            (instrument_id, "S-001", OrderSide::Sell, true),
+            (instrument_id, "S-002", OrderSide::Buy, true),
+            (instrument_id, "S-002", OrderSide::Sell, true),
+            (other_instrument_id, "S-001", OrderSide::Buy, true),
+            (other_instrument_id, "S-002", OrderSide::Sell, true),
+            (instrument_id, "S-001", OrderSide::Buy, false),
+            (instrument_id, "S-002", OrderSide::Sell, false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if empty
+                && instrument == instrument_id
+                && open
+                && order_side.is_none_or(|filter| filter == side)
+            {
+                continue;
+            }
+
+            let order = OrderTestBuilder::new(OrderType::Limit)
+                .trader_id(trader_id())
+                .strategy_id(StrategyId::from(owner))
+                .instrument_id(instrument)
+                .client_order_id(ClientOrderId::from(format!("O-CANCEL-ALL-{index}")))
+                .side(side)
+                .quantity(Quantity::from("0.1000"))
+                .price(Price::from("2361.31"))
+                .build();
+            let venue_order_id = VenueOrderId::from(format!("{}", 123 + index));
+            let accepted = TestOrderEventStubs::accepted(&order, account_id(), venue_order_id);
+            cache_order(&cache, order.clone());
+            cache.borrow_mut().update_order(&accepted).unwrap();
+            client
+                .dispatch
+                .venue_id_map
+                .insert(order.client_order_id(), venue_order_id);
+
+            let event = if open {
+                OrderEventAny::PendingCancel(OrderPendingCancel::new(
+                    order.trader_id(),
+                    order.strategy_id(),
+                    instrument,
+                    order.client_order_id(),
+                    Some(account_id()),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    UnixNanos::default(),
+                    false,
+                    Some(venue_order_id),
+                ))
+            } else {
+                TestOrderEventStubs::canceled(&order, account_id(), Some(venue_order_id))
+            };
+
+            cache.borrow_mut().update_order(&event).unwrap();
+            orders.push((order, venue_order_id));
+        }
+
+        client
+            .cancel_all_orders(CancelAllOrders::new(
+                trader_id(),
+                Some(client_id()),
+                strategy_id(),
+                instrument_id,
+                order_side,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+
+        // The disconnected transport rejects signed cancels, exposing selection
+        // and event ownership through the existing dispatch failure path.
+        let mut actual = Vec::new();
+
+        for _ in &expected_indices {
+            match recv_order_event(&mut rx).await {
+                OrderEventAny::CancelRejected(event) => {
+                    assert!(
+                        event
+                            .reason
+                            .contains("Lighter cancel_order dispatch failed")
+                    );
+                    assert!(event.reason.contains("handler unavailable"));
+                    assert_eq!(event.trader_id, trader_id());
+                    assert_eq!(event.account_id, Some(account_id()));
+                    actual.push((
+                        event.client_order_id,
+                        event.strategy_id,
+                        event.instrument_id,
+                        event.venue_order_id,
+                    ));
+                }
+                event => panic!("expected cancel rejected event, was {event:?}"),
+            }
+        }
+
+        let mut expected: Vec<_> = expected_indices
+            .iter()
+            .map(|&index| {
+                let (order, venue_order_id) = &orders[index];
+                (
+                    order.client_order_id(),
+                    order.strategy_id(),
+                    order.instrument_id(),
+                    Some(*venue_order_id),
+                )
+            })
+            .collect();
+
+        actual.sort();
+        expected.sort();
+
+        assert_eq!(actual, expected);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), rx.recv())
+                .await
+                .is_err()
+        );
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+
+        for (order, _) in orders {
+            assert_eq!(
+                client
+                    .dispatch
+                    .pending_order_action(&order.client_order_id()),
+                None
+            );
+        }
+
+        if empty {
+            assert_nonce_reusable(&client.dispatch);
+        }
+    }
+
     #[tokio::test]
     async fn cancel_all_orders_prepare_failure_suppresses_cancel_rejected_for_open_order() {
         let (client, cache, mut rx) = create_execution_client();
@@ -8405,11 +8563,12 @@ mod tests {
         );
         cmd.causation_id = Some(causation_id);
 
-        let order_cmd = cancel_order_from_cancel_all(&cmd, client_order_id);
+        let owner = StrategyId::from("S-002");
+        let order_cmd = cancel_order_from_cancel_all(&cmd, client_order_id, owner);
 
         assert_eq!(order_cmd.trader_id, trader_id());
         assert_eq!(order_cmd.client_id, Some(client_id()));
-        assert_eq!(order_cmd.strategy_id, strategy_id());
+        assert_eq!(order_cmd.strategy_id, owner);
         assert_eq!(order_cmd.instrument_id, instrument_id);
         assert_eq!(order_cmd.client_order_id, client_order_id);
         assert_eq!(order_cmd.venue_order_id, None);
