@@ -378,4 +378,66 @@ mod tests {
         assert_eq!(aroon.aroon_down, 25.0);
         assert_eq!(aroon.value, 0.0);
     }
+
+    #[rstest]
+    fn test_max_period_preserves_oldest_high_until_rollover() {
+        let mut aroon = AroonOscillator::new(MAX_PERIOD);
+
+        aroon.update_raw(1_000.0, 5.0);
+        for _ in 1..MAX_PERIOD {
+            aroon.update_raw(10.0, 1.0);
+        }
+
+        assert!(!aroon.initialized());
+        assert_eq!(aroon.count, MAX_PERIOD);
+
+        aroon.update_raw(10.0, 1.0);
+
+        assert!(aroon.initialized());
+        assert_eq!(aroon.count, MAX_PERIOD + 1);
+        assert_eq!(aroon.high_inputs.len(), MAX_PERIOD + 1);
+        assert_eq!(aroon.low_inputs.len(), MAX_PERIOD + 1);
+        assert_eq!(aroon.aroon_up, 0.0);
+        assert_eq!(aroon.aroon_down, 100.0);
+        assert_eq!(aroon.value, -100.0);
+
+        aroon.update_raw(10.0, 1.0);
+
+        assert_eq!(aroon.high_inputs.len(), MAX_PERIOD + 1);
+        assert_eq!(aroon.low_inputs.len(), MAX_PERIOD + 1);
+        assert_eq!(aroon.aroon_up, 100.0);
+        assert_eq!(aroon.aroon_down, 100.0);
+        assert_eq!(aroon.value, 0.0);
+    }
+
+    #[rstest]
+    fn test_max_period_preserves_oldest_low_until_rollover() {
+        let mut aroon = AroonOscillator::new(MAX_PERIOD);
+
+        aroon.update_raw(10.0, 0.0);
+        for _ in 1..MAX_PERIOD {
+            aroon.update_raw(10.0, 5.0);
+        }
+
+        assert!(!aroon.initialized());
+        assert_eq!(aroon.count, MAX_PERIOD);
+
+        aroon.update_raw(10.0, 5.0);
+
+        assert!(aroon.initialized());
+        assert_eq!(aroon.count, MAX_PERIOD + 1);
+        assert_eq!(aroon.high_inputs.len(), MAX_PERIOD + 1);
+        assert_eq!(aroon.low_inputs.len(), MAX_PERIOD + 1);
+        assert_eq!(aroon.aroon_up, 100.0);
+        assert_eq!(aroon.aroon_down, 0.0);
+        assert_eq!(aroon.value, 100.0);
+
+        aroon.update_raw(10.0, 5.0);
+
+        assert_eq!(aroon.high_inputs.len(), MAX_PERIOD + 1);
+        assert_eq!(aroon.low_inputs.len(), MAX_PERIOD + 1);
+        assert_eq!(aroon.aroon_up, 100.0);
+        assert_eq!(aroon.aroon_down, 100.0);
+        assert_eq!(aroon.value, 0.0);
+    }
 }
