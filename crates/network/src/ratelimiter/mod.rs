@@ -653,13 +653,13 @@ mod tests {
     #[rstest]
     fn test_per_minute_accepts_max_burst() {
         let quota = Quota::per_minute(NonZeroU32::new(u32::MAX).unwrap());
-        assert!(quota.replenish_interval().as_nanos() > 0);
+        assert_eq!(quota.replenish_interval(), Duration::from_nanos(13));
     }
 
     #[rstest]
     fn test_per_hour_accepts_max_burst() {
         let quota = Quota::per_hour(NonZeroU32::new(u32::MAX).unwrap());
-        assert!(quota.replenish_interval().as_nanos() > 0);
+        assert_eq!(quota.replenish_interval(), Duration::from_nanos(838));
     }
 
     mod property_tests {

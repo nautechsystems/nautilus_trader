@@ -294,4 +294,47 @@ mod tests {
         assert!(Message::ping(Bytes::new()).as_text().is_none());
         assert!(Message::Close(None).as_text().is_none());
     }
+
+    #[rstest]
+    #[case(Message::text("text-17"), [true, false, false, false, false])]
+    #[case(Message::binary(b"binary-29".as_slice()), [false, true, false, false, false])]
+    #[case(Message::ping(b"ping-31".as_slice()), [false, false, true, false, false])]
+    #[case(Message::pong(b"pong-43".as_slice()), [false, false, false, true, false])]
+    #[case(Message::Close(None), [false, false, false, false, true])]
+    fn predicates_distinguish_variants(#[case] message: Message, #[case] expected: [bool; 5]) {
+        assert_eq!(
+            [
+                message.is_text(),
+                message.is_binary(),
+                message.is_ping(),
+                message.is_pong(),
+                message.is_close()
+            ],
+            expected
+        );
+    }
+
+    #[rstest]
+    fn text_conversions_preserve_payload() {
+        assert_eq!(
+            Message::from("borrowed-17"),
+            Message::Text(Bytes::from_static(b"borrowed-17"))
+        );
+        assert_eq!(
+            Message::from(String::from("owned-29")),
+            Message::Text(Bytes::from_static(b"owned-29"))
+        );
+    }
+
+    #[rstest]
+    fn binary_conversions_preserve_payload() {
+        assert_eq!(
+            Message::from(vec![0, 17, 255]),
+            Message::Binary(Bytes::from_static(&[0, 17, 255]))
+        );
+        assert_eq!(
+            Message::from(Bytes::from_static(&[128, 29])),
+            Message::Binary(Bytes::from_static(&[128, 29]))
+        );
+    }
 }

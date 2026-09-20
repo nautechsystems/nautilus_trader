@@ -393,8 +393,9 @@ mod tests {
     async fn test_succeed_without_pending_auth() {
         let tracker = AuthTracker::new();
 
-        // Calling succeed without begin should not panic
         tracker.succeed();
+
+        assert_eq!(tracker.auth_state(), AuthState::Authenticated);
     }
 
     #[rstest]
@@ -402,8 +403,9 @@ mod tests {
     async fn test_fail_without_pending_auth() {
         let tracker = AuthTracker::new();
 
-        // Calling fail without begin should not panic
         tracker.fail("Some error");
+
+        assert_eq!(tracker.auth_state(), AuthState::Failed);
     }
 
     #[rstest]
@@ -442,17 +444,16 @@ mod tests {
         let tracker = AuthTracker::new();
         let rx = tracker.begin();
 
-        // Drop the tracker's sender by starting a new auth
-        tracker.begin();
+        drop(tracker.tx.lock().take());
 
-        // Original receiver should get channel closed error
         let result: Result<(), TestError> =
             tracker.wait_for_result(Duration::from_secs(1), rx).await;
 
         assert_eq!(
-            result.unwrap_err(),
-            TestError("Authentication attempt superseded".to_string())
+            result,
+            Err(TestError("Authentication channel closed".to_string()))
         );
+        assert_eq!(tracker.auth_state(), AuthState::Unauthenticated);
     }
 
     #[rstest]

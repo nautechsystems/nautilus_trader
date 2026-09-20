@@ -153,3 +153,45 @@ impl Gcra {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use rstest::{fixture, rstest};
+
+    use super::*;
+
+    #[rstest]
+    fn rejection_preserves_quota_and_deadline(rejection: NotUntil<Nanos>) {
+        let quota = rejection.quota();
+
+        assert_eq!(rejection.earliest_possible(), Nanos::new(135));
+        assert_eq!(quota.replenish_interval(), Duration::from_nanos(7));
+        assert_eq!(quota.burst_size().get(), 3);
+        assert_eq!(quota.burst_size_replenished_in(), Duration::from_nanos(21));
+        assert_eq!(rejection.to_string(), "rate-limited until Nanos(135ns)");
+    }
+
+    #[rstest]
+    #[case(100, 35)]
+    #[case(134, 1)]
+    #[case(135, 0)]
+    #[case(136, 0)]
+    fn rejection_wait_saturates_at_deadline(
+        rejection: NotUntil<Nanos>,
+        #[case] now: u64,
+        #[case] wait: u64,
+    ) {
+        assert_eq!(
+            rejection.wait_time_from(Nanos::new(now)),
+            Duration::from_nanos(wait)
+        );
+    }
+
+    #[fixture]
+    fn rejection() -> NotUntil<Nanos> {
+        NotUntil::new(
+            StateSnapshot::new(Nanos::new(7), Nanos::new(21), Nanos::new(35)),
+            Nanos::new(100),
+        )
+    }
+}

@@ -1021,6 +1021,98 @@ mod tests {
     use super::*;
     use crate::logging::tests::capture_logs;
 
+    #[rstest]
+    #[case("ftp://127.0.0.1:1/resource")]
+    #[case("file:///resource")]
+    #[tokio::test]
+    async fn test_request_rejects_unsupported_url(#[case] url: &str) {
+        let client = HttpClient::builder()
+            .use_system_proxy(false)
+            .build()
+            .unwrap();
+
+        let error = client
+            .request(Method::GET, url.to_string(), None, None, None, None, None)
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(error, HttpClientError::Error(ref message) if message == "unsupported HTTP URL scheme or hostname")
+        );
+    }
+
+    #[rstest]
+    #[case::username_only("user%2F17@", "Basic dXNlci8xNzo=")]
+    #[case::password_only(":secret%2F29@", "Basic OnNlY3JldC8yOQ==")]
+    #[tokio::test]
+    async fn test_request_url_credentials_allow_missing_username_or_password(
+        #[case] userinfo: &str,
+        #[case] expected: &str,
+    ) {
+        let addr = start_test_server().await.unwrap();
+        let client = HttpClient::builder()
+            .use_system_proxy(false)
+            .build()
+            .unwrap();
+
+        let response = client
+            .request(
+                Method::GET,
+                format!("http://{userinfo}{addr}/headers"),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status.as_u16(), 200);
+        assert_eq!(response.headers, HashMap::new());
+        assert_eq!(
+            response.body.as_ref(),
+            format!("{expected}\n*/*").as_bytes()
+        );
+    }
+
+    #[rstest]
+    #[case::default(None, "*/*")]
+    #[case::explicit(Some("application/octet-stream"), "application/octet-stream")]
+    #[tokio::test]
+    async fn test_request_accept_header_preserves_explicit_value(
+        #[case] accept: Option<&str>,
+        #[case] expected: &str,
+    ) {
+        let addr = start_test_server().await.unwrap();
+        let client = HttpClient::builder()
+            .use_system_proxy(false)
+            .build()
+            .unwrap();
+        let headers =
+            accept.map(|value| HashMap::from([("accept".to_string(), value.to_string())]));
+
+        let response = client
+            .request(
+                Method::GET,
+                format!("http://{addr}/headers"),
+                None,
+                headers,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status.as_u16(), 200);
+        assert_eq!(response.headers, HashMap::new());
+        assert_eq!(
+            response.body.as_ref(),
+            format!("absent\n{expected}").as_bytes()
+        );
+    }
+
     async fn capture_request(request: Request) -> impl IntoResponse {
         let (parts, body) = request.into_parts();
         let body = to_bytes(body, usize::MAX).await.unwrap();
@@ -1044,6 +1136,21 @@ mod tests {
             .route("/patch", patch(|body: Bytes| async move { body }))
             .route("/delete", delete(|| async { StatusCode::OK }))
             .route("/capture", any(capture_request))
+            .route(
+                "/headers",
+                get(|request: Request| async move {
+                    let headers = request.headers();
+                    format!(
+                        "{}\n{}",
+                        headers
+                            .get(http::header::AUTHORIZATION)
+                            .map_or("absent", |v| v.to_str().unwrap()),
+                        headers
+                            .get(http::header::ACCEPT)
+                            .map_or("absent", |v| v.to_str().unwrap()),
+                    )
+                }),
+            )
             .route("/notfound", get(|| async { StatusCode::NOT_FOUND }))
             .route(
                 "/redirect",

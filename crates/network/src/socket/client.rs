@@ -1595,6 +1595,67 @@ mod tests {
         }
     }
 
+    #[rstest]
+    #[case::drain_failed(
+        Some(false),
+        std::io::ErrorKind::Other,
+        "Failed to drain reconnection buffer"
+    )]
+    #[case::reply_dropped(
+        None,
+        std::io::ErrorKind::BrokenPipe,
+        "Writer task dropped response channel"
+    )]
+    #[tokio::test]
+    async fn test_reconnect_writer_failure_preserves_reconnect_state(
+        #[case] reply: Option<bool>,
+        #[case] kind: std::io::ErrorKind,
+        #[case] message: &str,
+    ) {
+        let (port, listener) = bind_test_server().await;
+        let config = SocketConfig::builder()
+            .url(format!("127.0.0.1:{port}"))
+            .mode(Mode::Plain)
+            .suffix(b"\r\n".to_vec())
+            .build()
+            .unwrap();
+        let mut client = SocketClientInner::connect_url(config, None).await.unwrap();
+        let (_peer, _) = listener.accept().await.unwrap();
+        client.read_task.abort();
+        client.write_task.abort();
+        let _ = (&mut client.read_task).await;
+        let _ = (&mut client.write_task).await;
+        let (writer_tx, mut writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        client.writer_tx = writer_tx;
+        client
+            .connection_mode
+            .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+
+        let writer = tokio::spawn(async move {
+            let WriterCommand::Update(_, sender) = writer_rx.recv().await.unwrap() else {
+                panic!("expected writer update");
+            };
+
+            if let Some(reply) = reply {
+                sender.send(reply).unwrap();
+            }
+        });
+
+        let error = client.reconnect(None).await.unwrap_err();
+        writer.await.unwrap();
+
+        let Error::Io(error) = error else {
+            panic!("expected I/O error, was {error}");
+        };
+
+        assert_eq!(error.kind(), kind);
+        assert_eq!(error.to_string(), message);
+        assert_eq!(
+            ConnectionMode::from_atomic(&client.connection_mode),
+            ConnectionMode::Reconnect
+        );
+    }
+
     #[tokio::test]
     async fn test_basic_send_receive() {
         let (port, listener) = bind_test_server().await;
@@ -2160,6 +2221,48 @@ mod rust_tests {
             ConnectionMode::Active
         );
         server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_aborts_retired_reader() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let mut inner = SocketClientInner::connect_url(reconnect_test_config(port), None)
+            .await
+            .unwrap();
+        let (_peer, _) = listener.accept().await.unwrap();
+        let (dropped_tx, dropped_rx) = tokio::sync::oneshot::channel::<()>();
+
+        let pending_reader = tokio::spawn(async move {
+            let _sender = dropped_tx;
+            std::future::pending::<()>().await;
+        });
+
+        let previous_reader = std::mem::replace(&mut inner.read_task, pending_reader);
+        previous_reader.abort();
+        let _ = previous_reader.await;
+        let old_fence = inner.read_fence.clone();
+        inner
+            .connection_mode
+            .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+
+        let outcome = inner.reconnect(None).await.unwrap();
+        let reader_result = tokio::time::timeout(Duration::from_secs(1), dropped_rx)
+            .await
+            .expect("retired reader task must be canceled");
+
+        assert_eq!(outcome, ReconnectOutcome::Reconnected);
+        assert!(
+            reader_result.is_err(),
+            "retired reader must drop its sender without sending"
+        );
+        assert!(!old_fence.is_valid());
+        assert!(inner.read_fence.is_valid());
+        assert_eq!(
+            ConnectionMode::from_atomic(&inner.connection_mode),
+            ConnectionMode::Active
+        );
     }
 
     #[rstest]

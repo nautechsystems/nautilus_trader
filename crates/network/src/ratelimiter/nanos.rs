@@ -143,7 +143,7 @@ impl Add<Duration> for Nanos {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use std::time::Duration;
 
     use rstest::rstest;
@@ -166,6 +166,7 @@ mod test {
         assert_eq!(n_half.saturating_sub(n), Nanos::new(0));
         assert_eq!(n.saturating_sub(n_half), n_half);
         assert_eq!(clock::Reference::saturating_sub(&n_half, n), Nanos::new(0));
+        assert_eq!(clock::Reference::saturating_sub(&n, n_half), n_half);
     }
 
     #[rstest]
@@ -190,5 +191,26 @@ mod test {
             Nanos::from_duration_saturating(Duration::from_nanos(42)),
             Nanos::new(42)
         );
+    }
+
+    #[rstest]
+    #[case(7, 11, 18)]
+    #[case(u64::MAX - 1, 1, u64::MAX)]
+    #[case(u64::MAX, 1, u64::MAX)]
+    fn saturating_add_preserves_sum_or_max(
+        #[case] left: u64,
+        #[case] right: u64,
+        #[case] expected: u64,
+    ) {
+        assert_eq!(
+            Nanos::new(left).saturating_add(Nanos::new(right)),
+            Nanos::new(expected)
+        );
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Duration is longer than 584 years")]
+    fn conversion_rejects_unrepresentable_duration() {
+        let _ = Nanos::from(Duration::MAX);
     }
 }

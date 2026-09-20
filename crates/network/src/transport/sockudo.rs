@@ -550,6 +550,50 @@ mod tests {
         })
     }
 
+    #[rstest]
+    #[tokio::test]
+    #[cfg(not(feature = "turmoil"))]
+    async fn handshake_rejects_eof_before_response() {
+        let (mut client, mut server) = duplex(4096);
+
+        let peer = tokio::spawn(async move {
+            read_http_request(&mut server).await;
+        });
+
+        let error = client_handshake_with_headers(&mut client, "localhost", "/", &[])
+            .await
+            .unwrap_err();
+        peer.await.unwrap();
+
+        assert!(matches!(error, TransportError::ConnectionClosed));
+    }
+
+    #[rstest]
+    #[case::at_limit(MAX_HTTP_HEADER_SIZE, "connection closed")]
+    #[case::above_limit(MAX_HTTP_HEADER_SIZE + 1, "handshake failed: response too large")]
+    #[tokio::test]
+    #[cfg(not(feature = "turmoil"))]
+    async fn handshake_rejects_incomplete_headers_at_size_boundary(
+        #[case] response_size: usize,
+        #[case] expected: &str,
+    ) {
+        let (mut client, mut server) = duplex(MAX_HTTP_HEADER_SIZE * 2);
+
+        let peer = tokio::spawn(async move {
+            read_http_request(&mut server).await;
+            let mut response = b"HTTP/1.1 101 Switching Protocols\r\nX-Padding: ".to_vec();
+            response.resize(response_size, b'x');
+            server.write_all(&response).await.unwrap();
+        });
+
+        let error = client_handshake_with_headers(&mut client, "localhost", "/", &[])
+            .await
+            .unwrap_err();
+        peer.await.unwrap();
+
+        assert_eq!(error.to_string(), expected);
+    }
+
     #[tokio::test]
     #[cfg(not(feature = "turmoil"))]
     async fn client_handshake_with_headers_sends_custom_headers() {
