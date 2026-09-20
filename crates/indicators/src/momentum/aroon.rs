@@ -24,6 +24,7 @@ use nautilus_model::{
 use crate::indicator::Indicator;
 
 pub const MAX_PERIOD: usize = 1_024;
+const MAX_CAPACITY: usize = MAX_PERIOD + 1;
 
 const ROUND_DP: f64 = 1_000_000_000_000.0;
 
@@ -48,8 +49,8 @@ pub struct AroonOscillator {
     pub initialized: bool,
     has_inputs: bool,
     total_count: usize,
-    high_inputs: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
-    low_inputs: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
+    high_inputs: ArrayDeque<f64, MAX_CAPACITY, Wrapping>,
+    low_inputs: ArrayDeque<f64, MAX_CAPACITY, Wrapping>,
 }
 
 impl Display for AroonOscillator {
