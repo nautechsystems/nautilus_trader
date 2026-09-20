@@ -56,6 +56,7 @@ Released on TBD (UTC).
 - Fixed dropping unfilled working orders when replacing a reconciliation lifecycle (#5003), thanks @abhijeetvichare76
 - Fixed live reconciliation applying report-task results after shutdown (#4982), thanks @folknor
 - Fixed backtest data-type and missing-engine errors to name the valid case (#4977), thanks @abhijeetvichare76
+- Fixed unclear errors for missing local Parquet catalog paths (#4950), thanks for reporting @Artur-Sulej
 - Fixed Betfair false fill voids and missing fills during reconciliation after price replacements
 - Fixed Betfair false fill voids from inconsistent order and fill snapshots during reconciliation
 - Fixed Betfair order quantities in replacement queries and quantity reduction recovery

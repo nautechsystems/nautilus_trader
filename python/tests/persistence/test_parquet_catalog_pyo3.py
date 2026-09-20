@@ -83,6 +83,29 @@ def _instrument(ts_init: int, venue_extra: str, count: int, enabled: bool) -> Cu
     return CurrencyPair.from_dict(payload)
 
 
+@pytest.mark.parametrize("file_uri", [False, True])
+def test_catalog_missing_directory_error(tmp_path: Path, file_uri: bool) -> None:
+    """
+    Report how to fix a missing catalog directory through the Python boundary.
+    """
+    path = tmp_path / "missing directory" / "catalog"
+    base_path = f"file://{path}" if file_uri else str(path)
+
+    with pytest.raises(OSError, match="failed to open local storage directory") as exc_info:
+        ParquetDataCatalog(base_path)
+
+    assert str(exc_info.value) == (
+        f"Failed to create ParquetDataCatalog: failed to open local storage directory '{path}'; "
+        "create it if it does not exist and check access permissions"
+    )
+    assert not path.exists()
+
+    path.mkdir(parents=True)
+    catalog = ParquetDataCatalog(base_path)
+
+    assert catalog.list_data_types() == []
+
+
 def test_migration_planner_resolves_funding_and_close_files(tmp_path: Path) -> None:
     """
     Verify migration planner resolves funding and close files.

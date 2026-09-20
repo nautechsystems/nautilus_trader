@@ -22,6 +22,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use ahash::AHashMap;
+use anyhow::Context;
 use arrow::{
     array::{
         Array, ArrayRef, BinaryArray, Decimal128Array, FixedSizeListArray, ListArray,
@@ -1482,7 +1483,14 @@ fn create_local_store(
         uri.to_string()
     };
 
-    let local_store = object_store::local::LocalFileSystem::new_with_prefix(&path)?;
+    let local_store =
+        object_store::local::LocalFileSystem::new_with_prefix(&path).with_context(|| {
+            format!(
+                "failed to open local storage directory '{path}'; \
+             create it if it does not exist and check access permissions"
+            )
+        })?;
+
     Ok((Arc::new(local_store), String::new(), uri.to_string()))
 }
 
