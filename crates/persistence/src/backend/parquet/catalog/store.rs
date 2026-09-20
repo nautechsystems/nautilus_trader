@@ -25,9 +25,10 @@ use object_store::ObjectMeta;
 
 use super::{
     HashSet, ObjectPath, ObjectStore, ObjectStoreExt, ParquetDataCatalog, PathBuf, StreamExt,
-    UnixNanos, append_path_to_file_uri, are_intervals_disjoint, extract_path_components,
-    is_remote_uri_scheme, make_object_store_path, query_intersects_filename, remote_full_uri,
-    remote_store_root_url, timestamps_to_filename, urisafe_instrument_id,
+    UnixNanos, append_path_to_file_uri, are_intervals_disjoint, decode_object_store_segment,
+    extract_path_components, is_remote_uri_scheme, make_object_store_path,
+    query_intersects_filename, remote_full_uri, remote_store_root_url, timestamps_to_filename,
+    urisafe_instrument_id,
 };
 use crate::{
     catalog::types::{
@@ -284,21 +285,25 @@ impl ParquetDataCatalog {
     }
 
     fn list_prefix_instruments(&self, data_type: &str) -> anyhow::Result<Vec<String>> {
+        let prefix = ObjectPath::from(self.make_path(data_type, None)?);
+
         self.execute_async(|| async {
-            let prefix = format!("data/{data_type}/");
-            let object_prefix = ObjectPath::from(prefix.as_str());
-            let mut stream = self.object_store.list(Some(&object_prefix));
+            let mut stream = self.object_store.list(Some(&prefix));
             let mut instruments = HashSet::new();
 
             while let Some(object) = stream.next().await {
                 let object = object?;
-                let path = object.location.as_ref();
-                // First segment below the prefix, covering nested `custom/{TypeName}` paths
-                if let Some(rest) = path.strip_prefix(prefix.as_str())
-                    && let Some(identifier) = rest.split('/').next()
-                    && !identifier.is_empty()
+
+                // Relative to the prefix a datum is `{identifier}/{filename}.parquet`
+                let Some(relative) = object.location.prefix_match(&prefix) else {
+                    continue;
+                };
+                let segments: Vec<_> = relative.collect();
+
+                if let [identifier, filename] = segments.as_slice()
+                    && filename.as_ref().ends_with(".parquet")
                 {
-                    instruments.insert(identifier.to_string());
+                    instruments.insert(decode_object_store_segment(identifier.as_ref()));
                 }
             }
             Ok::<Vec<String>, anyhow::Error>(instruments.into_iter().collect())
@@ -1040,5 +1045,106 @@ impl ParquetDataCatalog {
     /// ```
     pub fn list_live_runs(&self) -> anyhow::Result<Vec<String>> {
         self.list_directory_stems("live")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use nautilus_model::data::NautilusDataType;
+    use object_store::{ObjectStoreExt, PutPayload, memory::InMemory, path::Path as ObjectPath};
+    use rstest::rstest;
+
+    use super::ParquetDataCatalog;
+    use crate::{catalog::types::CatalogDataType, common::datafusion::DataBackendSession};
+
+    /// Builds a catalog over an in-memory store. Only remote catalogs carry a non-empty
+    /// `base_path`, so seeding one here is the sole way to reproduce a bucket sub-prefix.
+    fn memory_catalog(base_path: &str) -> ParquetDataCatalog {
+        ParquetDataCatalog {
+            base_path: base_path.to_string(),
+            original_uri: "memory://".to_string(),
+            object_store: Arc::new(InMemory::new()),
+            session: DataBackendSession::new(5_000),
+            batch_size: 5_000,
+            compression: parquet::basic::Compression::SNAPPY,
+            max_row_group_size: 5_000,
+        }
+    }
+
+    fn seed(catalog: &ParquetDataCatalog, keys: &[&str]) {
+        catalog
+            .execute_async(|| async {
+                for key in keys {
+                    catalog
+                        .object_store
+                        .put(&ObjectPath::from(*key), PutPayload::from_static(b"x"))
+                        .await?;
+                }
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    #[rstest]
+    #[case("nautilus-data", "nautilus-data/")]
+    #[case("", "")]
+    fn list_instruments_returns_ids_under_base_path(
+        #[case] base_path: &str,
+        #[case] key_prefix: &str,
+    ) {
+        let catalog = memory_catalog(base_path);
+        let keys = [
+            "data/quotes/EURUSD.SIM/0-1.parquet",
+            "data/quotes/EURUSD.SIM/2-3.parquet",
+            "data/quotes/GBPUSD.SIM/0-1.parquet",
+            "data/trades/AUDUSD.SIM/0-1.parquet",
+        ]
+        .map(|key| format!("{key_prefix}{key}"));
+        seed(&catalog, &keys.each_ref().map(String::as_str));
+
+        assert_eq!(
+            catalog
+                .list_instruments(&NautilusDataType::QuoteTick.into())
+                .unwrap(),
+            ["EURUSD.SIM", "GBPUSD.SIM"]
+        );
+    }
+
+    #[rstest]
+    fn list_instruments_ignores_unpartitioned_files() {
+        // An empty `base_path` keeps this distinct from the remote prefix defect, so an empty
+        // result can only come from the layout check.
+        let catalog = memory_catalog("");
+        seed(
+            &catalog,
+            &[
+                "data/custom/MyType/1-2.parquet",
+                "data/custom/MyType/1-2.json",
+            ],
+        );
+
+        let custom = CatalogDataType::Data(NautilusDataType::Custom {
+            type_name: "MyType".to_string(),
+        });
+
+        assert!(catalog.list_instruments(&custom).unwrap().is_empty());
+    }
+
+    #[rstest]
+    fn list_instruments_decodes_percent_encoded_ids() {
+        let catalog = memory_catalog("nautilus-data");
+        seed(
+            &catalog,
+            &["nautilus-data/data/quotes/BTC€.SIM/0-1.parquet"],
+        );
+
+        assert_eq!(
+            catalog
+                .list_instruments(&NautilusDataType::QuoteTick.into())
+                .unwrap(),
+            ["BTC€.SIM"]
+        );
     }
 }

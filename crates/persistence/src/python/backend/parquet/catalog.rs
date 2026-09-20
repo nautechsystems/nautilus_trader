@@ -961,14 +961,20 @@ impl PyParquetDataCatalog {
         instrument_id: &str,
     ) -> PyResult<Vec<String>> {
         let data_type = data_type.into_inner();
+        let list_files = |prefix: &str| -> PyResult<Vec<String>> {
+            let directory = self
+                .inner
+                .make_path(prefix, Some(instrument_id))
+                .map_err(|e| PyIOError::new_err(format!("Failed to list parquet files: {e}")))?;
+            self.inner
+                .list_parquet_files(&directory)
+                .map_err(|e| PyIOError::new_err(format!("Failed to list parquet files: {e}")))
+        };
         let mut files = Vec::new();
 
         if let Some(type_name) = custom_type_name(&data_type) {
             for prefix in custom_data_read_prefixes(type_name) {
-                let directory = format!("data/{prefix}/{instrument_id}");
-                files.extend(self.inner.list_parquet_files(&directory).map_err(|e| {
-                    PyIOError::new_err(format!("Failed to list parquet files: {e}"))
-                })?);
+                files.extend(list_files(prefix.as_ref())?);
             }
 
             files.sort();
@@ -977,13 +983,7 @@ impl PyParquetDataCatalog {
         }
 
         for prefix in parquet_catalog_data_type_path_prefixes(&data_type) {
-            let prefix = prefix.as_ref();
-            let directory = format!("data/{prefix}/{instrument_id}");
-            files.extend(
-                self.inner.list_parquet_files(&directory).map_err(|e| {
-                    PyIOError::new_err(format!("Failed to list parquet files: {e}"))
-                })?,
-            );
+            files.extend(list_files(prefix.as_ref())?);
         }
 
         Ok(files)
