@@ -15,7 +15,11 @@
 
 use crate::types::{Currency, Money, money::MoneyRaw};
 
-// TODO: Document panic
+/// Creates a new [`Money`] instance for FFI.
+///
+/// # Panics
+///
+/// Panics if a correctness check fails. See [`Money::new`] for more details.
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn money_new(amount: f64, currency: Currency) -> Money {
