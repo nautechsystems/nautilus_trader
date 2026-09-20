@@ -155,21 +155,28 @@ See [Community-contributed integrations](https://github.com/nautechsystems/nauti
 
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/nautechsystems/nautilus_trader/badge)](https://scorecard.dev/viewer/?uri=github.com/nautechsystems/nautilus_trader)
 
+Security is a priority for the NautilusTrader project. We apply security controls across dependency selection,
+development, builds, and releases.
+
 - Rust dependencies come only from crates.io; lock files pin dependencies with cryptographic checksums.
 - New dependency and tooling versions observe a publication cooldown before adoption.
 - Third-party Python packages install from wheels only.
-- `cargo-vet` audits Rust dependency provenance; `cargo-deny` enforces a license allow list compatible with `LGPL-3.0-only`.
-- TLS and most runtime cryptography use [aws-lc-rs](https://github.com/aws/aws-lc-rs), the Rust binding for AWS-LC.
+- `cargo-vet` audits Rust dependency provenance.
+- `cargo-deny` enforces a license allow list compatible with `LGPL-3.0-only`.
+- TLS and most runtime cryptography use AWS-LC through Rust's [aws-lc-rs](https://github.com/aws/aws-lc-rs).
 - Ed25519 signing uses [ed25519-dalek](https://github.com/dalek-cryptography/curve25519-dalek).
 - Gitleaks screens for secrets and Zizmor audits GitHub Actions at pre-commit.
 - CODEOWNERS require review of critical infrastructure, dependency manifests, and lock files.
 - Protected branches require signed commits and passing CI.
 - CodeQL runs on release PRs to `master` and pushes to `nightly`.
-- `cargo-audit`, `cargo-deny`, `cargo-vet`, OSV Scanner, and `pip-audit` run on audit-relevant PRs and daily schedules.
+- Audit-relevant PRs and daily audits run `cargo-audit`, `cargo-deny`, and `cargo-vet`.
+- OSV Scanner and `pip-audit` also run on audit-relevant PRs and daily.
 - `cargo-fuzz` targets cover selected adapter and signing surfaces.
 - GitHub Actions are pinned to commit SHAs; hardened CI runners restrict network egress to an allow list.
-- Python artifacts carry SLSA build provenance; container images are Sigstore-signed with attested SPDX SBOMs.
-- PyPI and crates.io use OIDC Trusted Publishing through a protected `release` environment that never runs PR or fork code.
+- Python artifacts carry SLSA build provenance.
+- Container images are Sigstore-signed with attested SPDX SBOMs.
+- PyPI and crates.io use OIDC Trusted Publishing through a protected `release` environment.
+- The `release` environment never runs PR or fork code.
 - Release tags are immutable.
 
 OpenSSF Scorecard provides an automated repository-health signal alongside manual review, CI hardening, and security audits.
@@ -180,7 +187,7 @@ Report privately through [GitHub Security Advisories](https://github.com/nautech
 or email <security@nautechsystems.io> (PGP key available on request).
 
 - We acknowledge reports within 48 hours and patch critical vulnerabilities within 30 days.
-- We appreciate vulnerability reports and credit reporters in the relevant advisory and release notes unless they prefer anonymity.
+- We thank and credit reporters in the relevant advisory and release notes unless they prefer anonymity.
 
 See the following for details:
 
