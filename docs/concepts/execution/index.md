@@ -97,7 +97,7 @@ enum.
 
 The `OmsType` enum has three variants:
 
-- `UNSPECIFIED`: The strategy uses the venue's OMS type.
+- `UNSPECIFIED`: The strategy uses the owning execution client's OMS type.
 - `NETTING`: Positions combine into one position per instrument and strategy.
 - `HEDGING`: Multiple positions per instrument and strategy can remain open.
 
@@ -119,9 +119,17 @@ For reductions of inherited inventory, see [Reducing external positions](reconci
 
 ### OMS configuration
 
-When a strategy omits `oms_type` or uses `UNSPECIFIED`, the `ExecutionEngine` follows the venue's
-OMS type without overriding venue `position_id` values. Configure a backtest venue with the OMS
-type used by the venue being modeled.
+When a strategy omits `oms_type` or uses `UNSPECIFIED`, the `ExecutionEngine` uses the owning
+execution client's OMS type. An explicit `NETTING` or `HEDGING` strategy override takes precedence.
+Submission validation uses the client selected by command routing. Fill processing uses the cached
+order's client origin, or the one registered client that matches the fill's account and handles its
+instrument venue when that origin is unavailable. This account lookup also covers spread-leg fills
+without a cached order. For fills associated with an order, an existing cached position retains its
+recorded OMS type.
+
+If ownership is absent or ambiguous, fills use `NETTING` unless the strategy supplies an explicit
+override. Venue and default command routes do not select the fill's OMS type. Configure a backtest
+venue with the OMS type used by the venue being modeled.
 
 Venue position modes may require adapter-specific configuration. For example, see
 [Binance Futures hedge mode](../../integrations/binance.md#futures-hedge-mode).

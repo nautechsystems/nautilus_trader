@@ -164,7 +164,7 @@ The position exposes its retained adjustments:
 ## OMS types and position management
 
 NautilusTrader supports two position management modes. A strategy configured with
-`OmsType.UNSPECIFIED` uses the venue's OMS type. For configuration details and position ID rules,
+`OmsType.UNSPECIFIED` uses the owning execution client's OMS type. For ownership resolution and position ID rules,
 see the [Execution guide](execution/index.md#order-management-system-oms).
 
 ### `NETTING`

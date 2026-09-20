@@ -1537,8 +1537,16 @@ fn test_submit_order_list_mixed_instruments_routes_per_order_own_book(
 }
 
 #[rstest]
-fn test_submit_order_denied_with_unspecified_strategy_oms_and_netting_client(
+fn test_submit_order_position_id_validation_uses_effective_oms(
     mut execution_engine: ExecutionEngine,
+    #[values(OmsType::Netting, OmsType::Hedging)] client_oms: OmsType,
+    #[values(
+        None,
+        Some(OmsType::Unspecified),
+        Some(OmsType::Netting),
+        Some(OmsType::Hedging)
+    )]
+    override_oms: Option<OmsType>,
 ) {
     let trader_id = TraderId::test_default();
     let strategy_id = StrategyId::test_default();
@@ -1548,16 +1556,17 @@ fn test_submit_order_denied_with_unspecified_strategy_oms_and_netting_client(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
         Venue::test_default(),
-        OmsType::Netting,
+        client_oms,
         None,
     );
+    let submitted_order_ids = stub_client.submitted_order_ids();
     execution_engine
         .register_client(Box::new(stub_client))
         .unwrap();
 
-    // Strategy registered with UNSPECIFIED; resolution must fall through to the
-    // routed client's NETTING OMS.
-    execution_engine.register_oms_type(strategy_id, OmsType::Unspecified);
+    if let Some(oms) = override_oms {
+        execution_engine.register_oms_type(strategy_id, oms);
+    }
 
     execution_engine
         .cache()
@@ -1608,7 +1617,20 @@ fn test_submit_order_denied_with_unspecified_strategy_oms_and_netting_client(
         .order(&order.client_order_id())
         .expect("Order should be cached");
 
-    assert_eq!(cached_order.status(), OrderStatus::Denied);
+    let effective_oms = override_oms
+        .filter(|oms| *oms != OmsType::Unspecified)
+        .unwrap_or(client_oms);
+
+    if effective_oms == OmsType::Netting {
+        assert_eq!(cached_order.status(), OrderStatus::Denied);
+        assert_eq!(submitted_order_ids.borrow().as_slice(), &[]);
+    } else {
+        assert_eq!(cached_order.status(), OrderStatus::Initialized);
+        assert_eq!(
+            submitted_order_ids.borrow().as_slice(),
+            &[order.client_order_id()]
+        );
+    }
 }
 
 #[rstest]
@@ -3383,6 +3405,208 @@ fn test_project_reconciliation_fill_applies_no_portfolio_economics_on_cash_accou
         received_portfolio.borrow().is_empty(),
         "projection must not emit portfolio economics"
     );
+}
+
+#[rstest]
+#[case::cached("ordinary", "cached")]
+#[case::account("ordinary", "account")]
+#[case::missing("ordinary", "missing")]
+#[case::stale("ordinary", "stale")]
+#[case::ambiguous("ordinary", "ambiguous")]
+#[case::external("external", "account")]
+#[case::external_missing("external", "missing")]
+#[case::external_ambiguous("external", "ambiguous")]
+#[case::leg("leg", "account")]
+#[case::default_route("leg", "default")]
+#[case::leg_missing("leg", "missing")]
+#[case::leg_ambiguous("leg", "ambiguous")]
+fn test_fill_oms_uses_ownership(
+    mut execution_engine: ExecutionEngine,
+    #[case] path: &str,
+    #[case] origin: &str,
+    #[values(OmsType::Netting, OmsType::Hedging)] owner_oms: OmsType,
+    #[values(
+        None,
+        Some(OmsType::Unspecified),
+        Some(OmsType::Netting),
+        Some(OmsType::Hedging)
+    )]
+    override_oms: Option<OmsType>,
+    #[values(OmsType::Netting, OmsType::Hedging)] default_oms: OmsType,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let (instrument, mut fill, _) = prepare_leg_fill_without_order(&execution_engine);
+    let owner_id = ClientId::from("OWNER");
+
+    let other_oms = if owner_oms == OmsType::Hedging {
+        OmsType::Netting
+    } else {
+        OmsType::Hedging
+    };
+
+    if origin != "missing" {
+        let owner = StubExecutionClient::new(
+            owner_id,
+            fill.account_id,
+            Venue::from("BROKER"),
+            owner_oms,
+            None,
+        )
+        .with_handles_all_order_venues();
+        execution_engine.register_client(Box::new(owner)).unwrap();
+    }
+
+    let route_account = if matches!(origin, "cached" | "ambiguous") {
+        fill.account_id
+    } else {
+        AccountId::from("OTHER-ACCOUNT")
+    };
+
+    let routed = StubExecutionClient::new(
+        ClientId::from("ROUTED"),
+        route_account,
+        if origin == "default" {
+            Venue::from("ROUTER")
+        } else {
+            instrument.id().venue
+        },
+        other_oms,
+        None,
+    );
+
+    execution_engine.register_client(Box::new(routed)).unwrap();
+
+    let default = StubExecutionClient::new(
+        ClientId::from("DEFAULT"),
+        AccountId::from("DEFAULT-ACCOUNT"),
+        Venue::from("DEFAULT"),
+        default_oms,
+        None,
+    );
+    execution_engine.register_default_client(Box::new(default));
+
+    if path == "external" {
+        fill.strategy_id = StrategyId::external();
+    }
+
+    if let Some(oms) = override_oms {
+        execution_engine.register_oms_type(fill.strategy_id, oms);
+    }
+
+    let supplied_position_id = PositionId::from("VENUE-POSITION-123");
+    fill.position_id = Some(supplied_position_id);
+    if path == "ordinary" {
+        fill.client_order_id = ClientOrderId::from("O-OWNER-1");
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(fill.trader_id)
+            .strategy_id(fill.strategy_id)
+            .instrument_id(fill.instrument_id)
+            .client_order_id(fill.client_order_id)
+            .side(fill.order_side)
+            .quantity(fill.last_qty)
+            .build();
+
+        let client_id = match origin {
+            "cached" => Some(owner_id),
+            "stale" => Some(ClientId::from("DEREGISTERED")),
+            _ => None,
+        };
+
+        if origin == "cached" {
+            execution_engine.execute(TradingCommand::SubmitOrder(SubmitOrder {
+                trader_id: fill.trader_id,
+                strategy_id: fill.strategy_id,
+                instrument_id: fill.instrument_id,
+                client_order_id: fill.client_order_id,
+                order_init: order.init_event().clone(),
+                position_id: None,
+                params: None,
+                client_id,
+                exec_algorithm_id: None,
+                command_id: UUID4::new(),
+                ts_init: UnixNanos::default(),
+                correlation_id: None,
+                causation_id: None,
+            }));
+
+            assert_eq!(
+                execution_engine
+                    .cache()
+                    .borrow()
+                    .client_id(&fill.client_order_id),
+                Some(&owner_id)
+            );
+        } else {
+            execution_engine
+                .cache()
+                .borrow_mut()
+                .add_order(order.clone(), None, client_id, true)
+                .unwrap();
+        }
+
+        execution_engine.process(&TestOrderEventStubs::submitted(&order, fill.account_id));
+        execution_engine.process(&TestOrderEventStubs::accepted(
+            &order,
+            fill.account_id,
+            fill.venue_order_id,
+        ));
+    }
+
+    if path == "external" {
+        let status = create_order_status_report(
+            Some(fill.client_order_id),
+            fill.venue_order_id,
+            fill.instrument_id,
+            OrderStatus::Accepted,
+            fill.last_qty,
+            Quantity::from(0),
+        )
+        .with_price(fill.last_px);
+        execution_engine.reconcile_order_status_report(&status);
+        let mut report = create_fill_report_with_account(
+            fill.account_id,
+            fill.instrument_id,
+            Some(fill.client_order_id),
+            fill.venue_order_id,
+            fill.trade_id,
+            fill.last_qty,
+            fill.last_px,
+        );
+        report.venue_position_id = fill.position_id;
+        execution_engine.reconcile_fill_report(&report);
+    } else {
+        execution_engine.process(&OrderEventAny::Filled(fill.clone()));
+    }
+
+    let effective_oms = match override_oms {
+        Some(OmsType::Hedging) => OmsType::Hedging,
+        Some(OmsType::Netting) => OmsType::Netting,
+        _ if matches!(origin, "missing" | "ambiguous") => OmsType::Netting,
+        _ => owner_oms,
+    };
+
+    let expected_id = if effective_oms == OmsType::Hedging {
+        supplied_position_id
+    } else {
+        PositionId::new(format!("{}-{}", fill.instrument_id, fill.strategy_id))
+    };
+
+    let cache = execution_engine.cache().borrow();
+    let positions = cache.positions_open(None, None, None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].id, expected_id);
+    assert_eq!(positions[0].quantity, Quantity::from(1));
+    assert_eq!(positions[0].account_id, fill.account_id);
+    assert_eq!(cache.oms_type(&expected_id), Some(effective_oms));
+
+    if path == "leg" {
+        assert!(!cache.order_exists(&fill.client_order_id));
+    } else {
+        let order = cache.order(&fill.client_order_id).unwrap();
+        assert_eq!(order.position_id(), Some(expected_id));
+        assert_eq!(order.filled_qty(), Quantity::from(1));
+        assert_eq!(order.status(), OrderStatus::Filled);
+    }
 }
 
 fn prepare_leg_fill_without_order(

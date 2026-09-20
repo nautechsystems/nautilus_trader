@@ -44,6 +44,7 @@ Released on TBD (UTC).
 - Fixed backtest rejection of lower-precision order fields within the same fixed-point scale
 - Fixed L1 queue estimates ignoring quote size reductions (#5016), thanks for reporting @GwangPyo
 - Fixed execution mass-status reconciliation ignoring filled-quantity decreases without companion fills
+- Fixed fill OMS resolution to use the owning execution client instead of venue or default routes
 - Fixed overlapping mass-status snapshots reversing newer cached fills or fill voids
 - Fixed trailing-stop orders already in the market being accepted despite `reject_stop_orders`
 - Fixed `convert_stream_to_data` silently skipping staged custom data (#4607), thanks for reporting @mystic-io

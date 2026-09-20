@@ -3237,29 +3237,24 @@ impl ExecutionEngine {
     }
 
     fn determine_oms_type(&self, fill: &OrderFilled) -> OmsType {
-        if let Some(oms_type) = self.oms_overrides.get(&fill.strategy_id)
-            && *oms_type != OmsType::Unspecified
-        {
-            return *oms_type;
-        }
+        let client_id = self
+            .cache
+            .borrow()
+            .client_id(&fill.client_order_id)
+            .copied();
 
-        if let Some(client_id) = self.routing_map.get(&fill.instrument_id.venue)
-            && let Some(client) = self.clients.get(client_id)
-        {
-            return client.oms_type;
-        }
+        let client = client_id.and_then(|id| self.get_client(&id)).or_else(|| {
+            self.source_client_id_for_account(fill.account_id, &fill.instrument_id)
+                .and_then(|id| self.get_client(&id))
+        });
 
-        if let Some(client) = self.default_client_id.and_then(|id| self.clients.get(&id)) {
-            return client.oms_type;
-        }
-
-        OmsType::Netting // Default fallback
+        self.resolve_oms_type_for_client(fill.strategy_id, client)
     }
 
     fn resolve_oms_type_for_client(
         &self,
         strategy_id: StrategyId,
-        client: &dyn ExecutionClient,
+        client: Option<&dyn ExecutionClient>,
     ) -> OmsType {
         if let Some(oms_type) = self.oms_overrides.get(&strategy_id)
             && *oms_type != OmsType::Unspecified
@@ -3267,7 +3262,8 @@ impl ExecutionEngine {
             return *oms_type;
         }
 
-        client.oms_type()
+        // Missing or ambiguous ownership retains the origin-free NETTING fallback
+        client.map_or(OmsType::Netting, ExecutionClient::oms_type)
     }
 
     fn check_position_id_against_oms(
@@ -3279,7 +3275,7 @@ impl ExecutionEngine {
     ) -> Option<OrderDeniedReason> {
         let position_id = position_id?;
 
-        if self.resolve_oms_type_for_client(strategy_id, client) != OmsType::Netting {
+        if self.resolve_oms_type_for_client(strategy_id, Some(client)) != OmsType::Netting {
             return None;
         }
 
