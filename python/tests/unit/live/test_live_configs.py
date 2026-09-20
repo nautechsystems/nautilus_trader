@@ -35,7 +35,7 @@ from nautilus_trader.live import PluginConfig
 from nautilus_trader.live import PortfolioConfig
 from nautilus_trader.live import QueueMonitorConfig
 from nautilus_trader.live import RoutingConfig
-from nautilus_trader.live import SubmittedOrderExhaustionPolicy
+from nautilus_trader.live import SubmissionRecoveryPolicy
 from nautilus_trader.model import BarIntervalType
 from nautilus_trader.model import ClientId
 from nautilus_trader.model import Venue
@@ -269,9 +269,7 @@ def test_live_exec_engine_config_defaults() -> None:
     config = LiveExecutionEngineConfig()
 
     assert isinstance(config, LiveExecutionEngineConfig)
-    assert (
-        config.submitted_order_exhaustion_policy == SubmittedOrderExhaustionPolicy.RESOLVE_LOCALLY
-    )
+    assert config.submission_recovery_policy == SubmissionRecoveryPolicy.RESOLVE_LOCALLY
     assert config.snapshot_orders is False
     assert config.snapshot_positions is False
 
@@ -279,38 +277,38 @@ def test_live_exec_engine_config_defaults() -> None:
 @pytest.mark.parametrize(
     ("policy", "expected"),
     [
-        (None, SubmittedOrderExhaustionPolicy.RESOLVE_LOCALLY),
+        (None, SubmissionRecoveryPolicy.RESOLVE_LOCALLY),
         (
-            SubmittedOrderExhaustionPolicy.RESOLVE_LOCALLY,
-            SubmittedOrderExhaustionPolicy.RESOLVE_LOCALLY,
+            SubmissionRecoveryPolicy.RESOLVE_LOCALLY,
+            SubmissionRecoveryPolicy.RESOLVE_LOCALLY,
         ),
         (
-            SubmittedOrderExhaustionPolicy.RETAIN_UNRESOLVED,
-            SubmittedOrderExhaustionPolicy.RETAIN_UNRESOLVED,
+            SubmissionRecoveryPolicy.RETAIN_UNRESOLVED,
+            SubmissionRecoveryPolicy.RETAIN_UNRESOLVED,
         ),
     ],
 )
-def test_submitted_order_exhaustion_policy_readback(
-    policy: SubmittedOrderExhaustionPolicy | None,
-    expected: SubmittedOrderExhaustionPolicy,
+def test_submission_recovery_policy_readback(
+    policy: SubmissionRecoveryPolicy | None,
+    expected: SubmissionRecoveryPolicy,
 ) -> None:
     """
     Test typed policy selection and nested configuration readback.
     """
-    config = LiveExecutionEngineConfig(submitted_order_exhaustion_policy=policy)
+    config = LiveExecutionEngineConfig(submission_recovery_policy=policy)
     node_config = LiveNodeConfig(exec_engine=config)
 
-    assert config.submitted_order_exhaustion_policy == expected
-    assert node_config.exec_engine.submitted_order_exhaustion_policy == expected
+    assert config.submission_recovery_policy == expected
+    assert node_config.exec_engine.submission_recovery_policy == expected
 
 
 @pytest.mark.parametrize("policy", ["retain_unresolved", 1, True])
-def test_submitted_order_exhaustion_policy_rejects_untyped_values(policy: object) -> None:
+def test_submission_recovery_policy_rejects_untyped_values(policy: object) -> None:
     """
     Test policy validation rejects strings and integer-like values.
     """
-    with pytest.raises(TypeError, match="submitted_order_exhaustion_policy"):
-        LiveExecutionEngineConfig(submitted_order_exhaustion_policy=policy)
+    with pytest.raises(TypeError, match="submission_recovery_policy"):
+        LiveExecutionEngineConfig(submission_recovery_policy=policy)
 
 
 def test_live_exec_engine_config_preserves_positional_arguments() -> None:
@@ -328,9 +326,7 @@ def test_live_exec_engine_config_preserves_positional_arguments() -> None:
     assert config.debug is True
     assert config.snapshot_orders is True
     assert config.snapshot_positions is True
-    assert (
-        config.submitted_order_exhaustion_policy == SubmittedOrderExhaustionPolicy.RESOLVE_LOCALLY
-    )
+    assert config.submission_recovery_policy == SubmissionRecoveryPolicy.RESOLVE_LOCALLY
 
 
 def test_live_exec_engine_config_readback() -> None:

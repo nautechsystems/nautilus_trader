@@ -107,7 +107,7 @@ pub fn live(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::config::LiveDataEngineConfig>()?;
     m.add_class::<crate::config::LiveRiskEngineConfig>()?;
     m.add_class::<crate::config::LiveExecutionEngineConfig>()?;
-    m.add_class::<crate::config::SubmittedOrderExhaustionPolicy>()?;
+    m.add_class::<crate::config::SubmissionRecoveryPolicy>()?;
     m.add_class::<crate::config::PluginConfig>()?;
     m.add_class::<crate::config::QueueMonitorConfig>()?;
     m.add_class::<crate::config::RoutingConfig>()?;

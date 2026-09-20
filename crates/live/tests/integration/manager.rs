@@ -59,7 +59,7 @@ use nautilus_execution::{
     },
 };
 use nautilus_live::{
-    execution::submission::SubmittedOrderExhaustionPolicy,
+    execution::submission::SubmissionRecoveryPolicy,
     manager::{ExecutionManager, ExecutionManagerConfig},
 };
 use nautilus_model::{
@@ -5124,20 +5124,20 @@ async fn test_reconcile_mass_status_sorts_events_chronologically() {
 }
 
 #[rstest]
-#[case::resolve_locally(SubmittedOrderExhaustionPolicy::ResolveLocally)]
-#[case::retain_unresolved(SubmittedOrderExhaustionPolicy::RetainUnresolved)]
+#[case::resolve_locally(SubmissionRecoveryPolicy::ResolveLocally)]
+#[case::retain_unresolved(SubmissionRecoveryPolicy::RetainUnresolved)]
 #[cfg_attr(
     not(all(feature = "simulation", madsim)),
     tokio::test(start_paused = true)
 )]
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 async fn test_inflight_order_generates_rejection_after_max_retries(
-    #[case] policy: SubmittedOrderExhaustionPolicy,
+    #[case] policy: SubmissionRecoveryPolicy,
 ) {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 1,
-        submitted_order_exhaustion_policy: policy,
+        submission_recovery_policy: policy,
         ..Default::default()
     };
 
@@ -5247,8 +5247,8 @@ fn test_config_default_values() {
     assert_eq!(config.inflight_threshold_ms, 5_000);
     assert_eq!(config.inflight_max_retries, 5);
     assert_eq!(
-        config.submitted_order_exhaustion_policy,
-        SubmittedOrderExhaustionPolicy::ResolveLocally,
+        config.submission_recovery_policy,
+        SubmissionRecoveryPolicy::ResolveLocally,
     );
 }
 
@@ -12798,11 +12798,11 @@ async fn test_check_open_orders_skips_excluded_missing_order() {
 }
 
 #[rstest]
-#[case::resolve_locally(SubmittedOrderExhaustionPolicy::ResolveLocally)]
-#[case::retain_unresolved(SubmittedOrderExhaustionPolicy::RetainUnresolved)]
+#[case::resolve_locally(SubmissionRecoveryPolicy::ResolveLocally)]
+#[case::retain_unresolved(SubmissionRecoveryPolicy::RetainUnresolved)]
 #[tokio::test]
 async fn test_check_open_orders_submitted_missing_at_venue_generates_rejected(
-    #[case] policy: SubmittedOrderExhaustionPolicy,
+    #[case] policy: SubmissionRecoveryPolicy,
 ) {
     // A SUBMITTED order with no venue_order_id that the venue doesn't know
     // about should eventually be rejected after retries are exhausted.
@@ -12810,7 +12810,7 @@ async fn test_check_open_orders_submitted_missing_at_venue_generates_rejected(
         open_check_threshold_ns: DurationNanos::ZERO,
         open_check_missing_retries: 1,
         open_check_open_only: false,
-        submitted_order_exhaustion_policy: policy,
+        submission_recovery_policy: policy,
         ..Default::default()
     };
 

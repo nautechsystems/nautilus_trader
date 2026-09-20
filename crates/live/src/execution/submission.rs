@@ -40,7 +40,7 @@ use serde::{Deserialize, Serialize};
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.live")
 )]
-pub enum SubmittedOrderExhaustionPolicy {
+pub enum SubmissionRecoveryPolicy {
     /// Selects local resolution using the existing timeout and missing-order policies.
     #[default]
     ResolveLocally,

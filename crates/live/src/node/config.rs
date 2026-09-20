@@ -50,7 +50,7 @@ use serde::{Deserialize, Serialize};
 
 pub use super::queue::QueueMonitorConfig;
 use crate::execution::manager::ExecutionManagerConfig;
-pub use crate::execution::submission::SubmittedOrderExhaustionPolicy;
+pub use crate::execution::submission::SubmissionRecoveryPolicy;
 
 /// The default rate limit string used for order submission and modification.
 const DEFAULT_ORDER_RATE_LIMIT: &str = "100/00:00:01";
@@ -460,7 +460,7 @@ pub struct LiveExecutionEngineConfig {
     /// Policy when a submitted order exhausts automatic recovery.
     /// Reserved for future use; the runtime currently resolves locally for both variants.
     #[builder(default)]
-    pub submitted_order_exhaustion_policy: SubmittedOrderExhaustionPolicy,
+    pub submission_recovery_policy: SubmissionRecoveryPolicy,
     /// The interval (seconds) between checks for open orders at the venue.
     pub open_check_interval_secs: Option<f64>,
     /// The lookback minutes for open order checks.
@@ -592,7 +592,7 @@ impl From<&LiveExecutionEngineConfig> for ExecutionManagerConfig {
             generate_missing_orders: config.generate_missing_orders,
             inflight_threshold_ms: u64::from(config.inflight_check_threshold_ms),
             inflight_max_retries: config.inflight_check_retries,
-            submitted_order_exhaustion_policy: config.submitted_order_exhaustion_policy,
+            submission_recovery_policy: config.submission_recovery_policy,
             open_check_lookback_mins: config.open_check_lookback_mins.map(u64::from),
             open_check_threshold_ns,
             open_check_missing_retries: config.open_check_missing_retries,
@@ -2085,8 +2085,8 @@ mean_dispatch_ns_clear = 700
         assert_eq!(config.inflight_check_threshold_ms, 5_000);
         assert_eq!(config.inflight_check_retries, 5);
         assert_eq!(
-            config.submitted_order_exhaustion_policy,
-            SubmittedOrderExhaustionPolicy::ResolveLocally,
+            config.submission_recovery_policy,
+            SubmissionRecoveryPolicy::ResolveLocally,
         );
         assert_eq!(config.open_check_threshold_ms, 5_000);
         assert_eq!(config.open_check_lookback_mins, Some(60));
@@ -2100,49 +2100,46 @@ mean_dispatch_ns_clear = 700
     }
 
     #[rstest]
-    fn test_submitted_order_exhaustion_policy_omitted() {
+    fn test_submission_recovery_policy_omitted() {
         let deserialized: LiveExecutionEngineConfig = serde_json::from_str("{}").unwrap();
         let built = LiveExecutionEngineConfig::builder().build();
 
         assert_eq!(
-            deserialized.submitted_order_exhaustion_policy,
-            SubmittedOrderExhaustionPolicy::ResolveLocally,
+            deserialized.submission_recovery_policy,
+            SubmissionRecoveryPolicy::ResolveLocally,
         );
         assert_eq!(
-            built.submitted_order_exhaustion_policy,
-            SubmittedOrderExhaustionPolicy::ResolveLocally,
+            built.submission_recovery_policy,
+            SubmissionRecoveryPolicy::ResolveLocally,
         );
     }
 
     #[rstest]
-    #[case(SubmittedOrderExhaustionPolicy::ResolveLocally, "resolve_locally")]
-    #[case(SubmittedOrderExhaustionPolicy::RetainUnresolved, "retain_unresolved")]
-    fn test_submitted_order_exhaustion_policy_config_round_trip(
-        #[case] policy: SubmittedOrderExhaustionPolicy,
+    #[case(SubmissionRecoveryPolicy::ResolveLocally, "resolve_locally")]
+    #[case(SubmissionRecoveryPolicy::RetainUnresolved, "retain_unresolved")]
+    fn test_submission_recovery_policy_config_round_trip(
+        #[case] policy: SubmissionRecoveryPolicy,
         #[case] serialized_policy: &str,
     ) {
         let config = LiveExecutionEngineConfig::builder()
-            .submitted_order_exhaustion_policy(policy)
+            .submission_recovery_policy(policy)
             .build();
         let serialized = serde_json::to_value(&config).unwrap();
         let deserialized: LiveExecutionEngineConfig =
             serde_json::from_value(serialized.clone()).unwrap();
         let manager_config = ExecutionManagerConfig::from(&deserialized);
 
-        assert_eq!(
-            serialized["submitted_order_exhaustion_policy"],
-            serialized_policy
-        );
+        assert_eq!(serialized["submission_recovery_policy"], serialized_policy);
         assert_eq!(deserialized, config);
-        assert_eq!(manager_config.submitted_order_exhaustion_policy, policy);
+        assert_eq!(manager_config.submission_recovery_policy, policy);
     }
 
     #[rstest]
-    #[case(r#"{"submitted_order_exhaustion_policy":"retry_forever"}"#)]
-    #[case(r#"{"submitted_order_exhaustion_policy":"RETAIN_UNRESOLVED"}"#)]
-    #[case(r#"{"submitted_order_exhaustion_policy":1}"#)]
-    #[case(r#"{"submitted_order_exhaustion_policy":null}"#)]
-    fn test_submitted_order_exhaustion_policy_rejects_invalid_json(#[case] json: &str) {
+    #[case(r#"{"submission_recovery_policy":"retry_forever"}"#)]
+    #[case(r#"{"submission_recovery_policy":"RETAIN_UNRESOLVED"}"#)]
+    #[case(r#"{"submission_recovery_policy":1}"#)]
+    #[case(r#"{"submission_recovery_policy":null}"#)]
+    fn test_submission_recovery_policy_rejects_invalid_json(#[case] json: &str) {
         assert!(serde_json::from_str::<LiveExecutionEngineConfig>(json).is_err());
     }
 
