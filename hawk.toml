@@ -1,10 +1,12 @@
-# Nautilus Rust crates expose supported external APIs. Review findings before applying fixes, and
-# add an override for intentional API use that Hawk cannot observe.
+# Audit the CLI library only. A binary production target treats every workspace library as
+# internal to that binary. These crates expose supported external APIs, so that closed world
+# is wrong here. A library production target limits diagnostics to that crate and compiles
+# the rest of the workspace as consumers.
 
 [[production]]
 package = "nautilus-cli"
-bin = "nautilus"
-reason = "shipped Nautilus command-line interface"
+lib = "nautilus_cli"
+reason = "CLI library consumed by the nautilus binary"
 
 # Core doctests provide representative external API use without rebuilding every crate's docs
 [[doctest]]
