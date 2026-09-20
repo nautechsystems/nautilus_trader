@@ -64,6 +64,7 @@ __all__ = [
     "RequestQuotes",
     "RequestTrades",
     "RoutingConfig",
+    "SubmissionRecoveryPolicy",
     "SubmitOrder",
     "SubmitOrderList",
     "SubscribeBars",
@@ -674,6 +675,8 @@ class LiveExecutionEngineConfig:
     @property
     def inflight_check_threshold_ms(self) -> int: ...
     @property
+    def submission_recovery_policy(self) -> SubmissionRecoveryPolicy: ...
+    @property
     def inflight_check_retries(self) -> int: ...
     @property
     def open_check_interval_secs(self) -> float | None: ...
@@ -752,6 +755,7 @@ class LiveExecutionEngineConfig:
         debug: bool | None = None,
         snapshot_orders: bool | None = None,
         snapshot_positions: bool | None = None,
+        submission_recovery_policy: SubmissionRecoveryPolicy | None = None,
     ) -> LiveExecutionEngineConfig: ...
 
 @typing.final
@@ -2130,3 +2134,8 @@ class NodeState(enum.Enum):
     RUNNING = ...
     SHUTTING_DOWN = ...
     STOPPED = ...
+
+@typing.final
+class SubmissionRecoveryPolicy(enum.Enum):
+    RESOLVE_LOCALLY = ...
+    RETAIN_UNRESOLVED = ...

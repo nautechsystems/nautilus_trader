@@ -23,6 +23,8 @@ use nautilus_common::config::{ConfigError, ConfigErrorCollector, ConfigResult};
 use nautilus_core::{DurationNanos, datetime::checked_mins_to_secs};
 use nautilus_model::identifiers::{ClientOrderId, InstrumentId, TraderId};
 
+use super::submission::SubmissionRecoveryPolicy;
+
 /// Configuration for execution manager.
 #[expect(
     clippy::struct_excessive_bools,
@@ -48,6 +50,9 @@ pub struct ExecutionManagerConfig {
     pub inflight_threshold_ms: u64,
     /// Maximum number of retries for inflight checks.
     pub inflight_max_retries: u32,
+    /// Policy when a submitted order exhausts automatic recovery.
+    /// Reserved for future use; the runtime currently resolves locally for both variants.
+    pub submission_recovery_policy: SubmissionRecoveryPolicy,
     /// The lookback minutes for open order checks.
     pub open_check_lookback_mins: Option<u64>,
     /// Threshold before acting on venue discrepancies for open orders.
@@ -88,6 +93,7 @@ impl Default for ExecutionManagerConfig {
             generate_missing_orders: true,
             inflight_threshold_ms: 5_000,
             inflight_max_retries: 5,
+            submission_recovery_policy: SubmissionRecoveryPolicy::default(),
             open_check_lookback_mins: Some(60),
             open_check_threshold_ns: DurationNanos::from_secs(5),
             open_check_missing_retries: 5,
