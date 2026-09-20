@@ -527,7 +527,14 @@ mod tests {
             16 => cursor.read_u128_le().map(|_| ()).unwrap_err(),
             _ => unreachable!(),
         };
-        assert!(matches!(err, SbeDecodeError::BufferTooShort { .. }));
+
+        assert_eq!(
+            err,
+            SbeDecodeError::BufferTooShort {
+                expected: needed,
+                actual: buf.len()
+            }
+        );
         assert_eq!(cursor.pos(), 0, "position must not advance on error");
     }
 
@@ -695,5 +702,77 @@ mod tests {
         cursor.reset();
         assert_eq!(cursor.pos(), 0);
         assert_eq!(cursor.remaining(), 4);
+    }
+
+    #[rstest]
+    #[case::short(false)]
+    #[case::wide(true)]
+    fn test_var_bytes_preserve_binary_and_position(#[case] wide: bool) {
+        let mut buf = if wide { vec![3, 0] } else { vec![3] };
+        buf.extend_from_slice(&[0xff, 0, 0x80, 0x42]);
+        let mut read = SbeCursor::new(&buf);
+        let mut skip = read.clone();
+
+        let bytes = if wide {
+            skip.skip_var_data16().unwrap();
+            read.read_var_bytes16().unwrap()
+        } else {
+            skip.skip_var_data8().unwrap();
+            read.read_var_bytes8().unwrap()
+        };
+
+        assert_eq!(bytes, [0xff, 0, 0x80]);
+        assert_eq!(read.pos(), buf.len() - 1);
+        assert_eq!(skip.pos(), read.pos());
+        assert_eq!(read.peek(), [0x42]);
+        assert_eq!(skip.peek(), [0x42]);
+    }
+
+    #[rstest]
+    #[case::short(false)]
+    #[case::wide(true)]
+    fn test_var_bytes_reject_truncated_payload(#[case] wide: bool) {
+        let buf = if wide {
+            vec![3, 0, 0xff]
+        } else {
+            vec![3, 0xff]
+        };
+
+        let prefix = if wide { 2 } else { 1 };
+        let mut read = SbeCursor::new(&buf);
+        let mut skip = read.clone();
+
+        let (read_result, skip_result) = if wide {
+            (read.read_var_bytes16(), skip.skip_var_data16())
+        } else {
+            (read.read_var_bytes8(), skip.skip_var_data8())
+        };
+
+        let expected = SbeDecodeError::BufferTooShort {
+            expected: prefix + 3,
+            actual: buf.len(),
+        };
+
+        assert_eq!(read_result, Err(expected.clone()));
+        assert_eq!(skip_result, Err(expected));
+        assert_eq!(read.pos(), prefix);
+        assert_eq!(skip.pos(), prefix);
+    }
+
+    #[rstest]
+    fn test_read_group_propagates_item_error() {
+        let mut cursor = SbeCursor::new(&[1, 2, 3, 4]);
+
+        let result = cursor.read_group(2, 2, |entry| {
+            let value = entry.read_u8()?;
+            if value == 3 {
+                Err(SbeDecodeError::InvalidValue { field: "entry" })
+            } else {
+                Ok(value)
+            }
+        });
+
+        assert_eq!(result, Err(SbeDecodeError::InvalidValue { field: "entry" }));
+        assert_eq!(cursor.pos(), 3);
     }
 }

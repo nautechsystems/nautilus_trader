@@ -491,3 +491,137 @@ pub fn py_instrument_closes_to_arrow_record_batch_bytes(
         Err(e) => Err(to_pyvalue_err(e)),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use nautilus_model::data::stubs::stub_instrument_status;
+    use pyo3::{
+        exceptions::{PyRuntimeError, PyTypeError, PyValueError},
+        types::PyString,
+    };
+    use rstest::rstest;
+
+    use super::*;
+    use crate::arrow::EncodeToRecordBatch;
+
+    #[rstest]
+    fn test_schema_bytes_and_map_match_rust_schema() {
+        Python::initialize();
+        Python::attach(|py| {
+            let cls = py.get_type::<InstrumentStatus>();
+            let bytes = get_arrow_schema_bytes(py, &cls).unwrap();
+            let mut reader = StreamReader::try_new(Cursor::new(bytes.as_bytes(py)), None).unwrap();
+            let map: HashMap<String, String> =
+                get_arrow_schema_map(py, &cls).unwrap().extract(py).unwrap();
+
+            assert_eq!(
+                reader.schema().as_ref(),
+                &InstrumentStatus::get_schema(None)
+            );
+            assert!(reader.next().is_none());
+            assert_eq!(map, InstrumentStatus::get_schema_map());
+        });
+    }
+
+    #[rstest]
+    fn test_schema_rejects_unsupported_class() {
+        Python::initialize();
+        Python::attach(|py| {
+            let cls = py.get_type::<PyString>();
+            let errors = [
+                get_arrow_schema_bytes(py, &cls).unwrap_err(),
+                get_arrow_schema_map(py, &cls).unwrap_err(),
+            ];
+
+            for error in errors {
+                assert!(error.is_instance_of::<PyTypeError>(py));
+                assert_eq!(
+                    error.value(py).to_string(),
+                    "Arrow schema for `str` is not currently implemented in Rust."
+                );
+            }
+        });
+    }
+
+    #[rstest]
+    fn test_status_ipc_preserves_multiple_batches() {
+        let first = stub_instrument_status();
+        let mut second = first;
+        second.ts_event = 31.into();
+        second.ts_init = 47.into();
+        second.reason = Some("venue halt".into());
+        second.is_trading = Some(false);
+        second.is_quoting = Some(true);
+        let rows = [first, second];
+        let batches = rows
+            .iter()
+            .map(|row| InstrumentStatus::encode_batch(&row.metadata(), &[*row]).unwrap())
+            .collect::<Vec<_>>();
+        Python::initialize();
+        Python::attach(|py| {
+            let bytes =
+                arrow_record_batches_to_pybytes(py, &batches[0].schema(), &batches).unwrap();
+            let decoded =
+                py_instrument_status_from_arrow_record_batch_bytes(py, bytes.as_bytes(py).to_vec())
+                    .unwrap();
+            let single =
+                py_instrument_status_to_arrow_record_batch_bytes(py, rows.to_vec()).unwrap();
+            let single_decoded = py_instrument_status_from_arrow_record_batch_bytes(
+                py,
+                single.as_bytes(py).to_vec(),
+            )
+            .unwrap();
+
+            assert_eq!(decoded, rows);
+            assert_eq!(single_decoded, rows);
+        });
+    }
+
+    #[rstest]
+    fn test_ipc_decode_rejects_invalid_stream() {
+        Python::initialize();
+        Python::attach(|py| {
+            let errors = [
+                py_instrument_status_from_arrow_record_batch_bytes(py, vec![1, 2, 3]).unwrap_err(),
+                py_option_greeks_from_arrow_record_batch_bytes(py, vec![1, 2, 3]).unwrap_err(),
+            ];
+
+            for error in errors {
+                assert!(error.is_instance_of::<PyRuntimeError>(py));
+                assert_eq!(
+                    error.value(py).to_string(),
+                    "Ipc error: Expected schema message, found empty stream."
+                );
+            }
+        });
+    }
+
+    #[rstest]
+    fn test_python_encoders_reject_empty_data() {
+        Python::initialize();
+        Python::attach(|py| {
+            let errors = [
+                py_book_deltas_to_arrow_record_batch_bytes(py, vec![]).unwrap_err(),
+                py_book_depths_to_arrow_record_batch_bytes(py, vec![]).unwrap_err(),
+                py_quotes_to_arrow_record_batch_bytes(py, vec![]).unwrap_err(),
+                py_trades_to_arrow_record_batch_bytes(py, vec![]).unwrap_err(),
+                py_bars_to_arrow_record_batch_bytes(py, vec![]).unwrap_err(),
+                py_mark_prices_to_arrow_record_batch_bytes(py, vec![]).unwrap_err(),
+                py_index_prices_to_arrow_record_batch_bytes(py, vec![]).unwrap_err(),
+                py_instrument_status_to_arrow_record_batch_bytes(py, vec![]).unwrap_err(),
+                py_option_greeks_to_arrow_record_batch_bytes(py, vec![]).unwrap_err(),
+                py_instrument_closes_to_arrow_record_batch_bytes(py, vec![]).unwrap_err(),
+            ];
+
+            for error in errors {
+                assert!(error.is_instance_of::<PyValueError>(py));
+                assert_eq!(
+                    error.value(py).to_string(),
+                    crate::arrow::EncodingError::EmptyData.to_string()
+                );
+            }
+        });
+    }
+}

@@ -4887,8 +4887,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_decimal_roundtrip_preserves_scale_and_sign() {
-        let decimal = Decimal::from_parts(0xffff_ffff, 0x7fff_ffff, 0x0000_00ff, false, 9);
+    #[case::positive(false, 9)]
+    #[case::negative(true, 9)]
+    #[case::maximum_scale_positive(false, Decimal::MAX_SCALE)]
+    #[case::maximum_scale_negative(true, Decimal::MAX_SCALE)]
+    fn test_decimal_roundtrip_preserves_scale_and_sign(#[case] negative: bool, #[case] scale: u32) {
+        let decimal = Decimal::from_parts(0xffff_ffff, 0x7fff_ffff, 0x0000_00ff, negative, scale);
 
         let mut message = capnp::message::Builder::new_default();
         {
@@ -4901,6 +4905,7 @@ mod tests {
             .expect("reader");
         let decoded = Decimal::from_capnp(reader).expect("decoded decimal");
         assert_eq!(decimal, decoded);
+        assert_eq!(decimal.serialize(), decoded.serialize());
     }
 
     #[rstest]
@@ -5226,6 +5231,62 @@ mod tests {
             OrderInitialized
         );
     }
+
+    #[rstest]
+    #[case::empty(false)]
+    #[case::populated(true)]
+    fn order_initialized_optional_collections_capnp_roundtrip(
+        order_initialized_buy_limit: OrderInitialized,
+        #[case] populated: bool,
+    ) {
+        let initialized = OrderInitialized {
+            expire_time: Some(UnixNanos::from(123_456)),
+            linked_order_ids: Some(if populated {
+                vec![ClientOrderId::from("O-101"), ClientOrderId::from("O-202")]
+            } else {
+                vec![]
+            }),
+            exec_algorithm_params: Some(if populated {
+                IndexMap::from([
+                    (Ustr::from("interval"), Ustr::from("17")),
+                    (Ustr::from("duration"), Ustr::from("53")),
+                ])
+            } else {
+                IndexMap::new()
+            }),
+            tags: Some(if populated {
+                vec![Ustr::from("first"), Ustr::from("second")]
+            } else {
+                vec![]
+            }),
+            ..order_initialized_buy_limit
+        };
+
+        let mut message = Builder::new_default();
+        initialized.to_capnp(message.init_root::<order_capnp::order_initialized::Builder>());
+        let reader = message
+            .get_root_as_reader::<order_capnp::order_initialized::Reader>()
+            .unwrap();
+        let decoded = OrderInitialized::from_capnp(reader).unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&decoded).unwrap(),
+            serde_json::to_value(&initialized).unwrap()
+        );
+        assert_eq!(
+            decoded
+                .exec_algorithm_params
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            initialized
+                .exec_algorithm_params
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>()
+        );
+    }
+
     #[rstest]
     fn order_filled_info_capnp_roundtrip(order_filled: OrderFilled) {
         let mut info = IndexMap::new();

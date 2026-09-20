@@ -368,7 +368,7 @@ fn arrow_custom_data_round_trips_all_optional_some_fields() {
 #[cfg(feature = "high-precision")]
 fn arrow_custom_data_rejects_precision_above_decimal_scale() {
     let mut original = manual_custom_data_for_decode();
-    original.price = Price::from_raw(1, 17);
+    original.price.precision = 17;
 
     let error = ManualCustomData::encode_batch(&original.metadata(), &[&original]).unwrap_err();
 

@@ -1747,6 +1747,10 @@ mod tests {
         datatypes::{Field, TimeUnit},
     };
     use nautilus_core::UnixNanos;
+    #[cfg(feature = "arrow-display")]
+    use nautilus_model::data::stubs::{
+        stub_bar, stub_delta, stub_instrument_close, stub_trade_ethusdt_buy,
+    };
     use nautilus_model::{
         data::{
             FundingRateUpdate, OrderBookDepth, QuoteTick, ensure_arrow_registered,
@@ -1761,6 +1765,14 @@ mod tests {
     use super::*;
     use crate::arrow::{
         EncodeToRecordBatch, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
+    };
+    #[cfg(feature = "arrow-display")]
+    use crate::arrow::{
+        display::{
+            bar::encode_bars, close::encode_instrument_closes, delta::encode_deltas,
+            trade::encode_trades,
+        },
+        record_batch_without_identifier_column,
     };
 
     #[rstest]
@@ -2306,5 +2318,53 @@ mod tests {
                 DataType::FixedSizeBinary(1)
             )
         ));
+    }
+
+    #[cfg(feature = "arrow-display")]
+    #[rstest]
+    #[case::bar(NautilusDataType::Bar)]
+    #[case::trade(NautilusDataType::TradeTick)]
+    #[case::delta(NautilusDataType::OrderBookDelta)]
+    #[case::close(NautilusDataType::InstrumentClose)]
+    fn test_catalog_display_matches_typed_encoder(#[case] data_type: NautilusDataType) {
+        let (raw, expected) = match data_type {
+            NautilusDataType::Bar => {
+                let value = stub_bar();
+                (
+                    Bar::encode_batch(&value.metadata(), &[value]).unwrap(),
+                    encode_bars(&[value]).unwrap(),
+                )
+            }
+            NautilusDataType::TradeTick => {
+                let value = stub_trade_ethusdt_buy();
+                (
+                    TradeTick::encode_batch(&value.metadata(), &[value]).unwrap(),
+                    encode_trades(&[value]).unwrap(),
+                )
+            }
+            NautilusDataType::OrderBookDelta => {
+                let value = stub_delta();
+                (
+                    OrderBookDelta::encode_batch(&value.metadata(), &[value]).unwrap(),
+                    encode_deltas(&[value]).unwrap(),
+                )
+            }
+            NautilusDataType::InstrumentClose => {
+                let value = stub_instrument_close();
+                (
+                    InstrumentClose::encode_batch(&value.metadata(), &[value]).unwrap(),
+                    encode_instrument_closes(&[value]).unwrap(),
+                )
+            }
+            _ => unreachable!(),
+        };
+
+        let displayed =
+            catalog_record_batch_to_display(&data_type, raw.schema().metadata(), &raw).unwrap();
+        let identifier = displayed.column_by_name(KEY_IDENTIFIER).unwrap().clone();
+        let without_identifier = record_batch_without_identifier_column(displayed).unwrap();
+
+        assert_eq!(&identifier, raw.column_by_name(KEY_IDENTIFIER).unwrap());
+        assert_eq!(without_identifier, expected);
     }
 }

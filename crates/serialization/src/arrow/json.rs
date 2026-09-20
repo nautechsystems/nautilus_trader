@@ -822,4 +822,94 @@ mod tests {
         assert!(matches!(error, EncodingError::ParseError("left", message)
             if message == "duplicate column name"));
     }
+
+    #[rstest]
+    #[case::missing(None)]
+    #[case::null(Some(Value::Null))]
+    fn encode_batch_rejects_missing_required_value(#[case] value: Option<Value>) {
+        let rows = [value
+            .into_iter()
+            .map(|value| ("left".to_string(), value))
+            .collect::<Map<_, _>>()];
+        let error = encode_batch("Record", &HashMap::new(), &rows, &FIELDS[..1]).unwrap_err();
+
+        assert!(matches!(error, ArrowError::InvalidArgumentError(message)
+            if message == "Missing required field `left`"));
+    }
+
+    #[rstest]
+    fn encode_batch_rejects_non_object() {
+        let error = encode_batch("Record", &HashMap::new(), &[17_u64], &FIELDS).unwrap_err();
+
+        assert!(matches!(error, ArrowError::InvalidArgumentError(message)
+            if message == "Expected serialized value to be a JSON object"));
+    }
+
+    #[rstest]
+    #[case(Value::from(-1), "Expected u64, found `-1`")]
+    #[case(Value::from(true), "Expected u64-compatible value, found `true`")]
+    #[case(
+        Value::from("18446744073709551616"),
+        "Failed to parse u64 from `18446744073709551616`: number too large to fit in target type"
+    )]
+    fn encode_batch_rejects_invalid_u64(#[case] value: Value, #[case] expected: &str) {
+        let rows = [Map::from_iter([("left".to_string(), value)])];
+        let error = encode_batch("Record", &HashMap::new(), &rows, &FIELDS[..1]).unwrap_err();
+
+        assert!(matches!(error, ArrowError::InvalidArgumentError(message) if message == expected));
+    }
+
+    #[rstest]
+    fn encode_decode_string_values_and_nulls() {
+        let fields = [
+            JsonFieldSpec::u64("count", true),
+            JsonFieldSpec::f64("ratio", true),
+            JsonFieldSpec::boolean("active", true),
+        ];
+        let rows = [
+            Map::from_iter([
+                ("count".to_string(), Value::from(u64::MAX.to_string())),
+                ("ratio".to_string(), Value::from("-1.25")),
+                ("active".to_string(), Value::from("false")),
+            ]),
+            Map::new(),
+        ];
+        let metadata = HashMap::new();
+        let batch = encode_batch("Record", &metadata, &rows, &fields).unwrap();
+        let decoded = decode_batch::<Map<String, Value>>(&metadata, &batch, &fields, None).unwrap();
+
+        assert_eq!(
+            decoded,
+            vec![
+                Map::from_iter([
+                    ("count".to_string(), Value::from(u64::MAX)),
+                    ("ratio".to_string(), Value::from(-1.25)),
+                    ("active".to_string(), Value::from(false)),
+                ]),
+                Map::from_iter([
+                    ("count".to_string(), Value::Null),
+                    ("ratio".to_string(), Value::Null),
+                    ("active".to_string(), Value::Null),
+                ])
+            ]
+        );
+    }
+
+    #[rstest]
+    #[case(f64::NAN)]
+    #[case(f64::INFINITY)]
+    #[case(f64::NEG_INFINITY)]
+    fn decode_batch_rejects_nonfinite_float(#[case] value: f64) {
+        let fields = [JsonFieldSpec::f64("ratio", false)];
+        let batch = RecordBatch::try_new(
+            Arc::new(schema_for_type("Record", None, &fields)),
+            vec![Arc::new(Float64Array::from(vec![1.25, value]))],
+        )
+        .unwrap();
+        let error =
+            decode_batch::<Map<String, Value>>(&HashMap::new(), &batch, &fields, None).unwrap_err();
+
+        assert!(matches!(error, EncodingError::ParseError("ratio", message)
+            if message == "row 1: invalid f64 value"));
+    }
 }
