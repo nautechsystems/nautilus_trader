@@ -817,6 +817,23 @@ fn test_register_object_store_from_uri_nonexistent_path() {
 }
 
 #[rstest]
+fn test_from_uri_returns_error_on_missing_local_path() {
+    let parent = tempfile::tempdir().unwrap();
+    let missing = parent.path().join("does-not-exist").join("catalog");
+    assert!(!missing.exists());
+
+    let result = ParquetDataCatalog::from_uri(missing.to_str().unwrap(), None, None, None, None);
+    assert!(
+        result.is_err(),
+        "expected error for missing local base path, received {result:?}"
+    );
+    assert!(
+        !missing.exists(),
+        "from_uri must not create a local base directory"
+    );
+}
+
+#[rstest]
 fn test_rust_get_missing_intervals() {
     let (_temp_dir, catalog) = create_temp_catalog();
 

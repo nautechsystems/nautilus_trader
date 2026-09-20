@@ -180,6 +180,16 @@ impl PyParquetDataCatalog {
         // Convert HashMap to AHashMap for internal use
         let storage_options = storage_options.map(|m| m.into_iter().collect());
 
+        if let Ok(normalized_uri) = crate::common::paths::normalize_path_to_uri(base_path)
+            && let Ok(parsed) = url::Url::parse(&normalized_uri)
+            && parsed.scheme() == "file"
+            && let Ok(path) = parsed.to_file_path()
+        {
+            std::fs::create_dir_all(&path).map_err(|e| {
+                PyIOError::new_err(format!("Failed to create catalog base directory: {e}"))
+            })?;
+        }
+
         let inner = ParquetDataCatalog::from_uri(
             base_path,
             storage_options,

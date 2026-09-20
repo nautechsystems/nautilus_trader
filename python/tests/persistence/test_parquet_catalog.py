@@ -85,3 +85,30 @@ def test_parquet_backend_is_builtin() -> None:
     assert CatalogBackend.from_str("parquet") == CatalogBackend.Parquet
     assert CatalogBackend.Parquet.name == "Parquet"
     assert CatalogBackend.Parquet.value == "Parquet"
+
+
+def test_parquet_data_catalog_creates_missing_local_directory(tmp_path) -> None:
+    """
+    Verify constructing on a not-yet-existing local path creates the base directory.
+    """
+    missing = tmp_path / "does-not-exist" / "catalog"
+    assert not missing.exists()
+
+    ParquetDataCatalog(str(missing))
+
+    assert missing.is_dir()
+
+
+def test_parquet_data_catalog_does_not_create_local_directory_for_unc_uri(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    """
+    Verify a UNC-shaped file URI does not silently create a local directory.
+    """
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(OSError, match="Failed to create ParquetDataCatalog"):
+        ParquetDataCatalog("file://nautilus-test-nonexistent-share/catalog")
+
+    assert not (tmp_path / "nautilus-test-nonexistent-share").exists()

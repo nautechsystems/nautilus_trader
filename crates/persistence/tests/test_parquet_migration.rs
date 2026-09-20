@@ -298,6 +298,28 @@ fn migration_dry_run_does_not_create_destination() {
 }
 
 #[rstest]
+#[case::dry_run(true)]
+#[case::apply(false)]
+fn migration_rejects_missing_source(#[case] dry_run: bool) {
+    let temporary = TempDir::new().unwrap();
+    let missing_source = temporary.path().join("absent");
+    let target = temporary.path().join("target");
+    let result = migrate_parquet_catalog(config(&missing_source, &target, dry_run));
+    assert!(
+        result.is_err(),
+        "expected error for missing source (dry_run={dry_run}), received {result:?}"
+    );
+    assert!(
+        !missing_source.exists(),
+        "migration must leave a missing source unchanged"
+    );
+    assert!(
+        !target.exists(),
+        "migration must not create the target when the source is missing"
+    );
+}
+
+#[rstest]
 fn migration_rejects_nonempty_destination() {
     let temporary = TempDir::new().unwrap();
     let marker = temporary.path().join("keep.txt");
