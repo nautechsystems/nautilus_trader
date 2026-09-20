@@ -209,6 +209,80 @@ def test_reset_successfully_returns_indicator_to_fresh_state(aroon: AroonOscilla
     assert aroon.value == 0
 
 
+def test_max_period_preserves_oldest_high_until_rollover() -> None:
+    """
+    Test the oldest unique high is retained through the MAX_PERIOD boundary.
+    """
+    # Arrange
+    period = 1024
+    aroon = AroonOscillator(period)
+
+    # Act
+    aroon.update_raw(1_000.0, 5.0)
+    for _ in range(1, period):
+        aroon.update_raw(10.0, 1.0)
+
+    # Assert
+    assert not aroon.initialized
+    assert aroon.count == period
+
+    # Act
+    aroon.update_raw(10.0, 1.0)
+
+    # Assert
+    assert aroon.initialized
+    assert aroon.count == period + 1
+    assert aroon.aroon_up == 0.0
+    assert aroon.aroon_down == 100.0
+    assert aroon.value == -100.0
+
+    # Act
+    aroon.update_raw(10.0, 1.0)
+
+    # Assert
+    assert aroon.count == period + 1
+    assert aroon.aroon_up == 100.0
+    assert aroon.aroon_down == 100.0
+    assert aroon.value == 0.0
+
+
+def test_max_period_preserves_oldest_low_until_rollover() -> None:
+    """
+    Test the oldest unique low is retained through the MAX_PERIOD boundary.
+    """
+    # Arrange
+    period = 1024
+    aroon = AroonOscillator(period)
+
+    # Act
+    aroon.update_raw(10.0, 0.0)
+    for _ in range(1, period):
+        aroon.update_raw(10.0, 5.0)
+
+    # Assert
+    assert not aroon.initialized
+    assert aroon.count == period
+
+    # Act
+    aroon.update_raw(10.0, 5.0)
+
+    # Assert
+    assert aroon.initialized
+    assert aroon.count == period + 1
+    assert aroon.aroon_up == 100.0
+    assert aroon.aroon_down == 0.0
+    assert aroon.value == 100.0
+
+    # Act
+    aroon.update_raw(10.0, 5.0)
+
+    # Assert
+    assert aroon.count == period + 1
+    assert aroon.aroon_up == 100.0
+    assert aroon.aroon_down == 100.0
+    assert aroon.value == 0.0
+
+
 def _bar(high: float, low: float, close: float) -> Bar:
     bar_type = BarType(
         InstrumentId.from_str("ETHUSDT.BINANCE"),
