@@ -366,6 +366,12 @@ impl From<SockudoError> for TransportError {
             SockudoError::InvalidHttp(msg) | SockudoError::HandshakeFailed(msg) => {
                 Self::Handshake(msg.to_string())
             }
+
+            // Keepalive and idle deadlines are dead connections, TimedOut takes
+            // the connection-drop warn path.
+            timeout @ (SockudoError::HeartbeatTimeout | SockudoError::IdleTimeout) => Self::Io(
+                std::io::Error::new(std::io::ErrorKind::TimedOut, timeout.to_string()),
+            ),
             other => Self::Other(other.to_string()),
         }
     }
@@ -815,6 +821,23 @@ mod tests {
     fn error_translation_handshake() {
         let err: TransportError = SockudoError::HandshakeFailed("bad").into();
         assert!(matches!(err, TransportError::Handshake(_)));
+    }
+
+    #[rstest]
+    #[case(SockudoError::HeartbeatTimeout, "WebSocket Pong deadline expired")]
+    #[case(SockudoError::IdleTimeout, "WebSocket inbound idle deadline expired")]
+    fn error_translation_timeouts_are_timed_out_io(
+        #[case] sockudo: SockudoError,
+        #[case] message: &str,
+    ) {
+        let err: TransportError = sockudo.into();
+        let TransportError::Io(io_err) = &err else {
+            panic!("expected I/O timeout, was: {err:?}");
+        };
+
+        assert_eq!(io_err.kind(), std::io::ErrorKind::TimedOut);
+        assert_eq!(io_err.to_string(), message);
+        assert_eq!(err.to_string(), format!("I/O error: {message}"));
     }
 
     // The log-capture harness is Linux-only for CI stability.
